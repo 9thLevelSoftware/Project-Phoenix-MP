@@ -13,6 +13,7 @@ import com.devil.phoenixproject.database.CycleConflictDraft
 import com.devil.phoenixproject.database.CycleSyncState
 import com.devil.phoenixproject.database.EarnedBadge
 import com.devil.phoenixproject.database.Exercise
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.database.GamificationStats
@@ -176,6 +177,8 @@ abstract class BaseDataBackupManager(
     private val portalTokenStorage: PortalTokenStorage? = null,
     /** Settings-held one-shot work markers a restore must clear (see resetOneShotWorkAfterRestore). */
     private val preferencesManager: PreferencesManager? = null,
+    /** Profiles a permanent delete (PR 20) is still pushing; kept out of backups both ways. */
+    private val pendingProfileDeletionStore: PendingProfileDeletionStore? = null,
 ) : DataBackupManager {
 
     protected val json = Json {
@@ -244,6 +247,19 @@ abstract class BaseDataBackupManager(
                 legacyOneRepMaxKg = it.one_rep_max_kg?.toFloat(),
             )
         }
+
+    /**
+     * Profiles the user permanently deleted (PR 20): those whose delete is still pushing, and
+     * those already finalized (their tombstones outlive the profile row). No backup writes them
+     * and no restore brings them back.
+     */
+    private fun deletedProfileFilter(): DeletedProfileBackupFilter = DeletedProfileBackupFilter(
+        queries.selectRemovedProfileIds().executeAsList().toSet() +
+            pendingProfileDeletionStore?.read().orEmpty(),
+    )
+
+    /** Set for the duration of one streaming export; every array section passes through it. */
+    private var activeExportFilter: DeletedProfileBackupFilter? = null
 
     /** Test seam for deterministic staging I/O failures; production uses private platform temp storage. */
     internal open fun createImportStagingArea(): BackupImportStagingArea = createBackupImportStagingArea()
@@ -404,7 +420,15 @@ abstract class BaseDataBackupManager(
 
     // -- Legacy export (kept for backward compatibility) --
 
-    override suspend fun exportAllData(): BackupData = withContext(Dispatchers.IO) {
+    override suspend fun exportAllData(): BackupData {
+        val backup = exportAllDataUnfiltered()
+        val filter = deletedProfileFilter()
+        if (!filter.isActive) return backup
+        val data = filter.filterData(json.encodeToJsonElement(BackupContent.serializer(), backup.data).jsonObject)
+        return backup.copy(data = json.decodeFromJsonElement(BackupContent.serializer(), data))
+    }
+
+    private suspend fun exportAllDataUnfiltered(): BackupData = withContext(Dispatchers.IO) {
         val sessions = queries.selectBackupSessionsSync().executeAsList()
 
         // IMPORTANT: Load metrics per-session to avoid memory exhaustion on iOS.
@@ -557,9 +581,10 @@ abstract class BaseDataBackupManager(
         val callerContext = currentCoroutineContext()
         val checkedSource = GuardedBackupStreamSource(source) { callerContext.ensureActive() }
         val staging = createImportStagingArea()
+        val deletedProfiles = deletedProfileFilter()
         return try {
             val header = try {
-                stageAndValidateBackup(checkedSource, staging)
+                stageAndValidateBackup(checkedSource, staging, deletedProfiles)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
@@ -582,7 +607,7 @@ abstract class BaseDataBackupManager(
                     GuardedBackupStreamSource(replay) { callerContext.ensureActive() },
                     staging,
                     onProgress,
-                )
+                ).map { result -> result.copy(deletedProfileRowsSkipped = deletedProfiles.dropped) }
             } finally {
                 replay.close()
             }
@@ -605,6 +630,7 @@ abstract class BaseDataBackupManager(
     private fun stageAndValidateBackup(
         source: BackupStreamSource,
         staging: BackupImportStagingArea,
+        filter: DeletedProfileBackupFilter,
     ): StagedBackupHeader {
         val nav = BackupJsonNavigator(source)
         var version: Int? = null
@@ -629,7 +655,7 @@ abstract class BaseDataBackupManager(
                 "data" -> {
                     require(!sawData) { "Backup contains duplicate data objects" }
                     sawData = true
-                    stageDataObject(nav, staging)
+                    stageDataObject(nav, staging, filter)
                 }
                 else -> {
                     Logger.d { "Backup validation: skipping unknown root field '$field'" }
@@ -651,7 +677,11 @@ abstract class BaseDataBackupManager(
         )
     }
 
-    private fun stageDataObject(nav: BackupJsonNavigator, staging: BackupImportStagingArea) {
+    private fun stageDataObject(
+        nav: BackupJsonNavigator,
+        staging: BackupImportStagingArea,
+        filter: DeletedProfileBackupFilter,
+    ) {
         val seenSections = mutableSetOf<String>()
         nav.beginObject()
         while (nav.hasNextInObject()) {
@@ -668,6 +698,8 @@ abstract class BaseDataBackupManager(
                     while (nav.hasNextInArray()) {
                         val raw = nav.nextValueAsString()
                         validateSectionValue(section, raw)
+                        // A profile the user permanently deleted never comes back from a backup.
+                        if (!filter.keep(section, raw)) continue
                         staging.appendArrayValue(section, raw)
                     }
                     nav.endArray()
@@ -2885,6 +2917,19 @@ abstract class BaseDataBackupManager(
         writer: BackupJsonWriter,
         onProgress: (BackupProgress) -> Unit,
     ) {
+        val filter = deletedProfileFilter()
+        activeExportFilter = filter.takeIf { it.isActive }
+        try {
+            streamExportToWriterFiltered(writer, onProgress)
+        } finally {
+            activeExportFilter = null
+        }
+    }
+
+    private suspend fun streamExportToWriterFiltered(
+        writer: BackupJsonWriter,
+        onProgress: (BackupProgress) -> Unit,
+    ) {
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
@@ -2922,7 +2967,13 @@ abstract class BaseDataBackupManager(
         // Phase 2: Sessions
         onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))
         writer.write("\"workoutSessions\":[")
-        val sessions = queries.selectBackupSessionsSync().executeAsList()
+        // A deleted profile's sessions are hard-deleted by PR 20; filtered anyway so a
+        // half-finished delete can never leak one into a backup.
+        val sessions = queries.selectBackupSessionsSync().executeAsList().filter { session ->
+            activeExportFilter?.keep("workoutSessions", mapSessionToBackup(session).let {
+                json.encodeToJsonElement(WorkoutSessionBackup.serializer(), it).jsonObject
+            }) ?: true
+        }
         sessions.forEachIndexed { index, session ->
             if (index > 0) writer.write(",")
             writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session, routineNameResolutionContext)))
@@ -3103,8 +3154,10 @@ abstract class BaseDataBackupManager(
     }
 
     private fun writeJsonArray(writer: BackupJsonWriter, fieldName: String, jsonStrings: List<String>) {
+        val filter = activeExportFilter
+        val kept = if (filter == null) jsonStrings else jsonStrings.filter { filter.keep(fieldName, it) }
         writer.write("\"$fieldName\":[")
-        jsonStrings.forEachIndexed { index, s ->
+        kept.forEachIndexed { index, s ->
             if (index > 0) writer.write(",")
             writer.write(s)
         }

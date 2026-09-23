@@ -10,6 +10,7 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -84,12 +85,14 @@ class AndroidDataBackupManager(
     profilePreferencesRepository: ProfilePreferencesRepository,
     userProfileRepository: UserProfileRepository,
     portalTokenStorage: PortalTokenStorage,
+    pendingProfileDeletionStore: PendingProfileDeletionStore,
 ) : BaseDataBackupManager(
     database,
     profilePreferencesRepository,
     userProfileRepository,
     portalTokenStorage,
     preferencesManager,
+    pendingProfileDeletionStore,
 ) {
 
     override val includeRawTelemetryInBackups: Boolean

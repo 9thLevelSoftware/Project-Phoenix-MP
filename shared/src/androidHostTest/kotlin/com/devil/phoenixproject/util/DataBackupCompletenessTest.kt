@@ -3,6 +3,7 @@ package com.devil.phoenixproject.util
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
+import com.devil.phoenixproject.data.preferences.InMemoryPendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
@@ -429,6 +430,60 @@ class DataBackupCompletenessTest {
         assertTrue(before.getValue("pulled-clean").dirty)
     }
 
+    // ---- PR 20: a permanently deleted profile never enters or leaves a backup ----
+
+    @Test
+    fun `a profile whose permanent delete is still pushing is left out of both exports`() = runTest {
+        val pending = InMemoryPendingProfileDeletionStore()
+        val source = Fixture(pendingProfileDeletionStore = pending)
+        source.seedProfiles()
+        source.saveSession("session-a")
+        source.saveSession("session-b", profileId = PROFILE_B)
+        source.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
+        pending.add(PROFILE_B)
+
+        listOf(
+            testJson.decodeFromString<BackupData>(source.manager.exportToJson()),
+            testJson.decodeFromString<BackupData>(File(source.manager.exportToCachePublic()).readText()),
+        ).forEach { backup ->
+            assertEquals(listOf("default"), backup.data.userProfiles.map { it.id })
+            assertEquals(listOf("default"), backup.data.profilePreferences.map { it.profileId })
+            assertEquals(listOf("session-a"), backup.data.workoutSessions.map { it.id })
+            assertTrue(backup.data.routines.isEmpty() && backup.data.routineExercises.isEmpty())
+        }
+    }
+
+    @Test
+    fun `restoring an older backup never brings back a permanently deleted profile`() = runTest {
+        val source = Fixture()
+        source.seedProfiles()
+        source.saveSession("session-a")
+        source.saveSession("session-b", profileId = PROFILE_B)
+        source.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
+        val olderBackup = source.manager.exportToJson()
+
+        // Finalized delete: B's row is gone and only its scrubbed tombstone remains.
+        val finalized = Fixture()
+        finalized.seedProfiles()
+        finalized.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
+        finalized.queries.softDeleteRoutine(1L, 1L, "routine-1")
+        finalized.driver.execute(null, "DELETE FROM UserProfile WHERE id = '$PROFILE_B'", 0)
+        // Still pushing: B's row is hidden and its id sits in the pending store.
+        val pending = InMemoryPendingProfileDeletionStore().apply { add(PROFILE_B) }
+        val pushing = Fixture(pendingProfileDeletionStore = pending)
+        pushing.seedProfiles()
+
+        listOf("finalized" to finalized, "pushing" to pushing).forEach { (case, target) ->
+            val result = target.manager.importFromJson(olderBackup).getOrThrow()
+            assertEquals(0, result.entitiesWithErrors, "$case: deleted rows are skipped, not failed")
+            assertTrue(result.deletedProfileRowsSkipped > 0, "$case")
+            assertEquals(null, target.queries.selectSessionById("session-b").executeAsOneOrNull(), "$case")
+            assertTrue(target.queries.selectSessionById("session-a").executeAsOneOrNull() != null, "$case")
+        }
+        assertEquals(null, finalized.queries.getProfileById(PROFILE_B).executeAsOneOrNull(), "no resurrected profile")
+        assertEquals(1L, finalized.queries.selectRoutineById("routine-1").executeAsOne().deletedAt, "tombstone untouched")
+    }
+
     // ---- v1-v6 single-object gamification stats (the shipping app's format) ----
 
     @Test
@@ -504,6 +559,7 @@ class DataBackupCompletenessTest {
         preferencesManager: FakePreferencesManager? = null,
         failSessionInsertsWith: String? = null,
         failInsertsInto: String = "WorkoutSession",
+        pendingProfileDeletionStore: InMemoryPendingProfileDeletionStore? = null,
     ) {
         val driver: SqlDriver = if (failSessionInsertsWith == null) {
             createTestDriver()
@@ -514,7 +570,7 @@ class DataBackupCompletenessTest {
         val database = PhoenixDatabase(driver)
         val queries = database.phoenixDatabaseQueries
         private val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
-        val manager = TestManager(database, includeRawTelemetry, portalTokenStorage, preferencesManager)
+        val manager = TestManager(database, includeRawTelemetry, portalTokenStorage, preferencesManager, pendingProfileDeletionStore)
 
         fun seedProfiles() {
             queries.insertUserProfileIgnore("default", "Default", 0L, 1L, 1L)
@@ -523,11 +579,13 @@ class DataBackupCompletenessTest {
             queries.insertDefaultProfilePreferences(PROFILE_B, 1L)
         }
 
-        suspend fun saveRoutineOn(exerciseId: String, progressionKg: Float) {
+        suspend fun saveRoutineOn(exerciseId: String, progressionKg: Float, profileId: String = "default") {
+            database.seedExercise(exerciseId, exerciseId, isCustom = true)
             workoutRepository.saveRoutine(
                 Routine(
                     id = "routine-1",
                     name = "Day",
+                    profileId = profileId,
                     exercises = listOf(
                         RoutineExercise(
                             id = "routine-1-re",
@@ -576,6 +634,7 @@ class DataBackupCompletenessTest {
         override val includeRawTelemetryInBackups: Boolean,
         portalTokenStorage: PortalTokenStorage?,
         preferencesManager: FakePreferencesManager?,
+        pendingProfileDeletionStore: InMemoryPendingProfileDeletionStore? = null,
     ) : BaseDataBackupManager(
         database,
         SqlDelightProfilePreferencesRepository(database),
@@ -587,6 +646,7 @@ class DataBackupCompletenessTest {
         ),
         portalTokenStorage,
         preferencesManager,
+        pendingProfileDeletionStore,
     ) {
         private val dir = kotlin.io.path.createTempDirectory("pr22-backups").toFile()
 

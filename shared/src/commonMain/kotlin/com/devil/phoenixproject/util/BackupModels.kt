@@ -797,6 +797,8 @@ data class ImportResult(
     val cycleSyncStatesImported: Int = 0,
     val cycleSyncStatesSkipped: Int = 0,
     val repairedReferences: Int = 0,
+    /** Rows of a profile the user permanently deleted (PR 20), left out on purpose. */
+    val deletedProfileRowsSkipped: Int = 0,
     /**
      * Count of individual entity rows that threw during import and were skipped.
      * Non-zero here means the backup contained malformed rows — the import still
@@ -834,5 +836,5 @@ data class ImportResult(
             profileExerciseBaselinesSkipped +
             workoutDeletionsSkipped + pendingProfileRecoveriesSkipped +
             ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
-            localOwnershipClaimsSkipped + cycleSyncStatesSkipped
+            localOwnershipClaimsSkipped + cycleSyncStatesSkipped + deletedProfileRowsSkipped
 }

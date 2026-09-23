@@ -940,6 +940,20 @@ SET portalOrigin = :portalOrigin,
     END
 WHERE id = :id;
 
+-- Backup (PR 22 x PR 20): profiles a permanent delete has already finalized. PR 20 keeps
+-- their tombstones (reduced to identity + clock) after removing the UserProfile row, so a
+-- tombstone whose profile no longer exists is the lasting evidence. 'default' is never
+-- inferred: legacy databases can hold default-scoped rows without a profile row.
+selectRemovedProfileIds:
+SELECT DISTINCT profile_id FROM (
+    SELECT profile_id FROM Routine WHERE deletedAt IS NOT NULL
+    UNION SELECT profile_id FROM TrainingCycle WHERE deletedAt IS NOT NULL
+    UNION SELECT profile_id FROM PersonalRecord WHERE deletedAt IS NOT NULL
+    UNION SELECT profile_id FROM WorkoutDeletion
+)
+WHERE profile_id != 'default'
+  AND profile_id NOT IN (SELECT id FROM UserProfile);
+
 -- Backup (PR 22): user-owned fields on stock catalogue rows. The catalogue itself ships
 -- with the app, so only rows carrying user state are exported.
 selectStockExerciseUserFields:
