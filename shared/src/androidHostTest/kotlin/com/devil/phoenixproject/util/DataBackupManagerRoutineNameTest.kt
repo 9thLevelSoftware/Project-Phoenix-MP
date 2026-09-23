@@ -367,6 +367,7 @@ class DataBackupManagerRoutineNameTest {
         // "legacy-rack-pull" is not in the explicit id map: only the reviewed name fallback
         // (Rack Pull -> Rack Pulls) resolves it, exactly as the remapper would.
         database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        database.phoenixDatabaseQueries.insertProfile("baseline-owner", "Owner", 0, 1_700_000_000_000, 0)
         fun session(id: String, exerciseId: String, exerciseName: String) = WorkoutSessionBackup(
             id = id,
             timestamp = 1_700_000_000_000,
@@ -407,6 +408,17 @@ class DataBackupManagerRoutineNameTest {
                         workoutMode = "OldSchool",
                     ),
                 ),
+                profileExerciseBaselines = listOf(
+                    // No name on this row either, and no routine exercise names the id: only the
+                    // session and PR sections (which restore earlier) can teach it the name.
+                    ProfileExerciseBaselineBackup(
+                        profileId = "baseline-owner",
+                        exerciseId = "legacy-rack-pull",
+                        oneRepMaxPerCableKg = 95f,
+                        updatedAt = 1_700_000_000_000,
+                        revision = 1,
+                    ),
+                ),
                 progressionEvents = listOf(
                     // No name on this row: it reuses the name the session section gave the id.
                     ProgressionEventBackup(
@@ -428,6 +440,10 @@ class DataBackupManagerRoutineNameTest {
         assertNull(queries.selectSessionById("session-custom").executeAsOne().exerciseId)
         assertEquals(listOf(180.0), queries.selectPersonalRecordsByExerciseId("Rack_Pulls").executeAsList().map { it.weight })
         assertEquals("Rack_Pulls", queries.selectProgressionEventById("event-name-only").executeAsOne().exercise_id)
+        assertEquals(
+            95.0,
+            queries.selectProfileExerciseBaseline("baseline-owner", "Rack_Pulls").executeAsOne().one_rep_max_per_cable_kg,
+        )
     }
 
     @Test

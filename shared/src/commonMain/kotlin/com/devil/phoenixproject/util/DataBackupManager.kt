@@ -259,7 +259,6 @@ abstract class BaseDataBackupManager(
             "supersets",
             "routineExercises",
             "plannedSets",
-            "profileExerciseBaselines",
             "trainingCycles",
             "cycleDays",
             "cycleProgress",
@@ -270,6 +269,10 @@ abstract class BaseDataBackupManager(
             "metricSamples",
             "completedSets",
             "personalRecords",
+            // After every section that names exercises (routine exercises, sessions, PRs): a
+            // baseline row carries only an id, so a retired catalogue id that maps by name alone
+            // resolves from the name those rows taught the restore's legacy-id translator.
+            "profileExerciseBaselines",
             "progressionEvents",
             "earnedBadges",
             "streakHistory",
