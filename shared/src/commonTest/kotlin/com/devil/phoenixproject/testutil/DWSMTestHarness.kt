@@ -329,6 +329,15 @@ internal class DWSMTestHarness(
     private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
     private val completedSetRepository = completedSetRepositoryOverride ?: fakeCompletedSetRepo
 
+    init {
+        // Production commits the session, its samples, its CompletedSet and both
+        // rep tables of ONE database in ONE transaction. The fake cannot be
+        // atomic, so it writes through the sibling fakes in the same order.
+        fakeWorkoutRepo.completedSetRepository = completedSetRepository
+        fakeWorkoutRepo.repMetricRepository = fakeRepMetricRepo
+        fakeWorkoutRepo.biomechanicsRepository = fakeBiomechanicsRepo
+    }
+
     val repCounter = RepCounterFromMachine()
     val fakeBaselineRepo = FakeProfileExerciseBaselineRepository()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeBaselineRepo, FakeVelocityOneRepMaxRepository())

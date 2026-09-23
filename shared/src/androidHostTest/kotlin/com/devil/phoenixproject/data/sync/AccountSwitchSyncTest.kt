@@ -42,6 +42,7 @@ class AccountSwitchSyncTest {
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var syncRepository: SqlDelightSyncRepository
     private lateinit var tokenStorage: PortalTokenStorage
+    private lateinit var settings: MapSettings
     private lateinit var api: OwnershipEnforcingPortalApi
     private lateinit var manager: SyncManager
     private val pendingAccountMismatch = PendingAccountMismatch()
@@ -66,7 +67,8 @@ class AccountSwitchSyncTest {
             setActiveProfileForTest(id = profileId, supabaseUserId = null)
         }
         syncRepository = SqlDelightSyncRepository(database, userProfileRepository)
-        tokenStorage = PortalTokenStorage(MapSettings())
+        settings = MapSettings()
+        tokenStorage = PortalTokenStorage(settings)
         tokenStorage.saveGoTrueAuth(authResponse(userA, emailA, "token-a"))
         // Suppress both one-time repair pushes; they gather from 0 and would re-send
         // pre-switch rows regardless of the exclusion filter.
@@ -367,6 +369,120 @@ class AccountSwitchSyncTest {
         )
     }
 
+    // ===== 2d. Devices upgraded from a pre-PR-11 build (legacy global cursor) =====
+
+    private fun plantLegacyCursor(ownerUserId: String?, lastSync: Long) {
+        settings.putLong("portal_last_sync_timestamp", lastSync)
+        if (ownerUserId != null) settings.putString("portal_delta_pull_key", "$ownerUserId:$profileId")
+    }
+
+    /** PR 10 namespaces the one-shot seeding ledger per account. */
+    private fun legacySeedingRan(accountId: String): Boolean =
+        database.phoenixDatabaseQueries
+            .selectAppliedDataRepair("legacy-sync-generations-v1:$accountId")
+            .executeAsOneOrNull() != null
+
+    @Test
+    fun anUpgradedDeviceSignedInAsTheLegacyOwnerSeedsAndSyncsWithoutPausing() = runTest {
+        // A workout the old client pushed: stamped at the legacy cursor, generations 1/0.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-1"), gatherStartedAt = baseTime)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+
+        assertTrue(manager.sync().isSuccess)
+        assertFalse(manager.syncState.value is SyncState.AccountMismatch)
+        assertTrue(legacySeedingRan(userA), "the legacy generation seeding runs for the legacy owner")
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+        assertTrue(
+            api.pushPayloads.flatMap { it.sessions }.none { it.id == "legacy-1" },
+            "a row the old client synced is seeded as synced, not re-pushed",
+        )
+    }
+
+    @Test
+    fun anUpgradedDeviceSigningInAsAnotherAccountIsDetectedFromTheLegacyCursor() = runTest {
+        // No PR 11 record yet: only the legacy cursor says which account the rows reached.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == null)
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+
+        val state = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(state.previousUserId == userA && state.newUserId == userB)
+        // saveGoTrueAuth dropped the legacy key on the switch; the evidence survived it.
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+        assertTrue(manager.sync().isFailure)
+        assertTrue(api.pushCallCount == 0, "nothing may be pushed before the choice")
+    }
+
+    @Test
+    fun changingAccountInTokenStorageKeepsTheLegacyOwnerAsLastSynced() = runTest {
+        // saveGoTrueAuth drops the un-namespaced legacy cursor on an account change; the
+        // fact it carried (which account the old client synced into) must survive it.
+        plantLegacyCursor(userA, lastSync = baseTime)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+    }
+
+    @Test
+    fun signingOutKeepsTheLegacyOwnerSoALaterSignInAsAnotherAccountIsDetected() = runTest {
+        // No delta-pull marker: the legacy cursor belongs to whoever was signed in.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        plantLegacyCursor(ownerUserId = null, lastSync = baseTime)
+        manager.logout()
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA, "sign-out must keep the legacy owner")
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        val state = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(state.previousUserId == userA)
+        assertTrue(api.pushCallCount == 0)
+    }
+
+    @Test
+    fun legacySeedingNeverRunsUnderAMismatchedAccount() = runTest {
+        // The token already names B (e.g. a restart after an older sign-in) while the legacy
+        // cursor is attributed to A: the pause gate must stop the sync before the one-shot
+        // seeding acks rows on B's behalf.
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-1"), gatherStartedAt = baseTime)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        api.currentPushUser = userB
+
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        val state = assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
+        assertTrue(state.previousUserId == userA && state.newUserId == userB)
+        assertFalse(legacySeedingRan(userB), "the one-shot seeding must not run under a mismatched account")
+        assertFalse(legacySeedingRan(userA))
+        assertTrue(api.pushCallCount == 0)
+    }
+
+    @Test
+    fun theMismatchGateRunsBeforeUnboundProfilesAreBoundToTheSigningInAccount() = runTest {
+        // One profile already belongs to A; a second was never linked. Signed in as B, the
+        // pause gate must stop the sync before PR 10's binding step claims the unbound
+        // profile (and its rows) for B, and nothing may overwrite A's owner.
+        val unbound = userProfileRepository.createProfile("Unbound", 1)
+        userProfileRepository.linkToSupabase(profileId, userA)
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = unbound.id)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        api.currentPushUser = userB
+
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
+        val owners = userProfileRepository.allProfiles.value.associate { it.id to it.supabaseUserId }
+        assertTrue(owners[profileId] == userA, "the other account's owner must not be overwritten: $owners")
+        assertTrue(owners[unbound.id] == null, "an unbound profile must not be bound under a mismatch: $owners")
+        assertTrue(api.pushCallCount == 0)
+    }
+
     // ===== 3. Rows pulled from the old account are not "never synced" =====
 
     @Test
@@ -442,6 +558,329 @@ class AccountSwitchSyncTest {
         assertTrue("just-lift" in sessionIds, "a tagged, never-synced Just Lift set must upload: $sessionIds")
         assertTrue("pre-1" !in sessionIds, "a re-armed row the old account holds must stay excluded: $sessionIds")
         assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    // ===== codex #859: switching back, pull-only retries, bounded recovery =====
+
+    private suspend fun switchTo(userId: String, email: String, token: String, choice: AccountSwitchChoice) {
+        api.currentPushUser = userId
+        api.signInResult = Result.success(authResponse(userId, email, token))
+        assertTrue(manager.login(email, "pw").isSuccess)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(manager.resolveAccountMismatch(choice).isSuccess)
+    }
+
+    @Test
+    fun switchingBackToTheOriginalAccountKeepsItsOwnRowsSyncing() = runTest {
+        // A owns a session and a routine; the device switches to B, B records its own
+        // session, then the device switches back to A. A's rows must not be excluded from A.
+        insertSession("a-session", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime)
+        assertTrue(manager.sync().isSuccess)
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        insertSession("b-session", groupId = null, timestamp = currentTimeMillis(), profileId = profileId)
+        assertTrue(manager.sync().isSuccess)
+        assertTrue("b-session" in api.pushPayloads.flatMap { it.sessions }.map { it.id })
+
+        switchTo(userA, emailA, "token-a2", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        assertFalse(
+            "a-session" in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT),
+            "A's own session must not be excluded from A",
+        )
+        assertFalse(routinePre in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.ROUTINE))
+        assertTrue(
+            "b-session" in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT),
+            "B's session still belongs to B",
+        )
+
+        // A's rows edited after returning to A upload to A; B's stays out.
+        val q = database.phoenixDatabaseQueries
+        q.markWorkoutComponentDirty("a-session")
+        q.markWorkoutComponentDirty("b-session")
+        q.updateRoutineFields(
+            name = "Edited", description = "", createdAt = baseTime, lastUsed = null, useCount = 0L,
+            updatedAt = currentTimeMillis(), profile_id = profileId, groupId = null, id = routinePre,
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("a-session" in sessionIds, "A's edited session must upload to A: $sessionIds")
+        assertTrue("b-session" !in sessionIds, "B's session must not upload to A: $sessionIds")
+        assertTrue(routinePre in api.pushPayloads.flatMap { it.routines }.map { it.id })
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun rowsImportedByAPullOnlyRetryAreNotUploadedToTheNextAccount() = runTest {
+        val pulledRoutine = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        api.claim(userA, pulledRoutine)
+        // A's push lands but its pull fails; a later pull-only retry imports A's routine.
+        api.pullResult = Result.failure(PortalApiException("server", null, 500))
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        manager.sync()
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(),
+                sessions = emptyList(),
+                routines = listOf(PullRoutineDto(id = pulledRoutine, userId = userA, name = "Pulled split")),
+                rpgAttributes = null,
+                badges = emptyList(),
+                gamificationStats = null,
+            ),
+        )
+        assertTrue(manager.retryPull().isSuccess)
+        assertTrue(database.phoenixDatabaseQueries.selectRoutineById(pulledRoutine).executeAsOneOrNull() != null)
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(), sessions = emptyList(), routines = emptyList(),
+                rpgAttributes = null, badges = emptyList(), gamificationStats = null,
+            ),
+        )
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "the new account's sync must not hit an ownership refusal")
+        assertTrue(api.pushPayloads.flatMap { it.routines }.none { it.id == pulledRoutine })
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun anOwnershipRefusalStopsTheProfileLoopBeforeLaterProfilesPush() = runTest {
+        val second = userProfileRepository.createProfile("Second", 1)
+        insertSession("p1-row", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertSession("p2-row", groupId = null, timestamp = baseTime, profileId = second.id)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+
+        assertTrue(manager.sync().isFailure)
+        assertTrue(api.pushCallCount == 1, "no later profile may push after a refusal (pushes=${api.pushCallCount})")
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        assertTrue(tokenStorage.getOwnershipConflict(userA) != null, "the terminal state is persisted")
+    }
+
+    @Test
+    fun rowsAcceptedBeforeALaterRefusalSurviveOwnershipRecovery() = runTest {
+        // The active profile's push lands; the next profile's push is refused. Recovery must
+        // not exclude the rows that already landed in this account, though they predate it.
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val second = userProfileRepository.createProfile("Second", 1)
+        insertSession("landed", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        insertSession("refused", groupId = null, timestamp = firstSeen - 60_000, profileId = second.id)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        api.refuseFromPushNumber = 2
+
+        assertTrue(manager.sync().isFailure)
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT)
+        assertTrue("landed" !in excluded, "an accepted row must not be excluded by recovery: $excluded")
+        assertTrue("refused" in excluded, "the pre-existing refused row is excluded: $excluded")
+    }
+
+    @Test
+    fun ownershipRecoveryExcludesBadgesEarnedBeforeThisAccountSignedIn() = runTest {
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val q = database.phoenixDatabaseQueries
+        q.insertEarnedBadge("old_badge", firstSeen - 60_000, profileId)
+        q.insertEarnedBadge("new_badge", firstSeen + 60_000, profileId)
+        insertSession("pre-1", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        assertTrue(manager.sync().isFailure)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.EARNED_BADGE)
+        assertTrue("old_badge" in excluded, "a badge that predates this account is excluded: $excluded")
+        assertTrue("new_badge" !in excluded, "a badge earned for this account still syncs: $excluded")
+    }
+
+    @Test
+    fun ownershipRecoveryKeepsRowsMadeForThisAccountAfterItSignedIn() = runTest {
+        // A pre-existing row (before A was first seen on the device) triggers the refusal;
+        // a workout and routine made for A afterwards, before the user presses recovery,
+        // must keep syncing.
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        insertSession("pre-existing", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        insertSession("made-for-a", groupId = null, timestamp = firstSeen + 60_000, profileId = profileId)
+        insertRoutine(routineNew, profileId = profileId, createdAt = firstSeen + 60_000)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        api.forcedRejectBody = null
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("made-for-a" in sessionIds, "a workout made for this account must still upload: $sessionIds")
+        assertTrue("pre-existing" !in sessionIds, "the pre-existing row stays out: $sessionIds")
+        assertTrue(routineNew in api.pushPayloads.flatMap { it.routines }.map { it.id })
+    }
+
+    @Test
+    fun catalogCollisionRecoveryExcludesOnlyCustomExercises() = runTest {
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val customId = "custom_${firstSeen - 60_000}"
+        database.seedExercise(customId, name = "Old Fly", isCustom = true)
+        insertSession("old-session", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Custom exercise id conflicts with an existing catalog exercise."
+        assertTrue(manager.sync().isFailure)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        assertTrue(customId in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.CUSTOM_EXERCISE))
+        assertTrue(
+            syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT).isEmpty(),
+            "a catalog collision must not exclude workouts",
+        )
+        api.forcedRejectBody = null
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue("old-session" in api.pushPayloads.flatMap { it.sessions }.map { it.id })
+    }
+
+    @Test
+    fun anUpgradeSwitchKeepsTheLegacyBoundaryForTheOldAccount() = runTest {
+        // Upgraded with only the legacy cursor, then signed straight into B before the
+        // upgraded build ever synced as A. Rows the old client synced to A must stay out of B.
+        val legacy = baseTime + 1_000
+        insertSession("legacy-pushed", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-pushed"), gatherStartedAt = baseTime)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime)
+        plantLegacyCursor(userA, lastSync = legacy)
+        insertSession("never-pushed", groupId = null, timestamp = legacy + 60_000, profileId = profileId)
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("legacy-pushed" !in sessionIds, "a row the old client synced to A must not go to B: $sessionIds")
+        assertTrue(routinePre !in api.pushPayloads.flatMap { it.routines }.map { it.id })
+        assertTrue("never-pushed" in sessionIds, "a never-synced row still uploads: $sessionIds")
+    }
+
+    @Test
+    fun theLegacyBoundaryCoversOnlyTheProfileTheMarkerNames() = runTest {
+        // Like PR 10's seeding, the preserved legacy boundary belongs to the marker's profile.
+        val other = userProfileRepository.createProfile("Other", 1)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        assertTrue(tokenStorage.getAccountSyncBoundary(userA, profileId) == baseTime + 1_000)
+        assertTrue(tokenStorage.getAccountSyncBoundary(userA, other.id) == 0L)
+        assertTrue(tokenStorage.getAccountSyncBoundary(userB, profileId) == 0L)
+    }
+
+    @Test
+    fun anOwnershipRefusalHoldsAcrossAProcessRestartUntilRecovery() = runTest {
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        val pushes = api.pushCallCount
+
+        // The process dies before recovery. A fresh manager must not push again.
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(restarted.syncState.value)
+        assertTrue(api.pushCallCount == pushes, "a restart must not resend the refused payload")
+
+        // Recovery clears the durable hold too.
+        assertTrue(restarted.applyOwnershipConflictRecovery().isSuccess)
+        api.forcedRejectBody = null
+        val again = newManager(PendingAccountMismatch())
+        assertTrue(again.sync().isSuccess)
+        assertFalse(again.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun signingOutDropsAnUnansweredOwnershipRefusal() = runTest {
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        manager.logout()
+        assertTrue(tokenStorage.getOwnershipConflict(userA) == null)
+    }
+
+    @Test
+    fun externalActivitiesFollowTheAccountSwitchChoice() = runTest {
+        // An imported activity: pending upload (needsSync = 1), recorded before the switch.
+        val q = database.phoenixDatabaseQueries
+        fun importActivity(id: String, needsSync: Long) = q.insertExternalActivityIfNew(
+            id, "ext-$id", "hevy", "Imported $id", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, needsSync, null,
+        )
+        importActivity("pending-activity", needsSync = 1L)
+        importActivity("synced-activity", needsSync = 0L)
+        tokenStorage.setLastSyncedPortalUserId(userA) // the device already synced as A
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY)
+        assertTrue("pending-activity" in excluded, "Don't upload existing data must exclude it: $excluded")
+        assertTrue("synced-activity" in excluded)
+    }
+
+    @Test
+    fun uploadNeverSyncedKeepsAPendingExternalActivityAndExcludesAnUploadedOne() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertExternalActivityIfNew(
+            "pending-activity", "ext-1", "hevy", "Imported", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, 1L, null,
+        )
+        q.insertExternalActivityIfNew(
+            "synced-activity", "ext-2", "hevy", "Imported", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, 0L, null,
+        )
+        tokenStorage.setLastSyncedPortalUserId(userA) // the device already synced as A
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY)
+        assertTrue("pending-activity" !in excluded, "a never-uploaded activity stays uploadable: $excluded")
+        assertTrue("synced-activity" in excluded, "an activity that reached A stays out of B: $excluded")
+    }
+
+    @Test
+    fun excludeAllExistingSendsNoneOfTheOldAccountsUserScopedValues() = runTest {
+        // A's history: a workout, an earned badge and gamification totals on the device.
+        val q = database.phoenixDatabaseQueries
+        insertSession("a-session", groupId = null, timestamp = baseTime, profileId = profileId)
+        q.insertEarnedBadge("first_workout", baseTime, profileId)
+        q.upsertGamificationStats(1L, 40L, 400L, 3200L, 9L, 4L, 5L, 2L, baseTime, baseTime, baseTime, profileId)
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.any { it.gamificationStats != null }, "A's own sync carries A's totals")
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(manager.sync().isSuccess)
+
+        assertTrue(api.pushPayloads.isNotEmpty())
+        assertTrue(api.pushPayloads.all { it.gamificationStats == null }, "A's totals must not reach B")
+        assertTrue(api.pushPayloads.all { it.rpgAttributes == null }, "A-derived RPG must not reach B")
+        assertTrue(
+            api.pushPayloads.flatMap { it.badges }.none { it.badgeId == "first_workout" },
+            "A's badge must not reach B",
+        )
+    }
+
+    @Test
+    fun eachProfileIsClassifiedUnderItsOwnPreviousOwner() = runTest {
+        // P1 is A's, P2 is C's. C synced recently; A long ago. Sign into B.
+        val p2 = userProfileRepository.createProfile("P2", 1)
+        userProfileRepository.linkToSupabase(profileId, userA)
+        userProfileRepository.linkToSupabase(p2.id, "user-c")
+        // A's routine was created after A's (old) boundary but well before C's (recent) one:
+        // under C's boundary it would look already-synced for P2, under A's it looks new.
+        // The inverse is the risk: an A routine created after C's boundary on P1.
+        tokenStorage.setPushWatermark(userA, profileId, baseTime + 100_000)
+        tokenStorage.setPushWatermark("user-c", p2.id, baseTime)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime + 50_000)
+        tokenStorage.setLastSyncedPortalUserId("user-c")
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.ROUTINE)
+        assertTrue(
+            routinePre in excluded,
+            "P1's routine predates A's boundary, so it reached A and must stay out of B: $excluded",
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.routines }.none { it.id == routinePre })
     }
 
     // ===== 4. "Don't upload existing data" =====
@@ -818,6 +1257,8 @@ class OwnershipEnforcingPortalApi : FakePortalApiClient() {
     var currentPushUser: String = "user-a"
     /** When set, every push is refused with this exact ownership-400 body. */
     var forcedRejectBody: String? = null
+    /** When set, pushes numbered >= this (1-based) are refused with [forcedRejectBody]. */
+    var refuseFromPushNumber: Int? = null
 
     private val ownedIds = mutableMapOf<String, String>()
 
@@ -826,7 +1267,7 @@ class OwnershipEnforcingPortalApi : FakePortalApiClient() {
     }
 
     override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
-        forcedRejectBody?.let { body ->
+        forcedRejectBody?.takeIf { refuseFromPushNumber == null || pushCallCount + 1 >= refuseFromPushNumber!! }?.let { body ->
             pushCallCount++
             lastPushPayload = payload
             pushPayloads += payload

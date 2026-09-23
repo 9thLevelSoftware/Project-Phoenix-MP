@@ -833,6 +833,25 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `the post-write heal propagates cancellation instead of swallowing it`() {
+        val cancelling = PhoenixDatabase(
+            object : app.cash.sqldelight.db.SqlDriver by driver {
+                override fun <R> executeQuery(
+                    identifier: Int?,
+                    sql: String,
+                    mapper: (app.cash.sqldelight.db.SqlCursor) -> app.cash.sqldelight.db.QueryResult<R>,
+                    parameters: Int,
+                    binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?,
+                ): app.cash.sqldelight.db.QueryResult<R> =
+                    throw kotlin.coroutines.cancellation.CancellationException("caller cancelled")
+            },
+        )
+        kotlin.test.assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
+            com.devil.phoenixproject.data.local.LegacyCatalogueRemapper.healAfterBulkWrite(cancelling, source = "test")
+        }
+    }
+
+    @Test
     fun `a failed remap rolls back and is retried by the next call`() = runTest {
         val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
         prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)

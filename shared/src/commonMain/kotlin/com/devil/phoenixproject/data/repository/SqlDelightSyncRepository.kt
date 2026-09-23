@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
+import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -936,6 +937,12 @@ class SqlDelightSyncRepository(
         exerciseId?.let { id ->
             val match = queries.selectExerciseById(id).executeAsOneOrNull()
             if (match != null) return@withContext match.id
+            // A retired catalogue id an older client uploaded. On a device that never held the
+            // archived legacy row (a fresh install) there is nothing for LegacyCatalogueRemapper
+            // to heal later, so translate it here with the remapper's own resolution (explicit
+            // ids and the reviewed name fallbacks) when this catalogue has the replacement.
+            val translated = LegacyCatalogueTranslator(db).translate(id, name)
+            if (translated != id) return@withContext translated
         }
 
         // Strategy 1: Try exact match with muscle group (most specific)
@@ -2059,12 +2066,23 @@ class SqlDelightSyncRepository(
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
+        pulledProvenance: Map<String, Collection<String>>,
     ) {
         withContext(Dispatchers.IO) {
             // Use a single outer transaction that wraps all entity merges.
             // SQLDelight handles nested transactions via savepoints, so if any inner
             // operation throws, the entire outer transaction rolls back.
             db.transaction {
+                // PR 11: the pulled rows' account provenance commits (or rolls back) with
+                // the rows themselves, so a crash can never leave pulled rows without the
+                // evidence that they belong to [ownerUserId] (codex #859).
+                if (ownerUserId.isNotBlank()) {
+                    for ((type, ids) in pulledProvenance) {
+                        for (id in ids.distinct()) {
+                            queries.insertSyncExcludedEntity(ownerUserId, SyncExcludedEntityTypes.reached(type), id)
+                        }
+                    }
+                }
                 // Permanent account-scoped tombstones are applied before any live
                 // projection so a stale/late pull cannot resurrect deleted content.
                 for (deletion in workoutDeletions) {
@@ -2396,6 +2414,30 @@ class SqlDelightSyncRepository(
      * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
      * newest-first so the parity cap drops the oldest.
      */
+    override suspend fun seedLegacySyncedGenerationsOnce(
+        accountId: String,
+        legacyLastSync: Long,
+        cursorProfileId: String?,
+        profileIds: Collection<String>,
+    ): Int? = withContext(Dispatchers.IO) {
+        val ledgerKey = "$LEGACY_SYNC_GENERATIONS_REPAIR_KEY:$accountId"
+        db.transactionWithResult {
+            if (queries.selectAppliedDataRepair(ledgerKey).executeAsOneOrNull() != null) {
+                return@transactionWithResult null
+            }
+            val marked = profileIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).sumOf { chunk ->
+                queries.seedLegacySyncedGenerations(
+                    profileIds = chunk,
+                    // No cursor profile → "" matches no row, so only pull provenance applies.
+                    cursorProfileId = cursorProfileId.orEmpty(),
+                    legacyLastSync = legacyLastSync,
+                ).value.toInt()
+            }
+            queries.insertAppliedDataRepair(ledgerKey, currentTimeMillis())
+            marked
+        }
+    }
+
     override suspend fun getLivePortalSessionIds(profileId: String): Set<String> = withContext(Dispatchers.IO) {
         queries.selectLivePortalSessionIdsByProfile(profileId).executeAsList().toHashSet()
     }
@@ -2450,79 +2492,161 @@ class SqlDelightSyncRepository(
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String?,
+        previousPortalUserIdsByProfile: Map<String, String>,
     ) = withContext(Dispatchers.IO) {
-        fun exclude(entityType: String, entityId: String) {
-            queries.insertSyncExcludedEntity(
-                portalUserId = portalUserId,
-                entityType = entityType,
-                entityId = entityId,
-            )
+        val types = SyncExcludedEntityTypes
+        fun ids(user: String?, type: String): Set<String> =
+            if (user.isNullOrBlank()) emptySet()
+            else queries.selectSyncExcludedEntityIds(portalUserId = user, entityType = type).executeAsList().toHashSet()
+        // Loaded before any write below, so this call's own inserts cannot feed back into it.
+        val targetReached = types.ALL.associateWith { ids(portalUserId, types.reached(it)) }
+        val previousOwners = (listOf(previousPortalUserId) + previousPortalUserIdsByProfile.values)
+            .filterNotNull().filter { it.isNotBlank() }.distinct()
+        val reachedByOwner = previousOwners.associateWith { owner -> types.ALL.associateWith { ids(owner, types.reached(it)) } }
+        val excludedByOwner = previousOwners.associateWith { owner -> types.ALL.associateWith { ids(owner, it) } }
+
+        /**
+         * One local entity (all its ids, e.g. a session and its portal group id).
+         * - It reached the previous account when the classification says so or the
+         *   previous account's provenance names it; if the previous account had not
+         *   excluded it, record that provenance (it is that account's row).
+         * - It is excluded from the target unless the target's own provenance names it:
+         *   a row that already belongs to the account being switched back to must keep
+         *   syncing there (codex #859).
+         */
+        fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean, previousOwner: String?) {
+            val ownerReached = previousOwner?.let { reachedByOwner[it]?.getValue(type) }.orEmpty()
+            val ownerExcluded = previousOwner?.let { excludedByOwner[it]?.getValue(type) }.orEmpty()
+            val reached = classifiedReached || entityIds.any { it in ownerReached }
+            if (previousOwner != null && reached && entityIds.none { it in ownerExcluded }) {
+                entityIds.forEach {
+                    queries.insertSyncExcludedEntity(previousOwner, types.reached(type), it)
+                }
+            }
+            val ownedByTarget = entityIds.any { it in targetReached.getValue(type) }
+            if ((excludeAllExisting || reached) && !ownedByTarget) {
+                entityIds.forEach { queries.insertSyncExcludedEntity(portalUserId, type, it) }
+            }
         }
 
-        for (profileId in profileIds) {
-            val watermark = previousPushWatermarks[profileId] ?: 0L
+        db.transaction {
+            for (profileId in profileIds) {
+                val watermark = previousPushWatermarks[profileId] ?: 0L
+                val owner = previousPortalUserIdsByProfile[profileId] ?: previousPortalUserId
+                fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean) =
+                    decide(type, entityIds, classifiedReached, owner)
 
-            // Sessions: classified by origin and acknowledged sync generation, not by
-            // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
-            // it on rows that already reached the old account). See isNeverSyncedSession.
-            queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
-                val neverSynced = isNeverSyncedSession(
-                    portalOrigin = row.portalOrigin,
-                    syncedSyncGeneration = row.synced_sync_generation,
-                    updatedAt = row.updatedAt,
-                    boundary = watermark,
-                )
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.WORKOUT, row.id)
-                    row.routineSessionId?.takeIf { it.isNotBlank() }
-                        ?.let { exclude(SyncExcludedEntityTypes.WORKOUT, it) }
+                // Sessions: classified by origin and acknowledged sync generation, not by
+                // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
+                // it on rows that already reached the old account). See isNeverSyncedSession.
+                queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
+                    val neverSynced = isNeverSyncedSession(
+                        portalOrigin = row.portalOrigin,
+                        syncedSyncGeneration = row.synced_sync_generation,
+                        updatedAt = row.updatedAt,
+                        boundary = watermark,
+                    )
+                    decide(types.WORKOUT, listOfNotNull(row.id, row.routineSessionId?.takeIf { it.isNotBlank() }), !neverSynced)
+                }
+
+                queries.selectRoutinesForAccountSwitch(profileId).executeAsList().forEach { routine ->
+                    decide(types.ROUTINE, listOf(routine.id), !(routine.createdAt > 0L && routine.createdAt > watermark))
+                }
+
+                queries.selectAllTrainingCyclesForAccountSwitch(profileId).executeAsList().forEach { cycle ->
+                    decide(types.CYCLE, listOf(cycle.id), !(cycle.created_at > 0L && cycle.created_at > watermark))
+                }
+
+                queries.selectPersonalRecordsForAccountSwitch(profileId).executeAsList().forEach { record ->
+                    // achievedAt is when the PR was achieved.
+                    decide(
+                        types.PERSONAL_RECORD,
+                        listOfNotNull(record.id.toString(), record.uuid),
+                        !(record.achievedAt > 0L && record.achievedAt > watermark),
+                    )
+                }
+
+                queries.selectAllAssessments(profileId).executeAsList().forEach { assessment ->
+                    decide(
+                        types.ASSESSMENT,
+                        listOf(assessment.id.toString()),
+                        !(assessment.createdAt > 0L && assessment.createdAt > watermark),
+                    )
+                }
+
+                queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach { activity ->
+                    decide(types.EXTERNAL_ACTIVITY, listOf(activity.id), activity.needsSync == 0L)
+                }
+
+                // Earned badges are the previous account's history (derived from its workouts),
+                // under either choice; a badge already on the target stays (codex #859).
+                queries.selectAllEarnedBadges(profileId).executeAsList().forEach { badge ->
+                    decide(types.EARNED_BADGE, listOf(badge.badgeId), true)
                 }
             }
 
-            getFullRoutinesModifiedSince(0L, profileId).forEach { routine ->
-                val neverSynced = routine.createdAt > 0L && routine.createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.ROUTINE, routine.id)
-                }
-            }
-
-            getFullCyclesForSync(profileId).forEach { cycleWithContext ->
-                val cycle = cycleWithContext.cycle
-                val neverSynced = cycle.createdAt > 0L && cycle.createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.CYCLE, cycle.id)
-                }
-            }
-
-            getFullPRsModifiedSince(0L, profileId).forEach { record ->
-                // PersonalRecord.timestamp is when the PR was achieved.
-                val neverSynced = record.timestamp > 0L && record.timestamp > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, record.id.toString())
-                    record.uuid?.let { exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, it) }
-                }
-            }
-
-            getCustomExercisesModifiedSince(0L).forEach { exercise ->
-                val idTime = customExerciseIdTimestamp(exercise.clientId)
+            // Custom exercises are account-wide. The highest per-profile boundary decides
+            // (a custom exercise reached the old account if any profile's sync sent it).
+            val customBoundary = profileIds.maxOfOrNull { previousPushWatermarks[it] ?: 0L } ?: 0L
+            queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
+                val idTime = customExerciseIdTimestamp(clientId)
                 // No parseable id time is treated as already synced (conservative).
-                val neverSynced = idTime != null && idTime > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.CUSTOM_EXERCISE, exercise.clientId)
-                }
-            }
-
-            getAllAssessments(profileId).forEach { assessment ->
-                val createdAt = assessment.createdAt
-                val neverSynced = createdAt > 0L && createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.ASSESSMENT, assessment.id.toString())
-                }
+                decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary), previousPortalUserId)
             }
 
             // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures
             // is left empty by SyncManager), so there is nothing to enumerate here. The
             // push-side filter still covers the entity type when a later push fills it.
+        }
+    }
+
+    override suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    ) = withContext(Dispatchers.IO) {
+        val types = SyncExcludedEntityTypes
+        val targetReached = types.ALL.associateWith {
+            queries.selectSyncExcludedEntityIds(portalUserId = portalUserId, entityType = types.reached(it))
+                .executeAsList().toHashSet()
+        }
+        fun exclude(type: String, entityIds: List<String>, createdAt: Long?) {
+            if (type !in entityTypes) return
+            // Unknown creation time is treated as pre-boundary (conservative: the refusal
+            // proves some pre-existing row belongs elsewhere).
+            if (createdAt != null && createdAt > createdAtOrBefore) return
+            if (entityIds.any { it in targetReached.getValue(type) }) return
+            entityIds.forEach { queries.insertSyncExcludedEntity(portalUserId, type, it) }
+        }
+        db.transaction {
+            for (profileId in profileIds) {
+                queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
+                    exclude(types.WORKOUT, listOfNotNull(row.id, row.routineSessionId?.takeIf { it.isNotBlank() }), row.timestamp)
+                }
+                queries.selectRoutinesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.ROUTINE, listOf(it.id), it.createdAt)
+                }
+                queries.selectAllTrainingCyclesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.CYCLE, listOf(it.id), it.created_at)
+                }
+                queries.selectPersonalRecordsForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.PERSONAL_RECORD, listOfNotNull(it.id.toString(), it.uuid), it.achievedAt)
+                }
+                queries.selectAllAssessments(profileId).executeAsList().forEach {
+                    exclude(types.ASSESSMENT, listOf(it.id.toString()), it.createdAt)
+                }
+                queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.EXTERNAL_ACTIVITY, listOf(it.id), it.syncedAt)
+                }
+                queries.selectAllEarnedBadges(profileId).executeAsList().forEach {
+                    exclude(types.EARNED_BADGE, listOf(it.badgeId), it.earnedAt)
+                }
+            }
+            queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
+                exclude(types.CUSTOM_EXERCISE, listOf(clientId), customExerciseIdTimestamp(clientId))
+            }
         }
     }
 
@@ -2841,6 +2965,7 @@ class SqlDelightSyncRepository(
                                     deletedAt = it.deletedAt,
                                     profileId = it.profile_id,
                                     portalOrigin = it.portalOrigin == 1L,
+                                    hasUnsyncedLocalEdit = it.local_sync_generation > it.synced_sync_generation,
                                 )
                             }
                     }
@@ -2927,9 +3052,15 @@ class SqlDelightSyncRepository(
                 // cross-clock comparison and wrongly rejects legitimate updates. The
                 // merge is therefore no longer LWW: portal-origin rows are server-owned
                 // for content.
+                // A row with a local edit the portal has not acknowledged yet keeps that
+                // edit: the pulled copy may be the version this device just pushed, and
+                // projecting it would overwrite the concurrent edit (tag, target reps, RPE)
+                // that the generation ack deliberately left dirty (codex #856). The next
+                // push sends the edit; a later pull projects the portal's result.
                 val accept = existing.portalOrigin &&
                     existing.profileId == session.profileId &&
                     existing.deletedAt == null &&
+                    !existing.hasUnsyncedLocalEdit &&
                     incomingTs != null
                 if (!accept) continue
 
@@ -3092,6 +3223,8 @@ class SqlDelightSyncRepository(
         val deletedAt: Long?,
         val profileId: String,
         val portalOrigin: Boolean,
+        /** local_sync_generation > synced_sync_generation: a local edit not yet acknowledged. */
+        val hasUnsyncedLocalEdit: Boolean,
     )
 
     /**
@@ -3257,6 +3390,7 @@ class SqlDelightSyncRepository(
         localSupersets: List<SupersetRow>,
         serverWins: Boolean,
     ) {
+        val legacyCatalogueTranslator by lazy { LegacyCatalogueTranslator(db) }
         val localExercisesById = localExercises.associateBy { it.id }
         val localSupersetsById = localSupersets.associateBy { it.id }
 
@@ -3349,9 +3483,12 @@ class SqlDelightSyncRepository(
 
             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
 
-            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
+            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404).
+            // A retired catalogue id an older client stored has no row on a fresh install, so it
+            // is translated with the remapper's own resolution (explicit ids and name fallbacks).
             val catalogExercise = exercise.exerciseId?.let { id ->
                 queries.selectExerciseById(id).executeAsOneOrNull()
+                    ?: queries.selectExerciseById(legacyCatalogueTranslator.translate(id, exercise.name)).executeAsOneOrNull()
             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
             // #635: the explicit flag is stored in its own column — the portal's
@@ -3568,3 +3705,6 @@ class SqlDelightSyncRepository(
         }
     }
 }
+
+/** Ledger key of the one-shot legacy generation seeding (AppliedDataRepair). */
+internal const val LEGACY_SYNC_GENERATIONS_REPAIR_KEY = "legacy-sync-generations-v1"
