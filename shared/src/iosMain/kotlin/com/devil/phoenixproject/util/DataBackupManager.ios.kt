@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -63,7 +64,17 @@ class IosDataBackupManager(
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
     userProfileRepository: UserProfileRepository,
-) : BaseDataBackupManager(database, profilePreferencesRepository, userProfileRepository) {
+    portalTokenStorage: PortalTokenStorage,
+) : BaseDataBackupManager(
+    database,
+    profilePreferencesRepository,
+    userProfileRepository,
+    portalTokenStorage,
+    preferencesManager,
+) {
+
+    override val includeRawTelemetryInBackups: Boolean
+        get() = preferencesManager.preferencesFlow.value.includeRawTelemetryInBackups
 
     private val fileManager = NSFileManager.defaultManager
 

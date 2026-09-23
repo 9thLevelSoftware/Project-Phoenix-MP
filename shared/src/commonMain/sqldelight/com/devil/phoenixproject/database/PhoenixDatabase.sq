@@ -915,6 +915,34 @@ selectBackupSessionsSync:
 SELECT * FROM WorkoutSession
 WHERE deletedAt IS NULL;
 
+-- Backup restore (PR 22): carry the session's sync stamp and portal-origin marker.
+-- A pulled row (portalOrigin = 1) restores generation-clean (0/0), exactly as a pull
+-- inserts it, so it is never re-pushed. A local row keeps insertSession's dirty
+-- generation (1/0) and pushes as an ordinary local row.
+restoreSessionSyncMarkers:
+UPDATE WorkoutSession
+SET portalOrigin = :portalOrigin,
+    updatedAt = :updatedAt,
+    local_sync_generation = CASE WHEN :portalOrigin = 1 THEN 0 ELSE local_sync_generation END,
+    synced_sync_generation = 0
+WHERE id = :id;
+
+-- Backup (PR 22): user-owned fields on stock catalogue rows. The catalogue itself ships
+-- with the app, so only rows carrying user state are exported.
+selectStockExerciseUserFields:
+SELECT id, isFavorite, mvtOverrideMs, one_rep_max_kg FROM Exercise
+WHERE isCustom = 0
+  AND (isFavorite = 1 OR mvtOverrideMs IS NOT NULL OR one_rep_max_kg IS NOT NULL)
+ORDER BY id;
+
+-- Restore fills user fields on an existing stock row without overwriting local choices.
+restoreStockExerciseUserFields:
+UPDATE Exercise SET
+    isFavorite = CASE WHEN isFavorite = 1 OR :isFavorite = 1 THEN 1 ELSE 0 END,
+    mvtOverrideMs = COALESCE(mvtOverrideMs, :mvtOverrideMs),
+    one_rep_max_kg = COALESCE(one_rep_max_kg, :oneRepMaxKg)
+WHERE id = :id AND isCustom = 0;
+
 -- Sync/migration version for code paths that need every local row,
 -- including tombstones.
 selectAllSessionsSync:

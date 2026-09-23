@@ -130,6 +130,7 @@ data class SettingsGlobalUiState(
     val enableVideoPlayback: Boolean,
     val bleCompatibilityMode: BleCompatibilitySetting,
     val autoBackupEnabled: Boolean,
+    val includeRawTelemetryInBackups: Boolean,
     val backupDestination: BackupDestination,
     val language: String,
 )
@@ -138,6 +139,7 @@ private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
     enableVideoPlayback = enableVideoPlayback,
     bleCompatibilityMode = bleCompatibilityMode,
     autoBackupEnabled = autoBackupEnabled,
+    includeRawTelemetryInBackups = includeRawTelemetryInBackups,
     backupDestination = backupDestination,
     language = language,
 )
@@ -869,6 +871,10 @@ class MainViewModel(
     fun setAutoBackupEnabled(enabled: Boolean) {
         settingsManager.setAutoBackupEnabled(enabled)
         refreshBackupStats()
+    }
+
+    fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        settingsManager.setIncludeRawTelemetryInBackups(enabled)
     }
 
     fun setBackupDestination(destination: BackupDestination) {

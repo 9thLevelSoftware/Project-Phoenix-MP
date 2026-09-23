@@ -144,6 +144,18 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoBackupEnabled = enabled)
     }
 
+    var oneShotResetCount = 0
+        private set
+
+    override suspend fun resetOneShotWorkAfterRestore() {
+        oneShotResetCount++
+        _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = false)
+    }
+
+    override suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(includeRawTelemetryInBackups = enabled)
+    }
+
     override suspend fun setLanguage(language: String) {
         _preferencesFlow.value = _preferencesFlow.value.copy(language = language)
     }

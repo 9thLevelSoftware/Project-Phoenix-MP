@@ -428,6 +428,20 @@ class PortalTokenStorage(private val settings: Settings) {
         setPullCursor(userId, profileId, 0L)
     }
 
+    /**
+     * A backup restore bulk-replaces the restored profiles' local rows, so for each of them the
+     * signed-in user's pull cursor restarts at 0 (the next pull reconciles everything against
+     * the portal) and the routine-group repair walks the restored history again. Both live in
+     * settings, which a backup file cannot carry.
+     */
+    fun resetAfterBackupRestore(profileIds: Collection<String>) {
+        val userId = currentUser.value?.id
+        profileIds.forEach { profileId ->
+            if (userId != null) resetPullCursor(userId, profileId)
+            settings.remove(routineGroupRepairCursorKey(profileId))
+        }
+    }
+
     /** Resets every profile's pull cursor for [userId] (force-full-resync). */
     fun resetAllPullCursors(userId: String) {
         withPlatformLock(authLock) {

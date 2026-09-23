@@ -10,6 +10,10 @@ import kotlinx.serialization.json.JsonElement
  */
 fun Int.sanitizeEccentricLoad(): Int = this.coerceIn(0, 150)
 
+/** Clamp an imported per-rep progression to the machine's command limit (defense in depth next to the command path). */
+fun Float.sanitizeProgressionKg(): Float =
+    if (isFinite()) coerceIn(-CommandLimits.MAX_PROGRESSION_KG, CommandLimits.MAX_PROGRESSION_KG) else 0f
+
 /**
  * Serializable backup data classes for export/import functionality.
  * These mirror the SQLDelight table structure but use kotlinx.serialization for JSON.
@@ -80,6 +84,10 @@ data class WorkoutSessionBackup(
     val formScore: Long? = null,
     // Profile separation (profile data separation plan)
     val profileId: String? = null, // null for backward compat with pre-profile backups
+    // Added v7: sync stamp and portal-origin marker. A pulled row restores as pulled so it is
+    // never re-pushed; a local row keeps its stamp so the portal's LWW sees its real age.
+    val updatedAt: Long? = null,
+    val portalOrigin: Boolean = false,
 )
 
 /**
@@ -289,6 +297,19 @@ data class ProfileExerciseBaselineBackup(
     val oneRepMaxPerCableKg: Float? = null,
     val updatedAt: Long,
     val revision: Long,
+)
+
+/**
+ * User-owned fields on a stock catalogue exercise (added v7). The catalogue itself ships with
+ * the app; only favourites, the MVT override and the legacy 1RM input are user state.
+ */
+@Serializable
+data class StockExerciseUserFieldsBackup(
+    val exerciseId: String,
+    val isFavorite: Boolean = false,
+    val mvtOverrideMs: Float? = null,
+    /** Legacy recovery source only, like [CustomExerciseBackup.legacyOneRepMaxKg]. */
+    val legacyOneRepMaxKg: Float? = null,
 )
 
 @Serializable
@@ -593,6 +614,8 @@ enum class BackupPhase(val displayName: String) {
  *       preference sections. Local safety/consent state and sync bookkeeping are excluded.
  * - v6: adds optional custom exercises, profile baselines, cycle clocks/drafts, workout
  *       deletion ledgers, and ownership/recovery operations.
+ * - v7: adds per-profile gamification stats, stock-exercise user fields, and the session
+ *       sync stamp + portal-origin marker. Raw telemetry (metricSamples) is opt-in.
  */
 @Serializable
 data class BackupData(
@@ -617,14 +640,29 @@ data class BackupPrivacyMetadata(
     val containsSessionNotes: Boolean = true,
     val containsAuthTokens: Boolean = false,
     val containsRuntimeSecrets: Boolean = false,
-    val userFacingSummary: String = "Full personal-data export: includes workout history, routines, profiles, profile training preferences, personal records, and notes. Does not include auth tokens, runtime secrets, preference sync bookkeeping, voice phrase or calibration, or adult consent and prompt state.",
+    val containsRawTelemetry: Boolean = false,
+    val userFacingSummary: String = backupPrivacySummary(containsRawTelemetry),
 )
+
+/** Lists what a full backup contains, so the privacy summary never over- or under-states it. */
+fun backupPrivacySummary(includesRawTelemetry: Boolean): String =
+    "Personal-data export: includes workout history, routines, custom exercises and exercise favourites, " +
+        "profiles, profile training preferences, training baselines, personal records, badges and stats, and notes. " +
+        (
+            if (includesRawTelemetry) {
+                "Includes raw per-sample force and position telemetry. "
+            } else {
+                "Does not include raw per-sample telemetry (turn on \"Include raw telemetry\" to add it). "
+            }
+            ) +
+        "Does not include auth tokens, runtime secrets, preference sync bookkeeping, voice phrase or calibration, " +
+        "or adult consent and prompt state."
 
 /**
  * Highest backup schema version this build can produce.
  * Bump whenever BackupContent gains/loses entities or a backup field type changes.
  */
-const val CURRENT_BACKUP_VERSION: Int = 6
+const val CURRENT_BACKUP_VERSION: Int = 7
 
 /**
  * Profile-scoped preference payload. Raw JSON sections intentionally isolate malformed or
@@ -664,7 +702,10 @@ data class BackupContent(
     val progressionEvents: List<ProgressionEventBackup> = emptyList(),
     val earnedBadges: List<EarnedBadgeBackup> = emptyList(),
     val streakHistory: List<StreakHistoryBackup> = emptyList(),
+    // v1-v6 single object. v7 writes gamificationStatsByProfile instead; both still import.
     val gamificationStats: GamificationStatsBackup? = null,
+    val gamificationStatsByProfile: List<GamificationStatsBackup> = emptyList(),
+    val stockExerciseUserFields: List<StockExerciseUserFieldsBackup> = emptyList(),
     val userProfiles: List<UserProfileBackup> = emptyList(),
     // Added v5: profile-scoped training preferences; sections decode independently.
     val profilePreferences: List<ProfilePreferencesBackup> = emptyList(),
@@ -730,6 +771,8 @@ data class ImportResult(
     val routineGroupsSkipped: Int = 0,
     val customExercisesImported: Int = 0,
     val customExercisesSkipped: Int = 0,
+    val stockExerciseUserFieldsImported: Int = 0,
+    val stockExerciseUserFieldsSkipped: Int = 0,
     val profileExerciseBaselinesImported: Int = 0,
     val profileExerciseBaselinesSkipped: Int = 0,
     val workoutDeletionsImported: Int = 0,
@@ -768,6 +811,7 @@ data class ImportResult(
             progressionEventsImported + earnedBadgesImported + streakHistoryImported +
             (if (gamificationStatsImported) 1 else 0) + userProfilesImported +
             sessionNotesImported + routineGroupsImported + customExercisesImported +
+            stockExerciseUserFieldsImported +
             profileExerciseBaselinesImported + workoutDeletionsImported +
             pendingProfileRecoveriesImported + ownershipTransfersImported +
             appliedOwnershipEventsImported + localOwnershipClaimsImported +
@@ -779,7 +823,8 @@ data class ImportResult(
             cycleProgressionsSkipped + plannedSetsSkipped + completedSetsSkipped + progressionEventsSkipped +
             earnedBadgesSkipped + streakHistorySkipped + (if (gamificationStatsSkipped) 1 else 0) +
             userProfilesSkipped + sessionNotesSkipped +
-            routineGroupsSkipped + customExercisesSkipped + profileExerciseBaselinesSkipped +
+            routineGroupsSkipped + customExercisesSkipped + stockExerciseUserFieldsSkipped +
+            profileExerciseBaselinesSkipped +
             workoutDeletionsSkipped + pendingProfileRecoveriesSkipped +
             ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
             localOwnershipClaimsSkipped + cycleSyncStatesSkipped

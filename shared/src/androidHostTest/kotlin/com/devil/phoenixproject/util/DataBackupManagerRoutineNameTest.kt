@@ -3150,6 +3150,8 @@ class DataBackupManagerRoutineNameTest {
             profilePreferencesRepository,
         ),
         private val stagingAreaFactory: (() -> BackupImportStagingArea)? = null,
+        // These tests exercise sample export/restore, so they opt in to raw telemetry.
+        override val includeRawTelemetryInBackups: Boolean = true,
     ) : BaseDataBackupManager(
         database,
         profilePreferencesRepository,
