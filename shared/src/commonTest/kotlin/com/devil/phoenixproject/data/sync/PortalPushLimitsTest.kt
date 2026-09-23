@@ -169,6 +169,60 @@ class PortalPushLimitsTest {
     }
 
     /**
+     * GitHub #853 (codex 4080812739): a Just Lift session tagged to A broke a PR, then
+     * was retagged to B. A's record is genuine and still ships, but it must not flag
+     * the retagged set as a PR: set-level `isPr` follows the record whose
+     * exerciseId + timestamp matches the session, and none matches B.
+     */
+    @Test
+    fun aRetaggedJustLiftSessionShipsNoPrSetForItsNewExercise() = runTest {
+        authenticate()
+        val session = WorkoutSession(
+            id = "just-lift-retagged",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 25f,
+            totalReps = 5,
+            exerciseId = "exercise-b",
+            exerciseName = "Deadlift",
+            isJustLift = true,
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = "exercise-a",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 5,
+                oneRepMax = 25f,
+                timestamp = session.timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 125f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-exercise-a",
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = fakeApi.pushPayloads.single()
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.none { it.isPr },
+            "The retagged set must not claim a PR for exercise B",
+        )
+        assertEquals(
+            listOf("pr-uuid-exercise-a"),
+            payload.personalRecords.mapNotNull { it.id },
+            "A's genuine record still ships",
+        )
+    }
+
+    /**
      * A PR that matches no session in this push (a historical PR resolved through
      * `findSessionIdsForPersonalRecords`) still has to be sent — it rides every
      * batch, including the final one.

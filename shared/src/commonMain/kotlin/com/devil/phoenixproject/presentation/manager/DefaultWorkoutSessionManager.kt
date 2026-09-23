@@ -653,6 +653,15 @@ class DefaultWorkoutSessionManager(
                 Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
             }
         } else if (completedSet != null && completedSet.actualReps > 0) {
+            // codex 4080812739: a retag skips PR evaluation for the new exercise, so a
+            // flag set by the previous exercise's PR is now false. Clear it, or history
+            // shows a PR for this exercise with no record behind it. The previous
+            // exercise's PR row itself stays: it was genuinely achieved, and sync links
+            // a PR to its session by exerciseId + timestamp, which no longer matches
+            // this retagged session, so the portal row loses its session link.
+            if (isRetaggingDifferentExercise && completedSet.isPr) {
+                completedSetRepository.clearPr(completedSet.id)
+            }
             Logger.i {
                 "Skipping PR update for Just Lift session $sessionId retag from $previousExerciseId to $exerciseId"
             }

@@ -2332,6 +2332,9 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 
+clearCompletedSetPr:
+UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
+
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet
 SET set_type = ?,

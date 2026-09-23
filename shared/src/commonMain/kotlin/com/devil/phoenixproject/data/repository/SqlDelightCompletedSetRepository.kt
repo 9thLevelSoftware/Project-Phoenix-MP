@@ -301,6 +301,16 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         }
     }
 
+    override suspend fun clearPr(setId: String) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.clearCompletedSetPr(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
+        }
+    }
+
     override suspend fun deleteCompletedSet(setId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
