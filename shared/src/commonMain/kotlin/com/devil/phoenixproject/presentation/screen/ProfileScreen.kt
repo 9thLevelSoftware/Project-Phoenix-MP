@@ -467,6 +467,10 @@ fun ProfileScreen(
                 pendingIdentityProfileId = deleteTarget.id
                 viewModel.deleteActiveProfile()
             },
+            onDeletePermanently = {
+                pendingIdentityProfileId = deleteTarget.id
+                viewModel.deleteActiveProfilePermanently()
+            },
             onDismiss = {
                 if (!state.identityMutationInFlight) deleteTargetProfileId = null
             },

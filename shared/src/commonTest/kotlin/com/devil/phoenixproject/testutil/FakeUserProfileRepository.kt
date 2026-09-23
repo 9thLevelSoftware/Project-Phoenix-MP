@@ -132,6 +132,21 @@ class FakeUserProfileRepository : UserProfileRepository {
     private val _allProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
     override val allProfiles: StateFlow<List<UserProfile>> = _allProfiles.asStateFlow()
 
+    // PR 20: permanently deleted profiles awaiting their push.
+    private val pendingDeletionIds = linkedSetOf<String>()
+    private val _pendingDeletionProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
+    override val pendingDeletionProfiles: StateFlow<List<UserProfile>> = _pendingDeletionProfiles.asStateFlow()
+    val deleteActiveProfilePermanentlyRequests = mutableListOf<String>()
+    val finalizePendingProfileDeletionRequests = mutableListOf<String>()
+    var finalizePendingProfileDeletionFailure: Throwable? = null
+
+    /** Marks an existing profile pending deletion, as a committed permanent delete would. */
+    suspend fun markPendingDeletionForTest(profileId: String) = mutex.withLock {
+        require(profiles.containsKey(profileId)) { "Unknown profile: $profileId" }
+        pendingDeletionIds += profileId
+        updateIdentityFlows()
+    }
+
     private val _activeProfileContext = MutableStateFlow<ActiveProfileContext>(
         ActiveProfileContext.Switching(null),
     )
@@ -247,7 +262,47 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
+    override suspend fun deleteActiveProfilePermanently(expectedProfileId: String): Boolean {
+        deleteActiveProfilePermanentlyRequests += expectedProfileId
+        deleteProfileFailure?.let { throw it }
+        deleteActiveProfileResultOverride?.let { return it }
+        return mutex.withLock {
+            val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
+                ?: throw ProfileContextUnavailableException()
+            if (ready.profile.id != expectedProfileId) {
+                throw StaleProfileContextException(expectedProfileId, ready.profile.id)
+            }
+            if (expectedProfileId == DEFAULT_PROFILE_ID || !profiles.containsKey(expectedProfileId)) {
+                return@withLock false
+            }
+            setActiveIdentityMapLocked(DEFAULT_PROFILE_ID)
+            if (profiles[expectedProfileId]?.supabaseUserId != null) {
+                pendingDeletionIds += expectedProfileId
+            } else {
+                profiles.remove(expectedProfileId)
+                preferenceFlows.remove(expectedProfileId)
+            }
+            updateIdentityFlows()
+            publishReady(DEFAULT_PROFILE_ID)
+            true
+        }
+    }
+
+    override suspend fun finalizePendingProfileDeletion(profileId: String): Boolean {
+        finalizePendingProfileDeletionRequests += profileId
+        finalizePendingProfileDeletionFailure?.let { throw it }
+        return mutex.withLock {
+            if (profileId !in pendingDeletionIds) return@withLock false
+            pendingDeletionIds -= profileId
+            profiles.remove(profileId)
+            preferenceFlows.remove(profileId)
+            updateIdentityFlows()
+            true
+        }
+    }
+
+    /** Test-only merge of [id] into the active profile (not on the interface since PR 20). */
+    suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
         deleteProfileLocked(id, requireActive = false)
     }
 
@@ -704,8 +759,11 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     private fun updateIdentityFlows() {
-        _allProfiles.value = profiles.values.toList()
-        _activeProfile.value = profiles.values.firstOrNull { it.isActive }
+        pendingDeletionIds.retainAll(profiles.keys)
+        val (pending, visible) = profiles.values.partition { it.id in pendingDeletionIds }
+        _allProfiles.value = visible
+        _pendingDeletionProfiles.value = pending
+        _activeProfile.value = visible.firstOrNull { it.isActive }
     }
 
     private fun publishReady(profileId: String) {

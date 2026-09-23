@@ -1973,6 +1973,12 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
+            if (dto.clientId.isNotBlank() &&
+                queries.countDeletedPersonalRecordInOtherProfile(profileId, dto.clientId).executeAsOne() > 0L
+            ) {
+                // PR 20: a permanently deleted profile's record, re-scoped by the portal.
+                return@forEach
+            }
             val prUuid = dto.clientId.ifBlank { generateUUID() }
             // Materialize an unknown remote PR first. The state-only LWW update below
             // immediately turns it into a hidden tombstone when appropriate.

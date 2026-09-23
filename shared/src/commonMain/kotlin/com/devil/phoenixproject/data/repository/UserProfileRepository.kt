@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.InMemoryPendingProfileDeletionStore
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
@@ -113,15 +115,42 @@ class ProfileAccountLinkRollbackException(profileId: String) : IllegalStateExcep
 
 interface UserProfileRepository {
     val activeProfile: StateFlow<UserProfile?>
+
+    /** Profiles the user can see and pick. Excludes [pendingDeletionProfiles]. */
     val allProfiles: StateFlow<List<UserProfile>>
     val activeProfileContext: StateFlow<ActiveProfileContext>
+
+    /**
+     * Permanently deleted profiles whose tombstones have not reached the portal yet
+     * (PR 20). Hidden from the UI; sync pushes them first and then calls
+     * [finalizePendingProfileDeletion].
+     */
+    val pendingDeletionProfiles: StateFlow<List<UserProfile>>
+        get() = NO_PENDING_DELETION_PROFILES
 
     fun observePreferences(profileId: String): Flow<UserProfilePreferences>
     suspend fun createProfile(name: String, colorIndex: Int): UserProfile
     suspend fun createAndActivateProfile(name: String, colorIndex: Int): UserProfile
     suspend fun updateProfile(id: String, name: String, colorIndex: Int)
-    suspend fun deleteProfile(id: String): Boolean
+
+    /** "Merge into Default": the active profile's data moves to Default, then the profile is removed. */
     suspend fun deleteActiveProfile(expectedProfileId: String): Boolean
+
+    /**
+     * "Delete permanently" (PR 20 / KD-12): the active profile's workouts are tombstoned and
+     * removed, its routines, cycles and personal records are soft-deleted, and Default
+     * becomes active. A profile with a portal owner (linked, or a signed-in account) is
+     * kept hidden in [pendingDeletionProfiles] until sync lands those tombstones; a profile
+     * with no portal owner is removed at once.
+     */
+    suspend fun deleteActiveProfilePermanently(expectedProfileId: String): Boolean =
+        throw UnsupportedOperationException("Permanent profile deletion is not supported")
+
+    /**
+     * Removes a pending-deletion profile row once its own push has landed its tombstones.
+     * Returns false when [profileId] is not pending deletion.
+     */
+    suspend fun finalizePendingProfileDeletion(profileId: String): Boolean = false
     suspend fun setActiveProfile(id: String)
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
@@ -182,6 +211,9 @@ interface UserProfileRepository {
     fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus>
 }
 
+private val NO_PENDING_DELETION_PROFILES: StateFlow<List<UserProfile>> =
+    MutableStateFlow<List<UserProfile>>(emptyList()).asStateFlow()
+
 class SqlDelightUserProfileRepository(
     private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
@@ -190,6 +222,9 @@ class SqlDelightUserProfileRepository(
     private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val profileMutationBarrier: ProfileMutationBarrier = ProfileMutationBarrier(),
     private val beforeProfileDeletionCommit: () -> Unit = {},
+    private val pendingDeletionStore: PendingProfileDeletionStore = InMemoryPendingProfileDeletionStore(),
+    /** The signed-in portal account, if any (PR 20). Decides whether a permanent delete must propagate. */
+    private val signedInPortalUserId: () -> String? = { null },
 ) : UserProfileRepository {
     private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
@@ -200,6 +235,10 @@ class SqlDelightUserProfileRepository(
 
     private val _allProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
     override val allProfiles: StateFlow<List<UserProfile>> = _allProfiles.asStateFlow()
+
+    private val _pendingDeletionProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
+    override val pendingDeletionProfiles: StateFlow<List<UserProfile>> =
+        _pendingDeletionProfiles.asStateFlow()
 
     private val _activeProfileContext = MutableStateFlow<ActiveProfileContext>(
         ActiveProfileContext.Switching(null),
@@ -266,7 +305,11 @@ class SqlDelightUserProfileRepository(
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = withProfileMutation {
+    /**
+     * Merges [id] into the *currently active* profile. Test-only: not on the interface,
+     * because no screen offers it (PR 20 removed it from the production surface).
+     */
+    internal suspend fun deleteProfile(id: String): Boolean = withProfileMutation {
         deleteProfileLocked(id, requireActive = false)
     }
 
@@ -277,6 +320,147 @@ class SqlDelightUserProfileRepository(
             throw StaleProfileContextException(expectedProfileId, ready.profile.id)
         }
         deleteProfileLocked(expectedProfileId, requireActive = true)
+    }
+
+    override suspend fun deleteActiveProfilePermanently(expectedProfileId: String): Boolean = withProfileMutation {
+        if (expectedProfileId == DEFAULT_PROFILE_ID) return@withProfileMutation false
+        val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: throw ProfileContextUnavailableException()
+        if (previous.profile.id != expectedProfileId) {
+            throw StaleProfileContextException(expectedProfileId, previous.profile.id)
+        }
+        val id = expectedProfileId
+        val sourceProfile = queries.getProfileById(id).executeAsOneOrNull()
+            ?: return@withProfileMutation false
+        requireNotNull(queries.getProfileById(DEFAULT_PROFILE_ID).executeAsOneOrNull()) {
+            "Profile deletion target missing: $DEFAULT_PROFILE_ID"
+        }
+        // Whose portal copy the tombstones must reach: the profile's own account when it
+        // was ever linked, else the signed-in account (PR 10 syncs unbound profiles under
+        // it). With neither, nothing of this profile can be on a portal.
+        val ownerUserId = sourceProfile.supabase_user_id?.takeIf { it.isNotBlank() }
+            ?: signedInPortalUserId()?.takeIf { it.isNotBlank() }
+        val propagate = ownerUserId != null
+        _activeProfileContext.value = ActiveProfileContext.Switching(DEFAULT_PROFILE_ID)
+
+        try {
+            Logger.i { "PROFILE_DELETE: Permanently deleting profile '$id' (propagate=$propagate)" }
+            database.transaction {
+                val deletedAt = currentTimeMillis()
+                queries.enqueueProfileLocalCleanup(id, deletedAt)
+                queries.deleteActiveWorkoutRuntimeByProfile(id)
+                // Workouts: an id-only tombstone per portal workout (no FK, survives the
+                // profile), then the rows themselves. The tombstone blocks any later pull
+                // from re-inserting them, whichever profile the portal scopes them to.
+                queries.selectDistinctLiveWorkoutPortalParentsForProfile(id)
+                    .executeAsList()
+                    .forEach { portalSessionId ->
+                        queries.insertWorkoutDeletion(
+                            mutationId = generateUUID(),
+                            ownerUserId = ownerUserId,
+                            profileId = id,
+                            scope = WorkoutDeletionScope.WORKOUT.name,
+                            portalSessionId = portalSessionId,
+                            componentSessionId = null,
+                            deletedAt = deletedAt,
+                            source = WorkoutDeletionSource.LOCAL.name,
+                        )
+                    }
+                queries.hardDeleteAllWorkoutSessionsForProfile(id)
+                // Routines, cycles and PRs become tombstones pushed by this profile's own
+                // push (deletedRoutineIds, deletedCycles, PR deletedAt) and kept locally so
+                // a pull cannot resurrect them under Default.
+                queries.selectAllRoutineIdsByProfile(id).executeAsList().forEach { routineId ->
+                    queries.softDeleteRoutine(deletedAt, deletedAt, routineId)
+                }
+                queries.selectAllRetainedCycleIdsByProfile(id).executeAsList().forEach { cycleId ->
+                    val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull()
+                    if (cycle == null || cycle.deletedAt != null) return@forEach
+                    // A cycle stamp must move past its last edit to win the portal's clocked
+                    // deletion gate.
+                    val cycleDeletedAt = maxOf(deletedAt, cycle.updatedAt + 1)
+                    queries.insertCycleSyncStateIfAbsent(
+                        cycleId = cycleId,
+                        profileId = id,
+                        accountId = ownerUserId,
+                        dirtyGeneration = 0L,
+                        acknowledgedGeneration = 0L,
+                        pendingDeleteUpdatedAt = null,
+                        pendingDeleteGeneration = null,
+                    )
+                    queries.softDeleteTrainingCycle(
+                        deletedAt = cycleDeletedAt,
+                        updatedAt = cycleDeletedAt,
+                        id = cycleId,
+                    )
+                    queries.markCycleDeletionPending(
+                        profileId = id,
+                        accountId = ownerUserId,
+                        deletedAt = cycleDeletedAt,
+                        cycleId = cycleId,
+                    )
+                }
+                queries.selectAllRecords(id).executeAsList().forEach { record ->
+                    queries.softDeletePRById(
+                        deletedAt = deletedAt,
+                        updatedAt = deletedAt,
+                        id = record.id,
+                        profileId = id,
+                    )
+                }
+                queries.deleteGamificationStatsByProfile(id)
+                queries.deleteRpgAttributesByProfile(id)
+                queries.deleteIntegrationStatusByProfile(id)
+                queries.deleteIntegrationSyncCursorByProfile(id)
+                queries.setActiveProfile(DEFAULT_PROFILE_ID)
+                if (!propagate) {
+                    // Nothing to propagate: the row goes now. Preferences and
+                    // training-max baselines CASCADE with it (carryover: do not flip).
+                    queries.deleteProfilePreferences(id)
+                    queries.deleteProfile(id)
+                }
+                beforeProfileDeletionCommit()
+            }
+            // Written after the commit: a crash in between leaves a visible, empty
+            // profile, never a hidden one that still owns live data.
+            if (propagate) pendingDeletionStore.add(id)
+        } catch (failure: Throwable) {
+            _activeProfileContext.value = previous
+            throw failure
+        }
+
+        try {
+            refreshProfilesSync()
+            publishReadyContext(DEFAULT_PROFILE_ID)
+        } catch (failure: Throwable) {
+            _activeProfileContext.value = ActiveProfileContext.Switching(DEFAULT_PROFILE_ID)
+            val recoveryFailure = withContext(NonCancellable) {
+                runCatching {
+                    reconcileActiveProfileContextLocked(publishReady = true)
+                }.exceptionOrNull()
+            }
+            if (recoveryFailure != null) {
+                failure.addSuppressed(recoveryFailure)
+                throw ProfileContextRecoveryException(failure)
+            }
+            if (failure is CancellationException) throw failure
+        }
+
+        retryPendingLocalCleanup(id)
+        true
+    }
+
+    override suspend fun finalizePendingProfileDeletion(profileId: String): Boolean = withProfileMutation {
+        if (profileId !in pendingDeletionStore.read()) return@withProfileMutation false
+        database.transaction {
+            // Preferences and training-max baselines CASCADE with the row.
+            queries.deleteProfilePreferences(profileId)
+            queries.deleteProfile(profileId)
+        }
+        pendingDeletionStore.remove(profileId)
+        refreshProfilesSync()
+        Logger.i { "PROFILE_DELETE: Pending deletion of profile '$profileId' finalized after its push" }
+        true
     }
 
     private suspend fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
@@ -769,8 +953,14 @@ class SqlDelightUserProfileRepository(
 
     private fun refreshProfilesSync() {
         val profiles = queries.getAllProfiles().executeAsList().map { it.toUserProfile() }
-        _allProfiles.value = profiles
-        _activeProfile.value = profiles.find { it.isActive }
+        val pendingIds = pendingDeletionStore.read()
+        // A flag whose row is already gone (finalized, or removed another way) is stale.
+        pendingIds.filter { id -> profiles.none { it.id == id } }
+            .forEach(pendingDeletionStore::remove)
+        val (pending, visible) = profiles.partition { it.id in pendingIds && it.id != DEFAULT_PROFILE_ID }
+        _allProfiles.value = visible
+        _pendingDeletionProfiles.value = pending
+        _activeProfile.value = visible.find { it.isActive }
     }
 
     private fun com.devil.phoenixproject.database.UserProfile.toUserProfile() = UserProfile(

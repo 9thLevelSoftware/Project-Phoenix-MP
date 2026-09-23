@@ -432,12 +432,19 @@ class ProfileViewModel(
         }
     }
 
-    fun deleteActiveProfile() {
+    /** "Merge into Default": the profile's data moves to Default. */
+    fun deleteActiveProfile() = deleteActive { profileId -> profiles.deleteActiveProfile(profileId) }
+
+    /** "Delete permanently" (PR 20): the profile's data is removed here and from the portal. */
+    fun deleteActiveProfilePermanently() =
+        deleteActive { profileId -> profiles.deleteActiveProfilePermanently(profileId) }
+
+    private fun deleteActive(delete: suspend (String) -> Boolean) {
         val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return
         val profileId = currentMutationProfileId() ?: return
         if (!canDeleteProfile(uiReady.profile)) return
         startIdentityMutation(profileId, ProfileIdentityMutationKind.DELETE) {
-            if (profiles.deleteActiveProfile(profileId)) {
+            if (delete(profileId)) {
                 ProfileUiEvent.ProfileDeleted(profileId)
             } else {
                 ProfileUiEvent.IdentityUpdateFailed(

@@ -689,7 +689,10 @@ class SyncManager(
             newUserLabel = user.email.takeIf { it.isNotBlank() } ?: user.id,
             lastSyncedPortalUserId = tokenStorage.getLastSyncedPortalUserId(),
             lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
-            profileOwners = userProfileRepository.allProfiles.value.mapNotNull { profile ->
+            profileOwners = (
+                userProfileRepository.allProfiles.value +
+                    userProfileRepository.pendingDeletionProfiles.value
+                ).mapNotNull { profile ->
                 profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
             },
         )
@@ -950,6 +953,7 @@ class SyncManager(
                 profile = profile,
                 includeUserScoped = includeUserScoped,
                 repairPushActive = repairPushActive,
+                pendingDeletion = isPendingDeletionProfile(profile),
             )
             outcomes += outcome
             if (outcome.authFailure) {
@@ -1000,13 +1004,15 @@ class SyncManager(
         if (userProfileRepository.allProfiles.value.isEmpty()) {
             userProfileRepository.ensureDefaultProfile()
         }
-        val all = userProfileRepository.allProfiles.value
-            .filter { isSyncableByPortalUser(it, userId) }
         val activeId = userProfileRepository.activeProfile.value?.id
-        // UserProfile has no pending-deletion field yet (PR 20). Keep the hook so PR 20
-        // only has to filter here; today nothing is pending-deletion.
-        val pendingDeletion = all.filter { isPendingDeletionProfile(it) }
-        val rest = all.filterNot { it in pendingDeletion }
+        // PR 20: permanently deleted profiles are hidden from allProfiles but still owe
+        // the portal their tombstones. They go first, so their own push lands while they
+        // are still listed in allProfiles (R-11); later pushes then omit them.
+        val pendingDeletion = userProfileRepository.pendingDeletionProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
+        val rest = userProfileRepository.allProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
+            .filterNot { candidate -> pendingDeletion.any { it.id == candidate.id } }
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
@@ -1018,8 +1024,8 @@ class SyncManager(
     private fun isAuthFailure(error: Throwable?): Boolean =
         error is PortalApiException && error.statusCode == 401
 
-    /** PR 20 hook: no profile is pending-deletion until that PR adds the field. */
-    private fun isPendingDeletionProfile(@Suppress("UNUSED_PARAMETER") profile: UserProfile): Boolean = false
+    private fun isPendingDeletionProfile(profile: UserProfile): Boolean =
+        userProfileRepository.pendingDeletionProfiles.value.any { it.id == profile.id }
 
     /** What one profile's push+pull contributed to the overall sync. */
     private data class ProfileSyncOutcome(
@@ -1111,6 +1117,7 @@ class SyncManager(
         profile: UserProfile,
         includeUserScoped: Boolean,
         repairPushActive: Boolean,
+        pendingDeletion: Boolean = false,
     ): ProfileSyncOutcome {
         // Push local changes (no status check -- Railway backend abandoned)
         val pushResult = pushLocalChanges(
@@ -1162,6 +1169,9 @@ class SyncManager(
         // delta; a failed push returned above and leaves the watermark untouched.
         // PR 11 also reads it as the account-switch "already synced" boundary.
         tokenStorage.setPushWatermark(userId, profile.id, pushOutcome.gatherStartedAt)
+        if (pendingDeletion) {
+            return finishPendingProfileDeletion(userId, profile, pushOutcome.response.syncTime)
+        }
         val pushResponse = pushOutcome.response
         val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
@@ -1340,6 +1350,54 @@ class SyncManager(
     }
 
     /**
+     * PR 20: a permanently deleted profile's push has landed its tombstones (workout
+     * deletions are exact-acked or the push failed; routine, cycle and PR tombstones rode
+     * the same push). Remove the hidden row now, so every later push omits it from
+     * allProfiles and the portal re-scopes whatever it still holds to Default. No pull:
+     * pulling into a profile that is being removed would only re-create rows in it.
+     * A failed finalize leaves the profile pending; the next sync pushes it again.
+     */
+    private suspend fun finishPendingProfileDeletion(
+        userId: String,
+        profile: UserProfile,
+        rawSyncTime: String,
+    ): ProfileSyncOutcome {
+        val syncTimeEpoch = runCatching {
+            kotlin.time.Instant.parse(rawSyncTime).toEpochMilliseconds()
+        }.getOrElse { currentTimeMillis() }
+        val finalized = runCatching { userProfileRepository.finalizePendingProfileDeletion(profile.id) }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                Logger.w("SyncManager") {
+                    "Pending deletion of profile ${profile.id} could not be finalized; retrying next sync: ${error.message}"
+                }
+            }
+            .getOrDefault(false)
+        if (finalized) {
+            // The profile never syncs again: drop its per-profile secure-settings state
+            // rather than leave it behind for good.
+            runCatching {
+                tokenStorage.retainSessionSentHashes(userId, profile.id, emptySet())
+                tokenStorage.resetPullCursor(userId, profile.id)
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Logger.w("SyncManager") { "Cleanup of deleted profile ${profile.id} sync state skipped: ${error.message}" }
+            }
+        }
+        Logger.i("SyncManager") {
+            "Pending-deletion profile ${profile.id} pushed its tombstones (finalized=$finalized)"
+        }
+        return ProfileSyncOutcome(
+            profileId = profile.id,
+            pushSucceeded = true,
+            // Nothing to pull for a profile being removed; count it as complete so it does
+            // not turn an otherwise clean sync into a partial one.
+            pullSucceeded = true,
+            syncTimeEpoch = syncTimeEpoch,
+        )
+    }
+
+    /**
      * Retry just the pull operation after a partial sync.
      * Use when push succeeded but pull failed.
      */
@@ -1359,7 +1417,8 @@ class SyncManager(
             ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
                 _syncState.value = SyncState.NotAuthenticated
             }
-        val profiles = syncProfileOrder(userId)
+        // A pending-deletion profile never pulls (PR 20): its rows are being removed.
+        val profiles = syncProfileOrder(userId).filterNot { isPendingDeletionProfile(it) }
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         val outcomes = mutableListOf<ProfileSyncOutcome>()
@@ -1684,7 +1743,12 @@ class SyncManager(
         userProfileRepository.ensureDefaultProfile()
         // Profile metadata for another portal account's profiles must not be published
         // into this account either (same rule as syncProfileOrder).
-        val allProfiles = userProfileRepository.allProfiles.value
+        val allProfiles = (
+            userProfileRepository.allProfiles.value +
+                // PR 20: a pending-deletion profile stays listed until its own push lands.
+                userProfileRepository.pendingDeletionProfiles.value
+            )
+            .distinctBy { it.id }
             .filter { isSyncableByPortalUser(it, userId) }
         val activeProfile = profile
         val activeProfileId = profile.id
