@@ -3279,4 +3279,74 @@ class SyncManagerTest {
             "no profile after a 401 may be synced (saw ${fakeApi.pushPayloads.map { it.profileId }})",
         )
     }
+
+    @Test
+    fun anAuthAbortedLoopKeepsTheOneTimeRepairOwedUntilEveryProfileDeliversIt() = runTest {
+        // codex #856 P1: profile 1 pushes its repair payload, then its pull gets a 401.
+        // The loop stops before profile 2, so the account-wide repair must stay owed.
+        setupAuthenticated()
+        fakeUserProfileRepo.seedReadyProfileForTest("second-profile")
+        fakeUserProfileRepo.setActiveProfileForTest()
+        assertTrue(tokenStorage.needsRoutineCyclePrRepairPush("user-123"))
+        // A routine older than every watermark: only the repair (from 0) can carry it.
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        tokenStorage.setPushWatermark("user-123", "second-profile", 1_000L)
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = LATE_ROUTINE_ID, name = "Old", profileId = "second-profile", updatedAt = 100L),
+        )
+        fakeApi.pullResult = Result.failure(PortalApiException("expired", null, 401))
+
+        assertTrue(createManager().sync().isFailure)
+
+        assertTrue(fakeApi.pushPayloads.none { it.profileId == "second-profile" })
+        assertTrue(
+            tokenStorage.needsRoutineCyclePrRepairPush("user-123"),
+            "an aborted loop must not mark the account-wide repair done",
+        )
+
+        // Re-auth: the next sync delivers profile 2's repair payload and only then completes it.
+        setupAuthenticated()
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1_740_916_800_000L))
+        fakeApi.pushPayloads.clear()
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertTrue(
+            fakeApi.pushPayloads.filter { it.profileId == "second-profile" }
+                .flatMap { it.routines }.any { it.id == LATE_ROUTINE_ID },
+            "profile 2's repair payload must be sent after re-auth",
+        )
+        assertFalse(tokenStorage.needsRoutineCyclePrRepairPush("user-123"))
+    }
+
+    @Test
+    fun retryPullWithA401PublishesNotAuthenticatedAndFailsEvenAfterAnEarlierProfilePulled() = runTest {
+        // codex #856 P2: retryPull must classify a 401 like the ordinary sync path does.
+        setupAuthenticated()
+        fakeUserProfileRepo.seedReadyProfileForTest("second-profile")
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(PortalSyncPullResponse(syncTime = 1_740_916_800_000L)),
+            Result.failure(PortalApiException("expired", null, 401)),
+        )
+        val manager = createManager()
+
+        val result = manager.retryPull()
+
+        assertTrue(result.isFailure, "a 401 must fail the retry")
+        assertEquals(SyncState.NotAuthenticated, manager.syncState.value)
+    }
+
+    @Test
+    fun retryPullWhoseEveryPullFailsPublishesAnErrorThatMatchesTheFailedResult() = runTest {
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pullResult = Result.failure(PortalApiException("boom", null, 500))
+        val manager = createManager()
+
+        val result = manager.retryPull()
+
+        assertTrue(result.isFailure)
+        assertIs<SyncState.Error>(manager.syncState.value)
+    }
 }
