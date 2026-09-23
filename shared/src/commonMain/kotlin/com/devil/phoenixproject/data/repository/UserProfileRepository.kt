@@ -464,6 +464,8 @@ class SqlDelightUserProfileRepository(
                 // progression, baselines, integrations, routine groups...): purged, so nothing
                 // of the profile survives locally for recovery discovery or backups to find.
                 queries.purgeProfileOwnedRows(id)
+                // The kept tombstones (this delete's and earlier ones) lose their content.
+                queries.scrubProfileTombstones(id)
                 queries.setActiveProfile(DEFAULT_PROFILE_ID)
                 if (propagate && sourceProfile.supabase_user_id.isNullOrBlank()) {
                     // Bind the hidden profile to the account its tombstones belong to: only that

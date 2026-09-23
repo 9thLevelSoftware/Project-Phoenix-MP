@@ -1603,6 +1603,31 @@ DELETE FROM AssessmentResult WHERE id = ?;
 --   CycleSyncState (the pending tombstones themselves), UserProfilePreferences (CASCADEs with
 --   the row at finalize), PendingProfileLocalCleanup (drained by the local-cleanup retry),
 --   and the ownership / recovery bookkeeping tables.
+-- PR 20: the tombstones a permanently deleted profile keeps (they block pull resurrection and
+-- carry the delete to the portal) are reduced to identity + deletion clock. Their user content
+-- and child graphs go, so neither the device nor a backup keeps what the user deleted.
+-- Routine deletes push by id; cycle deletes by id + clock (CycleSyncState); PR tombstones by
+-- uuid with the unique-key columns (exerciseId, workoutMode, prType, phase) intact.
+scrubProfileTombstones {
+    DELETE FROM Superset
+    WHERE routineId IN (SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM RoutineExercise
+    WHERE routineId IN (SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    UPDATE Routine SET name = '', description = ''
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+    DELETE FROM CycleDay
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM CycleProgress
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM CycleProgression
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    UPDATE TrainingCycle SET name = '', description = NULL
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+    UPDATE PersonalRecord
+    SET exerciseName = '', weight = 0.0, reps = 0, oneRepMax = 0.0, volume = 0.0
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+}
+
 purgeProfileOwnedRows {
     DELETE FROM AssessmentResult WHERE profile_id = :profileId;
     DELETE FROM VelocityOneRepMaxEstimate WHERE profile_id = :profileId;

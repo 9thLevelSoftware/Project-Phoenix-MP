@@ -621,6 +621,64 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun keptTombstonesLoseTheirContentAndChildrenAndTheExportCarriesNoneOfIt() = runTest {
+        val p = createProfileWithData()
+        val q = database.phoenixDatabaseQueries
+        database.seedExercise("squat")
+        // User content under the routine, cycle and PR the delete keeps as tombstones.
+        driver.execute(null, "UPDATE Routine SET name = 'SECRET-ROUTINE', description = 'SECRET-DESC' WHERE id = ?", 1) { bindString(0, routineP) }
+        driver.execute(null, "UPDATE TrainingCycle SET name = 'SECRET-CYCLE', description = 'SECRET-CYCLE-DESC' WHERE id = ?", 1) { bindString(0, cycleP) }
+        driver.execute(null, "UPDATE PersonalRecord SET exerciseName = 'SECRET-PR' WHERE uuid = ?", 1) { bindString(0, prUuidP) }
+        assertTrue(seedRow("RoutineExercise", p, mapOf("routineId" to routineP, "exerciseName" to "SECRET-EXERCISE")))
+        assertTrue(seedRow("PlannedSet", p, mapOf("routine_exercise_id" to "seed-RoutineExercise")))
+        assertTrue(seedRow("Superset", p, mapOf("routineId" to routineP, "name" to "SECRET-SUPERSET")))
+        assertTrue(seedRow("CycleDay", p, mapOf("cycle_id" to cycleP, "name" to "SECRET-DAY")))
+        assertTrue(seedRow("CycleProgress", p, mapOf("cycle_id" to cycleP)))
+        assertTrue(seedRow("CycleProgression", p, mapOf("cycle_id" to cycleP)))
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        assertEquals(0L, rowCount("RoutineExercise", "routineId", routineP))
+        assertEquals(0L, rowCount("Superset", "routineId", routineP))
+        assertEquals(0L, rowCount("PlannedSet", "routine_exercise_id", "seed-RoutineExercise"))
+        assertEquals(0L, rowCount("CycleDay", "cycle_id", cycleP))
+        assertEquals(0L, rowCount("CycleProgress", "cycle_id", cycleP))
+        assertEquals(0L, rowCount("CycleProgression", "cycle_id", cycleP))
+        val routine = q.selectRoutineById(routineP).executeAsOne()
+        assertNotNull(routine.deletedAt, "the tombstone itself stays, to block resurrection")
+
+        val exported = ExportProbe(database, profiles).exportToJson()
+        assertFalse("SECRET-" in exported, "the export still carries deleted profile content")
+
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == p }.flatMap { it.deletedRoutineIds }.contains(routineP),
+            "the routine delete is still pushed",
+        )
+    }
+
+    /** Minimal JVM backup manager: only the export path is exercised. */
+    private class ExportProbe(
+        database: PhoenixDatabase,
+        profiles: com.devil.phoenixproject.data.repository.UserProfileRepository,
+    ) : com.devil.phoenixproject.util.BaseDataBackupManager(
+        database,
+        SqlDelightProfilePreferencesRepository(database),
+        profiles,
+    ) {
+        override fun createBackupWriter() =
+            com.devil.phoenixproject.util.BackupJsonWriter(java.io.File.createTempFile("export-probe-", ".json").absolutePath)
+        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
+        override suspend fun saveToFile(backup: com.devil.phoenixproject.util.BackupData): Result<String> = error("unused")
+        override suspend fun importFromFile(filePath: String): Result<com.devil.phoenixproject.util.ImportResult> = error("unused")
+        override suspend fun shareBackup() = Unit
+        override fun getSessionBackupDirectory(): String = System.getProperty("java.io.tmpdir")
+        override fun listBackupFileSizes(): List<Long> = emptyList()
+        override fun openBackupFolder() = Unit
+        override fun pruneOldBackups(keepCount: Int) = Unit
+    }
+
+    @Test
     fun aPermanentDeleteIsRefusedDuringALiveWorkout() = runTest {
         val p = createProfileWithData()
 
