@@ -127,6 +127,13 @@ CREATE TABLE WorkoutSession (
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
 CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
+-- History/analytics list (profile filter + newest first) and the legacy catalogue remap's
+-- exerciseId rewrite. profile_id is heal-only, so upgraded installs get these two from
+-- SchemaManifest.manifestIndexes rather than a numbered migration.
+CREATE INDEX idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC);
+CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
+-- Routine-group lookups and sync repair (migration 55).
+CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -281,6 +288,7 @@ CREATE TABLE RoutineExercise (
 
 CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
 CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
+CREATE INDEX idx_routine_exercise_exercise ON RoutineExercise(exerciseId);
 
 -- ==================== CONNECTION LOGS ====================
 -- BLE connection debug logs for diagnosing connectivity issues

@@ -1212,10 +1212,38 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 55 indexes migration-guaranteed columns and the heal adds the profile-scoped ones`() {
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 55) // migrations only: profile_id is still heal-only here
+            assertEquals(false, columnExistsInDriver(driver, "WorkoutSession", "profile_id"), scenario)
+
+            // Must succeed on an unreconciled install (onUpgrade runs before the heal): the
+            // migration may not reference the heal-only WorkoutSession.profile_id.
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 55)
+                assertEquals(listOf(true, true), results.map { it.success }, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 55, 56)
+            }
+
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_routine_session"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_routine_exercise_exercise"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+
+            reconcileFullSchema(driver)
+
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 55L
+        private const val EXPECTED_SCHEMA_VERSION = 56L
 
         /** Pre-existing gaps (v5 predates MigrationStatements parity). Do not add to this list. */
         private val GRANDFATHERED_UNMIRRORED_SQM_COLUMNS = setOf(

@@ -27,6 +27,7 @@ class FakePreferencesManager : PreferencesManager {
     // Issue #611 (PR-followup #613): backing field for the 18+ modal one-shot flag.
     private var _adultsOnlyPrompted: Boolean = false
     private var exerciseCatalogSource: String = ""
+    private var legacyRemapVersion: Int = 0
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
@@ -34,6 +35,7 @@ class FakePreferencesManager : PreferencesManager {
         justLiftDefaults = JustLiftDefaults()
         _adultsOnlyPrompted = false
         exerciseCatalogSource = ""
+        legacyRemapVersion = 0
     }
 
     fun setPreferences(preferences: UserPreferences) {
@@ -56,6 +58,12 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setExerciseCatalogSource(source: String) {
         exerciseCatalogSource = source
+    }
+
+    override fun getLegacyRemapVersion(): Int = legacyRemapVersion
+
+    override suspend fun setLegacyRemapVersion(version: Int) {
+        legacyRemapVersion = version
     }
 
     override suspend fun setLastConnectedModel(model: PhoenixModel) {

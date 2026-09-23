@@ -796,6 +796,42 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(350.0, afterSecondPass.personalMvtMs)
     }
 
+    @Test
+    fun `importExercises runs the legacy remap once per remap version`() = runTest {
+        val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
+        // Catalogue already imported, so importExercises() only decides whether to remap.
+        prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+        val repo = SqlDelightExerciseRepository(database, importer, prefs)
+        val legacy = "ZZ92N8QsBdp6HCh3"
+        insertExercise(id = legacy, name = "Bench Press", muscleGroup = "Chest", equipment = "BAR", archived = 1L)
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        fun legacyPrCount() = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId(legacy)
+            .executeAsList()
+            .size
+
+        insertPr(exerciseId = legacy, exerciseName = "Bench Press", weight = 80.0)
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(0, legacyPrCount(), "the first import remaps")
+        assertEquals(ExerciseImporter.LEGACY_REMAP_VERSION, prefs.getLegacyRemapVersion())
+
+        // A row that still names the legacy id proves whether the remap executed again.
+        insertPr(exerciseId = legacy, exerciseName = "Bench Press", weight = 70.0)
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(1, legacyPrCount(), "the second import must not re-run the remap")
+
+        // A stale stored version (e.g. after the rules are bumped) runs it again.
+        prefs.setLegacyRemapVersion(ExerciseImporter.LEGACY_REMAP_VERSION - 1)
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(0, legacyPrCount(), "an out-of-date remap version re-runs the remap")
+        assertEquals(ExerciseImporter.LEGACY_REMAP_VERSION, prefs.getLegacyRemapVersion())
+    }
+
     private fun insertPr(
         exerciseId: String,
         exerciseName: String,

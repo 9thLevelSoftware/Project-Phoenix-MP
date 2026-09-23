@@ -116,6 +116,10 @@ interface PreferencesManager {
     fun getExerciseCatalogSource(): String
     suspend fun setExerciseCatalogSource(source: String)
 
+    /** Last [com.devil.phoenixproject.data.local.ExerciseImporter.LEGACY_REMAP_VERSION] applied; 0 = never. */
+    fun getLegacyRemapVersion(): Int
+    suspend fun setLegacyRemapVersion(version: Int)
+
     /**
      * Remember the trainer model this install last connected to (KD-9).
      * Planning/editor screens read it from [preferencesFlow] to pick a per-cable ceiling
@@ -193,6 +197,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
 
         private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
+        private const val KEY_LEGACY_REMAP_VERSION = "legacy_remap_version"
         private const val KEY_LAST_CONNECTED_MODEL = "last_connected_model"
     }
 
@@ -627,6 +632,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override suspend fun setExerciseCatalogSource(source: String) {
         settings.putString(KEY_EXERCISE_CATALOG_SOURCE, source)
+    }
+
+    override fun getLegacyRemapVersion(): Int = settings.getInt(KEY_LEGACY_REMAP_VERSION, 0)
+
+    override suspend fun setLegacyRemapVersion(version: Int) {
+        settings.putInt(KEY_LEGACY_REMAP_VERSION, version)
     }
 
     override suspend fun setLastConnectedModel(model: PhoenixModel) {

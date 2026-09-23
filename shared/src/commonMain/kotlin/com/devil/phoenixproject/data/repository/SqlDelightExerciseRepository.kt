@@ -145,7 +145,8 @@ class SqlDelightExerciseRepository(
     override suspend fun importExercises(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val currentSource = preferencesManager.getExerciseCatalogSource()
-            if (currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE) {
+            val catalogueImported = currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE
+            if (catalogueImported) {
                 Logger.d { "Importing bundled free-exercise-db catalogue..." }
                 val result = exerciseImporter.importExercises()
                 val importedCount = result.getOrNull() ?: 0
@@ -156,7 +157,15 @@ class SqlDelightExerciseRepository(
                 preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
                 Logger.d { "Successfully imported $importedCount exercises" }
             }
-            exerciseImporter.remapLegacyCatalogueIds()
+            // The remap rewrites every per-exercise table, so it runs once per rule version
+            // (F-030), and again whenever the catalogue itself was just (re)imported. The
+            // version is stored only after the remap returns: a throw leaves it owed.
+            if (catalogueImported ||
+                preferencesManager.getLegacyRemapVersion() < ExerciseImporter.LEGACY_REMAP_VERSION
+            ) {
+                exerciseImporter.remapLegacyCatalogueIds()
+                preferencesManager.setLegacyRemapVersion(ExerciseImporter.LEGACY_REMAP_VERSION)
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises" }

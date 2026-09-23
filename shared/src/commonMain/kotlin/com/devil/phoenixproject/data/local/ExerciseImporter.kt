@@ -473,6 +473,13 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
 
     companion object {
         const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1"
+
+        /**
+         * Version of [remapLegacyCatalogueIds]'s mapping rules. The remap runs once per
+         * version; bump it whenever [LegacyCatalogueIdMap] or the matching rules change so
+         * existing installs remap again.
+         */
+        const val LEGACY_REMAP_VERSION = 1
         const val FREE_EXERCISE_IMAGE_BASE =
             "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
         const val BODYWEIGHT_EQUIPMENT = "BODYWEIGHT"

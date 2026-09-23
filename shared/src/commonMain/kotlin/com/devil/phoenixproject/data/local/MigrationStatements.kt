@@ -1270,5 +1270,12 @@ WHERE gs.rowid = (
     )""",
     )
 
+    // Migration 55: routine-group and catalogue-remap indexes on migration-guaranteed
+    // columns (the profile_id-scoped ones are heal-only). Mirrors 55.sqm exactly.
+    55 -> listOf(
+        "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
+    )
+
     else -> emptyList()
 }
