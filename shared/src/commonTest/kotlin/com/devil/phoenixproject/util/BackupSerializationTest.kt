@@ -376,7 +376,7 @@ class BackupSerializationTest {
 
         val jsonString = json.encodeToString(backupData)
 
-        assertEquals(6, CURRENT_BACKUP_VERSION)
+        assertEquals(7, CURRENT_BACKUP_VERSION)
         assertTrue(jsonString.contains("\"profilePreferences\""))
         assertFalse(jsonString.contains("equipmentRackItems"))
         listOf(

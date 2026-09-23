@@ -2021,7 +2021,14 @@ class SyncManager(
                     childlessRepairGroupIds.take(10).joinToString()
             }
         }
-        val groupIds = deltaGroupIds + (repairGroupIds.keys - childlessRepairGroupIds)
+        // Groups a backup restore brought in have no rep summaries locally; re-pushing them
+        // would make the portal delete its copy (PR 22). The cursor still walks past them.
+        val restoreHeldGroupIds = if (repairGroupIds.isEmpty()) {
+            emptySet()
+        } else {
+            tokenStorage.getRoutineGroupRepairHolds(activeProfileId)
+        }
+        val groupIds = deltaGroupIds + (repairGroupIds.keys - childlessRepairGroupIds - restoreHeldGroupIds)
 
         // 1b. Hold, never split. A sibling this device only pulled and has no
         // measurements for cannot be rebuilt from local data, so the group can only be
