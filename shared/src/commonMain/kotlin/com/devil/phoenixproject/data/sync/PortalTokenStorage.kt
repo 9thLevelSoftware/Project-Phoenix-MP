@@ -573,6 +573,19 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     /**
+     * The profile the legacy global cursor belongs to, for [userId]: the profile named by
+     * the legacy "userId:profileId" delta-pull marker when that marker names [userId], else
+     * null. The old client synced only its active profile against that cursor, so the
+     * cursor is evidence for this profile alone.
+     */
+    fun legacyCursorProfileFor(userId: String): String? = withPlatformLock(authLock) {
+        if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock null
+        val marker = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY) ?: return@withPlatformLock null
+        if (marker.substringBefore(':', missingDelimiterValue = "") != userId) return@withPlatformLock null
+        marker.substringAfter(':', missingDelimiterValue = "").trim().ifBlank { "default" }
+    }
+
+    /**
      * True while the one-time routines/cycles/PRs repair push is still owed for this user.
      * That push re-sends routines, cycles, PRs and their tombstones for every profile from
      * timestamp 0, which is non-destructive under portal LWW and holds no session children.

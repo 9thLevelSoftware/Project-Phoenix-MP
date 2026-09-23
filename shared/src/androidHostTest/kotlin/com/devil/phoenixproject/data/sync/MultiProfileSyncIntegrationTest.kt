@@ -709,6 +709,13 @@ class MultiProfileSyncIntegrationTest {
     fun legacyRowsProvablySyncedByTheOldClientAreNotPushedFromAnInactiveProfile() = runTest {
         val legacy = baseTime - 60_000L
         settings.putLong("portal_last_sync_timestamp", legacy)
+        // The old client's active profile was B: the cursor is evidence for B's rows only.
+        settings.putString("portal_delta_pull_key", "$userId:$profileB")
+        // Profile A was NOT synced by the old client: a local tag edit there with an
+        // updatedAt at/before B's cursor is no proof of upload and must still be pushed.
+        insertSession("a-tag-edit", groupId = null, timestamp = baseTime - 210_000L, profileId = profileA, stampedAt = legacy - 5_000L)
+        addLocalMeasurement("a-tag-edit")
+        atMigrationInitialState("a-tag-edit")
         // Inactive profile B:
         //  - synced by the old client: stamped at/before the legacy cursor, with local data
         insertSession("b-synced", groupId = null, timestamp = baseTime - 200_000L, profileId = profileB, stampedAt = legacy - 1_000L)
@@ -736,6 +743,11 @@ class MultiProfileSyncIntegrationTest {
         assertFalse("b-pulled" in pushed, "a pulled legacy row must not be pushed over the portal's data (saw $pushed)")
         assertTrue("b-local" in pushed, "a never-synced legacy row must still be pushed (saw $pushed)")
         assertTrue("b-tagged" in pushed, "a childless local session edited after the cursor must be pushed (saw $pushed)")
+        val pushedA = api.pushPayloads.filter { it.profileId == profileA }.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(
+            "a-tag-edit" in pushedA,
+            "a row in a profile the legacy cursor does not name must not be seeded by it (saw $pushedA)",
+        )
         assertTrue(
             "b-child-edited" in pushed,
             "a post-migration child edit under an old parent timestamp must be pushed (saw $pushed)",
@@ -774,6 +786,7 @@ class MultiProfileSyncIntegrationTest {
         val markedForA = syncRepository.seedLegacySyncedGenerationsOnce(
             accountId = "account-a",
             legacyLastSync = legacy,
+            cursorProfileId = "profile-owned-by-a",
             profileIds = listOf("profile-owned-by-a"),
         )
         assertEquals(1, markedForA, "account-a's own seeding is not blocked by the other account's ledger entry")
@@ -785,7 +798,7 @@ class MultiProfileSyncIntegrationTest {
         assertTrue(manager.sync().isSuccess)
 
         assertNull(
-            syncRepository.seedLegacySyncedGenerationsOnce(userId, Long.MAX_VALUE, listOf(profileA, profileB)),
+            syncRepository.seedLegacySyncedGenerationsOnce(userId, Long.MAX_VALUE, profileA, listOf(profileA, profileB)),
             "the seeding is one-shot: a second run must be refused by the ledger",
         )
         // A row that becomes dirty after the upgrade is never swept up by a re-run.

@@ -957,9 +957,13 @@ class SyncManager(
         // signs in. Unbound profiles are included: this sync binds them to this account, and
         // the legacy cursor (only used when not attributed to another user) is this
         // account's. Must run before migrateLegacyCursors consumes the legacy key.
+        // The cursor rule applies only to the profile the legacy marker names (the one the
+        // old client synced); every other profile of this account gets pulled-provenance
+        // only. No marker → no profile gets the cursor rule (its rows re-push, safely).
         syncRepository.seedLegacySyncedGenerationsOnce(
             accountId = userId,
             legacyLastSync = tokenStorage.legacyLastSyncFor(userId),
+            cursorProfileId = tokenStorage.legacyCursorProfileFor(userId),
             profileIds = candidateProfiles.map { it.id },
         )?.let { marked ->
             Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
