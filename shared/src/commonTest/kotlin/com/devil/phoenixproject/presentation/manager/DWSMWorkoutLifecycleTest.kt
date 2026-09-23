@@ -4902,6 +4902,48 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    /**
+     * GitHub #853 (codex 4080812739): tagging exercise A breaks a PR and marks the
+     * set; retagging the SAME session to exercise B skips PR evaluation, so the set
+     * must not keep claiming a PR for B with no record behind it.
+     */
+    @Test
+    fun `retagging a Just Lift PR set to another exercise clears its PR flag`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-retag-pr-session",
+            timestamp = 2_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        assertTrue(
+            harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr,
+            "Precondition: the first tag breaks a PR and marks the set",
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+
+        val retagged = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
+        assertEquals(TestFixtures.deadlift.id, harness.fakeWorkoutRepo.getSession(session.id)?.exerciseId)
+        assertFalse(retagged.isPr, "A retag skips PR evaluation, so the set is no longer a PR")
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+            "No PR is evaluated for the new exercise",
+        )
+        harness.cleanup()
+    }
+
     @Test
     fun `workout service snapshot follows workout phases and stops when idle`() = runTest {
         val harness = DWSMTestHarness(this)

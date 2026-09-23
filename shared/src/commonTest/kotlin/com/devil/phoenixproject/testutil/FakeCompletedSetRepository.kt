@@ -219,6 +219,12 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         updateCompletedFlow(current.sessionId)
     }
 
+    override suspend fun clearPr(setId: String) {
+        val current = completedSets[setId] ?: return
+        completedSets[setId] = current.copy(isPr = false)
+        updateCompletedFlow(current.sessionId)
+    }
+
     override suspend fun deleteCompletedSet(setId: String) {
         val current = completedSets.remove(setId) ?: return
         completedSetsBySession[current.sessionId]?.remove(setId)
