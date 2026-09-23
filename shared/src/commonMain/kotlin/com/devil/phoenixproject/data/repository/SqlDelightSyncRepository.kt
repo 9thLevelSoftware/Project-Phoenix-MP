@@ -896,16 +896,17 @@ class SqlDelightSyncRepository(
      * Lookup strategy (in order):
      * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
      * 1. Exact match on name + muscle group (active rows only; if muscle group provided)
-     * 2. Exact match on name only (active rows only)
-     * 3. Pre-rename alias match (#857) — a stored legacy name resolves to the renamed active row
-     *    before any archived exact-name match, so an archived row still carrying the pre-rename
-     *    name cannot shadow it and fragment personal-record identity
-     * 4. Archived fallbacks for 1 and 2 (nothing active and nothing aliased matched)
-     * 5. Case-insensitive match on name (fallback for portal name variations)
+     * 2. Pre-rename alias match (#857) compatible with the supplied muscle group (if provided)
+     * 3. Exact match on name only (active rows only)
+     * 4. Pre-rename alias match (#857) with the muscle constraint dropped
+     * 5. Archived fallback for 1 (nothing active and nothing aliased matched)
+     * 6. Case-insensitive match on name (fallback for portal name variations)
      *
-     * Active exact-name matches deliberately outrank the alias match: custom creation permits
-     * duplicate names, so an active custom "One Leg Barbell Squat" must win over the stock row
-     * that now carries that name as its alias (#857 review follow-up).
+     * Two precedence rules hold throughout (#857 review follow-ups): an active exact-name match
+     * outranks the alias when nothing else disambiguates (custom creation permits duplicate
+     * names), and a muscle-compatible alias outranks the muscle-dropping name-only fallback (so
+     * stock history cannot reassociate with a custom row in a different muscle group). The alias
+     * always outranks archived rows still carrying the pre-rename name.
      *
      * @param name Exercise name from portal
      * @param muscleGroup Optional muscle group for disambiguation
@@ -919,8 +920,13 @@ class SqlDelightSyncRepository(
             if (match != null) return@withContext match.id
         }
 
+        // Resolved once and consumed by Strategies 2 and 4 (#857): the row whose aliases carry the
+        // pre-rename name. The query is already case-insensitive (LOWER(TRIM(...))) and prefers
+        // non-archived rows, which is why the case-insensitive fallback does not repeat it.
+        val aliasMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
+
         // Strategy 1: Try exact match with muscle group (most specific), active rows first. An
-        // archived match is remembered and only accepted in Strategy 4, so it cannot shadow the
+        // archived match is remembered and only accepted in Strategy 5, so it cannot shadow the
         // renamed active row (#857 review follow-up).
         var archivedNameMuscleMatch: String? = null
         if (muscleGroup != null) {
@@ -929,34 +935,40 @@ class SqlDelightSyncRepository(
                 return@withContext exactMatch.id
             }
             archivedNameMuscleMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()?.id
+
+            // Strategy 2: A muscle-compatible pre-rename alias match (#857 review follow-up). The
+            // supplied muscle group still constrains the lookup here, so the renamed stock row that
+            // carries the name as its alias wins over an active custom row in a DIFFERENT group
+            // before the name-only strategies drop that constraint.
+            if (aliasMatch != null && aliasMatch.muscleGroup.trim().equals(muscleGroup.trim(), ignoreCase = true)) {
+                return@withContext aliasMatch.id
+            }
         }
 
-        // Strategy 2: Try exact match on name only, active rows first — a custom exercise may
-        // legally share a stock row's pre-rename name and must not be shadowed by the alias below.
+        // Strategy 3: Try exact match on name only, active rows first — with nothing else to
+        // disambiguate, a custom exercise that legally shares a stock row's pre-rename name must
+        // not be shadowed by that row's alias.
         val activeNameMatch = queries.findExerciseByNameActive(name).executeAsOneOrNull()
         if (activeNameMatch != null) {
             return@withContext activeNameMatch.id
         }
 
-        // Strategy 3: Pre-rename alias resolution (#857). A stored legacy name resolves via the
-        // row's aliases to the renamed active row here — after active exact-name matches but ahead
-        // of archived ones — so an archived row still carrying the pre-rename name cannot shadow
-        // the renamed active row and fragment personal-record identity. The query is already
-        // case-insensitive (LOWER(TRIM(...))) and prefers non-archived rows, which is why the
-        // case-insensitive fallback below does not repeat it.
-        val aliasMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
+        // Strategy 4: Pre-rename alias resolution (#857) with the muscle constraint dropped —
+        // after active exact-name matches but ahead of archived ones, so an archived row still
+        // carrying the pre-rename name cannot shadow the renamed active row and fragment
+        // personal-record identity.
         if (aliasMatch != null) {
             return@withContext aliasMatch.id
         }
 
-        // Strategy 4: Archived exact-name fallbacks (nothing active and nothing aliased matched).
+        // Strategy 5: Archived exact-name fallbacks (nothing active and nothing aliased matched).
         archivedNameMuscleMatch?.let { return@withContext it }
         val nameMatch = queries.findExerciseByName(name).executeAsOneOrNull()
         if (nameMatch != null) {
             return@withContext nameMatch.id
         }
 
-        // Strategy 5: Case-insensitive fallback (handles "Bench Press" vs "bench press")
+        // Strategy 6: Case-insensitive fallback (handles "Bench Press" vs "bench press")
         val caseInsensitiveMatch = queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
         return@withContext caseInsensitiveMatch?.id
     }

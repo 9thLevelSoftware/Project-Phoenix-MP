@@ -1187,6 +1187,23 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("Legs", repository.getExerciseMuscleGroup(null, "Bulgarian Split Squat"))
     }
 
+    @Test
+    fun `muscle compatible alias beats a name only custom row in a different muscle group`() = runTest {
+        // #857 review follow-up: a pull for the STOCK exercise with no usable id still carries the
+        // pre-rename name plus the stock muscle group, while a custom row in a different group
+        // shares that name. The muscle constraint must keep pointing stock history at the renamed
+        // row instead of reassociating it with the custom exercise.
+        insertCatalogRow(id = "One_Leg_Barbell_Squat", name = "Bulgarian Split Squat", muscleGroup = "Legs", aliases = "One Leg Barbell Squat")
+        insertCatalogRow(id = "custom-1", name = "One Leg Barbell Squat", muscleGroup = "Back", isCustom = 1L)
+
+        // Muscle-compatible alias (Legs) wins over the name-only custom row (Back).
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("One Leg Barbell Squat", "Legs", null))
+        // The matching custom case stays handled by the name + muscle group strategy.
+        assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", "Back", null))
+        // Without a muscle group nothing disambiguates, so the active exact name wins.
+        assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", null, null))
+    }
+
     private fun insertCatalogRow(
         id: String,
         name: String,
