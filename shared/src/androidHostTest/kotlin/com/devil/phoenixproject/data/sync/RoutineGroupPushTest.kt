@@ -712,6 +712,24 @@ class RoutineGroupPushTest {
     }
 
     @Test
+    fun `deleting a synced session removes its sent hash on the next sync`() = runTest {
+        // codex #856 P2: fingerprints must not outlive the workout they describe.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertNotNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP))
+
+        val now = com.devil.phoenixproject.domain.model.currentTimeMillis()
+        database.phoenixDatabaseQueries.softDeleteSession(now, now, "set-1")
+        manager.sync()
+
+        assertNull(
+            tokenStorage.getSessionSentHash("user-1", profileId, GROUP),
+            "a deleted workout's sent hash must be garbage-collected",
+        )
+        assertTrue(GROUP !in tokenStorage.sessionSentHashIds("user-1", profileId))
+    }
+
+    @Test
     fun `a session the portal neither acknowledged nor rejected gets no sent hash`() = runTest {
         // codex #856 P1: a successful response that omits a session from
         // acknowledgedWorkoutSessionIds did NOT apply it. Recording its hash would let a

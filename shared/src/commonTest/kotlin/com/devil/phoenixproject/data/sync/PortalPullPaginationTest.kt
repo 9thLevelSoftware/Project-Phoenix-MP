@@ -574,10 +574,47 @@ class PortalPullPaginationTest {
         assertEquals(2, fakeApi.pullKnownEntityIdsHistory.size)
         assertEquals(listOf(localPr), fakeApi.pullKnownEntityIdsHistory[0].personalRecordIds)
         assertEquals(
-            listOf(localPr, page1Pr),
+            listOf(page1Pr, localPr),
             fakeApi.pullKnownEntityIdsHistory[1].personalRecordIds,
-            "IDs merged on page 1 must be sent on page 2 so a stuck cursor cannot replay them",
+            "IDs merged on page 1 must be sent on page 2 (newest first) so a stuck cursor cannot replay them",
         )
+    }
+
+    @Test
+    fun pagedPersonalRecordIdsSurviveTheParityCapWhenTheProfileIsAlreadyAtTheCap() = runTest {
+        // codex #856 P2: at MAX_PARITY_IDS local PRs, an id appended after page 1 was
+        // dropped by the cap, so page 2 re-delivered it until MAX_PAGES.
+        authenticate()
+        fakeSyncRepo.personalRecordIds = List(SyncConfig.MAX_PARITY_IDS) { i ->
+            "00000000-0000-4000-8000-" + i.toString().padStart(12, '0')
+        }
+        val page1Pr = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "pr-page-2",
+                    personalRecords = listOf(
+                        PullPersonalRecordDto(
+                            id = page1Pr,
+                            userId = "user-123",
+                            exerciseName = "Bench",
+                            updatedAt = "2026-07-08T14:24:09.648091+00:00",
+                        ),
+                    ),
+                ),
+            ),
+            Result.success(PortalSyncPullResponse(syncTime = 2L, hasMore = false)),
+        )
+
+        createManager().sync()
+
+        assertEquals(2, fakeApi.pullKnownEntityIdsHistory.size)
+        val page2 = fakeApi.pullKnownEntityIdsHistory[1].personalRecordIds
+        assertEquals(SyncConfig.MAX_PARITY_IDS, page2.size, "the request stays within the server cap")
+        assertTrue(page1Pr in page2, "page 1's id must survive the cap on page 2's request")
     }
 
     @Test

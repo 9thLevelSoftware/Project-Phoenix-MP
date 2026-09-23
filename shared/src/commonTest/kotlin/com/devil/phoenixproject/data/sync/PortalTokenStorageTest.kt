@@ -587,4 +587,37 @@ class PortalTokenStorageTest {
 
         assertEquals(4_000L, restarted.lastSyncTimestamp.value)
     }
+
+    @Test
+    fun theSessionSentHashStoreIsBoundedAndDropsTheOldestFirst() {
+        // codex #856 P2: the store must not grow without bound. Dropping the oldest is safe:
+        // a missing hash can only send a row down the re-push path, never stamp it.
+        val storage = PortalTokenStorage(MapSettings())
+        val cap = PortalTokenStorage.MAX_SESSION_SENT_HASHES
+        repeat(cap + 25) { i -> storage.setSessionSentHash("user-1", "p", "s-$i", "h-$i") }
+
+        val ids = storage.sessionSentHashIds("user-1", "p")
+        assertEquals(cap, ids.size)
+        assertNull(storage.getSessionSentHash("user-1", "p", "s-0"), "the oldest hash is evicted")
+        assertNull(storage.getSessionSentHash("user-1", "p", "s-24"))
+        assertEquals("h-25", storage.getSessionSentHash("user-1", "p", "s-25"))
+        assertEquals("h-${cap + 24}", storage.getSessionSentHash("user-1", "p", "s-${cap + 24}"))
+        // Another (user, profile) namespace is untouched by this one's bound.
+        storage.setSessionSentHash("user-2", "p", "s-0", "other")
+        assertEquals("other", storage.getSessionSentHash("user-2", "p", "s-0"))
+        assertEquals(cap, storage.sessionSentHashIds("user-1", "p").size)
+    }
+
+    @Test
+    fun retainingLiveSessionsRemovesEveryOtherSentHash() {
+        val storage = PortalTokenStorage(MapSettings())
+        storage.setSessionSentHash("user-1", "p", "live", "h1")
+        storage.setSessionSentHash("user-1", "p", "gone", "h2")
+
+        assertEquals(1, storage.retainSessionSentHashes("user-1", "p", setOf("live")))
+
+        assertEquals("h1", storage.getSessionSentHash("user-1", "p", "live"))
+        assertNull(storage.getSessionSentHash("user-1", "p", "gone"))
+        assertEquals(listOf("live"), storage.sessionSentHashIds("user-1", "p"))
+    }
 }

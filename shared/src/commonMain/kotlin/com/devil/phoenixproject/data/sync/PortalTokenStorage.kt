@@ -112,6 +112,20 @@ class PortalTokenStorage(private val settings: Settings) {
          */
         private const val KEY_SESSION_SENT_HASH_PREFIX = "portal_session_sent_hash_"
 
+        /**
+         * Per-(userId, profileId) index of the portal session ids that currently hold a
+         * sent hash, oldest first. Bounds the store (see [MAX_SESSION_SENT_HASHES]) and lets
+         * garbage collection find entries without enumerating every settings key.
+         */
+        private const val KEY_SESSION_SENT_HASH_INDEX_PREFIX = "portal_session_sent_hash_index_"
+
+        /**
+         * Most sent hashes kept per (userId, profileId). Dropping an old one is always
+         * safe: the LWW gate stamps only on `sentHash == currentHash`, so a missing hash
+         * sends the row down the re-push/pending path, never to a wrong "synced" stamp.
+         */
+        internal const val MAX_SESSION_SENT_HASHES = 500
+
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
         private const val KEY_DEVICE_ID = "portal_device_id"
@@ -523,12 +537,48 @@ class PortalTokenStorage(private val settings: Settings) {
 
     fun setSessionSentHash(userId: String, profileId: String, portalSessionId: String, hash: String?) {
         withPlatformLock(authLock) {
+            val index = readSentHashIndex(userId, profileId)
+            index.remove(portalSessionId)
             if (hash == null) {
                 settings.remove(sessionSentHashKey(userId, profileId, portalSessionId))
             } else {
                 settings[sessionSentHashKey(userId, profileId, portalSessionId)] = hash
+                index.addLast(portalSessionId)
+                while (index.size > MAX_SESSION_SENT_HASHES) {
+                    settings.remove(sessionSentHashKey(userId, profileId, index.removeFirst()))
+                }
             }
+            writeSentHashIndex(userId, profileId, index)
         }
+    }
+
+    /** Portal session ids that currently hold a sent hash for (userId, profileId), oldest first. */
+    fun sessionSentHashIds(userId: String, profileId: String): List<String> =
+        withPlatformLock(authLock) { readSentHashIndex(userId, profileId).toList() }
+
+    /**
+     * Drops the sent hash of every indexed session not in [livePortalSessionIds] (deleted
+     * locally or tombstoned by a pull). Returns how many were removed.
+     */
+    fun retainSessionSentHashes(userId: String, profileId: String, livePortalSessionIds: Set<String>): Int =
+        withPlatformLock(authLock) {
+            val index = readSentHashIndex(userId, profileId)
+            val stale = index.filter { it !in livePortalSessionIds }
+            if (stale.isEmpty()) return@withPlatformLock 0
+            stale.forEach { settings.remove(sessionSentHashKey(userId, profileId, it)) }
+            index.removeAll(stale.toSet())
+            writeSentHashIndex(userId, profileId, index)
+            stale.size
+        }
+
+    private fun readSentHashIndex(userId: String, profileId: String): ArrayDeque<String> {
+        val raw = settings.getStringOrNull(cursorKey(KEY_SESSION_SENT_HASH_INDEX_PREFIX, userId, profileId))
+        return ArrayDeque(raw?.split(',')?.filter { it.isNotEmpty() }.orEmpty())
+    }
+
+    private fun writeSentHashIndex(userId: String, profileId: String, index: Collection<String>) {
+        val key = cursorKey(KEY_SESSION_SENT_HASH_INDEX_PREFIX, userId, profileId)
+        if (index.isEmpty()) settings.remove(key) else settings[key] = index.joinToString(",")
     }
 
     fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
