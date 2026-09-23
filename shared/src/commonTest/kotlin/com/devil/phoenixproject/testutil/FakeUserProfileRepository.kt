@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ProfileAccountBindingException
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkReceipt
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkRollbackException
 import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
+import com.devil.phoenixproject.data.repository.ProfileSwitchBlockedDuringWorkoutException
 import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfile
@@ -193,12 +194,14 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
+        blockedByLiveSession: () -> Boolean,
     ): UserProfile {
         val request = CreateAndActivateRequest(name, colorIndex)
         createAndActivateRequests += request
         beforeCreateAndActivateProfile?.invoke(name, colorIndex)
         createAndActivateProfileFailure?.let { throw it }
         return mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()
             val trimmedName = name.trim()
@@ -297,11 +300,12 @@ class FakeUserProfileRepository : UserProfileRepository {
         return true
     }
 
-    override suspend fun setActiveProfile(id: String) {
+    override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         setActiveProfileRequests += id
         beforeSetActiveProfile?.invoke(id)
         setActiveProfileFailure?.let { throw it }
         mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             require(profiles.containsKey(id)) { "Unknown profile: $id" }
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()

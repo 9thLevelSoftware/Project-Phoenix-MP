@@ -295,11 +295,25 @@ class WorkoutCoordinator(
         _workoutState,
         _routineFlowState,
         _justLiftRestCountdown,
-    ) { ws, rfs, restCountdown ->
+    ) { ws, rfs, restCountdown -> inWorkoutSession(ws, rfs, restCountdown) }
+
+    /**
+     * The current value of [isInWorkoutSession], read synchronously. A profile switch
+     * re-checks this after it acquires the profile mutation barrier, where no
+     * collector is running (codex 4081312853).
+     */
+    fun isInWorkoutSessionNow(): Boolean =
+        inWorkoutSession(_workoutState.value, _routineFlowState.value, _justLiftRestCountdown.value)
+
+    private fun inWorkoutSession(
+        ws: WorkoutState,
+        rfs: RoutineFlowState,
+        restCountdown: Int?,
+    ): Boolean {
         val workoutInProgress = ws !is WorkoutState.Idle && ws !is WorkoutState.Completed
         val betweenRoutineSets = rfs is RoutineFlowState.SetReady
         val betweenJustLiftSets = ws is WorkoutState.Idle && (restCountdown ?: 0) > 0
-        workoutInProgress || betweenRoutineSets || betweenJustLiftSets
+        return workoutInProgress || betweenRoutineSets || betweenJustLiftSets
     }
 
     // ===== Metrics State =====

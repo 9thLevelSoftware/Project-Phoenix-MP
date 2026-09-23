@@ -26,11 +26,11 @@ class ProfileSwitchSessionGuardSourceTest {
     @Test
     fun bothSwitchEntryPointsPassTheSessionScopedSignal() {
         assertTrue(
-            source.contains("switchProfile(profile.id, isInWorkoutSession)"),
+            source.contains("switchProfile(profile.id, viewModel::isInWorkoutSessionNow)"),
             "switchProfile must be gated on isInWorkoutSession",
         )
         assertTrue(
-            source.contains("createAndActivateProfile(name, colorIndex, isInWorkoutSession)"),
+            source.contains("createAndActivateProfile(name, colorIndex, viewModel::isInWorkoutSessionNow)"),
             "createAndActivateProfile must be gated on isInWorkoutSession",
         )
     }

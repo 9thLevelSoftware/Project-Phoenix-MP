@@ -65,6 +65,13 @@ sealed interface ActiveProfileContext {
     ) : ActiveProfileContext
 }
 
+/**
+ * A profile switch was refused because a workout session went live while the switch
+ * waited for the profile mutation barrier (FP-6, codex 4081312853).
+ */
+class ProfileSwitchBlockedDuringWorkoutException :
+    IllegalStateException("A workout session is live; the profile cannot change now")
+
 class ProfileContextUnavailableException :
     IllegalStateException(
         "Active profile context is switching",
@@ -118,11 +125,21 @@ interface UserProfileRepository {
 
     fun observePreferences(profileId: String): Flow<UserProfilePreferences>
     suspend fun createProfile(name: String, colorIndex: Int): UserProfile
-    suspend fun createAndActivateProfile(name: String, colorIndex: Int): UserProfile
+    /**
+     * [blockedByLiveSession] is re-checked AFTER the profile mutation barrier is acquired:
+     * a workout can start while the switch waits for sync/auth to release it. A true
+     * result aborts with [ProfileSwitchBlockedDuringWorkoutException] and changes nothing.
+     */
+    suspend fun createAndActivateProfile(
+        name: String,
+        colorIndex: Int,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): UserProfile
     suspend fun updateProfile(id: String, name: String, colorIndex: Int)
     suspend fun deleteProfile(id: String): Boolean
     suspend fun deleteActiveProfile(expectedProfileId: String): Boolean
-    suspend fun setActiveProfile(id: String)
+    /** See [createAndActivateProfile] for [blockedByLiveSession]. */
+    suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean = { false })
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
     suspend fun updateCore(profileId: String, value: CoreProfilePreferences)
@@ -221,7 +238,9 @@ class SqlDelightUserProfileRepository(
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
+        blockedByLiveSession: () -> Boolean,
     ): UserProfile = withProfileMutation {
+        if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
         val id = generateUUID()
@@ -407,8 +426,10 @@ class SqlDelightUserProfileRepository(
         return maxOf(now, latest + 1L)
     }
 
-    override suspend fun setActiveProfile(id: String) {
+    override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         withProfileMutation {
+            // Checked under the barrier: a workout may have started while this waited.
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             require(allProfiles.value.any { it.id == id }) { "Unknown profile: $id" }
             withProfileContextTransition(id) { previous ->
                 database.transaction {

@@ -41,7 +41,7 @@ class ProfileSwitchDuringWorkoutTest {
     fun switchIsRefusedWithAVisibleMessageWhileASessionIsLive() {
         val (viewModel, profiles) = viewModelWithOpenSwitcher()
 
-        viewModel.switchProfile("b", inWorkoutSession = true)
+        viewModel.switchProfile("b", inWorkoutSession = { true })
 
         val state = viewModel.uiState.value
         assertEquals(ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT, state.error)
@@ -59,7 +59,7 @@ class ProfileSwitchDuringWorkoutTest {
         val (viewModel, profiles) = viewModelWithOpenSwitcher()
         viewModel.openAddDialog()
 
-        viewModel.createAndActivateProfile("New", 3, inWorkoutSession = true)
+        viewModel.createAndActivateProfile("New", 3, inWorkoutSession = { true })
 
         val state = viewModel.uiState.value
         assertEquals(ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT, state.error)
@@ -106,7 +106,7 @@ class ProfileSwitchDuringWorkoutTest {
         )
         val (viewModel, profiles) = viewModelWithOpenSwitcher()
 
-        viewModel.switchProfile("b", coordinator.isInWorkoutSession.first())
+        viewModel.switchProfile("b", coordinator::isInWorkoutSessionNow)
 
         assertEquals(ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT, viewModel.uiState.value.error)
         assertTrue(profiles.setActiveProfileRequests.isEmpty())
@@ -121,7 +121,7 @@ class ProfileSwitchDuringWorkoutTest {
         val (viewModel, profiles) = viewModelWithOpenSwitcher()
         viewModel.openAddDialog()
 
-        viewModel.createAndActivateProfile("New", 3, coordinator.isInWorkoutSession.first())
+        viewModel.createAndActivateProfile("New", 3, coordinator::isInWorkoutSessionNow)
 
         assertEquals(ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT, viewModel.uiState.value.error)
         assertTrue(profiles.createAndActivateRequests.isEmpty())
