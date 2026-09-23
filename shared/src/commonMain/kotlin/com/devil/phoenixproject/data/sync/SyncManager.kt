@@ -1035,6 +1035,19 @@ class SyncManager(
             }
         }
 
+        // Garbage-collect sent hashes of workouts that are gone (deleted here, or tombstoned
+        // by the pull just applied). Best-effort: a stale hash is harmless, only unbounded.
+        runCatching {
+            tokenStorage.retainSessionSentHashes(
+                userId,
+                profile.id,
+                syncRepository.getLivePortalSessionIds(profile.id),
+            )
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            Logger.w("SyncManager") { "Sent-hash garbage collection skipped: ${error.message}" }
+        }
+
         return if (pullResult.isSuccess) {
             val completedPull = pullResult.getOrThrow()
             recordCompletedPull(completedPull)
@@ -2955,10 +2968,15 @@ class SyncManager(
             listOf(NIL_UUID_SENTINEL as T)
         }
 
-        val knownPersonalRecordIds = capParity(
-            filterUuids(rawPersonalRecordIds, "personalRecordIds"),
-            "personalRecordIds",
-        ).toMutableList()
+        // PR ids fetched by THIS pull go to the front: the cap keeps the first
+        // MAX_PARITY_IDS, so appended ids would be dropped once the profile already holds
+        // that many, and the next page would re-deliver them until MAX_PAGES (codex #856).
+        // Session/routine/cycle/badge lists are fixed for the whole pull, so only this list
+        // grows inside the paging loop.
+        val knownPersonalRecordIds = ArrayDeque(
+            capParity(filterUuids(rawPersonalRecordIds, "personalRecordIds"), "personalRecordIds"),
+        )
+        val knownPersonalRecordIdSet = knownPersonalRecordIds.toHashSet()
 
         fun currentKnownEntityIds(): KnownEntityIds = KnownEntityIds(
             sessionIds = nonEmptyOrSentinel(capParity(filteredSessionIds, "sessionIds"), "sessionIds"),
@@ -3166,8 +3184,8 @@ class SyncManager(
 
             for (record in pullResponse.personalRecords) {
                 val id = record.id
-                if (CANONICAL_UUID_REGEX.matches(id) && id !in knownPersonalRecordIds) {
-                    knownPersonalRecordIds += id
+                if (CANONICAL_UUID_REGEX.matches(id) && knownPersonalRecordIdSet.add(id)) {
+                    knownPersonalRecordIds.addFirst(id)
                 }
             }
 

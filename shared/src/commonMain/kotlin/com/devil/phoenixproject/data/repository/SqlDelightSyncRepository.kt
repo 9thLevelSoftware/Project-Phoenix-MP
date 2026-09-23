@@ -2388,6 +2388,10 @@ class SqlDelightSyncRepository(
      * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
      * newest-first so the parity cap drops the oldest.
      */
+    override suspend fun getLivePortalSessionIds(profileId: String): Set<String> = withContext(Dispatchers.IO) {
+        queries.selectLivePortalSessionIdsByProfile(profileId).executeAsList().toHashSet()
+    }
+
     override suspend fun getKnownPortalSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectKnownPortalSessionIdsByProfile(profileId)
             .executeAsList()

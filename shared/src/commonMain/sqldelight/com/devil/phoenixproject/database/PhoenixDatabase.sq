@@ -4524,6 +4524,18 @@ VALUES (?, ?, ?, ?, ?);
 -- Parity Sync: Get all entity IDs for comparison with server
 -- PR 10 step 7 (R-19): distinct portal session ids (grouped routineSessionId,
 -- standalone row id) including soft-deleted tombstones, newest-first.
+-- Portal session ids that still have at least one live (not soft-deleted) row.
+-- Used to garbage-collect per-session sync fingerprints of deleted workouts.
+selectLivePortalSessionIdsByProfile:
+SELECT DISTINCT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL;
+
 selectKnownPortalSessionIdsByProfile:
 SELECT
     CASE

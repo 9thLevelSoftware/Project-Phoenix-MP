@@ -315,6 +315,13 @@ interface SyncRepository {
         getAllSessionIds(profileId)
 
     /**
+     * Portal session ids of [profileId] that still have a live (not soft-deleted) row.
+     * Tombstoned and hard-deleted workouts are absent.
+     */
+    suspend fun getLivePortalSessionIds(profileId: String): Set<String> =
+        getKnownPortalSessionIds(profileId).toSet()
+
+    /**
      * Get all routine IDs for the given profile.
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
