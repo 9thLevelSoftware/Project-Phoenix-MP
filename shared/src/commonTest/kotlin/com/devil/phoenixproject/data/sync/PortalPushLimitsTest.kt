@@ -499,18 +499,47 @@ class PortalPushLimitsTest {
             ),
         )
 
+        // A controllable clock: waiting for capacity advances it by exactly the wait.
+        // Everything pushed before the first wait is the first 60 s window.
+        var clock = 0L
+        var firstWindow: List<PortalSyncPayload>? = null
+        var firstWindowAcks: List<Set<String>>? = null
+        var firstWindowAppliedPreferenceOutcomes: Int? = null
         val result = createManager(
-            rateLimiter = ClientRateLimiter(nowMs = { 0L }),
+            rateLimiter = ClientRateLimiter(
+                nowMs = { clock },
+                waitFor = { waitMs ->
+                    if (firstWindow == null) {
+                        firstWindow = fakeApi.pushPayloads.toList()
+                        firstWindowAcks = fakeSyncRepo.acknowledgedWorkoutParentIdCalls.toList()
+                        firstWindowAppliedPreferenceOutcomes = fakeProfilePreferenceSyncRepo.appliedPushOutcomes.size
+                    }
+                    clock += waitMs
+                },
+            ),
         ).sync()
 
         assertTrue(result.isSuccess)
-        assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, fakeApi.pushPayloads.size)
+        // Every logical push call (main payload and preference chunks) draws on the one
+        // shared window: the first window holds exactly the limit, one ordinary push plus
+        // the preference chunks that fit, and the chunks past capacity fail fast.
+        val window = assertNotNull(firstWindow, "21 profiles must exhaust one window")
+        assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, window.size)
         assertEquals(
             SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1,
-            fakeApi.pushPayloads.count { it.profilePreferenceSections != null },
+            window.count { it.profilePreferenceSections != null },
         )
-        assertTrue(fakeProfilePreferenceSyncRepo.appliedPushOutcomes.isEmpty())
-        assertEquals(listOf(setOf(ordinary.id)), fakeSyncRepo.acknowledgedWorkoutParentIdCalls)
+        assertEquals(0, firstWindowAppliedPreferenceOutcomes)
+        assertEquals(listOf(setOf(ordinary.id)), firstWindowAcks)
+        // codex #856 P1: profiles past the window's capacity WAIT for it instead of being
+        // failed fast. Profiles are walked in the same order every sync, so failing fast
+        // would starve the same trailing profiles forever.
+        val pushedProfileIds = fakeApi.pushPayloads
+            .filter { it.profilePreferenceSections == null }
+            .map { it.profileId }
+            .toSet()
+        val expectedProfiles = (List(20) { "profile-$it" } + "profile-a").toSet()
+        assertEquals(expectedProfiles, pushedProfileIds.intersect(expectedProfiles))
     }
 
     // ==================== Telemetry-Aware Batching (audit: 36_852 point rejection) ====================
@@ -971,5 +1000,36 @@ class PortalPushLimitsTest {
         assertNotNull(payload)
         assertEquals(tokenStorage.getDeviceId(), payload.deviceId)
         assertTrue(payload.platform.isNotBlank(), "platform must be set on every push payload")
+    }
+
+
+    // ==================== codex #856 P1: the rejection fingerprint covers telemetry ====================
+
+    @Test
+    fun sessionFingerprintChangesWhenOnlyTheRawTelemetryChanges() {
+        val manager = createManager()
+        val dto = stubPortalSession("sess-telemetry")
+        val sent = listOf(
+            PortalRepTelemetryDto(id = "t-1", setId = "set-1", timestampMs = 0L, forceN = 100f, cable = "A"),
+            PortalRepTelemetryDto(id = "t-2", setId = "set-1", timestampMs = 20L, forceN = 110f, cable = "A"),
+        )
+        val changedCurve = listOf(
+            sent[0],
+            sent[1].copy(forceN = 111f),
+        )
+
+        assertEquals(
+            manager.sessionContentFingerprint(dto, sent),
+            manager.sessionContentFingerprint(dto, sent.reversed()),
+            "the fingerprint must not depend on telemetry order",
+        )
+        assertTrue(
+            manager.sessionContentFingerprint(dto, sent) != manager.sessionContentFingerprint(dto, changedCurve),
+            "a force-curve change with an identical session DTO must not look like already-accepted content",
+        )
+        assertTrue(
+            manager.sessionContentFingerprint(dto, sent) != manager.sessionContentFingerprint(dto, emptyList()),
+            "telemetry added to an otherwise identical session must change the fingerprint",
+        )
     }
 }

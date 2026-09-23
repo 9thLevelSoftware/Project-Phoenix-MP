@@ -3206,4 +3206,86 @@ class SyncManagerTest {
         assertEquals(listOf("r1"), withKey.skippedDeleted.routines)
         assertEquals(listOf("c1"), withKey.skippedDeleted.cycles)
     }
+
+
+    // ==================== GitHub review round (#856) ====================
+
+    @Test
+    fun profilesLinkedToAnotherPortalAccountAreNeverPushedOrPulled() = runTest {
+        // codex #856 P1: a profile bound to account A must never be pushed or pulled
+        // through account B's token, nor have its metadata published into B.
+        setupAuthenticated(userId = "owner-b")
+        fakeUserProfileRepo.seedReadyProfileForTest("foreign-profile")
+        fakeUserProfileRepo.linkToSupabase("foreign-profile", "owner-a")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
+
+        // PR 11: a profile still owned by another account is an unanswered account switch,
+        // so the whole sync pauses for the user's choice before anything is sent. The
+        // owner filter in syncProfileOrder stays as defence in depth behind that gate.
+        val manager = createManager()
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+
+        assertTrue(fakeApi.pushPayloads.isEmpty(), "nothing may be pushed before the choice")
+        assertTrue(
+            fakeApi.pushPayloads.none { it.profileId == "foreign-profile" },
+            "another account's profile must not be pushed (saw ${fakeApi.pushPayloads.map { it.profileId }})",
+        )
+        assertFalse(
+            "foreign-profile" in fakeApi.pullCallProfileIds,
+            "another account's profile must not be pulled (saw ${fakeApi.pullCallProfileIds})",
+        )
+        assertTrue(
+            fakeApi.pushPayloads.all { payload -> payload.allProfiles.orEmpty().none { it.id == "foreign-profile" } },
+            "another account's profile metadata must not be published",
+        )
+    }
+
+    @Test
+    fun aCompletedPushAdvancesThisProfilesPushWatermark() = runTest {
+        // codex #856 P2: the watermark read as the routine/PR gather floor must advance
+        // after every batch of a push landed, or the same rows are re-sent forever.
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        val before = com.devil.phoenixproject.domain.model.currentTimeMillis()
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertTrue(
+            tokenStorage.getPushWatermark("user-123", "default") >= before,
+            "a completed push must persist its gather time as the push watermark",
+        )
+    }
+
+    @Test
+    fun aFailedPushLeavesThePushWatermarkUntouched() = runTest {
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        tokenStorage.setPushWatermark("user-123", "default", 1L)
+        fakeApi.pushResult = Result.failure(PortalApiException("boom", null, 500))
+
+        createManager().sync()
+
+        assertEquals(1L, tokenStorage.getPushWatermark("user-123", "default"))
+    }
+
+    @Test
+    fun aPull401AbortsTheRemainingProfilesAndReportsNotAuthenticated() = runTest {
+        // Kilo (#856): the loop KDoc promises an auth failure aborts every remaining
+        // profile. A 401 on the pull means the token is gone just as much as on the push.
+        setupAuthenticated()
+        fakeUserProfileRepo.seedReadyProfileForTest("second-profile")
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pullResult = Result.failure(PortalApiException("expired", null, 401))
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        assertEquals(SyncState.NotAuthenticated, manager.syncState.value)
+        assertTrue(
+            fakeApi.pushPayloads.none { it.profileId == "second-profile" },
+            "no profile after a 401 may be synced (saw ${fakeApi.pushPayloads.map { it.profileId }})",
+        )
+    }
 }

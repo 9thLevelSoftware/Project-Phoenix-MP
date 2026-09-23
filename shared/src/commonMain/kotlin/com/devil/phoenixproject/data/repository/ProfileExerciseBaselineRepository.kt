@@ -27,6 +27,11 @@ data class AssessmentBaselineWriteReceipt(
     val written: ProfileExerciseBaseline,
 )
 
+data class ProfileExerciseBaselineUpdate(
+    val exerciseId: String,
+    val oneRepMaxPerCableKg: Float?,
+)
+
 data class LegacyBaselineRepairResult(
     val copiedCount: Int,
     val ambiguous: List<LegacyExerciseBaseline>,
@@ -43,6 +48,12 @@ interface ProfileExerciseBaselineRepository {
         oneRepMaxPerCableKg: Float?,
         updatedAt: Long,
     ): ProfileExerciseBaseline
+
+    suspend fun setBatch(
+        profileId: String,
+        updates: List<ProfileExerciseBaselineUpdate>,
+        updatedAt: Long,
+    )
 
     /** Atomically snapshots and replaces the row, returning proof of the committed write. */
     suspend fun writeForAssessment(
@@ -142,6 +153,26 @@ class SqlDelightProfileExerciseBaselineRepository(
         validateIds(profileId, exerciseId)
         validateValue(oneRepMaxPerCableKg)
         setInTransaction(profileId, exerciseId, oneRepMaxPerCableKg, updatedAt)
+    }
+
+    override suspend fun setBatch(
+        profileId: String,
+        updates: List<ProfileExerciseBaselineUpdate>,
+        updatedAt: Long,
+    ) = withContext(Dispatchers.IO) {
+        require(profileId.isNotBlank()) { "Baseline profileId must not be blank" }
+        database.transaction {
+            updates.forEach { update ->
+                validateIds(profileId, update.exerciseId)
+                validateValue(update.oneRepMaxPerCableKg)
+                setInCurrentTransaction(
+                    profileId = profileId,
+                    exerciseId = update.exerciseId,
+                    oneRepMaxPerCableKg = update.oneRepMaxPerCableKg,
+                    updatedAt = updatedAt,
+                )
+            }
+        }
     }
 
     override suspend fun writeForAssessment(
