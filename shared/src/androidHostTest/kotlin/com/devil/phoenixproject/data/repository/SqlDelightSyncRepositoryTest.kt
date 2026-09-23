@@ -1281,6 +1281,69 @@ class SqlDelightSyncRepositoryTest {
         )
     }
 
+
+    /**
+     * GitHub #853 (codex 4081208473, kilo 4081854459): a routine set is published
+     * under its parent routineSessionId, so a historical PR earned in a routine must
+     * resolve to that parent, not the local component id, or the pushed link
+     * references no portal workout.
+     */
+    @Test
+    fun `findSessionIdsForPersonalRecords resolves a routine set to its parent workout id`() = runTest {
+        val sessionStart = 1_700_000_500_000L
+        insertHistoricalSession(
+            id = "routine-component-row",
+            timestamp = sessionStart,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+            routineSessionId = "22222222-2222-4222-a222-222222222222",
+        )
+        insertHistoricalSession(
+            id = "standalone-press",
+            timestamp = sessionStart,
+            exerciseId = "press",
+            exerciseName = "Press",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+        )
+        fun record(exerciseId: String) = PersonalRecord(
+            exerciseId = exerciseId,
+            exerciseName = exerciseId,
+            weightPerCableKg = 42f,
+            reps = 8,
+            oneRepMax = 42f,
+            timestamp = sessionStart,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 336f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "active-profile",
+        )
+
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record("row"), record("press")),
+            "active-profile",
+        )
+
+        assertEquals(
+            mapOf(
+                "row:$sessionStart" to "22222222-2222-4222-a222-222222222222",
+                "press:$sessionStart" to "standalone-press",
+            ),
+            sessionIds,
+            "A routine PR links to the parent workout id; a standalone PR to its own id",
+        )
+    }
     @Test
     fun `backfillPhaseSpecificPRs checkpoints even when no sessions have phase metrics`() = runTest {
         insertHistoricalSession(
