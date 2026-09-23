@@ -525,6 +525,11 @@ class DataBackupCompletenessTest {
         val result = target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
         assertEquals(0, result.deletedProfileRowsSkipped)
         assertEquals(1, result.ownershipTransfersImported, "the pending transfer survives the restore")
+
+        // Defence in depth: even a profile in the deleted set keeps its transfers.
+        val filter = DeletedProfileBackupFilter(setOf(PROFILE_B))
+        assertTrue(filter.keep("ownershipTransfers", """{"mutationId":"m","sourceProfileId":"$PROFILE_B","targetProfileId":"default"}"""))
+        assertFalse(filter.keep("routines", """{"id":"r","profileId":"$PROFILE_B"}"""))
     }
 
     // ---- v1-v6 single-object gamification stats (the shipping app's format) ----
