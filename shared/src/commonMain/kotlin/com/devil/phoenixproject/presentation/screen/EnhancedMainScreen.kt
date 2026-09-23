@@ -607,7 +607,7 @@ fun EnhancedMainScreen(
                         else -> null
                     },
                     onSelectProfile = { profile ->
-                        profileSwitcherViewModel.switchProfile(profile.id, workoutState)
+                        profileSwitcherViewModel.switchProfile(profile.id, isInWorkoutSession)
                     },
                     onAddProfile = profileSwitcherViewModel::openAddDialog,
                     onDismiss = profileSwitcherViewModel::dismissSwitcher,
@@ -624,7 +624,7 @@ fun EnhancedMainScreen(
                         else -> null
                     },
                     onConfirm = { name, colorIndex ->
-                        profileSwitcherViewModel.createAndActivateProfile(name, colorIndex, workoutState)
+                        profileSwitcherViewModel.createAndActivateProfile(name, colorIndex, isInWorkoutSession)
                     },
                     onDismiss = profileSwitcherViewModel::dismissAddDialog,
                 )
