@@ -114,6 +114,14 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_SESSION_SENT_HASH_PREFIX = "portal_session_sent_hash_"
 
         /**
+         * Routine ids the portal LWW-rejected on push, per (userId, profileId): the next
+         * completed pull must take the server copy for these. Persisted because the push
+         * watermark has already moved past them — losing the marker on a restart before
+         * that pull would leave the routine neither re-pushed nor converged.
+         */
+        private const val KEY_SERVER_WINS_ROUTINES_PREFIX = "portal_server_wins_routines_"
+
+        /**
          * Per-(userId, profileId) index of the portal session ids that currently hold a
          * sent hash, oldest first. Bounds the store (see [MAX_SESSION_SENT_HASHES]) and lets
          * garbage collection find entries without enumerating every settings key.
@@ -601,6 +609,28 @@ class PortalTokenStorage(private val settings: Settings) {
                 }
             }
             writeSentHashIndex(userId, profileId, index)
+        }
+    }
+
+    /** Routine ids awaiting server-wins convergence for (userId, profileId). */
+    fun pendingServerWinsRoutineIds(userId: String, profileId: String): Set<String> =
+        settings.getStringOrNull(cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId))
+            ?.split(',')
+            ?.filterTo(linkedSetOf()) { it.isNotEmpty() }
+            .orEmpty()
+
+    fun addPendingServerWinsRoutineIds(userId: String, profileId: String, routineIds: Collection<String>) {
+        if (routineIds.isEmpty()) return
+        withPlatformLock(authLock) {
+            val merged = pendingServerWinsRoutineIds(userId, profileId) + routineIds
+            settings[cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId)] = merged.joinToString(",")
+        }
+    }
+
+    /** Cleared only after a completed pull has applied the server copies. */
+    fun clearPendingServerWinsRoutineIds(userId: String, profileId: String) {
+        withPlatformLock(authLock) {
+            settings.remove(cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId))
         }
     }
 

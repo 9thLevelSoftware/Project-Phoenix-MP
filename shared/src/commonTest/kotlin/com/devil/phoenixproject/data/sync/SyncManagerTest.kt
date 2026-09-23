@@ -3576,4 +3576,30 @@ class SyncManagerTest {
         assertTrue(fakeApi.pushPayloads.none { it.profileId == "created-signed-in" })
         assertFalse("created-signed-in" in fakeApi.pullCallProfileIds)
     }
+
+    @Test
+    fun anLwwRejectedRoutineStaysServerWinsAcrossARestartUntilAPullCompletes() = runTest {
+        // codex #856: the push watermark moves past a LWW-rejected routine; if the pull
+        // then fails and the app restarts, the server-wins marker must still be there.
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                rejections = SyncRejectionsDto(routines = listOf(SyncRejectionDto(LATE_ROUTINE_ID))),
+            ),
+        )
+        fakeApi.pullResult = Result.failure(PortalApiException("boom", null, 500))
+        createManager().sync()
+
+        // "Restart": a fresh storage and manager over the same persisted settings.
+        val restartedStorage = PortalTokenStorage(settings)
+        assertEquals(setOf(LATE_ROUTINE_ID), restartedStorage.pendingServerWinsRoutineIds("user-123", "default"))
+
+        // A completed pull applies the server copy and clears the marker.
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1_740_916_800_000L))
+        assertTrue(createManager().sync().isSuccess)
+        assertTrue(tokenStorage.pendingServerWinsRoutineIds("user-123", "default").isEmpty())
+    }
 }

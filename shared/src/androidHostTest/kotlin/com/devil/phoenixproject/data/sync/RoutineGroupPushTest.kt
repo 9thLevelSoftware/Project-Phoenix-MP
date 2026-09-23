@@ -1120,6 +1120,42 @@ class RoutineGroupPushTest {
         )
     }
 
+    @Test
+    fun `a pulled projection never overwrites a local edit the portal has not acknowledged`() = runTest {
+        // codex #856: a portal-origin row, synced clean, then edited locally (a tag edit)
+        // while a push is in flight. The next pull returns the older portal copy.
+        insertRoutineSet("pulled-row", groupId = null, timestamp = baseTime, stampedAt = baseTime + 1_000)
+        database.phoenixDatabaseQueries.markSessionPulled("pulled-row")
+        database.phoenixDatabaseQueries.updateSessionExerciseTag("row", "Row", baseTime + 2_000, "pulled-row")
+
+        syncRepository.mergePulledSessions(
+            sessions = listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = "pulled-row",
+                    timestamp = baseTime,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    duration = 45_000L,
+                    totalReps = 8,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    routineSessionId = null,
+                    profileId = profileId,
+                ),
+            ),
+            updatedAtBySessionId = mapOf("pulled-row" to baseTime + 3_000),
+            pushWatermark = baseTime + 1_500,
+        )
+
+        val row = database.phoenixDatabaseQueries.selectSessionById("pulled-row").executeAsOne()
+        assertEquals("row", row.exerciseId, "the unacknowledged local tag edit must survive the pull")
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.any { it.id == "pulled-row" },
+            "the edit stays dirty so the next push sends it",
+        )
+    }
+
     // ===== Helpers =====
 
     private fun lastSessionPayload(portalSessionId: String): PortalWorkoutSessionDto = apiClient.pushPayloads

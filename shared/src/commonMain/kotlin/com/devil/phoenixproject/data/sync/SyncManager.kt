@@ -486,7 +486,6 @@ class SyncManager(
      * row. Entries are account/profile scoped and cleared only when that scope's
      * pull completes. Guarded by [syncMutex].
      */
-    private val pendingServerWinsRoutineIdsByScope = mutableMapOf<String, MutableSet<String>>()
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -1230,12 +1229,9 @@ class SyncManager(
         val pushResponse = pushOutcome.response
         val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
-        if (rejectedRoutineIds.isNotEmpty()) {
-            val rejectionScopeKey = "$userId:${profile.id}"
-            pendingServerWinsRoutineIdsByScope
-                .getOrPut(rejectionScopeKey) { mutableSetOf() }
-                .addAll(rejectedRoutineIds)
-        }
+        // Persisted, not in memory (codex #856): the watermark just moved past these
+        // routines, so a restart before the next completed pull must not lose the marker.
+        tokenStorage.addPendingServerWinsRoutineIds(userId, profile.id, rejectedRoutineIds)
         val rejectedSessionIds = rejections.sessions.mapTo(mutableSetOf()) { it.id }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
@@ -1519,7 +1515,7 @@ class SyncManager(
                 completedPull.syncTime,
             )
         }
-        pendingServerWinsRoutineIdsByScope.remove("${completedPull.userId}:${completedPull.profileId}")
+        tokenStorage.clearPendingServerWinsRoutineIds(completedPull.userId, completedPull.profileId)
     }
 
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
@@ -3396,9 +3392,7 @@ class SyncManager(
             pullCursor
         }
         val mergeLastSync = pullCursor
-        val serverWinsRoutineIds = pendingServerWinsRoutineIdsByScope["$userId:$mergeProfileId"]
-            ?.toSet()
-            .orEmpty()
+        val serverWinsRoutineIds = tokenStorage.pendingServerWinsRoutineIds(userId, mergeProfileId)
         Logger.i("SyncManager") {
             "Pull mode: requestLastSync=$requestLastSync (stored=$pullCursor, " +
                 "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +

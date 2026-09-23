@@ -2915,6 +2915,7 @@ class SqlDelightSyncRepository(
                                     deletedAt = it.deletedAt,
                                     profileId = it.profile_id,
                                     portalOrigin = it.portalOrigin == 1L,
+                                    hasUnsyncedLocalEdit = it.local_sync_generation > it.synced_sync_generation,
                                 )
                             }
                     }
@@ -3001,9 +3002,15 @@ class SqlDelightSyncRepository(
                 // cross-clock comparison and wrongly rejects legitimate updates. The
                 // merge is therefore no longer LWW: portal-origin rows are server-owned
                 // for content.
+                // A row with a local edit the portal has not acknowledged yet keeps that
+                // edit: the pulled copy may be the version this device just pushed, and
+                // projecting it would overwrite the concurrent edit (tag, target reps, RPE)
+                // that the generation ack deliberately left dirty (codex #856). The next
+                // push sends the edit; a later pull projects the portal's result.
                 val accept = existing.portalOrigin &&
                     existing.profileId == session.profileId &&
                     existing.deletedAt == null &&
+                    !existing.hasUnsyncedLocalEdit &&
                     incomingTs != null
                 if (!accept) continue
 
@@ -3166,6 +3173,8 @@ class SqlDelightSyncRepository(
         val deletedAt: Long?,
         val profileId: String,
         val portalOrigin: Boolean,
+        /** local_sync_generation > synced_sync_generation: a local edit not yet acknowledged. */
+        val hasUnsyncedLocalEdit: Boolean,
     )
 
     /**
