@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -118,6 +119,46 @@ class SqlDelightSyncRepositoryTest {
         )
         val retry = repository.getDirtyWorkoutSnapshot("active-profile")
         assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    @Test
+    fun `a pulled session naming an archived legacy catalogue id is remapped onto its replacement`() = runTest {
+        // An older client uploaded history under the pre-catalogue id; the pull stores it as-is
+        // (findExerciseId resolves ids directly, archived or not). The merge must heal it.
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-1",
+            workoutDeletions = emptyList(),
+            sessions = listOf(
+                WorkoutSession(
+                    id = "pulled-legacy",
+                    timestamp = 100L,
+                    mode = "OldSchool",
+                    reps = 5,
+                    weightPerCableKg = 20f,
+                    totalReps = 5,
+                    workingReps = 5,
+                    exerciseId = "ZZ92N8QsBdp6HCh3",
+                    exerciseName = "Bench Press",
+                    profileId = "active-profile",
+                ),
+            ),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("pulled-legacy").executeAsOne().exerciseId,
+        )
+        assertTrue(database.phoenixDatabaseQueries.selectArchivedStockExerciseIdsNeedingRemap().executeAsList().isEmpty())
     }
 
     @Test

@@ -145,8 +145,7 @@ class SqlDelightExerciseRepository(
     override suspend fun importExercises(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val currentSource = preferencesManager.getExerciseCatalogSource()
-            val catalogueImported = currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE
-            if (catalogueImported) {
+            if (currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE) {
                 Logger.d { "Importing bundled free-exercise-db catalogue..." }
                 val result = exerciseImporter.importExercises()
                 val importedCount = result.getOrNull() ?: 0
@@ -157,15 +156,9 @@ class SqlDelightExerciseRepository(
                 preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
                 Logger.d { "Successfully imported $importedCount exercises" }
             }
-            // The remap rewrites every per-exercise table, so it runs once per rule version
-            // (F-030), and again whenever the catalogue itself was just (re)imported. The
-            // version is stored only after the remap returns: a throw leaves it owed.
-            if (catalogueImported ||
-                preferencesManager.getLegacyRemapVersion() < ExerciseImporter.LEGACY_REMAP_VERSION
-            ) {
-                exerciseImporter.remapLegacyCatalogueIds()
-                preferencesManager.setLegacyRemapVersion(ExerciseImporter.LEGACY_REMAP_VERSION)
-            }
+            // Data-gated (F-030): one indexed existence check, and the rewrite only runs when
+            // a row still references an archived catalogue id.
+            exerciseImporter.remapLegacyCatalogueIds()
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises" }

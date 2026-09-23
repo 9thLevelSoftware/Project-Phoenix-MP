@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -2348,6 +2349,10 @@ class SqlDelightSyncRepository(
                 "Atomic merge complete: ${sessions.size} sessions, ${routines.size} routines, " +
                     "${cycles.size} cycles, ${badges.size} badges, ${personalRecords.size} PRs (profile=$profileId)"
             }
+            // Pulled rows keep whatever exercise id the portal holds, including archived
+            // legacy catalogue ids an older client uploaded. Re-point them now, outside the
+            // merge transaction so a remap failure can never fail (and wedge) the pull.
+            LegacyCatalogueRemapper.healAfterBulkWrite(db, source = "pull merge")
         }
     }
 
