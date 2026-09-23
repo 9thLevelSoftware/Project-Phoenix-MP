@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
+import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -935,6 +937,12 @@ class SqlDelightSyncRepository(
         exerciseId?.let { id ->
             val match = queries.selectExerciseById(id).executeAsOneOrNull()
             if (match != null) return@withContext match.id
+            // A retired catalogue id an older client uploaded. On a device that never held the
+            // archived legacy row (a fresh install) there is nothing for LegacyCatalogueRemapper
+            // to heal later, so translate it here with the remapper's own resolution (explicit
+            // ids and the reviewed name fallbacks) when this catalogue has the replacement.
+            val translated = LegacyCatalogueTranslator(db).translate(id, name)
+            if (translated != id) return@withContext translated
         }
 
         // Strategy 1: Try exact match with muscle group (most specific)
@@ -2371,6 +2379,10 @@ class SqlDelightSyncRepository(
                 "Atomic merge complete: ${sessions.size} sessions, ${routines.size} routines, " +
                     "${cycles.size} cycles, ${badges.size} badges, ${personalRecords.size} PRs (profile=$profileId)"
             }
+            // Pulled rows keep whatever exercise id the portal holds, including archived
+            // legacy catalogue ids an older client uploaded. Re-point them now, outside the
+            // merge transaction so a remap failure can never fail (and wedge) the pull.
+            LegacyCatalogueRemapper.healAfterBulkWrite(db, source = "pull merge")
         }
     }
 
@@ -3390,6 +3402,7 @@ class SqlDelightSyncRepository(
         localSupersets: List<SupersetRow>,
         serverWins: Boolean,
     ) {
+        val legacyCatalogueTranslator by lazy { LegacyCatalogueTranslator(db) }
         val localExercisesById = localExercises.associateBy { it.id }
         val localSupersetsById = localSupersets.associateBy { it.id }
 
@@ -3482,9 +3495,12 @@ class SqlDelightSyncRepository(
 
             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
 
-            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
+            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404).
+            // A retired catalogue id an older client stored has no row on a fresh install, so it
+            // is translated with the remapper's own resolution (explicit ids and name fallbacks).
             val catalogExercise = exercise.exerciseId?.let { id ->
                 queries.selectExerciseById(id).executeAsOneOrNull()
+                    ?: queries.selectExerciseById(legacyCatalogueTranslator.translate(id, exercise.name)).executeAsOneOrNull()
             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
             // #635: the explicit flag is stored in its own column — the portal's

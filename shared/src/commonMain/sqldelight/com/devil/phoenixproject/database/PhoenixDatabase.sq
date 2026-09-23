@@ -127,6 +127,13 @@ CREATE TABLE WorkoutSession (
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
 CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
+-- History/analytics list (profile filter + newest first) and the legacy catalogue remap's
+-- exerciseId rewrite. profile_id is heal-only, so upgraded installs get these two from
+-- SchemaManifest.manifestIndexes rather than a numbered migration.
+CREATE INDEX idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC);
+CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
+-- Routine-group lookups and sync repair (migration 55).
+CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -281,6 +288,7 @@ CREATE TABLE RoutineExercise (
 
 CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
 CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
+CREATE INDEX idx_routine_exercise_exercise ON RoutineExercise(exerciseId);
 
 -- ==================== CONNECTION LOGS ====================
 -- BLE connection debug logs for diagnosing connectivity issues
@@ -655,10 +663,34 @@ SELECT COUNT(*) FROM Exercise;
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
 
+-- LegacyCatalogueRemapper's gate: archived stock exercises that still carry user fields or
+-- are still referenced by any table the remap rewrites. Every probe is an indexed search
+-- (IndexQueryPlanTest pins it), so the steady state (empty result) costs one pass over the
+-- archived catalogue rows. Keep the table list in step with LegacyCatalogueRemapper.
+selectArchivedStockExerciseIdsNeedingRemap:
+SELECT e.id FROM Exercise e
+WHERE e.archived = 1 AND e.isCustom = 0
+AND (
+    e.isFavorite = 1 OR e.timesPerformed > 0 OR e.lastPerformed IS NOT NULL
+    OR e.one_rep_max_kg IS NOT NULL OR e.mvtOverrideMs IS NOT NULL
+    OR EXISTS (SELECT 1 FROM WorkoutSession WHERE WorkoutSession.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM RoutineExercise WHERE RoutineExercise.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM PersonalRecord WHERE PersonalRecord.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseSignature WHERE ExerciseSignature.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM AssessmentResult WHERE AssessmentResult.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate WHERE VelocityOneRepMaxEstimate.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseMvt WHERE ExerciseMvt.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ProgressionEvent WHERE ProgressionEvent.exercise_id = e.id)
+    OR EXISTS (SELECT 1 FROM ProfileExerciseBaseline WHERE ProfileExerciseBaseline.exercise_id = e.id)
+);
+
+-- A locally recorded row becomes dirty so the corrected id reaches the portal. A pulled
+-- (portalOrigin = 1) row is server-owned and must never be pushed back, so its local
+-- projection is corrected without advancing its generation.
 reassignWorkoutSessionExerciseId:
 UPDATE WorkoutSession
 SET exerciseId = :newId,
-    local_sync_generation = local_sync_generation + 1
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE exerciseId = :oldId;
 
 reassignRoutineExerciseId:

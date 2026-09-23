@@ -1725,6 +1725,21 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),
     SchemaIndexOperation("idx_session_profile", "CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id)"),
+    // Heal-only (no numbered migration): profile_id is itself a heal column, so these run
+    // after manifestColumns has added it.
+    SchemaIndexOperation(
+        "idx_session_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC)",
+    ),
+    SchemaIndexOperation(
+        "idx_session_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise ON WorkoutSession(exerciseId, profile_id)",
+    ),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_session_routine_session",
+        "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
+    ),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
@@ -1787,6 +1802,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── RoutineExercise ─────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_exercise_routine", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)"),
     SchemaIndexOperation("idx_routine_exercise_superset", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)"),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_routine_exercise_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
+    ),
 
     // ── ConnectionLog ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_connection_log_timestamp", "CREATE INDEX IF NOT EXISTS idx_connection_log_timestamp ON ConnectionLog(timestamp)"),

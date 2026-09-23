@@ -175,6 +175,46 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `startup repairs re-point rows still naming an archived legacy catalogue id`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        queries.insertRoutine(
+            id = "routine-legacy",
+            name = "Push",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "default",
+            groupId = null,
+            deletedAt = null,
+        )
+        insertMinimalRoutineExercise(
+            id = "re-legacy-bench",
+            routineId = "routine-legacy",
+            exerciseName = "Bench Press",
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+        )
+
+        // A name-only mapping (not in the explicit id map): Rack Pull -> Rack Pulls.
+        database.seedExercise("legacy-rack-pull", name = "Rack Pull", archived = true)
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls")
+        insertMinimalRoutineExercise(
+            id = "re-legacy-rack-pull",
+            routineId = "routine-legacy",
+            exerciseName = "Rack Pull",
+            exerciseId = "legacy-rack-pull",
+        )
+
+        migrationManager.runMigrationsNow()
+
+        val routineExercise = queries.selectRoutineExerciseById("re-legacy-bench").executeAsOne()
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", routineExercise.exerciseId)
+        assertEquals("Rack_Pulls", queries.selectRoutineExerciseById("re-legacy-rack-pull").executeAsOne().exerciseId)
+    }
+
+    @Test
     fun `backfill replaces garbage routine name with inferred name when routine exists`() {
         val queries = database.phoenixDatabaseQueries
         // Create a routine with exercise mapping

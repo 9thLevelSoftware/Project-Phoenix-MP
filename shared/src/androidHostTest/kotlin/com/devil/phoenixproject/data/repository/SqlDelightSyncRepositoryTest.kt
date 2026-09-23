@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -118,6 +119,152 @@ class SqlDelightSyncRepositoryTest {
         )
         val retry = repository.getDirtyWorkoutSnapshot("active-profile")
         assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    @Test
+    fun `a pulled session naming an archived legacy catalogue id is remapped onto its replacement`() = runTest {
+        // An older client uploaded history under the pre-catalogue id; the pull stores it as-is
+        // (findExerciseId resolves ids directly, archived or not). The merge must heal it.
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-1",
+            workoutDeletions = emptyList(),
+            sessions = listOf(
+                WorkoutSession(
+                    id = "pulled-legacy",
+                    timestamp = 100L,
+                    mode = "OldSchool",
+                    reps = 5,
+                    weightPerCableKg = 20f,
+                    totalReps = 5,
+                    workingReps = 5,
+                    exerciseId = "ZZ92N8QsBdp6HCh3",
+                    exerciseName = "Bench Press",
+                    profileId = "active-profile",
+                ),
+            ),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("pulled-legacy").executeAsOne().exerciseId,
+        )
+        assertTrue(database.phoenixDatabaseQueries.selectArchivedStockExerciseIdsNeedingRemap().executeAsList().isEmpty())
+        // The corrected projection is local only: a pulled, server-owned row is never pushed back.
+        assertTrue(
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.none { it.id == "pulled-legacy" },
+            "remapping a pulled session must not queue it for push",
+        )
+    }
+
+    @Test
+    fun `a pulled legacy catalogue id resolves to its replacement on a fresh install`() = runTest {
+        // Fresh install: the current catalogue only, no archived legacy row for a later remap.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "ZZ92N8QsBdp6HCh3"),
+        )
+        // Not in the explicit id map: only the reviewed name fallback (Rack Pull -> Rack Pulls),
+        // the same one the remapper uses, can resolve it.
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        assertEquals(
+            "Rack_Pulls",
+            repository.findExerciseId(name = "Rack Pull", muscleGroup = null, exerciseId = "legacy-rack-pull"),
+        )
+        // An id this device still holds (archived legacy row) is kept for the remapper to merge.
+        database.seedExercise("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7", name = "Bench Press ", archived = true)
+        assertEquals(
+            "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7"),
+        )
+    }
+
+    @Test
+    fun `a pulled routine exercise naming a retired catalogue id links to its replacement on a fresh install`() = runTest {
+        // Fresh install: only replacement ids. One explicit mapping, one name-only mapping.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-legacy-ids",
+                    userId = "user",
+                    name = "Old Client Routine",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-explicit",
+                            routineId = "routine-legacy-ids",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 25f,
+                            exerciseId = "ZZ92N8QsBdp6HCh3",
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-name-only",
+                            routineId = "routine-legacy-ids",
+                            name = "Rack Pull",
+                            muscleGroup = "Back",
+                            orderIndex = 1,
+                            reps = 5,
+                            weight = 60f,
+                            exerciseId = "legacy-rack-pull",
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val linked = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-legacy-ids")
+            .executeAsList()
+            .associate { it.id to it.exerciseId }
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", linked["rex-explicit"])
+        assertEquals("Rack_Pulls", linked["rex-name-only"])
+    }
+
+    @Test
+    fun `remapping a locally recorded session queues the corrected id for push`() = runTest {
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        insertHistoricalSession(
+            id = "local-legacy",
+            timestamp = 100L,
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = null,
+        )
+        repository.acknowledgeWorkoutSnapshot(repository.getDirtyWorkoutSnapshot("active-profile"), setOf("local-legacy"))
+        assertTrue(repository.getDirtyWorkoutSnapshot("active-profile").sessions.isEmpty())
+
+        com.devil.phoenixproject.data.local.LegacyCatalogueRemapper(database).remapIfNeeded()
+
+        assertEquals(
+            listOf("Barbell_Bench_Press_-_Medium_Grip"),
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.map { it.exerciseId },
+        )
     }
 
     @Test
