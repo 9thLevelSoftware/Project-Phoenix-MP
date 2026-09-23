@@ -11,7 +11,8 @@ import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
-import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -30,6 +31,7 @@ import org.junit.Test
  */
 class MultiProfileSyncIntegrationTest {
 
+    private lateinit var driver: JdbcSqliteDriver
     private lateinit var database: PhoenixDatabase
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var syncRepository: SqlDelightSyncRepository
@@ -52,7 +54,8 @@ class MultiProfileSyncIntegrationTest {
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         userProfileRepository = FakeUserProfileRepository()
         // Seed both profiles, leave A active: setActiveProfileForTest keeps the others.
         userProfileRepository.setActiveProfileForTest(id = profileA)
@@ -682,9 +685,24 @@ class MultiProfileSyncIntegrationTest {
         )
     }
 
-    /** The shape migration 49 leaves every pre-existing row in: generation 1 / 0. */
-    private fun makeLegacyDirty(sessionId: String) {
+    /**
+     * A local edit after migration 49 (e.g. saveRepMetrics / saveCompletedSet): bumps the
+     * generation past the migration's initial 1 / 0 without touching the parent updatedAt.
+     * Freshly inserted rows already sit at 1 / 0, the shape the migration leaves them in.
+     */
+    private fun editAfterMigration(sessionId: String) {
         database.phoenixDatabaseQueries.markWorkoutComponentDirty(sessionId)
+    }
+
+    /** Exactly the state migration 49 leaves every pre-existing row in: generation 1 / 0. */
+    private fun atMigrationInitialState(vararg sessionIds: String) {
+        sessionIds.forEach { id ->
+            driver.execute(
+                null,
+                "UPDATE WorkoutSession SET local_sync_generation = 1, synced_sync_generation = 0 WHERE id = ?",
+                1,
+            ) { bindString(0, id) }
+        }
     }
 
     @Test
@@ -704,7 +722,12 @@ class MultiProfileSyncIntegrationTest {
         //  - a LOCAL childless (manual / zero-rep) session whose tag was edited after the
         //    cursor: stamped, no children, but not pulled — it must still be pushed
         insertSession("b-tagged", groupId = null, timestamp = baseTime - 170_000L, profileId = profileB, stampedAt = legacy + 9_000L)
-        listOf("b-synced", "b-pulled", "b-local", "b-tagged").forEach(::makeLegacyDirty)
+        //  - synced by the old client, but a child was edited after the migration (the
+        //    parent keeps its old updatedAt): that newer generation must still be pushed
+        insertSession("b-child-edited", groupId = null, timestamp = baseTime - 160_000L, profileId = profileB, stampedAt = legacy - 2_000L)
+        addLocalMeasurement("b-child-edited")
+        atMigrationInitialState("b-synced", "b-pulled", "b-local", "b-tagged", "b-child-edited")
+        editAfterMigration("b-child-edited")
 
         assertTrue(manager.sync().isSuccess)
 
@@ -713,6 +736,10 @@ class MultiProfileSyncIntegrationTest {
         assertFalse("b-pulled" in pushed, "a pulled legacy row must not be pushed over the portal's data (saw $pushed)")
         assertTrue("b-local" in pushed, "a never-synced legacy row must still be pushed (saw $pushed)")
         assertTrue("b-tagged" in pushed, "a childless local session edited after the cursor must be pushed (saw $pushed)")
+        assertTrue(
+            "b-child-edited" in pushed,
+            "a post-migration child edit under an old parent timestamp must be pushed (saw $pushed)",
+        )
     }
 
     @Test
@@ -726,7 +753,7 @@ class MultiProfileSyncIntegrationTest {
         userProfileRepository.emitReadyForTest(profileA)
         insertSession("a-edit", groupId = null, timestamp = baseTime - 200_000L, profileId = "profile-owned-by-a", stampedAt = legacy - 1_000L)
         addLocalMeasurement("a-edit")
-        makeLegacyDirty("a-edit")
+        atMigrationInitialState("a-edit")
 
         assertTrue(manager.sync().isSuccess) // signed in as userId (not account-a)
 
@@ -754,7 +781,7 @@ class MultiProfileSyncIntegrationTest {
         // A row that becomes dirty after the upgrade is never swept up by a re-run.
         insertSession("late", groupId = null, timestamp = baseTime, profileId = profileA, stampedAt = baseTime - 120_000L)
         addLocalMeasurement("late")
-        makeLegacyDirty("late")
+        editAfterMigration("late")
         api.pushPayloads.clear()
         assertTrue(manager.sync().isSuccess)
         assertTrue(api.pushPayloads.flatMap { it.sessions }.any { it.id == "late" })

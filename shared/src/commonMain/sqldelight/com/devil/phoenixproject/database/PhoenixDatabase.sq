@@ -852,7 +852,7 @@ SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 -- LWW gate does not issue one round-trip per incoming pull row. Returns
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, local_sync_generation, synced_sync_generation
 FROM WorkoutSession
 WHERE id IN ?;
 
@@ -3589,12 +3589,17 @@ ORDER BY timestamp ASC;
 -- Everything else stays dirty and is pushed: NULL `updatedAt` (never synced), and any
 -- row edited after the cursor — including a childless manual/zero-rep session whose tag
 -- was edited, which must not be mistaken for a pulled row.
+-- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
+-- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
+-- that newer generation.
 seedLegacySyncedGenerations:
 UPDATE WorkoutSession
 SET synced_sync_generation = local_sync_generation
 WHERE deletedAt IS NULL
   AND profile_id IN :profileIds
-  AND synced_sync_generation < local_sync_generation
+  AND local_sync_generation = 1
+  AND synced_sync_generation = 0
   AND updatedAt IS NOT NULL
   AND (updatedAt <= :legacyLastSync OR portalOrigin = 1);
 

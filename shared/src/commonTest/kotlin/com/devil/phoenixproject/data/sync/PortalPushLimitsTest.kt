@@ -728,7 +728,6 @@ class PortalPushLimitsTest {
         var clock = 0L
         var firstWindow: List<PortalSyncPayload>? = null
         var firstWindowAcks: List<Set<String>>? = null
-        var firstWindowAppliedPreferenceOutcomes: Int? = null
         val result = createManager(
             rateLimiter = ClientRateLimiter(
                 nowMs = { clock },
@@ -736,7 +735,6 @@ class PortalPushLimitsTest {
                     if (firstWindow == null) {
                         firstWindow = fakeApi.pushPayloads.toList()
                         firstWindowAcks = fakeSyncRepo.acknowledgedWorkoutParentIdCalls.toList()
-                        firstWindowAppliedPreferenceOutcomes = fakeProfilePreferenceSyncRepo.appliedPushOutcomes.size
                     }
                     clock += waitMs
                 },
