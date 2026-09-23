@@ -735,6 +735,83 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `a same-named index with a NOCASE collation is not canonical and is rebuilt with binary semantics`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Same name, same columns, but a restored/hand-made NOCASE collation on exerciseId.
+        driver.execute(
+            null,
+            "CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId COLLATE NOCASE, workoutMode, prType, phase, profile_id)",
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_pr_unique" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, op).status)
+
+        assertTrue(indexHasCanonicalShape(driver, op))
+        // Binary semantics restored: case-distinct exercise ids may now coexist.
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'Bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 200)
+            """.trimIndent(),
+            0,
+        )
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+    }
+
+    @Test
+    fun `a same-named index with a DESC column is not canonical`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "CREATE TABLE GamificationStats (id INTEGER PRIMARY KEY, lastUpdated INTEGER NOT NULL, updatedAt INTEGER, profile_id TEXT NOT NULL)", 0)
+        driver.execute(null, "CREATE UNIQUE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id DESC)", 0)
+
+        assertFalse(indexHasCanonicalShape(driver, manifestIndexes.first { it.name == "idx_gamification_stats_profile" }))
+    }
+
+    @Test
+    fun `unexpected index_xinfo shapes are unverifiable rather than coerced`() {
+        fun key(seqno: Long?, name: String?, desc: Long? = 0L, coll: String? = "BINARY", key: Long? = 1L) =
+            IndexXinfoRow(seqno = seqno, name = name, desc = desc, collation = coll, key = key)
+        val rowid = IndexXinfoRow(seqno = 2L, name = null, desc = 0L, collation = "BINARY", key = 0L)
+
+        // Canonical: key columns in seqno order, auxiliary rowid row ignored.
+        assertEquals(listOf("a", "b"), canonicalKeyColumnNames(listOf(key(1L, "b"), key(0L, "a"), rowid)))
+        // A null seqno must not be coerced to 0 and sorted to the front (Kilo 4083025660).
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(null, "b"), key(1L, "a"))))
+        // Gaps / duplicates in seqno, null key/desc flags, and unknown key values are unverifiable.
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a"), key(2L, "b"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a"), key(0L, "b"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", key = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", desc = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", key = 2L))))
+        // Collation / sort order / expression columns (Codex 4082804910).
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", coll = "NOCASE"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", coll = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", desc = 1L))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(rowid)))
+    }
+
+    @Test
     fun `a replaceable index missing after an upgrade or restore is still created`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         PhoenixDatabase.Schema.create(driver)

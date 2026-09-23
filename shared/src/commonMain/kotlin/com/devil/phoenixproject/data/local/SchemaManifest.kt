@@ -166,7 +166,10 @@ internal fun parseIndexShape(createSql: String): IndexShape? {
     )
 }
 
-/** Shape of the index as it exists in the database, or null if it is absent, partial or has expression columns. */
+/**
+ * Shape of the index as it exists in the database, or null if it is absent, partial, or has an
+ * expression column, a non-BINARY collation or a DESC column (none of which the canonical shape uses).
+ */
 internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
     var table: String? = null
     driver.executeQuery(
@@ -179,8 +182,12 @@ internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
         parameters = 0,
     )
     val tableName = table ?: return null
-    var unique: Boolean? = null
-    var partial = false
+    // Any NULL where SQLite documents a value (or a missing row) means the PRAGMA output is not
+    // what this check understands. That is "unverifiable", never a coerced default, so the caller
+    // rebuilds instead of trusting it.
+    var listRowFound = false
+    var unique: Long? = null
+    var partial: Long? = null
     driver.executeQuery(
         identifier = null,
         sql = "PRAGMA index_list(\"$tableName\")",
@@ -188,37 +195,85 @@ internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
             // index_list columns: seq, name, unique, origin, partial
             while (cursor.next().value) {
                 if (cursor.getString(1) == indexName) {
-                    unique = cursor.getLong(2) == 1L
-                    partial = cursor.getLong(4) == 1L
+                    listRowFound = true
+                    unique = cursor.getLong(2)
+                    partial = cursor.getLong(4)
                 }
             }
             QueryResult.Value(Unit)
         },
         parameters = 0,
     )
-    val isUnique = unique ?: return null
-    if (partial) return null
-    val columns = mutableListOf<Pair<Long, String?>>()
+    if (!listRowFound) return null
+    val isUnique = when (unique) {
+        1L -> true
+        0L -> false
+        else -> return null
+    }
+    if (partial != 0L) return null
+    val rows = mutableListOf<IndexXinfoRow>()
     driver.executeQuery(
         identifier = null,
-        sql = "PRAGMA index_info(\"$indexName\")",
+        sql = "PRAGMA index_xinfo(\"$indexName\")",
         mapper = { cursor ->
-            // index_info columns: seqno, cid, name (null for an expression column)
+            // index_xinfo columns: seqno, cid, name (null for an expression column), desc, coll, key
             while (cursor.next().value) {
-                columns += (cursor.getLong(0) ?: 0L) to cursor.getString(2)
+                rows += IndexXinfoRow(
+                    seqno = cursor.getLong(0),
+                    name = cursor.getString(2),
+                    desc = cursor.getLong(3),
+                    collation = cursor.getString(4),
+                    key = cursor.getLong(5),
+                )
             }
             QueryResult.Value(Unit)
         },
         parameters = 0,
     )
-    val names = columns.sortedBy { it.first }.map { it.second ?: return null }
-    if (names.isEmpty()) return null
+    val names = canonicalKeyColumnNames(rows) ?: return null
     return IndexShape(table = tableName, unique = isUnique, columns = names)
+}
+
+/** One raw `PRAGMA index_xinfo` row, with every value nullable exactly as the driver returns it. */
+internal data class IndexXinfoRow(
+    val seqno: Long?,
+    val name: String?,
+    val desc: Long?,
+    val collation: String?,
+    val key: Long?,
+)
+
+/**
+ * Ordered key-column names when every key column is a plain, ascending, BINARY-collated
+ * column; otherwise null ("not verifiably canonical, rebuild").
+ *
+ * Rows with key = 0 are the rowid/auxiliary columns SQLite appends and are ignored. Any NULL
+ * where SQLite documents a value, an unexpected key flag, or a seqno sequence that is not
+ * exactly 0..n-1 is treated as unverifiable, never coerced to a default that could sort or
+ * compare as a false match. A non-BINARY collation (e.g. NOCASE) or DESC column changes
+ * uniqueness or lookup semantics under the same column name, so it is not canonical either.
+ */
+internal fun canonicalKeyColumnNames(rows: List<IndexXinfoRow>): List<String>? {
+    val keyRows = mutableListOf<IndexXinfoRow>()
+    for (row in rows) {
+        when (row.key) {
+            1L -> keyRows += row
+            0L -> Unit
+            else -> return null
+        }
+    }
+    if (keyRows.isEmpty()) return null
+    val seqnos = keyRows.map { it.seqno ?: return null }
+    if (seqnos.sorted() != keyRows.indices.map { it.toLong() }) return null
+    return keyRows.sortedBy { it.seqno }.map { row ->
+        if (row.desc != 0L || !row.collation.equals("BINARY", ignoreCase = true)) return null
+        row.name ?: return null
+    }
 }
 
 /**
  * True only when the live index provably has the canonical shape of [op]: same table, same
- * uniqueness, same columns in the same order, and not partial. Anything unverifiable is false,
+ * uniqueness, same columns in the same order, BINARY collation and ascending order, and not partial. Anything unverifiable is false,
  * so the caller falls back to the old drop-and-rebuild.
  */
 internal fun indexHasCanonicalShape(driver: SqlDriver, op: SchemaIndexOperation): Boolean {
