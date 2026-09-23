@@ -2388,13 +2388,23 @@ class SqlDelightSyncRepository(
      * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
      * newest-first so the parity cap drops the oldest.
      */
-    override suspend fun seedLegacySyncedGenerationsOnce(legacyLastSync: Long): Int? = withContext(Dispatchers.IO) {
+    override suspend fun seedLegacySyncedGenerationsOnce(
+        accountId: String,
+        legacyLastSync: Long,
+        profileIds: Collection<String>,
+    ): Int? = withContext(Dispatchers.IO) {
+        val ledgerKey = "$LEGACY_SYNC_GENERATIONS_REPAIR_KEY:$accountId"
         db.transactionWithResult {
-            if (queries.selectAppliedDataRepair(LEGACY_SYNC_GENERATIONS_REPAIR_KEY).executeAsOneOrNull() != null) {
+            if (queries.selectAppliedDataRepair(ledgerKey).executeAsOneOrNull() != null) {
                 return@transactionWithResult null
             }
-            val marked = queries.seedLegacySyncedGenerations(legacyLastSync).value.toInt()
-            queries.insertAppliedDataRepair(LEGACY_SYNC_GENERATIONS_REPAIR_KEY, currentTimeMillis())
+            val marked = profileIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).sumOf { chunk ->
+                queries.seedLegacySyncedGenerations(
+                    profileIds = chunk,
+                    legacyLastSync = legacyLastSync,
+                ).value.toInt()
+            }
+            queries.insertAppliedDataRepair(ledgerKey, currentTimeMillis())
             marked
         }
     }

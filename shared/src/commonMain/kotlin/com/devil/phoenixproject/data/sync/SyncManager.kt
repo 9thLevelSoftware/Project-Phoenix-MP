@@ -713,18 +713,26 @@ class SyncManager(
         // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
         // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
         //
-        // First (codex #856 P1): migration 49 left every pre-existing workout row dirty
+        // The profiles this account may sync: bound to it, or unbound (bound below).
+        val candidateProfiles = syncProfileOrder(userId)
+
+        // First (codex #856): migration 49 left every pre-existing workout row dirty
         // (generation 1/0). Before the all-profile loop can see them, acknowledge the rows
         // the old client provably synchronized — a non-null updatedAt at or before the
-        // legacy cursor, or a pulled row with no local measurements. The evidence is per
-        // row, not per profile: the old client stamped only rows it pushed or pulled (and
-        // it only ever synced the active profile), so an inactive profile's never-synced
-        // rows still have NULL updatedAt and stay dirty. Runs once per device (ledger key);
-        // must run before migrateLegacyCursors consumes the legacy key.
-        syncRepository.seedLegacySyncedGenerationsOnce(tokenStorage.legacyLastSyncFor(userId))?.let { marked ->
+        // legacy cursor, or a pulled row (portalOrigin = 1). Scoped to THIS account's
+        // profiles and namespaced per account in the ledger, so account B's cursor can never
+        // mark account A's offline edits as synced, and A still gets its own seeding when it
+        // signs in. Unbound profiles are included: this sync binds them to this account, and
+        // the legacy cursor (only used when not attributed to another user) is this
+        // account's. Must run before migrateLegacyCursors consumes the legacy key.
+        syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = userId,
+            legacyLastSync = tokenStorage.legacyLastSyncFor(userId),
+            profileIds = candidateProfiles.map { it.id },
+        )?.let { marked ->
             Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
         }
-        val profiles = syncProfileOrder(userId)
+        val profiles = bindUnboundProfiles(userId, candidateProfiles)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val seeded = tokenStorage.migrateLegacyCursors(
             userId = userId,
@@ -808,6 +816,32 @@ class SyncManager(
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
+
+    /**
+     * Binds every unbound profile to [userId] before any of its data is pushed or pulled
+     * (codex #856): syncing an unbound profile without an owner let a later account bind
+     * it and receive its data. Runs under the profile-mutation barrier sync already holds,
+     * through the same guarded link the identity commit uses. A profile whose binding fails
+     * (e.g. another account claimed it concurrently) is dropped from this sync.
+     *
+     * PR 11 reads profile owners to detect an account switch; a profile bound here to the
+     * account that is syncing it is exactly the ownership that detection must see.
+     */
+    private suspend fun bindUnboundProfiles(userId: String, profiles: List<UserProfile>): List<UserProfile> =
+        profiles.mapNotNull { profile ->
+            if (!profile.supabaseUserId.isNullOrBlank()) return@mapNotNull profile
+            try {
+                userProfileRepository.linkToSupabaseUnderProfileMutationBarrier(profile.id, userId)
+                profile.copy(supabaseUserId = userId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w("SyncManager") {
+                    "Could not bind profile ${profile.id} to the signed-in account; skipping it this sync: ${e.message}"
+                }
+                null
+            }
+        }
 
     private fun isSyncableByPortalUser(profile: UserProfile, userId: String): Boolean =
         profile.supabaseUserId.isNullOrBlank() || profile.supabaseUserId == userId
@@ -1127,7 +1161,7 @@ class SyncManager(
             ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
                 _syncState.value = SyncState.NotAuthenticated
             }
-        val profiles = syncProfileOrder(userId)
+        val profiles = bindUnboundProfiles(userId, syncProfileOrder(userId))
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         val outcomes = mutableListOf<ProfileSyncOutcome>()

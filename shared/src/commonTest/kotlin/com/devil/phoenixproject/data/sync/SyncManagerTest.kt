@@ -173,10 +173,14 @@ class SyncManagerTest {
         assertTrue(login.isActive)
         releaseResponse.complete(Unit)
         assertTrue(sync.await().isSuccess)
-        assertTrue(login.await().isSuccess)
+        login.await()
 
+        // The account-bound deletion is acknowledged under the account that queued it,
+        // and only after it landed did the login proceed.
         assertEquals("owner-a", acknowledgedOwner)
-        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
+        // codex #856: the sync bound the previously unbound profile to owner-a before
+        // syncing it, so a switch to owner-b can no longer take that profile's data with it.
+        assertEquals("owner-a", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
     }
 
     @Test
@@ -3419,5 +3423,34 @@ class SyncManagerTest {
         } finally {
             PushPlanner.maxBytes = saved
         }
+    }
+
+    @Test
+    fun aProfileCreatedWhileSignedInIsBoundOnItsFirstSyncAndNeverSyncedUnderAnotherAccount() = runTest {
+        // codex #856: syncing an unbound profile without binding it let a later account bind
+        // it and receive its data.
+        setupAuthenticated(userId = "owner-a")
+        fakeUserProfileRepo.seedReadyProfileForTest("created-signed-in")
+        fakeUserProfileRepo.setActiveProfileForTest()
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertEquals(
+            "owner-a",
+            fakeUserProfileRepo.allProfiles.value.single { it.id == "created-signed-in" }.supabaseUserId,
+            "the first sync must bind the profile to the account it synced under",
+        )
+        assertTrue(fakeApi.pushPayloads.any { it.profileId == "created-signed-in" })
+
+        // Sign out, sign in as another account: the profile now belongs to owner-a.
+        tokenStorage.clearAuth()
+        setupAuthenticated(userId = "owner-b")
+        fakeApi.pushPayloads.clear()
+        fakeApi.pullCallProfileIds.clear()
+
+        createManager().sync()
+
+        assertTrue(fakeApi.pushPayloads.none { it.profileId == "created-signed-in" })
+        assertFalse("created-signed-in" in fakeApi.pullCallProfileIds)
     }
 }
