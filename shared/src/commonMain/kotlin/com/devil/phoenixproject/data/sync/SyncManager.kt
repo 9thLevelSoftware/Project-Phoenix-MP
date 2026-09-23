@@ -43,6 +43,20 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
+ * State to show when an automatic sync is skipped because the account is confirmed free.
+ * An in-flight sync and an open account-switch / ownership decision (PR 11) are kept:
+ * the sync will publish its own outcome, and the decision must stay on screen.
+ */
+internal fun pausedNotPremiumState(current: SyncState): SyncState = when (current) {
+    is SyncState.Syncing,
+    is SyncState.SyncingWithProgress,
+    is SyncState.AccountMismatch,
+    is SyncState.OwnershipConflict,
+    -> current
+    else -> SyncState.NotPremium
+}
+
+/**
  * User-visible summary of a destructive server-reported delete (delete wins, KD-4).
  */
 data class ServerDeletionNotice(
@@ -812,28 +826,19 @@ class SyncManager(
     }
 
     /**
-     * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
-     * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
-     */
-    /**
      * Publishes [SyncState.NotPremium] when the trigger skips an automatic sync because
      * the account is confirmed free (F-074). Without this the state only moved on a
      * 402/403, so a free account kept showing a stale "Last synced" forever.
-     * An in-flight sync or an open account-switch/ownership decision is left alone.
+     * See [pausedNotPremiumState] for which states are left alone.
      */
     fun markPausedNotPremium() {
-        _syncState.update { current ->
-            when (current) {
-                is SyncState.Syncing,
-                is SyncState.SyncingWithProgress,
-                is SyncState.AccountMismatch,
-                is SyncState.OwnershipConflict,
-                -> current
-                else -> SyncState.NotPremium
-            }
-        }
+        _syncState.update(::pausedNotPremiumState)
     }
 
+    /**
+     * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
+     * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
+     */
     suspend fun refreshPremiumStatusFromServer() {
         syncMutex.withLock {
             withProfileMutationBarrier {
@@ -865,6 +870,11 @@ class SyncManager(
                 val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
                 tokenStorage.updatePremiumStatus(isPremium)
                 tokenStorage.updateSubscriptionTier(resolvedTier)
+                if (isPremium) {
+                    // Renewed: drop the "subscription required" banner now. The next
+                    // automatic sync may still be held by throttle/backoff.
+                    _syncState.update { if (it is SyncState.NotPremium) SyncState.Idle else it }
+                }
 
                 Logger.d("SyncManager") {
                     "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
@@ -225,6 +227,9 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                // Scrolls so the account-deletion row stays reachable on short screens
+                // (landscape, small displays, large font scale).
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -328,20 +333,7 @@ private fun LinkedAccountContent(
                     )
                 }
 
-                is SyncState.NotPremium -> {
-                    Text(
-                        text = stringResource(Res.string.sync_paused_subscription_required),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    // The last successful sync stays visible, demoted to secondary text.
-                    if (lastSyncTime > 0) {
-                        Text(
-                            text = stringResource(Res.string.last_synced, formatSyncTimestamp(lastSyncTime)),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                is SyncState.NotPremium -> SyncPausedStatus(lastSyncTime)
 
                 is SyncState.NotAuthenticated -> {
                     Text(
@@ -430,6 +422,22 @@ private fun LinkedAccountContent(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+    }
+}
+
+/** "Sync paused — subscription required", with the last successful sync kept as secondary text. */
+@Composable
+private fun SyncPausedStatus(lastSyncTime: Long) {
+    Text(
+        text = stringResource(Res.string.sync_paused_subscription_required),
+        color = MaterialTheme.colorScheme.error,
+    )
+    if (lastSyncTime > 0) {
+        Text(
+            text = stringResource(Res.string.last_synced, formatSyncTimestamp(lastSyncTime)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
