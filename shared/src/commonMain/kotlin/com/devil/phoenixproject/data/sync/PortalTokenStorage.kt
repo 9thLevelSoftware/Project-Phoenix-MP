@@ -128,6 +128,14 @@ class PortalTokenStorage(private val settings: Settings) {
 
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
+        private const val KEY_ROUTINE_GROUP_REPAIR_HOLDS_PREFIX = "portal_routine_group_repair_holds_"
+
+        /**
+         * Most restored routine groups held out of the repair per profile. Past this the
+         * restore marks the repair done instead: losing the repair of this device's own
+         * truncated groups is recoverable, wiping restored groups' portal rep data is not.
+         */
+        const val MAX_ROUTINE_GROUP_REPAIR_HOLDS = 5_000
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
 
@@ -431,16 +439,40 @@ class PortalTokenStorage(private val settings: Settings) {
     /**
      * A backup restore bulk-replaces the restored profiles' local rows. For each of them the
      * signed-in user's pull cursor restarts at 0 (the next pull reconciles everything against
-     * the portal), and the one-time routine-group repair is marked done: restored rows carry
-     * no rep summaries, so a repair re-push would make the portal's replace_session_children
-     * delete the rep data it holds for them. Both live in settings, which a backup cannot carry.
+     * the portal). The one-time routine-group repair keeps its progress for this device's own
+     * workouts, but every restored routine group is held out of it: restored rows carry no
+     * rep summaries, so a repair re-push would make the portal's replace_session_children
+     * delete the rep data it holds for them. All of this lives in settings, which a backup
+     * cannot carry.
      */
-    fun resetAfterBackupRestore(profileIds: Collection<String>) {
+    fun resetAfterBackupRestore(
+        profileIds: Collection<String>,
+        restoredRoutineGroupIds: Map<String, Set<String>> = emptyMap(),
+    ) {
         val userId = currentUser.value?.id
         profileIds.forEach { profileId ->
             if (userId != null) resetPullCursor(userId, profileId)
-            setRoutineGroupRepairCursor(profileId, 0L)
         }
+        restoredRoutineGroupIds.forEach { (profileId, groupIds) ->
+            holdRoutineGroupsFromRepair(profileId, groupIds)
+        }
+    }
+
+    /** Restored routine groups the one-time repair must never re-push (see [resetAfterBackupRestore]). */
+    fun getRoutineGroupRepairHolds(profileId: String): Set<String> =
+        settings.getStringOrNull(routineGroupRepairHoldsKey(profileId))
+            ?.split('\n')
+            ?.filterTo(linkedSetOf()) { it.isNotEmpty() }
+            .orEmpty()
+
+    private fun holdRoutineGroupsFromRepair(profileId: String, groupIds: Set<String>) {
+        if (groupIds.isEmpty() || getRoutineGroupRepairCursor(profileId) <= 0L) return
+        val holds = getRoutineGroupRepairHolds(profileId) + groupIds
+        if (holds.size > MAX_ROUTINE_GROUP_REPAIR_HOLDS) {
+            setRoutineGroupRepairCursor(profileId, 0L)
+            return
+        }
+        settings[routineGroupRepairHoldsKey(profileId)] = holds.joinToString("\n")
     }
 
     /** Resets every profile's pull cursor for [userId] (force-full-resync). */
@@ -614,6 +646,8 @@ class PortalTokenStorage(private val settings: Settings) {
 
     fun setRoutineGroupRepairCursor(profileId: String, cursor: Long) {
         settings[routineGroupRepairCursorKey(profileId)] = cursor
+        // A finished repair needs no holds; this bounds how long they are kept.
+        if (cursor <= 0L) settings.remove(routineGroupRepairHoldsKey(profileId))
     }
 
     fun updatePremiumStatus(isPremium: Boolean) {
@@ -728,6 +762,11 @@ class PortalTokenStorage(private val settings: Settings) {
     private fun phasePRBackfillCheckpointKey(profileId: String): String {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
+    }
+
+    private fun routineGroupRepairHoldsKey(profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$KEY_ROUTINE_GROUP_REPAIR_HOLDS_PREFIX$normalizedProfileId"
     }
 
     private fun routineGroupRepairCursorKey(profileId: String): String {

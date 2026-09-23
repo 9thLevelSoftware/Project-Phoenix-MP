@@ -86,9 +86,13 @@ class DataBackupCompletenessTest {
         assertEquals(2, streamed.data.gamificationStatsByProfile.size, "streaming export must carry both profiles")
 
         val target = Fixture()
-        target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
+        val restored = target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
+        assertEquals(2, restored.gamificationStatsImported, "each profile's stats row counts")
         assertEquals(7L, target.queries.selectGamificationStats("default").executeAsOne().totalWorkouts)
         assertEquals(42L, target.queries.selectGamificationStats(PROFILE_B).executeAsOne().totalWorkouts)
+
+        val again = target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
+        assertEquals(2, again.gamificationStatsSkipped, "and each already-present row counts as present")
     }
 
     // ---- a table read failure fails the export ----
@@ -251,11 +255,11 @@ class DataBackupCompletenessTest {
             ),
         )
         storage.setPullCursor("user-1", PROFILE_B, 5_000L)
-        storage.setRoutineGroupRepairCursor(PROFILE_B, 0L)
+        storage.setRoutineGroupRepairCursor(PROFILE_B, 9_000L) // repair still in progress
 
         val source = Fixture()
         source.seedProfiles()
-        source.saveSession("session-b", profileId = PROFILE_B)
+        source.saveSession("session-b", profileId = PROFILE_B, routineSessionId = "group-b")
 
         val preferences = FakePreferencesManager()
         preferences.setVelocityOneRepMaxBackfillDone(true)
@@ -264,7 +268,8 @@ class DataBackupCompletenessTest {
         target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
 
         assertEquals(0L, storage.getPullCursor("user-1", PROFILE_B), "next pull must be a full pull")
-        assertEquals(0L, storage.getRoutineGroupRepairCursor(PROFILE_B), "no repair re-push of rep-less restored rows")
+        assertEquals(9_000L, storage.getRoutineGroupRepairCursor(PROFILE_B), "the device's own repair keeps its progress")
+        assertEquals(setOf("group-b"), storage.getRoutineGroupRepairHolds(PROFILE_B), "restored groups are held out of it")
         assertEquals(1, preferences.oneShotResetCount)
         assertFalse(preferences.preferencesFlow.value.velocityOneRepMaxBackfillDone, "backfill re-runs over restored sessions")
     }
@@ -343,7 +348,7 @@ class DataBackupCompletenessTest {
         val target = Fixture()
         val result = target.manager.importFromJson(v6Backup(statsProfileId = "default", totalWorkouts = 9)).getOrThrow()
 
-        assertTrue(result.gamificationStatsImported)
+        assertEquals(1, result.gamificationStatsImported)
         val restored = target.queries.selectGamificationStats("default").executeAsOne()
         assertEquals(9L, restored.totalWorkouts)
         assertEquals(1_700_000_000_000L, restored.lastUpdated)
@@ -354,7 +359,7 @@ class DataBackupCompletenessTest {
         val target = Fixture()
         val result = target.manager.importFromJson(v6Backup(statsProfileId = "ghost", totalWorkouts = 9)).getOrThrow()
 
-        assertFalse(result.gamificationStatsImported)
+        assertEquals(0, result.gamificationStatsImported)
         assertEquals(1, result.entitiesWithErrors)
         assertEquals(null, target.queries.selectGamificationStats("ghost").executeAsOneOrNull())
     }
@@ -448,10 +453,12 @@ class DataBackupCompletenessTest {
             )
         }
 
-        suspend fun saveSession(id: String, profileId: String = "default") {
+        suspend fun saveSession(id: String, profileId: String = "default", routineSessionId: String? = null) {
             workoutRepository.saveSession(
                 WorkoutSession(
                     id = id,
+                    routineSessionId = routineSessionId,
+                    routineName = routineSessionId?.let { "Day" },
                     timestamp = 1_700_000_000_000L,
                     mode = "OLD_SCHOOL",
                     reps = 8,

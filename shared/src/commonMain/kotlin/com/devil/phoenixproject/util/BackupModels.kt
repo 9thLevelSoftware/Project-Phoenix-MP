@@ -767,8 +767,9 @@ data class ImportResult(
     val earnedBadgesSkipped: Int = 0,
     val streakHistoryImported: Int = 0,
     val streakHistorySkipped: Int = 0,
-    val gamificationStatsImported: Boolean = false,
-    val gamificationStatsSkipped: Boolean = false,
+    /** One per profile: v7 backups carry a stats row per profile. */
+    val gamificationStatsImported: Int = 0,
+    val gamificationStatsSkipped: Int = 0,
     val userProfilesImported: Int = 0,
     val userProfilesSkipped: Int = 0,
     val sessionNotesImported: Int = 0,
@@ -815,7 +816,7 @@ data class ImportResult(
             trainingCyclesImported + cycleDaysImported + cycleProgressImported +
             cycleProgressionsImported + plannedSetsImported + completedSetsImported +
             progressionEventsImported + earnedBadgesImported + streakHistoryImported +
-            (if (gamificationStatsImported) 1 else 0) + userProfilesImported +
+            gamificationStatsImported + userProfilesImported +
             sessionNotesImported + routineGroupsImported + customExercisesImported +
             stockExerciseUserFieldsImported +
             profileExerciseBaselinesImported + workoutDeletionsImported +
@@ -827,7 +828,7 @@ data class ImportResult(
         get() = sessionsSkipped + metricsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
             routineExercisesSkipped + trainingCyclesSkipped + cycleDaysSkipped + cycleProgressSkipped +
             cycleProgressionsSkipped + plannedSetsSkipped + completedSetsSkipped + progressionEventsSkipped +
-            earnedBadgesSkipped + streakHistorySkipped + (if (gamificationStatsSkipped) 1 else 0) +
+            earnedBadgesSkipped + streakHistorySkipped + gamificationStatsSkipped +
             userProfilesSkipped + sessionNotesSkipped +
             routineGroupsSkipped + customExercisesSkipped + stockExerciseUserFieldsSkipped +
             profileExerciseBaselinesSkipped +

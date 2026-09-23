@@ -73,6 +73,17 @@ class BackupRestoreSyncTest {
         assertEquals(0, result.entitiesWithErrors)
         assertEquals(4, result.sessionsImported)
 
+        // The new phone's own history: a routine workout the portal holds truncated to its
+        // first set (the old per-set push bug). The repair must still rebuild it.
+        newPhone.insertSession("own-1", groupId = OWN_GROUP, timestamp = stamp - 600_000, stampedAt = stamp - 599_000)
+        newPhone.insertSession("own-2", groupId = OWN_GROUP, timestamp = stamp - 540_000, stampedAt = stamp - 539_000)
+        server.seedSession(
+            id = OWN_GROUP,
+            exercises = listOf(FakePortalServer.StoredExercise("own-1", "Bench Press", emptyList())),
+            updatedAt = stamp - 599_000,
+            routineSessionId = OWN_GROUP,
+        )
+
         val apiClient = PortalServerApiClient(server)
         val manager = syncManager(newPhone, apiClient, tokenStorage)
         manager.sync()
@@ -84,6 +95,11 @@ class BackupRestoreSyncTest {
             assertEquals(listOf("rep-data"), server.exerciseIds(id), "the portal's rep data for $id must survive")
         }
         assertEquals(1, pushedIds.count { it == "fresh" }, "a never-uploaded workout uploads exactly once")
+        assertEquals(
+            listOf("own-1", "own-2"),
+            server.exerciseIds(OWN_GROUP).sorted(),
+            "a restore must not stop the repair of this device's own truncated workouts",
+        )
         assertTrue(server.session("fresh") != null)
     }
 
@@ -196,5 +212,6 @@ class BackupRestoreSyncTest {
 
     private companion object {
         const val GROUP = "routine-session-restored"
+        const val OWN_GROUP = "routine-session-own"
     }
 }

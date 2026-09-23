@@ -779,6 +779,8 @@ abstract class BaseDataBackupManager(
         // Restored sessions whose sync markers must be (re)applied once every child section
         // has restored, because metric/set/note restores re-dirty their session.
         val restoredSessionSyncMarkers = mutableListOf<WorkoutSessionBackup>()
+        // Routine groups this restore inserted rows into, per profile; held out of the repair.
+        val restoredRoutineGroupIds = mutableMapOf<String, MutableSet<String>>()
         fun applyRestoredSessionSyncMarkers() {
             if (restoredSessionSyncMarkers.isEmpty()) return
             database.transaction {
@@ -796,7 +798,8 @@ abstract class BaseDataBackupManager(
             // State a backup file cannot carry must not describe the pre-restore database
             // (sync cursors, repair walks, one-shot work markers).
             portalTokenStorage?.resetAfterBackupRestore(
-                representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
+                profileIds = representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
+                restoredRoutineGroupIds = restoredRoutineGroupIds,
             )
             preferencesManager?.resetOneShotWorkAfterRestore()
         }
@@ -838,8 +841,8 @@ abstract class BaseDataBackupManager(
             var earnedBadgesSkipped = 0
             var streakHistoryImported = 0
             var streakHistorySkipped = 0
-            var gamificationStatsImported = false
-            var gamificationStatsSkipped = false
+            var gamificationStatsImported = 0
+            var gamificationStatsSkipped = 0
             var sessionNotesImported = 0
             var sessionNotesSkipped = 0
             var routineGroupsImported = 0
@@ -1055,7 +1058,7 @@ abstract class BaseDataBackupManager(
                     }
                     val existing = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
                     if (existing != null) {
-                        if (mapGamificationStatsToBackup(existing) == stats) gamificationStatsSkipped = true else {
+                        if (mapGamificationStatsToBackup(existing) == stats) gamificationStatsSkipped++ else {
                             entitiesWithErrors++
                             Logger.w { "Backup restore conflict gamificationStats profile=${stats.profileId}" }
                         }
@@ -1083,7 +1086,7 @@ abstract class BaseDataBackupManager(
                     if (inserted != null) {
                         val restored = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
                         if (restored != null && mapGamificationStatsToBackup(restored) == stats) {
-                            gamificationStatsImported = true
+                            gamificationStatsImported++
                         } else {
                             entitiesWithErrors++
                             Logger.w { "Backup restore could not insert gamificationStats profile=${stats.profileId}" }
@@ -1545,6 +1548,9 @@ abstract class BaseDataBackupManager(
                                                 }
                                                 if (inserted != null) {
                                                     sessionsImported++
+                                                    resolvedRoutineSessionId?.let { groupId ->
+                                                        restoredRoutineGroupIds.getOrPut(sessionProfileId) { linkedSetOf() } += groupId
+                                                    }
                                                     if (session.portalOrigin || session.updatedAt != null || session.syncAcknowledged) {
                                                         // Same transaction as the insert, so an aborted
                                                         // restore never leaves a half-marked row.
