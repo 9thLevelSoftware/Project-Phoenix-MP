@@ -723,7 +723,11 @@ class SyncManager(
         }
         try {
             withProfileMutationBarrier {
-                val profiles = userProfileRepository.allProfiles.value
+                // Pending-deletion profiles (PR 20) are hidden but still count as owners in
+                // detection; leaving them on the old account would re-detect the mismatch
+                // on every sync and the switch (and the deletion) could never complete.
+                val profiles = userProfileRepository.allProfiles.value +
+                    userProfileRepository.pendingDeletionProfiles.value
                 // Exclusions first, relink second: if the relink fails part-way, the profiles
                 // and the last-synced id still name the old account, so the pause gate
                 // re-detects the mismatch and the (idempotent) choice can be applied again.
@@ -777,7 +781,8 @@ class SyncManager(
             ?: return@withLock Result.failure(IllegalStateException("Not authenticated"))
         try {
             withProfileMutationBarrier {
-                val profiles = userProfileRepository.allProfiles.value
+                val profiles = userProfileRepository.allProfiles.value +
+                    userProfileRepository.pendingDeletionProfiles.value
                 syncRepository.recordAccountSwitchExclusions(
                     portalUserId = userId,
                     profileIds = profiles.map { it.id },
@@ -1010,9 +1015,9 @@ class SyncManager(
         // are still listed in allProfiles (R-11); later pushes then omit them.
         val pendingDeletion = userProfileRepository.pendingDeletionProfiles.value
             .filter { isSyncableByPortalUser(it, userId) }
+        // allProfiles and pendingDeletionProfiles partition the profile rows, so they never overlap.
         val rest = userProfileRepository.allProfiles.value
             .filter { isSyncableByPortalUser(it, userId) }
-            .filterNot { candidate -> pendingDeletion.any { it.id == candidate.id } }
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
@@ -1117,7 +1122,7 @@ class SyncManager(
         profile: UserProfile,
         includeUserScoped: Boolean,
         repairPushActive: Boolean,
-        pendingDeletion: Boolean = false,
+        pendingDeletion: Boolean,
     ): ProfileSyncOutcome {
         // Push local changes (no status check -- Railway backend abandoned)
         val pushResult = pushLocalChanges(
@@ -1125,6 +1130,7 @@ class SyncManager(
             profile = profile,
             includeUserScoped = includeUserScoped,
             repairPushActive = repairPushActive,
+            pendingDeletion = pendingDeletion,
         )
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
@@ -1744,6 +1750,7 @@ class SyncManager(
         profile: UserProfile,
         includeUserScoped: Boolean,
         repairPushActive: Boolean,
+        pendingDeletion: Boolean,
     ): Result<PushOutcome> {
         // Device time taken BEFORE anything is gathered. Two things key off it: the
         // post-push stamp skips rows edited after it (they hold data the portal never
@@ -1756,7 +1763,10 @@ class SyncManager(
         // after it are the only ones the ordinary delta sends.
         val pushWatermark = tokenStorage.getPushWatermark(userId, profile.id)
         // Step 8 repair push: gather routines/cycles/PRs + tombstones from 0 once per user.
-        val repairFrom = if (repairPushActive) 0L else pushWatermark
+        // A pending-deletion profile (PR 20) is finalized after this push, so every routine
+        // and PR tombstone must ride it even if the device clock moved behind the stored
+        // watermark (a strict `> watermark` gather would otherwise skip them for good).
+        val repairFrom = if (repairPushActive || pendingDeletion) 0L else pushWatermark
         val platform = getPlatformName()
         userProfileRepository.ensureDefaultProfile()
         // Profile metadata for another portal account's profiles must not be published

@@ -410,6 +410,12 @@ class SqlDelightUserProfileRepository(
                         cycleId = cycleId,
                     )
                 }
+                // Cycles deleted earlier while the profile was unbound kept a NULL account;
+                // getPendingCycleDeletions matches the account, so bind any still-pending one
+                // to this owner or it is never pushed before the profile is finalized.
+                ownerUserId?.let { owner ->
+                    queries.bindPendingCycleDeletionsForProfile(accountId = owner, profileId = id)
+                }
                 queries.selectAllRecords(id).executeAsList().forEach { record ->
                     queries.softDeletePRById(
                         deletedAt = deletedAt,

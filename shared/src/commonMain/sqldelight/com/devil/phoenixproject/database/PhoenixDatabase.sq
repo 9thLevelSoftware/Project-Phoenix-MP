@@ -2084,6 +2084,15 @@ WHERE cycle_id = :cycleId
   AND acknowledged_generation < :generation
   AND pending_delete_updated_at IS NULL;
 
+-- PR 20: a cycle deleted while its profile was unbound kept account_id NULL; bind every
+-- still-pending deletion of the profile to the owner a permanent delete resolved.
+bindPendingCycleDeletionsForProfile:
+UPDATE CycleSyncState
+SET account_id = :accountId
+WHERE profile_id = :profileId
+  AND account_id IS NULL
+  AND pending_delete_updated_at IS NOT NULL;
+
 markCycleDeletionPending:
 UPDATE CycleSyncState
 SET profile_id = :profileId,

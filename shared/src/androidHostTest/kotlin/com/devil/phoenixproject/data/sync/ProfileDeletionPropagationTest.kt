@@ -257,6 +257,57 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun resolvingTheAccountSwitchAlsoMovesAPendingProfileSoTheDeletionCompletes() = runTest {
+        profiles.reconcileActiveProfileContext()
+        val p = profiles.createAndActivateProfile("Guest", 1).id
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", baseTime, p)
+        profiles.refreshProfiles()
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertTrue(manager.sync().isFailure)
+        assertTrue(manager.syncState.value is SyncState.AccountMismatch)
+
+        assertTrue(manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess)
+        assertTrue(manager.sync().isSuccess, "the choice must end the pause: ${manager.syncState.value}")
+
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "the deletion completes")
+    }
+
+    @Test
+    fun aCycleDeletedWhileTheProfileWasUnboundIsStillPushedBeforeFinalizing() = runTest {
+        val p = createProfileWithData()
+        assertTrue(manager.sync().isSuccess, "seed sync failed: ${manager.syncState.value}")
+        tokenStorage.clearAuth()
+        // Deleted on its own while signed out: the unbound profile gives it no account.
+        com.devil.phoenixproject.data.repository.SqlDelightTrainingCycleRepository(database).deleteCycle(cycleP)
+        Thread.sleep(5)
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        signIn()
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == p }.flatMap { it.deletedCycles }.any { it.id == cycleP },
+            "the earlier cycle deletion must ride P's final push",
+        )
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+    }
+
+    @Test
+    fun aPendingProfilesTombstonesAreSentEvenWhenTheClockIsBehindItsWatermark() = runTest {
+        val p = createProfileWithData()
+        // A device clock that moved back: the stored watermark is ahead of every new stamp.
+        tokenStorage.setPushWatermark(userId, p, currentTimeMillis() + 3_600_000L)
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        val fromP = api.pushPayloads.filter { it.profileId == p }
+        assertTrue(fromP.flatMap { it.deletedRoutineIds }.contains(routineP), "routine tombstone")
+        assertTrue(fromP.flatMap { it.personalRecords }.any { it.id == prUuidP && it.deletedAt != null }, "PR tombstone")
+    }
+
+    @Test
     fun retryPullNeverPullsIntoAPendingDeletionProfile() = runTest {
         val p = createProfileWithData()
         assertTrue(profiles.deleteActiveProfilePermanently(p))
