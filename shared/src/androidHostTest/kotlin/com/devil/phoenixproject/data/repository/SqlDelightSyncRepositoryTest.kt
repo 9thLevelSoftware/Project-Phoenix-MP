@@ -191,6 +191,55 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `a pulled routine exercise naming a retired catalogue id links to its replacement on a fresh install`() = runTest {
+        // Fresh install: only replacement ids. One explicit mapping, one name-only mapping.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-legacy-ids",
+                    userId = "user",
+                    name = "Old Client Routine",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-explicit",
+                            routineId = "routine-legacy-ids",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 25f,
+                            exerciseId = "ZZ92N8QsBdp6HCh3",
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-name-only",
+                            routineId = "routine-legacy-ids",
+                            name = "Rack Pull",
+                            muscleGroup = "Back",
+                            orderIndex = 1,
+                            reps = 5,
+                            weight = 60f,
+                            exerciseId = "legacy-rack-pull",
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val linked = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-legacy-ids")
+            .executeAsList()
+            .associate { it.id to it.exerciseId }
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", linked["rex-explicit"])
+        assertEquals("Rack_Pulls", linked["rex-name-only"])
+    }
+
+    @Test
     fun `remapping a locally recorded session queues the corrected id for push`() = runTest {
         database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
         database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")

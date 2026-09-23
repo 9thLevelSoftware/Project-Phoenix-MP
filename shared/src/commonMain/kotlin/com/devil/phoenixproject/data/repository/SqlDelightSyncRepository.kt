@@ -3264,6 +3264,7 @@ class SqlDelightSyncRepository(
         localSupersets: List<SupersetRow>,
         serverWins: Boolean,
     ) {
+        val legacyCatalogueTranslator by lazy { LegacyCatalogueTranslator(db) }
         val localExercisesById = localExercises.associateBy { it.id }
         val localSupersetsById = localSupersets.associateBy { it.id }
 
@@ -3356,9 +3357,12 @@ class SqlDelightSyncRepository(
 
             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
 
-            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
+            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404).
+            // A retired catalogue id an older client stored has no row on a fresh install, so it
+            // is translated with the remapper's own resolution (explicit ids and name fallbacks).
             val catalogExercise = exercise.exerciseId?.let { id ->
                 queries.selectExerciseById(id).executeAsOneOrNull()
+                    ?: queries.selectExerciseById(legacyCatalogueTranslator.translate(id, exercise.name)).executeAsOneOrNull()
             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
             // #635: the explicit flag is stored in its own column — the portal's
