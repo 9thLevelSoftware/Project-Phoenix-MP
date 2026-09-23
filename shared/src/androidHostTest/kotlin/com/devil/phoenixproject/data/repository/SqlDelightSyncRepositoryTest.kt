@@ -167,6 +167,23 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `a pulled legacy catalogue id resolves to its replacement on a fresh install`() = runTest {
+        // Fresh install: the current catalogue only, no archived legacy row for a later remap.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "ZZ92N8QsBdp6HCh3"),
+        )
+        // An id this device still holds (archived legacy row) is kept for the remapper to merge.
+        database.seedExercise("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7", name = "Bench Press ", archived = true)
+        assertEquals(
+            "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7"),
+        )
+    }
+
+    @Test
     fun `remapping a locally recorded session queues the corrected id for push`() = runTest {
         database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
         database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")

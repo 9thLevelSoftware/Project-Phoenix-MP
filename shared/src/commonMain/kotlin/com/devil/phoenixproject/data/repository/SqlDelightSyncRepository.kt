@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueIdMap
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
@@ -936,6 +937,12 @@ class SqlDelightSyncRepository(
         exerciseId?.let { id ->
             val match = queries.selectExerciseById(id).executeAsOneOrNull()
             if (match != null) return@withContext match.id
+            // A retired catalogue id an older client uploaded. On a device that never held the
+            // archived legacy row (a fresh install) there is nothing for LegacyCatalogueRemapper
+            // to heal later, so translate it here to its replacement when this catalogue has it.
+            LegacyCatalogueIdMap.explicit[id]
+                ?.let { queries.selectExerciseById(it).executeAsOneOrNull() }
+                ?.let { return@withContext it.id }
         }
 
         // Strategy 1: Try exact match with muscle group (most specific)
