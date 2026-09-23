@@ -521,6 +521,35 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun notesOfWorkoutsDeletedBeforeTheProfileAreRemovedToo() = runTest {
+        val p = createProfileWithData()
+        val q = database.phoenixDatabaseQueries
+        // Deleted earlier: the rows are gone, only the WorkoutDeletion record keeps the id.
+        val earlier = "abababab-0000-4000-8000-000000000001"
+        q.insertWorkoutDeletion(
+            mutationId = "m-earlier",
+            ownerUserId = userId,
+            profileId = p,
+            scope = "WORKOUT",
+            portalSessionId = earlier,
+            componentSessionId = null,
+            deletedAt = baseTime,
+            source = "LOCAL",
+        )
+        q.upsertSessionNotes(earlier, "note of a workout deleted earlier", baseTime)
+        // Soft-deleted earlier: the row is still there with deletedAt set.
+        val softDeleted = "abababab-0000-4000-8000-000000000002"
+        insertSession(softDeleted, p)
+        q.softDeleteSession(baseTime, baseTime, softDeleted)
+        q.upsertSessionNotes(softDeleted, "note of a soft-deleted workout", baseTime)
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        assertNull(q.getSessionNotes(earlier).executeAsOneOrNull(), "note of an earlier-deleted workout survived")
+        assertNull(q.getSessionNotes(softDeleted).executeAsOneOrNull(), "note of a soft-deleted workout survived")
+    }
+
+    @Test
     fun aPendingProfilesDirtyPreferencesAreNotUploadedOnItsWayOut() = runTest {
         val p = createProfileWithData()
         preferenceSync.dirtySnapshot = ProfilePreferenceDirtySnapshot(

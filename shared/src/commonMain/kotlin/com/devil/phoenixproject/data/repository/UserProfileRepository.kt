@@ -365,8 +365,6 @@ class SqlDelightUserProfileRepository(
                 queries.selectDistinctLiveWorkoutPortalParentsForProfile(id)
                     .executeAsList()
                     .forEach { portalSessionId ->
-                        // Session notes are keyed by the portal workout id, with no FK.
-                        queries.deleteSessionNotes(portalSessionId)
                         queries.insertWorkoutDeletion(
                             mutationId = generateUUID(),
                             ownerUserId = ownerUserId,
@@ -378,6 +376,9 @@ class SqlDelightUserProfileRepository(
                             source = WorkoutDeletionSource.LOCAL.name,
                         )
                     }
+                // Session notes are keyed by the portal workout id, with no FK: remove the
+                // notes of every workout of the profile, including ones deleted earlier.
+                queries.deleteSessionNotesForProfile(id)
                 queries.hardDeleteAllWorkoutSessionsForProfile(id)
                 // Routines, cycles and PRs become tombstones pushed by this profile's own
                 // push (deletedRoutineIds, deletedCycles, PR deletedAt) and kept locally so

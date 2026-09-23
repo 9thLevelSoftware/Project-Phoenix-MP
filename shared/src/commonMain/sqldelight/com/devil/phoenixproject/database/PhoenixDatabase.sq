@@ -4716,10 +4716,16 @@ SELECT * FROM SessionNotes WHERE routineSessionId = ?;
 selectSessionNotesForIds:
 SELECT * FROM SessionNotes WHERE routineSessionId IN :ids;
 
--- PR 20: SessionNotes has no FK to WorkoutSession, so a permanently deleted workout's
--- note has to be removed explicitly.
-deleteSessionNotes:
-DELETE FROM SessionNotes WHERE routineSessionId = :portalSessionId;
+-- PR 20: SessionNotes has no FK to WorkoutSession, so a permanently deleted profile's notes
+-- are removed explicitly: every portal workout the profile still holds (live or soft-deleted)
+-- and every one it deleted earlier, whose rows are gone but whose WorkoutDeletion remains.
+deleteSessionNotesForProfile:
+DELETE FROM SessionNotes
+WHERE routineSessionId IN (
+    SELECT portal_session_id FROM WorkoutDeletion WHERE profile_id = :profileId
+    UNION
+    SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession WHERE profile_id = :profileId
+);
 
 -- Full-table scan for backup export (small table; one row per routine session with notes).
 selectAllSessionNotesSync:
