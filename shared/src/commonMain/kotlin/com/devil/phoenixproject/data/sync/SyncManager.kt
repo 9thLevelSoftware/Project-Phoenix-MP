@@ -870,9 +870,11 @@ class SyncManager(
                 val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
                 tokenStorage.updatePremiumStatus(isPremium)
                 tokenStorage.updateSubscriptionTier(resolvedTier)
-                if (isPremium) {
-                    // Renewed: drop the "subscription required" banner now. The next
-                    // automatic sync may still be held by throttle/backoff.
+                if (premiumResult.getOrNull() == true) {
+                    // Server-confirmed renewal: drop the "subscription required" banner now
+                    // (the next automatic sync may still be held by throttle/backoff). A failed
+                    // check falls back to the cached flag, which a 402/403 may have left stale,
+                    // so it must never clear the banner.
                     _syncState.update { if (it is SyncState.NotPremium) SyncState.Idle else it }
                 }
 
