@@ -922,6 +922,26 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `active custom exercise sharing the pre-rename name wins over the stock row alias`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        insertExercise(id = "custom-1", name = "One Leg Barbell Squat", muscleGroup = "Back", equipment = "BAR", isCustom = 1L)
+
+        // #857 review follow-up: custom creation permits duplicate names, so an active custom row
+        // named like the stock row's pre-rename name must win over that row's alias.
+        assertEquals("custom-1", repository.findByName("One Leg Barbell Squat")?.id)
+        assertEquals("custom-1", repository.findByIdOrName(null, "One Leg Barbell Squat")?.id)
+        assertEquals("custom-1", repository.findByIdOrName("gone-id", "One Leg Barbell Squat")?.id)
+        // The renamed stock row stays reachable under its new name.
+        assertEquals("One_Leg_Barbell_Squat", repository.findByName("Bulgarian Split Squat")?.id)
+    }
+
+    @Test
     fun `archived rows named bulgarian split squat and one leg barbell squat both remap onto the renamed row`() = runTest {
         importer.importFromFreeExerciseJson(
             """

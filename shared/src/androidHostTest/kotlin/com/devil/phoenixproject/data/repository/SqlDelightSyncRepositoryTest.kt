@@ -1147,39 +1147,8 @@ class SqlDelightSyncRepositoryTest {
     fun `findExerciseId and getExerciseMuscleGroup resolve a pre-rename name before an archived name match`() = runTest {
         // The renamed active catalogue row as the #857 importer overlay writes it, plus an
         // archived legacy row that still carries the pre-rename name under a stale muscle group.
-        listOf(
-            "One_Leg_Barbell_Squat" to ("Bulgarian Split Squat" to "Legs"),
-            "arch-ols" to ("One Leg Barbell Squat" to "General"),
-        ).forEach { (id, nameAndGroup) ->
-            val (rowName, group) = nameAndGroup
-            database.phoenixDatabaseQueries.insertExercise(
-                id,
-                rowName,
-                rowName,
-                null,
-                0L,
-                group,
-                group,
-                null,
-                "BARBELL",
-                null,
-                null,
-                null,
-                null,
-                null,
-                0.0,
-                if (id == "arch-ols") 1L else 0L,
-                0L,
-                0L,
-                0L,
-                null,
-                if (id == "arch-ols") null else "One Leg Barbell Squat",
-                "DOUBLE",
-                null,
-                null,
-                isBodyweight = null,
-            )
-        }
+        insertCatalogRow(id = "One_Leg_Barbell_Squat", name = "Bulgarian Split Squat", muscleGroup = "Legs", aliases = "One Leg Barbell Squat")
+        insertCatalogRow(id = "arch-ols", name = "One Leg Barbell Squat", muscleGroup = "General", archived = 1L)
 
         // The archived exact-name row must not win the muscle-specific match over the renamed
         // active row's alias, or pulled sessions link to the obsolete identity (#857).
@@ -1194,6 +1163,66 @@ class SqlDelightSyncRepositoryTest {
         // A usable id stays authoritative over any name or alias match.
         assertEquals("arch-ols", repository.findExerciseId("One Leg Barbell Squat", "General", "arch-ols"))
         assertNull(repository.findExerciseId("Totally Unknown", null, null))
+    }
+
+    @Test
+    fun `active custom exercise sharing the pre-rename name wins over the stock row alias`() = runTest {
+        // #857 review follow-up: custom creation permits duplicate names, so an active custom row
+        // named like the stock row's pre-rename name must win over that row's alias and over the
+        // archived legacy row, or custom history and PRs reassociate with the stock exercise.
+        insertCatalogRow(id = "One_Leg_Barbell_Squat", name = "Bulgarian Split Squat", muscleGroup = "Legs", aliases = "One Leg Barbell Squat")
+        insertCatalogRow(id = "custom-1", name = "One Leg Barbell Squat", muscleGroup = "Back", isCustom = 1L)
+        insertCatalogRow(id = "arch-ols", name = "One Leg Barbell Squat", muscleGroup = "General", archived = 1L)
+
+        // Active name + muscle group match.
+        assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", "Back", null))
+        // Active exact-name match outranks the alias even without a muscle group.
+        assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", null, null))
+        // ... and outranks the archived name + muscle group match.
+        assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", "General", null))
+        // Push-side lookup keeps the custom row's muscle group, not the stock or archived one.
+        assertEquals("Back", repository.getExerciseMuscleGroup(null, "One Leg Barbell Squat"))
+        // The stock row stays reachable under its new name.
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("Bulgarian Split Squat", null, null))
+        assertEquals("Legs", repository.getExerciseMuscleGroup(null, "Bulgarian Split Squat"))
+    }
+
+    private fun insertCatalogRow(
+        id: String,
+        name: String,
+        muscleGroup: String,
+        aliases: String? = null,
+        archived: Long = 0L,
+        isCustom: Long = 0L,
+    ) {
+        // Positional args follow the insertExercise column order (see the test above).
+        database.phoenixDatabaseQueries.insertExercise(
+            id,
+            name,
+            name,
+            null,
+            0L,
+            muscleGroup,
+            muscleGroup,
+            null,
+            "BARBELL",
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.0,
+            archived,
+            0L,
+            isCustom,
+            0L,
+            null,
+            aliases,
+            "DOUBLE",
+            null,
+            null,
+            isBodyweight = null,
+        )
     }
 
     @Test

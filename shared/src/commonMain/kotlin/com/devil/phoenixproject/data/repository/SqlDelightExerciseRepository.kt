@@ -300,10 +300,14 @@ class SqlDelightExerciseRepository(
     }
 
     override suspend fun findByName(name: String): Exercise? = withContext(Dispatchers.IO) {
-        // #857: resolve a stored pre-rename catalogue name via the row's aliases first so routine
-        // self-heal targets the renamed active row rather than an archived row still carrying the
-        // old name (which would otherwise hit the auto-create branch and duplicate the exercise).
-        queries.findExerciseByAlias(name, ::mapToExercise).executeAsOneOrNull()
+        // #857 lookup order: an active exact-name match wins first (a custom exercise may legally
+        // share a stock row's pre-rename name and must not be shadowed by that row's alias), then
+        // the row's pre-rename alias resolves to the renamed active catalogue row, then the
+        // archived exact-name match. Routine self-heal therefore cannot auto-create a duplicate
+        // custom exercise, and an archived row still carrying the old name cannot shadow the
+        // renamed row.
+        queries.findExerciseByNameActive(name, ::mapToExercise).executeAsOneOrNull()
+            ?: queries.findExerciseByAlias(name, ::mapToExercise).executeAsOneOrNull()
             ?: queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
     }
 
@@ -315,17 +319,23 @@ class SqlDelightExerciseRepository(
                 if (byId != null) return@withContext byId
             }
 
-            // Strategy 2: Pre-rename alias resolution (#857) — a stale id plus the old catalogue
-            // name resolves to the renamed active row here, before the exact-name strategy below
-            // can return an archived row that still carries that name.
+            // Strategy 2: Active exact name match (#857 review follow-up) — a custom exercise may
+            // legally share a stock row's pre-rename name and must not be shadowed by that row's
+            // alias.
+            val activeByName = queries.findExerciseByNameActive(name, ::mapToExercise).executeAsOneOrNull()
+            if (activeByName != null) return@withContext activeByName
+
+            // Strategy 3: Pre-rename alias resolution (#857) — a stale id plus the old catalogue
+            // name resolves to the renamed active row here, before the archived exact-name match
+            // below can return a row that still carries that name.
             val byAlias = queries.findExerciseByAlias(name, ::mapToExercise).executeAsOneOrNull()
             if (byAlias != null) return@withContext byAlias
 
-            // Strategy 3: Exact name match (uses TRIM for trailing space tolerance)
+            // Strategy 4: Exact name match (uses TRIM for trailing space tolerance)
             val byName = queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
             if (byName != null) return@withContext byName
 
-            // Strategy 4: Fuzzy search - take first result
+            // Strategy 5: Fuzzy search - take first result
             val searchResults = queries.searchExercises(name, ::mapToExercise).executeAsList()
             searchResults.firstOrNull()
         }

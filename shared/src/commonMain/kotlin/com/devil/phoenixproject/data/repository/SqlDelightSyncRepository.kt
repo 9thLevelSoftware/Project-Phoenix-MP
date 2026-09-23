@@ -895,12 +895,17 @@ class SqlDelightSyncRepository(
      *
      * Lookup strategy (in order):
      * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
-     * 1. Pre-rename alias match (#857) — a stored legacy name resolves to the renamed active row
-     *    before any name strategy, so an archived row still carrying the pre-rename name cannot
-     *    shadow it and fragment personal-record identity
-     * 2. Exact match on name + muscle group (if muscle group provided)
-     * 3. Exact match on name only (via findExerciseByName)
-     * 4. Case-insensitive match on name (fallback for portal name variations)
+     * 1. Exact match on name + muscle group (active rows only; if muscle group provided)
+     * 2. Exact match on name only (active rows only)
+     * 3. Pre-rename alias match (#857) — a stored legacy name resolves to the renamed active row
+     *    before any archived exact-name match, so an archived row still carrying the pre-rename
+     *    name cannot shadow it and fragment personal-record identity
+     * 4. Archived fallbacks for 1 and 2 (nothing active and nothing aliased matched)
+     * 5. Case-insensitive match on name (fallback for portal name variations)
+     *
+     * Active exact-name matches deliberately outrank the alias match: custom creation permits
+     * duplicate names, so an active custom "One Leg Barbell Squat" must win over the stock row
+     * that now carries that name as its alias (#857 review follow-up).
      *
      * @param name Exercise name from portal
      * @param muscleGroup Optional muscle group for disambiguation
@@ -914,40 +919,54 @@ class SqlDelightSyncRepository(
             if (match != null) return@withContext match.id
         }
 
-        // Strategy 1: Pre-rename alias resolution (#857). Resolved exactly once, ahead of the
-        // muscle-specific and exact-name strategies below, so an archived row still carrying the
-        // pre-rename name cannot shadow the renamed active row and fragment personal-record
-        // identity. The query is already case-insensitive (LOWER(TRIM(...))) and prefers
-        // non-archived rows, which is why the case-insensitive fallback does not repeat it.
+        // Strategy 1: Try exact match with muscle group (most specific), active rows first. An
+        // archived match is remembered and only accepted in Strategy 4, so it cannot shadow the
+        // renamed active row (#857 review follow-up).
+        var archivedNameMuscleMatch: String? = null
+        if (muscleGroup != null) {
+            val exactMatch = queries.findExerciseByNameAndMuscleActive(name, muscleGroup).executeAsOneOrNull()
+            if (exactMatch != null) {
+                return@withContext exactMatch.id
+            }
+            archivedNameMuscleMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()?.id
+        }
+
+        // Strategy 2: Try exact match on name only, active rows first — a custom exercise may
+        // legally share a stock row's pre-rename name and must not be shadowed by the alias below.
+        val activeNameMatch = queries.findExerciseByNameActive(name).executeAsOneOrNull()
+        if (activeNameMatch != null) {
+            return@withContext activeNameMatch.id
+        }
+
+        // Strategy 3: Pre-rename alias resolution (#857). A stored legacy name resolves via the
+        // row's aliases to the renamed active row here — after active exact-name matches but ahead
+        // of archived ones — so an archived row still carrying the pre-rename name cannot shadow
+        // the renamed active row and fragment personal-record identity. The query is already
+        // case-insensitive (LOWER(TRIM(...))) and prefers non-archived rows, which is why the
+        // case-insensitive fallback below does not repeat it.
         val aliasMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
         if (aliasMatch != null) {
             return@withContext aliasMatch.id
         }
 
-        // Strategy 2: Try exact match with muscle group (most specific)
-        if (muscleGroup != null) {
-            val exactMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()
-            if (exactMatch != null) {
-                return@withContext exactMatch.id
-            }
-        }
-
-        // Strategy 3: Try exact match on name only (via findExerciseByName)
+        // Strategy 4: Archived exact-name fallbacks (nothing active and nothing aliased matched).
+        archivedNameMuscleMatch?.let { return@withContext it }
         val nameMatch = queries.findExerciseByName(name).executeAsOneOrNull()
         if (nameMatch != null) {
             return@withContext nameMatch.id
         }
 
-        // Strategy 4: Case-insensitive fallback (handles "Bench Press" vs "bench press")
+        // Strategy 5: Case-insensitive fallback (handles "Bench Press" vs "bench press")
         val caseInsensitiveMatch = queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
         return@withContext caseInsensitiveMatch?.id
     }
 
     /**
      * Resolves the catalog muscle group for a performed exercise during push.
-     * Mirrors [findExerciseId]'s lookup order (ID → pre-rename alias → exact name →
-     * case-insensitive name) but returns the muscle group rather than the ID. Returns null
-     * when the exercise is not in the catalog so the caller can default to "General".
+     * Mirrors [findExerciseId]'s lookup order (ID → active exact name → pre-rename alias →
+     * archived exact name → case-insensitive name) but returns the muscle group rather than the
+     * ID. Returns null when the exercise is not in the catalog so the caller can default to
+     * "General".
      */
     override suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String? = withContext(Dispatchers.IO) {
         // Strategy 0: Direct ID lookup - O(1), unambiguous. When the catalog row
@@ -960,12 +979,17 @@ class SqlDelightSyncRepository(
         }
 
         if (!name.isNullOrBlank()) {
-            // Strategy 1: Pre-rename alias match (#857) — a dirty legacy name keeps its catalogue
-            // muscle group after the rename instead of degrading to "General" on push.
+            // Strategy 1: Active exact name match (#857 review follow-up) — a custom exercise may
+            // legally share a stock row's pre-rename name and must not be shadowed by that row's
+            // alias.
+            queries.findExerciseByNameActive(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+            // Strategy 2: Pre-rename alias match (#857) — a dirty legacy name keeps its catalogue
+            // muscle group after the rename instead of degrading to "General" on push, and an
+            // archived row still carrying the old name cannot shadow the renamed row.
             queries.findExerciseByAlias(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
-            // Strategy 2: Exact name match
+            // Strategy 3: Exact name match (archived tolerated)
             queries.findExerciseByName(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
-            // Strategy 3: Case-insensitive name match
+            // Strategy 4: Case-insensitive name match
             queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
         }
 
