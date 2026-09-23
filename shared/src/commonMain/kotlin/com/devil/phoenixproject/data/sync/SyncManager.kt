@@ -2082,7 +2082,11 @@ class SyncManager(
         val gamStatsDto = userScoped.gamStatsDto
 
         val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
-        val externalActivityDtos = enrichment.externalActivityDtos
+        // External activities (imported health data) follow the same account-switch
+        // exclusions as every other pushed entity (codex #859).
+        val externalActivityDtos = enrichment.externalActivityDtos.filter { activity ->
+            !exclusions.excludesExternalActivity(activity.id)
+        }
         val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
         val assessmentDtos = enrichment.assessmentDtos.filter { assessment ->
             !exclusions.excludesAssessment(assessment.id.toString())
@@ -3858,23 +3862,24 @@ class SyncManager(
      * The caller leaves the pull cursor unchanged and retries the page; revision guards make replay
      * idempotent and dirty-section predicates preserve concurrent local edits.
      */
-    /** See the call site in [mergePullPage]. */
-    private suspend fun recordPulledProvenance(
-        ownerUserId: String,
+    /**
+     * PR 11: every row a pull merges came from this portal account. Handed to
+     * [SyncRepository.mergeAllPullData] so the provenance commits in the merge transaction,
+     * for any pull (a pull-only retry included), and an account switch never classifies a
+     * pulled row as never-synced local data (codex #859).
+     */
+    private fun pulledProvenance(
         pullResponse: PortalSyncPullResponse,
         mobileSessions: List<com.devil.phoenixproject.domain.model.WorkoutSession>,
-    ) {
+    ): Map<String, Collection<String>> {
         val types = SyncExcludedEntityTypes
         val sessionIds = mobileSessions.flatMap { listOfNotNull(it.id, it.routineSessionId?.takeIf { id -> id.isNotBlank() }) }
-        val byType = mapOf(
+        return mapOf(
             types.WORKOUT to sessionIds + pullResponse.sessions.map { it.id },
             types.ROUTINE to pullResponse.routines.map { it.id },
             types.CYCLE to pullResponse.cycles.map { it.id },
             types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
-        )
-        for ((type, ids) in byType) {
-            if (ids.isNotEmpty()) syncRepository.insertSyncExcludedEntities(ownerUserId, types.reached(type), ids.distinct())
-        }
+        ).filterValues { it.isNotEmpty() }
     }
 
     private suspend fun mergePullPage(
@@ -4036,12 +4041,12 @@ class SyncManager(
                 serverWinsRoutineIds = serverWinsRoutineIds,
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
+                pulledProvenance = pulledProvenance(pullResponse, mobileSessions),
             )
             // PR 11: every row this merge committed came from this portal account. Record
             // that provenance for any pull (including a pull-only retry, which does not
             // advance the pull-merge stamp below), so an account switch never classifies a
             // pulled row as never-synced local data (codex #859).
-            recordPulledProvenance(ownerUserId, pullResponse, mobileSessions)
             // PR 11: a pulled routine / cycle gets its local createdAt at merge time, later
             // than the push watermark. Record when this account's rows landed so an account
             // switch does not mistake them for never-synced local rows. Stamped only once the

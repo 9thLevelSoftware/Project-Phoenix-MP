@@ -2058,12 +2058,23 @@ class SqlDelightSyncRepository(
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
+        pulledProvenance: Map<String, Collection<String>>,
     ) {
         withContext(Dispatchers.IO) {
             // Use a single outer transaction that wraps all entity merges.
             // SQLDelight handles nested transactions via savepoints, so if any inner
             // operation throws, the entire outer transaction rolls back.
             db.transaction {
+                // PR 11: the pulled rows' account provenance commits (or rolls back) with
+                // the rows themselves, so a crash can never leave pulled rows without the
+                // evidence that they belong to [ownerUserId] (codex #859).
+                if (ownerUserId.isNotBlank()) {
+                    for ((type, ids) in pulledProvenance) {
+                        for (id in ids.distinct()) {
+                            queries.insertSyncExcludedEntity(ownerUserId, SyncExcludedEntityTypes.reached(type), id)
+                        }
+                    }
+                }
                 // Permanent account-scoped tombstones are applied before any live
                 // projection so a stale/late pull cannot resurrect deleted content.
                 for (deletion in workoutDeletions) {
@@ -2543,6 +2554,10 @@ class SqlDelightSyncRepository(
                         !(assessment.createdAt > 0L && assessment.createdAt > watermark),
                     )
                 }
+
+                queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach { activity ->
+                    decide(types.EXTERNAL_ACTIVITY, listOf(activity.id), activity.needsSync == 0L)
+                }
             }
 
             // Custom exercises are account-wide. The highest per-profile boundary decides
@@ -2595,6 +2610,9 @@ class SqlDelightSyncRepository(
                 }
                 queries.selectAllAssessments(profileId).executeAsList().forEach {
                     exclude(types.ASSESSMENT, listOf(it.id.toString()), it.createdAt)
+                }
+                queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.EXTERNAL_ACTIVITY, listOf(it.id), it.syncedAt)
                 }
             }
             queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->

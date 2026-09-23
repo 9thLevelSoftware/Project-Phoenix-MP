@@ -751,6 +751,42 @@ class AccountSwitchSyncTest {
         assertTrue(tokenStorage.getOwnershipConflict(userA) == null)
     }
 
+    @Test
+    fun externalActivitiesFollowTheAccountSwitchChoice() = runTest {
+        // An imported activity: pending upload (needsSync = 1), recorded before the switch.
+        val q = database.phoenixDatabaseQueries
+        fun importActivity(id: String, needsSync: Long) = q.insertExternalActivityIfNew(
+            id, "ext-$id", "hevy", "Imported $id", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, needsSync, null,
+        )
+        importActivity("pending-activity", needsSync = 1L)
+        importActivity("synced-activity", needsSync = 0L)
+        tokenStorage.setLastSyncedPortalUserId(userA) // the device already synced as A
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY)
+        assertTrue("pending-activity" in excluded, "Don't upload existing data must exclude it: $excluded")
+        assertTrue("synced-activity" in excluded)
+    }
+
+    @Test
+    fun uploadNeverSyncedKeepsAPendingExternalActivityAndExcludesAnUploadedOne() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertExternalActivityIfNew(
+            "pending-activity", "ext-1", "hevy", "Imported", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, 1L, null,
+        )
+        q.insertExternalActivityIfNew(
+            "synced-activity", "ext-2", "hevy", "Imported", "strength", baseTime, 60L, null, null, null, null, null,
+            "{}", baseTime, profileId, 0L, null,
+        )
+        tokenStorage.setLastSyncedPortalUserId(userA) // the device already synced as A
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY)
+        assertTrue("pending-activity" !in excluded, "a never-uploaded activity stays uploadable: $excluded")
+        assertTrue("synced-activity" in excluded, "an activity that reached A stays out of B: $excluded")
+    }
+
     // ===== 4. "Don't upload existing data" =====
 
     @Test

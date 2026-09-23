@@ -2891,6 +2891,10 @@ SELECT id, uuid, achievedAt FROM PersonalRecord WHERE profile_id = :profileId;
 selectCustomExerciseIdsForAccountSwitch:
 SELECT id FROM Exercise WHERE isCustom = 1;
 
+-- needsSync = 0 means a push was acknowledged or the row was pulled: it reached an account.
+selectExternalActivitiesForAccountSwitch:
+SELECT id, needsSync, syncedAt FROM ExternalActivity WHERE profileId = :profileId;
+
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent
 WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId;

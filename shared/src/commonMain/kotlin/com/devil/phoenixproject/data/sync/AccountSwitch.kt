@@ -24,6 +24,7 @@ object SyncExcludedEntityTypes {
     const val PERSONAL_RECORD = "PERSONAL_RECORD"
     const val ASSESSMENT = "ASSESSMENT"
     const val EXERCISE_SIGNATURE = "EXERCISE_SIGNATURE"
+    const val EXTERNAL_ACTIVITY = "EXTERNAL_ACTIVITY"
 
     val ALL = listOf(
         WORKOUT,
@@ -33,6 +34,7 @@ object SyncExcludedEntityTypes {
         PERSONAL_RECORD,
         ASSESSMENT,
         EXERCISE_SIGNATURE,
+        EXTERNAL_ACTIVITY,
     )
 
     /**
@@ -139,6 +141,7 @@ data class SyncExclusionFilter(
     val personalRecords: Set<String> = emptySet(),
     val assessments: Set<String> = emptySet(),
     val exerciseSignatures: Set<String> = emptySet(),
+    val externalActivities: Set<String> = emptySet(),
 ) {
     fun excludesWorkout(sessionId: String, portalSessionId: String? = null): Boolean =
         sessionId in workouts || (portalSessionId != null && portalSessionId in workouts)
@@ -155,6 +158,8 @@ data class SyncExclusionFilter(
 
     fun excludesExerciseSignature(signatureId: String): Boolean = signatureId in exerciseSignatures
 
+    fun excludesExternalActivity(activityId: String): Boolean = activityId in externalActivities
+
     companion object {
         val EMPTY = SyncExclusionFilter()
 
@@ -168,6 +173,7 @@ data class SyncExclusionFilter(
                 personalRecords = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.PERSONAL_RECORD),
                 assessments = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.ASSESSMENT),
                 exerciseSignatures = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.EXERCISE_SIGNATURE),
+                externalActivities = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY),
             )
         }
     }

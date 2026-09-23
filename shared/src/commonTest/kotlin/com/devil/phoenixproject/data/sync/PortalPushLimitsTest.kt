@@ -1438,6 +1438,29 @@ class PortalPushLimitsTest {
     }
 
     @Test
+    fun anExcludedExternalActivityIsNeverPushed() = runTest {
+        // PR 11 (codex #859): imported activities follow the account-switch exclusions.
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.ACTIVE,
+        )
+        val kept = com.devil.phoenixproject.domain.model.ExternalActivity(
+            id = "kept", externalId = "hevy-kept", provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+            name = "Kept", startedAt = 1_000L, profileId = "default", needsSync = true,
+        )
+        val excluded = kept.copy(id = "excluded", externalId = "hevy-excluded", name = "Excluded")
+        fakeExternalActivityRepo.activities += kept
+        fakeExternalActivityRepo.activities += excluded
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.EXTERNAL_ACTIVITY, listOf("excluded"))
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+        val sent = fakeApi.pushPayloads.flatMap { it.externalActivities }.map { it.id }
+        assertTrue("excluded" !in sent, "an excluded activity must not be pushed: $sent")
+        assertTrue("kept" in sent, "a non-excluded activity still goes out: $sent")
+    }
+
+    @Test
     fun aSingleItemTooLargeForAnyRequestIsSkippedAndDoesNotWedgeSync() = runTest {
         authenticate()
         tokenStorage.setPushWatermark("user-123", "default", 1_000L)

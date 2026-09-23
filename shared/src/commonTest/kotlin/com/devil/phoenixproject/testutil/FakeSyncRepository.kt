@@ -542,6 +542,7 @@ class FakeSyncRepository : SyncRepository {
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
+        pulledProvenance: Map<String, Collection<String>>,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
