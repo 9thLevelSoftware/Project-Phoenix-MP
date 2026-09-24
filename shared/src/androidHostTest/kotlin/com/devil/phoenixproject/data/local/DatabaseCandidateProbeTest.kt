@@ -51,6 +51,19 @@ class DatabaseCandidateProbeTest {
             "gamification progress" to "UPDATE GamificationStats SET totalWorkouts = 1",
             "rpg progress" to "UPDATE RpgAttributes SET strength = 3",
             "other profile preferences" to "INSERT INTO UserProfilePreferences(profile_id) VALUES ('p2')",
+            "default body weight" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET body_weight_kg = 82.5",
+            "default units" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET weight_unit = 'KG'",
+            "default weight increment" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET weight_increment = 2.5",
+            "default equipment rack" to
+                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET equipment_rack_json = '{\"version\":1,\"items\":[{\"id\":\"bar\"}]}'",
+            "default workout preferences" to
+                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET workout_preferences_json = '{\"version\":1,\"stopAtTop\":true}'",
+            "default LED scheme" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET led_color_scheme_id = 3",
+            "default LED preferences" to
+                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET led_preferences_json = '{\"version\":1,\"x\":1}'",
+            "default VBT switch" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET vbt_enabled = 0",
+            "default VBT preferences" to
+                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET vbt_preferences_json = '{\"version\":1,\"x\":1}'",
             "routine" to "INSERT INTO Routine(id, name, createdAt) VALUES ('r1', 'Push', 1)",
             "unknown future table" to "CREATE TABLE FutureThing(id TEXT); INSERT INTO FutureThing VALUES ('x')",
         )
@@ -63,6 +76,23 @@ class DatabaseCandidateProbeTest {
             assertEquals(CandidateContent.HAS_USER_DATA, classify(db), label)
             deleteWithSidecars(db)
         }
+    }
+
+    @Test
+    fun aDefaultPreferencesRowWhoseValuesAllEqualTheSeedIsNotUserData() {
+        val db = freshDatabase("phoenix.db")
+        JdbcSqliteDriver("jdbc:sqlite:${db.path}").use { driver ->
+            driver.execute(null, DEFAULT_PREFERENCES, 0)
+            // Sync metadata only: a write that stored the seed values again, then a push.
+            driver.execute(
+                null,
+                "UPDATE UserProfilePreferences SET core_local_generation = 2, core_updated_at = 5, core_dirty = 0, " +
+                    "workout_local_generation = 1, workout_server_revision = 4",
+                0,
+            )
+        }
+
+        assertEquals(CandidateContent.EMPTY, classify(db))
     }
 
     @Test
@@ -221,5 +251,10 @@ class DatabaseCandidateProbeTest {
     private fun deleteWithSidecars(db: File) {
         db.delete()
         listOf("-wal", "-shm", "-journal").forEach { File("${db.path}$it").delete() }
+    }
+
+    private companion object {
+        /** The default profile's seeded preferences row, in case the schema seed did not create it. */
+        const val DEFAULT_PREFERENCES = "INSERT OR IGNORE INTO UserProfilePreferences(profile_id) VALUES ('default')"
     }
 }

@@ -106,11 +106,15 @@ internal fun startupSupportMailtoUri(failure: StartupDependencyResolution.Failed
     return "mailto:$SUPPORT_EMAIL?subject=${encodeMailtoComponent(subject)}"
 }
 
-/** Percent-encodes everything outside RFC 3986's unreserved set. */
+/**
+ * Percent-encodes everything outside RFC 3986's unreserved set. That set is ASCII-only, so the
+ * check uses explicit ranges: a UTF-8 continuation byte maps to a char in U+FF80..U+FFFF, many of
+ * which Char.isLetterOrDigit() accepts.
+ */
 internal fun encodeMailtoComponent(value: String): String = buildString {
     for (byte in value.encodeToByteArray()) {
         val char = byte.toInt().toChar()
-        if (char.isLetterOrDigit() && byte >= 0 || char in "-._~") {
+        if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in "-._~") {
             append(char)
         } else {
             append('%')

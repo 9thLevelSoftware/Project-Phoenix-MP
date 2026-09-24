@@ -124,6 +124,24 @@ internal object DatabaseUserDataClassifier {
         "serverId" to "IS NOT NULL",
     )
 
+    /**
+     * The default profile's preferences row counts as data once any setting differs from the
+     * schema default it is seeded with (PhoenixDatabase.sq). Sync metadata (generations, revisions,
+     * timestamps) is not compared: a row whose values all equal the seed loses nothing when set aside.
+     */
+    private val PREFERENCE_FIELDS = listOf(
+        "profile_id" to "<> 'default'",
+        "body_weight_kg" to "<> 0",
+        "weight_unit" to "<> 'LB'",
+        "weight_increment" to "<> -1",
+        "equipment_rack_json" to "<> '{\"version\":1,\"items\":[]}'",
+        "workout_preferences_json" to "<> '{\"version\":1}'",
+        "led_color_scheme_id" to "<> 0",
+        "led_preferences_json" to "<> '{\"version\":1}'",
+        "vbt_enabled" to "<> 1",
+        "vbt_preferences_json" to "<> '{\"version\":1}'",
+    )
+
     private val RPG_FIELDS = listOf(
         "strength" to "> 0",
         "power" to "> 0",
@@ -156,8 +174,9 @@ internal object DatabaseUserDataClassifier {
                 queries.exists("$from WHERE id <> 'default' OR name <> 'Default'$linked")
             }
 
-            // Seeded for the default profile at first launch; any other profile's row is data.
-            "userprofilepreferences" -> queries.exists("$from WHERE profile_id <> 'default'")
+            // Seeded for the default profile at first launch. Another profile's row, or a default
+            // row with any setting changed from its seed value, is data.
+            "userprofilepreferences" -> queries.existsWhereAny(from, table, PREFERENCE_FIELDS)
 
             // The bundled catalogue is seeded; only user-set fields and custom exercises are data.
             "exercise" -> queries.existsWhereAny(from, table, EXERCISE_USER_FIELDS)
