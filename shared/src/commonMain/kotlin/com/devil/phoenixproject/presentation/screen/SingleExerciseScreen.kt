@@ -108,6 +108,7 @@ fun SingleExerciseScreen(
     var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showEssentialsOnly by remember { mutableStateOf(false) }
     var showPreviouslyCompletedOnly by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
@@ -129,6 +130,7 @@ fun SingleExerciseScreen(
         candidateExercises,
         showFavoritesOnly,
         showCustomOnly,
+        showEssentialsOnly,
         selectedMuscles,
         selectedEquipment,
         showPreviouslyCompletedOnly,
@@ -146,6 +148,7 @@ fun SingleExerciseScreen(
                     selectedMuscles = selectedMuscles,
                     selectedEquipment = selectedEquipment,
                     showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                    showEssentialsOnly = showEssentialsOnly,
                 ),
                 completedExerciseIds = pickerCompletedExerciseIds,
             )
@@ -281,6 +284,9 @@ fun SingleExerciseScreen(
                 onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                 showCustomOnly = showCustomOnly,
                 onToggleCustom = { showCustomOnly = !showCustomOnly },
+                enableEssentialsFilter = true,
+                showEssentialsOnly = showEssentialsOnly,
+                onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
                 enablePreviouslyCompletedFilter = true,
                 showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
                 onTogglePreviouslyCompleted = {
@@ -309,6 +315,7 @@ fun SingleExerciseScreen(
                     selectedEquipment = emptySet()
                     showFavoritesOnly = false
                     showCustomOnly = false
+                    showEssentialsOnly = false
                     showPreviouslyCompletedOnly = false
                 },
                 onToggleFavorite = { exercise ->

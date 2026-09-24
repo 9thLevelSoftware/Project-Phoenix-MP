@@ -330,6 +330,18 @@ private fun MeasurementsPreferenceCard(
     }
 }
 
+/** `summaryCountdownSeconds` value that skips the Set Summary screen ("Automatic"). */
+internal const val SET_SUMMARY_SKIP = -1
+
+/** `summaryCountdownSeconds` value that holds the Set Summary until the user continues (#849). */
+internal const val SET_SUMMARY_MANUAL = 0
+
+/**
+ * Set Summary duration choices in menu order. Issue #849: Manual (0) sits after the longest
+ * timed value so it reads as the option beyond 30s; the stored values are unchanged.
+ */
+internal val SET_SUMMARY_DURATION_OPTIONS = listOf(SET_SUMMARY_SKIP, 5, 10, 15, 20, 25, 30, SET_SUMMARY_MANUAL)
+
 @Composable
 private fun WorkoutPreferenceCard(
     workout: WorkoutPreferences,
@@ -342,10 +354,14 @@ private fun WorkoutPreferenceCard(
         IntegerChoiceRow(
             label = stringResource(Res.string.profile_set_summary),
             value = workout.summaryCountdownSeconds,
-            options = listOf(-1, 0, 5, 10, 15, 20, 25, 30),
+            options = SET_SUMMARY_DURATION_OPTIONS,
             enabled = enabled,
             valueLabel = { seconds ->
-                if (seconds == -1) stringResource(Res.string.profile_automatic) else "${seconds}s"
+                when (seconds) {
+                    SET_SUMMARY_SKIP -> stringResource(Res.string.profile_automatic)
+                    SET_SUMMARY_MANUAL -> stringResource(Res.string.profile_manual)
+                    else -> "${seconds}s"
+                }
             },
             onSelected = { onWorkoutChange(workout.copy(summaryCountdownSeconds = it)) },
         )

@@ -65,11 +65,7 @@ fun GroupedExerciseList(
     }
 
     val groupedExercises: Map<Char, List<Exercise>> = remember(exercises) {
-        exercises
-            .groupBy { exercise: Exercise -> exercise.name.first().uppercaseChar() }
-            .toList()
-            .sortedBy { it.first }
-            .toMap()
+        groupExercisesByInitial(exercises)
     }
 
     val sectionIndices: Map<Char, Int> = remember(groupedExercises) {
@@ -287,3 +283,19 @@ fun ExerciseListEmptyState(
         }
     }
 }
+
+/** Section key for exercises whose name has no first character (#774). */
+internal const val UNNAMED_EXERCISE_SECTION = '#'
+
+/**
+ * Groups exercises under the upper-cased first character of their name, sections sorted.
+ *
+ * Issue #774: `name.first()` threw NoSuchElementException for an exercise with a blank name,
+ * which crashed the picker while composing, right after "Add Exercise". Blank names are
+ * reachable through stale routine rows and backup restores, so they get their own section.
+ */
+internal fun groupExercisesByInitial(exercises: List<Exercise>): Map<Char, List<Exercise>> = exercises
+    .groupBy { exercise -> exercise.name.trim().firstOrNull()?.uppercaseChar() ?: UNNAMED_EXERCISE_SECTION }
+    .toList()
+    .sortedBy { it.first }
+    .toMap()

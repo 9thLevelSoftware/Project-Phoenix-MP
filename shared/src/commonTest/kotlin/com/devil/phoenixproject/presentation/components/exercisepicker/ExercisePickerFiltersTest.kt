@@ -128,4 +128,40 @@ class ExercisePickerFiltersTest {
 
         assertEquals(listOf(facePull), result)
     }
+
+    @Test
+    fun essentialsFilterKeepsOnlyTheBuiltInSetInCandidateOrder() {
+        val candidates = listOf(
+            exercise("Barbell_Squat"),
+            exercise("Some_Obscure_Movement"),
+            exercise(" Barbell_Curl "),
+            exercise(null, name = "No id"),
+            exercise("Barbell_Bench_Press_-_Medium_Grip"),
+        )
+
+        val result = filterExercisePickerCandidates(
+            candidates = candidates,
+            filters = ExercisePickerFilterState(showEssentialsOnly = true),
+        )
+
+        assertEquals(
+            listOf("Barbell_Squat", " Barbell_Curl ", "Barbell_Bench_Press_-_Medium_Grip"),
+            result.map { it.id },
+        )
+    }
+
+    @Test
+    fun essentialsIntersectsWithTheOtherFilters() {
+        val favouriteEssential = exercise("Barbell_Curl", favorite = true, muscleGroups = "Arms")
+        val plainEssential = exercise("Barbell_Squat", muscleGroups = "Legs")
+        val favouriteOther = exercise("Some_Obscure_Movement", favorite = true, muscleGroups = "Arms")
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(favouriteEssential, plainEssential, favouriteOther),
+            filters = ExercisePickerFilterState(showFavoritesOnly = true, showEssentialsOnly = true),
+        )
+
+        assertEquals(listOf(favouriteEssential), result)
+    }
 }
+

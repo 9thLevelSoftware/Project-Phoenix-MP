@@ -49,6 +49,8 @@
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favorieten</string>
     <string name="label_custom">Aangepast</string>
+    <string name="label_essentials">Basis</string>
+    <string name="cd_filter_essentials">Alleen basisoefeningen tonen</string>
     <string name="label_all">Alles</string>
     <string name="label_done">KLAAR</string>
     <string name="label_reps">Herhalingen</string>
@@ -676,6 +678,7 @@
     <string name="color_orange">Oranje</string>
     <string name="cd_select_profile_color">Selecteer %1$s als profielkleur</string>
     <string name="profile_automatic">Automatisch</string>
+    <string name="profile_manual">Handmatig</string>
     <string name="profile_master_beeps">Trainingspiepjes</string>
     <string name="profile_body_weight_unset">Niet ingesteld</string>
     <string name="profile_body_weight_invalid">Voer een lichaamsgewicht van 20 tot 300 kg in</string>

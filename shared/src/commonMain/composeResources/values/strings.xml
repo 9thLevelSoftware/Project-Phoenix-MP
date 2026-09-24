@@ -41,6 +41,7 @@
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favorites</string>
     <string name="label_custom">Custom</string>
+    <string name="label_essentials">Essentials</string>
     <string name="label_all">All</string>
     <string name="label_done">DONE</string>
     <string name="label_reps">Reps</string>
@@ -838,6 +839,7 @@
     <string name="profile_auto_end_velocity_loss">Auto-end on velocity loss</string>
     <string name="profile_vbt_history_note">Turning VBT off affects live workouts only; saved estimates and assessments remain available.</string>
     <string name="profile_automatic">Automatic</string>
+    <string name="profile_manual">Manual</string>
     <string name="profile_master_beeps">Workout beeps</string>
     <string name="profile_body_weight_unset">Not set</string>
     <string name="profile_body_weight_invalid">Enter a body weight from 20 to 300 kg</string>
@@ -860,6 +862,7 @@
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
     <string name="label_previously_completed">Previously completed</string>
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
+    <string name="cd_filter_essentials">Show only essential exercises</string>
     <!-- PR 25: crash report prompt -->
     <string name="crash_report_title">Crash report available</string>
     <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>

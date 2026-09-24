@@ -8,7 +8,7 @@ import com.devil.phoenixproject.util.BackupDestination
 data class UserPreferences(
     val weightUnit: WeightUnit = WeightUnit.LB,
     // Issue #167: autoplayEnabled removed - now derived from summaryCountdownSeconds
-    // summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF, != 0 = autoplay ON
+    // summaryCountdownSeconds == 0 (Manual) = autoplay OFF, != 0 = autoplay ON
     val stopAtTop: Boolean = false, // false = stop at bottom (extended), true = stop at top (contracted)
     val enableVideoPlayback: Boolean = true, // true = show exercise demo images, false = hide them to avoid slow loading
     val beepsEnabled: Boolean = true, // true = play audio cues during workouts, false = haptic only
@@ -17,7 +17,7 @@ data class UserPreferences(
     val audioRepCountEnabled: Boolean = false, // Audio rep count announcements during workout
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric, BOTTOM=eccentric)
     // Countdown settings
-    val summaryCountdownSeconds: Int = 10, // -1 = Off (skip summary), 0 = Unlimited (no auto-advance), 5-30 = auto-advance
+    val summaryCountdownSeconds: Int = 10, // -1 = Automatic (skip summary), 0 = Manual (hold until the user continues), 5-30 = auto-advance
     val autoStartCountdownSeconds: Int = 5, // 2-10 in 1s intervals, default 5
     val gamificationEnabled: Boolean = true, // Show PR celebrations, award badges, play celebration sounds
     // Issue #266: Configurable weight increment (in user's selected unit)

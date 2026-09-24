@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
+import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -36,31 +38,29 @@ fun MiniExercisePickerDialog(
     val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
+    var showEssentialsOnly by remember { mutableStateOf(false) }
     var selectedMuscles by remember { mutableStateOf(setOf<String>()) }
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
 
-    val allExercises by remember(searchQuery, showFavoritesOnly) {
+    // Search picks the candidates; every chip then narrows them through the shared helper,
+    // as in the full picker, so Favorites and Essentials respect the search text.
+    val candidateExercises by remember(searchQuery) {
         when {
-            showFavoritesOnly -> exerciseRepository.getFavorites()
             searchQuery.isNotBlank() -> exerciseRepository.searchExercises(searchQuery)
             else -> exerciseRepository.getAllExercises()
         }
     }.collectAsState(initial = emptyList())
 
-    val exercises = remember(allExercises, selectedMuscles, selectedEquipment) {
-        allExercises.filter { exercise ->
-            val matchesMuscle = selectedMuscles.isEmpty() ||
-                selectedMuscles.any { muscle ->
-                    exercise.muscleGroups.contains(muscle, ignoreCase = true)
-                }
-            val matchesEquipment = selectedEquipment.isEmpty() ||
-                selectedEquipment.any { equipment ->
-                    val databaseValues = getEquipmentDatabaseValues(equipment)
-                    val equipmentList = exercise.equipment.uppercase().split(",").map { it.trim() }
-                    databaseValues.any { dbValue -> equipmentList.contains(dbValue.uppercase()) }
-                }
-            matchesMuscle && matchesEquipment
-        }
+    val exercises = remember(candidateExercises, showFavoritesOnly, showEssentialsOnly, selectedMuscles, selectedEquipment) {
+        filterExercisePickerCandidates(
+            candidates = candidateExercises,
+            filters = ExercisePickerFilterState(
+                showFavoritesOnly = showFavoritesOnly,
+                selectedMuscles = selectedMuscles,
+                selectedEquipment = selectedEquipment,
+                showEssentialsOnly = showEssentialsOnly,
+            ),
+        )
     }
 
     AlertDialog(
@@ -84,6 +84,11 @@ fun MiniExercisePickerDialog(
                     onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                     showCustomOnly = false,
                     onToggleCustom = {},
+                    // Tagging never creates exercises, so the Custom chip would be a dead control.
+                    showCustomFilter = false,
+                    enableEssentialsFilter = true,
+                    showEssentialsOnly = showEssentialsOnly,
+                    onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
                     customExerciseCount = 0,
                     selectedMuscles = selectedMuscles,
                     onToggleMuscle = { muscle ->
@@ -102,7 +107,9 @@ fun MiniExercisePickerDialog(
                         }
                     },
                     onClearAllFilters = {
+                        searchQuery = ""
                         showFavoritesOnly = false
+                        showEssentialsOnly = false
                         selectedMuscles = emptySet()
                         selectedEquipment = emptySet()
                     },

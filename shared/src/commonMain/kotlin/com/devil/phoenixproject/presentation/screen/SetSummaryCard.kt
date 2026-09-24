@@ -58,7 +58,7 @@ fun SetSummaryCard(
     formatWeight: (Float, WeightUnit) -> String,
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
-    summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Off, no auto-continue)
+    summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Manual, no auto-continue)
     onAutoContinue: (() -> Unit)? = null,
     onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback
     isHistoryView: Boolean = false, // Hide interactive elements when viewing from history
