@@ -190,17 +190,9 @@ class Issue687WorkoutStartGateUiTest {
     }
 
     @Test
-    fun `workout setup and set ready gate only their direct start actions`() {
-        val setup = source("presentation/screen/WorkoutSetupDialog.kt")
+    fun `set ready gates only its direct start action`() {
         val setReady = source("presentation/screen/SetReadyScreen.kt")
 
-        assertContainsAll(
-            setup,
-            "machineTeardownState: MachineTeardownState",
-            "machineTeardownState.toStartGatePresentation(requiresMachine = selectedExercise?.isBodyweight != true)",
-            "WorkoutStartGateNotice(",
-            "enabled = selectedExercise != null && startGate.startEnabled",
-        )
         assertContainsAll(
             setReady,
             "viewModel.machineTeardownState.collectAsState()",

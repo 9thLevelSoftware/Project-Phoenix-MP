@@ -119,7 +119,7 @@ class RoutinesChromeLuminanceContractTest {
     }
 
     @Test
-    fun workoutTab_liveHudAndConnectionCardAvoidUnclampedPrimaryContainer() {
+    fun workoutTab_liveHudAndConnectionChipAvoidUnclampedPrimaryContainer() {
         var dir = File(System.getProperty("user.dir") ?: ".")
         while (!File(dir, "shared/src/commonMain").exists()) {
             dir = dir.parentFile ?: break
@@ -132,14 +132,25 @@ class RoutinesChromeLuminanceContractTest {
             dir,
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt",
         ).readText()
-        val connectionBlock = workoutTab.substringAfter("fun ConnectionCard").substringBefore("private fun formatReps")
+        val connectionChip = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
+        ).readText()
+            .substringAfter("private fun ConnectionStatusIndicator(")
+            .substringBefore("private fun isSingleExerciseRoute")
+        val completedCard = workoutTab.substringAfter("private fun CompletedCard(")
+            .substringBefore("Show next exercise preview")
         assertTrue(
-            connectionBlock.contains("surfaceContainerHighest"),
-            "ConnectionCard must fill from surfaceContainerHighest so the #640 clamp applies.",
+            completedCard.contains("surfaceContainerHighest"),
+            "CompletedCard must fill from surfaceContainerHighest so the #640 clamp applies.",
         )
         assertFalse(
-            connectionBlock.contains("colorScheme.primaryContainer"),
-            "ConnectionCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+            completedCard.contains("colorScheme.primaryContainer"),
+            "CompletedCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        assertFalse(
+            connectionChip.contains("colorScheme.primaryContainer"),
+            "Top-bar ConnectionStatusIndicator must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
         )
         val hudStatsCards = workoutHud.substringAfter("// Load Section").substringBefore("// Position Section")
         assertTrue(

@@ -116,6 +116,10 @@ object LegacyCatalogueIdMap {
         "bent over row - wide grip" to "bent over two-dumbbell row",
         "bicep curl" to "barbell curl",
         "bulgarian split squat" to "one leg barbell squat",
+        // #857: reverse of the line above. After the rename the active row is named
+        // "Bulgarian Split Squat", so a stored pre-rename name "One Leg Barbell Squat" must
+        // still remap (and resolve) onto it instead of forking a duplicate identity.
+        "one leg barbell squat" to "bulgarian split squat",
         "calf raise" to "standing calf raises",
         "concentration curl" to "concentration curls",
         "conventional deadlift" to "barbell deadlift",
