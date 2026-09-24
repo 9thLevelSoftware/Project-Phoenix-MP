@@ -3005,9 +3005,9 @@ class SqlDelightSyncRepository(
         updatedAtBySessionId: Map<String, Long>,
         pushWatermark: Long,
     ) {
-            // Issue #591 follow-up: collapse the per-row
-            // selectSessionUpdatedAt + selectSessionById pair into a single
-            // batched round-trip per concern. For a 20-set routine this
+            // Issue #591 follow-up: one batched round-trip per concern
+            // instead of a per-row updatedAt read plus selectSessionById.
+            // For a 20-set routine this
             // drops 40+ queries (one LWW gate read + one full-row read per
             // incoming pull) down to two queries total.
             //
