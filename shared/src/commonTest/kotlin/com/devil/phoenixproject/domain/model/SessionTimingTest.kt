@@ -70,30 +70,42 @@ class SessionTimingTest {
     }
 
     @Test
-    fun `a start more than a day old writes a zero duration instead of a fabricated one`() {
-        val timing = SessionTiming.resolve(
-            workoutStartMs = now - SessionTiming.MAX_SESSION_DURATION_MS - 1,
-            warmupCompleteMs = 0L,
-            nowMs = now,
-        )
+    fun `a pre 2015 imported start is valid and resolves unchanged`() {
+        val start2012 = 1_336_000_000_000L // 2012-05-02
+        val timing = SessionTiming.resolve(workoutStartMs = start2012, warmupCompleteMs = 0L, nowMs = start2012 + 3_600_000)
 
-        assertTrue(timing.startKnown)
-        assertEquals(0L, timing.durationMs)
+        assertEquals(SessionTiming(startMs = start2012, durationMs = 3_600_000, startKnown = true), timing)
     }
 
     @Test
-    fun `sanitizeDurationMs keeps sane durations and zeroes negative or epoch sized ones`() {
+    fun `sanitizeDurationMs keeps real durations and zeroes negative or epoch sized ones`() {
         assertEquals(0L, SessionTiming.sanitizeDurationMs(0L))
         assertEquals(3_600_000L, SessionTiming.sanitizeDurationMs(3_600_000L))
-        assertEquals(SessionTiming.MAX_SESSION_DURATION_MS, SessionTiming.sanitizeDurationMs(SessionTiming.MAX_SESSION_DURATION_MS))
+        // Longer than a day but nowhere near the epoch time: not the bug signature, kept.
+        val twoDays = 2 * SessionTiming.MAX_SESSION_DURATION_MS
+        assertEquals(twoDays, SessionTiming.sanitizeDurationMs(twoDays))
         assertEquals(0L, SessionTiming.sanitizeDurationMs(-1L))
         assertEquals(0L, SessionTiming.sanitizeDurationMs(now))
+        assertEquals(0L, SessionTiming.sanitizeDurationMs(SessionTiming.MIN_EPOCH_SIZED_DURATION_MS))
+        assertEquals(
+            SessionTiming.MIN_EPOCH_SIZED_DURATION_MS - 1,
+            SessionTiming.sanitizeDurationMs(SessionTiming.MIN_EPOCH_SIZED_DURATION_MS - 1),
+        )
     }
 
     @Test
-    fun `plausible starts begin in 2015`() {
-        assertFalse(SessionTiming.isPlausibleStartMs(0L))
-        assertFalse(SessionTiming.isPlausibleStartMs(SessionTiming.MIN_PLAUSIBLE_START_MS - 1))
-        assertTrue(SessionTiming.isPlausibleStartMs(SessionTiming.MIN_PLAUSIBLE_START_MS))
+    fun `only starts near the epoch are corrupt`() {
+        assertTrue(SessionTiming.isCorruptStartMs(0L))
+        assertTrue(SessionTiming.isCorruptStartMs(-1L))
+        assertTrue(SessionTiming.isCorruptStartMs(SessionTiming.MIN_VALID_START_MS - 1))
+        assertFalse(SessionTiming.isCorruptStartMs(SessionTiming.MIN_VALID_START_MS))
+        assertFalse(SessionTiming.isCorruptStartMs(1_336_000_000_000L))
+    }
+
+    @Test
+    fun `a valid start is neither corrupt nor in the future`() {
+        assertTrue(SessionTiming.isValidStartMs(now, now))
+        assertFalse(SessionTiming.isValidStartMs(now + 1, now))
+        assertFalse(SessionTiming.isValidStartMs(0L, now))
     }
 }

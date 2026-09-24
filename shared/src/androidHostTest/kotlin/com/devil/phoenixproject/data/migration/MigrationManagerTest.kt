@@ -193,8 +193,25 @@ class MigrationManagerTest {
         insertMinimalSession(id = "bad-empty", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
         // A healthy row is untouched.
         insertMinimalSession(id = "good", routineSessionId = null, routineName = null, timestamp = 1_700_000_000_000L, duration = 90_000L)
+        // Pre-2015 CSV-imported history is legitimate: start and duration are kept.
+        insertMinimalSession(id = "import-2012", routineSessionId = null, routineName = null, timestamp = 1_336_000_000_000L, duration = 3_600_000L)
+        // A zeroed start with a real duration keeps the duration; only the start is rebuilt.
+        insertMinimalSession(id = "bad-start-only", routineSessionId = null, routineName = null, timestamp = 0L, duration = 45_000L)
+        queries.insertMetric("bad-start-only", 1_757_997_000_000L, null, null, null, null, null, null, null, 0L)
+        // A valid start with an epoch-sized duration keeps the start; only the duration is reset.
+        insertMinimalSession(id = "bad-duration-only", routineSessionId = null, routineName = null, timestamp = 1_757_996_000_000L, duration = epochDuration)
 
         migrationManager.runMigrationsNow()
+
+        val imported = queries.selectSessionById("import-2012").executeAsOne()
+        assertEquals(1_336_000_000_000L, imported.timestamp)
+        assertEquals(3_600_000L, imported.duration)
+        val startOnly = queries.selectSessionById("bad-start-only").executeAsOne()
+        assertEquals(1_757_997_000_000L, startOnly.timestamp)
+        assertEquals(45_000L, startOnly.duration)
+        val durationOnly = queries.selectSessionById("bad-duration-only").executeAsOne()
+        assertEquals(1_757_996_000_000L, durationOnly.timestamp)
+        assertEquals(0L, durationOnly.duration)
 
         val samples = queries.selectSessionById("bad-samples").executeAsOne()
         assertEquals(1_757_999_000_000L, samples.timestamp)

@@ -71,13 +71,41 @@ class PortalSyncAdapterSessionTimingTest {
     }
 
     @Test
-    fun `negative and over a day durations count as zero`() {
+    fun `negative and epoch sized durations count as zero`() {
         val rows = listOf(
             session("a", timestamp = now - 600_000, durationMs = -5_000, routineSessionId = "g"),
-            session("b", timestamp = now - 500_000, durationMs = SessionTiming.MAX_SESSION_DURATION_MS + 1, routineSessionId = "g"),
+            session("b", timestamp = now - 500_000, durationMs = SessionTiming.MIN_EPOCH_SIZED_DURATION_MS, routineSessionId = "g"),
         )
 
         assertEquals(0, PortalSyncAdapter.wireSessionTiming(rows, now).durationSeconds)
+    }
+
+    @Test
+    fun `a pre 2015 imported workout keeps its start and duration`() {
+        val start2012 = 1_336_000_000_000L // 2012-05-02, e.g. from a CSV import
+        val imported = session("csv", timestamp = start2012, durationMs = 3_600_000)
+
+        val timing = PortalSyncAdapter.wireSessionTiming(listOf(imported), now)
+        val dto = PortalSyncAdapter.toPortalWorkoutSessions(
+            listOf(PortalSyncAdapter.SessionWithReps(session = imported)),
+            "user-1",
+        ).single()
+
+        assertEquals(PortalSyncAdapter.WireSessionTiming(startedAtMs = start2012, durationSeconds = 3_600), timing)
+        assertTrue(dto.startedAt.startsWith("2012-05-02"), "startedAt was ${dto.startedAt}")
+        assertEquals(3_600, dto.durationSeconds)
+    }
+
+    @Test
+    fun `a future dated row in a routine group adds neither its start nor its duration`() {
+        val rows = listOf(
+            session("a", timestamp = now - 600_000, durationMs = 60_000, routineSessionId = "g"),
+            session("future", timestamp = now + 3_600_000, durationMs = 120_000, routineSessionId = "g"),
+        )
+
+        val timing = PortalSyncAdapter.wireSessionTiming(rows, now)
+
+        assertEquals(PortalSyncAdapter.WireSessionTiming(startedAtMs = now - 600_000, durationSeconds = 60), timing)
     }
 
     @Test

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -112,7 +113,7 @@ class ManualStopStartTimeRaceTest {
             advanceUntilIdle()
 
             val saved = harness.fakeWorkoutRepo.allSessions().single { it.totalReps == REPS }
-            assertTrue(SessionTiming.isPlausibleStartMs(saved.timestamp), "timestamp was ${saved.timestamp}")
+            assertFalse(SessionTiming.isCorruptStartMs(saved.timestamp), "timestamp was ${saved.timestamp}")
             assertEquals(0L, saved.duration, "no real start means no duration, never now minus zero")
         } finally {
             harness.cleanup()
@@ -155,7 +156,7 @@ class ManualStopStartTimeRaceTest {
             advanceUntilIdle()
 
             val saved = harness.fakeWorkoutRepo.allSessions().single { it.totalReps == 8 }
-            assertTrue(SessionTiming.isPlausibleStartMs(saved.timestamp), "timestamp was ${saved.timestamp}")
+            assertFalse(SessionTiming.isCorruptStartMs(saved.timestamp), "timestamp was ${saved.timestamp}")
             assertTrue(
                 saved.duration in 0L..SessionTiming.MAX_SESSION_DURATION_MS,
                 "duration was ${saved.duration}",

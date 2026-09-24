@@ -254,26 +254,26 @@ object PortalSyncAdapter {
      * Start and duration of a portal workout built from [sessions] (one row, or every row of
      * a routine group), bounded so a corrupt row can never be sent as-is.
      *
-     * - `startedAt` is the earliest plausible row start ([SessionTiming.isPlausibleStartMs]).
-     *   If no row has one (every row from the 1970 bug), it falls back to the earliest
-     *   plausible `updatedAt`, then to [nowMs]. Never 1970.
-     * - Each row's duration counts only if its own start is plausible and the duration is
-     *   within [SessionTiming.sanitizeDurationMs]; otherwise it counts as 0 (unknown), since a
-     *   duration measured from a zero start is the epoch itself.
+     * - `startedAt` is the earliest valid row start ([SessionTiming.isValidStartMs]: not the
+     *   zeroed-start signature and not in the future). If no row has one (every row from the
+     *   1970 bug), it falls back to the earliest valid `updatedAt`, then to [nowMs]. Never 1970.
+     *   Old imported history (e.g. 2012) is a valid start and is sent unchanged.
+     * - Each row's duration counts only if its own start passes the same check, and a negative
+     *   or epoch-sized duration ([SessionTiming.sanitizeDurationMs]) counts as 0 (unknown).
      * - The total is capped at `now - startedAt`, so it can never exceed the elapsed time.
      *
      * Pure and total: it never throws, so a bad row cannot wedge the push.
      */
     fun wireSessionTiming(sessions: List<WorkoutSession>, nowMs: Long = currentTimeMillis()): WireSessionTiming {
         val startedAtMs = sessions.map { it.timestamp }
-            .filter { SessionTiming.isPlausibleStartMs(it) && it <= nowMs }
+            .filter { SessionTiming.isValidStartMs(it, nowMs) }
             .minOrNull()
             ?: sessions.mapNotNull { it.updatedAt }
-                .filter { SessionTiming.isPlausibleStartMs(it) && it <= nowMs }
+                .filter { SessionTiming.isValidStartMs(it, nowMs) }
                 .minOrNull()
             ?: nowMs
         val totalDurationMs = sessions.sumOf { session ->
-            if (SessionTiming.isPlausibleStartMs(session.timestamp)) {
+            if (SessionTiming.isValidStartMs(session.timestamp, nowMs)) {
                 SessionTiming.sanitizeDurationMs(session.duration)
             } else {
                 0L
