@@ -720,4 +720,14 @@
     <string name="profile_adult_enable_partial_failure">La confirmación de edad se guardó, pero no se pudo activar el modo vulgar. Inténtalo de nuevo.</string>
     <string name="label_previously_completed">Completado anteriormente</string>
     <string name="cd_filter_previously_completed">Filtrar ejercicios completados anteriormente</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">El almacenamiento local necesita atención</string>
+    <string name="startup_local_data_preserved_title">Datos locales conservados</string>
+    <string name="startup_storage_failed_message">Phoenix no pudo preparar el almacenamiento local de forma segura. Los datos locales existentes no se han modificado. Puedes reintentarlo cuando se resuelva el problema del dispositivo o del almacenamiento.</string>
+    <string name="startup_dual_databases_message">Phoenix ha encontrado más de una copia de su base de datos local y no ha podido decidir con seguridad cuál conservar, así que no ha abierto ninguna. No se ha eliminado nada. Exporta los archivos de la base de datos para guardar una copia y envíalos de forma privada por correo a support@phoenix-portal.com junto con los códigos de diagnóstico y de soporte que aparecen abajo. Los archivos contienen tu historial de entrenamiento, así que no los adjuntes a una incidencia pública. «Reintentar» vuelve a comprobarlo cuando el soporte te haya ayudado.</string>
+    <string name="startup_export_database_files">Exportar archivos de la base de datos</string>
+    <string name="startup_export_failed">No se pudieron exportar los archivos de la base de datos. No se ha cambiado nada; puedes volver a intentarlo.</string>
+    <string name="startup_contact_support">Escribir al soporte</string>
+    <string name="startup_diagnostic_code">Código de diagnóstico: %1$s</string>
+    <string name="startup_support_code">Código de soporte: %1$s</string>
 </resources>

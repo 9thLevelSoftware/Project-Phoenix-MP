@@ -720,4 +720,14 @@
     <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
     <string name="label_previously_completed">Déjà terminés</string>
     <string name="cd_filter_previously_completed">Filtrer les exercices déjà terminés</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">Le stockage local nécessite votre attention</string>
+    <string name="startup_local_data_preserved_title">Données locales préservées</string>
+    <string name="startup_storage_failed_message">Phoenix n’a pas pu préparer le stockage local en toute sécurité. Les données locales existantes n’ont pas été modifiées. Vous pourrez réessayer une fois le problème d’appareil ou de stockage résolu.</string>
+    <string name="startup_dual_databases_message">Phoenix a trouvé plus d’une copie de sa base de données locale et n’a pas pu déterminer en toute sécurité laquelle conserver ; il n’a donc ouvert aucune des deux. Rien n’a été supprimé. Exportez les fichiers de la base de données pour en garder une copie, puis envoyez-les en privé par e-mail à support@phoenix-portal.com avec les codes de diagnostic et d’assistance ci-dessous. Ces fichiers contiennent votre historique d’entraînement : ne les joignez pas à un ticket public. « Réessayer » vérifie à nouveau une fois que l’assistance vous a aidé.</string>
+    <string name="startup_export_database_files">Exporter les fichiers de la base de données</string>
+    <string name="startup_export_failed">Les fichiers de la base de données n’ont pas pu être exportés. Rien n’a été modifié ; vous pouvez réessayer.</string>
+    <string name="startup_contact_support">Contacter l’assistance par e-mail</string>
+    <string name="startup_diagnostic_code">Code de diagnostic : %1$s</string>
+    <string name="startup_support_code">Code d’assistance : %1$s</string>
 </resources>

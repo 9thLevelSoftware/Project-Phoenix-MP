@@ -865,10 +865,15 @@
     <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>
     <string name="crash_report_share">Share</string>
     <string name="crash_report_dismiss">Not now</string>
-    <string name="startup_dual_databases_message">Phoenix found more than one copy of its local database and cannot safely choose between them, so nothing has been changed or deleted. Export the database files to keep a copy, then contact support with the diagnostic and support codes below. The files contain your workout history: send them privately to support@phoenix-portal.com rather than attaching them to a public issue. Retry checks again once support has helped you resolve the duplicate files.</string>
+    <string name="startup_dual_databases_message">Phoenix found more than one copy of its local database and could not tell safely which one to keep, so it stopped before opening either. Nothing was deleted. Export the database files to keep a copy, then email them privately to support@phoenix-portal.com with the diagnostic and support codes below. The files contain your workout history, so do not attach them to a public issue. Retry checks again once support has helped you resolve the duplicate.</string>
     <string name="startup_export_database_files">Export database files</string>
     <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
-    <string name="startup_contact_support">Contact support (GitHub Issues)</string>
+    <string name="startup_contact_support">Email support</string>
+    <string name="startup_storage_attention_title">Local storage needs attention</string>
+    <string name="startup_local_data_preserved_title">Local data preserved</string>
+    <string name="startup_storage_failed_message">Phoenix could not safely prepare local storage. Existing local data was left in place. You can retry after resolving the device or storage issue.</string>
+    <string name="startup_diagnostic_code">Diagnostic code: %1$s</string>
+    <string name="startup_support_code">Support code: %1$s</string>
     <!-- PR 28: voice safe-word emergency stop availability -->
     <string name="voice_stop_unavailable_chip">Voice stop unavailable: %1$s</string>
     <string name="voice_stop_unavailable_snackbar">Voice stop unavailable: %1$s. Use the on-screen Stop button to end the set.</string>

@@ -720,4 +720,14 @@
     <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
     <string name="label_previously_completed">Zuvor abgeschlossen</string>
     <string name="cd_filter_previously_completed">Zuvor abgeschlossene Übungen filtern</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">Lokaler Speicher braucht Aufmerksamkeit</string>
+    <string name="startup_local_data_preserved_title">Lokale Daten erhalten</string>
+    <string name="startup_storage_failed_message">Phoenix konnte den lokalen Speicher nicht sicher vorbereiten. Vorhandene lokale Daten wurden nicht verändert. Du kannst es erneut versuchen, sobald das Geräte- oder Speicherproblem behoben ist.</string>
+    <string name="startup_dual_databases_message">Phoenix hat mehr als eine Kopie seiner lokalen Datenbank gefunden und konnte nicht sicher entscheiden, welche behalten werden soll. Deshalb wurde keine davon geöffnet. Es wurde nichts gelöscht. Exportiere die Datenbankdateien, um eine Kopie zu behalten, und sende sie privat per E-Mail an support@phoenix-portal.com, zusammen mit dem Diagnose- und dem Supportcode unten. Die Dateien enthalten deinen Trainingsverlauf, hänge sie daher nicht an ein öffentliches Issue an. „Erneut versuchen“ prüft erneut, sobald der Support dir geholfen hat.</string>
+    <string name="startup_export_database_files">Datenbankdateien exportieren</string>
+    <string name="startup_export_failed">Die Datenbankdateien konnten nicht exportiert werden. Es wurde nichts verändert; du kannst es erneut versuchen.</string>
+    <string name="startup_contact_support">Support per E-Mail kontaktieren</string>
+    <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
+    <string name="startup_support_code">Supportcode: %1$s</string>
 </resources>
