@@ -85,7 +85,6 @@ private fun WorkoutTabActivePreview() {
             weightUnit = WeightUnit.KG,
             enableVideoPlayback = true,
             exerciseRepository = PreviewExerciseRepository(),
-            isWorkoutSetupDialogVisible = false,
             hapticEvents = null,
             loadedRoutine = null,
             currentExerciseIndex = 0,
@@ -114,10 +113,6 @@ private fun WorkoutTabActivePreview() {
             onResetForNewWorkout = {},
             onStartNextExercise = {},
             onUpdateParameters = {},
-            onShowWorkoutSetupDialog = {},
-            onHideWorkoutSetupDialog = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -357,7 +352,6 @@ private fun WorkoutTabConnectedIdlePreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            onShowWorkoutSetupDialog = {},
         )
     }
 }
@@ -440,8 +434,6 @@ private fun WorkoutTabCountdownPreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -512,8 +504,6 @@ private fun WorkoutTabRestingPreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -607,8 +597,6 @@ private fun WorkoutTabSetSummaryPreview() {
             onProceedFromSummary = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -687,8 +675,6 @@ private fun WorkoutTabSetSummaryAutoplayPreview() {
             onProceedFromSummary = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -985,8 +971,6 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }
@@ -1074,8 +1058,6 @@ private fun WorkoutTabWarmupPreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
         )
     }
 }

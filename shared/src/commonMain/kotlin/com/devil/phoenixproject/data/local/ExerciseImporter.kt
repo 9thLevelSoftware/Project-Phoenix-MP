@@ -128,8 +128,12 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                         val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
                         val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
                         val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
-                        val name = exercise.name.trim()
-                        val displayName = displayNames[exercise.id]
+                        // #857: apply the id-keyed naming overlay once so the insert and update
+                        // paths below share one source for name, displayName, and aliases.
+                        val overlay = CATALOG_OVERLAY[exercise.id]
+                        val name = overlay?.name ?: exercise.name.trim()
+                        val displayName = overlay?.displayName ?: displayNames[exercise.id]
+                        val aliases = overlay?.aliases
                         val description = exercise.instructions.joinToString("\n").ifBlank { null }
                         val muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
                             .joinToString(",")
@@ -157,7 +161,7 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                             isCustom = 0L,
                             timesPerformed = 0L,
                             lastPerformed = null,
-                            aliases = null,
+                            aliases = aliases,
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
@@ -176,7 +180,7 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                             grip = null,
                             gripWidth = null,
                             minRepRange = null,
-                            aliases = null,
+                            aliases = aliases,
                             defaultCableConfig = cableConfig,
                             isBodyweight = isBodyweight,
                             id = exercise.id,
@@ -362,7 +366,35 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
     }
 
     companion object {
-        const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1"
+        const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1+issue-857"
+
+        /**
+         * Per-id catalogue naming overlay applied at import so a renamed stock row keeps one
+         * user-facing label across browse, search, and templates. Keyed strictly by catalogue id
+         * (#857) and applied once to both the insert and update paths so they cannot drift.
+         * Deliberately not generalized into a nameAliases-driven rename table (that would rename
+         * dozens of rows, far outside this fix).
+         */
+        internal data class CatalogNameOverlay(
+            val name: String,
+            val displayName: String,
+            val aliases: String,
+        )
+
+        /**
+         * Id-keyed naming overrides applied to the bundled catalogue at import. The single entry
+         * renames `One_Leg_Barbell_Squat` to its common name so it is findable as "Bulgarian Split
+         * Squat", while keeping the raw JSON name "One Leg Barbell Squat" as an alias for search and
+         * routine self-heal (#857).
+         */
+        internal val CATALOG_OVERLAY: Map<String, CatalogNameOverlay> = mapOf(
+            "One_Leg_Barbell_Squat" to CatalogNameOverlay(
+                name = "Bulgarian Split Squat",
+                displayName = "Bulgarian Split Squat",
+                aliases = "One Leg Barbell Squat",
+            ),
+        )
+
         const val FREE_EXERCISE_IMAGE_BASE =
             "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
         const val BODYWEIGHT_EQUIPMENT = "BODYWEIGHT"

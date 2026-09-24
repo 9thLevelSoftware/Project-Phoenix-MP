@@ -799,6 +799,58 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `catalogue overlay renames one leg barbell squat and keeps search and sort intact`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "Bradford_Rocky_Presses", "name": "Bradford/Rocky Presses", "equipment": "barbell", "primaryMuscles": ["shoulders"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] },
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] },
+              { "id": "Butt_Lift_Bridge", "name": "Butt Lift (Bridge)", "equipment": "body only", "primaryMuscles": ["glutes"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] },
+              { "id": "Split_Squat_with_Dumbbells", "name": "Split Squat with Dumbbells", "equipment": "dumbbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(result.isSuccess)
+
+        // Acceptance 7: picker title (name) matches the cycle template label; catalogue id unchanged.
+        val row = database.phoenixDatabaseQueries.selectExerciseById("One_Leg_Barbell_Squat").executeAsOne()
+        assertEquals("One_Leg_Barbell_Squat", row.id)
+        assertEquals("Bulgarian Split Squat", row.name)
+        assertEquals("Bulgarian Split Squat", row.displayName)
+        assertEquals("One Leg Barbell Squat", row.aliases)
+
+        // Acceptance 1: sorts in the B section between Bradford/Rocky Presses and Butt Lift (Bridge).
+        val orderedNames = database.phoenixDatabaseQueries.selectAllExercises().executeAsList().map { it.name }
+        val bradford = orderedNames.indexOf("Bradford/Rocky Presses")
+        val bulgarian = orderedNames.indexOf("Bulgarian Split Squat")
+        val buttLift = orderedNames.indexOf("Butt Lift (Bridge)")
+        assertTrue(bradford >= 0 && bulgarian > bradford, "Bulgarian Split Squat must follow Bradford/Rocky Presses")
+        assertTrue(buttLift > bulgarian, "Bulgarian Split Squat must precede Butt Lift (Bridge)")
+
+        // Acceptance 2: search matches the new name and still matches the pre-rename alias.
+        repository.searchExercises("Bulgarian").test {
+            assertTrue(awaitItem().any { it.id == "One_Leg_Barbell_Squat" })
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.searchExercises("bulgarian split squat").test {
+            assertTrue(awaitItem().any { it.id == "One_Leg_Barbell_Squat" })
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.searchExercises("One Leg Barbell Squat").test {
+            assertTrue(awaitItem().any { it.id == "One_Leg_Barbell_Squat" })
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Acceptance 3: 'split squat' includes this row (via its new name) and Split_Squat_with_Dumbbells.
+        repository.searchExercises("split squat").test {
+            val results = awaitItem()
+            assertTrue(results.any { it.id == "One_Leg_Barbell_Squat" })
+            assertTrue(results.any { it.id == "Split_Squat_with_Dumbbells" })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `importExercises remaps only when a row still references an archived catalogue id`() = runTest {
         val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
         // Catalogue already imported, so importExercises() only decides whether to remap.
@@ -849,6 +901,177 @@ class SqlDelightExerciseRepositoryTest {
         kotlin.test.assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
             com.devil.phoenixproject.data.local.LegacyCatalogueRemapper.healAfterBulkWrite(cancelling, source = "test")
         }
+    }
+
+    @Test
+    fun `reimport keeps overlay name and aliases and preserves user fields`() = runTest {
+        // Seed an older row carrying user data and the pre-rename name.
+        insertExercise(
+            id = "One_Leg_Barbell_Squat",
+            name = "One Leg Barbell Squat",
+            muscleGroup = "Legs",
+            equipment = "BARBELL",
+            isFavorite = 1L,
+            oneRepMaxKg = 42.5,
+            timesPerformed = 9L,
+            lastPerformed = 1_700_000_000_000L,
+        )
+
+        val json = """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": ["Hold dumbbells."], "category": "strength", "images": [] }
+            ]
+        """.trimIndent()
+
+        assertTrue(importer.importFromFreeExerciseJson(json).isSuccess)
+        // A second pass exercises updateCatalogExercise again (the re-import path).
+        assertTrue(importer.importFromFreeExerciseJson(json).isSuccess)
+
+        val row = database.phoenixDatabaseQueries.selectExerciseById("One_Leg_Barbell_Squat").executeAsOne()
+        // Acceptance 4: not reset to the JSON name ("One Leg Barbell Squat") or to null on re-import.
+        assertEquals("Bulgarian Split Squat", row.name)
+        assertEquals("Bulgarian Split Squat", row.displayName)
+        assertEquals("One Leg Barbell Squat", row.aliases)
+        // User-owned fields preserved by updateCatalogExercise.
+        assertEquals(1L, row.isFavorite)
+        assertEquals(9L, row.timesPerformed)
+        assertEquals(42.5, row.one_rep_max_kg)
+        assertEquals(1_700_000_000_000L, row.lastPerformed)
+    }
+
+    @Test
+    fun `findByName resolves the pre-rename name to the renamed catalogue row`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+
+        // The renamed row resolves under both its new name and its pre-rename name (via aliases),
+        // so the routine self-heal path cannot auto-create a duplicate custom exercise (#857).
+        assertEquals("One_Leg_Barbell_Squat", repository.findByName("Bulgarian Split Squat")?.id)
+        assertEquals("One_Leg_Barbell_Squat", repository.findByName("One Leg Barbell Squat")?.id)
+    }
+
+    @Test
+    fun `findByIdOrName resolves the pre-rename name to the renamed row before an archived name match`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        insertExercise(id = "arch-ols", name = "One Leg Barbell Squat", muscleGroup = "Legs", equipment = "BAR", archived = 1L)
+
+        // The archived row that still carries the pre-rename name must not win the exact-name
+        // strategy over the renamed active row's alias, or template resolution forks exercise
+        // identity (#857).
+        assertEquals("One_Leg_Barbell_Squat", repository.findByIdOrName(null, "One Leg Barbell Squat")?.id)
+        // A stale id plus the stored pre-rename name resolves the same way.
+        assertEquals("One_Leg_Barbell_Squat", repository.findByIdOrName("gone-id", "One Leg Barbell Squat")?.id)
+        // A usable id stays authoritative over any name or alias match.
+        assertEquals("arch-ols", repository.findByIdOrName("arch-ols", "One Leg Barbell Squat")?.id)
+    }
+
+    @Test
+    fun `active custom exercise sharing the pre-rename name wins over the stock row alias`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        insertExercise(id = "custom-1", name = "One Leg Barbell Squat", muscleGroup = "Back", equipment = "BAR", isCustom = 1L)
+
+        // #857 review follow-up: custom creation permits duplicate names, so an active custom row
+        // named like the stock row's pre-rename name must win over that row's alias.
+        assertEquals("custom-1", repository.findByName("One Leg Barbell Squat")?.id)
+        assertEquals("custom-1", repository.findByIdOrName(null, "One Leg Barbell Squat")?.id)
+        assertEquals("custom-1", repository.findByIdOrName("gone-id", "One Leg Barbell Squat")?.id)
+        // The renamed stock row stays reachable under its new name.
+        assertEquals("One_Leg_Barbell_Squat", repository.findByName("Bulgarian Split Squat")?.id)
+    }
+
+    @Test
+    fun `archived rows named bulgarian split squat and one leg barbell squat both remap onto the renamed row`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        insertExercise(id = "arch-bss", name = "Bulgarian Split Squat", muscleGroup = "Legs", equipment = "BAR", archived = 1L)
+        insertExercise(id = "arch-ols", name = "One Leg Barbell Squat", muscleGroup = "Legs", equipment = "BAR", archived = 1L)
+        insertPr(exerciseId = "arch-bss", exerciseName = "Bulgarian Split Squat", weight = 50.0, workoutMode = "OldSchool")
+        insertPr(exerciseId = "arch-ols", exerciseName = "One Leg Barbell Squat", weight = 60.0, workoutMode = "NewSchool")
+
+        importer.remapLegacyCatalogueIds()
+
+        // Acceptance 6: both historical names fold onto the single renamed catalogue row.
+        val remapped = database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("One_Leg_Barbell_Squat").executeAsList()
+        assertEquals(2, remapped.size)
+        assertEquals(0, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("arch-bss").executeAsList().size)
+        assertEquals(0, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("arch-ols").executeAsList().size)
+    }
+
+    @Test
+    fun `bundled catalog source token is bumped for #857`() = runTest {
+        // Acceptance 5's regression lock: this bump is what makes an install holding the
+        // pre-#857 value run the importer exactly once on its next launch.
+        assertEquals("free-exercise-db@unlicense-1+issue-857", ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+    }
+
+    @Test
+    fun `import gate skips the importer once the #857 catalog source token is stored`() = runTest {
+        // Acceptance 5, exercised against the real gate in SqlDelightExerciseRepository.importExercises()
+        // rather than a preferences round-trip: with the stored token equal to BUNDLED_CATALOG_SOURCE
+        // the importer is skipped entirely, so the catalogue survives untouched and no further token
+        // bump or re-import is ever needed. (The gate's open side runs ExerciseImporter.importExercises(),
+        // whose bundled-JSON resource read cannot execute in android host tests, and the importer's
+        // re-import behaviour is covered by `reimport keeps overlay name and aliases and preserves
+        // user fields`.)
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        // Locally edit the row a re-import would rewrite, so an unexpected importer run is visible.
+        database.phoenixDatabaseQueries.updateCatalogExercise(
+            name = "Locally Edited Name",
+            displayName = "Locally Edited Name",
+            description = null,
+            muscleGroup = "Legs",
+            muscleGroups = "Legs",
+            muscles = null,
+            equipment = "BARBELL",
+            movement = "strength",
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            aliases = "One Leg Barbell Squat",
+            defaultCableConfig = "EITHER",
+            isBodyweight = 0L,
+            id = "One_Leg_Barbell_Squat",
+        )
+
+        val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
+        prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+        val gated = SqlDelightExerciseRepository(database, ExerciseImporter(database), prefs)
+
+        assertTrue(gated.importExercises().isSuccess)
+        assertEquals(ExerciseImporter.BUNDLED_CATALOG_SOURCE, prefs.getExerciseCatalogSource())
+        assertEquals(
+            "Locally Edited Name",
+            database.phoenixDatabaseQueries.selectExerciseById("One_Leg_Barbell_Squat").executeAsOne().name,
+        )
     }
 
     @Test
