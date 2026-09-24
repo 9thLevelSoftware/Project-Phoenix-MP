@@ -21,6 +21,8 @@ data class RoutineCsvExerciseDraft(
     val supersetName: String?,
     val supersetOrder: Int?,
     val supersetRestSeconds: Int?,
+    /** [com.devil.phoenixproject.domain.model.SupersetColors] index; null picks the next free colour. */
+    val supersetColor: Int?,
     /** One entry per set; null is an AMRAP set. */
     val setReps: List<Int?>,
     val setWeightsKg: List<Float>,
@@ -54,7 +56,7 @@ sealed interface RoutineCsvExportResult {
 
 /** Reads and writes [RoutineCsvFormat] v1. Pure: no repository access. */
 object RoutineCsvCodec {
-    private const val COLUMN_COUNT = 17
+    private val COLUMN_COUNT = RoutineCsvFormat.COLUMNS.size
 
     // ── Export ──────────────────────────────────────────────────────────────
 
@@ -95,6 +97,7 @@ object RoutineCsvCodec {
                     exercise.getRestForSet(0).toString(),
                     RoutineCsvFormat.modeName(exercise.programMode),
                     exercise.setReps.all { it == null }.toString(),
+                    superset?.colorIndex?.toString().orEmpty(),
                 )
                 append(cells.joinToString(",")).append("\r\n")
             }
@@ -126,6 +129,11 @@ object RoutineCsvCodec {
             val effectiveRests = exercise.setReps.indices.map(exercise::getRestForSet)
             if (effectiveRests.distinct().size > 1) reasons += "$name has different rest times per set."
             if (exercise.setReps.isEmpty()) reasons += "$name has no sets."
+            // Older routines mark only the last set AMRAP with numeric reps; the runtime reads that
+            // flag in several places, so it has no exact form in the file.
+            if (exercise.isAMRAP && exercise.setReps.any { it != null }) {
+                reasons += "$name marks its last set AMRAP in the older format."
+            }
         }
         return reasons.toList()
     }
@@ -155,68 +163,66 @@ object RoutineCsvCodec {
         if (content.encodeToByteArray().size > RoutineCsvFormat.MAX_BYTES) {
             return invalid(null, RoutineCsvFormat.TOO_LARGE_MESSAGE)
         }
-        val physicalLines = splitLines(content.removePrefix("﻿"))
-        val lines = physicalLines.map { it.first }
+        // Read one line at a time: nothing is kept per blank or comment line, so a file of
+        // mostly line breaks costs no more memory than its text.
+        val lines = LineReader(content.removePrefix("\ufeff"))
         val issues = mutableListOf<RoutineCsvIssue>()
 
-        var index = 0
-        fun nextContentLine(): Int? {
-            while (index < lines.size && lines[index].isBlank()) index++
-            return index.takeIf { it < lines.size }
+        fun nextContentLine(): String? {
+            while (lines.hasNext()) {
+                val line = lines.next()
+                if (line.isNotBlank()) return line
+            }
+            return null
         }
 
-        val versionIndex = nextContentLine()
-            ?: return invalid(null, "The file is empty.")
-        val versionLine = lines[versionIndex].trim()
+        val versionLine = nextContentLine()?.trim() ?: return invalid(null, "The file is empty.")
         if (!versionLine.startsWith(RoutineCsvFormat.VERSION_PREFIX)) {
-            return invalid(versionIndex + 1, "The first line must be ${RoutineCsvFormat.VERSION_LINE}.")
+            return invalid(lines.number, "The first line must be ${RoutineCsvFormat.VERSION_LINE}.")
         }
         val version = versionLine.removePrefix(RoutineCsvFormat.VERSION_PREFIX).trim().toIntOrNull()
         if (version != RoutineCsvFormat.VERSION) {
-            return invalid(versionIndex + 1, "Unsupported file version; this app reads version ${RoutineCsvFormat.VERSION}.")
+            return invalid(lines.number, "Unsupported file version; this app reads version ${RoutineCsvFormat.VERSION}.")
         }
-        index++
 
-        var headerIndex: Int
-        while (true) {
-            headerIndex = nextContentLine() ?: return invalid(null, "The header row is missing.")
-            if (!lines[headerIndex].trimStart().startsWith("#")) break
-            index++
-        }
-        val headerLine = lines[headerIndex]
-        if (hasUnbalancedQuotes(headerLine)) return invalid(headerIndex + 1, "A quoted field is not closed.")
+        var headerLine: String
+        do {
+            headerLine = nextContentLine() ?: return invalid(null, "The header row is missing.")
+        } while (headerLine.trimStart().startsWith("#"))
+        if (hasUnbalancedQuotes(headerLine)) return invalid(lines.number, "A quoted field is not closed.")
         val header = trimTrailingEmpty(CsvParser.parseCsvRow(headerLine).map { it.trim() })
         if (header.size == 1 && header[0].contains(';')) {
-            return invalid(headerIndex + 1, "The file uses semicolons. Save it as comma-separated CSV.")
+            return invalid(lines.number, "The file uses semicolons. Save it as comma-separated CSV.")
         }
-        if (header != RoutineCsvFormat.COLUMNS) {
-            return invalid(headerIndex + 1, "The header must be exactly: ${RoutineCsvFormat.COLUMNS.joinToString(",")}")
+        // Files written before superset_color existed have the same columns without it.
+        if (header != RoutineCsvFormat.COLUMNS && header != RoutineCsvFormat.COLUMNS_WITHOUT_SUPERSET_COLOR) {
+            return invalid(lines.number, "The header must be exactly: ${RoutineCsvFormat.COLUMNS.joinToString(",")}")
         }
-        index = headerIndex + 1
 
         val rows = mutableListOf<RawRow>()
         // Every data line counts, rejected ones and a quoted field's continuation lines too, so a
         // file of malformed lines stays within the same bound.
         var dataLineCount = 0
-        while (index < lines.size) {
-            val lineNumber = index + 1
-            if (lines[index].isBlank() || lines[index].trimStart().startsWith("#")) {
-                index++
-                continue
+        while (lines.hasNext()) {
+            val first = lines.next()
+            val lineNumber = lines.number
+            if (first.isBlank() || first.trimStart().startsWith("#")) continue
+            if (++dataLineCount > RoutineCsvFormat.MAX_ROWS) {
+                return invalid(lineNumber, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
             }
             // A quoted field may span lines (a line break in a name or description): join lines,
             // with their own breaks, until the quotes balance. Quotes are counted once per line.
-            val record = StringBuilder()
-            var quotes = 0
-            do {
+            val record = StringBuilder(first)
+            var quotes = first.count { it == '"' }
+            while (quotes % 2 != 0 && lines.hasNext()) {
+                val lineBreak = lines.lastBreak
+                val next = lines.next()
                 if (++dataLineCount > RoutineCsvFormat.MAX_ROWS) {
-                    return invalid(index + 1, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
+                    return invalid(lines.number, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
                 }
-                if (record.isNotEmpty()) record.append(physicalLines[index - 1].second)
-                record.append(lines[index])
-                quotes += lines[index].count { it == '"' }
-                index++
-            } while (quotes % 2 != 0 && index < lines.size)
+                record.append(lineBreak).append(next)
+                quotes += next.count { it == '"' }
+            }
             if (quotes % 2 != 0) {
                 issues += RoutineCsvIssue(lineNumber, "A quoted field that starts on this line is not closed.")
                 continue
@@ -240,8 +246,11 @@ object RoutineCsvCodec {
     private class RawRow(val line: Int, val cells: List<String>) {
         fun raw(column: Int): String = cells[column].trim()
 
-        /** A text column, with [CsvExporter.escapeCsvField]'s formula guard removed. */
-        fun text(column: Int): String = CsvExporter.unescapeFormulaGuard(raw(column))
+        /**
+         * A text column as written, with [CsvExporter.escapeCsvField]'s formula guard removed. Not
+         * trimmed: spaces and line breaks are part of a name or description (RFC 4180).
+         */
+        fun text(column: Int): String = CsvExporter.unescapeFormulaGuard(cells[column])
     }
 
     private fun groupRoutines(rows: List<RawRow>, issues: MutableList<RoutineCsvIssue>): List<RoutineCsvRoutineDraft> {
@@ -250,11 +259,11 @@ object RoutineCsvCodec {
         for (row in rows) {
             val id = row.raw(0)
             val name = row.text(1)
-            if (name.isEmpty()) {
+            if (name.isBlank()) {
                 issues += RoutineCsvIssue(row.line, "routine_name is required.")
                 continue
             }
-            val key = if (id.isNotEmpty()) "id:$id" else "name:${name.lowercase()}"
+            val key = if (id.isNotEmpty()) "id:$id" else "name:${name.trim().lowercase()}"
             byRoutine.getOrPut(key) { mutableListOf() } += row
         }
         return byRoutine.values.mapNotNull { routineRows -> routineDraft(routineRows, issues) }
@@ -264,13 +273,16 @@ object RoutineCsvCodec {
         val first = rows.first()
         val issueCount = issues.size
         for (row in rows.drop(1)) {
-            for ((column, label) in listOf(1 to "routine_name", 2 to "routine_description", 3 to "group_name", 4 to "group_order")) {
-                if (row.text(column) != first.text(column)) {
-                    issues += RoutineCsvIssue(row.line, "$label differs from line ${first.line} for the same routine.")
-                }
+            // Text columns compare as written; group_order is a number cell, compared trimmed.
+            val differing = listOf(1 to "routine_name", 2 to "routine_description", 3 to "group_name")
+                .filter { (column, _) -> row.text(column) != first.text(column) }
+                .map { it.second } +
+                listOfNotNull("group_order".takeIf { row.raw(4) != first.raw(4) })
+            differing.forEach { label ->
+                issues += RoutineCsvIssue(row.line, "$label differs from line ${first.line} for the same routine.")
             }
         }
-        val groupName = first.text(3).ifEmpty { null }
+        val groupName = first.text(3).takeIf { it.isNotBlank() }
         val groupOrder = optionalInt(first, 4, "group_order", 0, Int.MAX_VALUE, issues)
 
         val exercises = rows.mapNotNull { exerciseDraft(it, issues) }
@@ -294,13 +306,16 @@ object RoutineCsvCodec {
     private fun exerciseDraft(row: RawRow, issues: MutableList<RoutineCsvIssue>): RoutineCsvExerciseDraft? {
         val issueCount = issues.size
         val exerciseName = row.text(6)
-        if (exerciseName.isEmpty()) issues += RoutineCsvIssue(row.line, "exercise_name is required.")
+        if (exerciseName.isBlank()) issues += RoutineCsvIssue(row.line, "exercise_name is required.")
         val order = requiredInt(row, 7, "exercise_order", 0, Int.MAX_VALUE, issues)
 
         val supersetKey = row.raw(8).ifEmpty { null }
         val supersetOrder = optionalInt(row, 10, "superset_order", 0, Int.MAX_VALUE, issues)
         val supersetRest = optionalInt(row, 11, "superset_rest_seconds", 0, RoutineCsvFormat.MAX_REST_SECONDS, issues)
-        if (supersetKey == null && (row.raw(9).isNotEmpty() || supersetOrder != null || supersetRest != null)) {
+        val supersetColor = optionalInt(row, 17, "superset_color", 0, RoutineCsvFormat.MAX_SUPERSET_COLOR, issues)
+        if (supersetKey == null &&
+            (row.raw(9).isNotEmpty() || supersetOrder != null || supersetRest != null || supersetColor != null)
+        ) {
             issues += RoutineCsvIssue(row.line, "Superset columns are set but superset_key is blank.")
         }
 
@@ -346,9 +361,10 @@ object RoutineCsvCodec {
             exerciseName = exerciseName,
             order = order,
             supersetKey = supersetKey,
-            supersetName = row.text(9).ifEmpty { null },
+            supersetName = row.text(9).takeIf { it.isNotBlank() },
             supersetOrder = supersetOrder,
             supersetRestSeconds = supersetRest,
+            supersetColor = supersetColor,
             setReps = reps,
             setWeightsKg = weights,
             restSeconds = rest,
@@ -417,9 +433,10 @@ object RoutineCsvCodec {
             members.drop(1).forEach { member ->
                 if (member.supersetName != first.supersetName ||
                     member.supersetOrder != first.supersetOrder ||
-                    member.supersetRestSeconds != first.supersetRestSeconds
+                    member.supersetRestSeconds != first.supersetRestSeconds ||
+                    member.supersetColor != first.supersetColor
                 ) {
-                    issues += RoutineCsvIssue(member.line, "Superset '$key' name, order or rest differs from line ${first.line}.")
+                    issues += RoutineCsvIssue(member.line, "Superset '$key' name, order, rest or colour differs from line ${first.line}.")
                 }
             }
         }
@@ -449,29 +466,36 @@ object RoutineCsvCodec {
     private fun hasUnbalancedQuotes(line: String): Boolean = line.count { it == '"' } % 2 != 0
 
     /**
-     * Physical lines, each with the break that ended it (`""` for the last), so a quoted field
-     * spanning lines keeps its own `\n`, `\r\n` or `\r`.
+     * Physical lines of a text, one at a time, with the break that ended each ([lastBreak]: `\n`,
+     * `\r\n`, `\r`, or `""` at the end), so a quoted field spanning lines keeps its own breaks.
      */
-    private fun splitLines(content: String): List<Pair<String, String>> {
-        val lines = mutableListOf<Pair<String, String>>()
-        var start = 0
-        var i = 0
-        while (i < content.length) {
-            val breakLength = when {
-                content[i] == '\r' && i + 1 < content.length && content[i + 1] == '\n' -> 2
-                content[i] == '\r' || content[i] == '\n' -> 1
-                else -> 0
+    private class LineReader(private val text: String) {
+        private var position = 0
+        private var finished = false
+
+        /** 1-based number of the line [next] returned last. */
+        var number = 0
+            private set
+
+        var lastBreak = ""
+            private set
+
+        fun hasNext(): Boolean = !finished
+
+        fun next(): String {
+            val start = position
+            var end = start
+            while (end < text.length && text[end] != '\n' && text[end] != '\r') end++
+            lastBreak = when {
+                end >= text.length -> "".also { finished = true }
+                text[end] == '\r' && end + 1 < text.length && text[end + 1] == '\n' -> "\r\n"
+                text[end] == '\r' -> "\r"
+                else -> "\n"
             }
-            if (breakLength == 0) {
-                i++
-            } else {
-                lines += content.substring(start, i) to content.substring(i, i + breakLength)
-                i += breakLength
-                start = i
-            }
+            position = end + lastBreak.length
+            number++
+            return text.substring(start, end)
         }
-        lines += content.substring(start) to ""
-        return lines
     }
 
     private fun trimTrailingEmpty(cells: List<String>): List<String> = cells.dropLastWhile { it.isBlank() }

@@ -14,13 +14,19 @@ import com.devil.phoenixproject.util.Constants
  * is true exactly when every set is AMRAP. A `superset_key` groups two or more rows of a
  * routine into one superset; blank means standalone. `exercise_order` is the flat display
  * order, supersets included; a superset sits at its first exercise's position, so
- * `superset_order` is written for reference and only checked for consistency on import.
- * Blank lines and further `#` lines are ignored. Cells follow RFC 4180 quoting, so a quoted
- * name or description may contain commas, quotes and line breaks.
+ * `superset_order` is written for reference and only checked for consistency on import;
+ * `superset_color` (optional) is a SupersetColors index, blank picks the next free colour.
+ * Blank lines and further `#` lines are ignored. Cells follow RFC 4180: text cells are taken
+ * as written (spaces included), and a quoted cell may contain commas, quotes and line breaks.
+ * Number and code cells are trimmed.
  *
  * Only the fields below exist in v1. Export refuses a routine that uses anything else (Echo
- * and Eccentric Only modes, % of PR, warm-ups, rack defaults, drop sets, timed sets, and
- * non-default per-exercise behaviour), so a round trip never drops a setting silently.
+ * and Eccentric Only modes, % of PR, warm-ups, rack defaults, drop sets, timed sets, the older
+ * last-set AMRAP flag, and non-default per-exercise behaviour), so a round trip never drops a
+ * setting silently. Not carried, because nothing reads them in the modes v1 exports: Echo
+ * levels and % of PR values of exercises using neither, and the per-set rest toggle when every
+ * set rests the same. Imported exercises also take the first set's weight as their base weight,
+ * as the exercise editor does.
  */
 object RoutineCsvFormat {
     const val VERSION = 1
@@ -45,7 +51,11 @@ object RoutineCsvFormat {
         "rest_seconds",
         "mode",
         "is_amrap",
+        "superset_color",
     )
+
+    /** The v1 header as first released, before the optional [COLUMNS] `superset_color`; still read. */
+    val COLUMNS_WITHOUT_SUPERSET_COLOR = COLUMNS.dropLast(1)
 
     /** Denial-of-service bounds for a picked file. */
     const val MAX_BYTES = 2 * 1024 * 1024
@@ -53,6 +63,9 @@ object RoutineCsvFormat {
     const val MAX_ROWS = 2_000
     const val MAX_ROUTINES = 50
     const val MAX_SETS_PER_EXERCISE = 50
+
+    /** Highest [com.devil.phoenixproject.domain.model.SupersetColors] index. */
+    const val MAX_SUPERSET_COLOR = 3
 
     const val AMRAP = "AMRAP"
     const val MAX_REPS = 100
