@@ -655,7 +655,9 @@ class MainViewModel(
             }
             .stateIn(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
+                // Drop the cached list when collection stops: a profile switch made while no
+                // screen collects must not replay the previous profile's list on return.
+                started = SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0),
                 initialValue = emptyList(),
             )
 

@@ -65,6 +65,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -684,6 +685,22 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 the recent list is not replayed once collection has stopped`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        recentStore.record(profileId, "curl")
+        val collector = backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+
+        collector.cancel()
+        advanceTimeBy(5_001)
+
+        // A profile switch can happen while no screen collects; a returning screen must not
+        // briefly see the previous profile's list.
+        assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
     }
 
     @Test
