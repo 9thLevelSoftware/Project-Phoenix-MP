@@ -52,6 +52,8 @@ class DatabaseCandidateProbeTest {
             "favourite stock exercise" to "UPDATE Exercise SET isFavorite = 1 WHERE id = (SELECT id FROM Exercise LIMIT 1)",
             "performed stock exercise" to "UPDATE Exercise SET timesPerformed = 1 WHERE id = (SELECT id FROM Exercise LIMIT 1)",
             "custom exercise" to "UPDATE Exercise SET isCustom = 1 WHERE id = (SELECT id FROM Exercise LIMIT 1)",
+            "downloaded extra exercise" to
+                "INSERT INTO Exercise(id, name, muscleGroup, muscleGroups, equipment, defaultCableConfig) VALUES ('wger_42', 'Extra', 'Chest', 'Chest', 'BAR', 'DOUBLE')",
             "gamification progress" to "UPDATE GamificationStats SET totalWorkouts = 1",
             "rpg progress" to "UPDATE RpgAttributes SET strength = 3",
             "other profile preferences" to "INSERT INTO UserProfilePreferences(profile_id) VALUES ('p2')",

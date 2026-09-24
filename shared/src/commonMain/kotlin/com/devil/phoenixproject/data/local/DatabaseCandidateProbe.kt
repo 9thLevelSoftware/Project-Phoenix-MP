@@ -103,6 +103,8 @@ internal object DatabaseUserDataClassifier {
     ).map { it.lowercase() }.toSet()
 
     private val EXERCISE_USER_FIELDS = listOf(
+        // Downloaded with Settings > Refresh extra exercises (ExerciseImporter), not bundled.
+        "id" to "LIKE 'wger\\_%' ESCAPE '\\'",
         "isCustom" to "= 1",
         "isFavorite" to "= 1",
         "timesPerformed" to "> 0",
