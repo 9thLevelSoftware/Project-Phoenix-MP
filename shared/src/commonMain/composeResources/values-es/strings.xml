@@ -698,6 +698,7 @@
     <string name="color_orange">Naranja</string>
     <string name="cd_select_profile_color">Seleccionar %1$s como color del perfil</string>
     <string name="profile_automatic">Automático</string>
+    <string name="profile_manual">Manual</string>
     <string name="profile_master_beeps">Pitidos del entrenamiento</string>
     <string name="profile_body_weight_unset">Sin configurar</string>
     <string name="profile_body_weight_invalid">Introduce un peso corporal de 20 a 300 kg</string>

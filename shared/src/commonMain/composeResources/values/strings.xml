@@ -838,6 +838,7 @@
     <string name="profile_auto_end_velocity_loss">Auto-end on velocity loss</string>
     <string name="profile_vbt_history_note">Turning VBT off affects live workouts only; saved estimates and assessments remain available.</string>
     <string name="profile_automatic">Automatic</string>
+    <string name="profile_manual">Manual</string>
     <string name="profile_master_beeps">Workout beeps</string>
     <string name="profile_body_weight_unset">Not set</string>
     <string name="profile_body_weight_invalid">Enter a body weight from 20 to 300 kg</string>
