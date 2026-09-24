@@ -233,11 +233,14 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                     }
 
                 val exercise = resolvedExercise ?: run {
+                    // Issue #774: never mint an exercise with a blank name; it crashes the
+                    // exercise picker. Fall back to the stored id, then a fixed label.
+                    val healedName = healedExerciseName(row.exerciseName, row.exerciseId)
                     // Self-healing: auto-create a custom exercise so exerciseId is never null.
                     // A null exerciseId breaks the entire PR tracking pipeline (#319).
                     val autoCreated = exerciseRepository.createCustomExercise(
                         Exercise(
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
                             isCustom = true,
@@ -261,7 +264,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         }
                         Exercise(
                             id = syntheticId,
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             muscleGroups = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
@@ -1363,3 +1366,9 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         )
     }.asFlow().mapToList(Dispatchers.IO)
 }
+
+/** Name given to a healed routine exercise whose stored name and id are both blank (#774). */
+internal const val UNKNOWN_EXERCISE_NAME = "Unknown exercise"
+
+internal fun healedExerciseName(storedName: String, exerciseId: String?): String =
+    storedName.trim().ifEmpty { exerciseId?.trim()?.takeIf(String::isNotEmpty) ?: UNKNOWN_EXERCISE_NAME }

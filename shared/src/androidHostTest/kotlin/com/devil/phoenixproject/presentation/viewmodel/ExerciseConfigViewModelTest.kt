@@ -72,6 +72,37 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `addSet before initialize is ignored instead of touching uninitialized state`() {
+        val viewModel = createViewModel()
+
+        viewModel.addSet()
+
+        assertTrue(viewModel.sets.value.isEmpty())
+    }
+
+    @Test
+    fun `addSet after initialize appends a set`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.initialize(
+            exercise = RoutineExercise(
+                id = "rex-add",
+                exercise = Exercise(id = "cable-1", name = "Cable Row", muscleGroup = "Back", muscleGroups = "Back", equipment = "HANDLES"),
+                orderIndex = 0,
+                setReps = listOf(10, 10),
+                weightPerCableKg = 20f,
+            ),
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        val before = viewModel.sets.value.size
+
+        viewModel.addSet()
+
+        assertEquals(before + 1, viewModel.sets.value.size)
+    }
+
+    @Test
     fun `bodyweight exercise hides cable-only configuration toggles`() {
         val bodyweightSets = listOf(SetConfiguration(setNumber = 1, reps = 10))
 

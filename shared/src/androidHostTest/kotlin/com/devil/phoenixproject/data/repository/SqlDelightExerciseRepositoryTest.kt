@@ -87,6 +87,26 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `createCustomExercise rejects a blank name without inserting a row`() = runTest {
+        listOf("", "   ").forEach { blank ->
+            val result = repository.createCustomExercise(
+                com.devil.phoenixproject.domain.model.Exercise(
+                    name = blank,
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = "",
+                ),
+            )
+            assertTrue(result.isFailure, "blank name '$blank' was accepted")
+        }
+
+        repository.getCustomExercises().test {
+            assertEquals(0, awaitItem().size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `custom exercise sync preserves user metadata and image children`() = runTest {
         insertExercise(
             id = "custom-shared",
