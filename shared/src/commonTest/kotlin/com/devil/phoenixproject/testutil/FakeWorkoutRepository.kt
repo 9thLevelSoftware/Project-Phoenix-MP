@@ -6,12 +6,14 @@ import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
 import com.devil.phoenixproject.data.repository.RepMetricRepository
+import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -34,6 +36,9 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     private val sessions = mutableMapOf<String, WorkoutSession>()
     private val routines = mutableMapOf<String, Routine>()
+
+    /** Routine groups by id; the SQL repository keeps these outside the interface. */
+    val routineGroups = mutableMapOf<String, RoutineGroup>()
     private val metrics = mutableMapOf<String, List<WorkoutMetric>>()
     private val personalRecords = mutableMapOf<String, PersonalRecordEntity>()
     private val phaseStatistics = mutableMapOf<String, PhaseStatisticsData>()
@@ -331,6 +336,26 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override suspend fun getRoutineById(routineId: String): Routine? = routines[routineId]
+
+    override suspend fun getRoutineHeaders(profileId: String): List<Routine> =
+        routines.values.filter { it.profileId == profileId }.map { it.copy(exercises = emptyList(), supersets = emptyList()) }
+
+    override suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup> =
+        routineGroups.values.filter { it.profileId == profileId }.sortedBy { it.orderIndex }
+
+    override suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    ) {
+        for (routineId in overwriteRoutineIds) {
+            if (this.routines[routineId]?.profileId != profileId) throw RoutineCsvImportConflictException(routineId)
+        }
+        newGroups.forEach { routineGroups[it.id] = it.copy(profileId = profileId) }
+        routines.forEach { this.routines[it.id] = it.copy(profileId = profileId) }
+        updateRoutinesFlow()
+    }
 
     override suspend fun markRoutineUsed(routineId: String) {
         routines[routineId]?.let { routine ->

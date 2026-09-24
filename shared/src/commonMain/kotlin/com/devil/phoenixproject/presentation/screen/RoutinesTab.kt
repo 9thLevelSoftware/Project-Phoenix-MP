@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -86,6 +88,7 @@ import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.model.routineCopyName
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
@@ -129,6 +132,8 @@ import projectphoenix.shared.generated.resources.move_to_profile
 import projectphoenix.shared.generated.resources.no_other_profiles
 import projectphoenix.shared.generated.resources.routine_modifier_active_recovery
 import projectphoenix.shared.generated.resources.routine_modifier_heavy_deload
+import projectphoenix.shared.generated.resources.routine_csv_export
+import projectphoenix.shared.generated.resources.routine_csv_import
 import projectphoenix.shared.generated.resources.start_workout
 
 /**
@@ -163,6 +168,9 @@ fun RoutinesTab(
     onRenameGroup: (String, String) -> Unit = { _, _ -> },
     onDeleteGroup: (String) -> Unit = {},
     onMoveToGroup: (routineIds: Set<String>, groupId: String?) -> Unit = { _, _ -> },
+    // Issue #772: routine CSV. Null hides the entry points.
+    onExportRoutineCsv: ((Routine) -> Unit)? = null,
+    onImportRoutinesCsv: (() -> Unit)? = null,
     themeMode: ThemeMode,
     modifier: Modifier = Modifier,
 ) {
@@ -320,6 +328,7 @@ fun RoutinesTab(
                                 showMoveToGroupDialog = true
                             },
                             historicalTimeEstimate = timeEstimates[routine.id],
+                            onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
                         )
                     }
 
@@ -371,6 +380,7 @@ fun RoutinesTab(
                                         showMoveToGroupDialog = true
                                     },
                                     historicalTimeEstimate = timeEstimates[routine.id],
+                                    onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
                                 )
                             }
                         }
@@ -391,17 +401,31 @@ fun RoutinesTab(
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
             ) {
-                FloatingActionButton(
-                    onClick = onCreateRoutine,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = MaterialTheme.shapes.extraLarge,
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.End,
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = stringResource(Res.string.cd_add_routine),
-                        modifier = Modifier.size(28.dp),
-                    )
+                    if (onImportRoutinesCsv != null) {
+                        SmallFloatingActionButton(
+                            onClick = onImportRoutinesCsv,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ) {
+                            Icon(Icons.Default.FileUpload, contentDescription = stringResource(Res.string.routine_csv_import))
+                        }
+                    }
+                    FloatingActionButton(
+                        onClick = onCreateRoutine,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = MaterialTheme.shapes.extraLarge,
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = stringResource(Res.string.cd_add_routine),
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
                 }
             }
 
@@ -538,23 +562,7 @@ fun RoutinesTab(
                                     )
                                 }
 
-                                // Smart duplicate naming
-                                val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
-                                val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
-                                val existingCopyNumbers = routines
-                                    .mapNotNull { r ->
-                                        when {
-                                            r.name == baseName -> 0
-                                            r.name == "$baseName (Copy)" -> 1
-                                            else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
-                                        }
-                                    }
-                                val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
-                                val newName = if (nextCopyNumber == 1) {
-                                    "$baseName (Copy)"
-                                } else {
-                                    "$baseName (Copy $nextCopyNumber)"
-                                }
+                                val newName = routineCopyName(routine.name, routines.map { it.name })
 
                                 val duplicated = routine.copy(
                                     id = newRoutineId,
@@ -815,6 +823,7 @@ private fun RoutineCardWithActions(
     hasGroups: Boolean,
     onMoveToGroup: () -> Unit,
     historicalTimeEstimate: String? = null,
+    onExportCsv: (() -> Unit)? = null,
 ) {
     RoutineCard(
         routine = routine,
@@ -865,22 +874,7 @@ private fun RoutineCardWithActions(
                     supersetId = exercise.supersetId?.let { supersetIdMap[it] },
                 )
             }
-            val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
-            val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
-            val existingCopyNumbers = routines
-                .mapNotNull { r ->
-                    when {
-                        r.name == baseName -> 0
-                        r.name == "$baseName (Copy)" -> 1
-                        else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
-                    }
-                }
-            val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
-            val newName = if (nextCopyNumber == 1) {
-                "$baseName (Copy)"
-            } else {
-                "$baseName (Copy $nextCopyNumber)"
-            }
+            val newName = routineCopyName(routine.name, routines.map { it.name })
             val duplicated = routine.copy(
                 id = newRoutineId,
                 name = newName,
@@ -893,6 +887,7 @@ private fun RoutineCardWithActions(
             onSaveRoutine(duplicated)
         },
         historicalTimeEstimate = historicalTimeEstimate,
+        onExportCsv = onExportCsv,
     )
 }
 
@@ -920,23 +915,7 @@ private fun deepCopyRoutine(routine: Routine, allRoutines: List<Routine>): Routi
         )
     }
 
-    // Smart duplicate naming: extract base name and find next copy number
-    val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
-    val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
-    val existingCopyNumbers = allRoutines
-        .mapNotNull { r ->
-            when {
-                r.name == baseName -> 0
-                r.name == "$baseName (Copy)" -> 1
-                else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
-            }
-        }
-    val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
-    val newName = if (nextCopyNumber == 1) {
-        "$baseName (Copy)"
-    } else {
-        "$baseName (Copy $nextCopyNumber)"
-    }
+    val newName = routineCopyName(routine.name, allRoutines.map { it.name })
 
     return routine.copy(
         id = newRoutineId,
@@ -1046,6 +1025,7 @@ fun RoutineCard(
     hasGroups: Boolean = false,
     onMoveToGroup: () -> Unit = {},
     historicalTimeEstimate: String? = null,
+    onExportCsv: (() -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1335,8 +1315,8 @@ fun RoutineCard(
                             )
                         }
 
-                        // Overflow menu for Move/Copy to Profile and Move to Group
-                        if (hasGroups || hasOtherProfiles) {
+                        // Overflow menu for Move/Copy to Profile, Move to Group and Export CSV
+                        if (hasGroups || hasOtherProfiles || onExportCsv != null) {
                             var showOverflow by remember { mutableStateOf(false) }
                             Spacer(Modifier.width(2.dp))
                             Box {
@@ -1365,6 +1345,22 @@ fun RoutineCard(
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.FolderOpen,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            },
+                                        )
+                                    }
+                                    if (onExportCsv != null) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(Res.string.routine_csv_export)) },
+                                            onClick = {
+                                                showOverflow = false
+                                                onExportCsv()
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.FileDownload,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(20.dp),
                                                 )

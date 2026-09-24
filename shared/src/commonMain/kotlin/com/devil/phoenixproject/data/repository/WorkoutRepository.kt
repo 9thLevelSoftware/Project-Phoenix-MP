@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
@@ -136,6 +137,28 @@ interface WorkoutRepository {
     suspend fun getRoutineById(routineId: String): Routine?
 
     /**
+     * The profile's live routines without their exercises (#772). Unlike [getAllRoutines] and
+     * [getRoutineById], this never writes: it runs no exercise-id repair.
+     */
+    suspend fun getRoutineHeaders(profileId: String): List<Routine>
+
+    /** The profile's routine groups, read once (#772). */
+    suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup>
+
+    /**
+     * Stores a confirmed CSV import (#772) in one transaction: [newGroups], then every routine
+     * in [routines] with its supersets and exercises. Routines in [overwriteRoutineIds] are
+     * replaced in place and must still be live routines of [profileId]; otherwise nothing is
+     * written and [RoutineCsvImportConflictException] is thrown.
+     */
+    suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    )
+
+    /**
      * Mark routine as used (updates lastUsed and increments useCount)
      */
     suspend fun markRoutineUsed(routineId: String)
@@ -228,3 +251,7 @@ data class PhaseStatisticsData(
     val eccentricWattMax: Float,
     val timestamp: Long,
 )
+
+/** A routine a CSV import was going to overwrite was deleted or moved to another profile (#772). */
+class RoutineCsvImportConflictException(routineId: String) :
+    IllegalStateException("Routine $routineId changed since the import was previewed")
