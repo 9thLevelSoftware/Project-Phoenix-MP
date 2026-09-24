@@ -180,6 +180,10 @@ class SqlDelightExerciseRepository(
         .mapToList(Dispatchers.IO)
 
     override suspend fun createCustomExercise(exercise: Exercise): Result<Exercise> = withContext(Dispatchers.IO) {
+        // Issue #774: a blank name crashes every alphabetical exercise list it reaches.
+        if (exercise.name.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Custom exercise name must not be blank"))
+        }
         try {
             // Generate a unique ID for custom exercises
             val customId = "custom_${currentTimeMillis()}"

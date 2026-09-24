@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.local.DATABASE_QUARANTINE_DIRECTORY
 import com.devil.phoenixproject.data.local.DatabaseFileNames
 import kotlinx.coroutines.sync.Mutex
 
@@ -38,6 +39,19 @@ internal object DatabaseFileExport {
         DATABASE_NAMES.flatMap { name -> SIDECAR_SUFFIXES.map { suffix -> "$name$suffix" } }
             .map { fileName -> DatabaseExportEntry("$folder/$fileName", "$directory/$fileName") }
             .filter { exists(it.path) }
+
+    /**
+     * Candidates a DB_DUAL_DATABASES recovery moved aside (#764) live in [DATABASE_QUARANTINE_DIRECTORY]
+     * beside the databases. [relativeFiles] are the files under it, relative to it; each is exported
+     * as `quarantine/<relative path>` so a support export still carries every file Phoenix set aside.
+     */
+    fun quarantineEntries(databaseDirectory: String, relativeFiles: List<String>): List<DatabaseExportEntry> =
+        relativeFiles.sorted().map { relative ->
+            DatabaseExportEntry(
+                entryName = "quarantine/$relative",
+                path = "$databaseDirectory/$DATABASE_QUARANTINE_DIRECTORY/$relative",
+            )
+        }
 }
 
 /**

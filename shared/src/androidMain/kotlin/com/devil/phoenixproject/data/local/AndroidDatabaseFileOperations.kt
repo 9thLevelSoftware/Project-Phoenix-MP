@@ -123,6 +123,33 @@ internal class AndroidDatabaseFileOperations(
         }
     }
 
+    override fun probeUserData(artifact: DatabaseArtifact): CandidateContent {
+        val source = file(artifact)
+        val databasesDir = source.parentFile ?: return CandidateContent.UNINSPECTABLE
+        return try {
+            probeDatabaseCopy(source, databasesDir) { scratch ->
+                SQLiteDatabase.openDatabase(
+                    scratch.path,
+                    null,
+                    SQLiteDatabase.OPEN_READWRITE,
+                    PRESERVING_ERROR_HANDLER,
+                ).use { database -> DatabaseUserDataClassifier.classify(AndroidProbeQueries(database)) }
+            }
+        } catch (_: Throwable) {
+            CandidateContent.UNINSPECTABLE
+        }
+    }
+
+    override fun quarantine(artifact: DatabaseArtifact, reason: DatabaseDiagnosticReason) {
+        val source = file(artifact)
+        val databasesDir = checkNotNull(source.parentFile) { "No database directory for $artifact" }
+        quarantineDatabaseFiles(source, databasesDir, reason, System.currentTimeMillis())
+    }
+
+    override fun discardProbeScratch() {
+        context.getDatabasePath(DatabaseFileNames.TARGET).parentFile?.let(::deleteProbeScratch)
+    }
+
     private fun file(artifact: DatabaseArtifact): File = context.getDatabasePath(
         when (artifact) {
             DatabaseArtifact.LEGACY -> DatabaseFileNames.LEGACY
@@ -185,6 +212,27 @@ internal class AndroidDatabaseFileOperations(
         return normalized.contains("not a database") ||
             normalized.contains("malformed") ||
             normalized.contains("corrupt")
+    }
+
+    /** [DatabaseProbeQueries] over an Android SQLiteDatabase opened on a scratch copy. */
+    private class AndroidProbeQueries(private val database: SQLiteDatabase) : DatabaseProbeQueries {
+        override fun quickCheck(): List<String?> = database.rawQuery("PRAGMA quick_check", null).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+
+        override fun tableNames(): List<String> =
+            database.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table'", null).use { cursor ->
+                buildList { while (cursor.moveToNext()) cursor.getString(0)?.let(::add) }
+            }
+
+        override fun columnNames(table: String): Set<String> =
+            database.rawQuery("PRAGMA table_info(${quoteIdentifier(table)})", null).use { cursor ->
+                buildSet { while (cursor.moveToNext()) cursor.getString(1)?.let(::add) }
+            }
+
+        override fun exists(select: String): Boolean = database.rawQuery("SELECT EXISTS($select)", null).use { cursor ->
+            cursor.moveToFirst() && cursor.getLong(0) == 1L
+        }
     }
 
     private data class PragmaValues(

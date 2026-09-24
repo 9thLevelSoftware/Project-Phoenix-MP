@@ -124,6 +124,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
     // Issue #113: Just Lift visual rest countdown
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+    val recentJustLiftExerciseIds by viewModel.recentJustLiftExerciseIds.collectAsState()
     // Issue #190: Exercise timer pause state
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
@@ -422,6 +423,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         rackItems, activeRackItemIds, activeRackBehaviorOverrides,
         machineTeardownState,
         restTransitionPlan,
+        recentJustLiftExerciseIds,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -464,6 +466,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             activeRackBehaviorOverrides = activeRackBehaviorOverrides,
             machineTeardownState = machineTeardownState,
             restTransitionPlan = restTransitionPlan,
+            recentJustLiftExerciseIds = recentJustLiftExerciseIds,
         )
     }
 

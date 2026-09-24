@@ -3,6 +3,7 @@ package com.devil.phoenixproject.util
 import android.content.Intent
 import androidx.core.content.FileProvider
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.DATABASE_QUARANTINE_DIRECTORY
 import com.devil.phoenixproject.data.local.DatabaseFileNames
 import java.io.File
 import java.util.zip.ZipEntry
@@ -34,7 +35,12 @@ internal fun databaseExportArchive(cacheDir: File): File = File(cacheDir, "expor
 internal fun buildDatabaseArchive(databasesDir: File, cacheDir: File): File? {
     val archive = databaseExportArchive(cacheDir)
     archive.delete()
-    val entries = DatabaseFileExport.entries("databases", databasesDir.path) { File(it).isFile }
+    val quarantine = File(databasesDir, DATABASE_QUARANTINE_DIRECTORY)
+    val quarantined = quarantine.walkTopDown().filter(File::isFile)
+        .map { it.relativeTo(quarantine).invariantSeparatorsPath }
+        .toList()
+    val entries = DatabaseFileExport.entries("databases", databasesDir.path) { File(it).isFile } +
+        DatabaseFileExport.quarantineEntries(databasesDir.path, quarantined)
     if (entries.isEmpty()) return null
     return archive.also { writeDatabaseArchive(entries, it) }
 }

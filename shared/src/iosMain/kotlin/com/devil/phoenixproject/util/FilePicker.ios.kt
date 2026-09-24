@@ -168,6 +168,12 @@ actual class FilePicker {
         }
     }
 
+    /** The export picker takes the document type from the file's `.csv` extension. */
+    @Composable
+    actual fun LaunchCsvFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
+        LaunchFileSaver(fileName, content, onSaved)
+    }
+
     /**
      * Present document picker for importing a JSON file.
      */

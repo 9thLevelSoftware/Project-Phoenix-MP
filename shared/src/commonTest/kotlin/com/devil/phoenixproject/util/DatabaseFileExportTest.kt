@@ -41,4 +41,26 @@ class DatabaseFileExportTest {
 
         assertEquals(listOf("library/vitruvian.db", "sqliter/vitruvian.db"), entries.map { it.entryName })
     }
+
+    @Test
+    fun quarantinedCandidatesAreExportedUnderTheirOwnFolder() {
+        val entries = DatabaseFileExport.quarantineEntries(
+            "/db",
+            listOf("2-CANONICAL_LEGACY_TARGET-vitruvian.db/vitruvian.db", "1-X-phoenix.db/phoenix.db-wal"),
+        )
+
+        assertEquals(
+            listOf(
+                DatabaseExportEntry(
+                    "quarantine/1-X-phoenix.db/phoenix.db-wal",
+                    "/db/phoenix-quarantine/1-X-phoenix.db/phoenix.db-wal",
+                ),
+                DatabaseExportEntry(
+                    "quarantine/2-CANONICAL_LEGACY_TARGET-vitruvian.db/vitruvian.db",
+                    "/db/phoenix-quarantine/2-CANONICAL_LEGACY_TARGET-vitruvian.db/vitruvian.db",
+                ),
+            ),
+            entries,
+        )
+    }
 }

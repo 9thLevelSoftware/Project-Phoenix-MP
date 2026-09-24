@@ -19,9 +19,11 @@ import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.SettingsPendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.SettingsRecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.*
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.database.PhoenixDatabase
@@ -58,6 +60,7 @@ val dataModule = module {
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
     single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
     single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
+    single<RecentJustLiftExerciseStore> { SettingsRecentJustLiftExerciseStore(get()) }
     single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
     single { ProfileScopedDataMerger(get()) }
     single<PendingProfileDeletionStore> { SettingsPendingProfileDeletionStore(get()) }
@@ -67,6 +70,7 @@ val dataModule = module {
             database = get(),
             profilePreferencesRepository = get(),
             profileLocalSafetyStore = get(),
+            recentJustLiftExerciseStore = get(),
             gamificationRepository = get(),
             profileScopedDataMerger = get(),
             profileMutationBarrier = get(),

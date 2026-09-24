@@ -52,6 +52,13 @@ expect class FilePicker {
      */
     @Composable
     fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit)
+
+    /**
+     * [LaunchFileSaver] for a CSV file (#772): the save dialog offers a `text/csv` document
+     * rather than JSON.
+     */
+    @Composable
+    fun LaunchCsvFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit)
 }
 
 /**

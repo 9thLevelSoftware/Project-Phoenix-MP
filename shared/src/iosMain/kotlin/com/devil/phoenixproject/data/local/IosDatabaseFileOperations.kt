@@ -175,6 +175,123 @@ internal class IosDatabaseFileOperations(
         }
     }
 
+    override fun probeUserData(artifact: DatabaseArtifact): CandidateContent = probePath(path(artifact))
+
+    override fun quarantine(artifact: DatabaseArtifact, reason: DatabaseDiagnosticReason) {
+        quarantinePath(path(artifact), reason, sidecarsOnly = false)
+    }
+
+    override fun discardProbeScratch() {
+        val directory = path(DatabaseFileNames.TARGET).substringBeforeLast('/')
+        val names = fileManager.contentsOfDirectoryAtPath(directory, error = null).orEmpty()
+        for (name in names) {
+            val fileName = name as? String ?: continue
+            if (fileName.startsWith(DATABASE_PROBE_SCRATCH_PREFIX)) {
+                fileManager.removeItemAtPath("$directory/$fileName", error = null)
+            }
+        }
+    }
+
+    /**
+     * Classifies the database at [sourcePath] from a scratch copy in the SQLiter directory (#764).
+     * The original is only copied, never opened; the copy is deleted afterwards. Never throws.
+     */
+    private fun probePath(sourcePath: String): CandidateContent {
+        return try {
+            if (!fileManager.fileExistsAtPath(sourcePath)) return CandidateContent.UNINSPECTABLE
+            val sidecars = DATABASE_PROBE_SIDECAR_SUFFIXES.filter { fileManager.fileExistsAtPath("$sourcePath$it") }
+            val totalSize = fileSizeAt(sourcePath) + sidecars.sumOf { fileSizeAt("$sourcePath$it") }
+            if (totalSize > DATABASE_PROBE_SIZE_LIMIT_BYTES) return CandidateContent.HAS_USER_DATA
+
+            val scratchName = "$DATABASE_PROBE_SCRATCH_PREFIX${sourcePath.substringAfterLast('/')}"
+            val scratchPath = path(scratchName)
+            removeWithSidecars(scratchPath)
+            try {
+                check(fileManager.copyItemAtPath(sourcePath, toPath = scratchPath, error = null)) {
+                    "Could not copy a database candidate for inspection"
+                }
+                runBestEffortBackupExclusion(scratchPath) { excludeFromBackup(scratchPath) }
+                for (suffix in sidecars) {
+                    check(fileManager.copyItemAtPath("$sourcePath$suffix", toPath = "$scratchPath$suffix", error = null)) {
+                        "Could not copy a database candidate sidecar for inspection"
+                    }
+                }
+                val driver = NativeSqliteDriver(
+                    DatabaseConfiguration(
+                        name = scratchName,
+                        version = NO_VERSION_CHECK,
+                        create = {},
+                    ),
+                )
+                try {
+                    DatabaseUserDataClassifier.classify(SqlDriverProbeQueries(driver))
+                } finally {
+                    driver.close()
+                }
+            } finally {
+                removeWithSidecars(scratchPath)
+            }
+        } catch (_: Throwable) {
+            CandidateContent.UNINSPECTABLE
+        }
+    }
+
+    /**
+     * Moves the sidecars of [sourcePath] and then (unless [sidecarsOnly]) the main file into a new
+     * folder under the SQLiter directory's [DATABASE_QUARANTINE_DIRECTORY] (#764). Sidecars move
+     * first so a foreign -wal can never be left beside a database that later takes this name.
+     * Nothing is overwritten or deleted.
+     */
+    private fun quarantinePath(
+        sourcePath: String,
+        reason: DatabaseDiagnosticReason,
+        sidecarsOnly: Boolean,
+    ) {
+        val root = path(DATABASE_QUARANTINE_DIRECTORY)
+        val fileName = sourcePath.substringAfterLast('/')
+        val timestampMs = (NSDate().timeIntervalSince1970 * 1000).toLong()
+        var folder = "$root/${quarantineFolderName(timestampMs, reason, fileName)}"
+        var attempt = 1
+        while (fileManager.fileExistsAtPath(folder)) {
+            folder = "$root/${quarantineFolderName(timestampMs, reason, fileName)}-${attempt++}"
+        }
+        check(
+            fileManager.createDirectoryAtPath(
+                folder,
+                withIntermediateDirectories = true,
+                attributes = null,
+                error = null,
+            ),
+        ) { "Could not create the quarantine folder" }
+        runBestEffortBackupExclusion(folder) { excludeFromBackup(folder) }
+        for (suffix in DATABASE_SIDECAR_SUFFIXES) {
+            val sidecar = "$sourcePath$suffix"
+            if (fileManager.fileExistsAtPath(sidecar)) {
+                check(fileManager.moveItemAtPath(sidecar, toPath = "$folder/$fileName$suffix", error = null)) {
+                    "Could not move a database sidecar into quarantine"
+                }
+            }
+        }
+        if (!sidecarsOnly && fileManager.fileExistsAtPath(sourcePath)) {
+            check(fileManager.moveItemAtPath(sourcePath, toPath = "$folder/$fileName", error = null)) {
+                "Could not move a database into quarantine"
+            }
+        }
+    }
+
+    private fun removeWithSidecars(databasePath: String) {
+        fileManager.removeItemAtPath(databasePath, error = null)
+        for (suffix in DATABASE_SIDECAR_SUFFIXES) {
+            fileManager.removeItemAtPath("$databasePath$suffix", error = null)
+        }
+    }
+
+    private fun fileSizeAt(filePath: String): Long {
+        val attributes = fileManager.attributesOfItemAtPath(filePath, error = null)
+        return (attributes?.get(NSFileSize) as? NSNumber)?.longValue
+            ?: error("Could not read a database candidate's size")
+    }
+
     private fun rawDriver(artifact: DatabaseArtifact): NativeSqliteDriver = NativeSqliteDriver(
         DatabaseConfiguration(
             name = name(artifact),
@@ -261,20 +378,23 @@ internal class IosDatabaseFileOperations(
             return
         }
         if (legacyExists) {
-            throw DatabaseFileMigrationException(
-                DatabaseMigrationFailureCode.DUAL_DATABASES,
-                "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",
-                diagnosticReason = DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY,
-                presenceSnapshot = capturedPresenceSnapshot,
-            )
-        }
-        if (legacySidecars.isNotEmpty()) {
-            throw DatabaseFileMigrationException(
-                DatabaseMigrationFailureCode.DUAL_DATABASES,
-                "Legacy database sidecars exist in the SQLiter location without its main file; automatic recovery is disabled.",
-                diagnosticReason = DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS,
-                presenceSnapshot = capturedPresenceSnapshot,
-            )
+            // Guard B (#764): both locations hold a vitruvian.db. Keep one only when that is lossless.
+            if (resolveDuplicateLegacy(compatibilityPath, legacyPath) == DuplicateLegacyKept.SQLITER) return
+        } else if (legacySidecars.isNotEmpty()) {
+            // Guard C (#764): SQLiter-location sidecars with no main file cannot belong to any
+            // database Phoenix will open, but a -wal left there would be replayed into the copy
+            // made below. Move them aside (never delete them), then relocate as usual.
+            try {
+                quarantinePath(legacyPath, DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS, sidecarsOnly = true)
+            } catch (failure: Throwable) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.DUAL_DATABASES,
+                    "Legacy database sidecars exist in the SQLiter location without its main file; automatic recovery is disabled.",
+                    failure,
+                    diagnosticReason = DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS,
+                    presenceSnapshot = capturedPresenceSnapshot,
+                )
+            }
         }
 
         val parentPath = legacyPath.substringBeforeLast('/')
@@ -355,6 +475,55 @@ internal class IosDatabaseFileOperations(
                 failure,
             )
         }
+    }
+
+    private enum class DuplicateLegacyKept { LIBRARY, SQLITER }
+
+    /**
+     * Guard B (#764): Library-root and SQLiter vitruvian.db both exist. Resolved when the two are
+     * byte-identical (a relocation that copied but was interrupted before removing the original),
+     * or when exactly one of them holds user data. The other one is moved into quarantine; every
+     * other case throws the same fail-closed DUAL_DATABASES as before.
+     */
+    private fun resolveDuplicateLegacy(libraryPath: String, sqliterPath: String): DuplicateLegacyKept {
+        fun conflict(cause: Throwable? = null) = DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.DUAL_DATABASES,
+            "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",
+            cause,
+            diagnosticReason = DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY,
+            presenceSnapshot = capturedPresenceSnapshot,
+        )
+
+        val kept = if (sameDatabaseFiles(libraryPath, sqliterPath)) {
+            DuplicateLegacyKept.SQLITER
+        } else {
+            val library = probePath(libraryPath)
+            val sqliter = if (library == CandidateContent.UNINSPECTABLE) {
+                CandidateContent.UNINSPECTABLE
+            } else {
+                probePath(sqliterPath)
+            }
+            when {
+                library == CandidateContent.EMPTY && sqliter != CandidateContent.UNINSPECTABLE -> DuplicateLegacyKept.SQLITER
+                library == CandidateContent.HAS_USER_DATA && sqliter == CandidateContent.EMPTY -> DuplicateLegacyKept.LIBRARY
+                else -> throw conflict()
+            }
+        }
+
+        try {
+            val setAside = if (kept == DuplicateLegacyKept.SQLITER) libraryPath else sqliterPath
+            quarantinePath(setAside, DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY, sidecarsOnly = false)
+        } catch (failure: Throwable) {
+            throw conflict(failure)
+        }
+        return kept
+    }
+
+    private fun sameDatabaseFiles(first: String, second: String): Boolean {
+        val sidecars = existingSidecars(first)
+        if (sidecars != existingSidecars(second)) return false
+        if (!fileManager.contentsEqualAtPath(first, andPath = second)) return false
+        return sidecars.all { suffix -> fileManager.contentsEqualAtPath("$first$suffix", andPath = "$second$suffix") }
     }
 
     private fun existingSidecars(databasePath: String): List<String> = LEGACY_SIDECAR_SUFFIXES.filter { suffix ->

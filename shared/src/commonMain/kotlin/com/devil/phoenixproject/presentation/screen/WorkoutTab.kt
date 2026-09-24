@@ -218,6 +218,7 @@ fun WorkoutTab(
         rackLoadAdjustment = state.rackLoadAdjustment,
         currentWarmupSetIndex = state.currentWarmupSetIndex,
         restTransitionPlan = state.restTransitionPlan,
+        recentJustLiftExerciseIds = state.recentJustLiftExerciseIds,
     )
 }
 
@@ -248,7 +249,7 @@ fun WorkoutTab(
     skippedExercises: Set<Int> = emptySet(),
     completedExercises: Set<Int> = emptySet(),
     autoplayEnabled: Boolean = false,
-    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
+    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Manual: wait for the user)
     onJumpToExercise: (Int) -> Unit = {},
     canGoBack: Boolean = false,
     canSkipForward: Boolean = false,
@@ -309,6 +310,7 @@ fun WorkoutTab(
     rackItems: List<RackItem> = emptyList(),
     activeRackItemIds: List<String> = emptyList(),
     activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    recentJustLiftExerciseIds: List<String> = emptyList(),
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -526,6 +528,7 @@ fun WorkoutTab(
                         if (showExerciseTagPicker && summarySessionId != null) {
                             MiniExercisePickerDialog(
                                 exerciseRepository = exerciseRepository,
+                                recentExerciseIds = recentJustLiftExerciseIds,
                                 onDismiss = { showExerciseTagPicker = false },
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
