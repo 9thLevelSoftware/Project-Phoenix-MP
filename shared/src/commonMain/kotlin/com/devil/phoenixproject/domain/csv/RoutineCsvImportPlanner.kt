@@ -269,11 +269,12 @@ class RoutineCsvImportPlanner(
         // Supersets in order of first appearance; each sits at its first exercise's position.
         val supersetKeys = draft.exercises.mapNotNull { it.supersetKey }.distinct()
         val supersetIds = supersetKeys.associateWith { newSupersetId() }
-        val usedColors = mutableSetOf<Int>()
+        // Colours given in the file are kept; the others take the next free colour.
+        val usedColors = draft.exercises.mapNotNullTo(mutableSetOf()) { it.supersetColor }
         val supersets = supersetKeys.mapIndexed { number, key ->
             val members = draft.exercises.withIndex().filter { it.value.supersetKey == key }
             val first = members.first().value
-            val color = SupersetColors.next(usedColors).also { usedColors += it }
+            val color = first.supersetColor ?: SupersetColors.next(usedColors).also { usedColors += it }
             Superset(
                 id = supersetIds.getValue(key),
                 routineId = routineId,
