@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
@@ -69,6 +70,7 @@ import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.components.exercisepicker.recentJustLiftExerciseIdsFromHistory
 import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -106,10 +108,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
@@ -554,6 +559,7 @@ class MainViewModel(
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
+    private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -622,6 +628,37 @@ class MainViewModel(
                 initialValue = CompletedExerciseIdsState(profileId = null, isLoading = true),
             )
 
+    /**
+     * The active profile's exercises most recently used to tag Just Lift sets, newest first
+     * (#850). Empty while the profile is switching, so the picker never shows another
+     * profile's list. A profile without a stored list is seeded once from its history.
+     */
+    val recentJustLiftExerciseIds: StateFlow<List<String>> =
+        userProfileRepository.activeProfileContext
+            .flatMapLatest { context ->
+                val store = recentJustLiftExerciseStore
+                when {
+                    store == null || context !is ActiveProfileContext.Ready -> flowOf(emptyList())
+                    else -> flow {
+                        val profileId = context.profile.id
+                        if (!store.hasEntry(profileId)) {
+                            val sessions = workoutRepository.getHistoryVisibleSessions(profileId).first()
+                            store.initializeIfAbsent(profileId, recentJustLiftExerciseIdsFromHistory(sessions))
+                        }
+                        emitAll(store.observe(profileId))
+                    }.catch { error ->
+                        // Only this profile's list is lost; later profile switches still load.
+                        Logger.e(error) { "Failed to load recent Just Lift exercises" }
+                        emit(emptyList())
+                    }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = emptyList(),
+            )
+
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager: GamificationManager = GamificationManager(
         gamificationRepository,
@@ -679,6 +716,7 @@ class MainViewModel(
         _hapticEvents = _hapticEvents,
         machineSafetyCoordinator = machineSafetyCoordinator,
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
+        recentJustLiftExerciseStore = recentJustLiftExerciseStore,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===

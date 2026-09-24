@@ -103,6 +103,8 @@ data class WorkoutUiState(
     val activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     val machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     val restTransitionPlan: RestTransitionPlan? = null,
+    // Issue #850: newest-first IDs behind the Just Lift tagging picker's Recent chip
+    val recentJustLiftExerciseIds: List<String> = emptyList(),
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0

@@ -51,6 +51,7 @@
     <string name="label_custom">Personalizado</string>
     <string name="label_essentials">Esenciales</string>
     <string name="cd_filter_essentials">Mostrar solo ejercicios esenciales</string>
+    <string name="label_recent">Recientes</string>
     <string name="label_all">Todos</string>
     <string name="label_done">HECHO</string>
     <string name="label_reps">Repeticiones</string>

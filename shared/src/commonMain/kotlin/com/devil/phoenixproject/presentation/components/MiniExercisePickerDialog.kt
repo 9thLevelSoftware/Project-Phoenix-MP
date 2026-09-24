@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +23,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
+import com.devil.phoenixproject.presentation.components.exercisepicker.orderByRecentExercises
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -34,11 +36,26 @@ fun MiniExercisePickerDialog(
     exerciseRepository: ExerciseRepository,
     onDismiss: () -> Unit,
     onExerciseSelected: (Exercise) -> Unit,
+    /**
+     * Newest-first IDs for the Recent chip (#850). The chip only shows when this is non-empty,
+     * and then starts selected, so the usual choices are one tap away.
+     */
+    recentExerciseIds: List<String> = emptyList(),
 ) {
     val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showEssentialsOnly by remember { mutableStateOf(false) }
+    var showRecentOnly by remember { mutableStateOf(recentExerciseIds.isNotEmpty()) }
+    // The list can arrive after the dialog opens; select Recent once when it does.
+    var recentDefaultApplied by remember { mutableStateOf(recentExerciseIds.isNotEmpty()) }
+    LaunchedEffect(recentExerciseIds.isNotEmpty()) {
+        if (recentExerciseIds.isNotEmpty() && !recentDefaultApplied) {
+            showRecentOnly = true
+            recentDefaultApplied = true
+        }
+    }
+    val recentActive = showRecentOnly && recentExerciseIds.isNotEmpty()
     var selectedMuscles by remember { mutableStateOf(setOf<String>()) }
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
 
@@ -51,8 +68,16 @@ fun MiniExercisePickerDialog(
         }
     }.collectAsState(initial = emptyList())
 
-    val exercises = remember(candidateExercises, showFavoritesOnly, showEssentialsOnly, selectedMuscles, selectedEquipment) {
-        filterExercisePickerCandidates(
+    val exercises = remember(
+        candidateExercises,
+        showFavoritesOnly,
+        showEssentialsOnly,
+        selectedMuscles,
+        selectedEquipment,
+        recentActive,
+        recentExerciseIds,
+    ) {
+        val filtered = filterExercisePickerCandidates(
             candidates = candidateExercises,
             filters = ExercisePickerFilterState(
                 showFavoritesOnly = showFavoritesOnly,
@@ -61,6 +86,7 @@ fun MiniExercisePickerDialog(
                 showEssentialsOnly = showEssentialsOnly,
             ),
         )
+        if (recentActive) orderByRecentExercises(filtered, recentExerciseIds) else filtered
     }
 
     AlertDialog(
@@ -89,6 +115,9 @@ fun MiniExercisePickerDialog(
                     enableEssentialsFilter = true,
                     showEssentialsOnly = showEssentialsOnly,
                     onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
+                    enableRecentFilter = recentExerciseIds.isNotEmpty(),
+                    showRecentOnly = recentActive,
+                    onToggleRecent = { showRecentOnly = !showRecentOnly },
                     customExerciseCount = 0,
                     selectedMuscles = selectedMuscles,
                     onToggleMuscle = { muscle ->
@@ -110,6 +139,7 @@ fun MiniExercisePickerDialog(
                         searchQuery = ""
                         showFavoritesOnly = false
                         showEssentialsOnly = false
+                        showRecentOnly = false
                         selectedMuscles = emptySet()
                         selectedEquipment = emptySet()
                     },

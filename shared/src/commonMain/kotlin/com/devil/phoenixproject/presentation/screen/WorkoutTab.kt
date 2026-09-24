@@ -218,6 +218,7 @@ fun WorkoutTab(
         rackLoadAdjustment = state.rackLoadAdjustment,
         currentWarmupSetIndex = state.currentWarmupSetIndex,
         restTransitionPlan = state.restTransitionPlan,
+        recentJustLiftExerciseIds = state.recentJustLiftExerciseIds,
     )
 }
 
@@ -309,6 +310,7 @@ fun WorkoutTab(
     rackItems: List<RackItem> = emptyList(),
     activeRackItemIds: List<String> = emptyList(),
     activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    recentJustLiftExerciseIds: List<String> = emptyList(),
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -526,6 +528,7 @@ fun WorkoutTab(
                         if (showExerciseTagPicker && summarySessionId != null) {
                             MiniExercisePickerDialog(
                                 exerciseRepository = exerciseRepository,
+                                recentExerciseIds = recentJustLiftExerciseIds,
                                 onDismiss = { showExerciseTagPicker = false },
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
