@@ -178,6 +178,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
     ): Routine = Routine(
         id = id,
         name = name,
+        description = description,
         exercises = emptyList(),
         createdAt = createdAt,
         updatedAt = updatedAt,
@@ -196,6 +197,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         profileId: String = "default",
         groupId: String? = null,
         updatedAt: Long? = null,
+        description: String = "",
     ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
@@ -233,11 +235,14 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                     }
 
                 val exercise = resolvedExercise ?: run {
+                    // Issue #774: never mint an exercise with a blank name; it crashes the
+                    // exercise picker. Fall back to the stored id, then a fixed label.
+                    val healedName = healedExerciseName(row.exerciseName, row.exerciseId)
                     // Self-healing: auto-create a custom exercise so exerciseId is never null.
                     // A null exerciseId breaks the entire PR tracking pipeline (#319).
                     val autoCreated = exerciseRepository.createCustomExercise(
                         Exercise(
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
                             isCustom = true,
@@ -261,7 +266,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         }
                         Exercise(
                             id = syntheticId,
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             muscleGroups = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
@@ -437,6 +442,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         return Routine(
             id = routineId,
             name = name,
+            description = description,
             exercises = exercises,
             supersets = supersets,
             createdAt = createdAt,
@@ -822,6 +828,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         routine.profileId,
                         routine.groupId,
                         updatedAt = routine.updatedAt,
+                        description = routine.description,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
@@ -849,49 +856,94 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
             db.transaction {
-                // Upsert in place: UPDATE, then INSERT OR IGNORE. A REPLACE would cascade-delete
-                // the routine and null CycleDay.routine_id for any training cycle using it.
-                val updatedAt = currentTimeMillis()
-                queries.updateRoutineFields(
-                    name = routine.name,
-                    description = "", // Default empty description
-                    createdAt = routine.createdAt,
-                    lastUsed = routine.lastUsed,
-                    useCount = routine.useCount.toLong(),
-                    updatedAt = updatedAt,
-                    profile_id = routine.profileId,
-                    groupId = routine.groupId,
-                    id = routineId,
-                )
-                queries.insertRoutineIgnore(
-                    id = routineId,
-                    name = routine.name,
-                    description = "",
-                    createdAt = routine.createdAt,
-                    lastUsed = routine.lastUsed,
-                    useCount = routine.useCount.toLong(),
-                    updatedAt = updatedAt,
-                    profile_id = routine.profileId,
-                    groupId = routine.groupId,
-                )
-
-                // Delete existing supersets and exercises before re-inserting
-                val previousDurations = snapshotRoutineExerciseDurations(routineId)
-                queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineExercises(routineId)
-
-                // Insert all supersets
-                routine.supersets.forEach { superset ->
-                    insertSuperset(routineId, superset)
-                }
-
-                // Insert all exercises
-                routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index, previousDurations)
-                }
+                writeRoutineRows(routine, routineId)
             }
 
             Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
+        }
+    }
+
+    /** The routine row, then its supersets and exercises. Callers run it inside a transaction. */
+    private fun writeRoutineRows(routine: Routine, routineId: String) {
+        // Upsert in place: UPDATE, then INSERT OR IGNORE. A REPLACE would cascade-delete
+        // the routine and null CycleDay.routine_id for any training cycle using it.
+        val updatedAt = currentTimeMillis()
+        queries.updateRoutineFields(
+            name = routine.name,
+            description = routine.description,
+            createdAt = routine.createdAt,
+            lastUsed = routine.lastUsed,
+            useCount = routine.useCount.toLong(),
+            updatedAt = updatedAt,
+            profile_id = routine.profileId,
+            groupId = routine.groupId,
+            id = routineId,
+        )
+        queries.insertRoutineIgnore(
+            id = routineId,
+            name = routine.name,
+            description = routine.description,
+            createdAt = routine.createdAt,
+            lastUsed = routine.lastUsed,
+            useCount = routine.useCount.toLong(),
+            updatedAt = updatedAt,
+            profile_id = routine.profileId,
+            groupId = routine.groupId,
+        )
+
+        // Delete existing supersets and exercises before re-inserting
+        val previousDurations = snapshotRoutineExerciseDurations(routineId)
+        queries.deleteSupersetsByRoutine(routineId)
+        queries.deleteRoutineExercises(routineId)
+
+        // Supersets first: RoutineExercise.supersetId references them.
+        routine.supersets.forEach { superset ->
+            insertSuperset(routineId, superset)
+        }
+
+        routine.exercises.forEachIndexed { index, exercise ->
+            insertRoutineExercise(routineId, exercise, index, previousDurations)
+        }
+    }
+
+    override suspend fun getRoutineHeaders(profileId: String): List<Routine> = withContext(Dispatchers.IO) {
+        queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic).executeAsList()
+    }
+
+    override suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup> = withContext(Dispatchers.IO) {
+        queries.selectAllRoutineGroups(profileId = profileId, mapper = ::mapToRoutineGroup).executeAsList()
+    }
+
+    override suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                // The preview was read outside this transaction; a target deleted or moved since
+                // then must not be resurrected or written into another profile.
+                for (routineId in overwriteRoutineIds) {
+                    val row = queries.selectRoutineById(routineId).executeAsOneOrNull()
+                    if (row == null || row.profile_id != profileId || row.deletedAt != null) {
+                        throw RoutineCsvImportConflictException(routineId)
+                    }
+                }
+                for (group in newGroups) {
+                    queries.insertRoutineGroup(
+                        id = group.id,
+                        name = group.name,
+                        orderIndex = group.orderIndex.toLong(),
+                        createdAt = group.createdAt,
+                        profile_id = profileId,
+                    )
+                }
+                for (routine in routines) {
+                    writeRoutineRows(routine.copy(profileId = profileId), routine.id)
+                }
+            }
+            Logger.d { "Committed CSV import: ${routines.size} routines, ${newGroups.size} new groups" }
         }
     }
 
@@ -1014,7 +1066,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 // Update the routine
                 queries.updateRoutineById(
                     name = routine.name,
-                    description = "", // Keep description empty for now
+                    description = routine.description,
                     updatedAt = currentTimeMillis(),
                     id = routineId,
                 )
@@ -1078,21 +1130,24 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 basicRoutine.profileId,
                 basicRoutine.groupId,
                 updatedAt = basicRoutine.updatedAt,
+                description = basicRoutine.description,
             )
         }
     }
 
     // ==================== ROUTINE GROUP CRUD ====================
 
-    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> = queries.selectAllRoutineGroups(profileId = profileId) { id, name, orderIndex, createdAt, profile_id ->
+    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> =
+        queries.selectAllRoutineGroups(profileId = profileId, mapper = ::mapToRoutineGroup).asFlow().mapToList(Dispatchers.IO)
+
+    private fun mapToRoutineGroup(id: String, name: String, orderIndex: Long, createdAt: Long, profileId: String): RoutineGroup =
         RoutineGroup(
             id = id,
             name = name,
             orderIndex = orderIndex.toInt(),
             createdAt = createdAt,
-            profileId = profile_id,
+            profileId = profileId,
         )
-    }.asFlow().mapToList(Dispatchers.IO)
 
     suspend fun saveRoutineGroup(group: RoutineGroup) {
         withContext(Dispatchers.IO) {
@@ -1363,3 +1418,9 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         )
     }.asFlow().mapToList(Dispatchers.IO)
 }
+
+/** Name given to a healed routine exercise whose stored name and id are both blank (#774). */
+internal const val UNKNOWN_EXERCISE_NAME = "Unknown exercise"
+
+internal fun healedExerciseName(storedName: String, exerciseId: String?): String =
+    storedName.trim().ifEmpty { exerciseId?.trim()?.takeIf(String::isNotEmpty) ?: UNKNOWN_EXERCISE_NAME }

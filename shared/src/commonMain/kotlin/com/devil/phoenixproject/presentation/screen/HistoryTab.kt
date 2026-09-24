@@ -123,6 +123,7 @@ fun HistoryTab(
     onDeleteRoutineGroup: (String, String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    recentJustLiftExerciseIds: List<String> = emptyList(),
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -217,6 +218,7 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
+                                recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
@@ -230,6 +232,7 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
+                                recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
                                 // History "Delete All Sets" path also
@@ -256,6 +259,7 @@ fun WorkoutHistoryCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    recentJustLiftExerciseIds: List<String> = emptyList(),
     onDelete: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -469,6 +473,7 @@ fun WorkoutHistoryCard(
                         if (showExerciseTagPicker) {
                             MiniExercisePickerDialog(
                                 exerciseRepository = exerciseRepository,
+                                recentExerciseIds = recentJustLiftExerciseIds,
                                 onDismiss = { showExerciseTagPicker = false },
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
@@ -764,6 +769,7 @@ fun GroupedRoutineCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
     // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
@@ -1036,6 +1042,7 @@ fun GroupedRoutineCard(
                             if (taggingSessionId == session.id) {
                                 MiniExercisePickerDialog(
                                     exerciseRepository = exerciseRepository,
+                                    recentExerciseIds = recentJustLiftExerciseIds,
                                     onDismiss = { taggingSessionId = null },
                                     onExerciseSelected = { exercise ->
                                         taggingSessionId = null

@@ -73,8 +73,9 @@ internal class DatabaseFileMigrationException(
 ) : IllegalStateException(message, cause),
     StartupDiagnosticFailure {
     override val startupDiagnosticCode: String = "DB_${code.name}"
-    // DUAL_DATABASES stays fail-closed (nothing is chosen or deleted automatically), but a
-    // retry is harmless: the guards throw again before any mutation while the files are unchanged.
+    // DUAL_DATABASES stays fail-closed unless exactly one candidate holds user data (#764), and
+    // nothing is ever deleted. A retry is harmless: it re-runs the same checks, and a candidate is
+    // only ever moved aside after it was proven empty.
     override val startupRetryAllowed: Boolean = true
     override val startupDiagnosticReason: String? = diagnosticReason?.name
     override val startupPresenceSnapshot: DatabasePresenceSnapshot? = presenceSnapshot
@@ -106,6 +107,23 @@ internal interface DatabaseFileOperations {
     fun deleteLegacySidecars()
 
     fun <T> withExclusiveMigrationLock(block: () -> T): T
+
+    /**
+     * Classifies [artifact] from a scratch copy of it and its sidecars (#764). Must never open or
+     * change the original, and never throw. The default keeps every conflict fail-closed.
+     */
+    fun probeUserData(artifact: DatabaseArtifact): CandidateContent = CandidateContent.UNINSPECTABLE
+
+    /**
+     * Moves [artifact] and its sidecars (sidecars first, main file last) into a new folder under
+     * [DATABASE_QUARANTINE_DIRECTORY]. Never overwrites or deletes anything.
+     */
+    fun quarantine(artifact: DatabaseArtifact, reason: DatabaseDiagnosticReason) {
+        throw UnsupportedOperationException("Setting a database candidate aside is not supported here")
+    }
+
+    /** Removes scratch copies a probe interrupted by process death left behind. Best effort. */
+    fun discardProbeScratch() = Unit
 }
 
 /**
@@ -120,16 +138,12 @@ internal class DatabaseFileMigrationCoordinator(
     private var targetValidationPending = false
 
     fun prepareTarget(): DatabasePreparation = operations.withExclusiveMigrationLock {
+        runCatching { operations.discardProbeScratch() }
         val presenceSnapshot = runCatching { operations.capturePresenceSnapshot() }.getOrNull()
-        val layout = operations.inspect()
+        var layout = operations.inspect()
 
         if (layout.legacyExists && layout.targetExists) {
-            throw DatabaseFileMigrationException(
-                DatabaseMigrationFailureCode.DUAL_DATABASES,
-                "Both legacy and Phoenix database files exist; automatic recovery is disabled.",
-                diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
-                presenceSnapshot = presenceSnapshot,
-            )
+            layout = resolveCanonicalConflict(layout, presenceSnapshot)
         }
 
         val preparation = when {
@@ -168,6 +182,53 @@ internal class DatabaseFileMigrationCoordinator(
             preparation
         }
     }
+
+    /**
+     * Issue #764: `vitruvian.db` and `phoenix.db` both exist (for example after an older build
+     * recreated the legacy file). Set one aside only when that is provably lossless: it holds no
+     * user data and the other one either does or holds none either. Probes run on scratch copies
+     * before anything moves; the loser is moved, never deleted. Every other case - both hold data,
+     * either cannot be inspected, or a recovery/staging file is part of the picture - throws the
+     * same fail-closed DUAL_DATABASES as before.
+     */
+    private fun resolveCanonicalConflict(
+        layout: DatabaseFileLayout,
+        presenceSnapshot: DatabasePresenceSnapshot?,
+    ): DatabaseFileLayout {
+        fun conflict(cause: Throwable? = null) = DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.DUAL_DATABASES,
+            "Both legacy and Phoenix database files exist; automatic recovery is disabled.",
+            cause,
+            diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
+            presenceSnapshot = presenceSnapshot,
+        )
+
+        // A recovery or staging file means a migration was mid-flight; its fingerprints tie it to
+        // one of the candidates, so neither may be moved.
+        if (layout.recoveryExists || layout.stagingExists) throw conflict()
+
+        val legacy = probe(DatabaseArtifact.LEGACY)
+        if (legacy == CandidateContent.UNINSPECTABLE) throw conflict()
+        val target = probe(DatabaseArtifact.TARGET)
+        val setAside = when {
+            legacy == CandidateContent.EMPTY && target != CandidateContent.UNINSPECTABLE -> DatabaseArtifact.LEGACY
+            legacy == CandidateContent.HAS_USER_DATA && target == CandidateContent.EMPTY -> DatabaseArtifact.TARGET
+            else -> throw conflict()
+        }
+
+        try {
+            operations.quarantine(setAside, DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET)
+        } catch (failure: Throwable) {
+            throw conflict(failure)
+        }
+
+        val resolved = operations.inspect()
+        if (resolved.legacyExists && resolved.targetExists) throw conflict()
+        return resolved
+    }
+
+    private fun probe(artifact: DatabaseArtifact): CandidateContent =
+        runCatching { operations.probeUserData(artifact) }.getOrDefault(CandidateContent.UNINSPECTABLE)
 
     /**
      * Called only after SQLDelight schema migration and reconciliation succeed.

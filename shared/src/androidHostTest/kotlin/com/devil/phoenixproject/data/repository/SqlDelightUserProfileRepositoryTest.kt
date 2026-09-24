@@ -6,6 +6,7 @@ import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.SettingsRecentJustLiftExerciseStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -631,6 +632,27 @@ class SqlDelightUserProfileRepositoryTest {
                 .isEmpty(),
         )
         assertNull(settings.getStringOrNull("profile_source_safe_word"))
+    }
+
+    @Test
+    fun pendingLocalCleanupRemovesTheRecentJustLiftListWithTheProfilesOtherKeys() = runTest {
+        val recentStore = SettingsRecentJustLiftExerciseStore(settings)
+        val cleaningRepository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferenceStore,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            recentJustLiftExerciseStore = recentStore,
+        )
+        recentStore.record("source", "bench")
+        recentStore.record("kept", "squat")
+        database.phoenixDatabaseQueries.enqueueProfileLocalCleanup("source", 100)
+
+        cleaningRepository.retryPendingLocalCleanup()
+
+        assertFalse(recentStore.hasEntry("source"), "#850: a deleted profile's Recent list must not outlive it")
+        assertEquals(listOf("squat"), recentStore.read("kept"))
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup().executeAsOneOrNull())
     }
 
     @Test

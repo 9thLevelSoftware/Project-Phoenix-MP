@@ -49,6 +49,9 @@
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favoriten</string>
     <string name="label_custom">Benutzerdefiniert</string>
+    <string name="label_essentials">Grundübungen</string>
+    <string name="cd_filter_essentials">Nur Grundübungen anzeigen</string>
+    <string name="label_recent">Zuletzt</string>
     <string name="label_all">Alle</string>
     <string name="label_done">FERTIG</string>
     <string name="label_reps">Wiederholungen</string>
@@ -182,6 +185,27 @@
     <string name="add_exercise">Übung hinzufügen</string>
     <string name="delete_routine">Routine löschen</string>
     <string name="delete_routine_message">Bist du sicher, dass du \'%1$s\' löschen möchtest?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Routinen aus CSV importieren</string>
+    <string name="routine_csv_export">Als CSV exportieren</string>
+    <string name="routine_csv_import_title">Routinen importieren</string>
+    <string name="routine_csv_unreadable_title">Diese Datei kann nicht importiert werden</string>
+    <string name="routine_csv_issues_title">Behebe diese Probleme in der Datei und wähle sie erneut aus:</string>
+    <string name="routine_csv_more_issues">…und %1$d weitere</string>
+    <string name="routine_csv_action_create">Neu</string>
+    <string name="routine_csv_action_overwrite">Ersetzt die vorhandene Routine</string>
+    <string name="routine_csv_action_copy">Neue Kopie</string>
+    <string name="routine_csv_summary">%1$d Übungen · %2$d Sätze · %3$s</string>
+    <string name="routine_csv_group">Gruppe: %1$s</string>
+    <string name="routine_csv_matches_found">Einige Routinen in dieser Datei entsprechen vorhandenen Routinen.</string>
+    <string name="routine_csv_mode_copies">Als Kopien importieren</string>
+    <string name="routine_csv_mode_overwrite">Vorhandene Routinen ersetzen</string>
+    <string name="routine_csv_refreshed">Deine Routinen haben sich seit dieser Vorschau geändert. Prüfe sie vor dem Import erneut.</string>
+    <string name="routine_csv_commit_failed">Der Import ist fehlgeschlagen. Es wurde nichts gespeichert.</string>
+    <string name="routine_csv_confirm">Importieren</string>
+    <string name="routine_csv_imported">%1$d Routinen importiert.</string>
+    <string name="routine_csv_export_blocked_title">%1$s kann nicht exportiert werden</string>
+    <string name="routine_csv_export_blocked_message">CSV-Dateien können diese Einstellungen noch nicht speichern, beim Export gingen sie verloren:</string>
     <string name="delete_selected_routines">%1$d Routinen löschen?</string>
     <string name="duplicate_selected_routines">%1$d Routinen duplizieren?</string>
     <string name="duplicate_routines_message">Neue Kopien werden mit \'(Kopie)\' Suffix erstellt.</string>
@@ -698,6 +722,7 @@
     <string name="color_orange">Orange</string>
     <string name="cd_select_profile_color">Profilfarbe %1$s auswählen</string>
     <string name="profile_automatic">Automatisch</string>
+    <string name="profile_manual">Manuell</string>
     <string name="profile_master_beeps">Trainingstöne</string>
     <string name="profile_body_weight_unset">Nicht festgelegt</string>
     <string name="profile_body_weight_invalid">Gib ein Körpergewicht zwischen 20 und 300 kg ein</string>
@@ -720,4 +745,14 @@
     <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
     <string name="label_previously_completed">Zuvor abgeschlossen</string>
     <string name="cd_filter_previously_completed">Zuvor abgeschlossene Übungen filtern</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">Lokaler Speicher braucht Aufmerksamkeit</string>
+    <string name="startup_local_data_preserved_title">Lokale Daten erhalten</string>
+    <string name="startup_storage_failed_message">Phoenix konnte den lokalen Speicher nicht sicher vorbereiten. Vorhandene lokale Daten wurden nicht verändert. Du kannst es erneut versuchen, sobald das Geräte- oder Speicherproblem behoben ist.</string>
+    <string name="startup_dual_databases_message">Phoenix hat mehr als eine Kopie seiner lokalen Datenbank gefunden und konnte nicht sicher entscheiden, welche behalten werden soll. Deshalb wurde keine davon geöffnet. Es wurde nichts gelöscht. Exportiere die Datenbankdateien, um eine Kopie zu behalten, und sende sie privat per E-Mail an support@phoenix-portal.com, zusammen mit dem Diagnose- und dem Supportcode unten. Die Dateien enthalten deinen Trainingsverlauf, hänge sie daher nicht an ein öffentliches Issue an. „Erneut versuchen“ prüft erneut, sobald der Support dir geholfen hat.</string>
+    <string name="startup_export_database_files">Datenbankdateien exportieren</string>
+    <string name="startup_export_failed">Die Datenbankdateien konnten nicht exportiert werden. Es wurde nichts verändert; du kannst es erneut versuchen.</string>
+    <string name="startup_contact_support">Support per E-Mail kontaktieren</string>
+    <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
+    <string name="startup_support_code">Supportcode: %1$s</string>
 </resources>

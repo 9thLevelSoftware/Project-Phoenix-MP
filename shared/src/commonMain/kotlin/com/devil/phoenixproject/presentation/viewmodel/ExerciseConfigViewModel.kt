@@ -772,6 +772,9 @@ class ExerciseConfigViewModel constructor(
     }
 
     fun addSet() {
+        // Issue #774: "Add Set" is enabled from the sheet's first frame, before initialize()
+        // has supplied the unit converters; a tap then hit an uninitialized lateinit.
+        if (!::kgToDisplay.isInitialized || !::weightUnit.isInitialized) return
         val lastSet = _sets.value.lastOrNull()
         val newSet = SetConfiguration(
             setNumber = _sets.value.size + 1,

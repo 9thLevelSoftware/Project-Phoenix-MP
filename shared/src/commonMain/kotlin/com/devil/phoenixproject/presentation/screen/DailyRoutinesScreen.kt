@@ -9,10 +9,13 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.RoutineCsvExportBlockedDialog
+import com.devil.phoenixproject.presentation.components.RoutineCsvImportDialog
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
@@ -20,6 +23,8 @@ import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
 import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvExportUiState
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
@@ -30,9 +35,13 @@ import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
 import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
 import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.BoundedUriContent
+import com.devil.phoenixproject.util.readUriContentUpTo
+import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 
@@ -167,6 +176,12 @@ fun DailyRoutinesScreen(
     // Issue #130: Block routine editing during active workout
     var showWorkoutActiveDialog by remember { mutableStateOf(false) }
 
+    // Issue #772: routine CSV import and export
+    val routineCsvViewModel: RoutineCsvViewModel = koinViewModel()
+    val csvImportState by routineCsvViewModel.importState.collectAsState()
+    val csvExportState by routineCsvViewModel.exportState.collectAsState()
+    var pickRoutineCsv by remember { mutableStateOf(false) }
+
     // Set global title
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("Daily Routines")
@@ -257,9 +272,59 @@ fun DailyRoutinesScreen(
                     navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
                 }
             },
+            onExportRoutineCsv = { routine -> routineCsvViewModel.exportRoutine(routine) },
+            onImportRoutinesCsv = {
+                // Same rule as editing: routines are not replaced during a workout.
+                if (viewModel.isWorkoutActive) {
+                    showWorkoutActiveDialog = true
+                } else {
+                    pickRoutineCsv = true
+                }
+            },
             themeMode = themeMode,
             modifier = Modifier.fillMaxSize(),
         )
+
+        if (pickRoutineCsv) {
+            val filePicker = rememberFilePicker()
+            filePicker.LaunchCsvFilePicker { uri ->
+                pickRoutineCsv = false
+                if (uri != null) {
+                    scope.launch {
+                        when (val read = readUriContentUpTo(uri, RoutineCsvFormat.MAX_BYTES)) {
+                            is BoundedUriContent.Read -> routineCsvViewModel.previewImport(read.content)
+                            BoundedUriContent.TooLarge -> routineCsvViewModel.onFileTooLarge()
+                            BoundedUriContent.Unreadable -> routineCsvViewModel.onFileUnreadable()
+                        }
+                    }
+                }
+            }
+        }
+
+        csvImportState?.let { state ->
+            RoutineCsvImportDialog(
+                state = state,
+                onSelectMode = routineCsvViewModel::selectMode,
+                onConfirm = routineCsvViewModel::confirmImport,
+                onDismiss = routineCsvViewModel::dismissImport,
+            )
+        }
+
+        when (val export = csvExportState) {
+            is RoutineCsvExportUiState.Ready -> {
+                val filePicker = rememberFilePicker()
+                filePicker.LaunchCsvFileSaver(export.fileName, export.content) {
+                    routineCsvViewModel.clearExport()
+                }
+            }
+
+            is RoutineCsvExportUiState.Blocked -> RoutineCsvExportBlockedDialog(
+                state = export,
+                onDismiss = routineCsvViewModel::clearExport,
+            )
+
+            null -> Unit
+        }
 
         // Connection error dialog
         connectionError?.let { error ->

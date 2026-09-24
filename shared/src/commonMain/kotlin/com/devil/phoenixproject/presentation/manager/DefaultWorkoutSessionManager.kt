@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
@@ -271,6 +272,7 @@ class DefaultWorkoutSessionManager(
     private val scope: CoroutineScope,
     private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
+    private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
@@ -681,6 +683,16 @@ class DefaultWorkoutSessionManager(
                 taggedExerciseId = exerciseId,
                 taggedExerciseName = exercise.name,
             )
+        }
+
+        // #850: feeds the Recent chip on the tagging picker. Device-local and best effort:
+        // the tag above is already stored, so a settings failure must not undo or hide it.
+        try {
+            recentJustLiftExerciseStore?.record(taggedSession.profileId, exerciseId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Failed to record $exerciseId as a recent Just Lift exercise" }
         }
 
         syncTriggerManager?.onWorkoutCompleted()

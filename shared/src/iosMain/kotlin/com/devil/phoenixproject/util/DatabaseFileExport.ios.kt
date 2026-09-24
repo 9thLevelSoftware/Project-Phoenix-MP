@@ -4,6 +4,7 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import co.touchlab.sqliter.DatabaseFileContext
+import com.devil.phoenixproject.data.local.DATABASE_QUARANTINE_DIRECTORY
 import com.devil.phoenixproject.data.local.DatabaseFileNames
 import com.devil.phoenixproject.data.local.legacyLibraryRootPath
 import kotlin.coroutines.resume
@@ -22,6 +23,8 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileCoordinator
 import platform.Foundation.NSFileCoordinatorReadingForUploading
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileType
+import platform.Foundation.NSFileTypeRegular
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 
@@ -76,7 +79,8 @@ private fun buildDatabaseArchive(): String? {
     val sqliterDirectory = DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null).substringBeforeLast('/')
     val libraryDirectory = legacyLibraryRootPath().substringBeforeLast('/')
     val entries = DatabaseFileExport.entries("sqliter", sqliterDirectory, exists) +
-        DatabaseFileExport.entries("library", libraryDirectory, exists)
+        DatabaseFileExport.entries("library", libraryDirectory, exists) +
+        DatabaseFileExport.quarantineEntries(sqliterDirectory, quarantinedFiles(sqliterDirectory))
     if (entries.isEmpty()) return null
 
     val staging = "${NSTemporaryDirectory().trimEnd('/')}/phoenix-database-files"
@@ -121,4 +125,14 @@ private fun zipDirectory(directory: String, archive: String): Boolean = memScope
     )
     error.value?.let { Logger.w { "Database export zip failed: ${it.localizedDescription}" } }
     moved
+}
+
+/** Regular files under the quarantine folder (#764), relative to it. */
+private fun quarantinedFiles(sqliterDirectory: String): List<String> {
+    val fileManager = NSFileManager.defaultManager
+    val root = "$sqliterDirectory/$DATABASE_QUARANTINE_DIRECTORY"
+    val subpaths = fileManager.subpathsOfDirectoryAtPath(root, error = null).orEmpty()
+    return subpaths.mapNotNull { it as? String }.filter { relative ->
+        fileManager.attributesOfItemAtPath("$root/$relative", error = null)?.get(NSFileType) == NSFileTypeRegular
+    }
 }
