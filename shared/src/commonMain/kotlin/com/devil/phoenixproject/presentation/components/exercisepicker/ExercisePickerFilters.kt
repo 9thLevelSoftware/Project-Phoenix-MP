@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.components.exercisepicker
 
+import com.devil.phoenixproject.domain.model.EssentialsExercises
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.getEquipmentDatabaseValues
 
@@ -9,6 +10,8 @@ internal data class ExercisePickerFilterState(
     val selectedMuscles: Set<String> = emptySet(),
     val selectedEquipment: Set<String> = emptySet(),
     val showPreviouslyCompletedOnly: Boolean = false,
+    /** Issue #770: only the built-in [EssentialsExercises] set. */
+    val showEssentialsOnly: Boolean = false,
 )
 
 /**
@@ -41,5 +44,8 @@ internal fun filterExercisePickerCandidates(
     val matchesPreviouslyCompleted = !filters.showPreviouslyCompletedOnly ||
         (exercise.id?.trim()?.takeIf(String::isNotEmpty) in completedExerciseIds)
 
-    matchesFavorites && matchesCustom && matchesMuscle && matchesEquipment && matchesPreviouslyCompleted
+    val matchesEssentials = !filters.showEssentialsOnly || EssentialsExercises.contains(exercise)
+
+    matchesFavorites && matchesCustom && matchesMuscle && matchesEquipment && matchesPreviouslyCompleted &&
+        matchesEssentials
 }

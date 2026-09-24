@@ -49,6 +49,8 @@
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favorieten</string>
     <string name="label_custom">Aangepast</string>
+    <string name="label_essentials">Basis</string>
+    <string name="cd_filter_essentials">Alleen basisoefeningen tonen</string>
     <string name="label_all">Alles</string>
     <string name="label_done">KLAAR</string>
     <string name="label_reps">Herhalingen</string>

@@ -16,6 +16,9 @@ import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.data.sync.SyncTriggerTarget
+import com.devil.phoenixproject.util.ConnectivityChecker
+import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val syncModule = module {
@@ -59,7 +62,7 @@ val syncModule = module {
             trainingCycleRepository = get<TrainingCycleRepository>(),
             pendingAccountMismatch = get<PendingAccountMismatch>(),
         )
-    }
+    } bind SyncTriggerTarget::class
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
     single {
         HealthBodyWeightSyncManager(
@@ -70,7 +73,7 @@ val syncModule = module {
             userProfileRepository = get(),
         )
     }
-    single { SyncTriggerManager(get(), get(), get()) }
+    single { SyncTriggerManager(get<SyncManager>(), get<ConnectivityChecker>(), get()) }
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)

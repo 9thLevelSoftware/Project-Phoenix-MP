@@ -7,6 +7,12 @@ private const val UNLIMITED_REPS_SET_TOTAL = 252
 internal sealed interface RepFreshnessState {
     data object AwaitingEvidence : RepFreshnessState
     data class LegacyBaseline(val topCounter: Int, val completeCounter: Int) : RepFreshnessState
+
+    /**
+     * Issue #712: the legacy counter baseline for this execution is established and a later
+     * legacy packet has moved past it. Every further legacy packet is a delta from that baseline.
+     */
+    data object LegacyArmed : RepFreshnessState
     data object Armed : RepFreshnessState
 }
 
@@ -42,7 +48,14 @@ internal class RepNotificationFreshnessGate {
 
     fun observeMovement(lease: ExecutionLease): Boolean {
         if (!isActive(lease)) return false
-        states[lease.identity()] = RepFreshnessState.Armed
+        val identity = lease.identity()
+        // Issue #712: movement is freshness evidence for modern packets only. A legacy
+        // baseline is already fresh; replacing it with Armed made the next legacy packet
+        // re-baseline and swallow that packet's rep.
+        when (states[identity]) {
+            is RepFreshnessState.LegacyBaseline, RepFreshnessState.LegacyArmed -> Unit
+            else -> states[identity] = RepFreshnessState.Armed
+        }
         return true
     }
 
@@ -121,17 +134,30 @@ internal class RepNotificationFreshnessGate {
         return RepFreshnessDecision.BaselineOnly
     }
 
+    /**
+     * Legacy packets carry only the machine's directional counters, which run across sets, so the
+     * first post-cutover packet of an execution is taken as that execution's baseline. That happens
+     * ONCE: issue #712 re-baselined every legacy packet that arrived after a processed packet or a
+     * Moving handle state, and each re-baseline swallowed that packet's top-counter increment. When
+     * the first packet of a set was a top packet, every rep of the set was lost.
+     */
     private fun evaluateLegacy(identity: LeaseIdentity, notification: RepNotification): RepFreshnessDecision {
-        val state = states[identity]
-        if (state !is RepFreshnessState.LegacyBaseline) {
-            states[identity] = RepFreshnessState.LegacyBaseline(notification.topCounter, notification.completeCounter)
-            return RepFreshnessDecision.BaselineOnly
+        when (val state = states[identity]) {
+            RepFreshnessState.LegacyArmed -> return RepFreshnessDecision.Process
+
+            is RepFreshnessState.LegacyBaseline -> {
+                if (state.topCounter == notification.topCounter && state.completeCounter == notification.completeCounter) {
+                    return RepFreshnessDecision.BaselineOnly
+                }
+                states[identity] = RepFreshnessState.LegacyArmed
+                return RepFreshnessDecision.Process
+            }
+
+            else -> {
+                states[identity] = RepFreshnessState.LegacyBaseline(notification.topCounter, notification.completeCounter)
+                return RepFreshnessDecision.BaselineOnly
+            }
         }
-        if (state.topCounter == notification.topCounter && state.completeCounter == notification.completeCounter) {
-            return RepFreshnessDecision.BaselineOnly
-        }
-        states[identity] = RepFreshnessState.Armed
-        return RepFreshnessDecision.Process
     }
 
     private fun isActive(lease: ExecutionLease): Boolean = lease.activationCutoverTimestampMs != null && lease.identity() !in invalidatedLeases
