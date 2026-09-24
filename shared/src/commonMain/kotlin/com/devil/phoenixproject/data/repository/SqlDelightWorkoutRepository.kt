@@ -1186,9 +1186,15 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     // ========== New methods for full parity ==========
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentVisibleSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
         .asFlow()
         .mapToList(Dispatchers.IO)
+
+    override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = withContext(Dispatchers.IO) {
+        queries.selectLastWeightForExercise(profileId = profileId, exerciseId = exerciseId)
+            .executeAsOneOrNull()
+            ?.toFloat()
+    }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = withContext(Dispatchers.IO) {
         queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()

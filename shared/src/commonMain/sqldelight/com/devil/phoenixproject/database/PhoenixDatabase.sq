@@ -132,6 +132,9 @@ CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
 -- SchemaManifest.manifestIndexes rather than a numbered migration.
 CREATE INDEX idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC);
 CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
+-- Last weight for an exercise (exerciseId + profile predicate, newest first): serves the
+-- WHERE and the ORDER BY timestamp DESC LIMIT 1 without a sort. Also heal-only (profile_id).
+CREATE INDEX idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC);
 -- Routine-group lookups and sync repair (migration 55).
 CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
 
@@ -1014,6 +1017,27 @@ SELECT id FROM WorkoutSession;
 
 selectRecentSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
+
+-- F-034: the newest :limit user-visible rows (same tombstone filter and order as
+-- selectAllSessions), so the History header can observe 20 rows instead of the whole
+-- history. Served by idx_session_profile_ts.
+selectRecentVisibleSessions:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC
+LIMIT :limit;
+
+-- F-034: last per-cable weight used for one exercise in this profile (newest
+-- user-visible session). Served by idx_session_exercise_profile_ts
+-- (exerciseId, profile_id, timestamp DESC): an index search with no ORDER BY sort.
+selectLastWeightForExercise:
+SELECT weightPerCableKg FROM WorkoutSession
+WHERE profile_id = :profileId
+AND exerciseId = :exerciseId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC
+LIMIT 1;
 
 selectSessionsByRoutineSessionId:
 SELECT * FROM WorkoutSession
@@ -1957,10 +1981,6 @@ SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId
 selectUniqueWorkoutModes:
 SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
 
--- Get peak power from all workout metrics
-selectPeakPower:
-SELECT MAX(power) AS peakPower FROM MetricSample;
-
 -- Profile-scoped peak power (audit F019).
 selectPeakPowerForProfile:
 SELECT MAX(ms.power) AS peakPower FROM MetricSample ms
@@ -1973,6 +1993,46 @@ SELECT DISTINCT e.muscleGroup
 FROM WorkoutSession ws
 INNER JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.workingReps > 0;
+
+-- F-034 badge helpers: aggregate in SQL instead of loading every session. All use the
+-- row filter the old Kotlin helpers applied to selectAllSessions (profile-scoped,
+-- user-visible, workingReps > 0) and the device's local time zone.
+
+-- Workouts per local hour of day (0-23). The time-of-day badges apply their
+-- inclusive/exclusive hour ranges to these <=24 buckets.
+countWorkoutsByLocalHour:
+SELECT CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
+       COUNT(*) AS count
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+GROUP BY hour;
+
+-- Distinct local calendar days with a workout, as epoch days, ascending
+-- (comeback-after-a-break badge).
+selectWorkoutLocalEpochDays:
+SELECT DISTINCT CAST(julianday(date(timestamp / 1000, 'unixepoch', 'localtime')) - 2440587.5 AS INTEGER) AS epochDay
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+ORDER BY epochDay ASC;
+
+-- Start of the current local week (Monday 00:00 local) in epoch ms. Computed with SQLite's
+-- 'localtime' so the weekly badge uses the same zone source as the hour/day buckets above.
+selectLocalWeekStartMs:
+SELECT CAST(strftime('%s', date('now', 'localtime', '-6 days', 'weekday 1'), 'utc') AS INTEGER) * 1000;
+
+-- Workouts at or after :sinceMs (workouts-this-week badge).
+countWorkoutsSince:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+AND timestamp >= :sinceMs;
+
+-- Largest single-session volume in kg, truncated per session like the old Kotlin
+-- helper: measured totalVolumeKg, else reps x per-cable weight x cable count (legacy
+-- rows without cableCount count one cable).
+selectMaxSingleSessionVolume:
+SELECT MAX(CAST(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1)) AS INTEGER)) AS maxVolume
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count workouts completed on weekends (profile-scoped)
 countWeekendWorkouts:
