@@ -457,10 +457,6 @@ class StreamingImportRoundTripTest {
 
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
-        override suspend fun saveToFile(backup: BackupData): Result<String> {
-            error("Not needed for tests")
-        }
-
         override suspend fun importFromFile(filePath: String): Result<ImportResult> {
             error("Not needed for tests")
         }

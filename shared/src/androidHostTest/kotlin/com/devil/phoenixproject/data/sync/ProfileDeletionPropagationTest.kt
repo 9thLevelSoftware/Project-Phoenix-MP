@@ -677,7 +677,6 @@ class ProfileDeletionPropagationTest {
         override fun createBackupWriter() =
             com.devil.phoenixproject.util.BackupJsonWriter(java.io.File.createTempFile("export-probe-", ".json").absolutePath)
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-        override suspend fun saveToFile(backup: com.devil.phoenixproject.util.BackupData): Result<String> = error("unused")
         override suspend fun importFromFile(filePath: String): Result<com.devil.phoenixproject.util.ImportResult> = error("unused")
         override suspend fun shareBackup() = Unit
         override fun getSessionBackupDirectory(): String = System.getProperty("java.io.tmpdir")

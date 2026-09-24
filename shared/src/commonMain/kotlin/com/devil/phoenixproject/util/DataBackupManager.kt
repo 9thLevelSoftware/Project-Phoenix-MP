@@ -111,12 +111,6 @@ interface DataBackupManager {
     suspend fun importFromJson(jsonString: String): Result<ImportResult>
 
     /**
-     * Save backup to platform-specific location (Downloads on Android, Documents on iOS)
-     * Returns the file path on success
-     */
-    suspend fun saveToFile(backup: BackupData): Result<String>
-
-    /**
      * Export all data to a file using streaming JSON to avoid OOM on large datasets.
      * Writes data incrementally to disk -- peak memory is ~1 session's worth of metrics.
      * Returns the final file path on success.
