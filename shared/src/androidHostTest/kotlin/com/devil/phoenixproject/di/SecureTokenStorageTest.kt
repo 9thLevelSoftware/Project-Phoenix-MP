@@ -1,202 +1,132 @@
 package com.devil.phoenixproject.di
 
+import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
-import com.russhwolf.settings.MapSettings
-import com.russhwolf.settings.Settings
 import org.junit.Test
 
 /**
- * Tests for secure token storage migration logic.
- *
- * These tests verify the migration contract that exists in both Android and iOS platform modules:
- * - Legacy tokens in plain storage should be migrated to secure storage
- * - Legacy keys should be removed after successful migration
- * - Migration should be idempotent (safe to run multiple times)
- * - Migration should not crash on failures
- *
- * Note: Full platform-specific tests require:
- * - Android: Robolectric or instrumented test for EncryptedSharedPreferences
- * - iOS: macOS with Xcode for KeychainSettings
- *
- * This test validates the migration algorithm using MapSettings as a stand-in.
+ * Tests the production Android token migration, [migrateTokensToEncrypted] (#869: this file
+ * used to test a hand-copied algorithm). An in-memory [SharedPreferences] stands in for the
+ * plaintext and EncryptedSharedPreferences stores; the Keystore-backed encryption itself
+ * needs an instrumented test, and iOS KeychainSettings needs macOS.
  */
 class SecureTokenStorageTest {
 
-    private val portalKeys = listOf(
-        "portal_auth_token",
-        "portal_refresh_token",
-        "portal_token_expires_at",
-        "portal_user_id",
-        "portal_user_email",
-        "portal_user_display_name",
-        "portal_user_is_premium",
-        "portal_device_id",
-        "portal_last_sync_timestamp",
-    )
-
-    /**
-     * Simulates the migration logic that exists in both PlatformModule.android.kt
-     * and PlatformModule.ios.kt to validate the algorithm.
-     */
-    private fun migrateTokens(legacy: Settings, secure: Settings) {
-        // Check if any portal keys exist in legacy storage
-        val hasLegacyKeys = portalKeys.any { key ->
-            legacy.getStringOrNull(key) != null ||
-                legacy.getLongOrNull(key) != null ||
-                legacy.getBooleanOrNull(key) != null
+    @Test
+    fun portalKeysMoveToEncryptedStorageAndLeavePlaintext() {
+        val plain = InMemorySharedPreferences().apply {
+            edit()
+                .putString("portal_auth_token", "jwt")
+                .putString("portal_refresh_token", "refresh")
+                .putLong("portal_token_expires_at", 42L)
+                .putBoolean("portal_user_is_premium", true)
+                .putString("units", "kg")
+                .commit()
         }
-        if (!hasLegacyKeys) return
+        val encrypted = InMemorySharedPreferences()
 
-        // Copy values to secure storage
-        for (key in portalKeys) {
-            legacy.getStringOrNull(key)?.let { value ->
-                secure.putString(key, value)
-            }
-            legacy.getLongOrNull(key)?.let { value ->
-                secure.putLong(key, value)
-            }
-            legacy.getBooleanOrNull(key)?.let { value ->
-                secure.putBoolean(key, value)
-            }
+        migrateTokensToEncrypted(plain, encrypted)
+
+        assertThat(encrypted.getString("portal_auth_token", null)).isEqualTo("jwt")
+        assertThat(encrypted.getString("portal_refresh_token", null)).isEqualTo("refresh")
+        assertThat(encrypted.getLong("portal_token_expires_at", 0L)).isEqualTo(42L)
+        assertThat(encrypted.getBoolean("portal_user_is_premium", false)).isTrue()
+        PORTAL_KEYS.forEach { key -> assertThat(plain.contains(key)).isFalse() }
+        assertThat(plain.getString("units", null)).isEqualTo("kg")
+        assertThat(encrypted.contains("units")).isFalse()
+    }
+
+    @Test
+    fun anExistingEncryptedValueIsNeverOverwritten() {
+        val plain = InMemorySharedPreferences().apply {
+            edit().putString("portal_auth_token", "stale-plaintext").commit()
+        }
+        val encrypted = InMemorySharedPreferences().apply {
+            edit().putString("portal_auth_token", "current").commit()
         }
 
-        // Remove migrated keys from legacy storage
-        for (key in portalKeys) {
-            legacy.remove(key)
+        migrateTokensToEncrypted(plain, encrypted)
+
+        assertThat(encrypted.getString("portal_auth_token", null)).isEqualTo("current")
+        assertThat(plain.contains("portal_auth_token")).isFalse()
+    }
+
+    @Test
+    fun aFailedEncryptedWriteKeepsThePlaintextTokensForTheNextLaunch() {
+        val plain = InMemorySharedPreferences().apply {
+            edit().putString("portal_auth_token", "jwt").putString("portal_user_id", "u1").commit()
         }
+        val encrypted = InMemorySharedPreferences(commitSucceeds = false)
+
+        migrateTokensToEncrypted(plain, encrypted)
+
+        assertThat(plain.getString("portal_auth_token", null)).isEqualTo("jwt")
+        assertThat(plain.getString("portal_user_id", null)).isEqualTo("u1")
+        assertThat(encrypted.contains("portal_auth_token")).isFalse()
     }
 
     @Test
-    fun migrationCopiesStringTokensToSecureStorage() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
+    fun migrationIsIdempotentAndANoOpWithoutPortalKeys() {
+        val plain = InMemorySharedPreferences().apply {
+            edit().putString("portal_device_id", "device").commit()
+        }
+        val encrypted = InMemorySharedPreferences()
 
-        // Setup: store tokens in legacy storage
-        legacy.putString("portal_auth_token", "jwt-token-123")
-        legacy.putString("portal_refresh_token", "refresh-token-456")
-        legacy.putString("portal_user_id", "user-789")
-        legacy.putString("portal_user_email", "user@example.com")
+        migrateTokensToEncrypted(plain, encrypted)
+        migrateTokensToEncrypted(plain, encrypted)
 
-        // Act: run migration
-        migrateTokens(legacy, secure)
+        assertThat(encrypted.getString("portal_device_id", null)).isEqualTo("device")
+        assertThat(encrypted.all).hasSize(1)
 
-        // Assert: tokens are in secure storage
-        assertThat(secure.getStringOrNull("portal_auth_token")).isEqualTo("jwt-token-123")
-        assertThat(secure.getStringOrNull("portal_refresh_token")).isEqualTo("refresh-token-456")
-        assertThat(secure.getStringOrNull("portal_user_id")).isEqualTo("user-789")
-        assertThat(secure.getStringOrNull("portal_user_email")).isEqualTo("user@example.com")
-
-        // Assert: tokens are removed from legacy storage
-        assertThat(legacy.getStringOrNull("portal_auth_token")).isNull()
-        assertThat(legacy.getStringOrNull("portal_refresh_token")).isNull()
-        assertThat(legacy.getStringOrNull("portal_user_id")).isNull()
-        assertThat(legacy.getStringOrNull("portal_user_email")).isNull()
+        val untouched = InMemorySharedPreferences().apply { edit().putString("units", "lb").commit() }
+        migrateTokensToEncrypted(untouched, InMemorySharedPreferences())
+        assertThat(untouched.getString("units", null)).isEqualTo("lb")
     }
 
-    @Test
-    fun migrationCopiesLongValuesToSecureStorage() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
+    /** Map-backed [SharedPreferences]; [commitSucceeds] = false makes every commit a no-op failure. */
+    private class InMemorySharedPreferences(private val commitSucceeds: Boolean = true) : SharedPreferences {
+        private val values = mutableMapOf<String, Any?>()
 
-        // Setup: store long values in legacy storage
-        legacy.putLong("portal_token_expires_at", 1740916800L)
-        legacy.putLong("portal_last_sync_timestamp", 1234567890L)
+        override fun getAll(): Map<String, *> = values.toMap()
+        override fun getString(key: String, defValue: String?): String? = values[key] as? String ?: defValue
 
-        // Act: run migration
-        migrateTokens(legacy, secure)
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(key: String, defValues: Set<String>?): Set<String>? =
+            values[key] as? Set<String> ?: defValues
+        override fun getInt(key: String, defValue: Int): Int = values[key] as? Int ?: defValue
+        override fun getLong(key: String, defValue: Long): Long = values[key] as? Long ?: defValue
+        override fun getFloat(key: String, defValue: Float): Float = values[key] as? Float ?: defValue
+        override fun getBoolean(key: String, defValue: Boolean): Boolean = values[key] as? Boolean ?: defValue
+        override fun contains(key: String): Boolean = key in values
+        override fun edit(): SharedPreferences.Editor = Editor()
+        override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) = Unit
+        override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) = Unit
 
-        // Assert: values are in secure storage
-        assertThat(secure.getLong("portal_token_expires_at", 0L)).isEqualTo(1740916800L)
-        assertThat(secure.getLong("portal_last_sync_timestamp", 0L)).isEqualTo(1234567890L)
+        private inner class Editor : SharedPreferences.Editor {
+            private val puts = mutableMapOf<String, Any?>()
+            private val removals = mutableSetOf<String>()
+            private var clear = false
 
-        // Assert: values are removed from legacy storage
-        assertThat(legacy.getLongOrNull("portal_token_expires_at")).isNull()
-        assertThat(legacy.getLongOrNull("portal_last_sync_timestamp")).isNull()
-    }
+            override fun putString(key: String, value: String?) = apply { puts[key] = value }
+            override fun putStringSet(key: String, values: Set<String>?) = apply { puts[key] = values?.toSet() }
+            override fun putInt(key: String, value: Int) = apply { puts[key] = value }
+            override fun putLong(key: String, value: Long) = apply { puts[key] = value }
+            override fun putFloat(key: String, value: Float) = apply { puts[key] = value }
+            override fun putBoolean(key: String, value: Boolean) = apply { puts[key] = value }
+            override fun remove(key: String) = apply { removals += key }
+            override fun clear() = apply { clear = true }
 
-    @Test
-    fun migrationCopiesBooleanValuesToSecureStorage() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
+            override fun commit(): Boolean {
+                if (!commitSucceeds) return false
+                if (clear) values.clear()
+                removals.forEach(values::remove)
+                values.putAll(puts)
+                return true
+            }
 
-        // Setup: store boolean in legacy storage
-        legacy.putBoolean("portal_user_is_premium", true)
-
-        // Act: run migration
-        migrateTokens(legacy, secure)
-
-        // Assert: value is in secure storage
-        assertThat(secure.getBoolean("portal_user_is_premium", false)).isTrue()
-
-        // Assert: value is removed from legacy storage
-        assertThat(legacy.getBooleanOrNull("portal_user_is_premium")).isNull()
-    }
-
-    @Test
-    fun migrationIsIdempotentWhenNoLegacyKeys() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
-
-        // Setup: tokens already in secure storage (no legacy keys)
-        secure.putString("portal_auth_token", "existing-token")
-
-        // Act: run migration (should be a no-op)
-        migrateTokens(legacy, secure)
-
-        // Assert: secure storage unchanged
-        assertThat(secure.getStringOrNull("portal_auth_token")).isEqualTo("existing-token")
-    }
-
-    @Test
-    fun migrationHandlesMixedValueTypes() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
-
-        // Setup: store mixed types
-        legacy.putString("portal_auth_token", "test-jwt")
-        legacy.putString("portal_device_id", "device-uuid")
-        legacy.putLong("portal_token_expires_at", 9999999999L)
-        legacy.putBoolean("portal_user_is_premium", false)
-
-        // Act: run migration
-        migrateTokens(legacy, secure)
-
-        // Assert: all types migrated correctly
-        assertThat(secure.getStringOrNull("portal_auth_token")).isEqualTo("test-jwt")
-        assertThat(secure.getStringOrNull("portal_device_id")).isEqualTo("device-uuid")
-        assertThat(secure.getLong("portal_token_expires_at", 0L)).isEqualTo(9999999999L)
-        assertThat(secure.getBoolean("portal_user_is_premium", true)).isFalse()
-
-        // Assert: all legacy keys removed
-        assertThat(legacy.getStringOrNull("portal_auth_token")).isNull()
-        assertThat(legacy.getStringOrNull("portal_device_id")).isNull()
-        assertThat(legacy.getLongOrNull("portal_token_expires_at")).isNull()
-        assertThat(legacy.getBooleanOrNull("portal_user_is_premium")).isNull()
-    }
-
-    @Test
-    fun migrationPreservesNonPortalKeys() {
-        val legacy = MapSettings()
-        val secure = MapSettings()
-
-        // Setup: store both portal and non-portal keys
-        legacy.putString("portal_auth_token", "migrate-me")
-        legacy.putString("user_theme", "dark") // Should NOT be migrated
-        legacy.putString("preferred_units", "metric") // Should NOT be migrated
-
-        // Act: run migration
-        migrateTokens(legacy, secure)
-
-        // Assert: portal key migrated
-        assertThat(secure.getStringOrNull("portal_auth_token")).isEqualTo("migrate-me")
-        assertThat(legacy.getStringOrNull("portal_auth_token")).isNull()
-
-        // Assert: non-portal keys preserved in legacy
-        assertThat(legacy.getStringOrNull("user_theme")).isEqualTo("dark")
-        assertThat(legacy.getStringOrNull("preferred_units")).isEqualTo("metric")
-
-        // Assert: non-portal keys NOT in secure storage
-        assertThat(secure.getStringOrNull("user_theme")).isNull()
-        assertThat(secure.getStringOrNull("preferred_units")).isNull()
+            override fun apply() {
+                commit()
+            }
+        }
     }
 }

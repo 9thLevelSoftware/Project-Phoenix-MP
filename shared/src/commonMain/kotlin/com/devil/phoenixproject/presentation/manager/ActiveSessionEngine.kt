@@ -112,6 +112,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -129,6 +130,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -513,6 +515,12 @@ private sealed interface RetryRequestBuildResult {
     data class FailClosed(val recovery: RetryStartRequest?) : RetryRequestBuildResult
     data object Wait : RetryRequestBuildResult
 }
+
+/**
+ * Issue #869: longest Set Summary waits for its set's commit. A normal commit takes well
+ * under a second; past this bound the summary is shown and the save carries on.
+ */
+internal const val SUMMARY_COMMIT_WAIT_MS = 5_000L
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -1663,6 +1671,10 @@ class ActiveSessionEngine(
     private val resetMachineTeardownOwner = atomic<ResetMachineTeardownOwner?>(null)
     private val pendingResetStart = atomic<PendingResetStart?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
+
+    // Issue #869: one commit signal per in-flight session save, completed once the set's
+    // transaction has settled (committed or failed), so Set Summary can wait for it.
+    private val setCommitSignals = atomic<Map<String, CompletableDeferred<Unit>>>(emptyMap())
     private val restTransitionMutex = Mutex()
     private val runtimeResumeMutex = Mutex()
     private var pendingRuntimeResume: PendingRuntimeResume? = null
@@ -9338,14 +9350,64 @@ class ActiveSessionEngine(
         }
     }
 
-    private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot) {
+    /**
+     * Starts saving [snapshot] and returns a signal that completes once the set's commit has
+     * settled, or null when the session is already persisted. A save that is already in flight
+     * for the same session returns that save's signal.
+     */
+    private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot): Deferred<Unit>? {
         val stableSessionId = snapshot.completion.lease.sessionId
-        when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
-            PersistenceClaimResult.Claimed -> scope.launch { persistSnapshot(snapshot) }
+        return when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
+            PersistenceClaimResult.Claimed -> launchClaimedSnapshotPersistence(snapshot)
 
-            PersistenceClaimResult.DuplicateInProgress,
-            PersistenceClaimResult.AlreadyPersisted,
-            -> logPersistenceDeduplicated(snapshot)
+            PersistenceClaimResult.DuplicateInProgress -> {
+                logPersistenceDeduplicated(snapshot)
+                setCommitSignals.value[stableSessionId]
+            }
+
+            PersistenceClaimResult.AlreadyPersisted -> {
+                logPersistenceDeduplicated(snapshot)
+                null
+            }
+        }
+    }
+
+    private fun launchClaimedSnapshotPersistence(snapshot: WorkoutExitSnapshot): Deferred<Unit> {
+        val sessionId = snapshot.completion.lease.sessionId
+        val commitSettled = CompletableDeferred<Unit>()
+        while (true) {
+            val current = setCommitSignals.value
+            if (setCommitSignals.compareAndSet(current, current + (sessionId to commitSettled))) break
+        }
+        val job = scope.launch { persistSnapshot(snapshot, commitSettled) }
+        // A launch on a cancelled scope never runs its body; the signal must still settle.
+        job.invokeOnCompletion { settleSetCommitSignal(sessionId, commitSettled) }
+        return commitSettled
+    }
+
+    private fun settleSetCommitSignal(sessionId: String, commitSettled: CompletableDeferred<Unit>) {
+        commitSettled.complete(Unit)
+        while (true) {
+            val current = setCommitSignals.value
+            if (current[sessionId] !== commitSettled) return
+            if (setCommitSignals.compareAndSet(current, current - sessionId)) return
+        }
+    }
+
+    /**
+     * Issue #869: Set Summary must not appear before the set it summarises is committed, or a
+     * tag made from the summary finds no session and is dropped. The wait is bounded so a slow
+     * or stuck write can never hold the summary back indefinitely; the save itself carries on
+     * and its failure path still raises the save-failure offer.
+     */
+    private suspend fun awaitSetCommitBeforeSummary(lease: ExecutionLease, commitSettled: Deferred<Unit>?) {
+        if (commitSettled == null || commitSettled.isCompleted) return
+        val settled = withTimeoutOrNull(SUMMARY_COMMIT_WAIT_MS) { commitSettled.await() }
+        if (settled == null) {
+            Logger.w {
+                "Issue #869: set ${lease.sessionId} not committed after ${SUMMARY_COMMIT_WAIT_MS}ms; " +
+                    "showing Set Summary while the save continues"
+            }
         }
     }
 
@@ -9364,7 +9426,7 @@ class ActiveSessionEngine(
 
     private fun retryRetainedWorkoutExitPersistence() {
         scope.launch {
-            exitSnapshotStore.retainedSnapshots().forEach(::launchSnapshotPersistence)
+            exitSnapshotStore.retainedSnapshots().forEach { launchSnapshotPersistence(it) }
         }
     }
 
@@ -9373,7 +9435,7 @@ class ActiveSessionEngine(
         val stableSessionId = snapshot.completion.lease.sessionId
         return when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
             PersistenceClaimResult.Claimed -> {
-                scope.launch { persistSnapshot(snapshot) }
+                launchClaimedSnapshotPersistence(snapshot)
                 true
             }
 
@@ -9383,7 +9445,10 @@ class ActiveSessionEngine(
         }
     }
 
-    private suspend fun persistSnapshot(snapshot: WorkoutExitSnapshot) {
+    private suspend fun persistSnapshot(
+        snapshot: WorkoutExitSnapshot,
+        commitSettled: CompletableDeferred<Unit>? = null,
+    ) {
         val sessionId = snapshot.completion.lease.sessionId
         require(snapshot.session.id == sessionId) {
             "Workout exit snapshot session must match its completion lease"
@@ -9401,6 +9466,8 @@ class ActiveSessionEngine(
                 repMetrics = snapshot.repMetrics,
                 repBiomechanics = snapshot.biomechanicsRepResults,
             )
+            // Issue #869: the set is durable; Set Summary may now appear.
+            commitSettled?.complete(Unit)
             snapshot.singleExerciseDefaults?.let { defaults ->
                 settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
                     workoutPreferences.copy(
@@ -9449,6 +9516,8 @@ class ActiveSessionEngine(
             // offer must not be overwritten. This session stays retained, so the next
             // set start auto-retries it even while the screen names the earlier one.
             coordinator.offerWorkoutSaveFailure(sessionId)
+            // Issue #869: release Set Summary together with the failure offer.
+            commitSettled?.complete(Unit)
         }
         if (!persistenceSucceeded) return
         try {
@@ -10413,7 +10482,7 @@ class ActiveSessionEngine(
         }
 
         val manualSnapshot = completion?.let { captureExitSnapshot(it, TerminalPath.MANUAL_STOP) }
-        manualSnapshot?.let(::launchSnapshotPersistence)
+        val manualCommit = manualSnapshot?.let { launchSnapshotPersistence(it) }
         val shouldExitToIdle = exitingWorkout
         coordinator._weightAdjustmentRecommendation.value = null
 
@@ -10469,6 +10538,8 @@ class ActiveSessionEngine(
                         }
                     }
 
+                    // Issue #869: the summary follows the set's commit, as on auto-complete.
+                    awaitSetCommitBeforeSummary(manualSnapshot.lease, manualCommit)
                     if (!hasCurrentAuthority(manualSnapshot.lease, "manual_stop_summary")) {
                         return@launchPresentationContinuation
                     }
@@ -11223,8 +11294,9 @@ class ActiveSessionEngine(
             }
             null
         } else {
-            captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
+            captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE)
         }
+        val terminalCommit = terminalSnapshot?.let { launchSnapshotPersistence(it) }
         val teardownReady = CompletableDeferred<Unit>()
         launchCompletionJob(lease) {
             // This is the one lease-owned completion job. It persists the exact rest
@@ -11421,21 +11493,6 @@ class ActiveSessionEngine(
 
             val effectiveSkipSummary = skipSummary
 
-            // Rest actions can be selected while RESET is still in flight. Read the
-            // final durable plan and its visible state together under the transition
-            // mutex immediately before any post-Ready presentation write.
-            val preservePlanOwnedResting = restTransitionMutex.withLock {
-                val plan = coordinator._restTransitionPlan.value
-                val document = activeRuntimeDocument
-                coordinator._workoutState.value is WorkoutState.Resting &&
-                    plan != null &&
-                    plan !is RestTransitionPlan.NormalAdvance &&
-                    document != null &&
-                    hasRestTransitionAuthority(document, plan, lease)
-            }
-
-            Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
-
             // Issue #714: persist the captured Just Lift defaults before publishing
             // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
@@ -11450,6 +11507,32 @@ class ActiveSessionEngine(
                     }
                 }
             }
+
+            // Rest actions can be selected while RESET is still in flight. Read the
+            // final durable plan and its visible state together under the transition
+            // mutex immediately before any post-Ready presentation write.
+            suspend fun planOwnsResting(): Boolean = restTransitionMutex.withLock {
+                val plan = coordinator._restTransitionPlan.value
+                val document = activeRuntimeDocument
+                coordinator._workoutState.value is WorkoutState.Resting &&
+                    plan != null &&
+                    plan !is RestTransitionPlan.NormalAdvance &&
+                    document != null &&
+                    hasRestTransitionAuthority(document, plan, lease)
+            }
+            // A plan-owned rest (drop-set offer) already presents this set; this job
+            // publishes nothing more for it.
+            if (planOwnsResting()) return@launchCompletionJob
+
+            // Issue #869: publish nothing that follows this set (summary, rest, next set)
+            // until its commit has settled. RESET is already done or in flight; this wait
+            // never delays it.
+            awaitSetCommitBeforeSummary(lease, terminalCommit)
+            if (!hasCurrentAuthority(lease, "completion_after_set_commit")) return@launchCompletionJob
+            // Re-read after the wait: a rest action may have landed while it ran.
+            val preservePlanOwnedResting = planOwnsResting()
+
+            Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
             if (!effectiveSkipSummary && !preservePlanOwnedResting) {
                 Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
