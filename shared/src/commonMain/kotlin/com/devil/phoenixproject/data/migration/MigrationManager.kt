@@ -20,6 +20,7 @@ import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
+import com.devil.phoenixproject.domain.model.SessionTiming
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
@@ -229,6 +230,21 @@ class MigrationManager(
         runAtomicDataRepair("fabricated-routine-session-ids-v1", ::cleanupFabricatedRoutineSessionIds)
         runAtomicDataRepair("workout-mode-keys-v1", ::normalizeLegacyWorkoutModes)
         runAtomicDataRepair("legacy-workout-routine-names-v1", ::backfillLegacyWorkoutRoutineNames)
+        runAtomicDataRepair("epoch-zero-session-starts-v1", ::repairEpochZeroSessionStarts)
+    }
+
+    /**
+     * Sessions saved by the "1970" bug (a save read a zeroed workoutStartTime) have
+     * timestamp 0 and a duration equal to the save time in epoch ms. Only that signature is
+     * touched (old imported history is legitimate). Rebuild the start from
+     * the session's own samples/sets and replace an epoch-sized duration with the sample span (or 0).
+     * Local only: sync generations are not bumped, and the portal repairs these on push.
+     */
+    private fun repairEpochZeroSessionStarts() {
+        queries.repairEpochZeroSessionStarts(
+            minEpochSizedDurationMs = SessionTiming.MIN_EPOCH_SIZED_DURATION_MS,
+            minValidStartMs = SessionTiming.MIN_VALID_START_MS,
+        )
     }
 
     private fun runAtomicDataRepair(repairKey: String, repair: () -> Unit) {
