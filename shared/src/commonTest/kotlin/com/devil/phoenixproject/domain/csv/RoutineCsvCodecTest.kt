@@ -120,6 +120,8 @@ class RoutineCsvCodecTest {
         assertTrue(blocked { it.copy(stopAtTop = true) }.single().contains("top"))
         assertTrue(blocked { it.copy(repCountTiming = RepCountTiming.BOTTOM) }.single().contains("bottom"))
         assertTrue(blocked { it.copy(setRestSeconds = listOf(60, 90, 120), perSetRestTime = true) }.single().contains("rest"))
+        // Missing entries rest 60 s at runtime (getRestForSet), so [90] over three sets is 90, 60, 60.
+        assertTrue(blocked { it.copy(setRestSeconds = listOf(90)) }.single().contains("rest"))
 
         val empty = assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(base.copy(exercises = emptyList()), null, null))
         assertEquals(1, empty.reasons.size)
@@ -216,6 +218,10 @@ class RoutineCsvCodecTest {
         // Rows rejected before validation count toward the cap as well.
         val tooManyBadRows = file(*Array(RoutineCsvFormat.MAX_ROWS + 1) { ",Big,,,,,\"Squat,$it" })
         assertTrue(issues(tooManyBadRows).single().message.contains("${RoutineCsvFormat.MAX_ROWS} rows"))
+
+        val tooManySets = List(RoutineCsvFormat.MAX_SETS_PER_EXERCISE + 1) { "5" }.joinToString("|")
+        assertTrue(issues(file(",R,,,,,Squat,0,,,,,5,$tooManySets,,,")).single().message.contains("set_weights_kg has more than"))
+        assertTrue(issues(file(",R,,,,,Squat,0,,,,,$tooManySets,60,,,")).any { it.message.contains("set_reps has more than") })
 
         val huge = RoutineCsvFormat.VERSION_LINE + "\n" + "x".repeat(RoutineCsvFormat.MAX_BYTES)
         assertTrue(issues(huge).single().message.contains("2 MB"))

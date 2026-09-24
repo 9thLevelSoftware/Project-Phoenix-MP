@@ -92,7 +92,7 @@ object RoutineCsvCodec {
                     exercise.setReps.joinToString("|") { it?.toString() ?: RoutineCsvFormat.AMRAP },
                     exerciseWeights(exercise.setWeightsPerCableKg, exercise.weightPerCableKg, exercise.setReps.size)
                         .joinToString("|") { RoutineCsvFormat.formatNumber(it) },
-                    (exercise.setRestSeconds.firstOrNull() ?: RoutineCsvFormat.DEFAULT_REST_SECONDS).toString(),
+                    exercise.getRestForSet(0).toString(),
                     RoutineCsvFormat.modeName(exercise.programMode),
                     exercise.setReps.all { it == null }.toString(),
                 )
@@ -122,7 +122,9 @@ object RoutineCsvCodec {
             if (!exercise.stallDetectionEnabled) reasons += "$name has stall detection turned off."
             if (exercise.stopAtTop) reasons += "$name stops at the top."
             if (exercise.repCountTiming != RepCountTiming.TOP) reasons += "$name counts reps at the bottom."
-            if (exercise.setRestSeconds.distinct().size > 1) reasons += "$name has different rest times per set."
+            // The rest each set actually gets, missing entries included (getRestForSet's fallback).
+            val effectiveRests = exercise.setReps.indices.map(exercise::getRestForSet)
+            if (effectiveRests.distinct().size > 1) reasons += "$name has different rest times per set."
             if (exercise.setReps.isEmpty()) reasons += "$name has no sets."
         }
         return reasons.toList()
@@ -348,11 +350,11 @@ object RoutineCsvCodec {
             issues += RoutineCsvIssue(row.line, "set_reps is required.")
             return null
         }
-        val parts = cell.split('|').map { it.trim() }
-        if (parts.size > RoutineCsvFormat.MAX_SETS_PER_EXERCISE) {
-            issues += RoutineCsvIssue(row.line, "More than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
+        if (hasMoreThanMaxSets(cell)) {
+            issues += RoutineCsvIssue(row.line, "set_reps has more than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
             return null
         }
+        val parts = cell.split('|').map { it.trim() }
         val reps = parts.map { part ->
             if (part.equals(RoutineCsvFormat.AMRAP, ignoreCase = true)) {
                 null
@@ -366,10 +368,17 @@ object RoutineCsvCodec {
         return reps
     }
 
+    /** Counts separators before anything is split, so an oversized list is never materialised. */
+    private fun hasMoreThanMaxSets(cell: String): Boolean = cell.count { it == '|' } >= RoutineCsvFormat.MAX_SETS_PER_EXERCISE
+
     private fun parseWeights(row: RawRow, issues: MutableList<RoutineCsvIssue>): List<Float>? {
         val cell = row.raw(13)
         if (cell.isEmpty()) {
             issues += RoutineCsvIssue(row.line, "set_weights_kg is required.")
+            return null
+        }
+        if (hasMoreThanMaxSets(cell)) {
+            issues += RoutineCsvIssue(row.line, "set_weights_kg has more than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
             return null
         }
         return cell.split('|').map { it.trim() }.map { part ->
