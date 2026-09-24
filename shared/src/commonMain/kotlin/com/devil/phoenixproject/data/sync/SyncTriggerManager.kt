@@ -24,6 +24,23 @@ data class RetryState(
 )
 
 /**
+ * The part of [SyncManager] that [SyncTriggerManager] drives. It exists so the trigger's
+ * retry, backoff and gating logic is tested against the production class (#869).
+ */
+interface SyncTriggerTarget {
+    val isAuthenticated: StateFlow<Boolean>
+    val syncState: StateFlow<SyncState>
+    val currentUser: StateFlow<PortalUser?>
+    val lastSyncTime: StateFlow<Long>
+
+    suspend fun sync(): Result<Long>
+
+    suspend fun refreshPremiumStatusFromServer()
+
+    fun markPausedNotPremium()
+}
+
+/**
  * Manages automatic sync triggers with throttling, failure tracking, and exponential backoff.
  *
  * Sync is triggered:
@@ -46,10 +63,17 @@ data class RetryState(
  * - Backoff resets on successful sync
  */
 class SyncTriggerManager(
-    private val syncManager: SyncManager,
-    private val connectivityChecker: ConnectivityChecker,
+    private val syncManager: SyncTriggerTarget,
+    private val isOnline: () -> Boolean,
     private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager? = null,
+    private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
+    constructor(
+        syncManager: SyncManager,
+        connectivityChecker: ConnectivityChecker,
+        healthBodyWeightSyncManager: HealthBodyWeightSyncManager? = null,
+    ) : this(syncManager, connectivityChecker::isOnline, healthBodyWeightSyncManager)
+
     companion object {
         private const val DEFAULT_THROTTLE_MILLIS = 5 * 60 * 1000L // 5 minutes
 
@@ -298,7 +322,7 @@ class SyncTriggerManager(
         }
 
         // Check connectivity
-        if (!connectivityChecker.isOnline()) {
+        if (!isOnline()) {
             Logger.d { "SyncTrigger: Skipping sync - offline" }
             withPlatformLock(stateLock) { isWaitingForConnectivity = true }
             updateRetryState()
@@ -315,7 +339,7 @@ class SyncTriggerManager(
         // Check throttle/backoff (unless bypassed for workout complete).
         // currentBackoffIndex is read inside the lock to avoid a race where
         // onSyncFailure increments it between the read and the comparison.
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = nowMillis()
         val shouldSkip = withPlatformLock(stateLock) {
             val currentThrottle = getCurrentThrottleMillis()
             if (!bypassThrottle && (now - lastSyncAttemptMillis) < currentThrottle) {

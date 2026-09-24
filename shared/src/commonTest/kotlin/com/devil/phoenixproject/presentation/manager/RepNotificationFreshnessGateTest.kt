@@ -212,6 +212,105 @@ class RepNotificationFreshnessGateTest {
         assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, legacyPacket(topCounter = 5, completeCounter = 4, timestamp = 1_002L)))
         assertEquals(RepFreshnessState.LegacyBaseline(5, 4), gate.stateFor(lease))
         assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 5, completeCounter = 5, timestamp = 1_003L)))
+        assertEquals(RepFreshnessState.LegacyArmed, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `issue 712 legacy packets after the first delta are all processed`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+
+        // Carried counters from the previous set; the first packet is rep 1's top.
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, legacyPacket(topCounter = 11, completeCounter = 10, timestamp = 1_001L)))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 11, completeCounter = 11, timestamp = 1_002L)))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 12, completeCounter = 11, timestamp = 1_003L)))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 12, completeCounter = 12, timestamp = 1_004L)))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 13, completeCounter = 12, timestamp = 1_005L)))
+        assertEquals(RepFreshnessState.LegacyArmed, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `issue 712 one legacy packet per rep is processed every time`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+
+        gate.evaluate(lease, legacyPacket(topCounter = 4, completeCounter = 4, timestamp = 1_001L))
+        (5..9).forEachIndexed { index, counter ->
+            assertEquals(
+                RepFreshnessDecision.Process,
+                gate.evaluate(lease, legacyPacket(topCounter = counter, completeCounter = counter, timestamp = 1_002L + index)),
+            )
+        }
+    }
+
+    @Test
+    fun `issue 712 handle movement does not replace a legacy baseline or armed legacy state`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+
+        gate.evaluate(lease, legacyPacket(topCounter = 7, completeCounter = 7, timestamp = 1_001L))
+        assertTrue(gate.observeMovement(lease))
+        assertEquals(RepFreshnessState.LegacyBaseline(7, 7), gate.stateFor(lease))
+
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 8, completeCounter = 7, timestamp = 1_002L)))
+        assertTrue(gate.observeMovement(lease))
+        assertEquals(RepFreshnessState.LegacyArmed, gate.stateFor(lease))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 9, completeCounter = 8, timestamp = 1_003L)))
+    }
+
+    @Test
+    fun `issue 712 movement before the first legacy packet still baselines carried counters`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+
+        assertTrue(gate.observeMovement(lease))
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, legacyPacket(topCounter = 30, completeCounter = 30, timestamp = 1_001L)))
+        assertEquals(RepFreshnessState.LegacyBaseline(30, 30), gate.stateFor(lease))
+    }
+
+    @Test
+    fun `issue 712 armed legacy state keeps the cutover and lease guards`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+        gate.evaluate(lease, legacyPacket(topCounter = 1, completeCounter = 1, timestamp = 1_001L))
+        gate.evaluate(lease, legacyPacket(topCounter = 2, completeCounter = 1, timestamp = 1_002L))
+        assertEquals(RepFreshnessState.LegacyArmed, gate.stateFor(lease))
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.PRE_CUTOVER_TIMESTAMP),
+            gate.evaluate(lease, legacyPacket(topCounter = 3, completeCounter = 2, timestamp = 999L)),
+        )
+
+        gate.resetFor(lease)
+        assertEquals(RepFreshnessState.AwaitingEvidence, gate.stateFor(lease))
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, legacyPacket(topCounter = 3, completeCounter = 2, timestamp = 1_003L)))
+
+        gate.invalidate(lease)
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.LEASE_NOT_ACTIVE),
+            gate.evaluate(lease, legacyPacket(topCounter = 4, completeCounter = 3, timestamp = 1_004L)),
+        )
+    }
+
+    @Test
+    fun `issue 712 legacy counter wrap is still processed once armed`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+        gate.evaluate(lease, legacyPacket(topCounter = 0xFFFE, completeCounter = 0xFFFE, timestamp = 1_001L))
+        gate.evaluate(lease, legacyPacket(topCounter = 0xFFFF, completeCounter = 0xFFFE, timestamp = 1_002L))
+
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 0, completeCounter = 0xFFFF, timestamp = 1_003L)))
+    }
+
+    @Test
+    fun `issue 712 a modern packet after armed legacy packets takes the modern evidence path`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L)
+        gate.evaluate(lease, legacyPacket(topCounter = 1, completeCounter = 1, timestamp = 1_001L))
+        gate.evaluate(lease, legacyPacket(topCounter = 2, completeCounter = 1, timestamp = 1_002L))
+
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_003L)))
         assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
     }
 

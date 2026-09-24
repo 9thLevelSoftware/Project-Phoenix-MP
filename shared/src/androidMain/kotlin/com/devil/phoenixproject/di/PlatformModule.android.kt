@@ -165,7 +165,7 @@ private fun createEncryptedPreferences(context: Context, name: String): SharedPr
  * One-time migration: copies all portal keys from the old plaintext prefs to
  * the encrypted store, then removes them from plaintext.
  */
-private val PORTAL_KEYS = listOf(
+internal val PORTAL_KEYS = listOf(
     "portal_auth_token",
     "portal_refresh_token",
     "portal_token_expires_at",
@@ -177,7 +177,7 @@ private val PORTAL_KEYS = listOf(
     "portal_last_sync_timestamp",
 )
 
-private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: SharedPreferences) {
+internal fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: SharedPreferences) {
     // Skip if nothing to migrate (no portal keys in plaintext)
     val hasPortalKeys = PORTAL_KEYS.any { plain.contains(it) }
     if (!hasPortalKeys) return
