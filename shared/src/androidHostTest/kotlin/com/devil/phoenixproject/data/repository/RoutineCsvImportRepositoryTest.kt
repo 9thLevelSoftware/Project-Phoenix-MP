@@ -177,6 +177,6 @@ class RoutineCsvImportRepositoryTest {
     private companion object {
         const val HEADER = "routine_id,routine_name,routine_description,group_name,group_order,exercise_id,exercise_name," +
             "exercise_order,superset_key,superset_name,superset_order,superset_rest_seconds,set_reps,set_weights_kg," +
-            "rest_seconds,mode,is_amrap"
+            "rest_seconds,mode,is_amrap,superset_color"
     }
 }

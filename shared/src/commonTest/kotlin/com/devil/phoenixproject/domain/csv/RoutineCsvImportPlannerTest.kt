@@ -49,8 +49,8 @@ class RoutineCsvImportPlannerTest {
         val plan = plan(
             drafts(
                 ",Push,Chest day,,,bench-id,Bench Press,0,,,,,8|8|6,40|40|42.5,120,PUMP,false",
-                ",Push,Chest day,,,,seated row,1,a,Pair,,20,10|10,30|30,90,,false",
-                ",Push,Chest day,,,,Bench Press,2,a,Pair,,20,AMRAP|AMRAP,0|0,90,,true",
+                ",Push,Chest day,,,,seated row,1,a,Pair,,20,10|10,30|30,90,,false,2",
+                ",Push,Chest day,,,,Bench Press,2,a,Pair,,20,AMRAP|AMRAP,0|0,90,,true,2",
             ),
         )
         assertTrue(plan.canCommit, plan.issues.toString())
@@ -77,6 +77,7 @@ class RoutineCsvImportPlannerTest {
         val superset = routine.supersets.single()
         assertEquals("Pair", superset.name)
         assertEquals(20, superset.restBetweenSeconds)
+        assertEquals(2, superset.colorIndex, "a colour given in the file is kept")
         assertEquals(1, superset.orderIndex)
         assertEquals(routine.id, superset.routineId)
         assertEquals(listOf(superset.id, superset.id), listOf(second.supersetId, third.supersetId))

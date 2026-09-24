@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WarmupSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,7 +58,9 @@ class RoutineCsvCodecTest {
             routineExercise("e3", pulldown, 2, reps = listOf(10, 10), weights = listOf(35f, 35f), rest = 90, supersetId = "s1", orderInSuperset = 1),
             routineExercise("e4", pushUp, 3, reps = listOf(null, null), weights = listOf(0f, 0f), rest = 60, mode = ProgramMode.TUTBeast),
         ),
-        supersets = listOf(Superset(id = "s1", routineId = "routine-1", name = "Back pair", restBetweenSeconds = 15, orderIndex = 1)),
+        supersets = listOf(
+            Superset(id = "s1", routineId = "routine-1", name = "Back pair", colorIndex = SupersetColors.AMBER, restBetweenSeconds = 15, orderIndex = 1),
+        ),
     )
 
     private fun parsed(text: String): List<RoutineCsvRoutineDraft> =
@@ -86,6 +89,7 @@ class RoutineCsvCodecTest {
         assertEquals(listOf("ss1", "ss1"), draft.exercises.subList(1, 3).map { it.supersetKey })
         assertEquals("Back pair", draft.exercises[1].supersetName)
         assertEquals(15, draft.exercises[1].supersetRestSeconds)
+        assertEquals(SupersetColors.AMBER, draft.exercises[1].supersetColor)
         assertEquals(listOf(null, null), draft.exercises[3].setReps)
         assertEquals(ProgramMode.TUTBeast, draft.exercises[3].mode)
 
@@ -95,19 +99,31 @@ class RoutineCsvCodecTest {
     }
 
     @Test
-    fun lineBreaksInsideQuotedTextSurviveARoundTrip() {
-        val routine = sampleRoutine().copy(
-            name = "Upper\r\nheavy",
-            description = "Line one\n\nLine three\r\n# not a comment, still the description",
+    fun textKeepsItsSpacesAndLineBreaksThroughARoundTrip() {
+        val base = sampleRoutine()
+        val routine = base.copy(
+            name = " Upper\r\nheavy ",
+            description = "Line one\n\nLine three\r\n# not a comment, still the description\n",
+            supersets = base.supersets.map { it.copy(name = "  Back pair ") },
         )
-        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, " Strength ", 2))
 
         val draft = parsed(exported.content).single()
         assertEquals(routine.name, draft.name)
         assertEquals(routine.description, draft.description)
-        // Every row repeats the name and description, so each record spans five lines and is
+        assertEquals(" Strength ", draft.groupName)
+        assertEquals("  Back pair ", draft.exercises[1].supersetName)
+        // Every row repeats the name and description, so each record spans six lines and is
         // reported by the line it starts on.
-        assertEquals(listOf(3, 8, 13, 18), draft.exercises.map { it.line })
+        assertEquals(listOf(3, 9, 15, 21), draft.exercises.map { it.line })
+    }
+
+    @Test
+    fun blankLinesAreSkippedOneAtATime() {
+        // A file of mostly line breaks: read line by line, nothing kept per blank line.
+        val text = RoutineCsvFormat.VERSION_LINE + "\n" + header + "\n".repeat(1_000_000) + ",R,,,,,Squat,0,,,,,5,60,,,\n"
+
+        assertEquals(1_000_002, parsed(text).single().exercises.single().line)
     }
 
     @Test
@@ -137,6 +153,7 @@ class RoutineCsvCodecTest {
         assertTrue(blocked { it.copy(repCountTiming = RepCountTiming.BOTTOM) }.single().contains("bottom"))
         assertTrue(blocked { it.copy(setRestSeconds = listOf(60, 90, 120), perSetRestTime = true) }.single().contains("rest"))
         // Missing entries rest 60 s at runtime (getRestForSet), so [90] over three sets is 90, 60, 60.
+        assertTrue(blocked { it.copy(isAMRAP = true) }.single().contains("AMRAP"))
         assertTrue(blocked { it.copy(setRestSeconds = listOf(90)) }.single().contains("rest"))
 
         val empty = assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(base.copy(exercises = emptyList()), null, null))
