@@ -124,6 +124,17 @@ internal object DatabaseUserDataClassifier {
         "serverId" to "IS NOT NULL",
     )
 
+    /** Seeded values of the default profile; `createdAt` and `isActive` are bookkeeping, not data. */
+    private val PROFILE_FIELDS = listOf(
+        "id" to "<> 'default'",
+        "name" to "<> 'Default'",
+        "colorIndex" to "<> 0",
+        "supabase_user_id" to "IS NOT NULL",
+        "subscription_status" to "<> 'free'",
+        "subscription_expires_at" to "IS NOT NULL",
+        "last_auth_at" to "IS NOT NULL",
+    )
+
     /**
      * The default profile's preferences row counts as data once any setting differs from the
      * schema default it is seeded with (PhoenixDatabase.sq). Sync metadata (generations, revisions,
@@ -167,12 +178,9 @@ internal object DatabaseUserDataClassifier {
     private fun holdsUserData(queries: DatabaseProbeQueries, table: String, key: String): Boolean {
         val from = "SELECT 1 FROM ${quoteIdentifier(table)}"
         return when (key) {
-            // A fresh install creates exactly one profile: id 'default', named "Default", unlinked.
-            "userprofile" -> {
-                val columns = queries.columnNames(table)
-                val linked = if ("supabase_user_id" in columns) " OR supabase_user_id IS NOT NULL" else ""
-                queries.exists("$from WHERE id <> 'default' OR name <> 'Default'$linked")
-            }
+            // A fresh install creates exactly one profile (UserProfileRepository.ensureDefaultProfileSync).
+            // Another profile, or any change to that one's seeded values, is data.
+            "userprofile" -> queries.existsWhereAny(from, table, PROFILE_FIELDS)
 
             // Seeded for the default profile at first launch. Another profile's row, or a default
             // row with any setting changed from its seed value, is data.
