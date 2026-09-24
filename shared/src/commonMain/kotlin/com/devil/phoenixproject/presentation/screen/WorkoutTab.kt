@@ -249,7 +249,7 @@ fun WorkoutTab(
     skippedExercises: Set<Int> = emptySet(),
     completedExercises: Set<Int> = emptySet(),
     autoplayEnabled: Boolean = false,
-    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
+    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Manual: wait for the user)
     onJumpToExercise: (Int) -> Unit = {},
     canGoBack: Boolean = false,
     canSkipForward: Boolean = false,

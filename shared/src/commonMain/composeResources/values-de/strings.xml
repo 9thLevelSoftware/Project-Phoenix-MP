@@ -701,6 +701,7 @@
     <string name="color_orange">Orange</string>
     <string name="cd_select_profile_color">Profilfarbe %1$s auswählen</string>
     <string name="profile_automatic">Automatisch</string>
+    <string name="profile_manual">Manuell</string>
     <string name="profile_master_beeps">Trainingstöne</string>
     <string name="profile_body_weight_unset">Nicht festgelegt</string>
     <string name="profile_body_weight_invalid">Gib ein Körpergewicht zwischen 20 und 300 kg ein</string>
