@@ -388,6 +388,9 @@ fun ExercisePickerContent(
     enableEssentialsFilter: Boolean = false,
     showEssentialsOnly: Boolean = false,
     onToggleEssentials: () -> Unit = {},
+    enableRecentFilter: Boolean = false,
+    showRecentOnly: Boolean = false,
+    onToggleRecent: () -> Unit = {},
     enablePreviouslyCompletedFilter: Boolean = false,
     showPreviouslyCompletedOnly: Boolean = false,
     onTogglePreviouslyCompleted: () -> Unit = {},
@@ -420,6 +423,7 @@ fun ExercisePickerContent(
         showFavoritesOnly ||
         showCustomOnly ||
         showEssentialsOnly ||
+        (enableRecentFilter && showRecentOnly) ||
         showPreviouslyCompletedOnly ||
         selectedMuscles.isNotEmpty() ||
         selectedEquipment.isNotEmpty()
@@ -500,6 +504,9 @@ fun ExercisePickerContent(
                 enableEssentialsFilter = enableEssentialsFilter,
                 showEssentialsOnly = showEssentialsOnly,
                 onToggleEssentials = onToggleEssentials,
+                enableRecentFilter = enableRecentFilter,
+                showRecentOnly = showRecentOnly,
+                onToggleRecent = onToggleRecent,
                 enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
                 showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
                 onTogglePreviouslyCompleted = onTogglePreviouslyCompleted,
@@ -545,6 +552,8 @@ fun ExercisePickerContent(
             // Grouped exercise list
             GroupedExerciseList(
                 exercises = exercises,
+                // Recent (#850) is ordered by recency, so letter sections would scatter it.
+                grouped = !(enableRecentFilter && showRecentOnly),
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
                 onExerciseSelected = onExerciseSelected,

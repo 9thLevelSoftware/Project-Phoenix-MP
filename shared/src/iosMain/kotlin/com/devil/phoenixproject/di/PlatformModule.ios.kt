@@ -144,6 +144,7 @@ actual val platformModule: Module = module {
             backfillVelocityOneRepMaxUseCase = get(),
             machineSafetyCoordinator = get(),
             profileRecoveryActivityTracker = get(),
+            recentJustLiftExerciseStore = get(),
         )
     }
 }

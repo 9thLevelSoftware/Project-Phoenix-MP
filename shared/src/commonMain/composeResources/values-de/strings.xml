@@ -51,6 +51,7 @@
     <string name="label_custom">Benutzerdefiniert</string>
     <string name="label_essentials">Grundübungen</string>
     <string name="cd_filter_essentials">Nur Grundübungen anzeigen</string>
+    <string name="label_recent">Zuletzt</string>
     <string name="label_all">Alle</string>
     <string name="label_done">FERTIG</string>
     <string name="label_reps">Wiederholungen</string>

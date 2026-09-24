@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
@@ -44,6 +45,9 @@ fun ExerciseFilterShelf(
     enableEssentialsFilter: Boolean = false,
     showEssentialsOnly: Boolean = false,
     onToggleEssentials: () -> Unit = {},
+    enableRecentFilter: Boolean = false,
+    showRecentOnly: Boolean = false,
+    onToggleRecent: () -> Unit = {},
     enablePreviouslyCompletedFilter: Boolean = false,
     showPreviouslyCompletedOnly: Boolean = false,
     onTogglePreviouslyCompleted: () -> Unit = {},
@@ -72,7 +76,7 @@ fun ExerciseFilterShelf(
         stringResource(Res.string.cd_filter_previously_completed)
     val essentialsDescription = stringResource(Res.string.cd_filter_essentials)
     val hasActiveFilters = showFavoritesOnly || showCustomOnly || showPreviouslyCompletedOnly || showEssentialsOnly ||
-        selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
+        (enableRecentFilter && showRecentOnly) || selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -120,6 +124,28 @@ fun ExerciseFilterShelf(
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             )
+        }
+
+        // Recent chip (#850): exercises most recently used to tag Just Lift sets
+        if (enableRecentFilter) {
+            item {
+                FilterChip(
+                    selected = showRecentOnly,
+                    onClick = onToggleRecent,
+                    label = { Text(stringResource(Res.string.label_recent)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         }
 
         // Essentials chip (#770): opt-in, built-in common-movement set

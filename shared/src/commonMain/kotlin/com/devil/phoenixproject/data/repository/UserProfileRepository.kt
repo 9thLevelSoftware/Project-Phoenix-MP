@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.InMemoryPendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -254,6 +255,8 @@ class SqlDelightUserProfileRepository(
      * profiles under the signed-in account), so its tombstones are owned by it.
      */
     private val lastSyncedPortalUserId: () -> String? = { null },
+    /** Device-local Recent tagging list (#850); removed with the profile's other local keys. */
+    private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
 ) : UserProfileRepository {
     private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
@@ -766,6 +769,7 @@ class SqlDelightUserProfileRepository(
                 .forEach { pending ->
                     try {
                         profileLocalSafetyStore.delete(pending.profile_id)
+                        recentJustLiftExerciseStore?.delete(pending.profile_id)
                         queries.dequeueProfileLocalCleanup(pending.profile_id)
                     } catch (error: CancellationException) {
                         throw error
