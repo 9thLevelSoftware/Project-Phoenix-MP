@@ -119,6 +119,34 @@ class RoutineCsvCodecTest {
     }
 
     @Test
+    fun theFirstV1HeaderWithoutSupersetColourIsStillRead() {
+        val header17 = RoutineCsvFormat.COLUMNS.dropLast(1).joinToString(",")
+        val text = listOf(
+            RoutineCsvFormat.VERSION_LINE,
+            header17,
+            ",Pull,,,,,Row,0,a,Pair,,15,10,30,90,,false",
+            ",Pull,,,,,Curl,1,a,Pair,,15,10,20,90,,false",
+        ).joinToString("\n")
+
+        val exercises = parsed(text).single().exercises
+        assertEquals(listOf("a", "a"), exercises.map { it.supersetKey })
+        assertEquals(listOf(null, null), exercises.map { it.supersetColor })
+    }
+
+    @Test
+    fun numberCellsOfOneRoutineCompareTrimmed() {
+        val draft = parsed(
+            file(
+                ",Push,,Strength,2,,Bench Press,0,,,,,8,40,,,",
+                ",Push,,Strength, 2 ,,Dip,1,,,,,8,0,,,",
+            ),
+        ).single()
+
+        assertEquals(2, draft.groupOrder)
+        assertEquals(2, draft.exercises.size)
+    }
+
+    @Test
     fun blankLinesAreSkippedOneAtATime() {
         // A file of mostly line breaks: read line by line, nothing kept per blank line.
         val text = RoutineCsvFormat.VERSION_LINE + "\n" + header + "\n".repeat(1_000_000) + ",R,,,,,Squat,0,,,,,5,60,,,\n"

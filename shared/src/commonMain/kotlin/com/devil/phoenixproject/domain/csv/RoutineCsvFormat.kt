@@ -54,6 +54,9 @@ object RoutineCsvFormat {
         "superset_color",
     )
 
+    /** The v1 header as first released, before the optional [COLUMNS] `superset_color`; still read. */
+    val COLUMNS_WITHOUT_SUPERSET_COLOR = COLUMNS.dropLast(1)
+
     /** Denial-of-service bounds for a picked file. */
     const val MAX_BYTES = 2 * 1024 * 1024
     const val TOO_LARGE_MESSAGE = "The file is larger than 2 MB."

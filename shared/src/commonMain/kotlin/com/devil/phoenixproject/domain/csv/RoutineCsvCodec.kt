@@ -194,7 +194,8 @@ object RoutineCsvCodec {
         if (header.size == 1 && header[0].contains(';')) {
             return invalid(lines.number, "The file uses semicolons. Save it as comma-separated CSV.")
         }
-        if (header != RoutineCsvFormat.COLUMNS) {
+        // Files written before superset_color existed have the same columns without it.
+        if (header != RoutineCsvFormat.COLUMNS && header != RoutineCsvFormat.COLUMNS_WITHOUT_SUPERSET_COLOR) {
             return invalid(lines.number, "The header must be exactly: ${RoutineCsvFormat.COLUMNS.joinToString(",")}")
         }
 
@@ -272,10 +273,13 @@ object RoutineCsvCodec {
         val first = rows.first()
         val issueCount = issues.size
         for (row in rows.drop(1)) {
-            for ((column, label) in listOf(1 to "routine_name", 2 to "routine_description", 3 to "group_name", 4 to "group_order")) {
-                if (row.text(column) != first.text(column)) {
-                    issues += RoutineCsvIssue(row.line, "$label differs from line ${first.line} for the same routine.")
-                }
+            // Text columns compare as written; group_order is a number cell, compared trimmed.
+            val differing = listOf(1 to "routine_name", 2 to "routine_description", 3 to "group_name")
+                .filter { (column, _) -> row.text(column) != first.text(column) }
+                .map { it.second } +
+                listOfNotNull("group_order".takeIf { row.raw(4) != first.raw(4) })
+            differing.forEach { label ->
+                issues += RoutineCsvIssue(row.line, "$label differs from line ${first.line} for the same routine.")
             }
         }
         val groupName = first.text(3).takeIf { it.isNotBlank() }
