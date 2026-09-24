@@ -15,7 +15,8 @@ import com.devil.phoenixproject.util.Constants
  * routine into one superset; blank means standalone. `exercise_order` is the flat display
  * order, supersets included; a superset sits at its first exercise's position, so
  * `superset_order` is written for reference and only checked for consistency on import.
- * Blank lines and further `#` lines are ignored.
+ * Blank lines and further `#` lines are ignored. Cells follow RFC 4180 quoting, so a quoted
+ * name or description may contain commas, quotes and line breaks.
  *
  * Only the fields below exist in v1. Export refuses a routine that uses anything else (Echo
  * and Eccentric Only modes, % of PR, warm-ups, rack defaults, drop sets, timed sets, and

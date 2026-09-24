@@ -75,7 +75,7 @@ class RoutineCsvCodecTest {
         val draft = parsed(exported.content).single()
         assertEquals("routine-1", draft.routineId)
         assertEquals("Upper, heavy", draft.name)
-        assertEquals("Says \"hi\" over two lines", draft.description)
+        assertEquals("Says \"hi\"\nover two lines", draft.description)
         assertEquals("Strength", draft.groupName)
         assertEquals(2, draft.groupOrder)
         assertEquals(listOf("bench-id", "row-id", "pulldown-id", "pushup-id"), draft.exercises.map { it.exerciseId })
@@ -92,6 +92,22 @@ class RoutineCsvCodecTest {
         // Canonical output: exporting what the file describes gives the same file.
         val again = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(sampleRoutine(), "Strength", 2))
         assertEquals(exported.content, again.content)
+    }
+
+    @Test
+    fun lineBreaksInsideQuotedTextSurviveARoundTrip() {
+        val routine = sampleRoutine().copy(
+            name = "Upper\r\nheavy",
+            description = "Line one\n\nLine three\r\n# not a comment, still the description",
+        )
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+
+        val draft = parsed(exported.content).single()
+        assertEquals(routine.name, draft.name)
+        assertEquals(routine.description, draft.description)
+        // Every row repeats the name and description, so each record spans five lines and is
+        // reported by the line it starts on.
+        assertEquals(listOf(3, 8, 13, 18), draft.exercises.map { it.line })
     }
 
     @Test

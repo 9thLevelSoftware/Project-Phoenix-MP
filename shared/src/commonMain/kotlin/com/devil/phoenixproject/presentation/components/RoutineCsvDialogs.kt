@@ -118,16 +118,18 @@ fun RoutineCsvImportDialog(
                         if (plan.hasMatches) {
                             HorizontalDivider()
                             Text(stringResource(Res.string.routine_csv_matches_found), style = MaterialTheme.typography.bodyMedium)
+                            // The picked mode shows at once; its plan follows.
+                            val selectedMode = state.replanningTo ?: plan.mode
                             Column(Modifier.selectableGroup()) {
                                 ModeOption(
                                     label = stringResource(Res.string.routine_csv_mode_copies),
-                                    selected = plan.mode == RoutineCsvImportMode.CREATE_COPIES,
+                                    selected = selectedMode == RoutineCsvImportMode.CREATE_COPIES,
                                     enabled = !state.committing,
                                     onSelect = { onSelectMode(RoutineCsvImportMode.CREATE_COPIES) },
                                 )
                                 ModeOption(
                                     label = stringResource(Res.string.routine_csv_mode_overwrite),
-                                    selected = plan.mode == RoutineCsvImportMode.OVERWRITE_MATCHING,
+                                    selected = selectedMode == RoutineCsvImportMode.OVERWRITE_MATCHING,
                                     enabled = !state.committing,
                                     onSelect = { onSelectMode(RoutineCsvImportMode.OVERWRITE_MATCHING) },
                                 )
@@ -143,7 +145,7 @@ fun RoutineCsvImportDialog(
                     if (state.committing) {
                         CircularProgressIndicator(modifier = Modifier.heightIn(max = 24.dp))
                     } else {
-                        TextButton(onClick = onConfirm, enabled = plan.canCommit) {
+                        TextButton(onClick = onConfirm, enabled = plan.canCommit && state.replanningTo == null) {
                             Text(stringResource(Res.string.routine_csv_confirm))
                         }
                     }

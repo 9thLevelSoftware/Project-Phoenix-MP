@@ -97,6 +97,29 @@ class RoutineCsvViewModelTest {
     }
 
     @Test
+    fun confirmingBeforeTheNewlyPickedModeIsPlannedWritesNothing() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.previewImport(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+        viewModel.selectMode(RoutineCsvImportMode.OVERWRITE_MATCHING)
+        advanceUntilIdle()
+
+        // Back to copies, and Import tapped before that plan is built.
+        viewModel.selectMode(RoutineCsvImportMode.CREATE_COPIES)
+        viewModel.selectMode(RoutineCsvImportMode.OVERWRITE_MATCHING)
+        viewModel.selectMode(RoutineCsvImportMode.CREATE_COPIES)
+        assertEquals(RoutineCsvImportMode.CREATE_COPIES, assertIs<RoutineCsvImportUiState.Preview>(viewModel.importState.value).replanningTo)
+        viewModel.confirmImport()
+        advanceUntilIdle()
+
+        val preview = assertIs<RoutineCsvImportUiState.Preview>(viewModel.importState.value)
+        assertEquals(RoutineCsvImportMode.CREATE_COPIES, preview.plan.mode, "the last pick wins")
+        assertNull(preview.replanningTo)
+        assertEquals(5, workouts.getRoutineById("existing-Push")?.exercises?.single()?.setReps?.single(), "nothing was overwritten")
+        assertEquals(1, workouts.getAllRoutines(profileId).first().size, "nothing was written")
+    }
+
+    @Test
     fun aChangeSinceThePreviewShowsTheRefreshedPlanInsteadOfWriting() = runTest(dispatcher) {
         viewModel.previewImport(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
         advanceUntilIdle()

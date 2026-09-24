@@ -20,6 +20,7 @@ import com.devil.phoenixproject.domain.csv.RoutineCsvRoutineDraft
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +39,8 @@ sealed interface RoutineCsvImportUiState {
         /** The profile's routines changed after the preview; this is the refreshed plan. */
         val refreshed: Boolean = false,
         val commitFailed: Boolean = false,
+        /** The mode the user just picked while its plan is built; [plan] is still the previous one. */
+        val replanningTo: RoutineCsvImportMode? = null,
     ) : RoutineCsvImportUiState
 
     data class Imported(val routineCount: Int) : RoutineCsvImportUiState
@@ -71,9 +74,13 @@ class RoutineCsvViewModel(
     private var drafts: List<RoutineCsvRoutineDraft> = emptyList()
     private var previewProfileId: String? = null
 
+    /** The one parse or re-plan in flight; a newer request cancels it so only the latest lands. */
+    private var planJob: Job? = null
+
     /** Parses [content] and shows a preview for the active profile. */
     fun previewImport(content: String) {
-        viewModelScope.launch {
+        planJob?.cancel()
+        planJob = viewModelScope.launch {
             when (val parsed = RoutineCsvCodec.parse(content)) {
                 is RoutineCsvParseResult.Invalid -> _importState.value = RoutineCsvImportUiState.Unreadable(parsed.issues)
 
@@ -93,12 +100,25 @@ class RoutineCsvViewModel(
         }
     }
 
-    /** Re-plans the preview for [mode]. */
+    /**
+     * Re-plans the preview for [mode]. Until that plan is shown the preview cannot be confirmed,
+     * so a quick tap on Import never writes the plan of the previously selected mode.
+     */
     fun selectMode(mode: RoutineCsvImportMode) {
         val profileId = previewProfileId ?: return
-        if ((_importState.value as? RoutineCsvImportUiState.Preview)?.committing == true) return
-        viewModelScope.launch {
-            _importState.value = RoutineCsvImportUiState.Preview(plan(profileId, mode))
+        val preview = _importState.value as? RoutineCsvImportUiState.Preview ?: return
+        if (preview.committing) return
+        planJob?.cancel()
+        _importState.value = preview.copy(replanningTo = mode, refreshed = false, commitFailed = false)
+        planJob = viewModelScope.launch {
+            _importState.value = try {
+                RoutineCsvImportUiState.Preview(plan(profileId, mode))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e(e) { "Routine CSV import could not be re-planned" }
+                preview
+            }
         }
     }
 
@@ -110,7 +130,7 @@ class RoutineCsvViewModel(
     fun confirmImport() {
         val preview = _importState.value as? RoutineCsvImportUiState.Preview ?: return
         val profileId = previewProfileId ?: return
-        if (preview.committing || !preview.plan.canCommit) return
+        if (preview.committing || preview.replanningTo != null || !preview.plan.canCommit) return
         _importState.value = preview.copy(committing = true, commitFailed = false)
         viewModelScope.launch {
             try {
@@ -156,6 +176,7 @@ class RoutineCsvViewModel(
 
     fun dismissImport() {
         if ((_importState.value as? RoutineCsvImportUiState.Preview)?.committing == true) return
+        planJob?.cancel()
         drafts = emptyList()
         previewProfileId = null
         _importState.value = null

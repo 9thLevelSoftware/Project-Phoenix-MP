@@ -133,9 +133,8 @@ object RoutineCsvCodec {
     private fun exerciseWeights(setWeights: List<Float>, weight: Float, setCount: Int): List<Float> =
         List(setCount) { index -> setWeights.getOrNull(index) ?: weight }
 
-    /** A text cell: formula-guarded and quoted by [CsvExporter.escapeCsvField], on one line. */
-    private fun text(value: String): String =
-        CsvExporter.escapeCsvField(value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' '))
+    /** A text cell, formula-guarded and quoted by [CsvExporter.escapeCsvField]; line breaks stay inside the quotes. */
+    private fun text(value: String): String = CsvExporter.escapeCsvField(value)
 
     private fun fileName(routineName: String): String {
         val slug = routineName.lowercase()
@@ -156,7 +155,8 @@ object RoutineCsvCodec {
         if (content.encodeToByteArray().size > RoutineCsvFormat.MAX_BYTES) {
             return invalid(null, RoutineCsvFormat.TOO_LARGE_MESSAGE)
         }
-        val lines = content.removePrefix("﻿").split("\r\n", "\n", "\r")
+        val physicalLines = splitLines(content.removePrefix("﻿"))
+        val lines = physicalLines.map { it.first }
         val issues = mutableListOf<RoutineCsvIssue>()
 
         var index = 0
@@ -195,21 +195,33 @@ object RoutineCsvCodec {
         index = headerIndex + 1
 
         val rows = mutableListOf<RawRow>()
-        // Rejected rows count too, so a file of malformed lines stays within the same bound.
-        var dataRowCount = 0
+        // Every data line counts, rejected ones and a quoted field's continuation lines too, so a
+        // file of malformed lines stays within the same bound.
+        var dataLineCount = 0
         while (index < lines.size) {
-            val line = lines[index]
             val lineNumber = index + 1
-            index++
-            if (line.isBlank() || line.trimStart().startsWith("#")) continue
-            if (++dataRowCount > RoutineCsvFormat.MAX_ROWS) {
-                return invalid(lineNumber, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
-            }
-            if (hasUnbalancedQuotes(line)) {
-                issues += RoutineCsvIssue(lineNumber, "A quoted field is not closed (line breaks inside a field are not supported).")
+            if (lines[index].isBlank() || lines[index].trimStart().startsWith("#")) {
+                index++
                 continue
             }
-            val cells = trimTrailingEmpty(CsvParser.parseCsvRow(line))
+            // A quoted field may span lines (a line break in a name or description): join lines,
+            // with their own breaks, until the quotes balance. Quotes are counted once per line.
+            val record = StringBuilder()
+            var quotes = 0
+            do {
+                if (++dataLineCount > RoutineCsvFormat.MAX_ROWS) {
+                    return invalid(index + 1, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
+                }
+                if (record.isNotEmpty()) record.append(physicalLines[index - 1].second)
+                record.append(lines[index])
+                quotes += lines[index].count { it == '"' }
+                index++
+            } while (quotes % 2 != 0 && index < lines.size)
+            if (quotes % 2 != 0) {
+                issues += RoutineCsvIssue(lineNumber, "A quoted field that starts on this line is not closed.")
+                continue
+            }
+            val cells = trimTrailingEmpty(CsvParser.parseCsvRow(record.toString()))
             if (cells.size > COLUMN_COUNT) {
                 issues += RoutineCsvIssue(lineNumber, "The row has more than $COLUMN_COUNT columns.")
                 continue
@@ -435,6 +447,32 @@ object RoutineCsvCodec {
 
     /** Odd number of quote characters means a field continues onto the next line. */
     private fun hasUnbalancedQuotes(line: String): Boolean = line.count { it == '"' } % 2 != 0
+
+    /**
+     * Physical lines, each with the break that ended it (`""` for the last), so a quoted field
+     * spanning lines keeps its own `\n`, `\r\n` or `\r`.
+     */
+    private fun splitLines(content: String): List<Pair<String, String>> {
+        val lines = mutableListOf<Pair<String, String>>()
+        var start = 0
+        var i = 0
+        while (i < content.length) {
+            val breakLength = when {
+                content[i] == '\r' && i + 1 < content.length && content[i + 1] == '\n' -> 2
+                content[i] == '\r' || content[i] == '\n' -> 1
+                else -> 0
+            }
+            if (breakLength == 0) {
+                i++
+            } else {
+                lines += content.substring(start, i) to content.substring(i, i + breakLength)
+                i += breakLength
+                start = i
+            }
+        }
+        lines += content.substring(start) to ""
+        return lines
+    }
 
     private fun trimTrailingEmpty(cells: List<String>): List<String> = cells.dropLastWhile { it.isBlank() }
 
