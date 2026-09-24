@@ -41,8 +41,6 @@ class FakeDataBackupManager : DataBackupManager {
         ),
     )
 
-    override suspend fun saveToFile(backup: BackupData): Result<String> = Result.success("/fake/backup.json")
-
     override suspend fun exportToFile(onProgress: (BackupProgress) -> Unit): Result<String> = Result.success("/fake/backup.json")
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = importFromJson("{}")

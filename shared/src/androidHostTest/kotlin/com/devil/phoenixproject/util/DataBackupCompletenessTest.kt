@@ -704,7 +704,6 @@ class DataBackupCompletenessTest {
             BackupJsonWriter(File.createTempFile("pr22-export-", ".json", dir).absolutePath)
 
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-        override suspend fun saveToFile(backup: BackupData): Result<String> = error("unused")
         override suspend fun importFromFile(filePath: String): Result<ImportResult> = error("unused")
         override suspend fun shareBackup() = Unit
         override fun getSessionBackupDirectory(): String = dir.absolutePath

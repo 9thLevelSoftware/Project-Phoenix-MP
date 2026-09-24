@@ -331,31 +331,6 @@ class IosDataBackupManager(
         }
     }
 
-    // Legacy save path (kept for backward compatibility)
-    override suspend fun saveToFile(backup: BackupData): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val jsonString = json.encodeToString(backup)
-            val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
-                .replace("-", "") + "_" +
-                KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
-                    .replace(":", "")
-            val fileName = "phoenix_backup_$timestamp.json"
-            val filePath = "$backupDirectory/$fileName"
-
-            val data = NSString.create(string = jsonString).dataUsingEncoding(NSUTF8StringEncoding)
-                ?: throw Exception("Failed to encode backup data")
-
-            val success = data.writeToFile(filePath, atomically = true)
-            if (!success) {
-                throw Exception("Failed to write backup file")
-            }
-
-            Result.success(filePath)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
             val source = FileBackupStreamSource(filePath)

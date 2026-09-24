@@ -389,54 +389,6 @@ class AndroidDataBackupManager(
         }
     }
 
-    // Legacy save path (kept for backward compatibility)
-    override suspend fun saveToFile(backup: BackupData): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val jsonString = json.encodeToString(backup)
-            val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
-                .replace("-", "") + "_" +
-                KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
-                    .replace(":", "")
-            val fileName = "phoenix_backup_$timestamp.json"
-
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+ use MediaStore
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
-                }
-
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    ?: throw Exception("Failed to create file in Downloads")
-
-                resolver.openOutputStream(uri)?.use { outputStream ->
-                    outputStream.write(jsonString.toByteArray())
-                }
-
-                uri.toString()
-            } else {
-                // Android 9 and below - direct file access
-                @Suppress("DEPRECATION")
-                val downloadsDir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "ProjectPhoenix",
-                )
-                downloadsDir.mkdirs()
-
-                val file = File(downloadsDir, fileName)
-                file.writeText(jsonString)
-
-                file.absolutePath
-            }
-
-            Result.success(uri)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
             val inputStream = if (filePath.startsWith("content://")) {
