@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.SessionTiming
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -246,6 +247,44 @@ object PortalSyncAdapter {
         return PortalSessionBuildResult(resultSessions, resultTelemetry)
     }
 
+    /** Start and duration of one portal workout, as sent on the wire. */
+    data class WireSessionTiming(val startedAtMs: Long, val durationSeconds: Int)
+
+    /**
+     * Start and duration of a portal workout built from [sessions] (one row, or every row of
+     * a routine group), bounded so a corrupt row can never be sent as-is.
+     *
+     * - `startedAt` is the earliest valid row start ([SessionTiming.isValidStartMs]: not the
+     *   zeroed-start signature and not in the future). If no row has one (every row from the
+     *   1970 bug), it falls back to the earliest valid `updatedAt`, then to [nowMs]. Never 1970.
+     *   Old imported history (e.g. 2012) is a valid start and is sent unchanged.
+     * - Each row's duration counts only if its own start passes the same check, and a negative
+     *   or epoch-sized duration ([SessionTiming.sanitizeDurationMs]) counts as 0 (unknown).
+     * - The total is capped at `now - startedAt`, so it can never exceed the elapsed time.
+     *
+     * Pure and total: it never throws, so a bad row cannot wedge the push.
+     */
+    fun wireSessionTiming(sessions: List<WorkoutSession>, nowMs: Long = currentTimeMillis()): WireSessionTiming {
+        val startedAtMs = sessions.map { it.timestamp }
+            .filter { SessionTiming.isValidStartMs(it, nowMs) }
+            .minOrNull()
+            ?: sessions.mapNotNull { it.updatedAt }
+                .filter { SessionTiming.isValidStartMs(it, nowMs) }
+                .minOrNull()
+            ?: nowMs
+        val totalDurationMs = sessions.sumOf { session ->
+            if (SessionTiming.isValidStartMs(session.timestamp, nowMs)) {
+                SessionTiming.sanitizeDurationMs(session.duration)
+            } else {
+                0L
+            }
+        }.coerceAtMost((nowMs - startedAtMs).coerceAtLeast(0L))
+        return WireSessionTiming(
+            startedAtMs = startedAtMs,
+            durationSeconds = (totalDurationMs / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        )
+    }
+
     private fun buildPortalSession(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
@@ -259,8 +298,10 @@ object PortalSyncAdapter {
         val first = sorted.first().session
         val portalSessionId = routineSessionId ?: first.id
 
-        // Aggregate metrics across all exercises in this workout
-        val totalDuration = sorted.sumOf { (it.session.duration / 1000).toInt() } // ms → s
+        // Aggregate metrics across all exercises in this workout. Rows already on disk from
+        // the 1970 bug carry timestamp 0 and an epoch-sized duration; never send them as-is.
+        val wireTiming = wireSessionTiming(sorted.map { it.session })
+        val totalDuration = wireTiming.durationSeconds
         // Portal stores per-cable volume (KD-8); it does NOT double it. Display shows
         // per-cable first, with the total (× cable_count) only when the cable count is known.
         // - Measured totalVolumeKg is TOTAL (both cables) → divide by the same
@@ -348,7 +389,7 @@ object PortalSyncAdapter {
             name = first.routineName
                 ?: first.exerciseName
                 ?: "Just Lift".takeIf { first.isJustLift },
-            startedAt = epochToIso8601(first.timestamp),
+            startedAt = epochToIso8601(wireTiming.startedAtMs),
             // LWW gate: wire the domain last-edit, never encode-time wall clock.
             // Stamping NOW() at push time made every mobile sync win against a
             // later portal edit of the same session id. The one exception is a

@@ -2901,6 +2901,33 @@ insertAppliedDataRepair:
 INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
 VALUES (:repairKey, :appliedAt);
 
+-- One-shot repair of sessions saved by the "1970" bug: a save read a zeroed workoutStartTime,
+-- so timestamp = 0 and duration = the save time in epoch ms. Only that signature is touched
+-- (SessionTiming.isCorruptStartMs / isEpochSizedDurationMs): old imported history, e.g. a
+-- 2012 workout with a normal duration, is left alone. A zeroed start comes back from the
+-- session's own children (first sample, then first completed set, then the last-edit stamp);
+-- a row with none keeps its timestamp. An epoch-sized duration becomes the sample span, or 0
+-- (unknown); any other duration is kept. (:minEpochSizedDurationMs is ~45 years, so it also
+-- implies "longer than a day".)
+-- Local only: sync generations are untouched, and the portal already repairs these on push.
+repairEpochZeroSessionStarts:
+UPDATE WorkoutSession
+SET
+    duration = CASE WHEN duration >= :minEpochSizedDurationMs THEN COALESCE(
+        (SELECT MAX(m.timestamp) - MIN(m.timestamp) FROM MetricSample m
+            WHERE m.sessionId = WorkoutSession.id AND m.timestamp >= :minValidStartMs),
+        0
+    ) ELSE duration END,
+    timestamp = CASE WHEN timestamp < :minValidStartMs THEN COALESCE(
+        (SELECT MIN(m.timestamp) FROM MetricSample m
+            WHERE m.sessionId = WorkoutSession.id AND m.timestamp >= :minValidStartMs),
+        (SELECT MIN(c.completed_at) FROM CompletedSet c
+            WHERE c.session_id = WorkoutSession.id AND c.completed_at >= :minValidStartMs),
+        CASE WHEN updatedAt >= :minValidStartMs THEN updatedAt END,
+        timestamp
+    ) ELSE timestamp END
+WHERE timestamp < :minValidStartMs OR duration >= :minEpochSizedDurationMs;
+
 CREATE TABLE PendingProfileRecovery (
     recovery_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
