@@ -425,7 +425,7 @@ class SyncManager(
     private val profileMutationBarrier: ProfileMutationBarrier? = null,
     private val trainingCycleRepository: TrainingCycleRepository? = null,
     private val pendingAccountMismatch: PendingAccountMismatch = PendingAccountMismatch(),
-) {
+) : SyncTriggerTarget {
     companion object {
         /**
          * Maximum sessions per sync batch. Keeps HTTP payload well under the Edge Function
@@ -503,13 +503,13 @@ class SyncManager(
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
-    val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+    override val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     /**
      * Minimum successful pull time across profiles (PR 10 step 9). Republished after
      * every profile loop; 0 while any profile has never completed a pull.
      */
-    val lastSyncTime: StateFlow<Long> = tokenStorage.lastSyncTimestamp
+    override val lastSyncTime: StateFlow<Long> = tokenStorage.lastSyncTimestamp
 
     private val _serverDeletionNotice = MutableStateFlow<ServerDeletionNotice?>(null)
 
@@ -521,8 +521,8 @@ class SyncManager(
      */
     val serverDeletionNotice: StateFlow<ServerDeletionNotice?> = _serverDeletionNotice.asStateFlow()
 
-    val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
-    val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
+    override val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
+    override val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
 
     /** Auth events for UI notification (session expiry, refresh failure, logout). */
     val authEvents = tokenStorage.authEvents
@@ -882,7 +882,7 @@ class SyncManager(
      * live only in durable state until the next sync, and the trigger's premium gate
      * returns before any sync, so run the same pause gate here first.
      */
-    fun markPausedNotPremium() {
+    override fun markPausedNotPremium() {
         if (accountPauseFailure() != null) return
         _syncState.update(::pausedNotPremiumState)
     }
@@ -891,7 +891,7 @@ class SyncManager(
      * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
-    suspend fun refreshPremiumStatusFromServer() {
+    override suspend fun refreshPremiumStatusFromServer() {
         syncMutex.withLock {
             withProfileMutationBarrier {
                 val expectedUserId = tokenStorage.currentUser.value?.id ?: return@withProfileMutationBarrier
@@ -979,7 +979,7 @@ class SyncManager(
      *
      * @see SyncState.PartialSuccess for incomplete sync handling
      */
-    suspend fun sync(): Result<Long> = syncMutex.withLock {
+    override suspend fun sync(): Result<Long> = syncMutex.withLock {
         withProfileMutationBarrier { syncLocked() }
     }
 

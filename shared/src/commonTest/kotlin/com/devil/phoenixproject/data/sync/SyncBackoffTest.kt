@@ -1,21 +1,16 @@
 package com.devil.phoenixproject.data.sync
 
-import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.testutil.FakeSyncTriggerTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 
 /**
- * Tests for the documented exponential backoff schedule 5 → 15 → 30 → 60 minutes
- * in SyncTriggerManager.
- *
- * These tests reuse the documented behavior from SyncTriggerManager via a lightweight
- * testable mirror (same pattern used by SyncTriggerManagerTest) so we can assert the
- * backoff arithmetic without time-boxing real millisecond-level waits.
+ * Tests for the documented exponential backoff schedule 5 → 15 → 30 → 60 minutes in the
+ * production [SyncTriggerManager], with its clock injected so throttle windows can be
+ * crossed without real waits (#869: this used to test a hand-copied mirror).
  *
  * Scope covered:
  *  - After N consecutive transient failures, the next-retry delay matches the schedule.
@@ -26,334 +21,117 @@ import kotlinx.coroutines.test.runTest
  */
 class SyncBackoffTest {
 
-    // ==================== Test Doubles ====================
+    private class Fixture {
+        val target = FakeSyncTriggerTarget()
+        var now = 1_000_000L
+        val trigger = SyncTriggerManager(syncManager = target, isOnline = { true }, nowMillis = { now })
 
-    /** Minimal SyncManager double used by the testable trigger. */
-    private class TestSyncManager {
-        private val _isAuthenticated = MutableStateFlow(true)
-        val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
+        fun nextRetryDelayMinutes(): Int? = trigger.retryState.value.nextRetryDelayMinutes
 
-        private val _currentUser = MutableStateFlow<PortalUser?>(
-            PortalUser(id = "u", email = "u@e.com", displayName = "U", isPremium = true),
-        )
-        val currentUser: StateFlow<PortalUser?> = _currentUser
-
-        private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
-        val syncState: StateFlow<SyncState> = _syncState
-
-        private val _lastSyncTime = MutableStateFlow(1000L)
-        val lastSyncTime: StateFlow<Long> = _lastSyncTime
-
-        var syncResult: Result<Long> = Result.success(currentTimeMillis())
-        var syncCallCount = 0
-
-        suspend fun sync(): Result<Long> {
-            syncCallCount++
-            if (syncResult.isSuccess) {
-                _syncState.value = SyncState.Success(syncResult.getOrThrow())
-            }
-            return syncResult
+        fun advanceTime(millis: Long) {
+            now += millis
         }
     }
-
-    /** Minimal connectivity double. */
-    private class TestConnectivityChecker(var online: Boolean = true) {
-        fun isOnline(): Boolean = online
-    }
-
-    /**
-     * Testable mirror of SyncTriggerManager with an injected clock so we can control
-     * "now" in unit tests. Mirrors the production logic in SyncTriggerManager.kt —
-     * the goal is to lock in the backoff-schedule contract, not to re-invent it.
-     */
-    private class TestableSyncTriggerManager(
-        private val syncManager: TestSyncManager,
-        private val connectivity: TestConnectivityChecker,
-        private var now: Long = 0L,
-    ) {
-        companion object {
-            val BACKOFF_SCHEDULE_MINUTES = listOf(5, 15, 30, 60)
-            const val DEFAULT_THROTTLE_MILLIS = 5 * 60 * 1000L
-            const val MAX_CONSECUTIVE_FAILURES = 3
-        }
-
-        private var consecutiveFailures: Int = 0
-        private var currentBackoffIndex: Int = 0
-        private var lastErrorCategory: SyncErrorCategory? = null
-        private var lastSyncAttemptMillis: Long = 0
-        private var isWaitingForConnectivity: Boolean = false
-        private val _hasPersistentError = MutableStateFlow(false)
-        val hasPersistentError: StateFlow<Boolean> = _hasPersistentError
-
-        fun advanceTime(deltaMillis: Long) {
-            now += deltaMillis
-        }
-
-        fun currentBackoffIndex(): Int = currentBackoffIndex
-        fun nextRetryDelayMinutes(): Int? = if (currentBackoffIndex > 0) {
-            BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                BACKOFF_SCHEDULE_MINUTES.last()
-            }
-        } else {
-            null
-        }
-        fun consecutiveFailures(): Int = consecutiveFailures
-
-        private fun currentThrottleMillis(): Long = if (currentBackoffIndex == 0) {
-            DEFAULT_THROTTLE_MILLIS
-        } else {
-            val delayMin = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                BACKOFF_SCHEDULE_MINUTES.last()
-            }
-            delayMin * 60 * 1000L
-        }
-
-        suspend fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
-        suspend fun onAppForeground() = attemptSync(bypassThrottle = false)
-
-        private suspend fun attemptSync(bypassThrottle: Boolean) {
-            if (!syncManager.isAuthenticated.value) return
-            val user = syncManager.currentUser.value
-            if (user?.isPremium == false && syncManager.lastSyncTime.value > 0) return
-            if (!connectivity.isOnline()) {
-                isWaitingForConnectivity = true
-                return
-            }
-            if (isWaitingForConnectivity && !bypassThrottle) return
-
-            if (!bypassThrottle && (now - lastSyncAttemptMillis) < currentThrottleMillis()) {
-                // Throttled
-                return
-            }
-            lastSyncAttemptMillis = now
-
-            if (_hasPersistentError.value && !bypassThrottle) return
-
-            val result = syncManager.sync()
-            if (result.isSuccess) {
-                val state = syncManager.syncState.value
-                if (state is SyncState.PartialSuccess) {
-                    onSyncFailure(PortalApiException(state.pullError ?: "Pull failed"))
-                } else {
-                    onSyncSuccess()
-                }
-            } else {
-                onSyncFailure(result.exceptionOrNull())
-            }
-        }
-
-        private fun onSyncFailure(error: Throwable?) {
-            val classified = if (error is Exception) {
-                classifyError(error, "Sync")
-            } else {
-                ClassifiedSyncError(
-                    category = SyncErrorCategory.TRANSIENT,
-                    message = error?.message ?: "Unknown",
-                    isRetryable = true,
-                    cause = error,
-                )
-            }
-            consecutiveFailures++
-            lastErrorCategory = classified.category
-            when (classified.category) {
-                SyncErrorCategory.TRANSIENT -> {
-                    if (currentBackoffIndex < BACKOFF_SCHEDULE_MINUTES.size) {
-                        currentBackoffIndex++
-                    }
-                }
-
-                SyncErrorCategory.OWNERSHIP_CONFLICT,
-                SyncErrorCategory.PERMANENT -> {
-                    currentBackoffIndex = 0
-                    _hasPersistentError.value = true
-                }
-
-                SyncErrorCategory.NETWORK -> {
-                    isWaitingForConnectivity = true
-                }
-
-                SyncErrorCategory.AUTH -> {
-                    currentBackoffIndex = 0
-                    _hasPersistentError.value = true
-                }
-            }
-            // Issue #528: TRANSIENT storms do NOT latch the persistent error flag
-            // anymore — only PERMANENT and AUTH do. Mirrors SyncTriggerManager.kt.
-        }
-
-        private fun onSyncSuccess() {
-            consecutiveFailures = 0
-            currentBackoffIndex = 0
-            lastErrorCategory = null
-            isWaitingForConnectivity = false
-            _hasPersistentError.value = false
-        }
-    }
-
-    // ==================== Schedule Contract ====================
 
     @Test
     fun backoffScheduleMatchesFiveFifteenThirtySixty() {
-        assertEquals(
-            listOf(5, 15, 30, 60),
-            TestableSyncTriggerManager.BACKOFF_SCHEDULE_MINUTES,
-            "Documented schedule is 5 → 15 → 30 → 60 minutes",
-        )
-        assertEquals(
-            listOf(5, 15, 30, 60),
-            SyncTriggerManager.BACKOFF_SCHEDULE_MINUTES,
-            "Production schedule must match the tested schedule",
-        )
+        assertEquals(listOf(5, 15, 30, 60), SyncTriggerManager.BACKOFF_SCHEDULE_MINUTES)
     }
 
     @Test
     fun consecutiveFailuresStepThroughScheduleExactly() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc)
-        sm.syncResult = Result.failure(PortalApiException("boom", null, 500))
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("boom", null, 500))
 
-        // Use onWorkoutCompleted to bypass throttle so each attempt actually runs.
-        trigger.onWorkoutCompleted()
-        assertEquals(5, trigger.nextRetryDelayMinutes(), "Step 1 = 5 min")
-
-        trigger.onWorkoutCompleted()
-        assertEquals(15, trigger.nextRetryDelayMinutes(), "Step 2 = 15 min")
-
-        trigger.onWorkoutCompleted()
-        assertEquals(30, trigger.nextRetryDelayMinutes(), "Step 3 = 30 min")
-
-        trigger.onWorkoutCompleted()
-        assertEquals(60, trigger.nextRetryDelayMinutes(), "Step 4 = 60 min")
+        // onWorkoutCompleted bypasses throttle so each attempt actually runs.
+        f.trigger.onWorkoutCompleted()
+        assertEquals(5, f.nextRetryDelayMinutes(), "Step 1 = 5 min")
+        f.trigger.onWorkoutCompleted()
+        assertEquals(15, f.nextRetryDelayMinutes(), "Step 2 = 15 min")
+        f.trigger.onWorkoutCompleted()
+        assertEquals(30, f.nextRetryDelayMinutes(), "Step 3 = 30 min")
+        f.trigger.onWorkoutCompleted()
+        assertEquals(60, f.nextRetryDelayMinutes(), "Step 4 = 60 min")
     }
 
     @Test
     fun backoffScheduleCapsAtSixtyMinutes() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc)
-        sm.syncResult = Result.failure(PortalApiException("boom", null, 500))
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("boom", null, 500))
 
-        repeat(6) { trigger.onWorkoutCompleted() }
+        repeat(6) { f.trigger.onWorkoutCompleted() }
 
-        assertEquals(
-            60,
-            trigger.nextRetryDelayMinutes(),
-            "After 5+ transient failures the delay caps at the last scheduled value (60)",
-        )
-        assertEquals(
-            4,
-            trigger.currentBackoffIndex(),
-            "Backoff index never grows past the schedule length (4 entries)",
-        )
+        assertEquals(60, f.nextRetryDelayMinutes(), "After 5+ transient failures the delay caps at 60")
+        assertEquals(6, f.trigger.retryState.value.retryCount)
     }
 
-    // ==================== Reset on Success ====================
+    @Test
+    fun nextRetryAtIsMeasuredFromTheLastAttempt() = runTest {
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("boom", null, 500))
+
+        f.trigger.onWorkoutCompleted()
+
+        assertEquals(f.now + 5 * 60 * 1000L, f.trigger.retryState.value.nextRetryAtMillis)
+    }
 
     @Test
     fun successfulSyncResetsBackoffCounterToZero() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("boom", null, 500))
+        repeat(3) { f.trigger.onWorkoutCompleted() }
+        assertEquals(30, f.nextRetryDelayMinutes(), "pre-condition: backoff has ratcheted up")
 
-        // Build up some backoff.
-        sm.syncResult = Result.failure(PortalApiException("boom", null, 500))
-        trigger.onWorkoutCompleted()
-        trigger.onWorkoutCompleted()
-        trigger.onWorkoutCompleted()
-        assertEquals(3, trigger.currentBackoffIndex(), "pre-condition: backoff has ratcheted up")
+        f.target.syncResult = Result.success(2L)
+        f.trigger.onWorkoutCompleted()
 
-        // Now succeed.
-        sm.syncResult = Result.success(currentTimeMillis())
-        trigger.onWorkoutCompleted()
-
-        assertEquals(0, trigger.currentBackoffIndex(), "Success resets backoff index")
-        assertEquals(0, trigger.consecutiveFailures(), "Success resets failure counter")
-        assertNull(trigger.nextRetryDelayMinutes(), "No next-retry delay after a clean success")
+        assertEquals(0, f.trigger.retryState.value.retryCount, "Success resets failure counter")
+        assertNull(f.nextRetryDelayMinutes(), "No next-retry delay after a clean success")
     }
-
-    // ==================== Manual vs Throttled Triggers ====================
 
     @Test
     fun manualWorkoutCompleteBypassesBackoffWindow() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc, now = 1_000_000L)
-
-        // Start with a successful sync to set lastSyncAttemptMillis.
-        sm.syncResult = Result.success(currentTimeMillis())
-        trigger.onWorkoutCompleted()
-        val afterFirst = sm.syncCallCount
+        val f = Fixture()
+        f.trigger.onWorkoutCompleted()
+        val afterFirst = f.target.syncCallCount
 
         // Still within the 5-minute default throttle: a workout-complete trigger MUST still sync.
-        trigger.advanceTime(30_000L) // 30 seconds later
-        trigger.onWorkoutCompleted()
+        f.advanceTime(30_000L)
+        f.trigger.onWorkoutCompleted()
 
-        assertEquals(
-            afterFirst + 1,
-            sm.syncCallCount,
-            "onWorkoutCompleted must bypass the throttle/backoff window",
-        )
+        assertEquals(afterFirst + 1, f.target.syncCallCount, "onWorkoutCompleted must bypass the throttle")
     }
 
     @Test
     fun foregroundTriggerIsSuppressedInsideBackoffWindow() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc, now = 1_000_000L)
+        val f = Fixture()
+        f.trigger.onAppForeground()
+        assertEquals(1, f.target.syncCallCount, "First foreground sync should run")
 
-        // First foreground: success (resets backoff, records lastSyncAttempt).
-        sm.syncResult = Result.success(currentTimeMillis())
-        trigger.onAppForeground()
-        val firstCount = sm.syncCallCount
-        assertEquals(1, firstCount, "First foreground sync should run")
+        f.advanceTime(60_000L)
+        f.trigger.onAppForeground()
+        assertEquals(1, f.target.syncCallCount, "Foreground trigger inside throttle window must not call sync")
 
-        // Advance within the default 5-minute throttle: foreground should NOT re-run.
-        trigger.advanceTime(60_000L) // 1 minute later
-        trigger.onAppForeground()
-        assertEquals(
-            firstCount,
-            sm.syncCallCount,
-            "Foreground trigger inside throttle window must not call sync",
-        )
-
-        // Advance past throttle: foreground should run again.
-        trigger.advanceTime(5 * 60 * 1000L + 1) // >5 min later
-        trigger.onAppForeground()
-        assertTrue(
-            sm.syncCallCount > firstCount,
-            "Foreground trigger after throttle window should call sync again",
-        )
+        f.advanceTime(5 * 60 * 1000L + 1)
+        f.trigger.onAppForeground()
+        assertEquals(2, f.target.syncCallCount, "Foreground trigger after throttle window should sync again")
     }
 
     @Test
     fun foregroundTriggerRespectsEscalatedBackoffAfterFailures() = runTest {
-        val sm = TestSyncManager()
-        val cc = TestConnectivityChecker()
-        val trigger = TestableSyncTriggerManager(sm, cc, now = 1_000_000L)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("boom", null, 500))
+        f.trigger.onWorkoutCompleted()
+        f.trigger.onWorkoutCompleted()
+        assertEquals(15, f.nextRetryDelayMinutes(), "After 2 failures backoff = 15 min")
+        val callsAfterFailures = f.target.syncCallCount
 
-        // Fail twice (manual) → backoff = 15 min.
-        sm.syncResult = Result.failure(PortalApiException("boom", null, 500))
-        trigger.onWorkoutCompleted()
-        trigger.onWorkoutCompleted()
-        assertEquals(15, trigger.nextRetryDelayMinutes(), "After 2 failures backoff = 15 min")
-        val callsAfterFailures = sm.syncCallCount
+        f.advanceTime(10 * 60 * 1000L)
+        f.trigger.onAppForeground()
+        assertEquals(callsAfterFailures, f.target.syncCallCount, "t=10min is inside the 15-min backoff")
 
-        // Foreground 10 minutes later → still inside the 15-minute escalated window.
-        trigger.advanceTime(10 * 60 * 1000L)
-        trigger.onAppForeground()
-        assertEquals(
-            callsAfterFailures,
-            sm.syncCallCount,
-            "Foreground trigger at t=10min (inside 15-min backoff) must be suppressed",
-        )
-
-        // Foreground 20 minutes later (past the 15-min window) → should run.
-        trigger.advanceTime(11 * 60 * 1000L)
-        trigger.onAppForeground()
-        assertTrue(
-            sm.syncCallCount > callsAfterFailures,
-            "Foreground trigger after the escalated backoff window must run",
-        )
+        f.advanceTime(11 * 60 * 1000L)
+        f.trigger.onAppForeground()
+        assertTrue(f.target.syncCallCount > callsAfterFailures, "Past the escalated window the trigger must run")
     }
 }
