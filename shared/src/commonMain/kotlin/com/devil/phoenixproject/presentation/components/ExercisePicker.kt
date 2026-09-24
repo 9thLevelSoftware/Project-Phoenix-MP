@@ -112,6 +112,7 @@ fun ExercisePickerDialog(
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showEssentialsOnly by remember { mutableStateOf(false) }
     var showPreviouslyCompletedOnly by remember { mutableStateOf(false) }
     LaunchedEffect(showDialog) {
         if (showDialog) showPreviouslyCompletedOnly = false
@@ -136,6 +137,7 @@ fun ExercisePickerDialog(
         candidateExercises,
         showFavoritesOnly,
         showCustomOnly,
+        showEssentialsOnly,
         selectedMuscles,
         selectedEquipment,
         showPreviouslyCompletedOnly,
@@ -154,6 +156,7 @@ fun ExercisePickerDialog(
                     selectedEquipment = selectedEquipment,
                     showPreviouslyCompletedOnly =
                         enablePreviouslyCompletedFilter && showPreviouslyCompletedOnly,
+                    showEssentialsOnly = showEssentialsOnly,
                 ),
                 completedExerciseIds = completedExerciseIds,
             )
@@ -164,6 +167,7 @@ fun ExercisePickerDialog(
         searchQuery = ""
         showFavoritesOnly = false
         showCustomOnly = false
+        showEssentialsOnly = false
         showPreviouslyCompletedOnly = false
         selectedMuscles = emptySet()
         selectedEquipment = emptySet()
@@ -248,6 +252,9 @@ fun ExercisePickerDialog(
                         onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                         showCustomOnly = showCustomOnly,
                         onToggleCustom = { showCustomOnly = !showCustomOnly },
+                        enableEssentialsFilter = true,
+                        showEssentialsOnly = showEssentialsOnly,
+                        onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
                         enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
                         showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
                         onTogglePreviouslyCompleted = {
@@ -311,6 +318,9 @@ fun ExercisePickerDialog(
                 onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                 showCustomOnly = showCustomOnly,
                 onToggleCustom = { showCustomOnly = !showCustomOnly },
+                enableEssentialsFilter = true,
+                showEssentialsOnly = showEssentialsOnly,
+                onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
                 enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
                 showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
                 onTogglePreviouslyCompleted = {
@@ -374,6 +384,10 @@ fun ExercisePickerContent(
     onToggleFavorites: () -> Unit,
     showCustomOnly: Boolean,
     onToggleCustom: () -> Unit,
+    showCustomFilter: Boolean = true,
+    enableEssentialsFilter: Boolean = false,
+    showEssentialsOnly: Boolean = false,
+    onToggleEssentials: () -> Unit = {},
     enablePreviouslyCompletedFilter: Boolean = false,
     showPreviouslyCompletedOnly: Boolean = false,
     onTogglePreviouslyCompleted: () -> Unit = {},
@@ -405,6 +419,7 @@ fun ExercisePickerContent(
     val hasActiveFilters = searchQuery.isNotBlank() ||
         showFavoritesOnly ||
         showCustomOnly ||
+        showEssentialsOnly ||
         showPreviouslyCompletedOnly ||
         selectedMuscles.isNotEmpty() ||
         selectedEquipment.isNotEmpty()
@@ -481,6 +496,10 @@ fun ExercisePickerContent(
                 onToggleFavorites = onToggleFavorites,
                 showCustomOnly = showCustomOnly,
                 onToggleCustom = onToggleCustom,
+                showCustomFilter = showCustomFilter,
+                enableEssentialsFilter = enableEssentialsFilter,
+                showEssentialsOnly = showEssentialsOnly,
+                onToggleEssentials = onToggleEssentials,
                 enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
                 showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
                 onTogglePreviouslyCompleted = onTogglePreviouslyCompleted,
