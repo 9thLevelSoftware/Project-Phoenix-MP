@@ -24,6 +24,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.components.exercisepicker.orderByRecentExercises
+import com.devil.phoenixproject.presentation.components.exercisepicker.selectableRecentExerciseIds
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -46,16 +47,20 @@ fun MiniExercisePickerDialog(
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showEssentialsOnly by remember { mutableStateOf(false) }
-    var showRecentOnly by remember { mutableStateOf(recentExerciseIds.isNotEmpty()) }
-    // The list can arrive after the dialog opens; select Recent once when it does.
-    var recentDefaultApplied by remember { mutableStateOf(recentExerciseIds.isNotEmpty()) }
-    LaunchedEffect(recentExerciseIds.isNotEmpty()) {
-        if (recentExerciseIds.isNotEmpty() && !recentDefaultApplied) {
+    // Only recent ids that still name an exercise count: a deleted custom exercise must not
+    // leave Recent selected over an empty list.
+    val library by remember { exerciseRepository.getAllExercises() }.collectAsState(initial = emptyList())
+    val recentIds = remember(recentExerciseIds, library) { selectableRecentExerciseIds(recentExerciseIds, library) }
+    var showRecentOnly by remember { mutableStateOf(false) }
+    // The ids and the library load after the dialog opens; select Recent once when they do.
+    var recentDefaultApplied by remember { mutableStateOf(false) }
+    LaunchedEffect(recentIds.isNotEmpty()) {
+        if (recentIds.isNotEmpty() && !recentDefaultApplied) {
             showRecentOnly = true
             recentDefaultApplied = true
         }
     }
-    val recentActive = showRecentOnly && recentExerciseIds.isNotEmpty()
+    val recentActive = showRecentOnly && recentIds.isNotEmpty()
     var selectedMuscles by remember { mutableStateOf(setOf<String>()) }
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
 
@@ -75,7 +80,7 @@ fun MiniExercisePickerDialog(
         selectedMuscles,
         selectedEquipment,
         recentActive,
-        recentExerciseIds,
+        recentIds,
     ) {
         val filtered = filterExercisePickerCandidates(
             candidates = candidateExercises,
@@ -86,7 +91,7 @@ fun MiniExercisePickerDialog(
                 showEssentialsOnly = showEssentialsOnly,
             ),
         )
-        if (recentActive) orderByRecentExercises(filtered, recentExerciseIds) else filtered
+        if (recentActive) orderByRecentExercises(filtered, recentIds) else filtered
     }
 
     AlertDialog(
@@ -115,7 +120,7 @@ fun MiniExercisePickerDialog(
                     enableEssentialsFilter = true,
                     showEssentialsOnly = showEssentialsOnly,
                     onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
-                    enableRecentFilter = recentExerciseIds.isNotEmpty(),
+                    enableRecentFilter = recentIds.isNotEmpty(),
                     showRecentOnly = recentActive,
                     onToggleRecent = { showRecentOnly = !showRecentOnly },
                     customExerciseCount = 0,

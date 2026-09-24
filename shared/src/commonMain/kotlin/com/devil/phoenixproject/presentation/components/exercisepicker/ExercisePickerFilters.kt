@@ -50,6 +50,12 @@ internal fun filterExercisePickerCandidates(
         matchesEssentials
 }
 
+/** Issue #850: the recent ids that still name an exercise in [library], newest first. */
+internal fun selectableRecentExerciseIds(recentExerciseIds: List<String>, library: List<Exercise>): List<String> {
+    val available = library.mapNotNullTo(HashSet()) { it.id?.trim() }
+    return recentExerciseIds.filter { it.trim() in available }
+}
+
 /**
  * Issue #850: the Recent chip. Keeps only exercises in [recentExerciseIds] and orders them as
  * that list does (newest first), replacing the candidates' own order.

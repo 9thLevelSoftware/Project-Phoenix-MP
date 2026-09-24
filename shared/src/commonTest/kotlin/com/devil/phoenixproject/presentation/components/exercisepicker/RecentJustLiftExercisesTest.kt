@@ -26,6 +26,14 @@ class RecentJustLiftExercisesTest {
     }
 
     @Test
+    fun deletedExercisesDropOutOfTheSelectableRecentList() {
+        val library = listOf(exercise("bench"), exercise("squat"))
+
+        assertEquals(listOf("squat", "bench"), selectableRecentExerciseIds(listOf("squat", "deleted-custom", "bench"), library))
+        assertEquals(emptyList(), selectableRecentExerciseIds(listOf("deleted-custom"), library))
+    }
+
+    @Test
     fun historySeedUsesTaggedJustLiftSessionsNewestFirst() {
         val sessions = listOf(
             WorkoutSession(id = "1", timestamp = 100, isJustLift = true, exerciseId = "bench"),
