@@ -828,7 +828,68 @@ class Issue687WorkoutExecutionIsolationTest {
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
             assertEquals(1, harness.coordinator.repCount.value.warmupReps)
             assertEquals(0, harness.coordinator.repCount.value.workingReps)
-            assertEquals(RepFreshnessState.Armed, harness.activeSessionEngine.executionGuard.repFreshnessGate.stateFor(lease))
+            assertEquals(RepFreshnessState.LegacyArmed, harness.activeSessionEngine.executionGuard.repFreshnessGate.stateFor(lease))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `issue 712 legacy top and bottom packets count every rep after the baseline despite handle movement`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startCableSet(harness, targetReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutover = requireNotNull(lease.activationCutoverTimestampMs)
+            var timestamp = cutover
+            var top = 10
+            var complete = 10
+            suspend fun emit() {
+                timestamp += 1
+                harness.fakeBleRepo.emitRepNotification(
+                    harness.legacyRepPacket(topCounter = top, completeCounter = complete, timestamp = timestamp),
+                )
+                runCurrent()
+            }
+
+            // The directional counters carry over from the previous set, and the first
+            // post-cutover packet is rep 1's top: it can only become the baseline.
+            top += 1
+            emit()
+            complete += 1
+            emit()
+            assertEquals(0, harness.coordinator.repCount.value.warmupReps)
+
+            // Before #712 was fixed, every Moving transition and every processed packet made
+            // the next packet a new baseline, so none of these top packets counted.
+            repeat(3) { index ->
+                harness.fakeBleRepo.setHandleState(HandleState.Moving)
+                runCurrent()
+                top += 1
+                emit()
+                assertEquals(index + 1, harness.coordinator.repCount.value.warmupReps)
+                harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+                runCurrent()
+                complete += 1
+                emit()
+            }
+            assertTrue(harness.coordinator.repCount.value.isWarmupComplete)
+
+            repeat(3) { index ->
+                harness.fakeBleRepo.setHandleState(HandleState.Moving)
+                runCurrent()
+                top += 1
+                emit()
+                assertEquals(index + 1, harness.coordinator.repCount.value.workingReps)
+                harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+                runCurrent()
+                complete += 1
+                emit()
+            }
+            advanceUntilIdle()
+
+            assertEquals(3, harness.coordinator.repCount.value.workingReps)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
         } finally {
             harness.cleanup()
         }
