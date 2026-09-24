@@ -8,7 +8,6 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 - Spawned agents must stay within this project's tools and skills (`.agents/skills/`: `agent-browser`, `update-phoenix-version`); don't pull in tooling from unrelated projects.
 - All weight fields are **per cable** unless the name says *Total*. Never treat a machine total (200/220 kg) as a per-cable value.
 - Never use `INSERT OR REPLACE` on a table with FK children. REPLACE deletes the old row, and `ON DELETE CASCADE` children (e.g. of `WorkoutSession`, `Exercise`) go with it. Use `INSERT OR IGNORE` + `UPDATE` instead.
-- `.almanac/` is an older agent wiki (historical, last verified 2026-06). Use it as secondary background only; this file and the code win where they disagree.
 
 ## Project Overview
 
@@ -106,6 +105,13 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 3. Among its gates, `release-all` refuses to run if Android `versionName` and the iOS `MARKETING_VERSION`s differ or the tag `v<version>` already exists (read the workflow for the current full set). It does not check `Constants.APP_VERSION`, so rely on the skill for that.
 4. It creates the GitHub release `v<version>`, then calls `android-release-apk.yml`, `ios-release-ipa.yml`, `android-playstore.yml` and `ios-testflight.yml` (each can be skipped by an input).
 5. Required repo secrets, by group: release (`RELEASE_PAT`); Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`); Android signing (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); Play (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Apple signing (`BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `PROVISION_PROFILE_BASE64`, `PROVISIONING_PROFILE_NAME`, `TEAM_ID`); App Store Connect (`APPSTORE_API_KEY`, `APPSTORE_API_KEY_ID`, `APPSTORE_ISSUER_ID`, `APP_APPLE_ID`, `TESTFLIGHT_GROUP_NAME`).
+
+### Pending release gates (reliability work, #832; not yet released as of v1.0.2)
+`release-all` does not enforce these. Complete them, then delete this subsection, before dispatching the next release:
+1. Deploy the portal first: the additive migration `20260920120000_sync_reliability_contract.sql`, both mobile sync Edge Functions and their portal callers, released together. Then verify the deployed contract with controlled accounts: component-safe writes, permanent workout deletion, exact acknowledgements, ownership transfer and event replay, and cycle rejection/nullable-field behaviour.
+2. On macOS, build the release iOS framework and app and run the native startup/database tests with the production driver. Confirm foreign keys are enforced after migration and reopening.
+3. On a V-Form and a Trainer+, verify manual and autoplay transitions, edited rack loads and counterweights, same-exercise and next-exercise transitions, idle/armed disconnect and recovery, and repeated timed warmups with the next exercise initially stationary.
+4. During rollout, watch pending ownership/deletion operation counts, age and failures. Missing acknowledgements must stay pending: never treat them as success or rebind them to another account.
 
 ## Sync Architecture
 
