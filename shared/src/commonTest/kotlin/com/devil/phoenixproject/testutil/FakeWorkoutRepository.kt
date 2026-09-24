@@ -282,6 +282,13 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = _sessionsFlow.map { it.take(limit) }
 
+    // Mirrors the engine's previous in-memory lookup over getAllSessions (this fake's
+    // getAllSessions is not profile-filtered either).
+    override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = _sessionsFlow.value
+        .filter { it.exerciseId == exerciseId }
+        .maxByOrNull { it.timestamp }
+        ?.weightPerCableKg
+
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
     override suspend fun getSessionsForRoutineSession(

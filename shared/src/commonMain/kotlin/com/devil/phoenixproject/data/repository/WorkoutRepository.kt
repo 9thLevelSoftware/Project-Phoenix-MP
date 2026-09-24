@@ -75,11 +75,19 @@ interface WorkoutRepository {
     suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String)
 
     /**
-     * Get recent workout sessions
+     * Get the newest user-visible workout sessions (soft-deleted rows excluded, newest first),
+     * observed as a flow. Same rows and order as the head of [getAllSessions], without loading
+     * the rest of the history (F-034).
      * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return
      */
     fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
+
+    /**
+     * Per-cable weight of the newest user-visible session of [exerciseId] in [profileId],
+     * or null when the profile has never done it (F-034: one indexed row, not the history).
+     */
+    suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float?
 
     /**
      * Issue #591: Workout sessions that should appear in the Analytics /
@@ -162,7 +170,8 @@ interface WorkoutRepository {
     suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric>
 
     /**
-     * Get recent workout sessions synchronously (for export)
+     * Get recent workout sessions synchronously (for export / import de-duplication).
+     * Unlike [getRecentSessions] this includes soft-deleted rows.
      */
     suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
 

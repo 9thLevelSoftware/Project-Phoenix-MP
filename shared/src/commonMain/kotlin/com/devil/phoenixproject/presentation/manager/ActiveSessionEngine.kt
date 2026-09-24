@@ -6840,12 +6840,8 @@ class ActiveSessionEngine(
 
     suspend fun getLastWeightForExercise(exerciseId: String): Float? {
         val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
-        return workoutRepository.getAllSessions(profileId = profileId)
-            .first()
-            .filter { it.exerciseId == exerciseId }
-            .sortedByDescending { it.timestamp }
-            .firstOrNull()
-            ?.weightPerCableKg
+        // F-034: one indexed row instead of loading the profile's whole history.
+        return workoutRepository.getLastWeightForExercise(profileId = profileId, exerciseId = exerciseId)
     }
 
     // ===== Just Lift =====

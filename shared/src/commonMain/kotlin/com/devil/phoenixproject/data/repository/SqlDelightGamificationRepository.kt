@@ -277,87 +277,84 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
     private data class StreakData(val currentStreak: Int, val longestStreak: Int, val streakStartMs: Long?, val lastWorkoutMs: Long?)
 
     /**
-     * Count workouts completed in the current week (Monday to Sunday)
+     * SQL-backed inputs for one badge evaluation pass (F-034). The old helpers each loaded
+     * every session and filtered in Kotlin; these aggregates run in SQL, scoped to
+     * [profileId], and each runs at most once per pass however many badges ask for it.
      */
-    private fun countWorkoutsInCurrentWeek(profileId: String): Int {
-        val now = Clock.System.now()
-        val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+    private inner class BadgePass(val profileId: String) {
+        /** Workouts per local hour of day (0-23); hours with none are absent. */
+        val workoutsByLocalHour: Map<Int, Int> by lazy {
+            queries.countWorkoutsByLocalHour(profileId = profileId).executeAsList()
+                .mapNotNull { row -> row.hour?.let { hour -> hour.toInt() to row.count.toInt() } }
+                .toMap()
+        }
 
-        // Find start of current week (Monday)
+        /** Distinct local calendar days with a workout, as epoch days, ascending. */
+        val workoutLocalEpochDays: List<Long> by lazy {
+            queries.selectWorkoutLocalEpochDays(profileId = profileId).executeAsList()
+                .filterNotNull()
+        }
+
+        val maxSingleSessionVolumeKg: Int by lazy {
+            queries.selectMaxSingleSessionVolume(profileId = profileId).executeAsOneOrNull()
+                ?.maxVolume?.toInt() ?: 0
+        }
+
+        val workoutsInCurrentWeek: Int by lazy {
+            queries.countWorkoutsSince(profileId = profileId, sinceMs = currentWeekStartMs())
+                .executeAsOne().toInt()
+        }
+
+        val peakPowerWatts: Int by lazy { peakRepPowerWatts(profileId) }
+    }
+
+    /**
+     * Start of the current local week (Monday 00:00) in epoch ms, from SQLite's 'localtime'
+     * so it agrees with the hour/day buckets of the other badge queries (review R-1).
+     */
+    private fun currentWeekStartMs(): Long = queries.selectLocalWeekStartMs().executeAsOne()
+        ?: kotlinWeekStartMs()
+
+    /** Fallback week start from kotlinx's zone; only used if SQLite returns no value. */
+    private fun kotlinWeekStartMs(): Long {
+        val zone = TimeZone.currentSystemDefault()
+        val today = Clock.System.now().toLocalDateTime(zone).date
         val dayOfWeek = today.dayOfWeek.ordinal // Monday = 0, Sunday = 6
         val weekStart = LocalDate.fromEpochDays(today.toEpochDays() - dayOfWeek)
-        val weekStartMs = weekStart.atStartOfDayIn(
-            TimeZone.currentSystemDefault(),
-        ).toEpochMilliseconds()
-
-        // Count sessions with timestamp >= weekStartMs
-        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-        return sessions.count { it.workingReps > 0 && it.timestamp >= weekStartMs }
+        return weekStart.atStartOfDayIn(zone).toEpochMilliseconds()
     }
 
     /**
-     * Get the maximum volume (kg) lifted in any single workout session
-     * Prefer measured totalVolumeKg when available (v0.2.1+), otherwise fallback using stored cableCount.
-     * Legacy rows without cable metadata default conservatively to single-cable volume.
+     * Peak concentric power in watts from this profile's RepMetric rows (F-035). RepMetric
+     * stores true watts (load kg x velocity m/s x 9.81), which is the unit the PeakPower badge
+     * thresholds (500/750/1000 W) are written in. Raw MetricSample `power` is kg x mm/s and
+     * unscoped, so it is never used for badges.
      */
-    private fun getMaxSingleSessionVolume(profileId: String): Int {
-        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-            .filter { it.workingReps > 0 }
-        if (sessions.isEmpty()) return 0
-
-        return sessions.maxOfOrNull { session ->
-            (
-                session.totalVolumeKg
-                    ?: (
-                        session.totalReps * session.weightPerCableKg *
-                            (session.cableCount ?: 1L).toDouble()
-                        )
-                ).toInt()
-        } ?: 0
+    private fun peakRepPowerWatts(profileId: String): Int = try {
+        queries.selectPeakRepPowerForProfile(profileId).executeAsOneOrNull()?.peakRepPower?.toInt() ?: 0
+    } catch (e: Exception) {
+        Logger.w(e) { "Peak rep power unavailable for badge evaluation (profile=$profileId)" }
+        0 // RepMetric table may not exist due to a migration gap, as in getRpgInput
     }
 
-    /**
-     * Check if any workout was completed within the specified hour range
-     * @param hourStart Start hour (0-23, inclusive)
-     * @param hourEnd End hour (0-23, inclusive)
-     */
-    private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int, profileId: String): Boolean {
-        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-            .filter { it.workingReps > 0 }
-
-        return sessions.any { session ->
-            val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
-                .toLocalDateTime(TimeZone.currentSystemDefault())
-            val hour = sessionTime.hour
-
+    /** Workouts whose local hour is in [hourStart]..[hourEnd] (inclusive; wraps past midnight). */
+    private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int, pass: BadgePass): Boolean = pass.workoutsByLocalHour.any { (hour, count) ->
+        count > 0 &&
             if (hourStart <= hourEnd) {
-                // Normal range (e.g., 6 to 9)
                 hour in hourStart..hourEnd
             } else {
-                // Wrapping range (e.g., 22 to 5 for late night/early morning)
                 hour >= hourStart || hour <= hourEnd
             }
-        }
     }
 
-    /**
-     * Count workouts completed within a specific time range
-     */
-    private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int, profileId: String): Int {
-        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-            .filter { it.workingReps > 0 }
-
-        return sessions.count { session ->
-            val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
-                .toLocalDateTime(TimeZone.currentSystemDefault())
-            val hour = sessionTime.hour
-
-            if (hourStart <= hourEnd) {
-                hour in hourStart until hourEnd
-            } else {
-                hour >= hourStart || hour < hourEnd
-            }
+    /** Workouts whose local hour is from [hourStart] up to [hourEnd] (end exclusive; wraps past midnight). */
+    private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int, pass: BadgePass): Int = pass.workoutsByLocalHour.entries.sumOf { (hour, count) ->
+        val inRange = if (hourStart <= hourEnd) {
+            hour in hourStart until hourEnd
+        } else {
+            hour >= hourStart || hour < hourEnd
         }
+        if (inRange) count else 0
     }
 
     /**
@@ -409,14 +406,6 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
     }
 
     /**
-     * Get peak power from all workouts
-     */
-    private fun getPeakPower(): Int {
-        val result = queries.selectPeakPower().executeAsOneOrNull()
-        return result?.peakPower?.toInt() ?: 0
-    }
-
-    /**
      * Get count of unique muscle groups trained
      */
     private fun getUniqueMuscleGroupsCount(profileId: String): Int {
@@ -445,26 +434,9 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
      * Check if user came back after a break of specified days
      * This is tracked by checking if there was a gap >= breakDays between any two workouts
      */
-    private fun hasComebackAfterBreak(breakDays: Int, profileId: String): Boolean {
-        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-            .filter { it.workingReps > 0 }
-        if (sessions.size < 2) return false
-
-        val sortedSessions = sessions.sortedBy { it.timestamp }
-
-        for (i in 1 until sortedSessions.size) {
-            val prevDate = Instant.fromEpochMilliseconds(sortedSessions[i - 1].timestamp)
-                .toLocalDateTime(TimeZone.currentSystemDefault()).date
-            val currDate = Instant.fromEpochMilliseconds(sortedSessions[i].timestamp)
-                .toLocalDateTime(TimeZone.currentSystemDefault()).date
-
-            val daysBetween = currDate.toEpochDays() - prevDate.toEpochDays()
-            if (daysBetween >= breakDays) {
-                return true
-            }
-        }
-        return false
-    }
+    private fun hasComebackAfterBreak(breakDays: Int, pass: BadgePass): Boolean =
+        // Consecutive distinct workout days; same-day repeats only ever add a 0-day gap.
+        pass.workoutLocalEpochDays.zipWithNext().any { (previousDay, day) -> day - previousDay >= breakDays }
 
     /**
      * Check if user saved their streak (workout when at risk)
@@ -585,11 +557,17 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
                 queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
                     ?: return@withContext emptyList()
 
+            // F-034: one earned-badge read and one SQL-backed pass for the whole check,
+            // instead of a query per badge and a full-history load per helper.
+            val earnedBadgeIds = queries.selectAllEarnedBadges(profileId = profileId).executeAsList()
+                .mapTo(HashSet()) { it.badgeId }
+            val pass = BadgePass(profileId)
+
             // Check each badge
             for (badge in BadgeDefinitions.allBadges) {
-                if (isBadgeEarned(badge.id, profileId)) continue
+                if (badge.id in earnedBadgeIds) continue
 
-                val isEarned = checkBadgeRequirement(badge, stats, profileId)
+                val isEarned = checkBadgeRequirement(badge, stats, pass)
                 if (isEarned) {
                     val awarded = awardBadge(badge.id, profileId)
                     if (awarded) {
@@ -606,7 +584,7 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
     private fun checkBadgeRequirement(
         badge: Badge,
         stats: com.devil.phoenixproject.database.GamificationStats,
-        profileId: String,
+        pass: BadgePass,
     ): Boolean = when (val req = badge.requirement) {
         is BadgeRequirement.StreakDays ->
             stats.currentStreak >= req.days ||
@@ -628,61 +606,59 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
         }
 
         is BadgeRequirement.WorkoutsInWeek -> {
-            val workoutsThisWeek = countWorkoutsInCurrentWeek(profileId)
-            workoutsThisWeek >= req.count
+            pass.workoutsInCurrentWeek >= req.count
         }
 
         is BadgeRequirement.SingleWorkoutVolume -> {
-            val maxSessionVolume = getMaxSingleSessionVolume(profileId)
-            maxSessionVolume >= req.kgLifted
+            pass.maxSingleSessionVolumeKg >= req.kgLifted
         }
 
         is BadgeRequirement.WorkoutAtTime -> {
-            hasWorkoutAtTime(req.hourStart, req.hourEnd, profileId)
+            hasWorkoutAtTime(req.hourStart, req.hourEnd, pass)
         }
 
         is BadgeRequirement.WorkoutsAtTimeCount -> {
-            countWorkoutsAtTime(req.hourStart, req.hourEnd, profileId) >= req.count
+            countWorkoutsAtTime(req.hourStart, req.hourEnd, pass) >= req.count
         }
 
         is BadgeRequirement.WorkoutModeCount -> {
-            getWorkoutCountByMode(req.modeName, profileId) >= req.count
+            getWorkoutCountByMode(req.modeName, pass.profileId) >= req.count
         }
 
         is BadgeRequirement.AllWorkoutModes -> {
-            hasUsedAllWorkoutModes(profileId)
+            hasUsedAllWorkoutModes(pass.profileId)
         }
 
         is BadgeRequirement.PeakPower -> {
-            getPeakPower() >= req.watts
+            pass.peakPowerWatts >= req.watts
         }
 
         is BadgeRequirement.UniqueMuscleGroups -> {
-            getUniqueMuscleGroupsCount(profileId) >= req.count
+            getUniqueMuscleGroupsCount(pass.profileId) >= req.count
         }
 
         is BadgeRequirement.ComebackAfterBreak -> {
-            hasComebackAfterBreak(req.breakDays, profileId)
+            hasComebackAfterBreak(req.breakDays, pass)
         }
 
         is BadgeRequirement.StreakSaved -> {
-            hasSavedStreak(profileId)
+            hasSavedStreak(pass.profileId)
         }
 
         is BadgeRequirement.StreakRebuilt -> {
-            hasRebuiltStreak(req.days, profileId)
+            hasRebuiltStreak(req.days, pass.profileId)
         }
 
         is BadgeRequirement.WeekendWorkouts -> {
-            getWeekendWorkoutsCount(profileId) >= req.count
+            getWeekendWorkoutsCount(pass.profileId) >= req.count
         }
 
         is BadgeRequirement.RoutinesCompleted -> {
-            getCompletedRoutinesCount(profileId) >= req.count
+            getCompletedRoutinesCount(pass.profileId) >= req.count
         }
 
         is BadgeRequirement.RoutinesCreated -> {
-            getCreatedRoutinesCount(profileId) >= req.count
+            getCreatedRoutinesCount(pass.profileId) >= req.count
         }
 
         is BadgeRequirement.QualityStreak -> {
@@ -703,90 +679,97 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
             val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
                 ?: return@withContext Pair(0, badge.getTargetValue())
 
-            val current = when (val req = badge.requirement) {
-                is BadgeRequirement.StreakDays -> maxOf(
-                    stats.currentStreak.toInt(),
-                    stats.longestStreak.toInt(),
-                )
+            Pair(badgeProgress(badge, stats, BadgePass(profileId)), badge.getTargetValue())
+        }
+    }
 
-                is BadgeRequirement.TotalWorkouts -> stats.totalWorkouts.toInt()
+    private fun badgeProgress(
+        badge: Badge,
+        stats: com.devil.phoenixproject.database.GamificationStats,
+        pass: BadgePass,
+    ): Int {
+        val profileId = pass.profileId
+        return when (val req = badge.requirement) {
+            is BadgeRequirement.StreakDays -> maxOf(
+                stats.currentStreak.toInt(),
+                stats.longestStreak.toInt(),
+            )
 
-                is BadgeRequirement.TotalReps -> stats.totalReps.toInt()
+            is BadgeRequirement.TotalWorkouts -> stats.totalWorkouts.toInt()
 
-                is BadgeRequirement.PRsAchieved -> stats.prsAchieved.toInt()
+            is BadgeRequirement.TotalReps -> stats.totalReps.toInt()
 
-                is BadgeRequirement.UniqueExercises -> stats.uniqueExercisesUsed.toInt()
+            is BadgeRequirement.PRsAchieved -> stats.prsAchieved.toInt()
 
-                is BadgeRequirement.TotalVolume -> stats.totalVolumeKg.toInt()
+            is BadgeRequirement.UniqueExercises -> stats.uniqueExercisesUsed.toInt()
 
-                is BadgeRequirement.ConsecutiveWeeks -> stats.longestStreak.toInt() / 7
+            is BadgeRequirement.TotalVolume -> stats.totalVolumeKg.toInt()
 
-                is BadgeRequirement.WorkoutsInWeek -> countWorkoutsInCurrentWeek(profileId)
+            is BadgeRequirement.ConsecutiveWeeks -> stats.longestStreak.toInt() / 7
 
-                is BadgeRequirement.SingleWorkoutVolume -> getMaxSingleSessionVolume(profileId)
+            is BadgeRequirement.WorkoutsInWeek -> pass.workoutsInCurrentWeek
 
-                is BadgeRequirement.WorkoutAtTime -> if (hasWorkoutAtTime(
-                        req.hourStart,
-                        req.hourEnd,
-                        profileId,
-                    )
-                ) {
-                    1
-                } else {
-                    0
-                }
+            is BadgeRequirement.SingleWorkoutVolume -> pass.maxSingleSessionVolumeKg
 
-                is BadgeRequirement.WorkoutsAtTimeCount -> countWorkoutsAtTime(
+            is BadgeRequirement.WorkoutAtTime -> if (hasWorkoutAtTime(
                     req.hourStart,
                     req.hourEnd,
-                    profileId,
+                    pass,
                 )
-
-                is BadgeRequirement.WorkoutModeCount -> getWorkoutCountByMode(
-                    req.modeName,
-                    profileId,
-                )
-
-                is BadgeRequirement.AllWorkoutModes -> getUniqueWorkoutModesCount(profileId)
-
-                is BadgeRequirement.PeakPower -> getPeakPower()
-
-                is BadgeRequirement.UniqueMuscleGroups -> getUniqueMuscleGroupsCount(profileId)
-
-                is BadgeRequirement.ComebackAfterBreak -> if (hasComebackAfterBreak(
-                        req.breakDays,
-                        profileId,
-                    )
-                ) {
-                    1
-                } else {
-                    0
-                }
-
-                is BadgeRequirement.StreakSaved -> if (hasSavedStreak(profileId)) 1 else 0
-
-                is BadgeRequirement.StreakRebuilt -> if (hasRebuiltStreak(
-                        req.days,
-                        profileId,
-                    )
-                ) {
-                    req.days
-                } else {
-                    stats.currentStreak.toInt()
-                }
-
-                is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount(profileId)
-
-                is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount(profileId)
-
-                is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount(profileId)
-
-                is BadgeRequirement.QualityStreak -> 0 // Session-scoped, not tracked in DB
-
-                is BadgeRequirement.VelocityOneRepMaxImprovements -> 0 // Awarded by GamificationManager.checkVelocityOneRepMaxBadges() via the post-save hook in MainViewModel.
+            ) {
+                1
+            } else {
+                0
             }
 
-            Pair(current, badge.getTargetValue())
+            is BadgeRequirement.WorkoutsAtTimeCount -> countWorkoutsAtTime(
+                req.hourStart,
+                req.hourEnd,
+                pass,
+            )
+
+            is BadgeRequirement.WorkoutModeCount -> getWorkoutCountByMode(
+                req.modeName,
+                profileId,
+            )
+
+            is BadgeRequirement.AllWorkoutModes -> getUniqueWorkoutModesCount(profileId)
+
+            is BadgeRequirement.PeakPower -> pass.peakPowerWatts
+
+            is BadgeRequirement.UniqueMuscleGroups -> getUniqueMuscleGroupsCount(profileId)
+
+            is BadgeRequirement.ComebackAfterBreak -> if (hasComebackAfterBreak(
+                    req.breakDays,
+                    pass,
+                )
+            ) {
+                1
+            } else {
+                0
+            }
+
+            is BadgeRequirement.StreakSaved -> if (hasSavedStreak(profileId)) 1 else 0
+
+            is BadgeRequirement.StreakRebuilt -> if (hasRebuiltStreak(
+                    req.days,
+                    profileId,
+                )
+            ) {
+                req.days
+            } else {
+                stats.currentStreak.toInt()
+            }
+
+            is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount(profileId)
+
+            is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount(profileId)
+
+            is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount(profileId)
+
+            is BadgeRequirement.QualityStreak -> 0 // Session-scoped, not tracked in DB
+
+            is BadgeRequirement.VelocityOneRepMaxImprovements -> 0 // Awarded by GamificationManager.checkVelocityOneRepMaxBadges() via the post-save hook in MainViewModel.
         }
     }
 
@@ -795,15 +778,14 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
             .associateBy { it.badgeId }
         val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
 
+        // F-034: one SQL-backed pass for every badge's progress (was a withContext and a
+        // set of full-history loads per badge).
+        val pass = BadgePass(profileId)
+
         BadgeDefinitions.allBadges.map { badge ->
             val earned = earnedBadges[badge.id]
-            val (current, target) = if (stats != null) {
-                val progress =
-                    getBadgeProgress(badge.id, profileId) ?: Pair(0, badge.getTargetValue())
-                progress
-            } else {
-                Pair(0, badge.getTargetValue())
-            }
+            val target = badge.getTargetValue()
+            val current = if (stats != null) badgeProgress(badge, stats, pass) else 0
 
             BadgeWithProgress(
                 badge = badge,
