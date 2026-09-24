@@ -194,7 +194,7 @@ fun ExerciseConfigModal(
 private fun ExerciseConfigHeader(exerciseName: String, templateSets: Int, templateReps: Int?, oneRepMaxKg: Float?) {
     // workout-setup-17: primaryContainer tint brings in brand colour and visually separates
     // the header from the surfaceContainer modal body. titleLarge aligns with other modal
-    // headers (WorkoutSetupDialog, CompletedCard).
+    // headers (CompletedCard).
     Column(
         modifier = Modifier
             .fillMaxWidth()

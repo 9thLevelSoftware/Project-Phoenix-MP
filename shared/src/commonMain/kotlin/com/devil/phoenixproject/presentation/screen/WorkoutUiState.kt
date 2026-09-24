@@ -44,9 +44,6 @@ import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
  * @property autoplayEnabled Whether to auto-advance after set summary
  * @property canGoBack Whether user can navigate to previous exercise
  * @property canSkipForward Whether user can skip to next exercise
- * @property isWorkoutSetupDialogVisible Whether setup dialog is shown
- * @property showConnectionCard Whether to show connection status card
- * @property showWorkoutSetupCard Whether to show workout setup button
  * @property loadBaselineA Load baseline for cable A (base tension to subtract, ~4kg)
  * @property loadBaselineB Load baseline for cable B (base tension to subtract, ~4kg)
  * @property timedExerciseRemainingSeconds Countdown timer for timed exercises (null = not timed)
@@ -76,9 +73,6 @@ data class WorkoutUiState(
     val summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
     val canGoBack: Boolean = false,
     val canSkipForward: Boolean = false,
-    val isWorkoutSetupDialogVisible: Boolean = false,
-    val showConnectionCard: Boolean = true,
-    val showWorkoutSetupCard: Boolean = true,
     val loadBaselineA: Float = 0f,
     val loadBaselineB: Float = 0f,
     val timedExerciseRemainingSeconds: Int? = null,
@@ -192,12 +186,6 @@ interface WorkoutActions {
     /** Update the next set's runtime equipment behavior overrides. */
     fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>)
 
-    /** Show workout setup dialog */
-    fun onShowWorkoutSetupDialog()
-
-    /** Hide workout setup dialog */
-    fun onHideWorkoutSetupDialog()
-
     /** Convert kg to display unit */
     fun kgToDisplay(kg: Float, unit: WeightUnit): Float
 
@@ -221,45 +209,6 @@ interface WorkoutActions {
 
     /** Confirm performed reps for a timed bodyweight set. */
     fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption)
-}
-
-/**
- * Default no-op implementation of WorkoutActions for previews.
- */
-object PreviewWorkoutActions : WorkoutActions {
-    override fun onScan() {}
-    override fun onCancelScan() {}
-    override fun onDisconnect() {}
-    override fun onStartWorkout() {}
-    override fun onRetryWorkoutTeardown() {}
-    override fun onReconnectWorkoutTeardown() {}
-    override fun onStopWorkout() {}
-    override fun onSkipRest() {}
-    override fun onSkipRest(identity: RestActionIdentity) {}
-    override fun onAcceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) {}
-    override fun onDeclineDropSet(identity: RestActionIdentity) {}
-    override fun onExtendRest(seconds: Int) {}
-    override fun onToggleRestPause() {}
-    override fun onResetRest() {}
-    override fun onSkipCountdown() {}
-    override fun onProceedFromSummary() {}
-    override fun onRpeLogged(rpe: Int) {}
-    override fun onResetForNewWorkout() {}
-    override fun onStartNextExercise() {}
-    override fun onJumpToExercise(index: Int) {}
-    override fun onUpdateParameters(params: WorkoutParameters) {}
-    override fun onUpdateRackSelection(itemIds: List<String>) {}
-    override fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {}
-    override fun onShowWorkoutSetupDialog() {}
-    override fun onHideWorkoutSetupDialog() {}
-    override fun kgToDisplay(kg: Float, unit: WeightUnit): Float = kg
-    override fun displayToKg(display: Float, unit: WeightUnit): Float = display
-    override fun formatWeight(weight: Float, unit: WeightUnit): String = "${weight.toInt()} kg"
-    override suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) {}
-    override fun onPauseExerciseTimer() {}
-    override fun onResumeExerciseTimer() {}
-    override fun onResetExerciseTimer() {}
-    override fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) {}
 }
 
 /**
@@ -290,8 +239,6 @@ fun workoutActions(
     onUpdateParameters: (WorkoutParameters) -> Unit,
     onUpdateRackSelection: (List<String>) -> Unit = {},
     onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
-    onShowWorkoutSetupDialog: () -> Unit,
-    onHideWorkoutSetupDialog: () -> Unit,
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
@@ -324,8 +271,6 @@ fun workoutActions(
     override fun onUpdateParameters(params: WorkoutParameters) = onUpdateParameters(params)
     override fun onUpdateRackSelection(itemIds: List<String>) = onUpdateRackSelection(itemIds)
     override fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = onUpdateRackBehaviorOverrides(overrides)
-    override fun onShowWorkoutSetupDialog() = onShowWorkoutSetupDialog()
-    override fun onHideWorkoutSetupDialog() = onHideWorkoutSetupDialog()
     override fun kgToDisplay(kg: Float, unit: WeightUnit) = kgToDisplay(kg, unit)
     override fun displayToKg(display: Float, unit: WeightUnit) = displayToKg(display, unit)
     override fun formatWeight(weight: Float, unit: WeightUnit) = formatWeight(weight, unit)
