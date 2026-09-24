@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ProfileAccountBindingException
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkReceipt
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkRollbackException
 import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
+import com.devil.phoenixproject.data.repository.ProfileSwitchBlockedDuringWorkoutException
 import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfile
@@ -132,6 +133,21 @@ class FakeUserProfileRepository : UserProfileRepository {
     private val _allProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
     override val allProfiles: StateFlow<List<UserProfile>> = _allProfiles.asStateFlow()
 
+    // PR 20: permanently deleted profiles awaiting their push.
+    private val pendingDeletionIds = linkedSetOf<String>()
+    private val _pendingDeletionProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
+    override val pendingDeletionProfiles: StateFlow<List<UserProfile>> = _pendingDeletionProfiles.asStateFlow()
+    val deleteActiveProfilePermanentlyRequests = mutableListOf<String>()
+    val finalizePendingProfileDeletionRequests = mutableListOf<String>()
+    var finalizePendingProfileDeletionFailure: Throwable? = null
+
+    /** Marks an existing profile pending deletion, as a committed permanent delete would. */
+    suspend fun markPendingDeletionForTest(profileId: String) = mutex.withLock {
+        require(profiles.containsKey(profileId)) { "Unknown profile: $profileId" }
+        pendingDeletionIds += profileId
+        updateIdentityFlows()
+    }
+
     private val _activeProfileContext = MutableStateFlow<ActiveProfileContext>(
         ActiveProfileContext.Switching(null),
     )
@@ -193,12 +209,14 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
+        blockedByLiveSession: () -> Boolean,
     ): UserProfile {
         val request = CreateAndActivateRequest(name, colorIndex)
         createAndActivateRequests += request
         beforeCreateAndActivateProfile?.invoke(name, colorIndex)
         createAndActivateProfileFailure?.let { throw it }
         return mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()
             val trimmedName = name.trim()
@@ -232,7 +250,10 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean {
+    override suspend fun deleteActiveProfile(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
         deleteActiveProfileRequests += expectedProfileId
         deleteProfileFailure?.let { throw it }
         beforeDeleteActiveProfileMutation?.invoke(expectedProfileId)
@@ -243,15 +264,62 @@ class FakeUserProfileRepository : UserProfileRepository {
             if (ready.profile.id != expectedProfileId) {
                 throw StaleProfileContextException(expectedProfileId, ready.profile.id)
             }
-            deleteProfileLocked(expectedProfileId, requireActive = true)
+            deleteProfileLocked(expectedProfileId, requireActive = true, blockedByLiveSession)
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
-        deleteProfileLocked(id, requireActive = false)
+    override suspend fun deleteActiveProfilePermanently(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
+        deleteActiveProfilePermanentlyRequests += expectedProfileId
+        deleteProfileFailure?.let { throw it }
+        deleteActiveProfileResultOverride?.let { return it }
+        return mutex.withLock {
+            val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
+                ?: throw ProfileContextUnavailableException()
+            if (ready.profile.id != expectedProfileId) {
+                throw StaleProfileContextException(expectedProfileId, ready.profile.id)
+            }
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
+            if (expectedProfileId == DEFAULT_PROFILE_ID || !profiles.containsKey(expectedProfileId)) {
+                return@withLock false
+            }
+            setActiveIdentityMapLocked(DEFAULT_PROFILE_ID)
+            if (profiles[expectedProfileId]?.supabaseUserId != null) {
+                pendingDeletionIds += expectedProfileId
+            } else {
+                profiles.remove(expectedProfileId)
+                preferenceFlows.remove(expectedProfileId)
+            }
+            updateIdentityFlows()
+            publishReady(DEFAULT_PROFILE_ID)
+            true
+        }
     }
 
-    private fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+    override suspend fun finalizePendingProfileDeletion(profileId: String): Boolean {
+        finalizePendingProfileDeletionRequests += profileId
+        finalizePendingProfileDeletionFailure?.let { throw it }
+        return mutex.withLock {
+            if (profileId !in pendingDeletionIds) return@withLock false
+            pendingDeletionIds -= profileId
+            profiles.remove(profileId)
+            preferenceFlows.remove(profileId)
+            updateIdentityFlows()
+            true
+        }
+    }
+
+    override suspend fun deleteProfile(id: String, blockedByLiveSession: () -> Boolean): Boolean = mutex.withLock {
+        deleteProfileLocked(id, requireActive = false, blockedByLiveSession)
+    }
+
+    private fun deleteProfileLocked(
+        id: String,
+        requireActive: Boolean,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): Boolean {
         if (id == DEFAULT_PROFILE_ID) return false
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
@@ -260,6 +328,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
         profiles[id] ?: return false
         val wasActive = previous.profile.id == id
+        if (wasActive && blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
         val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         require(profiles.containsKey(targetProfileId)) { "Profile deletion target missing: $targetProfileId" }
         if (wasActive) {
@@ -297,11 +366,12 @@ class FakeUserProfileRepository : UserProfileRepository {
         return true
     }
 
-    override suspend fun setActiveProfile(id: String) {
+    override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         setActiveProfileRequests += id
         beforeSetActiveProfile?.invoke(id)
         setActiveProfileFailure?.let { throw it }
         mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             require(profiles.containsKey(id)) { "Unknown profile: $id" }
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()
@@ -323,13 +393,15 @@ class FakeUserProfileRepository : UserProfileRepository {
 
     override suspend fun ensureDefaultProfile() {
         mutex.withLock {
-            if (!profiles.containsKey(DEFAULT_PROFILE_ID)) {
+            // Matches SqlDelightUserProfileRepository.ensureDefaultProfileSync: only seed
+            // "default" when the profile table is empty, never alongside an existing profile.
+            if (profiles.isEmpty()) {
                 profiles[DEFAULT_PROFILE_ID] = UserProfile(
                     id = DEFAULT_PROFILE_ID,
                     name = "Default",
                     colorIndex = 0,
                     createdAt = currentTimeMillis(),
-                    isActive = profiles.values.none { it.isActive },
+                    isActive = true,
                 )
                 ensurePreferenceFlow(DEFAULT_PROFILE_ID, legacyMigrationVersion = 0)
             }
@@ -543,10 +615,21 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun linkToSupabaseUnderProfileMutationBarrier(
         profileId: String,
         supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = linkUnderBarrier(profileId, supabaseUserId, allowOwnerChange = false)
+
+    override suspend fun reassignToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = linkUnderBarrier(profileId, supabaseUserId, allowOwnerChange = true)
+
+    private suspend fun linkUnderBarrier(
+        profileId: String,
+        supabaseUserId: String,
+        allowOwnerChange: Boolean,
     ): ProfileAccountLinkReceipt = mutex.withLock {
         val profile = profiles[profileId] ?: error("Profile does not exist: $profileId")
         val currentOwnerUserId = profile.supabaseUserId
-        if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId) {
+        if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId && !allowOwnerChange) {
             throw ProfileAccountBindingException(profileId, currentOwnerUserId, supabaseUserId)
         }
         val linkedAt = currentTimeMillis()
@@ -691,8 +774,11 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     private fun updateIdentityFlows() {
-        _allProfiles.value = profiles.values.toList()
-        _activeProfile.value = profiles.values.firstOrNull { it.isActive }
+        pendingDeletionIds.retainAll(profiles.keys)
+        val (pending, visible) = profiles.values.partition { it.id in pendingDeletionIds }
+        _allProfiles.value = visible
+        _pendingDeletionProfiles.value = pending
+        _activeProfile.value = visible.firstOrNull { it.isActive }
     }
 
     private fun publishReady(profileId: String) {

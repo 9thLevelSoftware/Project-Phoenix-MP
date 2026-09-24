@@ -298,6 +298,8 @@ fun SettingsTab(
     onBleCompatibilityModeChange: (BleCompatibilitySetting) -> Unit,
     autoBackupEnabled: Boolean,
     onAutoBackupEnabledChange: (Boolean) -> Unit,
+    includeRawTelemetryInBackups: Boolean,
+    onIncludeRawTelemetryInBackupsChange: (Boolean) -> Unit,
     backupStats: BackupStats?,
     onOpenBackupFolder: () -> Unit,
     backupDestination: BackupDestination,
@@ -871,6 +873,33 @@ fun SettingsTab(
                     Switch(
                         checked = autoBackupEnabled,
                         onCheckedChange = onAutoBackupEnabledChange,
+                    )
+                }
+
+                // Raw telemetry is out of backups unless opted in (F-033)
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Include raw telemetry",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Add every raw force and position sample to backups. Makes backups much larger; " +
+                                "workouts, reps and records are always included",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = includeRawTelemetryInBackups,
+                        onCheckedChange = onIncludeRawTelemetryInBackupsChange,
                     )
                 }
 
@@ -1492,7 +1521,7 @@ fun SettingsTab(
                     when {
                         isError -> "Error"
                         backupResult != null -> "Backup Complete"
-                        restoreResult?.hasPartialFailure == true -> "Restore Partially Complete"
+                        restoreResult?.hasPartialFailure == true -> "Restore Incomplete"
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
@@ -1520,7 +1549,9 @@ fun SettingsTab(
                                 if (result.hasPartialFailure) {
                                     Spacer(modifier = Modifier.height(Spacing.small))
                                     Text(
-                                        "Some records could not be restored. The counts above reflect the partial result.",
+                                        "Restore incomplete: ${result.entitiesFailed} " +
+                                            (if (result.entitiesFailed == 1) "item" else "items") +
+                                            " could not be restored. The counts above reflect the partial result.",
                                         color = MaterialTheme.colorScheme.error,
                                     )
                                 }

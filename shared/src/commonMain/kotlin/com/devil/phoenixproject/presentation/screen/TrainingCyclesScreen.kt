@@ -62,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,13 +81,20 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.CycleConflictDraft
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineUpdate
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.CycleOneRepMaxNormalization
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.MissingFiveThreeOneTrainingMax
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.missingFiveThreeOneTrainingMaxes
+import com.devil.phoenixproject.domain.model.normalizeCycleOneRepMaxInputs
+import com.devil.phoenixproject.domain.model.oneRepMaxInputPrefillKg
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
@@ -113,6 +121,7 @@ import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperati
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -127,6 +136,9 @@ import projectphoenix.shared.generated.resources.assign_routine
 import projectphoenix.shared.generated.resources.cd_create_cycle
 import projectphoenix.shared.generated.resources.cd_expand
 import projectphoenix.shared.generated.resources.create_cycle
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_action
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_body
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_title
 import projectphoenix.shared.generated.resources.delete_cycle_message
 import projectphoenix.shared.generated.resources.delete_cycle_title
 import projectphoenix.shared.generated.resources.edit_cycle
@@ -166,6 +178,30 @@ sealed class CycleCreationState {
     data class Creating(val template: CycleTemplate) : CycleCreationState()
 }
 
+internal class CycleCreationSubmissionGate {
+    private var generation = 0L
+    private var activeSubmissionToken: Long? = null
+
+    fun begin(): Long? {
+        if (activeSubmissionToken != null) return null
+        generation += 1L
+        activeSubmissionToken = generation
+        return generation
+    }
+
+    fun finish(token: Long) {
+        if (activeSubmissionToken == token) {
+            activeSubmissionToken = null
+        }
+    }
+
+    fun cancel() {
+        generation += 1L
+    }
+
+    fun isCurrent(token: Long): Boolean = token == generation
+}
+
 /**
  * Training Cycles screen - view and manage rolling workout schedules.
  * Replaces the calendar-bound WeeklyPrograms with flexible Day 1, Day 2, etc.
@@ -184,6 +220,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
+    val creationSubmissionGate = remember { CycleCreationSubmissionGate() }
+    DisposableEffect(Unit) {
+        onDispose { creationSubmissionGate.cancel() }
+    }
 
     // User preferences for weight unit and increment
     val weightUnit by viewModel.weightUnit.collectAsState()
@@ -212,6 +252,23 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         }.toMap()
     }
     val allRoutines = remember(routines, cycleRoutines) { routines + cycleRoutines.values }
+
+    // Carryover R-24: a 5/3/1 main lift with no baseline for the cycle's profile silently
+    // misses its weekly training-max bump. Surface it on the active cycle and let the user set
+    // it here, since a mid-cycle user never revisits the cycle-creation 1RM step.
+    var missingTrainingMaxes by remember { mutableStateOf<List<MissingFiveThreeOneTrainingMax>>(emptyList()) }
+    var trainingMaxRefresh by remember { mutableStateOf(0) }
+    var trainingMaxRepair by remember { mutableStateOf<TrainingMaxRepair?>(null) }
+    LaunchedEffect(activeCycle, allRoutines, trainingMaxRefresh) {
+        val cycle = activeCycle
+        missingTrainingMaxes = if (cycle == null) {
+            emptyList()
+        } else {
+            val baselines = baselineRepository.getAllForProfile(cycle.profileId)
+                .associate { it.exerciseId to it.oneRepMaxPerCableKg }
+            missingFiveThreeOneTrainingMaxes(cycle, allRoutines) { exerciseId -> baselines[exerciseId] }
+        }
+    }
 
     // State
     val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -452,6 +509,20 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             cycle = activeCycle!!,
                             progress = cycleProgress[activeCycle!!.id],
                             routines = allRoutines,
+                            missingTrainingMaxes = missingTrainingMaxes,
+                            onSetTrainingMaxes = {
+                                activeCycle?.let { cycle ->
+                                    val missing = missingTrainingMaxes
+                                    scope.launch {
+                                        trainingMaxRepair = TrainingMaxRepair(
+                                            profileId = cycle.profileId,
+                                            exerciseByName = missing.associate { lift ->
+                                                lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
+                                            },
+                                        )
+                                    }
+                                }
+                            },
                             selectedDayNumber = selectedDayNumber,
                             onDaySelected = { dayNumber ->
                                 selectedDayNumber = dayNumber
@@ -640,6 +711,55 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         )
     }
 
+    trainingMaxRepair?.let { repair ->
+        OneRepMaxInputScreen(
+            mainLiftNames = repair.exerciseByName.keys.toList(),
+            exerciseByName = repair.exerciseByName,
+            weightUnit = weightUnit,
+            kgToDisplay = viewModel::kgToDisplay,
+            displayToKg = viewModel::displayToKg,
+            onConfirm = { oneRepMaxValues ->
+                scope.launch {
+                    try {
+                        when (
+                            val normalization = normalizeCycleOneRepMaxInputs(
+                                inputValues = oneRepMaxValues,
+                                exercisesByName = repair.exerciseByName,
+                            )
+                        ) {
+                            is CycleOneRepMaxNormalization.Invalid -> {
+                                showErrorDialog =
+                                    "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                        "Exercise cable metadata is unavailable; review the value and try again."
+                            }
+
+                            is CycleOneRepMaxNormalization.Valid -> {
+                                // Persisted baselines are per-cable kg, scoped to the cycle's profile.
+                                baselineRepository.setBatch(
+                                    profileId = repair.profileId,
+                                    updates = normalization.values.values.map { normalizedValue ->
+                                        ProfileExerciseBaselineUpdate(
+                                            exerciseId = normalizedValue.exerciseId,
+                                            oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                        )
+                                    },
+                                    updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                )
+                                trainingMaxRepair = null
+                                trainingMaxRefresh++
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (failure: Exception) {
+                        showErrorDialog = "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                    }
+                }
+            },
+            onCancel = { trainingMaxRepair = null },
+        )
+    }
+
     // OneRepMaxInputScreen
     when (val state = creationState) {
         is CycleCreationState.Previewing -> {
@@ -650,6 +770,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
@@ -687,12 +808,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // on the map's identity; in-place mutation never re-seeds, leaving the prefill
             // blank and Continue disabled for returning users (#633 review, P2).
             var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
+            var existingExercisesByName by remember { mutableStateOf<Map<String, Exercise?>>(emptyMap()) }
             var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
             LaunchedEffect(mainLiftNames, profileId) {
                 val oneRepMaxValues = mutableMapOf<String, Float>()
+                val exercisesByName = mutableMapOf<String, Exercise?>()
                 val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
-                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                    val exercise = exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)
+                    exercisesByName[exerciseName] = exercise
+                    exercise?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
@@ -705,8 +830,12 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 ?.oneRepMaxPerCableKg
                                 ?.takeIf { it > 0f }
 
-                        valueToUse?.let { oneRepMax ->
-                            oneRepMaxValues[exerciseName] = oneRepMax
+                        valueToUse?.let { oneRepMaxPerCableKg ->
+                            // Persisted baselines are per-cable kg. The wizard's confirmed
+                            // unified fields accept total load; all other metadata stays unchanged.
+                            exercise.oneRepMaxInputPrefillKg(oneRepMaxPerCableKg)?.let { inputValue ->
+                                oneRepMaxValues[exerciseName] = inputValue
+                            }
                         }
 
                         // Store the actual PR weight for indicator display
@@ -715,11 +844,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         }
                     }
                 }
+                existingExercisesByName = exercisesByName.toMap()
                 existingPrWeightValues = prWeights.toMap()
                 existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
             val loadedOneRepMaxValues = existingOneRepMaxValues
+            val loadedExercisesByName = existingExercisesByName
             if (loadedOneRepMaxValues == null) {
                 // Local DB lookups — resolves within a frame or two. Gating avoids
                 // composing the form before the prefill snapshot exists.
@@ -734,35 +865,76 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             } else {
                 OneRepMaxInputScreen(
                     mainLiftNames = mainLiftNames,
+                    exerciseByName = loadedExercisesByName,
                     existingOneRepMaxValues = loadedOneRepMaxValues,
                     weightUnit = weightUnit,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
+                        val submissionToken = creationSubmissionGate.begin() ?: return@OneRepMaxInputScreen
                         scope.launch {
-                            oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                                if (oneRepMax > 0f) {
-                                    // ID-first lookup: template IDs are stable, names are not.
-                                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id ->
-                                            baselineRepository.set(
-                                                profileId = profileId,
-                                                exerciseId = id,
-                                                oneRepMaxPerCableKg = oneRepMax,
-                                                updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
-                                            )
+                            try {
+                                val exercisesByName = oneRepMaxValues
+                                    .filterValues { it > 0f }
+                                    .keys
+                                    .associateWith { exerciseName ->
+                                        exerciseRepository.findByIdOrName(
+                                            templateExerciseIds[exerciseName],
+                                            exerciseName,
+                                        )
+                                    }
+                                when (
+                                    val normalization = normalizeCycleOneRepMaxInputs(
+                                        inputValues = oneRepMaxValues,
+                                        exercisesByName = exercisesByName,
+                                    )
+                                ) {
+                                    is CycleOneRepMaxNormalization.Invalid -> {
+                                        // Keep the user on the input page and reject the entire
+                                        // submission rather than persisting a partial baseline map.
+                                        if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                            showErrorDialog =
+                                                "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                                    "Exercise cable metadata is unavailable; review the value and try again."
                                         }
                                     }
+
+                                    is CycleOneRepMaxNormalization.Valid -> {
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        baselineRepository.setBatch(
+                                            profileId = profileId,
+                                            updates = normalization.values.values.map { normalizedValue ->
+                                                ProfileExerciseBaselineUpdate(
+                                                    exerciseId = normalizedValue.exerciseId,
+                                                    oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                                )
+                                            },
+                                            updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                        )
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        creationState = CycleCreationState.ModeConfirmation(
+                                            template = state.template,
+                                            oneRepMaxValues = normalization.values.mapValues { it.value.perCableKg },
+                                            prWeightValues = existingPrWeightValues,
+                                        )
+                                    }
+                                }
+                            } catch (_: CancellationException) {
+                                // Cancellation is a user action, not a creation failure.
+                                return@launch
+                            } catch (failure: Exception) {
+                                if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                    showErrorDialog =
+                                        "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
                                 }
                             }
+                            finally {
+                                creationSubmissionGate.finish(submissionToken)
+                            }
                         }
-                        creationState = CycleCreationState.ModeConfirmation(
-                            template = state.template,
-                            oneRepMaxValues = oneRepMaxValues,
-                            prWeightValues = existingPrWeightValues,
-                        )
                     },
                     onCancel = {
+                        creationSubmissionGate.cancel()
                         creationState = CycleCreationState.Idle
                     },
                 )
@@ -810,14 +982,17 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             // 5. Navigate back or reset state
                             creationState = CycleCreationState.Idle
                             Logger.d { "Successfully created cycle: ${state.template.name}" }
+                        } catch (_: CancellationException) {
+                            return@launch
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
-                            showErrorDialog = e.message ?: "Failed to create training cycle"
+                            showErrorDialog = "Failed to create training cycle: ${e.message ?: "An unexpected error occurred."}"
                         }
                     }
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
@@ -930,7 +1105,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         )
     }
 
-    // Error Dialog - shows when cycle creation fails
+    // Error Dialog - shows validation and cycle-creation failures
     showErrorDialog?.let { errorMessage ->
         AlertDialog(
             onDismissRequest = { showErrorDialog = null },
@@ -944,7 +1119,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             title = { Text(stringResource(Res.string.label_error)) },
             text = {
                 Text(
-                    "Failed to create training cycle: $errorMessage",
+                    errorMessage,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -983,11 +1158,59 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 /**
  * Active cycle card with "Up Next" style display and DayStrip for browsing days.
  */
+/** Mid-cycle training-max input (carryover R-24): lifts with no baseline for [profileId]. */
+private data class TrainingMaxRepair(
+    val profileId: String,
+    val exerciseByName: Map<String, Exercise?>,
+)
+
+@Composable
+private fun MissingTrainingMaxNotice(
+    missing: List<MissingFiveThreeOneTrainingMax>,
+    onSetTrainingMaxes: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(Res.string.cycle_training_max_missing_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(
+                    Res.string.cycle_training_max_missing_body,
+                    missing.joinToString(", ") { it.exerciseName },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(onClick = onSetTrainingMaxes) {
+                Text(stringResource(Res.string.cycle_training_max_missing_action))
+            }
+        }
+    }
+}
+
 @Composable
 private fun ActiveCycleCard(
     cycle: TrainingCycle,
     progress: CycleProgress?,
     routines: List<Routine>,
+    missingTrainingMaxes: List<MissingFiveThreeOneTrainingMax>,
+    onSetTrainingMaxes: () -> Unit,
     selectedDayNumber: Int?,
     onDaySelected: (Int) -> Unit,
     onStartWorkout: (routineId: String?, cycleId: String, dayNumber: Int) -> Unit,
@@ -1028,6 +1251,11 @@ private fun ActiveCycleCard(
                 .fillMaxWidth()
                 .padding(20.dp),
         ) {
+            if (missingTrainingMaxes.isNotEmpty()) {
+                MissingTrainingMaxNotice(missingTrainingMaxes, onSetTrainingMaxes)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),

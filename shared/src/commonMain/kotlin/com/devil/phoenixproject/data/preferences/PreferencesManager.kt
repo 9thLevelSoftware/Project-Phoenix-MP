@@ -109,9 +109,18 @@ interface PreferencesManager {
 
     suspend fun setEnableVideoPlayback(enabled: Boolean)
     suspend fun setAutoBackupEnabled(enabled: Boolean)
+    suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean)
     suspend fun setBackupDestination(destination: BackupDestination)
     suspend fun setLanguage(language: String)
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
+
+    /**
+     * Post-restore one-shot reset (PR 22). A backup restore can bring back rows that one-shot
+     * startup work never processed on this install, so every settings-held "done" marker for
+     * work that derives from or rewrites stored rows is cleared here and that work runs again
+     * on next launch. Add each new marker of that kind (e.g. a catalogue-remap version) here.
+     */
+    suspend fun resetOneShotWorkAfterRestore()
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
     fun getExerciseCatalogSource(): String
     suspend fun setExerciseCatalogSource(source: String)
@@ -166,6 +175,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_REP_SOUND_ENABLED = "rep_sound_enabled"
         private const val KEY_MOTION_START = "motion_start_enabled"
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+        private const val KEY_BACKUP_INCLUDE_RAW_TELEMETRY = "backup_include_raw_telemetry"
         private const val KEY_BACKUP_DESTINATION = "backup_destination"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
@@ -231,6 +241,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true),
             motionStartEnabled = settings.getBoolean(KEY_MOTION_START, false),
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
+            includeRawTelemetryInBackups = settings.getBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, false),
             backupDestination = BackupDestination.fromJson(settings.getStringOrNull(KEY_BACKUP_DESTINATION)),
             language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
@@ -481,6 +492,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(autoBackupEnabled = enabled) }
     }
 
+    override suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        settings.putBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, enabled)
+        updateAndEmit { copy(includeRawTelemetryInBackups = enabled) }
+    }
+
     override suspend fun setBackupDestination(destination: BackupDestination) {
         settings.putString(KEY_BACKUP_DESTINATION, destination.toJson())
         updateAndEmit { copy(backupDestination = destination) }
@@ -540,6 +556,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         val clamped = percent.coerceIn(50, 120)
         settings.putInt(KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR, clamped)
         updateAndEmit { copy(defaultRoutineExerciseWeightPercentOfPR = clamped) }
+    }
+
+    override suspend fun resetOneShotWorkAfterRestore() {
+        settings.remove(KEY_VELOCITY_1RM_BACKFILL_DONE)
+        updateAndEmit { copy(velocityOneRepMaxBackfillDone = false) }
     }
 
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {

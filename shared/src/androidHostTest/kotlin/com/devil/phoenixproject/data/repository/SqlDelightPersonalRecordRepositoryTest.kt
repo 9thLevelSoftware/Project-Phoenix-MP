@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.util.OneRepMaxCalculator
@@ -9,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -25,7 +27,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
         repository = SqlDelightPersonalRecordRepository(database)
-        insertExercise(id = "bench", name = "Bench Press")
+        insertExerciseIfAbsent(id = "bench", name = "Bench Press")
     }
 
     @Test
@@ -317,8 +319,59 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(90f, replacementPr.weightPerCableKg)
     }
 
-    private fun insertExercise(id: String, name: String) {
-        database.phoenixDatabaseQueries.insertExercise(
+    @Test
+    fun `PR grouping and best PR ignore a phase peak-force row heavier than the max-weight PR`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 60f,
+            volumePRWeightPerCableKg = 60f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 1_000L,
+            profileId = "default",
+        ).getOrThrow()
+        // Peak eccentric force routinely exceeds the commanded load; it is a
+        // different metric and must never be shown or exported as the PR (FP-5).
+        repository.updatePhaseSpecificPRs(
+            exerciseId = "bench",
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            reps = 5,
+            peakConcentricForceKg = 0f,
+            peakEccentricForceKg = 95f,
+            profileId = "default",
+        ).getOrThrow()
+
+        val grouped = repository.getAllPRsGrouped("default").first()
+        val benchPr = assertNotNull(grouped.singleOrNull { it.exerciseId == "bench" })
+        assertEquals(60f, benchPr.weightPerCableKg)
+        assertEquals(PRType.MAX_WEIGHT, benchPr.prType)
+        assertEquals(WorkoutPhase.COMBINED, benchPr.phase)
+
+        assertEquals(60f, repository.getBestPR("bench", profileId = "default")?.weightPerCableKg)
+    }
+
+    @Test
+    fun `PR grouping ignores the COMBINED volume row even when it is heavier`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 50f,
+            volumePRWeightPerCableKg = 80f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 1_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val benchPr = assertNotNull(
+            repository.getAllPRsGrouped("default").first().singleOrNull { it.exerciseId == "bench" },
+        )
+        assertEquals(PRType.MAX_WEIGHT, benchPr.prType)
+        assertEquals(50f, benchPr.weightPerCableKg)
+    }
+
+    private fun insertExerciseIfAbsent(id: String, name: String) {
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,
             name = name,
             displayName = null,

@@ -1,0 +1,9 @@
+-- Migration 54: entities the current portal user must never upload after an account switch.
+-- Row identity is (portal_user_id, entity_type, entity_id) so the exclusion set of one
+-- account cannot hide rows from another account's next sign-in.
+CREATE TABLE SyncExcludedEntity (
+    portal_user_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    PRIMARY KEY (portal_user_id, entity_type, entity_id)
+);

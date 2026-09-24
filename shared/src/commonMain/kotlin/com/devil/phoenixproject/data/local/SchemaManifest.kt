@@ -139,9 +139,162 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
     }
 }
 
+/** Table, uniqueness and ordered plain-column list of an index. */
+internal data class IndexShape(val table: String, val unique: Boolean, val columns: List<String>)
+
+private val CREATE_INDEX_SHAPE = Regex(
+    """^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?\w+"?\s+ON\s+"?(\w+)"?\s*\(([^()]*)\)\s*;?\s*$""",
+    RegexOption.IGNORE_CASE,
+)
+private val PLAIN_INDEX_COLUMN = Regex("""^"?(\w+)"?$""")
+
+/**
+ * Shape declared by a `CREATE [UNIQUE] INDEX ... ON Table(col, ...)` statement, or null when
+ * the statement uses anything this check cannot compare (expressions, collations, sort order,
+ * a WHERE clause). A null shape means "unverifiable", and callers must treat that as a mismatch.
+ */
+internal fun parseIndexShape(createSql: String): IndexShape? {
+    val match = CREATE_INDEX_SHAPE.matchEntire(createSql.trim()) ?: return null
+    val columns = match.groupValues[3].split(',').map { part ->
+        PLAIN_INDEX_COLUMN.matchEntire(part.trim())?.groupValues?.get(1) ?: return null
+    }
+    if (columns.isEmpty()) return null
+    return IndexShape(
+        table = match.groupValues[2],
+        unique = match.groupValues[1].isNotBlank(),
+        columns = columns,
+    )
+}
+
+/**
+ * Shape of the index as it exists in the database, or null if it is absent, partial, or has an
+ * expression column, a non-BINARY collation or a DESC column (none of which the canonical shape uses).
+ */
+internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
+    var table: String? = null
+    driver.executeQuery(
+        identifier = null,
+        sql = "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+        mapper = { cursor ->
+            if (cursor.next().value) table = cursor.getString(0)
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val tableName = table ?: return null
+    // Any NULL where SQLite documents a value (or a missing row) means the PRAGMA output is not
+    // what this check understands. That is "unverifiable", never a coerced default, so the caller
+    // rebuilds instead of trusting it.
+    var listRowFound = false
+    var unique: Long? = null
+    var partial: Long? = null
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_list(\"$tableName\")",
+        mapper = { cursor ->
+            // index_list columns: seq, name, unique, origin, partial
+            while (cursor.next().value) {
+                if (cursor.getString(1) == indexName) {
+                    listRowFound = true
+                    unique = cursor.getLong(2)
+                    partial = cursor.getLong(4)
+                }
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    if (!listRowFound) return null
+    val isUnique = when (unique) {
+        1L -> true
+        0L -> false
+        else -> return null
+    }
+    if (partial != 0L) return null
+    val rows = mutableListOf<IndexXinfoRow>()
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_xinfo(\"$indexName\")",
+        mapper = { cursor ->
+            // index_xinfo columns: seqno, cid, name (null for an expression column), desc, coll, key
+            while (cursor.next().value) {
+                rows += IndexXinfoRow(
+                    seqno = cursor.getLong(0),
+                    name = cursor.getString(2),
+                    desc = cursor.getLong(3),
+                    collation = cursor.getString(4),
+                    key = cursor.getLong(5),
+                )
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val names = canonicalKeyColumnNames(rows) ?: return null
+    return IndexShape(table = tableName, unique = isUnique, columns = names)
+}
+
+/** One raw `PRAGMA index_xinfo` row, with every value nullable exactly as the driver returns it. */
+internal data class IndexXinfoRow(
+    val seqno: Long?,
+    val name: String?,
+    val desc: Long?,
+    val collation: String?,
+    val key: Long?,
+)
+
+/**
+ * Ordered key-column names when every key column is a plain, ascending, BINARY-collated
+ * column; otherwise null ("not verifiably canonical, rebuild").
+ *
+ * Rows with key = 0 are the rowid/auxiliary columns SQLite appends and are ignored. Any NULL
+ * where SQLite documents a value, an unexpected key flag, or a seqno sequence that is not
+ * exactly 0..n-1 is treated as unverifiable, never coerced to a default that could sort or
+ * compare as a false match. A non-BINARY collation (e.g. NOCASE) or DESC column changes
+ * uniqueness or lookup semantics under the same column name, so it is not canonical either.
+ */
+internal fun canonicalKeyColumnNames(rows: List<IndexXinfoRow>): List<String>? {
+    val keyRows = mutableListOf<IndexXinfoRow>()
+    for (row in rows) {
+        when (row.key) {
+            1L -> keyRows += row
+            0L -> Unit
+            else -> return null
+        }
+    }
+    if (keyRows.isEmpty()) return null
+    val seqnos = keyRows.map { it.seqno ?: return null }
+    if (seqnos.sorted() != keyRows.indices.map { it.toLong() }) return null
+    return keyRows.sortedBy { it.seqno }.map { row ->
+        if (row.desc != 0L || !row.collation.equals("BINARY", ignoreCase = true)) return null
+        row.name ?: return null
+    }
+}
+
+/**
+ * True only when the live index provably has the canonical shape of [op]: same table, same
+ * uniqueness, same columns in the same order, BINARY collation and ascending order, and not partial. Anything unverifiable is false,
+ * so the caller falls back to the old drop-and-rebuild.
+ */
+internal fun indexHasCanonicalShape(driver: SqlDriver, op: SchemaIndexOperation): Boolean {
+    val expected = parseIndexShape(op.createSql) ?: return false
+    val live = liveIndexShape(driver, op.name) ?: return false
+    return live.table.equals(expected.table, ignoreCase = true) &&
+        live.unique == expected.unique &&
+        live.columns.map { it.lowercase() } == expected.columns.map { it.lowercase() }
+}
+
 internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
     val alreadyExists = indexExists(driver, op.name)
     if (alreadyExists && op.preDropSql == null) {
+        return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+    }
+    // A preDropSql op replaces a stale shape. When the index already has the canonical
+    // shape there is nothing to replace: skip the dedupe + drop + rebuild that would
+    // otherwise run on every database open. The check reads the live index structure
+    // (not a "done once" flag), so a stale or hand-made index is still rebuilt, and a
+    // missing one (upgrade, restore) is still created below.
+    if (alreadyExists && indexHasCanonicalShape(driver, op)) {
         return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
     }
 
@@ -1458,6 +1611,20 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // SyncExcludedEntity -- migration 54, account-switch upload exclusions.
+    // Full shape: all columns present from creation (no later migrations add columns).
+    SchemaTableOperation(
+        table = "SyncExcludedEntity",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS SyncExcludedEntity (
+                portal_user_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                PRIMARY KEY (portal_user_id, entity_type, entity_id)
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1711,6 +1878,25 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),
     SchemaIndexOperation("idx_session_profile", "CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id)"),
+    // Heal-only (no numbered migration): profile_id is itself a heal column, so these run
+    // after manifestColumns has added it.
+    SchemaIndexOperation(
+        "idx_session_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC)",
+    ),
+    SchemaIndexOperation(
+        "idx_session_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise ON WorkoutSession(exerciseId, profile_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_session_exercise_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC)",
+    ),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_session_routine_session",
+        "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
+    ),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
@@ -1773,6 +1959,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── RoutineExercise ─────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_exercise_routine", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)"),
     SchemaIndexOperation("idx_routine_exercise_superset", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)"),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_routine_exercise_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
+    ),
 
     // ── ConnectionLog ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_connection_log_timestamp", "CREATE INDEX IF NOT EXISTS idx_connection_log_timestamp ON ConnectionLog(timestamp)"),

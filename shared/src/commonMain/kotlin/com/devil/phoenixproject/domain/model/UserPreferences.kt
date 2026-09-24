@@ -33,6 +33,8 @@ data class UserPreferences(
     val motionStartEnabled: Boolean = false, // Start sets by holding cables instead of countdown
     // Issue #293: Per-session auto-backup to device filesystem
     val autoBackupEnabled: Boolean = false, // Automatically save each workout to a local backup file
+    // F-033: raw per-sample telemetry is excluded from full and auto backups unless opted in
+    val includeRawTelemetryInBackups: Boolean = false,
     // Issue #238: Language/locale preference for i18n
     val language: String = "en", // Language code: "en", "nl", "de", "es", "fr"
     // Issue #141: Voice-activated emergency stop

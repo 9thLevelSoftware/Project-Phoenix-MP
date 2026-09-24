@@ -317,4 +317,44 @@ class HistoryManagerTest {
     private fun timestampForDate(date: KmpLocalDate): Long = LocalDate(date.year, date.month, date.dayOfMonth)
         .atStartOfDayIn(TimeZone.currentSystemDefault())
         .toEpochMilliseconds()
+
+    @Test
+    fun `workout history observes at most 20 recent sessions and updates on insert`() = runTest {
+        repeat(25) { i ->
+            fakeWorkoutRepository.addSession(WorkoutSession(id = "s$i", timestamp = 1_000L + i, totalReps = 10))
+        }
+        val requestedLimits = mutableListOf<Int>()
+        var fullHistoryLoads = 0
+        // F-034: the history header must observe a LIMIT query, never the full history.
+        val recordingRepository = object : com.devil.phoenixproject.data.repository.WorkoutRepository by fakeWorkoutRepository {
+            override fun getAllSessions(profileId: String) = fakeWorkoutRepository.getAllSessions(profileId)
+                .also { fullHistoryLoads++ }
+
+            override fun getRecentSessions(profileId: String, limit: Int) = fakeWorkoutRepository.getRecentSessions(profileId, limit)
+                .also { requestedLimits += limit }
+        }
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = HistoryManager(
+                recordingRepository,
+                fakePersonalRecordRepository,
+                fakeUserProfileRepository,
+                managerScope,
+            )
+            advanceUntilIdle()
+
+            assertEquals(20, manager.workoutHistory.value.size)
+            assertEquals("s24", manager.workoutHistory.value.first().id)
+            assertEquals(listOf(HistoryManager.RECENT_HISTORY_LIMIT), requestedLimits)
+            assertEquals(0, fullHistoryLoads)
+
+            fakeWorkoutRepository.addSession(WorkoutSession(id = "newest", timestamp = 5_000L, totalReps = 10))
+            advanceUntilIdle()
+
+            assertEquals(20, manager.workoutHistory.value.size)
+            assertEquals("newest", manager.workoutHistory.value.first().id)
+        } finally {
+            managerScope.cancel()
+        }
+    }
 }
