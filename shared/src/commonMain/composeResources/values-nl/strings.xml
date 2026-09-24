@@ -49,6 +49,9 @@
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favorieten</string>
     <string name="label_custom">Aangepast</string>
+    <string name="label_essentials">Basis</string>
+    <string name="cd_filter_essentials">Alleen basisoefeningen tonen</string>
+    <string name="label_recent">Recent</string>
     <string name="label_all">Alles</string>
     <string name="label_done">KLAAR</string>
     <string name="label_reps">Herhalingen</string>
@@ -182,6 +185,27 @@
     <string name="add_exercise">Oefening toevoegen</string>
     <string name="delete_routine">Routine verwijderen</string>
     <string name="delete_routine_message">Weet je zeker dat je \'%1$s\' wilt verwijderen?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Routines importeren uit CSV</string>
+    <string name="routine_csv_export">Exporteren als CSV</string>
+    <string name="routine_csv_import_title">Routines importeren</string>
+    <string name="routine_csv_unreadable_title">Dit bestand kan niet worden geïmporteerd</string>
+    <string name="routine_csv_issues_title">Los deze problemen in het bestand op en kies het opnieuw:</string>
+    <string name="routine_csv_more_issues">…en nog %1$d</string>
+    <string name="routine_csv_action_create">Nieuw</string>
+    <string name="routine_csv_action_overwrite">Vervangt de bestaande routine</string>
+    <string name="routine_csv_action_copy">Nieuwe kopie</string>
+    <string name="routine_csv_summary">%1$d oefeningen · %2$d sets · %3$s</string>
+    <string name="routine_csv_group">Groep: %1$s</string>
+    <string name="routine_csv_matches_found">Sommige routines in dit bestand komen overeen met routines die je al hebt.</string>
+    <string name="routine_csv_mode_copies">Als kopieën importeren</string>
+    <string name="routine_csv_mode_overwrite">Bestaande routines vervangen</string>
+    <string name="routine_csv_refreshed">Je routines zijn sinds dit voorbeeld gewijzigd. Controleer het opnieuw voordat je importeert.</string>
+    <string name="routine_csv_commit_failed">Het importeren is mislukt. Er is niets opgeslagen.</string>
+    <string name="routine_csv_confirm">Importeren</string>
+    <string name="routine_csv_imported">%1$d routines geïmporteerd.</string>
+    <string name="routine_csv_export_blocked_title">%1$s kan niet worden geëxporteerd</string>
+    <string name="routine_csv_export_blocked_message">CSV-bestanden kunnen deze instellingen nog niet bevatten, dus exporteren zou ze verliezen:</string>
     <string name="delete_selected_routines">%1$d routines verwijderen?</string>
     <string name="duplicate_selected_routines">%1$d routines dupliceren?</string>
     <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met \'(Kopie)\' achtervoegsel.</string>
@@ -676,6 +700,7 @@
     <string name="color_orange">Oranje</string>
     <string name="cd_select_profile_color">Selecteer %1$s als profielkleur</string>
     <string name="profile_automatic">Automatisch</string>
+    <string name="profile_manual">Handmatig</string>
     <string name="profile_master_beeps">Trainingspiepjes</string>
     <string name="profile_body_weight_unset">Niet ingesteld</string>
     <string name="profile_body_weight_invalid">Voer een lichaamsgewicht van 20 tot 300 kg in</string>
@@ -698,4 +723,14 @@
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
     <string name="label_previously_completed">Eerder voltooid</string>
     <string name="cd_filter_previously_completed">Eerder voltooide oefeningen filteren</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">Lokale opslag vraagt aandacht</string>
+    <string name="startup_local_data_preserved_title">Lokale gegevens behouden</string>
+    <string name="startup_storage_failed_message">Phoenix kon de lokale opslag niet veilig voorbereiden. Bestaande lokale gegevens zijn niet gewijzigd. Je kunt het opnieuw proberen zodra het apparaat- of opslagprobleem is opgelost.</string>
+    <string name="startup_dual_databases_message">Phoenix heeft meer dan één kopie van zijn lokale database gevonden en kon niet veilig bepalen welke bewaard moet worden, dus is geen van beide geopend. Er is niets verwijderd. Exporteer de databasebestanden om een kopie te bewaren en mail ze privé naar support@phoenix-portal.com, samen met de diagnose- en supportcode hieronder. De bestanden bevatten je trainingsgeschiedenis, dus voeg ze niet toe aan een openbaar issue. Opnieuw proberen controleert het opnieuw zodra support je heeft geholpen.</string>
+    <string name="startup_export_database_files">Databasebestanden exporteren</string>
+    <string name="startup_export_failed">De databasebestanden konden niet worden geëxporteerd. Er is niets gewijzigd; je kunt het opnieuw proberen.</string>
+    <string name="startup_contact_support">Support mailen</string>
+    <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
+    <string name="startup_support_code">Supportcode: %1$s</string>
 </resources>

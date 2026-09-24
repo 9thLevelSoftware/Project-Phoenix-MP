@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
@@ -39,6 +41,13 @@ fun ExerciseFilterShelf(
     onToggleFavorites: () -> Unit,
     showCustomOnly: Boolean,
     onToggleCustom: () -> Unit,
+    showCustomFilter: Boolean = true,
+    enableEssentialsFilter: Boolean = false,
+    showEssentialsOnly: Boolean = false,
+    onToggleEssentials: () -> Unit = {},
+    enableRecentFilter: Boolean = false,
+    showRecentOnly: Boolean = false,
+    onToggleRecent: () -> Unit = {},
     enablePreviouslyCompletedFilter: Boolean = false,
     showPreviouslyCompletedOnly: Boolean = false,
     onTogglePreviouslyCompleted: () -> Unit = {},
@@ -65,8 +74,9 @@ fun ExerciseFilterShelf(
 
     val previouslyCompletedDescription =
         stringResource(Res.string.cd_filter_previously_completed)
-    val hasActiveFilters = showFavoritesOnly || showCustomOnly || showPreviouslyCompletedOnly ||
-        selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
+    val essentialsDescription = stringResource(Res.string.cd_filter_essentials)
+    val hasActiveFilters = showFavoritesOnly || showCustomOnly || showPreviouslyCompletedOnly || showEssentialsOnly ||
+        (enableRecentFilter && showRecentOnly) || selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -116,24 +126,71 @@ fun ExerciseFilterShelf(
             )
         }
 
+        // Recent chip (#850): exercises most recently used to tag Just Lift sets
+        if (enableRecentFilter) {
+            item {
+                FilterChip(
+                    selected = showRecentOnly,
+                    onClick = onToggleRecent,
+                    label = { Text(stringResource(Res.string.label_recent)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+
+        // Essentials chip (#770): opt-in, built-in common-movement set
+        if (enableEssentialsFilter) {
+            item {
+                FilterChip(
+                    selected = showEssentialsOnly,
+                    onClick = onToggleEssentials,
+                    label = { Text(stringResource(Res.string.label_essentials)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.FitnessCenter,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    modifier = Modifier.semantics { contentDescription = essentialsDescription },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+
         // Custom chip
-        item {
-            FilterChip(
-                selected = showCustomOnly,
-                onClick = onToggleCustom,
-                label = { Text(stringResource(Res.string.label_custom)) },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+        if (showCustomFilter) {
+            item {
+                FilterChip(
+                    selected = showCustomOnly,
+                    onClick = onToggleCustom,
+                    label = { Text(stringResource(Res.string.label_custom)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         }
 
         if (enablePreviouslyCompletedFilter) {

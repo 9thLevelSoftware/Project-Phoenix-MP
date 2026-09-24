@@ -4853,6 +4853,50 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `issue 850 successful Just Lift tags are recorded as recent for the session's profile`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-recent-session",
+            timestamp = 1_000L,
+            mode = "OldSchool",
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+            profileId = "lifter",
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(TestFixtures.deadlift.id, TestFixtures.squat.id),
+            harness.recentJustLiftExerciseStore.read("lifter"),
+        )
+        assertEquals(emptyList(), harness.recentJustLiftExerciseStore.read("default"))
+        harness.cleanup()
+    }
+
+    @Test
+    fun `issue 850 a dropped Just Lift tag records nothing as recent`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeWorkoutRepo.addSession(
+            WorkoutSession(id = "routine-set", timestamp = 1_000L, mode = "OldSchool", isJustLift = false),
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise("missing-session", TestFixtures.deadlift, isAmrap = false)
+        harness.dwsm.tagJustLiftSessionExercise("routine-set", TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), harness.recentJustLiftExerciseStore.read("default"))
+        assertFalse(harness.recentJustLiftExerciseStore.hasEntry("default"))
+        harness.cleanup()
+    }
+
+    @Test
     fun `retagging Just Lift session updates tag without duplicating completed set`() = runTest {
         val harness = DWSMTestHarness(this)
         val session = WorkoutSession(

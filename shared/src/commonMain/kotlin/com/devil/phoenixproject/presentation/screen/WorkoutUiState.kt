@@ -70,7 +70,7 @@ data class WorkoutUiState(
     val skippedExercises: Set<Int> = emptySet(),
     val completedExercises: Set<Int> = emptySet(),
     val autoplayEnabled: Boolean = false,
-    val summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
+    val summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Manual: wait for the user)
     val canGoBack: Boolean = false,
     val canSkipForward: Boolean = false,
     val loadBaselineA: Float = 0f,
@@ -103,6 +103,8 @@ data class WorkoutUiState(
     val activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     val machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     val restTransitionPlan: RestTransitionPlan? = null,
+    // Issue #850: newest-first IDs behind the Just Lift tagging picker's Recent chip
+    val recentJustLiftExerciseIds: List<String> = emptyList(),
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0

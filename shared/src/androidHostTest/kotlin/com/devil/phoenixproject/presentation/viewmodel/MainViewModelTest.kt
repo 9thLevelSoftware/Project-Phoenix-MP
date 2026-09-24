@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.preferences.InMemoryRecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
@@ -21,6 +22,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
@@ -62,6 +64,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -92,6 +96,7 @@ class MainViewModelTest {
     private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
     private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
     private lateinit var safetyStore: com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
+    private lateinit var recentStore: InMemoryRecentJustLiftExerciseStore
 
     @Before
     fun setup() {
@@ -113,6 +118,7 @@ class MainViewModelTest {
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
         )
         safetyStore = com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository()
+        recentStore = InMemoryRecentJustLiftExerciseStore()
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -171,6 +177,7 @@ class MainViewModelTest {
                 scope = kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher),
                 nowEpochMs = { testCoroutineRule.dispatcher.scheduler.currentTime },
             ),
+            recentJustLiftExerciseStore = recentStore,
         )
         val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
         viewModel.workoutSessionManager.activeSessionEngine.javaClass
@@ -638,6 +645,106 @@ class MainViewModelTest {
 
         assertEquals(ConnectionState.Disconnected, viewModel.connectionState.value)
     }
+
+    // ========== Issue #850: Recent Just Lift exercises ==========
+
+    private fun justLiftSession(id: String, timestamp: Long, exerciseId: String?, profileId: String, isJustLift: Boolean = true) =
+        WorkoutSession(
+            id = id,
+            timestamp = timestamp,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = isJustLift,
+            exerciseId = exerciseId,
+            profileId = profileId,
+        )
+
+    @Test
+    fun `issue 850 recent Just Lift exercises are seeded from history newest first then follow the store`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            fakeWorkoutRepository.addSession(justLiftSession("older", 100L, "bench", profileId))
+            fakeWorkoutRepository.addSession(justLiftSession("newer", 200L, "squat", profileId))
+            fakeWorkoutRepository.addSession(justLiftSession("routine", 300L, "row", profileId, isJustLift = false))
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+
+            assertEquals(listOf("squat", "bench"), viewModel.recentJustLiftExerciseIds.value)
+
+            recentStore.record(profileId, "curl")
+            advanceUntilIdle()
+            assertEquals(listOf("curl", "squat", "bench"), viewModel.recentJustLiftExerciseIds.value)
+        }
+
+    @Test
+    fun `issue 850 an empty history is not stored so sessions synced later still seed the list`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+            assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+            assertFalse(recentStore.hasEntry(profileId), "an empty history must not be stored as the list")
+
+            // The first portal pull brings in tagged Just Lift sessions after the screen opened.
+            fakeWorkoutRepository.addSession(justLiftSession("synced", 100L, "bench", profileId))
+            advanceUntilIdle()
+
+            assertEquals(listOf("bench"), viewModel.recentJustLiftExerciseIds.value)
+        }
+
+    @Test
+    fun `issue 850 a tag recorded before any history ends the wait for a seed`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+
+        recentStore.record(profileId, "curl")
+        advanceUntilIdle()
+
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 a stored recent list is never replaced by the history seed`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        recentStore.record(profileId, "curl")
+        fakeWorkoutRepository.addSession(justLiftSession("tagged", 100L, "bench", profileId))
+        backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 the recent list is not replayed once collection has stopped`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        recentStore.record(profileId, "curl")
+        val collector = backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+
+        collector.cancel()
+        advanceTimeBy(5_001)
+
+        // A profile switch can happen while no screen collects; a returning screen must not
+        // briefly see the previous profile's list.
+        assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 recent Just Lift exercises are empty while the profile is switching`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            recentStore.record(profileId, "curl")
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+            assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+
+            fakeUserProfileRepository.emitSwitchingForTest("other-profile")
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+        }
 
     // ========== User Preferences Tests ==========
 

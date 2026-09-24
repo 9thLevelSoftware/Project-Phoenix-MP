@@ -327,6 +327,7 @@ fun AnalyticsScreen(
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
+    val recentJustLiftExerciseIds by viewModel.recentJustLiftExerciseIds.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
@@ -569,6 +570,7 @@ fun AnalyticsScreen(
                         onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
                             viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
                         },
+                        recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                         onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
                         modifier = Modifier.fillMaxSize(),
                     )

@@ -11,6 +11,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ExternalProgramsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalRoutinesViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -24,6 +25,7 @@ val presentationModule = module {
     factory { CycleEditorViewModel(get(), get()) }
     factory { GamificationViewModel(get(), get()) }
     factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { RoutineCsvViewModel(get(), get(), get()) }
     factory { ExternalActivitiesViewModel(get(), get()) }
     factory { ExternalRoutinesViewModel(get(), get()) }
     factory { ExternalProgramsViewModel(get(), get(), get()) }

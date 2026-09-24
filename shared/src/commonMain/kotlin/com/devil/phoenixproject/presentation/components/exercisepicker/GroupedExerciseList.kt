@@ -53,6 +53,8 @@ fun GroupedExerciseList(
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     emptyContent: @Composable () -> Unit = {},
+    /** False lists [exercises] in their given order, with no letter headers or alphabet strip. */
+    grouped: Boolean = true,
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -65,11 +67,7 @@ fun GroupedExerciseList(
     }
 
     val groupedExercises: Map<Char, List<Exercise>> = remember(exercises) {
-        exercises
-            .groupBy { exercise: Exercise -> exercise.name.first().uppercaseChar() }
-            .toList()
-            .sortedBy { it.first }
-            .toMap()
+        groupExercisesByInitial(exercises)
     }
 
     val sectionIndices: Map<Char, Int> = remember(groupedExercises) {
@@ -87,64 +85,75 @@ fun GroupedExerciseList(
         null
     }
 
+    val exerciseRow: @Composable (Exercise) -> Unit = { exercise: Exercise ->
+        ExerciseItemWithImage(
+            exercise = exercise,
+            exerciseRepository = exerciseRepository,
+            enableVideoPlayback = enableVideoPlayback,
+            onSelect = { onExerciseSelected(exercise) },
+            onToggleFavorite = { onToggleFavorite(exercise) },
+            onShowVideo = { images -> onShowVideo(exercise, images) },
+            onLongPress = when {
+                exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
+                onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
+                else -> null
+            },
+            onLongPressLabel = when {
+                exercise.isCustom && onEditExercise != null -> null
+                else -> exerciseDetailLabel
+            },
+            isRevealed = exercise.id == revealedExerciseId,
+            onRevealChange = { revealed ->
+                revealedExerciseId = if (revealed) exercise.id else null
+            },
+        )
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
         ) {
-            groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->
-                stickyHeader(key = "header_$letter") {
-                    LetterHeader(letter = letter.toString())
-                }
+            if (grouped) {
+                groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->
+                    stickyHeader(key = "header_$letter") {
+                        LetterHeader(letter = letter.toString())
+                    }
 
-                items(
-                    items = exerciseList,
-                    key = { exercise: Exercise -> exercise.id ?: exercise.name },
-                ) { exercise: Exercise ->
-                    ExerciseItemWithImage(
-                        exercise = exercise,
-                        exerciseRepository = exerciseRepository,
-                        enableVideoPlayback = enableVideoPlayback,
-                        onSelect = { onExerciseSelected(exercise) },
-                        onToggleFavorite = { onToggleFavorite(exercise) },
-                        onShowVideo = { images -> onShowVideo(exercise, images) },
-                        onLongPress = when {
-                            exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
-                            onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
-                            else -> null
-                        },
-                        onLongPressLabel = when {
-                            exercise.isCustom && onEditExercise != null -> null
-                            else -> exerciseDetailLabel
-                        },
-                        isRevealed = exercise.id == revealedExerciseId,
-                        onRevealChange = { revealed ->
-                            revealedExerciseId = if (revealed) exercise.id else null
-                        },
-                    )
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
+                    items(
+                        items = exerciseList,
+                        key = { exercise: Exercise -> exercise.id ?: exercise.name },
+                    ) { exercise: Exercise -> exerciseRow(exercise) }
                 }
+            } else {
+                items(
+                    items = exercises,
+                    key = { exercise: Exercise -> exercise.id ?: exercise.name },
+                ) { exercise: Exercise -> exerciseRow(exercise) }
             }
         }
 
         // Alphabet strip overlay
-        AlphabetStrip(
-            letters = groupedExercises.keys.toList(),
-            onLetterTap = { letter ->
-                revealedExerciseId = null // Close any revealed row when jumping
-                sectionIndices[letter]?.let { index ->
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(index)
+        if (grouped) {
+            AlphabetStrip(
+                letters = groupedExercises.keys.toList(),
+                onLetterTap = { letter ->
+                    revealedExerciseId = null // Close any revealed row when jumping
+                    sectionIndices[letter]?.let { index ->
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(index)
+                        }
                     }
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 4.dp),
-        )
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp),
+            )
+        }
     }
 }
 
@@ -287,3 +296,19 @@ fun ExerciseListEmptyState(
         }
     }
 }
+
+/** Section key for exercises whose name has no first character (#774). */
+internal const val UNNAMED_EXERCISE_SECTION = '#'
+
+/**
+ * Groups exercises under the upper-cased first character of their name, sections sorted.
+ *
+ * Issue #774: `name.first()` threw NoSuchElementException for an exercise with a blank name,
+ * which crashed the picker while composing, right after "Add Exercise". Blank names are
+ * reachable through stale routine rows and backup restores, so they get their own section.
+ */
+internal fun groupExercisesByInitial(exercises: List<Exercise>): Map<Char, List<Exercise>> = exercises
+    .groupBy { exercise -> exercise.name.trim().firstOrNull()?.uppercaseChar() ?: UNNAMED_EXERCISE_SECTION }
+    .toList()
+    .sortedBy { it.first }
+    .toMap()
