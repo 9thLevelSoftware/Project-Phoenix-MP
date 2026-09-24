@@ -32,6 +32,11 @@ data class RoutineCsvPlannedRoutine(
     val setCount: Int,
     val modes: List<String>,
     val groupName: String?,
+    /**
+     * The existing routine an [RoutineCsvImportAction.OVERWRITE] replaces. Not shown, but part of
+     * equality, so a same-named routine that replaced the target after the preview is a change.
+     */
+    val targetRoutineId: String? = null,
 )
 
 /**
@@ -172,6 +177,7 @@ class RoutineCsvImportPlanner(
                 setCount = draft.exercises.sumOf { it.setReps.size },
                 modes = draft.exercises.map { RoutineCsvFormat.modeName(it.mode) }.distinct(),
                 groupName = draft.groupName ?: groupId?.let { id -> profileGroups.firstOrNull { it.id == id }?.name },
+                targetRoutineId = target?.id,
             )
 
             if (issues.size == issueCount) {

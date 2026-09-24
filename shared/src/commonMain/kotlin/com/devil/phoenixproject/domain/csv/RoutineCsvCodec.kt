@@ -152,7 +152,7 @@ object RoutineCsvCodec {
      */
     fun parse(content: String): RoutineCsvParseResult {
         if (content.encodeToByteArray().size > RoutineCsvFormat.MAX_BYTES) {
-            return invalid(null, "The file is larger than 2 MB.")
+            return invalid(null, RoutineCsvFormat.TOO_LARGE_MESSAGE)
         }
         val lines = content.removePrefix("﻿").split("\r\n", "\n", "\r")
         val issues = mutableListOf<RoutineCsvIssue>()
@@ -193,12 +193,14 @@ object RoutineCsvCodec {
         index = headerIndex + 1
 
         val rows = mutableListOf<RawRow>()
+        // Rejected rows count too, so a file of malformed lines stays within the same bound.
+        var dataRowCount = 0
         while (index < lines.size) {
             val line = lines[index]
             val lineNumber = index + 1
             index++
             if (line.isBlank() || line.trimStart().startsWith("#")) continue
-            if (rows.size >= RoutineCsvFormat.MAX_ROWS) {
+            if (++dataRowCount > RoutineCsvFormat.MAX_ROWS) {
                 return invalid(lineNumber, "The file has more than ${RoutineCsvFormat.MAX_ROWS} rows.")
             }
             if (hasUnbalancedQuotes(line)) {

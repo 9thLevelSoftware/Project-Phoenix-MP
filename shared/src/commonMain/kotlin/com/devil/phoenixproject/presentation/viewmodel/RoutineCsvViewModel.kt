@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.csv.RoutineCsvCodec
 import com.devil.phoenixproject.domain.csv.RoutineCsvExportResult
+import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.domain.csv.RoutineCsvImportMode
 import com.devil.phoenixproject.domain.csv.RoutineCsvImportPlan
 import com.devil.phoenixproject.domain.csv.RoutineCsvImportPlanner
@@ -103,7 +104,8 @@ class RoutineCsvViewModel(
 
     /**
      * Writes the previewed import. The plan is rebuilt from current data first; when it no
-     * longer matches what the user saw, the refreshed preview is shown instead of writing.
+     * longer matches what the user saw, including which routine each overwrite replaces, the
+     * refreshed preview is shown instead of writing.
      */
     fun confirmImport() {
         val preview = _importState.value as? RoutineCsvImportUiState.Preview ?: return
@@ -145,6 +147,11 @@ class RoutineCsvViewModel(
     /** The picked file could not be read at all. */
     fun onFileUnreadable() {
         _importState.value = RoutineCsvImportUiState.Unreadable(listOf(FILE_UNREADABLE))
+    }
+
+    /** The picked file is over [RoutineCsvFormat.MAX_BYTES]; it was not read. */
+    fun onFileTooLarge() {
+        _importState.value = RoutineCsvImportUiState.Unreadable(listOf(RoutineCsvIssue(null, RoutineCsvFormat.TOO_LARGE_MESSAGE)))
     }
 
     fun dismissImport() {

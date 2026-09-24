@@ -111,6 +111,34 @@ class RoutineCsvViewModelTest {
     }
 
     @Test
+    fun aSameNamedRoutineThatReplacedTheTargetIsNotOverwrittenWithoutANewPreview() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.previewImport(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+        viewModel.selectMode(RoutineCsvImportMode.OVERWRITE_MATCHING)
+        advanceUntilIdle()
+        // Sync deletes the previewed target and brings in another routine with the same name.
+        workouts.deleteRoutine("existing-Push")
+        workouts.addRoutine(existing("Push").copy(id = "replacement"))
+
+        viewModel.confirmImport()
+        advanceUntilIdle()
+
+        val refreshed = assertIs<RoutineCsvImportUiState.Preview>(viewModel.importState.value)
+        assertTrue(refreshed.refreshed)
+        assertEquals("replacement", refreshed.plan.routines.single().targetRoutineId)
+        assertEquals(5, workouts.getRoutineById("replacement")?.exercises?.single()?.setReps?.single(), "nothing was written")
+    }
+
+    @Test
+    fun aFileOverTheSizeLimitIsReportedWithoutParsing() = runTest(dispatcher) {
+        viewModel.onFileTooLarge()
+
+        val unreadable = assertIs<RoutineCsvImportUiState.Unreadable>(viewModel.importState.value)
+        assertEquals(RoutineCsvFormat.TOO_LARGE_MESSAGE, unreadable.issues.single().message)
+    }
+
+    @Test
     fun anUnreadableFileIsReportedAndDismissClearsIt() = runTest(dispatcher) {
         viewModel.previewImport("not a routine file")
         advanceUntilIdle()

@@ -213,6 +213,10 @@ class RoutineCsvCodecTest {
         val tooManyRows = file(*Array(RoutineCsvFormat.MAX_ROWS + 1) { ",Big,,,,,Squat,$it,,,,,5,60,,," })
         assertTrue(issues(tooManyRows).single().message.contains("${RoutineCsvFormat.MAX_ROWS} rows"))
 
+        // Rows rejected before validation count toward the cap as well.
+        val tooManyBadRows = file(*Array(RoutineCsvFormat.MAX_ROWS + 1) { ",Big,,,,,\"Squat,$it" })
+        assertTrue(issues(tooManyBadRows).single().message.contains("${RoutineCsvFormat.MAX_ROWS} rows"))
+
         val huge = RoutineCsvFormat.VERSION_LINE + "\n" + "x".repeat(RoutineCsvFormat.MAX_BYTES)
         assertTrue(issues(huge).single().message.contains("2 MB"))
     }

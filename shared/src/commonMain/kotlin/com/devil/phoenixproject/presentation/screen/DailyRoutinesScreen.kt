@@ -9,6 +9,7 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
@@ -34,7 +35,8 @@ import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
 import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
 import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
-import com.devil.phoenixproject.util.readUriContent
+import com.devil.phoenixproject.util.BoundedUriContent
+import com.devil.phoenixproject.util.readUriContentUpTo
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -289,11 +291,10 @@ fun DailyRoutinesScreen(
                 pickRoutineCsv = false
                 if (uri != null) {
                     scope.launch {
-                        val content = readUriContent(uri)
-                        if (content != null) {
-                            routineCsvViewModel.previewImport(content)
-                        } else {
-                            routineCsvViewModel.onFileUnreadable()
+                        when (val read = readUriContentUpTo(uri, RoutineCsvFormat.MAX_BYTES)) {
+                            is BoundedUriContent.Read -> routineCsvViewModel.previewImport(read.content)
+                            BoundedUriContent.TooLarge -> routineCsvViewModel.onFileTooLarge()
+                            BoundedUriContent.Unreadable -> routineCsvViewModel.onFileUnreadable()
                         }
                     }
                 }

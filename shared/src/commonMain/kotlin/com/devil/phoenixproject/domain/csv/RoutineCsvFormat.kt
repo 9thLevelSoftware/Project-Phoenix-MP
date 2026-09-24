@@ -48,6 +48,7 @@ object RoutineCsvFormat {
 
     /** Denial-of-service bounds for a picked file. */
     const val MAX_BYTES = 2 * 1024 * 1024
+    const val TOO_LARGE_MESSAGE = "The file is larger than 2 MB."
     const val MAX_ROWS = 2_000
     const val MAX_ROUTINES = 50
     const val MAX_SETS_PER_EXERCISE = 50
