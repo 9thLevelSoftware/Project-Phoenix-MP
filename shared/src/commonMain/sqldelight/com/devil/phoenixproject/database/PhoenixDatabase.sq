@@ -752,10 +752,6 @@ UPDATE Exercise SET
     lastPerformed = NULL
 WHERE id = :oldId AND isCustom = 0;
 
--- Archive/unarchive exercise
-updateArchived:
-UPDATE Exercise SET archived = ? WHERE id = ?;
-
 -- Custom Exercise Queries
 selectCustomExercises:
 SELECT * FROM Exercise WHERE isCustom = 1 ORDER BY name ASC;
@@ -799,21 +795,12 @@ DELETE FROM WorkoutSession;
 selectImagesByExercise:
 SELECT * FROM ExerciseImage WHERE exerciseId = ? ORDER BY sortOrder ASC, id ASC;
 
-countImages:
-SELECT COUNT(*) FROM ExerciseImage;
-
 insertImage:
 INSERT INTO ExerciseImage (exerciseId, url, sortOrder)
 VALUES (?, ?, ?);
 
 deleteImagesForExercise:
 DELETE FROM ExerciseImage WHERE exerciseId = ?;
-
-deleteAllExercises:
-DELETE FROM Exercise;
-
-deleteAllImages:
-DELETE FROM ExerciseImage;
 
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
@@ -864,23 +851,6 @@ LIMIT 1;
 
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
-
-selectSessionMergeStateById:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, serverId
-FROM WorkoutSession
-WHERE id = ?;
-
-selectSessionMergeStateByServerId:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, serverId
-FROM WorkoutSession
-WHERE serverId = ?;
-
--- Phase 3.3 (audit item #1): cheap LWW-gate read. Returns just the
--- existing updatedAt for a given session id so the repository can
--- decide whether to accept an incoming pull row without loading the
--- full row body.
-selectSessionUpdatedAt:
-SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 
 -- Issue #591 follow-up: batch-read the existing updatedAt for a list of
 -- session ids. Used by SqlDelightSyncRepository.mergePulledSessions so the
@@ -1010,10 +980,6 @@ WHERE id = :id AND isCustom = 0;
 -- including tombstones.
 selectAllSessionsSync:
 SELECT * FROM WorkoutSession;
-
--- Get all session IDs for duplicate checking during import
-selectAllSessionIds:
-SELECT id FROM WorkoutSession;
 
 selectRecentSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
@@ -1191,12 +1157,6 @@ UPDATE WorkoutSession SET
     updatedAt = :updatedAt
 WHERE id = :id AND portalOrigin = 1;
 
-updateSession:
-UPDATE WorkoutSession
-SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?,
-    local_sync_generation = local_sync_generation + 1
-WHERE id = ?;
-
 -- Target reps and RPE are session-level planning/RPE fields the user can edit after
 -- the fact. Leaves the sync generation untouched: callers that mean "this row is
 -- dirty again" must also markWorkoutComponentDirty.
@@ -1235,10 +1195,6 @@ SELECT * FROM MetricSample WHERE sessionId = ? ORDER BY timestamp ASC;
 
 selectMetricById:
 SELECT * FROM MetricSample WHERE id = :id;
-
--- Sync version for backup
-selectAllMetricsSync:
-SELECT * FROM MetricSample;
 
 insertMetric:
 INSERT INTO MetricSample (sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status)
@@ -1320,13 +1276,6 @@ SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
 AND profile_id = :profileId
 LIMIT 1;
-
--- Get active PRs for an exercise in a specific mode (COMBINED phase)
-selectPRsForExerciseAndMode:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ?
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY prType;
 
 -- Get all active PRs for an exercise (all modes) for display
 selectAllPRsForExercise:
@@ -1571,27 +1520,14 @@ DELETE FROM Superset WHERE id = ?;
 deleteSupersetsByRoutine:
 DELETE FROM Superset WHERE routineId = ?;
 
-countSupersetsInRoutine:
-SELECT COUNT(*) FROM Superset WHERE routineId = ?;
-
 -- Sync version for backup
 selectAllSupersetsSync:
 SELECT * FROM Superset;
-
--- Get all superset IDs for duplicate detection during import
-selectAllSupersetIds:
-SELECT id FROM Superset;
 
 -- Insert superset, ignoring duplicates (for backup import)
 insertSupersetIgnore:
 INSERT OR IGNORE INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
 VALUES (?, ?, ?, ?, ?, ?);
-
--- Update exercise superset reference (for migration and CRUD operations)
-updateExerciseSupersetRef:
-UPDATE RoutineExercise
-SET supersetId = ?, orderInSuperset = ?
-WHERE id = ?;
 
 -- Mark whether a routine exercise's duration is known to be current for portal sync.
 updateRoutineExerciseDurationSyncKnown:
@@ -1618,9 +1554,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectPhaseStatsBySessionIds:
 SELECT * FROM PhaseStatistics WHERE sessionId IN ?;
-
-deletePhaseStatsBySession:
-DELETE FROM PhaseStatistics WHERE sessionId = ?;
 
 selectAllPhaseStats:
 SELECT * FROM PhaseStatistics ORDER BY timestamp DESC;
@@ -1657,9 +1590,6 @@ FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 deleteRepMetricsBySession:
 DELETE FROM RepMetric WHERE sessionId = ?;
 
-selectAllRepMetricsSync:
-SELECT * FROM RepMetric;
-
 countRepMetricsBySession:
 SELECT COUNT(*) FROM RepMetric WHERE sessionId = ?;
 
@@ -1678,17 +1608,6 @@ INSERT OR REPLACE INTO RepBiomechanics (
 
 deleteRepBiomechanicsBySession:
 DELETE FROM RepBiomechanics WHERE sessionId = ?;
-
-selectAllRepBiomechanicsSync:
-SELECT * FROM RepBiomechanics;
-
-insertRepBiomechanicsIgnore:
-INSERT OR IGNORE INTO RepBiomechanics (
-    id, sessionId, repNumber, mcvMmS, peakVelocityMmS, velocityZone,
-    velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
-    normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
-    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- ==================== ASSESSMENT RESULT QUERIES ====================
 
@@ -1763,9 +1682,6 @@ purgeProfileOwnedRows {
     DELETE FROM IntegrationStatus WHERE profileId = :profileId;
     DELETE FROM IntegrationSyncCursor WHERE profileId = :profileId;
 }
-
-deleteAssessmentsByExercise:
-DELETE FROM AssessmentResult WHERE exerciseId = ?;
 
 lastInsertRowId:
 SELECT last_insert_rowid();
@@ -1886,14 +1802,6 @@ INSERT OR REPLACE INTO GamificationStats
 (id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
--- Used by backup restore (v2+) to preserve sync bookkeeping fields (updatedAt,
--- serverId) across backup round-trips. Same behaviour as `upsertGamificationStats`
--- but writes the sync columns instead of leaving them NULL.
-upsertGamificationStatsWithSync:
-INSERT OR REPLACE INTO GamificationStats
-(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, updatedAt, serverId, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
-
 insertGamificationStatsRestoreIfAbsent:
 INSERT OR IGNORE INTO GamificationStats(
     id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
@@ -1918,12 +1826,6 @@ countBackupMetricSamples:
 SELECT COUNT(*)
 FROM MetricSample
 WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
-
-countAllWorkoutSessions:
-SELECT COUNT(*) FROM WorkoutSession;
-
-countAllRoutineExercises:
-SELECT COUNT(*) FROM RoutineExercise;
 
 countTotalReps:
 SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
@@ -1957,9 +1859,6 @@ SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL 
 
 selectAvgWorkingWeight:
 SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId AND workingReps > 0;
-
-selectPeakRepPower:
-SELECT MAX(peakPowerWatts) FROM RepMetric;
 
 -- Profile-scoped peak rep power (audit F019): join to WorkoutSession so one
 -- profile's RepMetric rows cannot influence another profile's RPG power.
@@ -2349,16 +2248,6 @@ WHERE id = :cycleId
         AND state.pending_delete_updated_at = :deletedAt
   );
 
-insertCycleConflictDraft:
-INSERT INTO CycleConflictDraft(
-    id, cycle_id, original_profile_id, rejected_updated_at,
-    payload_json, created_at, resolution
-)
-VALUES (
-    :id, :cycleId, :originalProfileId, :rejectedUpdatedAt,
-    :payloadJson, :createdAt, NULL
-);
-
 insertCycleConflictDraftIfAbsent:
 INSERT OR IGNORE INTO CycleConflictDraft(
     id, cycle_id, original_profile_id, rejected_updated_at,
@@ -2382,9 +2271,6 @@ SELECT * FROM CycleConflictDraft ORDER BY created_at, id;
 
 resolveCycleConflictDraft:
 UPDATE CycleConflictDraft SET resolution = :resolution WHERE id = :id AND resolution IS NULL;
-
-deleteCycleConflictDraft:
-DELETE FROM CycleConflictDraft WHERE id = :id;
 
 -- CycleDay Queries
 selectCycleDaysByCycle:
@@ -2447,15 +2333,6 @@ DELETE FROM CycleProgress WHERE cycle_id = ?;
 -- CycleProgression Queries
 selectCycleProgression:
 SELECT * FROM CycleProgression WHERE cycle_id = ?;
-
-insertCycleProgression:
-INSERT INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
-VALUES (?, ?, ?, ?, ?);
-
-updateCycleProgression:
-UPDATE CycleProgression
-SET frequency_cycles = ?, weight_increase_percent = ?, echo_level_increase = ?, eccentric_load_increase_percent = ?
-WHERE cycle_id = ?;
 
 upsertCycleProgression:
 INSERT OR REPLACE INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
@@ -2710,18 +2587,12 @@ insertProgressionEventIgnore:
 INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
-insertEarnedBadgeIgnore:
-INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt, profile_id) VALUES (?, ?, ?, ?);
-
 -- Used by backup restore (v2+) to preserve sync bookkeeping across round-trips.
 -- If the row was synced before the backup was taken, we want the restored row
 -- to carry the original updatedAt/serverId so it does not immediately re-push.
 insertEarnedBadgeFullIgnore:
 INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt, updatedAt, serverId, deletedAt, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?);
-
-insertStreakHistoryIgnore:
-INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, ?);
 
 insertUserProfileIgnore:
 INSERT OR IGNORE INTO UserProfile (id, name, colorIndex, createdAt, isActive) VALUES (?, ?, ?, ?, ?);
@@ -2792,11 +2663,6 @@ selectProfileExerciseBaselinesByProfile:
 SELECT * FROM ProfileExerciseBaseline
 WHERE profile_id = :profileId
 ORDER BY exercise_id;
-
-selectProfileExerciseBaselinesByExercise:
-SELECT * FROM ProfileExerciseBaseline
-WHERE exercise_id = :exerciseId
-ORDER BY profile_id;
 
 selectAllProfileExerciseBaselines:
 SELECT * FROM ProfileExerciseBaseline
@@ -2893,9 +2759,6 @@ CREATE TABLE AppliedDataRepair (
 
 selectAppliedDataRepair:
 SELECT * FROM AppliedDataRepair WHERE repair_key = :repairKey;
-
-selectAllAppliedDataRepairs:
-SELECT * FROM AppliedDataRepair ORDER BY applied_at, repair_key;
 
 insertAppliedDataRepair:
 INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
@@ -3092,11 +2955,6 @@ selectAllLocalOwnershipClaims:
 SELECT * FROM LocalOwnershipClaim
 ORDER BY owner_user_id, entity_type, entity_id;
 
-selectLocalOwnershipClaimsByMutation:
-SELECT * FROM LocalOwnershipClaim
-WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId
-ORDER BY entity_type, entity_id;
-
 selectLocalOwnershipClaimsForEntity:
 SELECT * FROM LocalOwnershipClaim
 WHERE entity_type = :entityType AND entity_id = :entityId
@@ -3140,17 +2998,6 @@ VALUES (:portalUserId, :entityType, :entityId);
 selectSyncExcludedEntityIds:
 SELECT entity_id FROM SyncExcludedEntity
 WHERE portal_user_id = :portalUserId AND entity_type = :entityType;
-
-selectAllSyncExcludedEntities:
-SELECT * FROM SyncExcludedEntity
-ORDER BY portal_user_id, entity_type, entity_id;
-
-deleteSyncExcludedEntity:
-DELETE FROM SyncExcludedEntity
-WHERE portal_user_id = :portalUserId AND entity_type = :entityType AND entity_id = :entityId;
-
-deleteSyncExcludedEntitiesForUser:
-DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
 
 -- PR 11 account-switch classification for one profile's sessions. A session reached
 -- a portal account when it was pulled (portalOrigin = 1) or a push was acknowledged
@@ -3346,10 +3193,6 @@ ORDER BY timestamp, id;
 
 hardDeleteWorkoutComponent:
 DELETE FROM WorkoutSession WHERE id = :id;
-
-hardDeleteWorkoutPortalParent:
-DELETE FROM WorkoutSession
-WHERE COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
 
 hardDeleteProfileWorkoutPortalParent:
 DELETE FROM WorkoutSession
@@ -3795,14 +3638,8 @@ UPDATE EarnedBadge SET profile_id = ? WHERE profile_id = ?;
 reassignStreakProfile:
 UPDATE StreakHistory SET profile_id = ? WHERE profile_id = ?;
 
-reassignGamificationStatsProfile:
-UPDATE GamificationStats SET profile_id = ? WHERE profile_id = ?;
-
 deleteGamificationStatsByProfile:
 DELETE FROM GamificationStats WHERE profile_id = ?;
-
-reassignRpgAttributesProfile:
-UPDATE RpgAttributes SET profile_id = ? WHERE profile_id = ?;
 
 deleteRpgAttributesByProfile:
 DELETE FROM RpgAttributes WHERE profile_id = ?;
@@ -3993,11 +3830,6 @@ AND MAX(timestamp) < :beforeTimestamp
 ORDER BY MAX(timestamp) DESC
 LIMIT :limit;
 
--- Get soft-deleted sessions (for push)
-selectDeletedSessionsSince:
-SELECT id, serverId, deletedAt FROM WorkoutSession
-WHERE deletedAt IS NOT NULL AND deletedAt > ?;
-
 -- Update session server ID after push
 updateSessionServerId:
 UPDATE WorkoutSession SET serverId = ? WHERE id = ?;
@@ -4154,17 +3986,9 @@ WHERE profile_id = :profileId
 ORDER BY COALESCE(lastUpdated, 0) DESC, COALESCE(updatedAt, 0) DESC, id DESC
 LIMIT 1;
 
--- Update gamification stats server ID (profile-scoped)
-updateGamificationStatsServerId:
-UPDATE GamificationStats SET serverId = ? WHERE profile_id = :profileId;
-
 -- Find session by server ID (for conflict resolution)
 selectSessionByServerId:
 SELECT * FROM WorkoutSession WHERE serverId = ?;
-
--- Find PR by server ID
-selectPRByServerId:
-SELECT * FROM PersonalRecord WHERE serverId = ?;
 
 -- Find routine by server ID
 selectRoutineByServerId:
@@ -4547,8 +4371,11 @@ UPDATE ExternalRoutine SET
     deletedAt = ?
 WHERE provider = ? AND externalId = ? AND profileId = ?;
 
+-- Plain INSERT. REPLACE would delete the existing row, and ON DELETE CASCADE
+-- would take ExternalRoutineSet children with it. The parent routine already
+-- uses INSERT OR IGNORE plus UPDATE; sets are deleted before these rows are rewritten.
 insertExternalRoutineExercise:
-INSERT OR REPLACE INTO ExternalRoutineExercise(
+INSERT INTO ExternalRoutineExercise(
     id, externalRoutineId, externalExerciseTemplateId, title, exerciseType,
     primaryMuscleGroups, secondaryMuscleGroups, orderIndex, rawData
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -4559,20 +4386,10 @@ INSERT OR REPLACE INTO ExternalRoutineSet(
     minReps, maxReps, restSeconds, rpe, durationSeconds, distanceMeters, rawData
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
-getExternalRoutineExercises:
-SELECT * FROM ExternalRoutineExercise
-WHERE externalRoutineId = ?
-ORDER BY orderIndex ASC;
-
 getExternalRoutineExercisesForRoutines:
 SELECT * FROM ExternalRoutineExercise
 WHERE externalRoutineId IN ?
 ORDER BY externalRoutineId, orderIndex ASC;
-
-getExternalRoutineSets:
-SELECT * FROM ExternalRoutineSet
-WHERE externalRoutineExerciseId = ?
-ORDER BY setIndex ASC;
 
 getExternalRoutineSetsForExercises:
 SELECT * FROM ExternalRoutineSet
@@ -4759,9 +4576,6 @@ reassignExternalProgramProfile:
 UPDATE ExternalProgram SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalProgramStats queries
-getExternalProgramStats:
-SELECT * FROM ExternalProgramStats WHERE externalProgramId = ?;
-
 getExternalProgramStatsByProfile:
 SELECT s.*
 FROM ExternalProgramStats s
@@ -4779,9 +4593,6 @@ INSERT OR REPLACE INTO ExternalProgramStats(
     id, externalProgramId, days, approximateMinutes, setCount,
     muscleGroupBreakdownJson, rawData, computedAt
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-deleteExternalProgramStatsByProgram:
-DELETE FROM ExternalProgramStats WHERE externalProgramId = ?;
 
 deleteExternalProgramStatsByProvider:
 DELETE FROM ExternalProgramStats
