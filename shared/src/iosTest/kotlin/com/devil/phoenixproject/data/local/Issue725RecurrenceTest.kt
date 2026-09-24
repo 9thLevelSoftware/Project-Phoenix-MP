@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.local
 
+import app.cash.sqldelight.TransacterImpl
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
@@ -53,14 +54,14 @@ class Issue725RecurrenceTest {
         val driver = DriverFactory().createDriver()
         try {
             assertEquals("Legacy", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'legacy-profile'"))
-            assertEquals(1L, queryLong(driver, "PRAGMA foreign_keys"))
+            assertEquals(1L, driver.writerForeignKeys())
         } finally {
             driver.close()
         }
 
         val reopened = DriverFactory().createDriver()
         try {
-            assertEquals(1L, queryLong(reopened, "PRAGMA foreign_keys"))
+            assertEquals(1L, reopened.writerForeignKeys())
         } finally {
             reopened.close()
         }
@@ -186,9 +187,16 @@ class Issue725RecurrenceTest {
             schema = PhoenixDatabase.Schema,
             name = DatabaseFileNames.LEGACY,
         )
+        // The driver opens its file lazily: write once so the legacy database exists on disk.
+        setupDriver.execute(
+            null,
+            "INSERT INTO UserProfile(id, name, colorIndex, createdAt, isActive) VALUES ('sidecar-profile', 'Sidecar', 0, 1, 1)",
+            0,
+        )
         setupDriver.close()
         val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
         val libraryLegacy = legacyLibraryRootPath()
+        assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
         moveArtifact(sqliterLegacy, libraryLegacy)
         ensureSidecar(sqliterLegacy, "-wal")
         ensureSidecar(sqliterLegacy, "-shm")
@@ -413,6 +421,12 @@ class Issue725RecurrenceTest {
         )
         return value
     }
+
+    // NativeSqliteDriver answers a non-transactional executeQuery from its reader pool,
+    // but DriverFactory sets PRAGMA foreign_keys = ON on the writer connection, which is
+    // the one every insert, update and delete uses. Read the pragma there.
+    private fun SqlDriver.writerForeignKeys(): Long =
+        object : TransacterImpl(this) {}.transactionWithResult { checkNotNull(queryLong(this@writerForeignKeys, "PRAGMA foreign_keys")) }
 
     private fun queryLong(driver: SqlDriver, sql: String): Long? {
         var value: Long? = null

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.local
 
+import app.cash.sqldelight.TransacterImpl
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import co.touchlab.sqliter.DatabaseFileContext
@@ -39,7 +40,7 @@ class Issue725FreshInstallDriverFactoryTest {
             assertEquals(PhoenixDatabase.Schema.version, driver.queryLong("PRAGMA user_version"))
             assertEquals("wal", driver.queryText("PRAGMA journal_mode").lowercase())
             assertEquals("ok", driver.queryText("PRAGMA quick_check").lowercase())
-            assertEquals(1L, driver.queryLong("PRAGMA foreign_keys"))
+            assertEquals(1L, driver.writerForeignKeys())
         } finally {
             driver.close()
         }
@@ -54,7 +55,7 @@ class Issue725FreshInstallDriverFactoryTest {
             assertEquals(PhoenixDatabase.Schema.version, driver.queryLong("PRAGMA user_version"))
             assertEquals("wal", driver.queryText("PRAGMA journal_mode").lowercase())
             assertEquals("ok", driver.queryText("PRAGMA quick_check").lowercase())
-            assertEquals(1L, driver.queryLong("PRAGMA foreign_keys"))
+            assertEquals(1L, driver.writerForeignKeys())
         } finally {
             driver.close()
         }
@@ -111,6 +112,12 @@ class Issue725FreshInstallDriverFactoryTest {
             }
         }
     }
+
+    // NativeSqliteDriver answers a non-transactional executeQuery from its reader pool,
+    // but DriverFactory sets PRAGMA foreign_keys = ON on the writer connection, which is
+    // the one every insert, update and delete uses. Read the pragma there.
+    private fun SqlDriver.writerForeignKeys(): Long =
+        object : TransacterImpl(this) {}.transactionWithResult { queryLong("PRAGMA foreign_keys") }
 
     private fun SqlDriver.queryLong(sql: String): Long {
         var value: Long? = null
