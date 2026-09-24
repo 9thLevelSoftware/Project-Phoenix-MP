@@ -677,6 +677,34 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `issue 850 an empty history is not stored so sessions synced later still seed the list`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+            assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+            assertFalse(recentStore.hasEntry(profileId), "an empty history must not be stored as the list")
+
+            // The first portal pull brings in tagged Just Lift sessions after the screen opened.
+            fakeWorkoutRepository.addSession(justLiftSession("synced", 100L, "bench", profileId))
+            advanceUntilIdle()
+
+            assertEquals(listOf("bench"), viewModel.recentJustLiftExerciseIds.value)
+        }
+
+    @Test
+    fun `issue 850 a tag recorded before any history ends the wait for a seed`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+
+        recentStore.record(profileId, "curl")
+        advanceUntilIdle()
+
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
     fun `issue 850 a stored recent list is never replaced by the history seed`() = runTest(testCoroutineRule.dispatcher) {
         val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
         recentStore.record(profileId, "curl")

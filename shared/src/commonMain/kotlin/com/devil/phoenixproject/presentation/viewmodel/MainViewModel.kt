@@ -110,6 +110,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -631,7 +632,8 @@ class MainViewModel(
     /**
      * The active profile's exercises most recently used to tag Just Lift sets, newest first
      * (#850). Empty while the profile is switching, so the picker never shows another
-     * profile's list. A profile without a stored list is seeded once from its history.
+     * profile's list. A profile without a stored list is seeded once from its history, as soon
+     * as that history holds a tagged Just Lift set.
      */
     val recentJustLiftExerciseIds: StateFlow<List<String>> =
         userProfileRepository.activeProfileContext
@@ -642,8 +644,15 @@ class MainViewModel(
                     else -> flow {
                         val profileId = context.profile.id
                         if (!store.hasEntry(profileId)) {
-                            val sessions = workoutRepository.getHistoryVisibleSessions(profileId).first()
-                            store.initializeIfAbsent(profileId, recentJustLiftExerciseIdsFromHistory(sessions))
+                            // Seed from the first history holding a tagged Just Lift set. An empty
+                            // history is not stored, so sessions a first sync pulls in later still
+                            // seed the list; a tag recorded meanwhile creates it and ends the wait.
+                            combine(
+                                store.observe(profileId),
+                                workoutRepository.getHistoryVisibleSessions(profileId),
+                            ) { _, sessions -> recentJustLiftExerciseIdsFromHistory(sessions) }
+                                .first { seed -> seed.isNotEmpty() || store.hasEntry(profileId) }
+                                .let { seed -> if (seed.isNotEmpty()) store.initializeIfAbsent(profileId, seed) }
                         }
                         emitAll(store.observe(profileId))
                     }.catch { error ->
