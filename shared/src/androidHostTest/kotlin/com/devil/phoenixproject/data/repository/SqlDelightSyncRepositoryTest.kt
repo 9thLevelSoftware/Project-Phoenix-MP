@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -118,6 +119,152 @@ class SqlDelightSyncRepositoryTest {
         )
         val retry = repository.getDirtyWorkoutSnapshot("active-profile")
         assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    @Test
+    fun `a pulled session naming an archived legacy catalogue id is remapped onto its replacement`() = runTest {
+        // An older client uploaded history under the pre-catalogue id; the pull stores it as-is
+        // (findExerciseId resolves ids directly, archived or not). The merge must heal it.
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-1",
+            workoutDeletions = emptyList(),
+            sessions = listOf(
+                WorkoutSession(
+                    id = "pulled-legacy",
+                    timestamp = 100L,
+                    mode = "OldSchool",
+                    reps = 5,
+                    weightPerCableKg = 20f,
+                    totalReps = 5,
+                    workingReps = 5,
+                    exerciseId = "ZZ92N8QsBdp6HCh3",
+                    exerciseName = "Bench Press",
+                    profileId = "active-profile",
+                ),
+            ),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("pulled-legacy").executeAsOne().exerciseId,
+        )
+        assertTrue(database.phoenixDatabaseQueries.selectArchivedStockExerciseIdsNeedingRemap().executeAsList().isEmpty())
+        // The corrected projection is local only: a pulled, server-owned row is never pushed back.
+        assertTrue(
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.none { it.id == "pulled-legacy" },
+            "remapping a pulled session must not queue it for push",
+        )
+    }
+
+    @Test
+    fun `a pulled legacy catalogue id resolves to its replacement on a fresh install`() = runTest {
+        // Fresh install: the current catalogue only, no archived legacy row for a later remap.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "ZZ92N8QsBdp6HCh3"),
+        )
+        // Not in the explicit id map: only the reviewed name fallback (Rack Pull -> Rack Pulls),
+        // the same one the remapper uses, can resolve it.
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        assertEquals(
+            "Rack_Pulls",
+            repository.findExerciseId(name = "Rack Pull", muscleGroup = null, exerciseId = "legacy-rack-pull"),
+        )
+        // An id this device still holds (archived legacy row) is kept for the remapper to merge.
+        database.seedExercise("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7", name = "Bench Press ", archived = true)
+        assertEquals(
+            "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7"),
+        )
+    }
+
+    @Test
+    fun `a pulled routine exercise naming a retired catalogue id links to its replacement on a fresh install`() = runTest {
+        // Fresh install: only replacement ids. One explicit mapping, one name-only mapping.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-legacy-ids",
+                    userId = "user",
+                    name = "Old Client Routine",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-explicit",
+                            routineId = "routine-legacy-ids",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 25f,
+                            exerciseId = "ZZ92N8QsBdp6HCh3",
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-name-only",
+                            routineId = "routine-legacy-ids",
+                            name = "Rack Pull",
+                            muscleGroup = "Back",
+                            orderIndex = 1,
+                            reps = 5,
+                            weight = 60f,
+                            exerciseId = "legacy-rack-pull",
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val linked = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-legacy-ids")
+            .executeAsList()
+            .associate { it.id to it.exerciseId }
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", linked["rex-explicit"])
+        assertEquals("Rack_Pulls", linked["rex-name-only"])
+    }
+
+    @Test
+    fun `remapping a locally recorded session queues the corrected id for push`() = runTest {
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        insertHistoricalSession(
+            id = "local-legacy",
+            timestamp = 100L,
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = null,
+        )
+        repository.acknowledgeWorkoutSnapshot(repository.getDirtyWorkoutSnapshot("active-profile"), setOf("local-legacy"))
+        assertTrue(repository.getDirtyWorkoutSnapshot("active-profile").sessions.isEmpty())
+
+        com.devil.phoenixproject.data.local.LegacyCatalogueRemapper(database).remapIfNeeded()
+
+        assertEquals(
+            listOf("Barbell_Bench_Press_-_Medium_Grip"),
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.map { it.exerciseId },
+        )
     }
 
     @Test
@@ -1213,11 +1360,19 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(336.0, eccentricVolume.volume)
     }
 
+    /**
+     * F-021: the lookup keys on the SESSION's start timestamp. The two fixture
+     * sessions deliberately SHARE a start time, so only the profile filter can
+     * exclude the other profile's row. The second lookup supplies the timestamp
+     * the old code produced — the instant the set ENDED, 60 s later — and shows
+     * it resolves to nothing, which is why a PR must carry its session's stamp.
+     */
     @Test
     fun `findSessionIdsForPersonalRecords resolves sessions outside delta batch`() = runTest {
+        val sessionStart = 1_700_000_000_000L
         insertHistoricalSession(
             id = "historical-bicep-curl",
-            timestamp = 1_700_000_000_000L,
+            timestamp = sessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1229,7 +1384,7 @@ class SqlDelightSyncRepositoryTest {
         )
         insertHistoricalSession(
             id = "other-profile-session",
-            timestamp = 1_700_000_000_000L,
+            timestamp = sessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1239,13 +1394,13 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 41.0,
             profileId = "other-profile",
         )
-        val record = PersonalRecord(
+        fun record(timestamp: Long) = PersonalRecord(
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             weightPerCableKg = 42f,
             reps = 8,
             oneRepMax = 42f,
-            timestamp = 1_700_000_000_000L,
+            timestamp = timestamp,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
             volume = 336f,
@@ -1253,14 +1408,89 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val sessionIds = repository.findSessionIdsForPersonalRecords(listOf(record), "active-profile")
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record(sessionStart)),
+            "active-profile",
+        )
 
         assertEquals(
-            mapOf("bicep-curl:1700000000000" to "historical-bicep-curl"),
+            mapOf("bicep-curl:$sessionStart" to "historical-bicep-curl"),
             sessionIds,
+            "A PR carrying its session's start timestamp resolves to that session, and never to another profile's",
+        )
+        assertEquals(
+            emptyMap(),
+            repository.findSessionIdsForPersonalRecords(
+                listOf(record(sessionStart + 60_000L)),
+                "active-profile",
+            ),
+            "A PR stamped when the set ENDED matches nothing — which is why the PR must carry the session's timestamp",
         )
     }
 
+
+    /**
+     * GitHub #853 (codex 4081208473, kilo 4081854459): a routine set is published
+     * under its parent routineSessionId, so a historical PR earned in a routine must
+     * resolve to that parent, not the local component id, or the pushed link
+     * references no portal workout.
+     */
+    @Test
+    fun `findSessionIdsForPersonalRecords resolves a routine set to its parent workout id`() = runTest {
+        val sessionStart = 1_700_000_500_000L
+        insertHistoricalSession(
+            id = "routine-component-row",
+            timestamp = sessionStart,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+            routineSessionId = "22222222-2222-4222-a222-222222222222",
+        )
+        insertHistoricalSession(
+            id = "standalone-press",
+            timestamp = sessionStart,
+            exerciseId = "press",
+            exerciseName = "Press",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+        )
+        fun record(exerciseId: String) = PersonalRecord(
+            exerciseId = exerciseId,
+            exerciseName = exerciseId,
+            weightPerCableKg = 42f,
+            reps = 8,
+            oneRepMax = 42f,
+            timestamp = sessionStart,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 336f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "active-profile",
+        )
+
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record("row"), record("press")),
+            "active-profile",
+        )
+
+        assertEquals(
+            mapOf(
+                "row:$sessionStart" to "22222222-2222-4222-a222-222222222222",
+                "press:$sessionStart" to "standalone-press",
+            ),
+            sessionIds,
+            "A routine PR links to the parent workout id; a standalone PR to its own id",
+        )
+    }
     @Test
     fun `backfillPhaseSpecificPRs checkpoints even when no sessions have phase metrics`() = runTest {
         insertHistoricalSession(

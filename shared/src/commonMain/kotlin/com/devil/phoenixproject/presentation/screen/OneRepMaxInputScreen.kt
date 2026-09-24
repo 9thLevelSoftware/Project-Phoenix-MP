@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.oneRepMaxInputUnitLabel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -28,6 +30,7 @@ import projectphoenix.shared.generated.resources.Res
  * their 1RM values for the main lifts.
  *
  * @param mainLiftNames List of exercise names that need 1RM input (e.g., ["Bench Press", "Squat", "Shoulder Press", "Deadlift"])
+ * @param exerciseByName Resolved exercise metadata used to label combined-load inputs safely
  * @param existingOneRepMaxValues Pre-fill values from stored data (exercise name to 1RM in kg)
  * @param weightUnit User's preferred weight unit (KG or LB)
  * @param kgToDisplay Conversion function from kg to display unit
@@ -39,6 +42,7 @@ import projectphoenix.shared.generated.resources.Res
 @Composable
 fun OneRepMaxInputScreen(
     mainLiftNames: List<String>,
+    exerciseByName: Map<String, Exercise?> = emptyMap(),
     existingOneRepMaxValues: Map<String, Float> = emptyMap(),
     weightUnit: WeightUnit = WeightUnit.KG,
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
@@ -49,7 +53,7 @@ fun OneRepMaxInputScreen(
     // Unit label based on user preference
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     // State: Map of exercise name to text input value (displayed in user's preferred unit)
-    val inputValues = remember(existingOneRepMaxValues, weightUnit) {
+    val inputValues = remember(existingOneRepMaxValues, exerciseByName, weightUnit) {
         mutableStateMapOf<String, String>().apply {
             // Initialize with existing values converted to display unit
             mainLiftNames.forEach { name ->
@@ -146,7 +150,7 @@ fun OneRepMaxInputScreen(
                                 validationErrors[exerciseName] = !isValid
                             },
                             isError = validationErrors[exerciseName] == true,
-                            unitLabel = unitLabel,
+                            unitLabel = exerciseByName[exerciseName].oneRepMaxInputUnitLabel(unitLabel),
                         )
                     }
                 }
@@ -305,7 +309,7 @@ private fun OneRepMaxInputField(
             color = MaterialTheme.colorScheme.onSurface,
         )
 
-        // Weight input field with "kg" suffix
+        // Weight input field with the current-unit or total-load indicator
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.small),

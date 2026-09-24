@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
+import com.devil.phoenixproject.data.sync.PendingAccountMismatch
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
@@ -41,6 +42,7 @@ class PortalAuthRepository private constructor(
     private val supabaseConfig: SupabaseConfig,
     private val launchOAuth: suspend (String, String) -> Result<String>,
     private val profileMutationBarrier: ProfileMutationBarrier,
+    private val pendingAccountMismatch: PendingAccountMismatch,
 ) : AuthRepository {
 
     constructor(
@@ -50,6 +52,7 @@ class PortalAuthRepository private constructor(
         supabaseConfig: SupabaseConfig,
         oauthLauncher: OAuthLauncher,
         profileMutationBarrier: ProfileMutationBarrier,
+        pendingAccountMismatch: PendingAccountMismatch,
     ) : this(
         apiClient,
         tokenStorage,
@@ -57,6 +60,7 @@ class PortalAuthRepository private constructor(
         supabaseConfig,
         oauthLauncher::launch,
         profileMutationBarrier,
+        pendingAccountMismatch,
     )
 
     internal constructor(
@@ -66,6 +70,7 @@ class PortalAuthRepository private constructor(
         supabaseConfig: SupabaseConfig,
         profileMutationBarrier: ProfileMutationBarrier,
         launchOAuth: suspend (String, String) -> Result<String>,
+        pendingAccountMismatch: PendingAccountMismatch,
     ) : this(
         apiClient,
         tokenStorage,
@@ -73,6 +78,7 @@ class PortalAuthRepository private constructor(
         supabaseConfig,
         launchOAuth,
         profileMutationBarrier,
+        pendingAccountMismatch,
     )
 
     companion object {
@@ -233,6 +239,7 @@ class PortalAuthRepository private constructor(
                 response,
                 tokenStorage,
                 userProfileRepository,
+                pendingAccountMismatch,
             )
         }
         Result.success(response.toPortalAuthResponse().user.toAuthUser())

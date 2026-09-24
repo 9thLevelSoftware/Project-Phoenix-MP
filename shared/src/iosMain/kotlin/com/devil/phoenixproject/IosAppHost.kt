@@ -17,6 +17,7 @@ import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
+import kotlinx.coroutines.Dispatchers
 import org.koin.mp.KoinPlatform
 
 private data class IosAppDependencies(
@@ -61,11 +62,15 @@ fun IosAppHost() {
                     migrationManager = startup.migrationManager,
                 )
             },
+            // Opening the database (schema heal) and the required migrations are
+            // blocking work; keep them off the main thread while the splash draws.
+            blockingDispatcher = Dispatchers.Default,
         )
     }
 
     when (val current = resolution) {
-        null -> Unit
+        // Startup resolves off the main thread; draw the splash instead of a blank frame meanwhile.
+        null -> StartupPendingSurface()
         is StartupDependencyResolution.Failed -> {
             Logger.e {
                 "iOS app dependency resolution blocked: code=${current.diagnosticCode}, " +

@@ -8,6 +8,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
@@ -31,6 +35,7 @@ class StartupDependencyResolutionTest {
                 events += "features"
                 "ready"
             },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
         )
 
         assertEquals(listOf("startup-only", "required", "features"), events)
@@ -48,6 +53,7 @@ class StartupDependencyResolutionTest {
                 featureResolutions++
                 "must-not-resolve"
             },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
         )
 
         val failure = assertIs<StartupDependencyResolution.Failed>(result)
@@ -70,12 +76,60 @@ class StartupDependencyResolutionTest {
                 featureConstructions++
                 "features"
             },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
         )
 
         assertIs<StartupDependencyResolution.Failed>(attempt())
         assertEquals(0, featureConstructions)
         assertIs<StartupDependencyResolution.Ready<String>>(attempt())
         assertEquals(1, featureConstructions)
+    }
+
+    @Test
+    fun databaseOpenAndRequiredMigrationsRunOnTheBlockingDispatcherAndFeaturesOnTheCaller() = runTest {
+        val blocking = RecordingDispatcher(StandardTestDispatcher(testScheduler))
+        val observed = mutableMapOf<String, Boolean>()
+
+        val result = prepareAppHostDependencies(
+            resolveStartupOnly = {
+                observed["startup-only"] = blocking.running
+                "database"
+            },
+            prepareRequired = {
+                observed["required"] = blocking.running
+            },
+            resolveFeatures = {
+                observed["features"] = blocking.running
+                "ready"
+            },
+            blockingDispatcher = blocking,
+        )
+
+        assertIs<StartupDependencyResolution.Ready<String>>(result)
+        assertEquals(
+            mapOf(
+                "startup-only" to true,
+                "required" to true,
+                "features" to false,
+            ),
+            observed,
+        )
+    }
+
+    @Test
+    fun aFailedDatabaseOpenOnTheBlockingDispatcherStillSurfacesAsAFailedResolution() = runTest {
+        val blocking = RecordingDispatcher(StandardTestDispatcher(testScheduler))
+        var requiredRuns = 0
+
+        val result = prepareAppHostDependencies<String, String>(
+            resolveStartupOnly = { throw RequiredStartupProbeFailure() },
+            prepareRequired = { requiredRuns++ },
+            resolveFeatures = { "must-not-resolve" },
+            blockingDispatcher = blocking,
+        )
+
+        assertEquals("REQUIRED_STARTUP_PROBE", assertIs<StartupDependencyResolution.Failed>(result).diagnosticCode)
+        assertEquals(0, requiredRuns)
     }
 
     @Test
@@ -194,5 +248,23 @@ class StartupDependencyResolutionTest {
     private class RequiredStartupProbeFailure : IllegalStateException(), StartupDiagnosticFailure {
         override val startupDiagnosticCode: String = "REQUIRED_STARTUP_PROBE"
         override val startupRetryAllowed: Boolean = true
+    }
+}
+
+/** Delegates to [delegate] and reports whether a block dispatched through it is running right now. */
+private class RecordingDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+    var running: Boolean = false
+        private set
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        delegate.dispatch(context, Runnable {
+            val outer = running
+            running = true
+            try {
+                block.run()
+            } finally {
+                running = outer
+            }
+        })
     }
 }

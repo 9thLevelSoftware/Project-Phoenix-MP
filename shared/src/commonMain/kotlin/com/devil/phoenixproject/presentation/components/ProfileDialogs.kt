@@ -39,7 +39,6 @@ import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_add
 import projectphoenix.shared.generated.resources.action_cancel
-import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_save
 import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.add_profile
@@ -56,6 +55,9 @@ import projectphoenix.shared.generated.resources.color_red
 import projectphoenix.shared.generated.resources.delete_profile
 import projectphoenix.shared.generated.resources.edit_profile
 import projectphoenix.shared.generated.resources.label_name
+import projectphoenix.shared.generated.resources.profile_delete_merge_action
+import projectphoenix.shared.generated.resources.profile_delete_permanent_action
+import projectphoenix.shared.generated.resources.profile_delete_permanent_message
 import projectphoenix.shared.generated.resources.profile_delete_reassign_message
 import projectphoenix.shared.generated.resources.profile_recovery_message
 import projectphoenix.shared.generated.resources.profile_recovery_title
@@ -122,6 +124,7 @@ fun ProfileDeleteDialog(
     profile: UserProfile,
     isSubmitting: Boolean,
     onConfirm: () -> Unit,
+    onDeletePermanently: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     require(canDeleteProfile(profile)) {
@@ -134,19 +137,40 @@ fun ProfileDeleteDialog(
         },
         title = { Text(stringResource(Res.string.delete_profile)) },
         text = {
-            Text(
-                text = stringResource(
-                    Res.string.profile_delete_reassign_message,
-                    profile.name,
-                ),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(
+                        Res.string.profile_delete_reassign_message,
+                        profile.name,
+                    ),
+                )
+                Text(
+                    text = stringResource(
+                        Res.string.profile_delete_permanent_message,
+                        profile.name,
+                    ),
+                )
+            }
         },
+        // PR 20: the owner's rule is to offer the choice. Merge keeps today's behaviour;
+        // "Delete permanently" removes the data here and from the portal.
         confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = !isSubmitting,
-            ) {
-                Text(stringResource(Res.string.action_delete))
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(
+                    onClick = onConfirm,
+                    enabled = !isSubmitting,
+                ) {
+                    Text(stringResource(Res.string.profile_delete_merge_action))
+                }
+                TextButton(
+                    onClick = onDeletePermanently,
+                    enabled = !isSubmitting,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.profile_delete_permanent_action),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
         dismissButton = {

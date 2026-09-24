@@ -192,6 +192,7 @@ class SyncTriggerManagerTest {
             // Check premium status
             val user = testSyncManager.currentUser.value
             if (user?.isPremium == false && testSyncManager.lastSyncTime.value > 0) {
+                testSyncManager.setSyncState(SyncState.NotPremium) // mirrors markPausedNotPremium()
                 return
             }
 
@@ -251,6 +252,7 @@ class SyncTriggerManagerTest {
                     }
                 }
 
+                SyncErrorCategory.OWNERSHIP_CONFLICT,
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true
@@ -665,6 +667,7 @@ class SyncTriggerManagerTest {
         triggerManager.onWorkoutCompleted()
 
         assertEquals(0, syncManager.syncCallCount, "Sync should be skipped for non-premium after first sync")
+        assertEquals(SyncState.NotPremium, syncManager.syncState.value, "Skip must show the paused state")
     }
 
     @Test
