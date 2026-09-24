@@ -12,6 +12,30 @@ def workflow(name: str) -> str:
 
 
 class ReleaseWorkflowContracts(unittest.TestCase):
+    def test_ios_release_konan_cache_follows_gradle_version_inputs(self) -> None:
+        ci_keys = re.findall(
+            r"(?m)^[ ]+key: \$\{\{ runner\.os \}\}-konan-\$\{\{ hashFiles\([^)]+\) \}\}$",
+            workflow("ci-tests.yml"),
+        )
+        self.assertGreaterEqual(len(ci_keys), 1)
+        expected_key = ci_keys[0].strip()
+        self.assertIn("gradle/libs.versions.toml", expected_key)
+        self.assertIn("**/*.gradle*", expected_key)
+        self.assertIn("**/gradle-wrapper.properties", expected_key)
+        self.assertNotRegex(expected_key, r"\d+\.\d+\.\d+")
+        for name in (
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+            "ios-testflight-internal.yml",
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                self.assertIn("path: ~/.konan", text)
+                self.assertRegex(text, r"uses: actions/cache@[0-9a-f]{40}")
+                self.assertIn(expected_key, text)
+                self.assertIn("restore-keys: |\n            ${{ runner.os }}-konan-\n", text)
+                self.assertNotRegex(text, r"konan-\d+\.\d+\.\d+")
+
     def test_ios_archives_use_xcode_26_sdk(self) -> None:
         for name in (
             "ios-release-ipa.yml",
