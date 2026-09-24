@@ -1,6 +1,10 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +32,30 @@ interface WorkoutRepository {
     // Workout sessions
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
+
+    /**
+     * Commit one completed set — the session row, its raw metric samples, its
+     * `CompletedSet`, its rep metrics and its rep biomechanics — in a SINGLE
+     * transaction.
+     *
+     * Before this existed the six writes were six transactions, so a process
+     * death or a concurrent portal push could see a session without its sets:
+     * the push stamps the session as synced and the set that lands afterwards
+     * is never re-pushed. Either the whole set is durable or none of it is.
+     *
+     * Idempotent, with the same guards the step-by-step save used: the session
+     * is inserted only when absent, the `CompletedSet` only when its id is
+     * absent, and the metric / rep-metric / rep-biomechanics rows are replaced
+     * wholesale. Re-committing the same snapshot after a later step failed
+     * therefore changes nothing — including an `is_pr` flag already set.
+     */
+    suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    )
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
     /** User-facing deletion. Records a durable tombstone before hard-deleting local data. */
     suspend fun deleteSession(sessionId: String)
@@ -47,11 +75,19 @@ interface WorkoutRepository {
     suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String)
 
     /**
-     * Get recent workout sessions
+     * Get the newest user-visible workout sessions (soft-deleted rows excluded, newest first),
+     * observed as a flow. Same rows and order as the head of [getAllSessions], without loading
+     * the rest of the history (F-034).
      * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return
      */
     fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
+
+    /**
+     * Per-cable weight of the newest user-visible session of [exerciseId] in [profileId],
+     * or null when the profile has never done it (F-034: one indexed row, not the history).
+     */
+    suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float?
 
     /**
      * Issue #591: Workout sessions that should appear in the Analytics /
@@ -134,7 +170,8 @@ interface WorkoutRepository {
     suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric>
 
     /**
-     * Get recent workout sessions synchronously (for export)
+     * Get recent workout sessions synchronously (for export / import de-duplication).
+     * Unlike [getRecentSessions] this includes soft-deleted rows.
      */
     suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
 

@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.LegacyExerciseBaseline
 import com.devil.phoenixproject.data.repository.AssessmentBaselineWriteReceipt
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaseline
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineUpdate
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 
 class FakeProfileExerciseBaselineRepository : ProfileExerciseBaselineRepository {
@@ -45,6 +46,33 @@ class FakeProfileExerciseBaselineRepository : ProfileExerciseBaselineRepository 
         )
         rows[key] = row
         return row
+    }
+
+    override suspend fun setBatch(
+        profileId: String,
+        updates: List<ProfileExerciseBaselineUpdate>,
+        updatedAt: Long,
+    ) {
+        require(profileId.isNotBlank()) { "Baseline profileId must not be blank" }
+        val snapshot = rows.toMap()
+        try {
+            updates.forEach { update ->
+                require(update.exerciseId.isNotBlank()) { "Baseline exerciseId must not be blank" }
+                require(update.oneRepMaxPerCableKg == null || update.oneRepMaxPerCableKg.isFinite() && update.oneRepMaxPerCableKg > 0f) {
+                    "Baseline one-rep max must be null or finite and positive"
+                }
+                set(
+                    profileId = profileId,
+                    exerciseId = update.exerciseId,
+                    oneRepMaxPerCableKg = update.oneRepMaxPerCableKg,
+                    updatedAt = updatedAt,
+                )
+            }
+        } catch (failure: Throwable) {
+            rows.clear()
+            rows.putAll(snapshot)
+            throw failure
+        }
     }
 
     override suspend fun writeForAssessment(

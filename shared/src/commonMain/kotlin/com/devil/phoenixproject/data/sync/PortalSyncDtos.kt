@@ -80,9 +80,16 @@ data class PortalWorkoutSessionDto(
     val exerciseCount: Int = 0,
     val prCount: Int = 0,
     val routineName: String? = null,
-    val notes: String? = null,
     val workoutMode: String? = null, // SCREAMING_SNAKE
     val routineSessionId: String? = null,
+    /**
+     * Session-level note, authored on the portal website. The portal's session upsert
+     * writes `notes = EXCLUDED.notes` on every accepted push, so a push that leaves
+     * this null DELETES the note (AF-4). Mobile has no note editor of its own: the
+     * adapter fills this from the local SessionNotes side-table that the pull
+     * populates, so an accepted push simply hands the portal back its own note.
+     */
+    val notes: String? = null,
     val exercises: List<PortalExerciseDto> = emptyList(),
     // --- Session enrichment (GAPs 3-6) ---
     // Biomechanics summary
@@ -797,6 +804,12 @@ data class PortalDeletedCycleDto(
 data class PortalSyncPayload(
     val deviceId: String,
     val platform: String = "android",
+    /**
+     * Device-clock push watermark for this profile. The portal's push handler
+     * declares this field but never reads it (verified against `mobile-sync-push`):
+     * it is contract-inert, kept only for wire compatibility. The pull cursor is
+     * the field the portal actually honours, and it is sent on the *pull* request.
+     */
     val lastSync: Long,
     val sessions: List<PortalWorkoutSessionDto> = emptyList(),
     val telemetry: List<PortalRepTelemetryDto> = emptyList(),

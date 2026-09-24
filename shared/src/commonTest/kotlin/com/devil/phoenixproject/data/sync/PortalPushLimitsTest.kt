@@ -1,9 +1,12 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -51,8 +54,9 @@ class PortalPushLimitsTest {
 
     private fun createManager(
         rateLimiter: ClientRateLimiter = ClientRateLimiter(),
+        apiClient: PortalApiClient = fakeApi,
     ) = SyncManager(
-        apiClient = fakeApi,
+        apiClient = apiClient,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
@@ -97,6 +101,228 @@ class PortalPushLimitsTest {
             routineSessionId = null, // standalone → 1 portal session per mobile session
             profileId = "default",
         )
+    }
+
+    /**
+     * PORTAL ROW-DUPLICATION HAZARD (PR 15 review R-8).
+     *
+     * The portal derives a `personal_records` row from every `set.isPr` and
+     * INSERTs it with no id whenever a request carries no dedicated
+     * `personalRecords` (`personalRecordRow.ts buildPersonalRecordRowsForPush`).
+     * A derived id-less row can never dedupe against the real one, which is keyed
+     * on its id, so holding every PR to the final batch duplicated any PR whose
+     * session rode an earlier batch. Every batch now carries the full dedicated
+     * list (the portal upserts dedicated rows on id, so a re-send is a no-op):
+     *   1. no payload carries a PR-flagged set without dedicated PR rows,
+     *   2. each batch carries the PRs of the sessions it contains, and
+     *   3. every PR is sent.
+     */
+    @Test
+    fun everyBatchCarryingAPrSetAlsoCarriesItsDedicatedPersonalRecords() = runTest {
+        authenticate()
+        val sessions = buildSessions(60)
+        fakeSyncRepo.workoutSessionsToReturn = sessions
+        fakeSyncRepo.fullPRsToReturn = sessions.map { session ->
+            PersonalRecord(
+                exerciseId = session.exerciseId!!,
+                exerciseName = "Squat",
+                weightPerCableKg = session.weightPerCableKg,
+                reps = session.totalReps,
+                oneRepMax = session.weightPerCableKg,
+                // F-021: a live PR carries its session's timestamp, which is what
+                // makes `set.isPr` true on the pushed set for the first time.
+                timestamp = session.timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = session.weightPerCableKg * session.totalReps,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-${session.id}",
+            )
+        }
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payloads = fakeApi.pushPayloads
+        assertEquals(2, payloads.size, "60 sessions → [50, 10]")
+        payloads.forEachIndexed { index, payload ->
+            val prFlaggedSets = payload.sessions
+                .flatMap { it.exercises }
+                .flatMap { it.sets }
+                .count { it.isPr }
+            if (prFlaggedSets > 0) {
+                assertTrue(
+                    payload.personalRecords.isNotEmpty(),
+                    "Batch ${index + 1} flags $prFlaggedSets PR set(s) but ships no dedicated " +
+                        "personalRecords, so the portal would derive id-less duplicates",
+                )
+            }
+            val carried = payload.personalRecords.mapNotNull { it.id }.toSet()
+            val ownPrIds = payload.sessions.map { "pr-uuid-${it.id}" }
+            assertTrue(
+                carried.containsAll(ownPrIds),
+                "Batch ${index + 1} must carry the PRs of the sessions it contains",
+            )
+        }
+        val sentPrIds = payloads.flatMap { it.personalRecords }.mapNotNull { it.id }.toSet()
+        assertEquals(60, sentPrIds.size, "Every PR must be sent")
+    }
+
+    /**
+     * GitHub #853 (codex 4080812739): a Just Lift session tagged to A broke a PR, then
+     * was retagged to B. A's record is genuine and still ships, but it must not flag
+     * the retagged set as a PR: set-level `isPr` follows the record whose
+     * exerciseId + timestamp matches the session, and none matches B.
+     */
+    @Test
+    fun aRetaggedJustLiftSessionShipsNoPrSetForItsNewExercise() = runTest {
+        authenticate()
+        val session = WorkoutSession(
+            id = "just-lift-retagged",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 25f,
+            totalReps = 5,
+            exerciseId = "exercise-b",
+            exerciseName = "Deadlift",
+            isJustLift = true,
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = "exercise-a",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 5,
+                oneRepMax = 25f,
+                timestamp = session.timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 125f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-exercise-a",
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = fakeApi.pushPayloads.single()
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.none { it.isPr },
+            "The retagged set must not claim a PR for exercise B",
+        )
+        assertEquals(
+            listOf("pr-uuid-exercise-a"),
+            payload.personalRecords.mapNotNull { it.id },
+            "A's genuine record still ships",
+        )
+    }
+
+    /**
+     * GitHub #853 (codex 4081208473): buildPortalSession publishes a routine set under
+     * its parent routineSessionId (the component id becomes an exercise id), so a PR
+     * earned in a routine must link to that parent. A standalone PR links to its own id.
+     */
+    @Test
+    fun aRoutinePrLinksToTheParentWorkoutAndAStandalonePrToItself() = runTest {
+        authenticate()
+        val routineSet = WorkoutSession(
+            id = "routine-component",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-routine",
+            exerciseName = "Row",
+            routineSessionId = "11111111-1111-4111-a111-111111111111",
+            profileId = "default",
+        )
+        val standalone = WorkoutSession(
+            id = "standalone-session",
+            timestamp = 1_740_000_100_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-standalone",
+            exerciseName = "Press",
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(routineSet, standalone)
+        fun prFor(session: WorkoutSession) = PersonalRecord(
+            exerciseId = session.exerciseId!!,
+            exerciseName = session.exerciseName!!,
+            weightPerCableKg = 30f,
+            reps = 5,
+            oneRepMax = 30f,
+            timestamp = session.timestamp,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 150f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "default",
+            uuid = "pr-uuid-${session.id}",
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(prFor(routineSet), prFor(standalone))
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val sessionIdByPr = fakeApi.pushPayloads.flatMap { it.personalRecords }
+            .associate { it.id to it.sessionId }
+        assertEquals(routineSet.routineSessionId, sessionIdByPr["pr-uuid-routine-component"])
+        assertEquals(standalone.id, sessionIdByPr["pr-uuid-standalone-session"])
+        val pushedWorkoutIds = fakeApi.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(
+            sessionIdByPr.values.all { it in pushedWorkoutIds },
+            "Every PR must reference a pushed portal workout",
+        )
+    }
+
+    /**
+     * A PR that matches no session in this push (a historical PR resolved through
+     * `findSessionIdsForPersonalRecords`) still has to be sent — it rides every
+     * batch, including the final one.
+     */
+    @Test
+    fun aPersonalRecordMatchingNoPushedSessionRidesTheFinalBatch() = runTest {
+        authenticate()
+        fakeSyncRepo.workoutSessionsToReturn = buildSessions(60)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = "historical-lift",
+                exerciseName = "Historical Lift",
+                weightPerCableKg = 80f,
+                reps = 3,
+                oneRepMax = 88f,
+                timestamp = 1_700_000_000_000L,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 240f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-historical",
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payloads = fakeApi.pushPayloads
+        assertEquals(2, payloads.size)
+        payloads.forEachIndexed { index, payload ->
+            assertEquals(
+                listOf("pr-uuid-historical"),
+                payload.personalRecords.mapNotNull { it.id },
+                "Batch ${index + 1} must carry the dedicated list, including the final batch",
+            )
+        }
     }
 
     // ==================== Batch-Size Constant Contract ====================
@@ -251,6 +477,28 @@ class PortalPushLimitsTest {
     fun nonSessionDataAttachedOnlyToLastBatch() = runTest {
         authenticate()
         fakeSyncRepo.workoutSessionsToReturn = buildSessions(120) // 3 batches
+        // One dedicated personal_records row matching sess-0/ex-0 so that session is
+        // also flagged isPr. The portal derives an id-less personal_records row from
+        // every set.isPr whenever a payload's `personalRecords` is empty (PORTAL
+        // ROW-DUPLICATION HAZARD) — so every batch must carry the dedicated rows,
+        // not just the last one.
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "ex-0",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 10,
+                oneRepMax = 25f,
+                timestamp = 1_740_000_000_000L,
+                workoutMode = "OldSchool",
+                volume = 250f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                cableCount = 2,
+                uuid = "pr-uuid-0",
+            ),
+        )
 
         val capturedPayloads = mutableListOf<PortalSyncPayload>()
         val capturingApi = object : FakePortalApiClient() {
@@ -277,6 +525,23 @@ class PortalPushLimitsTest {
         mgr.sync()
 
         assertEquals(3, capturedPayloads.size)
+
+        // Every batch, not just the last: an empty `personalRecords` re-arms the
+        // portal's id-less derived personal_records rows for that batch's isPr sets.
+        for ((index, payload) in capturedPayloads.withIndex()) {
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "Batch $index must carry personalRecords (empty arms the portal " +
+                    "row-duplication hazard for this batch's isPr sets)",
+            )
+        }
+        assertTrue(
+            capturedPayloads.first().sessions
+                .flatMap { it.exercises }
+                .flatMap { it.sets }
+                .any { it.isPr },
+            "Precondition: the seeded PR must flag its set isPr (that is the hazard source)",
+        )
 
         // Batches 0 and 1 (non-final) must have empty non-session collections.
         for ((index, payload) in capturedPayloads.withIndex().take(2)) {
@@ -316,10 +581,10 @@ class PortalPushLimitsTest {
     // ==================== Failure Handling ====================
 
     @Test
-    fun failedBatchAbortsSyncWithoutAdvancingTimestamp() = runTest {
+    fun failedBatchAbortsSyncWithoutAdvancingPushWatermark() = runTest {
         authenticate()
         val initial = 9999L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPushWatermark("user-123", "default", initial)
         fakeSyncRepo.workoutSessionsToReturn = buildSessions(120) // 3 batches
 
         var callIndex = 0
@@ -351,8 +616,8 @@ class PortalPushLimitsTest {
         assertTrue(result.isFailure, "Batch failure propagates up as overall failure")
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
-            "lastSync must NOT advance when any batch fails (prevents data consistency gap)",
+            tokenStorage.getPushWatermark("user-123", "default"),
+            "push watermark must NOT advance when any batch fails (prevents data consistency gap)",
         )
     }
 
@@ -458,18 +723,52 @@ class PortalPushLimitsTest {
             ),
         )
 
+        // A controllable clock: waiting for capacity advances it by exactly the wait.
+        // Everything pushed before the first wait is the first 60 s window.
+        var clock = 0L
+        var firstWindow: List<PortalSyncPayload>? = null
+        var firstWindowAcks: List<Set<String>>? = null
         val result = createManager(
-            rateLimiter = ClientRateLimiter(nowMs = { 0L }),
+            rateLimiter = ClientRateLimiter(
+                nowMs = { clock },
+                waitFor = { waitMs ->
+                    if (firstWindow == null) {
+                        firstWindow = fakeApi.pushPayloads.toList()
+                        firstWindowAcks = fakeSyncRepo.acknowledgedWorkoutParentIdCalls.toList()
+                    }
+                    clock += waitMs
+                },
+            ),
         ).sync()
 
         assertTrue(result.isSuccess)
-        assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, fakeApi.pushPayloads.size)
+        // Every logical push call (main payload and preference chunks) draws on the one
+        // shared window: the first window holds exactly the limit, one ordinary push plus
+        // the preference chunks that fit.
+        val window = assertNotNull(firstWindow, "21 profiles must exhaust one window")
+        assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, window.size)
         assertEquals(
             SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1,
-            fakeApi.pushPayloads.count { it.profilePreferenceSections != null },
+            window.count { it.profilePreferenceSections != null },
         )
-        assertTrue(fakeProfilePreferenceSyncRepo.appliedPushOutcomes.isEmpty())
-        assertEquals(listOf(setOf(ordinary.id)), fakeSyncRepo.acknowledgedWorkoutParentIdCalls)
+        assertEquals(listOf(setOf(ordinary.id)), firstWindowAcks)
+        // codex #856: preference chunks past the first window WAIT for capacity instead of
+        // taking a local 429 — every one of the 20 dirty sections reaches the portal.
+        assertEquals(
+            20,
+            fakeApi.pushPayloads.flatMap { it.profilePreferenceSections.orEmpty() }
+                .map { it.localProfileId }.toSet().size,
+            "every dirty preference chunk must reach the portal, not only those in the first window",
+        )
+        // codex #856 P1: profiles past the window's capacity WAIT for it instead of being
+        // failed fast. Profiles are walked in the same order every sync, so failing fast
+        // would starve the same trailing profiles forever.
+        val pushedProfileIds = fakeApi.pushPayloads
+            .filter { it.profilePreferenceSections == null }
+            .map { it.profileId }
+            .toSet()
+        val expectedProfiles = (List(20) { "profile-$it" } + "profile-a").toSet()
+        assertEquals(expectedProfiles, pushedProfileIds.intersect(expectedProfiles))
     }
 
     // ==================== Telemetry-Aware Batching (audit: 36_852 point rejection) ====================
@@ -887,6 +1186,27 @@ class PortalPushLimitsTest {
     }
 
     @Test
+    fun repSummariesStillShipWhenTelemetryIsGatedOff() = runTest {
+        // The gate must skip only the 50 Hz force curves. Rep summaries are part of
+        // every tier's history and analytics, which is why the push still loads rep
+        // metrics for an Ember/Flame user even though it builds no telemetry from them.
+        authenticate()
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = assertNotNull(fakeApi.lastPushPayload)
+        assertTrue(payload.telemetry.isEmpty(), "Precondition: this user's tier cannot sync telemetry")
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.any { it.repSummaries.isNotEmpty() },
+            "Rep summaries must reach the portal on every tier",
+        )
+    }
+
+    @Test
     fun telemetrySyncTierConstantIsInferno() {
         assertEquals(
             "INFERNO",
@@ -909,5 +1229,443 @@ class PortalPushLimitsTest {
         assertNotNull(payload)
         assertEquals(tokenStorage.getDeviceId(), payload.deviceId)
         assertTrue(payload.platform.isNotBlank(), "platform must be set on every push payload")
+    }
+
+
+    // ==================== codex #856 P1: the rejection fingerprint covers telemetry ====================
+
+    @Test
+    fun sessionFingerprintChangesWhenOnlyTheRawTelemetryChanges() {
+        val manager = createManager()
+        val dto = stubPortalSession("sess-telemetry")
+        val sent = listOf(
+            PortalRepTelemetryDto(id = "t-1", setId = "set-1", timestampMs = 0L, forceN = 100f, cable = "A"),
+            PortalRepTelemetryDto(id = "t-2", setId = "set-1", timestampMs = 20L, forceN = 110f, cable = "A"),
+        )
+        val changedCurve = listOf(
+            sent[0],
+            sent[1].copy(forceN = 111f),
+        )
+
+        assertEquals(
+            manager.sessionContentFingerprint(dto, sent),
+            manager.sessionContentFingerprint(dto, sent.reversed()),
+            "the fingerprint must not depend on telemetry order",
+        )
+        assertTrue(
+            manager.sessionContentFingerprint(dto, sent) != manager.sessionContentFingerprint(dto, changedCurve),
+            "a force-curve change with an identical session DTO must not look like already-accepted content",
+        )
+        assertTrue(
+            manager.sessionContentFingerprint(dto, sent) != manager.sessionContentFingerprint(dto, emptyList()),
+            "telemetry added to an otherwise identical session must change the fingerprint",
+        )
+    }
+
+    // ==================== codex #856 P1: the repair / delta is batched under the caps ====================
+
+    private fun routineWithId(i: Int, name: String = "Routine $i") = com.devil.phoenixproject.domain.model.Routine(
+        id = "00000000-0000-4000-8000-" + i.toString().padStart(12, '0'),
+        name = name,
+        profileId = "default",
+        updatedAt = 100L,
+    )
+
+    private fun prWithId(i: Int) = PersonalRecord(
+        id = i.toLong(),
+        exerciseId = "ex-$i",
+        exerciseName = "Squat",
+        weightPerCableKg = 25f,
+        reps = 10,
+        oneRepMax = 25f,
+        timestamp = 1_740_000_000_000L + i,
+        workoutMode = "OldSchool",
+        volume = 250f,
+        phase = WorkoutPhase.COMBINED,
+        profileId = "default",
+        cableCount = 2,
+        uuid = "10000000-0000-4000-8000-" + i.toString().padStart(12, '0'),
+    )
+
+    private inline fun withByteCap(cap: Long, block: () -> Unit) {
+        val saved = PushPlanner.maxBytes
+        PushPlanner.maxBytes = cap
+        try {
+            block()
+        } finally {
+            PushPlanner.maxBytes = saved
+        }
+    }
+
+    @Test
+    fun aRepairHistoryOverTheByteCapCompletesAcrossSeveralRequests() = runTest {
+        authenticate()
+        // Repair owed; every routine sits below the watermark, so only repairFrom = 0 sends them.
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        fakeSyncRepo.routinesToReturn = List(40) { routineWithId(it) }
+        fakeSyncRepo.fullPRsToReturn = List(40) { prWithId(it) }
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, routines = listOf(
+                PortalSyncAdapter.toPortalRoutine(routineWithId(0), "user-123"),
+            )),
+        )
+
+        withByteCap(single * 8) {
+            assertTrue(createManager().sync().isSuccess)
+
+            assertTrue(fakeApi.pushPayloads.size > 2, "the history must be split (saw ${fakeApi.pushPayloads.size})")
+            fakeApi.pushPayloads.forEachIndexed { i, payload ->
+                assertTrue(
+                    PushPlanner.byteSize(payload) <= PushPlanner.maxBytes,
+                    "request $i is ${PushPlanner.byteSize(payload)} bytes, over the ${PushPlanner.maxBytes} cap",
+                )
+            }
+            assertEquals(40, fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }.toSet().size)
+            assertEquals(40, fakeApi.pushPayloads.flatMap { it.personalRecords }.map { it.id }.toSet().size)
+            assertFalse(tokenStorage.needsRoutineCyclePrRepairPush("user-123"), "the repair completes")
+        }
+    }
+
+    @Test
+    fun accountSwitchExclusionsHoldAcrossEveryPlannedRequest() = runTest {
+        // PR 11: exclusions filter the gathered lists before the planner splits them, so an
+        // excluded routine, deleted-routine id, cycle or PR can reach none of the requests,
+        // including the trailing non-session ones.
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val routines = List(40) { routineWithId(it) }
+        val prs = List(40) { prWithId(it) }
+        val cycleIds = List(6) { "60000000-0000-4000-8000-" + it.toString().padStart(12, '0') }
+        fakeSyncRepo.routinesToReturn = routines
+        fakeSyncRepo.fullPRsToReturn = prs
+        fakeSyncRepo.cyclesToReturn = cycleIds.map { id ->
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = id, name = "Cycle $id", days = emptyList()))
+        }
+        val excludedRoutines = routines.filterIndexed { i, _ -> i % 2 == 0 }.map { it.id }
+        val excludedPrs = prs.filterIndexed { i, _ -> i % 2 == 0 }
+        val excludedCycles = cycleIds.filterIndexed { i, _ -> i % 2 == 0 }
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.ROUTINE, excludedRoutines)
+        fakeSyncRepo.insertSyncExcludedEntities(
+            "user-123",
+            SyncExcludedEntityTypes.PERSONAL_RECORD,
+            excludedPrs.map { it.id.toString() } + excludedPrs.mapNotNull { it.uuid },
+        )
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.CYCLE, excludedCycles)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, routines = listOf(
+                PortalSyncAdapter.toPortalRoutine(routineWithId(0), "user-123"),
+            )),
+        )
+
+        withByteCap(single * 6) {
+            assertTrue(createManager().sync().isSuccess)
+            assertTrue(fakeApi.pushPayloads.size > 2, "the push must be split (saw ${fakeApi.pushPayloads.size})")
+
+            val sentRoutines = fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }
+            val sentDeleted = fakeApi.pushPayloads.flatMap { it.deletedRoutineIds }
+            val sentCycles = fakeApi.pushPayloads.flatMap { it.cycles }.map { it.id }
+            val sentPrs = fakeApi.pushPayloads.flatMap { it.personalRecords }.mapNotNull { it.id }
+            assertTrue(sentRoutines.none { it in excludedRoutines }, "excluded routine planned: $sentRoutines")
+            assertTrue(sentDeleted.none { it in excludedRoutines }, "excluded deleted-routine id planned")
+            assertTrue(sentCycles.none { it in excludedCycles }, "excluded cycle planned: $sentCycles")
+            assertTrue(
+                sentPrs.none { id -> excludedPrs.any { it.uuid == id || it.id.toString() == id } },
+                "excluded PR planned: $sentPrs",
+            )
+            // The allowed half still goes out, so the filter is not simply emptying the push.
+            assertTrue(sentRoutines.toSet() == (routines.map { it.id } - excludedRoutines.toSet()).toSet())
+            assertTrue(sentCycles.toSet() == (cycleIds - excludedCycles.toSet()).toSet())
+        }
+    }
+
+    @Test
+    fun accountSwitchExclusionsHoldForCustomExercisesAndAssessmentsInTrailingRequests() = runTest {
+        // PR 11 x PR 10's planner: custom exercises and assessments now ride their own
+        // trailing requests. Exclusions are applied where both lists are gathered, so an
+        // excluded row reaches none of those requests.
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val customs = List(30) { i ->
+            CustomExerciseSyncDto(
+                clientId = "custom_${1_740_000_000_000L + i}",
+                name = "Custom exercise $i",
+                muscleGroup = "Chest",
+                equipment = "Cable",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1_740_000_000_000L + i,
+                updatedAt = 1_740_000_000_000L + i,
+            )
+        }
+        val assessments = List(30) { i ->
+            com.devil.phoenixproject.database.AssessmentResult(
+                id = (i + 1).toLong(),
+                exerciseId = "ex-$i",
+                estimatedOneRepMaxKg = 60.0,
+                loadVelocityData = "[]",
+                assessmentSessionId = null,
+                userOverrideKg = null,
+                createdAt = 1_740_000_000_000L + i,
+                profile_id = "default",
+            )
+        }
+        fakeSyncRepo.customExercisesToReturn = customs
+        fakeSyncRepo.assessmentsToReturn = assessments
+        val excludedCustoms = customs.filterIndexed { i, _ -> i % 2 == 0 }.map { it.clientId }
+        val excludedAssessments = assessments.filterIndexed { i, _ -> i % 2 == 0 }.map { it.id.toString() }
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.CUSTOM_EXERCISE, excludedCustoms)
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.ASSESSMENT, excludedAssessments)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, customExercises = listOf(customs[0])),
+        )
+
+        withByteCap(single * 5) {
+            assertTrue(createManager().sync().isSuccess)
+            assertTrue(fakeApi.pushPayloads.size > 2, "the push must be split (saw ${fakeApi.pushPayloads.size})")
+
+            val sentCustoms = fakeApi.pushPayloads.flatMap { it.customExercises }.map { it.clientId }
+            val sentAssessments = fakeApi.pushPayloads.flatMap { it.assessments }.map { it.id }
+            assertTrue(sentCustoms.none { it in excludedCustoms }, "excluded custom exercise planned: $sentCustoms")
+            assertTrue(sentAssessments.none { it in excludedAssessments }, "excluded assessment planned: $sentAssessments")
+            assertEquals((customs.map { it.clientId } - excludedCustoms.toSet()).toSet(), sentCustoms.toSet())
+            assertEquals(
+                (assessments.map { it.id.toString() } - excludedAssessments.toSet()).toSet(),
+                sentAssessments.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun anExcludedExternalActivityIsNeverPushed() = runTest {
+        // PR 11 (codex #859): imported activities follow the account-switch exclusions.
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.ACTIVE,
+        )
+        val kept = com.devil.phoenixproject.domain.model.ExternalActivity(
+            id = "kept", externalId = "hevy-kept", provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+            name = "Kept", startedAt = 1_000L, profileId = "default", needsSync = true,
+        )
+        val excluded = kept.copy(id = "excluded", externalId = "hevy-excluded", name = "Excluded")
+        fakeExternalActivityRepo.activities += kept
+        fakeExternalActivityRepo.activities += excluded
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.EXTERNAL_ACTIVITY, listOf("excluded"))
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+        val sent = fakeApi.pushPayloads.flatMap { it.externalActivities }.map { it.id }
+        assertTrue("excluded" !in sent, "an excluded activity must not be pushed: $sent")
+        assertTrue("kept" in sent, "a non-excluded activity still goes out: $sent")
+    }
+
+    @Test
+    fun aSingleItemTooLargeForAnyRequestIsSkippedAndDoesNotWedgeSync() = runTest {
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val small = List(5) { routineWithId(it) }
+        val huge = routineWithId(99, name = "x".repeat(20_000))
+        fakeSyncRepo.routinesToReturn = small + huge
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        withByteCap(10_000L) {
+            assertTrue(createManager().sync().isSuccess, "an oversized item must not fail the whole push")
+            val sent = fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }.toSet()
+            assertEquals(small.map { it.id }.toSet(), sent, "the oversized routine is skipped, the rest are sent")
+            assertTrue(fakeApi.pushPayloads.all { PushPlanner.byteSize(it) <= 10_000L })
+
+            fakeApi.pushPayloads.clear()
+            assertTrue(createManager().sync().isSuccess, "the next sync is not wedged either")
+        }
+    }
+
+    @Test
+    fun moreThanTheArrayCapOfPrsIsSplitAndEverySessionBatchStillCarriesPrs() = runTest {
+        authenticate()
+        fakeSyncRepo.workoutSessionsToReturn = buildSessions(120)
+        fakeSyncRepo.fullPRsToReturn = List(PushPlanner.MAX_ITEMS_PER_ARRAY + 5) { prWithId(it) }
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertEquals(
+            120,
+            fakeApi.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet().size,
+            "every session is delivered: a huge PR list must not make session batches unsendable",
+        )
+        fakeApi.pushPayloads.forEach { payload ->
+            assertTrue(payload.personalRecords.size <= PushPlanner.MAX_ITEMS_PER_ARRAY)
+        }
+        fakeApi.pushPayloads.filter { it.sessions.isNotEmpty() }.forEachIndexed { i, payload ->
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "session batch $i must carry personalRecords (PORTAL ROW-DUPLICATION HAZARD)",
+            )
+        }
+        assertEquals(
+            PushPlanner.MAX_ITEMS_PER_ARRAY + 5,
+            fakeApi.pushPayloads.flatMap { it.personalRecords }.map { it.id }.toSet().size,
+            "every PR is delivered exactly across the requests",
+        )
+    }
+
+    // ==================== codex #856 P1: list-shaped final fields are split too ====================
+
+    @Test
+    fun listShapedFinalFieldsAreSplitAndEachExternalActivityAckReadsItsOwnRequest() = runTest {
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.ACTIVE,
+        )
+        fakeSyncRepo.customExercisesToReturn = List(30) { i ->
+            CustomExerciseSyncDto(
+                clientId = "custom_$i",
+                name = "Custom exercise number $i with a long descriptive name",
+                muscleGroup = "Back",
+                equipment = "Cable",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1L,
+                updatedAt = 1L,
+            )
+        }
+        repeat(30) { i ->
+            fakeExternalActivityRepo.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
+                externalId = "hevy-$i",
+                provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+                name = "Imported activity $i with a long descriptive name",
+                startedAt = 1_000L + i,
+                profileId = "default",
+                needsSync = true,
+            )
+        }
+        // Echo, for each request, exactly the external activities THAT request carried.
+        val echoingApi = object : FakePortalApiClient() {
+            override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
+                super.pushPortalPayload(payload)
+                return Result.success(
+                    PortalSyncPushResponse(
+                        syncTime = "2026-03-02T12:00:00Z",
+                        externalActivityKeys = payload.externalActivities.map {
+                            ExternalActivityAckDto(externalId = it.externalId, provider = it.provider)
+                        },
+                    ),
+                )
+            }
+        }
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(
+                deviceId = "d",
+                platform = "p",
+                lastSync = 0L,
+                customExercises = listOf(fakeSyncRepo.customExercisesToReturn.first()),
+            ),
+        )
+
+        withByteCap(single * 6) {
+            assertTrue(createManager(apiClient = echoingApi).sync().isSuccess)
+
+            val payloads = echoingApi.pushPayloads
+            assertTrue(payloads.size > 2, "the final fields must be split (saw ${payloads.size})")
+            payloads.forEachIndexed { i, payload ->
+                assertTrue(PushPlanner.byteSize(payload) <= PushPlanner.maxBytes, "request $i is over the cap")
+            }
+            assertEquals(30, payloads.flatMap { it.customExercises }.map { it.clientId }.toSet().size)
+            assertEquals(30, payloads.flatMap { it.externalActivities }.map { it.externalId }.toSet().size)
+            assertTrue(
+                payloads.filter { it.externalActivities.isNotEmpty() }.size > 1,
+                "external activities must span several requests for this test to mean anything",
+            )
+            // allProfiles travels only on the last request.
+            assertEquals(listOf(payloads.lastIndex), payloads.indices.filter { payloads[it].allProfiles != null })
+            // Every activity is acknowledged from the response of the request that carried it.
+            assertEquals(
+                (0 until 30).map { "hevy-$it" }.toSet(),
+                fakeExternalActivityRepo.markedSyncedKeys.map { it.externalId }.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun assessmentsAreSplitUnderTheCapAndAnAssessmentTooLargeForAnyRequestIsSkippedWithItsId() {
+        val envelope = PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L)
+        fun assessment(i: Int, data: String = "[]") = PortalAssessmentResultDto(
+            id = "assessment-$i",
+            exerciseId = "ex-$i",
+            estimatedOneRepMaxKg = 50f,
+            loadVelocityData = data,
+            createdAt = "2026-03-02T12:00:00Z",
+        )
+        val normal = List(25) { assessment(it) }
+        val huge = assessment(99, data = "[" + "1".repeat(5_000) + "]")
+        val single = PushPlanner.byteSize(envelope.copy(assessments = listOf(normal.first())))
+        val skipped = mutableListOf<Pair<String, String>>()
+
+        val envelopeBytes = PushPlanner.byteSize(envelope)
+        // Room for about six assessments per request on top of the envelope.
+        withByteCap(envelopeBytes + (single - envelopeBytes + 1) * 6) {
+            val requests = PushPlanner.planTailRequests(
+                envelope = envelope,
+                routines = emptyList(),
+                deletedRoutineIds = emptyList(),
+                cycles = emptyList(),
+                personalRecords = emptyList(),
+                customExercises = emptyList(),
+                assessments = normal + huge,
+                badges = emptyList(),
+                externalActivities = emptyList(),
+                rpgAttributes = null,
+                gamificationStats = null,
+                allProfiles = listOf(LocalProfileDto("default", "Default", 0)),
+                onSkip = { type, id -> skipped += type to id },
+            )
+
+            assertTrue(requests.size > 2)
+            requests.forEach { assertTrue(PushPlanner.byteSize(it) <= PushPlanner.maxBytes) }
+            assertEquals(normal.map { it.id }.toSet(), requests.flatMap { it.assessments }.map { it.id }.toSet())
+            assertEquals(listOf("assessment" to "assessment-99"), skipped)
+            assertEquals(listOf(requests.lastIndex), requests.indices.filter { requests[it].allProfiles != null })
+        }
+    }
+
+    // ==================== codex #856 P2: profile metadata can never wedge the push ====================
+
+    @Test
+    fun anAbsurdProfileNameAndManyProfilesNeverWedgeThePush() = runTest {
+        authenticate()
+        val hugeName = "N".repeat(5_000)
+        repeat(24) { i -> fakeUserProfileRepo.seedReadyProfileForTest("profile-$i", name = "$hugeName-$i") }
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        // Names are bounded on the wire.
+        assertEquals(MAX_PORTAL_PROFILE_NAME_CHARS, boundedProfileName(hugeName).length)
+
+        // A cap that 25 bounded profiles do not fit in: allProfiles must be dropped, not
+        // partially sent (the portal would delete every omitted profile) and not sent oversized.
+        val oneProfile = PushPlanner.byteSize(
+            PortalSyncPayload(
+                deviceId = "d",
+                platform = "p",
+                lastSync = 0L,
+                allProfiles = listOf(LocalProfileDto("profile-0", boundedProfileName(hugeName), 0)),
+            ),
+        )
+        withByteCap(oneProfile * 10) {
+            // 25 profiles push more than the 10/min client limit; drive the limiter on a
+            // controllable clock (the default reads the real clock while runTest skips delays).
+            var clock = 0L
+            val limiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it })
+            assertTrue(createManager(rateLimiter = limiter).sync().isSuccess, "oversized profile metadata must not fail the push")
+            fakeApi.pushPayloads.forEachIndexed { i, payload ->
+                assertTrue(PushPlanner.byteSize(payload) <= PushPlanner.maxBytes, "request $i is over the cap")
+                payload.allProfiles?.forEach { assertTrue(it.name.length <= MAX_PORTAL_PROFILE_NAME_CHARS) }
+                assertTrue(
+                    payload.allProfiles == null || payload.allProfiles!!.size == 25,
+                    "allProfiles is all-or-nothing (saw ${payload.allProfiles?.size})",
+                )
+            }
+            // Every profile still reaches the portal through its own push's profileId.
+            assertEquals(25, fakeApi.pushPayloads.mapNotNull { it.profileId }.toSet().size)
+        }
     }
 }

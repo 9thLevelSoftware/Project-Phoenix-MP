@@ -18,6 +18,8 @@ import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import org.koin.mp.KoinPlatform
 
 private data class AndroidAppDependencies(
@@ -59,11 +61,15 @@ fun AndroidAppHost() {
                     migrationManager = startup.migrationManager,
             )
             },
+            // Opening the database (schema heal) and the required migrations are
+            // blocking I/O; keep them off Main while the splash draws.
+            blockingDispatcher = Dispatchers.IO,
         )
     }
 
     when (val current = resolution) {
-        null -> Unit
+        // Startup resolves off Main; draw the splash instead of a blank frame meanwhile.
+        null -> StartupPendingSurface()
         is StartupDependencyResolution.Failed -> {
             Logger.e {
                 "Android app dependency resolution blocked: code=${current.diagnosticCode}, " +
@@ -84,10 +90,12 @@ internal suspend fun <S, T> prepareAndroidHostGraph(
     resolveStartupOnly: () -> S,
     prepareRequired: suspend (S) -> Unit,
     resolveFeatures: (S) -> T,
+    blockingDispatcher: CoroutineDispatcher,
 ): StartupDependencyResolution<T> = prepareAppHostDependencies(
     resolveStartupOnly = resolveStartupOnly,
     prepareRequired = prepareRequired,
     resolveFeatures = resolveFeatures,
+    blockingDispatcher = blockingDispatcher,
 )
 
 @Composable

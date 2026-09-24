@@ -117,44 +117,18 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         targetWeek: Int,
         onMatchedLift: (canonicalId: String, storedId: String) -> Unit,
     ): Routine? {
-        val matches = routine.exercises.mapIndexedNotNull { index, exercise ->
-            val liftId = FiveThreeOneRoutineDetector.mainLiftId(exercise) ?: return@mapIndexedNotNull null
-            val storedId = exercise.exercise.id ?: return@mapIndexedNotNull null
-            MainLiftMatch(
-                index = index,
-                liftId = liftId,
-                storedId = storedId,
-                hasFiveThreeOneSetShape = FiveThreeOneRoutineDetector.hasKnownSetShape(exercise),
+        val mainLiftMatch = when (val resolution = FiveThreeOneRoutineDetector.resolveMainLift(routine.exercises)) {
+            FiveThreeOneRoutineDetector.MainLiftResolution.None -> return null
+            is FiveThreeOneRoutineDetector.MainLiftResolution.Found -> resolution
+            is FiveThreeOneRoutineDetector.MainLiftResolution.DuplicateLift -> throw IllegalStateException(
+                "5/3/1 regeneration found multiple matches for liftId=${resolution.canonicalId} routineId=${routine.id} dayNumber=${day.dayNumber} matches=${resolution.indexes.joinToString(",")}",
             )
-        }
-        if (matches.isEmpty()) {
-            return null
-        }
-
-        val duplicateLift = matches
-            .groupBy { it.liftId }
-            .firstNotNullOfOrNull { (liftId, liftMatches) ->
-                liftMatches.takeIf { it.size > 1 }?.let { liftId to it }
-            }
-        if (duplicateLift != null) {
-            val (liftId, duplicateMatches) = duplicateLift
-            throw IllegalStateException(
-                "5/3/1 regeneration found multiple matches for liftId=$liftId routineId=${routine.id} dayNumber=${day.dayNumber} matches=${duplicateMatches.joinToString(",") { it.index.toString() }}",
+            is FiveThreeOneRoutineDetector.MainLiftResolution.MultipleCandidates -> throw IllegalStateException(
+                "5/3/1 regeneration found multiple possible main lifts: routineId=${routine.id} dayNumber=${day.dayNumber} matches=${resolution.candidates.joinToString(",") { "${it.canonicalId}@${it.index}" }}",
             )
         }
 
-        val shapedMatches = matches.filter { it.hasFiveThreeOneSetShape }
-        val mainLiftMatch = when {
-            matches.size == 1 -> matches.single()
-            shapedMatches.size == 1 -> shapedMatches.single()
-            else -> {
-                throw IllegalStateException(
-                    "5/3/1 regeneration found multiple possible main lifts: routineId=${routine.id} dayNumber=${day.dayNumber} matches=${matches.joinToString(",") { "${it.liftId}@${it.index}" }}",
-                )
-            }
-        }
-
-        onMatchedLift(mainLiftMatch.liftId, mainLiftMatch.storedId)
+        onMatchedLift(mainLiftMatch.canonicalId, mainLiftMatch.storedId)
         val mainLiftIndex = mainLiftMatch.index
         var changed = false
         val targetSets = FiveThreeOneWeeks.forWeek(targetWeek)
@@ -178,13 +152,6 @@ class RegenerateFiveThreeOneRoutinesUseCase(
 
         return if (changed) routine.copy(exercises = updatedExercises) else routine
     }
-
-    private data class MainLiftMatch(
-        val index: Int,
-        val liftId: String,
-        val storedId: String,
-        val hasFiveThreeOneSetShape: Boolean,
-    )
 
     private companion object {
         const val UPPER_ONE_REP_MAX_BUMP_KG = 1.25f / 0.9f

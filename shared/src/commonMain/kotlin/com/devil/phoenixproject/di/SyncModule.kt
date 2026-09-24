@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.integration.HealthIntegrationBodyWeightRead
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.data.sync.PendingAccountMismatch
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalProfileRecoverySourceVerifier
 import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncCodec
@@ -26,6 +27,8 @@ val syncModule = module {
             tokenStorage = get<PortalTokenStorage>(),
         )
     }
+    // One hand-off slot shared by PortalAuthRepository (publishes) and SyncManager (adopts).
+    single { PendingAccountMismatch() }
     single<ProfileRecoverySourceVerifier> { PortalProfileRecoverySourceVerifier(get()) }
     single<SyncRepository> { SqlDelightSyncRepository(get(), get(), get()) }
     single { ProfilePreferenceSyncCodec() }
@@ -54,6 +57,7 @@ val syncModule = module {
             ownershipEventApplier = get<OwnershipEventApplier>(),
             profileMutationBarrier = get<ProfileMutationBarrier>(),
             trainingCycleRepository = get<TrainingCycleRepository>(),
+            pendingAccountMismatch = get<PendingAccountMismatch>(),
         )
     }
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
@@ -78,6 +82,7 @@ val syncModule = module {
             supabaseConfig = get(),
             oauthLauncher = get(),
             profileMutationBarrier = get(),
+            pendingAccountMismatch = get<PendingAccountMismatch>(),
         )
     }
 }

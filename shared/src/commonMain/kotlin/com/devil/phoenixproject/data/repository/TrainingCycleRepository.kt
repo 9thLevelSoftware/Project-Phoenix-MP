@@ -49,6 +49,12 @@ interface TrainingCycleRepository {
         at: Long,
     ) = Unit
 
+    /**
+     * Moves a still-pending (portal-rejected) cycle deletion's clock to [at] or later, so the
+     * next push can win the portal's clocked gate over a newer web edit (PR 20).
+     */
+    suspend fun restampPendingCycleDeletion(cycleId: String, at: Long) = Unit
+
     /** Persist the exact immutable component that was sent, rather than re-reading mutable state. */
     suspend fun saveRejectedCycleDraft(snapshot: CycleComponentSnapshot, rejectedUpdatedAt: Long) = Unit
 

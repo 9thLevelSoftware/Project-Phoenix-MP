@@ -89,7 +89,31 @@ enum class SyncErrorCategory {
 
     /** Network connectivity issues - wait for connectivity */
     NETWORK,
+
+    /**
+     * The portal refused an entity because it belongs to a different portal user
+     * (or a custom exercise id collides with the shared catalog). Terminal for the
+     * upload loop: never auto-retry. PR 11 resolves it with the account-switch
+     * exclusion choice ("Stop uploading data from before the account switch").
+     */
+    OWNERSHIP_CONFLICT,
 }
+
+/**
+ * Portal refusal bodies that mean "this entity is not yours to upload"
+ * (`mobile-sync-push/index.ts`: "…belongs to another user" and "Custom exercise id
+ * conflicts with an existing catalog exercise").
+ */
+internal const val CATALOG_COLLISION_MARKER = "Custom exercise id conflicts with an existing catalog exercise"
+
+internal val OWNERSHIP_REFUSAL_MARKERS = listOf(
+    "belongs to another user",
+    CATALOG_COLLISION_MARKER,
+)
+
+/** True when [message] is one of the portal's ownership-refusal bodies. */
+internal fun isOwnershipRefusalMessage(message: String): Boolean =
+    OWNERSHIP_REFUSAL_MARKERS.any { marker -> message.contains(marker, ignoreCase = true) }
 
 /**
  * Classified error with retry context for intelligent error handling.
@@ -170,7 +194,20 @@ fun classifyByStatusCode(
     statusCode: Int?,
     message: String,
     cause: Throwable? = null,
-): ClassifiedSyncError = when (statusCode) {
+): ClassifiedSyncError {
+    // Ownership refusals are 400s with a distinctive body. Classify them before the
+    // generic 400 → PERMANENT mapping so the sync loop can end the upload instead of
+    // treating a foreign-owned row as a permanent-but-retryable payload error.
+    if (statusCode == 400 && isOwnershipRefusalMessage(message)) {
+        return ClassifiedSyncError(
+            category = SyncErrorCategory.OWNERSHIP_CONFLICT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = false,
+            cause = cause,
+        )
+    }
+    return when (statusCode) {
     // Auth errors - don't retry, trigger re-login
     401 -> ClassifiedSyncError(
         category = SyncErrorCategory.AUTH,
@@ -224,6 +261,7 @@ fun classifyByStatusCode(
         isRetryable = true,
         cause = cause,
     )
+    }
 }
 
 /** GoTrue error codes meaning the refresh token or its session is gone for good. */

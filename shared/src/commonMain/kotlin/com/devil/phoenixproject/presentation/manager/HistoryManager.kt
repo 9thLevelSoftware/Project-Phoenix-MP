@@ -200,6 +200,8 @@ class HistoryManager(
     init {
         // Load recent history (moved from MainViewModel init L483-487)
         // Re-subscribes automatically when active profile changes via flatMapLatest.
+        // F-034: observe only the newest RECENT_HISTORY_LIMIT rows, not the whole history,
+        // so each session write re-runs a LIMIT query instead of a full-history load.
         // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
         // in scope.launch call abort(), causing SIGABRT crash on launch.
         scope.launch {
@@ -207,10 +209,10 @@ class HistoryManager(
                 userProfileRepository.activeProfile
                     .flatMapLatest { profile ->
                         val profileId = profile?.id ?: "default"
-                        workoutRepository.getAllSessions(profileId)
+                        workoutRepository.getRecentSessions(profileId, RECENT_HISTORY_LIMIT)
                     }
                     .collect { sessions ->
-                        _workoutHistory.value = sessions.take(20)
+                        _workoutHistory.value = sessions.take(RECENT_HISTORY_LIMIT)
                     }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e // Never suppress coroutine cancellation
@@ -237,5 +239,10 @@ class HistoryManager(
 
     fun deleteAllWorkouts(profileId: String) {
         scope.launch { workoutRepository.deleteAllSessions(profileId) }
+    }
+
+    companion object {
+        /** Rows exposed by [workoutHistory]. */
+        const val RECENT_HISTORY_LIMIT = 20
     }
 }

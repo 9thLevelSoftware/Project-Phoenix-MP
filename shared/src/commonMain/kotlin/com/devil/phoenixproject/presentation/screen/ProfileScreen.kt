@@ -139,6 +139,7 @@ fun ProfileScreen(
     onPlayDominatrixUnlockSound: () -> Unit,
     enableVideoPlayback: Boolean,
     themeMode: ThemeMode,
+    isInWorkoutSession: () -> Boolean,
     modifier: Modifier = Modifier,
     viewModel: ProfileViewModel = koinViewModel(),
     exerciseRepository: ExerciseRepository = koinInject(),
@@ -465,7 +466,11 @@ fun ProfileScreen(
             isSubmitting = state.identityMutationInFlight,
             onConfirm = {
                 pendingIdentityProfileId = deleteTarget.id
-                viewModel.deleteActiveProfile()
+                viewModel.deleteActiveProfile(isInWorkoutSession)
+            },
+            onDeletePermanently = {
+                pendingIdentityProfileId = deleteTarget.id
+                viewModel.deleteActiveProfilePermanently(isInWorkoutSession)
             },
             onDismiss = {
                 if (!state.identityMutationInFlight) deleteTargetProfileId = null

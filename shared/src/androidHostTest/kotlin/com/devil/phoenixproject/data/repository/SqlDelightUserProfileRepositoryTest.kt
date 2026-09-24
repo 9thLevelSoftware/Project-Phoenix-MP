@@ -34,6 +34,7 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -191,6 +192,87 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals(created.id, context.preferences.profileId)
         assertEquals(safetyStore.read(created.id), context.localSafety)
         assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+    }
+
+    /**
+     * GitHub #854 (codex 4081312853): the pre-lock check passed while idle, but sync/auth
+     * held the profile mutation barrier and a Just Lift set auto-started during the wait.
+     * The switch must re-check the LIVE session under the barrier and refuse.
+     */
+    @Test
+    fun aSwitchQueuedBehindTheBarrierIsRefusedIfAWorkoutStartsMeanwhile() = runTest {
+        val barrier = ProfileMutationBarrier()
+        repository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferenceStore,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            profileMutationBarrier = barrier,
+        )
+        ready()
+        val target = repository.createProfile("Target", 2)
+        val startingProfileId = repository.activeProfile.value?.id
+        var sessionLive = false
+        val release = CompletableDeferred<Unit>()
+        val holder = launch { barrier.withExclusive { release.await() } }
+        testScheduler.runCurrent()
+
+        val switch = async {
+            runCatching { repository.setActiveProfile(target.id, blockedByLiveSession = { sessionLive }) }
+        }
+        val create = async {
+            runCatching {
+                repository.createAndActivateProfile("New", 3, blockedByLiveSession = { sessionLive })
+            }
+        }
+        testScheduler.runCurrent()
+        sessionLive = true // a Just Lift set auto-starts while both wait for the barrier
+        release.complete(Unit)
+        holder.join()
+
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(switch.await().exceptionOrNull())
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(create.await().exceptionOrNull())
+        assertEquals(startingProfileId, repository.activeProfile.value?.id, "The active profile must not change")
+        assertTrue(repository.allProfiles.value.none { it.name == "New" }, "No profile may be created")
+    }
+
+    /**
+     * GitHub #854 (codex 4082092571): deleting the ACTIVE profile moves the running
+     * workout's lease onto a deleted id. A delete queued behind the barrier must re-check
+     * the live session once it holds the barrier, like switch and create do.
+     */
+    @Test
+    fun anActiveProfileDeleteQueuedBehindTheBarrierIsRefusedIfAWorkoutStartsMeanwhile() = runTest {
+        val barrier = ProfileMutationBarrier()
+        repository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferenceStore,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            profileMutationBarrier = barrier,
+        )
+        ready()
+        val active = repository.createAndActivateProfile("Lifter", 2)
+        var sessionLive = false
+        val release = CompletableDeferred<Unit>()
+        val holder = launch { barrier.withExclusive { release.await() } }
+        testScheduler.runCurrent()
+
+        val deleteActive = async {
+            runCatching { repository.deleteActiveProfile(active.id, blockedByLiveSession = { sessionLive }) }
+        }
+        val deleteById = async {
+            runCatching { repository.deleteProfile(active.id, blockedByLiveSession = { sessionLive }) }
+        }
+        testScheduler.runCurrent()
+        sessionLive = true // a Just Lift set auto-starts while both deletes wait for the barrier
+        release.complete(Unit)
+        holder.join()
+
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(deleteActive.await().exceptionOrNull())
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(deleteById.await().exceptionOrNull())
+        assertEquals(active.id, repository.activeProfile.value?.id, "The active profile must not change")
+        assertTrue(repository.allProfiles.value.any { it.id == active.id }, "The profile must be left intact")
     }
 
     @Test

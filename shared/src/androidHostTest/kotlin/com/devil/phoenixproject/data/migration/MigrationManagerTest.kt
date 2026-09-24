@@ -175,6 +175,46 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `startup repairs re-point rows still naming an archived legacy catalogue id`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        queries.insertRoutine(
+            id = "routine-legacy",
+            name = "Push",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "default",
+            groupId = null,
+            deletedAt = null,
+        )
+        insertMinimalRoutineExercise(
+            id = "re-legacy-bench",
+            routineId = "routine-legacy",
+            exerciseName = "Bench Press",
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+        )
+
+        // A name-only mapping (not in the explicit id map): Rack Pull -> Rack Pulls.
+        database.seedExercise("legacy-rack-pull", name = "Rack Pull", archived = true)
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls")
+        insertMinimalRoutineExercise(
+            id = "re-legacy-rack-pull",
+            routineId = "routine-legacy",
+            exerciseName = "Rack Pull",
+            exerciseId = "legacy-rack-pull",
+        )
+
+        migrationManager.runMigrationsNow()
+
+        val routineExercise = queries.selectRoutineExerciseById("re-legacy-bench").executeAsOne()
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", routineExercise.exerciseId)
+        assertEquals("Rack_Pulls", queries.selectRoutineExerciseById("re-legacy-rack-pull").executeAsOne().exerciseId)
+    }
+
+    @Test
     fun `backfill replaces garbage routine name with inferred name when routine exists`() {
         val queries = database.phoenixDatabaseQueries
         // Create a routine with exercise mapping
@@ -421,6 +461,46 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `repairOrphanedPRRecords leaves a deleted profile's PR tombstones where they are`() = runTest {
+        val driver = createTestDriver()
+        val localDatabase = PhoenixDatabase(driver)
+        val localMigrationManager = createMigrationManager(localDatabase, driver)
+        val queries = localDatabase.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "target-profile",
+            name = "Target Profile",
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        // PR 20: a permanently deleted profile keeps its PR tombstones under its own id.
+        queries.insertRecord(
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            weight = 80.0,
+            reps = 5L,
+            oneRepMax = 90.0,
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "deleted-profile",
+            cable_count = 2L,
+            uuid = "abcdefab-1234-4abc-8def-1234567890ab",
+        )
+        val tombstone = queries.selectAllRecords("deleted-profile").executeAsList().single()
+        queries.softDeletePRById(1_700_000_000_500, 1_700_000_000_500, tombstone.id, "deleted-profile")
+
+        assertEquals(emptyMap(), localMigrationManager.scanForOrphanedPRRecords())
+        assertEquals(0, localMigrationManager.repairOrphanedPRRecords("target-profile"))
+        assertEquals(
+            "deleted-profile",
+            queries.selectPRsModifiedSince(0L, "deleted-profile").executeAsList().single().profile_id,
+        )
+    }
+
+    @Test
     fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
         val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)
@@ -545,7 +625,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("default").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -564,7 +644,7 @@ class MigrationManagerTest {
         val sourceVolume = queries.selectAllRecords("default").executeAsList()
             .single { it.workoutMode == "OldSchool" }
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",
@@ -650,7 +730,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("target-profile").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -668,7 +748,7 @@ class MigrationManagerTest {
         )
         val sourceVolume = queries.selectAllRecords("orphan-profile").executeAsList().single()
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",

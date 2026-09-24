@@ -563,65 +563,125 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
-            queries.insertSession(
-                id = session.id,
-                timestamp = session.timestamp,
-                mode = session.mode,
-                targetReps = session.reps.toLong(),
-                weightPerCableKg = session.weightPerCableKg.toDouble(),
-                progressionKg = session.progressionKg.toDouble(),
-                duration = session.duration,
-                totalReps = session.totalReps.toLong(),
-                warmupReps = session.warmupReps.toLong(),
-                workingReps = session.workingReps.toLong(),
-                isJustLift = if (session.isJustLift) 1L else 0L,
-                stopAtTop = if (session.stopAtTop) 1L else 0L,
-                eccentricLoad = session.eccentricLoad.toLong(),
-                echoLevel = session.echoLevel.toLong(),
-                exerciseId = session.exerciseId,
-                exerciseName = session.exerciseName,
-                routineSessionId = session.routineSessionId,
-                routineName = session.routineName,
-                routineId = session.routineId,
-                safetyFlags = session.safetyFlags.toLong(),
-                deloadWarningCount = session.deloadWarningCount.toLong(),
-                romViolationCount = session.romViolationCount.toLong(),
-                spotterActivations = session.spotterActivations.toLong(),
-                // New summary metrics
-                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                cableCount = session.cableCount?.toLong(),
-                estimatedCalories = session.estimatedCalories?.toDouble(),
-                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                peakWeightKg = session.peakWeightKg?.toDouble(),
-                rpe = session.rpe?.toLong(),
-                // Biomechanics summary
-                avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                dominantSide = session.dominantSide,
-                strengthProfile = session.strengthProfile,
-                // Form Check score
-                formScore = session.formScore?.toLong(),
-                // Multi-profile support
-                profile_id = session.profileId,
-                // Equipment-aware weight display
-                display_multiplier = session.displayMultiplier?.toLong(),
-                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                counterweightKg = session.counterweightKg.toDouble(),
-                rackItemsJson = session.rackItemsJson,
-            )
+            insertSessionRow(session)
         }
+    }
+
+    /**
+     * F-012: the whole completion in one transaction. See
+     * [WorkoutRepository.commitCompletedSet] for the contract; the guards here
+     * are the ones the former six-call sequence used, so a retry is a no-op.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
+                    insertSessionRow(session)
+                }
+                if (metrics.isNotEmpty()) {
+                    queries.deleteMetricsBySession(session.id)
+                    metrics.forEach { metric -> insertMetricRow(session.id, metric) }
+                }
+                if (completedSet != null &&
+                    queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
+                ) {
+                    queries.insertCompletedSetRow(completedSet)
+                }
+                queries.deleteRepMetricsBySession(session.id)
+                repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
+                queries.deleteRepBiomechanicsBySession(session.id)
+                repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+                // Main's newer sync-dirty contract: every child write marks its
+                // session. The atomic commit writes those children in one
+                // transaction, so it must dirty the session the same way the
+                // old per-repo calls did — otherwise a committed set never pushes.
+                queries.markWorkoutComponentDirty(session.id)
+            }
+        }
+    }
+
+    private fun insertSessionRow(session: WorkoutSession) {
+        queries.insertSession(
+            id = session.id,
+            timestamp = session.timestamp,
+            mode = session.mode,
+            targetReps = session.reps.toLong(),
+            weightPerCableKg = session.weightPerCableKg.toDouble(),
+            progressionKg = session.progressionKg.toDouble(),
+            duration = session.duration,
+            totalReps = session.totalReps.toLong(),
+            warmupReps = session.warmupReps.toLong(),
+            workingReps = session.workingReps.toLong(),
+            isJustLift = if (session.isJustLift) 1L else 0L,
+            stopAtTop = if (session.stopAtTop) 1L else 0L,
+            eccentricLoad = session.eccentricLoad.toLong(),
+            echoLevel = session.echoLevel.toLong(),
+            exerciseId = session.exerciseId,
+            exerciseName = session.exerciseName,
+            routineSessionId = session.routineSessionId,
+            routineName = session.routineName,
+            routineId = session.routineId,
+            safetyFlags = session.safetyFlags.toLong(),
+            deloadWarningCount = session.deloadWarningCount.toLong(),
+            romViolationCount = session.romViolationCount.toLong(),
+            spotterActivations = session.spotterActivations.toLong(),
+            // New summary metrics
+            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+            totalVolumeKg = session.totalVolumeKg?.toDouble(),
+            cableCount = session.cableCount?.toLong(),
+            estimatedCalories = session.estimatedCalories?.toDouble(),
+            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+            peakWeightKg = session.peakWeightKg?.toDouble(),
+            rpe = session.rpe?.toLong(),
+            // Biomechanics summary
+            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+            dominantSide = session.dominantSide,
+            strengthProfile = session.strengthProfile,
+            // Form Check score
+            formScore = session.formScore?.toLong(),
+            // Multi-profile support
+            profile_id = session.profileId,
+            // Equipment-aware weight display
+            display_multiplier = session.displayMultiplier?.toLong(),
+            externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+            counterweightKg = session.counterweightKg.toDouble(),
+            rackItemsJson = session.rackItemsJson,
+        )
+    }
+
+    private fun insertMetricRow(sessionId: String, metric: com.devil.phoenixproject.domain.model.WorkoutMetric) {
+        // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+        val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+        queries.insertMetric(
+            sessionId = sessionId,
+            timestamp = metric.timestamp,
+            position = metric.positionA.toDouble(),
+            positionB = metric.positionB.toDouble(),
+            velocity = metric.velocityA,
+            velocityB = metric.velocityB,
+            load = metric.loadA.toDouble(),
+            loadB = metric.loadB.toDouble(),
+            power = power.toDouble(),
+            status = metric.status.toLong(),
+        )
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
@@ -1118,22 +1178,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         withContext(Dispatchers.IO) {
             db.transaction {
                 queries.deleteMetricsBySession(sessionId)
-                metrics.forEach { metric ->
-                    // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
-                    val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-                    queries.insertMetric(
-                        sessionId = sessionId,
-                        timestamp = metric.timestamp,
-                        position = metric.positionA.toDouble(),
-                        positionB = metric.positionB.toDouble(),
-                        velocity = metric.velocityA,
-                        velocityB = metric.velocityB,
-                        load = metric.loadA.toDouble(),
-                        loadB = metric.loadB.toDouble(),
-                        power = power.toDouble(),
-                        status = metric.status.toLong(),
-                    )
-                }
+                metrics.forEach { metric -> insertMetricRow(sessionId, metric) }
                 queries.markWorkoutComponentDirty(sessionId)
             }
         }
@@ -1141,9 +1186,15 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     // ========== New methods for full parity ==========
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentVisibleSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
         .asFlow()
         .mapToList(Dispatchers.IO)
+
+    override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = withContext(Dispatchers.IO) {
+        queries.selectLastWeightForExercise(profileId = profileId, exerciseId = exerciseId)
+            .executeAsOneOrNull()
+            ?.toFloat()
+    }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = withContext(Dispatchers.IO) {
         queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
