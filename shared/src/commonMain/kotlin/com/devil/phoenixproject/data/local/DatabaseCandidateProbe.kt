@@ -138,22 +138,17 @@ internal object DatabaseUserDataClassifier {
     )
 
     /**
-     * The default profile's preferences row counts as data once any setting differs from the
-     * schema default it is seeded with (PhoenixDatabase.sq). Sync metadata (generations, revisions,
-     * timestamps) is not compared: a row whose values all equal the seed loses nothing when set aside.
+     * The default profile's preferences row is judged by its write history, not its values. It is
+     * seeded at local generation 0, and the startup migration sets every section to generation 1
+     * once (`applyLegacyProfilePreferences`), copying the device's legacy settings, which every
+     * database file on the device shares. Every later write bumps a section's local generation
+     * (`update*ProfilePreferences`, including a reset to the defaults) or records a portal
+     * revision (pull or push acknowledgement), so either one marks data.
      */
-    private val PREFERENCE_FIELDS = listOf(
-        "profile_id" to "<> 'default'",
-        "body_weight_kg" to "<> 0",
-        "weight_unit" to "<> 'LB'",
-        "weight_increment" to "<> -1",
-        "equipment_rack_json" to "<> '{\"version\":1,\"items\":[]}'",
-        "workout_preferences_json" to "<> '{\"version\":1}'",
-        "led_color_scheme_id" to "<> 0",
-        "led_preferences_json" to "<> '{\"version\":1}'",
-        "vbt_enabled" to "<> 1",
-        "vbt_preferences_json" to "<> '{\"version\":1}'",
-    )
+    private val PREFERENCE_FIELDS = listOf("profile_id" to "<> 'default'") +
+        listOf("core", "rack", "workout", "led", "vbt").flatMap { section ->
+            listOf("${section}_local_generation" to "> 1", "${section}_server_revision" to "> 0")
+        }
 
     private val RPG_FIELDS = listOf(
         "strength" to "> 0",
@@ -184,8 +179,8 @@ internal object DatabaseUserDataClassifier {
             // Another profile, or any change to that one's seeded values, is data.
             "userprofile" -> queries.existsWhereAny(from, table, PROFILE_FIELDS)
 
-            // Seeded for the default profile at first launch. Another profile's row, or a default
-            // row with any setting changed from its seed value, is data.
+            // Seeded and migrated for the default profile at first launch. Another profile's row,
+            // or a default row written to since, is data.
             "userprofilepreferences" -> queries.existsWhereAny(from, table, PREFERENCE_FIELDS)
 
             // The bundled catalogue is seeded; only user-set fields and custom exercises are data.

@@ -1,8 +1,23 @@
 package com.devil.phoenixproject.data.local
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.data.migration.MigrationManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationState
+import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
+import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.LedPreferences
+import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.VbtPreferences
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.readProjectFile
+import com.russhwolf.settings.MapSettings
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -57,19 +72,7 @@ class DatabaseCandidateProbeTest {
             "gamification progress" to "UPDATE GamificationStats SET totalWorkouts = 1",
             "rpg progress" to "UPDATE RpgAttributes SET strength = 3",
             "other profile preferences" to "INSERT INTO UserProfilePreferences(profile_id) VALUES ('p2')",
-            "default body weight" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET body_weight_kg = 82.5",
-            "default units" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET weight_unit = 'KG'",
-            "default weight increment" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET weight_increment = 2.5",
-            "default equipment rack" to
-                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET equipment_rack_json = '{\"version\":1,\"items\":[{\"id\":\"bar\"}]}'",
-            "default workout preferences" to
-                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET workout_preferences_json = '{\"version\":1,\"stopAtTop\":true}'",
-            "default LED scheme" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET led_color_scheme_id = 3",
-            "default LED preferences" to
-                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET led_preferences_json = '{\"version\":1,\"x\":1}'",
-            "default VBT switch" to "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET vbt_enabled = 0",
-            "default VBT preferences" to
-                "$DEFAULT_PREFERENCES; UPDATE UserProfilePreferences SET vbt_preferences_json = '{\"version\":1,\"x\":1}'",
+            "portal preferences" to "UPDATE UserProfilePreferences SET led_server_revision = 3 WHERE profile_id = 'default'",
             "routine" to "INSERT INTO Routine(id, name, createdAt) VALUES ('r1', 'Push', 1)",
             "unknown future table" to "CREATE TABLE FutureThing(id TEXT); INSERT INTO FutureThing VALUES ('x')",
         )
@@ -85,17 +88,43 @@ class DatabaseCandidateProbeTest {
     }
 
     @Test
-    fun aDefaultPreferencesRowWhoseValuesAllEqualTheSeedIsNotUserData() {
-        val db = freshDatabase("phoenix.db")
+    fun anyWriteToTheDefaultPreferencesAfterFirstLaunchIsUserData() {
+        val writes: Map<String, suspend SqlDelightProfilePreferencesRepository.() -> Unit> = mapOf(
+            "body weight" to { updateCore("default", CoreProfilePreferences(bodyWeightKg = 82.5f), 5L) },
+            "units" to { updateCore("default", CoreProfilePreferences(weightUnit = WeightUnit.KG), 5L) },
+            "workout preferences" to { updateWorkout("default", WorkoutPreferences(stopAtTop = true), 5L) },
+            "VBT switched off" to { updateVbt("default", VbtPreferences(enabled = false), 5L) },
+            // An explicit reset stores the default values again, but it is still the user's choice.
+            "core reset to defaults" to { updateCore("default", CoreProfilePreferences(), 5L) },
+            "rack reset to defaults" to { updateRack("default", RackPreferences(), 5L) },
+            "workout reset to defaults" to { updateWorkout("default", WorkoutPreferences(), 5L) },
+            "LED reset to defaults" to { updateLed("default", LedPreferences(), 5L) },
+            "VBT reset to defaults" to { updateVbt("default", VbtPreferences(), 5L) },
+        )
+        writes.forEach { (label, write) ->
+            val db = freshDatabase("case.db")
+            JdbcSqliteDriver("jdbc:sqlite:${db.path}").use { driver ->
+                runBlocking { SqlDelightProfilePreferencesRepository(PhoenixDatabase(driver)).write() }
+            }
+
+            assertEquals(CandidateContent.HAS_USER_DATA, classify(db), label)
+            deleteWithSidecars(db)
+        }
+    }
+
+    @Test
+    fun aFirstLaunchThatImportedTheDevicesLegacySettingsIsEmpty() {
+        // The legacy settings live outside the database file, so every candidate on the device
+        // imports the same values; the imported row holds nothing of its own.
+        val db = freshDatabase("phoenix.db") { settings ->
+            settings.putString("weight_unit", "KG")
+            settings.putFloat("body_weight_kg", 82f)
+            settings.putInt("color_scheme", 3)
+        }
         JdbcSqliteDriver("jdbc:sqlite:${db.path}").use { driver ->
-            driver.execute(null, DEFAULT_PREFERENCES, 0)
-            // Sync metadata only: a write that stored the seed values again, then a push.
-            driver.execute(
-                null,
-                "UPDATE UserProfilePreferences SET core_local_generation = 2, core_updated_at = 5, core_dirty = 0, " +
-                    "workout_local_generation = 1, workout_server_revision = 4",
-                0,
-            )
+            val imported = PhoenixDatabase(driver).phoenixDatabaseQueries.selectProfilePreferences("default").executeAsOne()
+            assertEquals("KG", imported.weight_unit)
+            assertEquals(1L, imported.core_local_generation)
         }
 
         assertEquals(CandidateContent.EMPTY, classify(db))
@@ -238,29 +267,51 @@ class DatabaseCandidateProbeTest {
             DatabaseUserDataClassifier.classify(SqlDriverProbeQueries(driver))
         }
 
-    /** A database as a first launch leaves it: current schema, catalogue, default profile, zero stats. */
-    private fun freshDatabase(name: String): File {
+    /**
+     * A database as a first launch leaves it: current schema, bundled catalogue, the startup
+     * migration (default profile, its preferences seeded and the legacy settings imported), and
+     * the all-zero stats rows the gamification screens write.
+     */
+    private fun freshDatabase(name: String, legacySettings: (MapSettings) -> Unit = {}): File {
         val db = File(dir, name)
         JdbcSqliteDriver("jdbc:sqlite:${db.path}").use { driver ->
             PhoenixDatabase.Schema.create(driver)
             val database = PhoenixDatabase(driver)
             val catalogue = requireNotNull(readProjectFile("src/commonMain/composeResources/files/exercises.json"))
-            runBlocking { ExerciseImporter(database).importFromFreeExerciseJson(catalogue).getOrThrow() }
-            database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
-            driver.execute(null, "INSERT INTO UserProfilePreferences(profile_id) VALUES ('default')", 0)
-            driver.execute(null, "INSERT INTO GamificationStats(id, lastUpdated, profile_id) VALUES (1, 1, 'default')", 0)
-            driver.execute(null, "INSERT INTO RpgAttributes(id, profile_id) VALUES (1, 'default')", 0)
+            val migration = firstLaunchMigration(database, MapSettings().also(legacySettings))
+            runBlocking {
+                ExerciseImporter(database).importFromFreeExerciseJson(catalogue).getOrThrow()
+                migration.runMigrationsNow()
+            }
+            assertEquals(RequiredMigrationState.Ready, migration.requiredMigrationState.value)
+            driver.execute(null, "INSERT OR IGNORE INTO GamificationStats(id, lastUpdated, profile_id) VALUES (1, 1, 'default')", 0)
+            driver.execute(null, "INSERT OR IGNORE INTO RpgAttributes(id, profile_id) VALUES (1, 'default')", 0)
         }
         return db
+    }
+
+    private fun firstLaunchMigration(database: PhoenixDatabase, settings: MapSettings): MigrationManager {
+        val preferences = SqlDelightProfilePreferencesRepository(database)
+        val safetyStore = SettingsProfileLocalSafetyStore(settings)
+        val gamification = SqlDelightGamificationRepository(database)
+        return MigrationManager(
+            database = database,
+            userProfileRepository = SqlDelightUserProfileRepository(
+                database = database,
+                profilePreferencesRepository = preferences,
+                profileLocalSafetyStore = safetyStore,
+                gamificationRepository = gamification,
+            ),
+            gamificationRepository = gamification,
+            settings = settings,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = safetyStore,
+            legacyProfilePreferencesReader = SettingsLegacyProfilePreferencesReader(SettingsPreferencesManager(settings), settings),
+        )
     }
 
     private fun deleteWithSidecars(db: File) {
         db.delete()
         listOf("-wal", "-shm", "-journal").forEach { File("${db.path}$it").delete() }
-    }
-
-    private companion object {
-        /** The default profile's seeded preferences row, in case the schema seed did not create it. */
-        const val DEFAULT_PREFERENCES = "INSERT OR IGNORE INTO UserProfilePreferences(profile_id) VALUES ('default')"
     }
 }
