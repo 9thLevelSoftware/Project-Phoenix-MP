@@ -184,6 +184,27 @@
     <string name="add_exercise">Ajouter un exercice</string>
     <string name="delete_routine">Supprimer la routine</string>
     <string name="delete_routine_message">Êtes-vous sûr de vouloir supprimer \'%1$s\' ?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Importer des routines depuis un CSV</string>
+    <string name="routine_csv_export">Exporter en CSV</string>
+    <string name="routine_csv_import_title">Importer des routines</string>
+    <string name="routine_csv_unreadable_title">Impossible d\'importer ce fichier</string>
+    <string name="routine_csv_issues_title">Corrigez ces problèmes dans le fichier, puis sélectionnez-le à nouveau :</string>
+    <string name="routine_csv_more_issues">…et %1$d de plus</string>
+    <string name="routine_csv_action_create">Nouvelle</string>
+    <string name="routine_csv_action_overwrite">Remplace la routine existante</string>
+    <string name="routine_csv_action_copy">Nouvelle copie</string>
+    <string name="routine_csv_summary">%1$d exercices · %2$d séries · %3$s</string>
+    <string name="routine_csv_group">Groupe : %1$s</string>
+    <string name="routine_csv_matches_found">Certaines routines de ce fichier correspondent à des routines existantes.</string>
+    <string name="routine_csv_mode_copies">Les importer comme copies</string>
+    <string name="routine_csv_mode_overwrite">Remplacer les routines existantes</string>
+    <string name="routine_csv_refreshed">Vos routines ont changé depuis cet aperçu. Vérifiez-le à nouveau avant d\'importer.</string>
+    <string name="routine_csv_commit_failed">L\'importation a échoué. Rien n\'a été enregistré.</string>
+    <string name="routine_csv_confirm">Importer</string>
+    <string name="routine_csv_imported">%1$d routines importées.</string>
+    <string name="routine_csv_export_blocked_title">Impossible d\'exporter %1$s</string>
+    <string name="routine_csv_export_blocked_message">Les fichiers CSV ne gèrent pas encore ces réglages ; l\'export les perdrait :</string>
     <string name="delete_selected_routines">Supprimer %1$d routines ?</string>
     <string name="duplicate_selected_routines">Dupliquer %1$d routines ?</string>
     <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe \'(Copie)\'.</string>

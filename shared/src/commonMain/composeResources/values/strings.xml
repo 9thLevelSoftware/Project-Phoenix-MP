@@ -220,6 +220,27 @@
     <string name="add_exercise">Add Exercise</string>
     <string name="delete_routine">Delete Routine</string>
     <string name="delete_routine_message">Are you sure you want to delete \'%1$s\'?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Import routines from CSV</string>
+    <string name="routine_csv_export">Export CSV</string>
+    <string name="routine_csv_import_title">Import routines</string>
+    <string name="routine_csv_unreadable_title">Can\'t import this file</string>
+    <string name="routine_csv_issues_title">Fix these problems in the file, then pick it again:</string>
+    <string name="routine_csv_more_issues">…and %1$d more</string>
+    <string name="routine_csv_action_create">New</string>
+    <string name="routine_csv_action_overwrite">Replaces the existing routine</string>
+    <string name="routine_csv_action_copy">New copy</string>
+    <string name="routine_csv_summary">%1$d exercises · %2$d sets · %3$s</string>
+    <string name="routine_csv_group">Group: %1$s</string>
+    <string name="routine_csv_matches_found">Some routines in this file match routines you already have.</string>
+    <string name="routine_csv_mode_copies">Import them as copies</string>
+    <string name="routine_csv_mode_overwrite">Replace the existing routines</string>
+    <string name="routine_csv_refreshed">Your routines changed since this preview. Check it again before importing.</string>
+    <string name="routine_csv_commit_failed">The import failed. Nothing was saved.</string>
+    <string name="routine_csv_confirm">Import</string>
+    <string name="routine_csv_imported">Imported %1$d routines.</string>
+    <string name="routine_csv_export_blocked_title">Can\'t export %1$s</string>
+    <string name="routine_csv_export_blocked_message">CSV files can\'t hold these settings yet, so exporting would lose them:</string>
     <string name="delete_selected_routines">Delete %1$d routines?</string>
     <string name="delete_group_title">Delete Group</string>
     <string name="delete_group_message">Delete group \"%1$s\"? Routines in this group will become ungrouped.</string>

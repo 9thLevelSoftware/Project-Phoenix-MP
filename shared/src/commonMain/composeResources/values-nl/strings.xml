@@ -184,6 +184,27 @@
     <string name="add_exercise">Oefening toevoegen</string>
     <string name="delete_routine">Routine verwijderen</string>
     <string name="delete_routine_message">Weet je zeker dat je \'%1$s\' wilt verwijderen?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Routines importeren uit CSV</string>
+    <string name="routine_csv_export">Exporteren als CSV</string>
+    <string name="routine_csv_import_title">Routines importeren</string>
+    <string name="routine_csv_unreadable_title">Dit bestand kan niet worden geïmporteerd</string>
+    <string name="routine_csv_issues_title">Los deze problemen in het bestand op en kies het opnieuw:</string>
+    <string name="routine_csv_more_issues">…en nog %1$d</string>
+    <string name="routine_csv_action_create">Nieuw</string>
+    <string name="routine_csv_action_overwrite">Vervangt de bestaande routine</string>
+    <string name="routine_csv_action_copy">Nieuwe kopie</string>
+    <string name="routine_csv_summary">%1$d oefeningen · %2$d sets · %3$s</string>
+    <string name="routine_csv_group">Groep: %1$s</string>
+    <string name="routine_csv_matches_found">Sommige routines in dit bestand komen overeen met routines die je al hebt.</string>
+    <string name="routine_csv_mode_copies">Als kopieën importeren</string>
+    <string name="routine_csv_mode_overwrite">Bestaande routines vervangen</string>
+    <string name="routine_csv_refreshed">Je routines zijn sinds dit voorbeeld gewijzigd. Controleer het opnieuw voordat je importeert.</string>
+    <string name="routine_csv_commit_failed">Het importeren is mislukt. Er is niets opgeslagen.</string>
+    <string name="routine_csv_confirm">Importeren</string>
+    <string name="routine_csv_imported">%1$d routines geïmporteerd.</string>
+    <string name="routine_csv_export_blocked_title">%1$s kan niet worden geëxporteerd</string>
+    <string name="routine_csv_export_blocked_message">CSV-bestanden kunnen deze instellingen nog niet bevatten, dus exporteren zou ze verliezen:</string>
     <string name="delete_selected_routines">%1$d routines verwijderen?</string>
     <string name="duplicate_selected_routines">%1$d routines dupliceren?</string>
     <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met \'(Kopie)\' achtervoegsel.</string>

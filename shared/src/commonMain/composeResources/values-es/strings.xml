@@ -184,6 +184,27 @@
     <string name="add_exercise">Añadir ejercicio</string>
     <string name="delete_routine">Eliminar rutina</string>
     <string name="delete_routine_message">¿Estás seguro de que deseas eliminar \'%1$s\'?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Importar rutinas desde CSV</string>
+    <string name="routine_csv_export">Exportar CSV</string>
+    <string name="routine_csv_import_title">Importar rutinas</string>
+    <string name="routine_csv_unreadable_title">No se puede importar este archivo</string>
+    <string name="routine_csv_issues_title">Corrige estos problemas en el archivo y vuelve a seleccionarlo:</string>
+    <string name="routine_csv_more_issues">…y %1$d más</string>
+    <string name="routine_csv_action_create">Nueva</string>
+    <string name="routine_csv_action_overwrite">Reemplaza la rutina existente</string>
+    <string name="routine_csv_action_copy">Nueva copia</string>
+    <string name="routine_csv_summary">%1$d ejercicios · %2$d series · %3$s</string>
+    <string name="routine_csv_group">Grupo: %1$s</string>
+    <string name="routine_csv_matches_found">Algunas rutinas de este archivo coinciden con rutinas que ya tienes.</string>
+    <string name="routine_csv_mode_copies">Importarlas como copias</string>
+    <string name="routine_csv_mode_overwrite">Reemplazar las rutinas existentes</string>
+    <string name="routine_csv_refreshed">Tus rutinas cambiaron desde esta vista previa. Revísala de nuevo antes de importar.</string>
+    <string name="routine_csv_commit_failed">La importación falló. No se guardó nada.</string>
+    <string name="routine_csv_confirm">Importar</string>
+    <string name="routine_csv_imported">Se importaron %1$d rutinas.</string>
+    <string name="routine_csv_export_blocked_title">No se puede exportar %1$s</string>
+    <string name="routine_csv_export_blocked_message">Los archivos CSV aún no admiten estos ajustes, así que al exportar se perderían:</string>
     <string name="delete_selected_routines">¿Eliminar %1$d rutinas?</string>
     <string name="duplicate_selected_routines">¿Duplicar %1$d rutinas?</string>
     <string name="duplicate_routines_message">Se crearán nuevas copias con el sufijo \'(Copia)\'.</string>
