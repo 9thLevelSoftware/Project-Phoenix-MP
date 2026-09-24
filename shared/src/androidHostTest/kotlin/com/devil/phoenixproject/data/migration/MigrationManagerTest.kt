@@ -175,6 +175,40 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `epoch zero session repair rebuilds start and duration from the sessions own data`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        val epochDuration = 1_758_000_000_000L
+        // 1970 row with samples: start = first sample, duration = sample span.
+        insertMinimalSession(id = "bad-samples", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        queries.insertMetric("bad-samples", 1_757_999_000_000L, null, null, null, null, null, null, null, 0L)
+        queries.insertMetric("bad-samples", 1_757_999_090_000L, null, null, null, null, null, null, null, 0L)
+        // A stray pre-2015 sample must not become the start.
+        queries.insertMetric("bad-samples", 5_000L, null, null, null, null, null, null, null, 0L)
+        // 1970 row with only a completed set: start = completed_at, duration unknown (0).
+        insertMinimalSession(id = "bad-set", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        queries.insertCompletedSet(
+            "set-1", "bad-set", null, null, 0L, "STANDARD", 1L, 8L, 20.0, null, 0L, 1_757_998_000_000L, "UNKNOWN",
+        )
+        // 1970 row with nothing to rebuild from: the duration is still zeroed.
+        insertMinimalSession(id = "bad-empty", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        // A healthy row is untouched.
+        insertMinimalSession(id = "good", routineSessionId = null, routineName = null, timestamp = 1_700_000_000_000L, duration = 90_000L)
+
+        migrationManager.runMigrationsNow()
+
+        val samples = queries.selectSessionById("bad-samples").executeAsOne()
+        assertEquals(1_757_999_000_000L, samples.timestamp)
+        assertEquals(90_000L, samples.duration)
+        val set = queries.selectSessionById("bad-set").executeAsOne()
+        assertEquals(1_757_998_000_000L, set.timestamp)
+        assertEquals(0L, set.duration)
+        assertEquals(0L, queries.selectSessionById("bad-empty").executeAsOne().duration)
+        val good = queries.selectSessionById("good").executeAsOne()
+        assertEquals(1_700_000_000_000L, good.timestamp)
+        assertEquals(90_000L, good.duration)
+    }
+
+    @Test
     fun `startup repairs re-point rows still naming an archived legacy catalogue id`() = runTest {
         val queries = database.phoenixDatabaseQueries
         database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
@@ -1124,6 +1158,7 @@ class MigrationManagerTest {
         heaviestLiftKg: Double? = null,
         timestamp: Long = 1_700_000_000_000,
         profileId: String = "default",
+        duration: Long = 0L,
     ) {
         database.phoenixDatabaseQueries.insertSession(
             id = id,
@@ -1132,7 +1167,7 @@ class MigrationManagerTest {
             targetReps = 10,
             weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
-            duration = 0L,
+            duration = duration,
             totalReps = totalReps,
             warmupReps = 0,
             workingReps = workingReps,

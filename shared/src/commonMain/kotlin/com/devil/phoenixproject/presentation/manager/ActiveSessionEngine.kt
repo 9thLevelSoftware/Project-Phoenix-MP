@@ -40,6 +40,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.SessionTiming
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.DropPercentage
@@ -7374,6 +7375,30 @@ class ActiveSessionEngine(
         }
     }
 
+    /** Final presentation state of the no-snapshot manual stop, saved or not. */
+    private fun applyManualStopEndState(shouldExitToIdle: Boolean, nonExitState: WorkoutState) {
+        if (shouldExitToIdle) {
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+            coordinator._loadedRoutine.value = null
+            coordinator.routineStartTime = 0
+            // Issue #392: Clear routine session context on exit
+            coordinator.currentRoutineSessionId = null
+            coordinator.currentRoutineName = null
+            coordinator.currentRoutineId = null
+            coordinator.routineAccumulatedCalories = 0f
+            coordinator._completedRoutineSetKeys.value = emptySet()
+            // Safe to clear origin here: every call site (e.g. ActiveWorkoutScreen) reads
+            // routineExitDestination() BEFORE invoking stopWorkout(exitingWorkout=true), so
+            // the navigation decision is already captured before this async block runs.
+            // Clearing prevents a stale TRAINING_CYCLES origin from bleeding into the next
+            // session when the user subsequently enters via DailyRoutinesScreen.
+            coordinator.routineLaunchOrigin = null
+        } else {
+            coordinator._workoutState.value = nonExitState
+        }
+    }
+
     private fun clearSharedStateForNewWorkout() {
         cancelJustLiftEggTimer()
         coordinator.currentSessionId = null
@@ -9154,10 +9179,18 @@ class ActiveSessionEngine(
         } catch (_: IllegalStateException) {
             null
         }
-        val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) {
-            coordinator.warmupCompleteTimeMs
-        } else {
-            coordinator.workoutStartTime
+        // A reset zeroes workoutStartTime; never let that reach the row as a 1970 start with an
+        // epoch-sized duration. Fall back to the first collected sample, then to "now, 0 ms".
+        val timing = SessionTiming.resolve(
+            workoutStartMs = coordinator.workoutStartTime,
+            warmupCompleteMs = coordinator.warmupCompleteTimeMs,
+            nowMs = wallClockMillisProvider(),
+            fallbackStartMs = metrics.firstOrNull()?.timestamp,
+        )
+        if (!timing.startKnown) {
+            Logger.w("ActiveSessionEngine") {
+                "Set completion for session ${lease.sessionId} had no start time; saving with a zero duration"
+            }
         }
         val savedWeightKg = if (lease.isBodyweight) {
             summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: recordedWeightPerCableKg
@@ -9166,14 +9199,14 @@ class ActiveSessionEngine(
         }
         val session = WorkoutSession(
             id = lease.sessionId,
-            timestamp = coordinator.workoutStartTime,
+            timestamp = timing.startMs,
             mode = params.programMode.displayName,
             reps = params.reps,
             weightPerCableKg = recordedWeightPerCableKg,
             // The program frame carries progression verbatim (BlePacketFactory
             // 0x5C) and nothing bounds it, so the request IS the command here.
             progressionKg = executedParams.progressionRegressionKg,
-            duration = (wallClockMillisProvider() - effectiveStart).coerceAtLeast(0L),
+            duration = timing.durationMs,
             totalReps = repCount.totalReps,
             warmupReps = repCount.warmupReps,
             workingReps = repCount.workingReps,
@@ -10396,6 +10429,15 @@ class ActiveSessionEngine(
         coordinator.restDeadlineElapsedRealtimeMs = null
         cancelJustLiftEggTimer()
 
+        // The no-snapshot save below runs in a launched continuation, after a suspension.
+        // A teardown or reset (clearSharedStateForNewWorkout, a routine start) can zero
+        // workoutStartTime/warmupCompleteTimeMs and clear the samples before it runs, which
+        // saved sessions starting 1970-01-01 with a duration of "now". Read the set's timing
+        // here, at Stop, and let the continuation use only these values.
+        val startAtStopMs = coordinator.workoutStartTime
+        val warmupCompleteAtStopMs = coordinator.warmupCompleteTimeMs
+        val firstSampleAtStopMs = coordinator.collectedMetrics.snapshot().firstOrNull()?.timestamp
+
         val completeStop: () -> Unit = {
             launchPresentationContinuation(lease) {
                 if (manualSnapshot != null) {
@@ -10514,20 +10556,40 @@ class ActiveSessionEngine(
                 }
                 val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
-                // Issue #252: Exclude warmup time from session duration
-                val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
+                // Issue #252 (warmup excluded) and the 1970 bug: timing comes from the values
+                // read at Stop, never from coordinator fields a reset may have zeroed since.
+                val timing = SessionTiming.resolve(
+                    workoutStartMs = startAtStopMs,
+                    warmupCompleteMs = warmupCompleteAtStopMs,
+                    nowMs = wallClockMillisProvider(),
+                    fallbackStartMs = firstSampleAtStopMs,
+                )
+                if (!timing.startKnown && repCount.totalReps == 0 && firstSampleAtStopMs == null) {
+                    // No set was running at Stop: no start, no reps, no samples. There is
+                    // nothing to record, and saving here is what wrote the 1970 sessions.
+                    Logger.w("ActiveSessionEngine") {
+                        "Manual stop with no running set (no start time, reps or samples); not saving a session"
+                    }
+                    applyManualStopEndState(shouldExitToIdle, nonExitState = WorkoutState.Idle)
+                    return@launchPresentationContinuation
+                }
+                if (!timing.startKnown) {
+                    Logger.w("ActiveSessionEngine") {
+                        "Manual stop had no start time; saving the set with a zero duration"
+                    }
+                }
                 // Capture the biomechanics summary before building the session:
                 // biomechanicsEngine.reset() is not called on this path before this point.
                 val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
                 val session = WorkoutSession(
-                    timestamp = coordinator.workoutStartTime,
+                    timestamp = timing.startMs,
                     mode = params.programMode.displayName,
                     reps = params.reps,
                     weightPerCableKg = recordedWeightPerCableKg,
                     totalReps = repCount.totalReps,
                     workingReps = repCount.workingReps,
                     warmupReps = repCount.warmupReps,
-                    duration = currentTimeMillis() - effectiveStart,
+                    duration = timing.durationMs,
                     isJustLift = isJustLift,
                     exerciseId = params.selectedExerciseId,
                     exerciseName = exerciseName,
@@ -10665,26 +10727,7 @@ class ActiveSessionEngine(
                     saveSingleExerciseDefaultsFromWorkout()
                 }
 
-                if (shouldExitToIdle) {
-                    coordinator._workoutState.value = WorkoutState.Idle
-                    coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
-                    coordinator._loadedRoutine.value = null
-                    coordinator.routineStartTime = 0
-                    // Issue #392: Clear routine session context on exit
-                    coordinator.currentRoutineSessionId = null
-                    coordinator.currentRoutineName = null
-                    coordinator.currentRoutineId = null
-                    coordinator.routineAccumulatedCalories = 0f
-                    coordinator._completedRoutineSetKeys.value = emptySet()
-                    // Safe to clear origin here: every call site (e.g. ActiveWorkoutScreen) reads
-                    // routineExitDestination() BEFORE invoking stopWorkout(exitingWorkout=true), so
-                    // the navigation decision is already captured before this async block runs.
-                    // Clearing prevents a stale TRAINING_CYCLES origin from bleeding into the next
-                    // session when the user subsequently enters via DailyRoutinesScreen.
-                    coordinator.routineLaunchOrigin = null
-                } else {
-                    coordinator._workoutState.value = persistedSummary
-                }
+                applyManualStopEndState(shouldExitToIdle, nonExitState = persistedSummary)
             }
         }
 

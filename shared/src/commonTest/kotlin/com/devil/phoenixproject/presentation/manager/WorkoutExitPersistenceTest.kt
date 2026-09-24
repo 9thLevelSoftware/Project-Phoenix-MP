@@ -1028,6 +1028,9 @@ class WorkoutExitPersistenceTest {
         try {
             startTrackedCableSet(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            // The engine stamps the start from the real clock but saves on the harness clock;
+            // put the start on the harness clock so the set spans the 45 s advanced below.
+            harness.coordinator.workoutStartTime = harness.nowMs
             advanceTimeBy(45_000L)
 
             harness.dwsm.stopWorkout(exitingWorkout = true)

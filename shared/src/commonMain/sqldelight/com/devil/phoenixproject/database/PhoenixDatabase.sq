@@ -2882,6 +2882,29 @@ insertAppliedDataRepair:
 INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
 VALUES (:repairKey, :appliedAt);
 
+-- One-shot repair of sessions saved by the "1970" bug: a save read a zeroed workoutStartTime,
+-- so timestamp = 0 and duration = the save time in epoch ms. The start comes back from the
+-- session's own children (first sample, then first completed set, then the last-edit stamp);
+-- a row with none keeps its timestamp. The duration becomes the sample span, or 0 (unknown).
+-- Local only: sync generations are untouched, and the portal already repairs these on push.
+repairEpochZeroSessionStarts:
+UPDATE WorkoutSession
+SET
+    duration = COALESCE(
+        (SELECT MAX(m.timestamp) - MIN(m.timestamp) FROM MetricSample m
+            WHERE m.sessionId = WorkoutSession.id AND m.timestamp >= :minPlausibleMs),
+        0
+    ),
+    timestamp = COALESCE(
+        (SELECT MIN(m.timestamp) FROM MetricSample m
+            WHERE m.sessionId = WorkoutSession.id AND m.timestamp >= :minPlausibleMs),
+        (SELECT MIN(c.completed_at) FROM CompletedSet c
+            WHERE c.session_id = WorkoutSession.id AND c.completed_at >= :minPlausibleMs),
+        CASE WHEN updatedAt >= :minPlausibleMs THEN updatedAt END,
+        timestamp
+    )
+WHERE timestamp < :minPlausibleMs;
+
 CREATE TABLE PendingProfileRecovery (
     recovery_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
