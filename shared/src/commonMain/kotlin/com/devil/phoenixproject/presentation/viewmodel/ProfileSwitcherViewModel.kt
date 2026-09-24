@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
+import com.devil.phoenixproject.data.repository.ProfileSwitchBlockedDuringWorkoutException
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -27,6 +28,9 @@ enum class ProfileOverlayError {
     SWITCH_FAILED,
     CREATE_FAILED,
     RECOVERY_RETRY_FAILED,
+
+    /** FP-6: a switch was refused because a workout is still in progress. */
+    SWITCH_BLOCKED_DURING_WORKOUT,
 }
 
 data class ProfileSwitcherUiState(
@@ -85,18 +89,44 @@ class ProfileSwitcherViewModel(
         }
     }
 
-    fun switchProfile(profileId: String) {
+    /**
+     * FP-6: switching profiles mid-workout would split one workout's writes across
+     * two profiles, so the switch is refused for the WHOLE session
+     * ([inWorkoutSession] = `WorkoutCoordinator.isInWorkoutSession`). That includes
+     * the gaps where `workoutState` is Idle but the session is live: SetReady between
+     * routine sets, and the Just Lift rest countdown (codex 4080108011). The refusal
+     * is visible: the sheet stays open carrying
+     * [ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT], never a silent no-op. The
+     * caller passes the live flag because the workout engine is owned by
+     * MainViewModel, not by the DI graph this ViewModel is built from.
+     *
+     * [inWorkoutSession] is a LIVE read, checked twice: here, and again by the
+     * repository after it acquires the profile mutation barrier, because sync/auth can
+     * hold that barrier while a Just Lift set auto-starts (codex 4081312853).
+     */
+    fun switchProfile(profileId: String, inWorkoutSession: () -> Boolean) {
         val targetProfileId = profileId.trim()
         if (targetProfileId.isEmpty()) return
         val ready = profiles.activeProfileContext.value as? ActiveProfileContext.Ready ?: return
         if (ready.profile.id == targetProfileId || !_uiState.value.showSwitcher) return
+        // Refuse BEFORE any operation starts: a switch mid-workout would split the
+        // running set's writes across two profiles (FP-6). The sheet stays open
+        // carrying the error so the refusal is visible, never a silent no-op.
+        if (inWorkoutSession()) {
+            _uiState.update { it.copy(error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT) }
+            return
+        }
         val operation = beginOperation(RootProfileOperationKind.SWITCH, targetProfileId) ?: return
         launchOwned(operation) {
             try {
-                profiles.setActiveProfile(targetProfileId)
+                profiles.setActiveProfile(targetProfileId, blockedByLiveSession = inWorkoutSession)
                 finishOwned(operation.token) { ProfileSwitcherUiState() }
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: ProfileSwitchBlockedDuringWorkoutException) {
+                finishOwned(operation.token) { state ->
+                    state.copy(operation = null, error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT)
+                }
             } catch (error: ProfileContextRecoveryException) {
                 enterRecoveryIfOwned(operation.token, error)
             } catch (error: Exception) {
@@ -107,18 +137,31 @@ class ProfileSwitcherViewModel(
         }
     }
 
-    fun createAndActivateProfile(name: String, colorIndex: Int) {
+    /**
+     * Creating a profile also ACTIVATES it, so it is a profile switch and gets the
+     * same FP-6 mid-workout refusal as [switchProfile]: the add dialog stays open
+     * carrying [ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT].
+     */
+    fun createAndActivateProfile(name: String, colorIndex: Int, inWorkoutSession: () -> Boolean) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
         if (profiles.activeProfileContext.value !is ActiveProfileContext.Ready) return
         if (!_uiState.value.showAddDialog) return
+        if (inWorkoutSession()) {
+            _uiState.update { it.copy(error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT) }
+            return
+        }
         val operation = beginOperation(RootProfileOperationKind.CREATE) ?: return
         launchOwned(operation) {
             try {
-                profiles.createAndActivateProfile(trimmedName, colorIndex)
+                profiles.createAndActivateProfile(trimmedName, colorIndex, blockedByLiveSession = inWorkoutSession)
                 finishOwned(operation.token) { ProfileSwitcherUiState() }
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: ProfileSwitchBlockedDuringWorkoutException) {
+                finishOwned(operation.token) { state ->
+                    state.copy(operation = null, error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT)
+                }
             } catch (error: ProfileContextRecoveryException) {
                 enterRecoveryIfOwned(operation.token, error)
             } catch (error: Exception) {

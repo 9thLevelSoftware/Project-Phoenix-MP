@@ -72,6 +72,9 @@ data class CycleSyncSnapshot(
  */
 interface SyncRepository {
 
+    /** PR 20: moves [profileId]'s PR tombstones' `updatedAt` to [at] or later (see the query). */
+    suspend fun restampPersonalRecordTombstones(profileId: String, at: Long) = Unit
+
     // === Push Operations (get local changes) ===
 
     /**
@@ -218,6 +221,18 @@ interface SyncRepository {
         },
     )
 
+    /**
+     * PR 10 step 8: every cycle for [profileId], dirty or not, as a push snapshot.
+     * The one-time routine/cycle/PR repair push re-sends from timestamp 0 and cannot
+     * use [getDirtyCycleSnapshot] — that one is generation-based and would miss
+     * cycles the portal already accepted.
+     */
+    suspend fun getAllCyclesForRepair(profileId: String = "default"): CycleSyncSnapshot = CycleSyncSnapshot(
+        getFullCyclesForSync(profileId).map { context ->
+            CycleComponentSnapshot(context = context, localSyncGeneration = 0L)
+        },
+    )
+
     /** Clears only unchanged generations for cycle IDs accepted by the portal. */
     suspend fun acknowledgeCycleSnapshot(
         snapshot: CycleSyncSnapshot,
@@ -248,8 +263,10 @@ interface SyncRepository {
     ): PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
 
     /**
-     * Resolve local workout session IDs for dedicated PR rows whose source
-     * sessions may not be included in the current modified-since push batch.
+     * Resolve the PORTAL workout id (`routineSessionId ?: id`) for dedicated PR rows
+     * whose source sessions may not be included in the current modified-since push
+     * batch. A routine set is published under its parent routineSessionId, so the
+     * component id would reference no pushed workout.
      */
     suspend fun findSessionIdsForPersonalRecords(
         records: List<PersonalRecord>,
@@ -290,6 +307,40 @@ interface SyncRepository {
     suspend fun getAllSessionIds(profileId: String = "default"): List<String>
 
     /**
+     * PR 10 step 7 (R-19): the profile's known *portal* session ids — distinct
+     * `routineSessionId`s for grouped rows, the row id for standalone rows, plus
+     * tombstone portal ids from soft-deleted rows — newest-first so the parity cap
+     * drops the oldest. UUID-valid ids only (local template-derived ids cannot
+     * converge through the portal's UUID contract).
+     *
+     * Default falls back to [getAllSessionIds] so unrelated test fakes keep compiling;
+     * production overrides this with the real portal-id projection.
+     */
+    suspend fun getKnownPortalSessionIds(profileId: String = "default"): List<String> =
+        getAllSessionIds(profileId)
+
+    /**
+     * One-shot upgrade seeding, once per portal account ([accountId] namespaces the ledger
+     * key): marks legacy workout rows of [profileIds] (the account's profiles) that the old
+     * client provably synchronized as acknowledged, so PR 10's all-profile loop does not
+     * re-push them. See `seedLegacySyncedGenerations` in PhoenixDatabase.sq for the
+     * evidence rule. Returns the number of rows marked, or null when it already ran.
+     */
+    suspend fun seedLegacySyncedGenerationsOnce(
+        accountId: String,
+        legacyLastSync: Long,
+        cursorProfileId: String?,
+        profileIds: Collection<String>,
+    ): Int? = null
+
+    /**
+     * Portal session ids of [profileId] that still have a live (not soft-deleted) row.
+     * Tombstoned and hard-deleted workouts are absent.
+     */
+    suspend fun getLivePortalSessionIds(profileId: String): Set<String> =
+        getKnownPortalSessionIds(profileId).toSet()
+
+    /**
      * Get all routine IDs for the given profile.
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
@@ -311,6 +362,56 @@ interface SyncRepository {
      * Get all personal record IDs for the given profile.
      */
     suspend fun getAllPersonalRecordIds(profileId: String = "default"): List<String>
+
+    /**
+     * Rows [portalUserId] must never upload (PR 11 account-switch exclusions).
+     * Scoped by portal user so one account's exclusion set cannot hide rows from
+     * another account that later signs in on the same install.
+     */
+    suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    )
+
+    suspend fun getSyncExcludedEntityIds(portalUserId: String, entityType: String): Set<String>
+
+    /**
+     * Records which pre-switch rows the chosen account-switch policy excludes from
+     * upload to [portalUserId].
+     *
+     * @param excludeAllExisting true for "Don't upload existing data": every pre-switch row.
+     *   false for "Upload workouts not yet synced": only rows that already reached another account.
+     * @param previousPushWatermarks the old account's sync boundary per profile: the later of its
+     *   push watermark and its last post-push pull merge (PortalTokenStorage.getAccountSyncBoundary).
+     *   Sessions are classified by origin and acknowledged generation instead (isNeverSyncedSession).
+     */
+    suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String? = null,
+        /**
+         * Each profile's own previous owner (its `supabase_user_id` before the switch),
+         * falling back to [previousPortalUserId]. A device can hold profiles synced to
+         * different accounts; each is classified under its own (codex #859).
+         */
+        previousPortalUserIdsByProfile: Map<String, String> = emptyMap(),
+    )
+
+    /**
+     * Ownership-conflict recovery (PR 11): exclude from [portalUserId] only rows of
+     * [entityTypes] created at or before [createdAtOrBefore] (the moment this account was
+     * first seen on the device), never a row known to have reached [portalUserId] itself.
+     * Rows made for this account afterwards keep syncing (codex #859).
+     */
+    suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    )
 
     // === Post-Push Stamping ===
 
@@ -350,7 +451,14 @@ interface SyncRepository {
      * portal are re-shipped on every sync because the push path only
      * stamped WorkoutSession rows.
      */
-    suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long)
+    suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long)
+
+    /**
+     * Stamp pushed routines that have no `updatedAt` with [timestamp] (the push's
+     * gatherStartedAt), so `updatedAt IS NULL` stops re-selecting them every sync.
+     * Routines that already carry an edit time are left alone.
+     */
+    suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long)
 
     // === ID Mapping (after push) ===
 
@@ -406,8 +514,12 @@ interface SyncRepository {
      * Merge pulled workout sessions into local database.
      * Uses INSERT OR IGNORE — if a session with the same ID already exists locally,
      * it is NOT overwritten (local data wins for immutable sessions).
+     *
+     * PR 10 step 5 (R-10): inserted rows are stamped with [pushWatermark] (device
+     * clock captured before the push gather), never with the portal's server
+     * `updated_at`, so a pulled session is never pushed back.
      */
-    suspend fun mergePortalSessions(sessions: List<WorkoutSession>)
+    suspend fun mergePortalSessions(sessions: List<WorkoutSession>, pushWatermark: Long = 0L)
 
     /**
      * Merge personal records from portal pull response, scoped to profile.
@@ -465,6 +577,9 @@ interface SyncRepository {
      * @param profileId Target profile for all entities
      * @param serverWinsRoutineIds Routines whose push the server rejected under LWW: the
      *   portal version is applied even if the local row was modified after [lastSync]
+     * @param pushWatermark PR 10 step 5 (R-10): device-clock watermark stamped onto
+     *   every pulled session row so it is never pushed back. Never the portal's
+     *   server `updated_at`.
      */
     suspend fun mergeAllPullData(
         ownerUserId: String = "",
@@ -480,6 +595,9 @@ interface SyncRepository {
         serverWinsRoutineIds: Set<String> = emptySet(),
         sessionNotes: Map<String, SessionNotesEntry> = emptyMap(),
         sessionUpdatedAtById: Map<String, Long> = emptyMap(),
+        pushWatermark: Long = 0L,
+        /** PR 11: `entity type -> ids` pulled from [ownerUserId], recorded in the same transaction. */
+        pulledProvenance: Map<String, Collection<String>> = emptyMap(),
     )
 
     /**
@@ -539,26 +657,29 @@ interface SyncRepository {
     ): ServerDeletionResult = ServerDeletionResult()
 
     /**
-     * Phase 3.3 (audit item #1): LWW pull merge for WorkoutSession rows.
-     *
-     * Replaces the legacy INSERT OR IGNORE behavior (`mergeAllPullData`)
-     * which silently dropped server-newer rows. For each session, the
-     * implementation reads the existing local `updatedAt`, compares to
-     * `updatedAtBySessionId[session.id]`, and overwrites only when the
-     * incoming timestamp is newer-or-equal. NULL existing or absent map
-     * entry is treated as older (accept incoming) so first-time pulls
-     * always write.
+     * PR 10 step 13: pull merge for WorkoutSession rows owned by the portal
+     * (`portalOrigin = 1`). Formerly named `mergeSessionsLww`; the merge is no
+     * longer LWW because `WorkoutSession.updatedAt` on a pulled row is a *device*
+     * watermark ([pushWatermark]), not the portal's clock — comparing it to
+     * `updatedAtBySessionId` (server clock) is a cross-clock comparison and was
+     * dropped. Portal-origin rows are server-owned for content; local captures
+     * (`portalOrigin = 0`) are excluded by the accept gate and keep their data.
      *
      * `updatedAtBySessionId` is the authoritative server timestamp that
      * portal-sync-pull returns on `PullWorkoutSessionDto.updatedAt`. It
      * is keyed on the per-exercise WorkoutSession.id (which equals the
      * portal exercise id; one portal session expands to N mobile rows).
      *
+     * Inserted rows are stamped with [pushWatermark] (PR 10 step 5) so a pulled
+     * session is never pushed back. The narrow projection update
+     * (`updatePortalSessionProjection`) writes the same watermark (step 12).
+     *
      * Default no-op so unrelated test fakes do not need to implement.
      */
-    suspend fun mergeSessionsLww(
+    suspend fun mergePulledSessions(
         sessions: List<WorkoutSession>,
         updatedAtBySessionId: Map<String, Long>,
+        pushWatermark: Long = 0L,
     ) {
         // Default no-op for fakes / older implementations.
     }

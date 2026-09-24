@@ -888,7 +888,7 @@ class SyncManagerProfilePreferencesTest {
     fun `ordinary merge failure keeps earlier preference commit and checkpoint for retry`() =
         runTest {
             val initialLastSync = 5_000L
-            harness.tokenStorage.setLastSyncTimestamp(initialLastSync)
+            harness.tokenStorage.setPullCursor("user", harness.activeProfileId, initialLastSync)
             harness.syncRepository.atomicMergeShouldFail = true
             harness.api.pullResult = Result.success(
                 PortalSyncPullResponse(
@@ -900,16 +900,18 @@ class SyncManagerProfilePreferencesTest {
             val manager = harness.manager(migrationReady = { true })
 
             assertTrue(manager.retryPull().isFailure)
-            assertIs<SyncState.PartialSuccess>(manager.syncState.value)
-            assertEquals(initialLastSync, harness.tokenStorage.getLastSyncTimestamp())
+            // A pull-only retry whose pull failed publishes an Error that agrees with the
+            // failed Result (PartialSuccess would claim a push that retryPull never made).
+            assertIs<SyncState.Error>(manager.syncState.value)
+            assertEquals(initialLastSync, harness.tokenStorage.getPullCursor("user", harness.activeProfileId))
             assertEquals(1, harness.preferenceSyncRepository.appliedPulledSections.size)
 
             harness.syncRepository.atomicMergeShouldFail = false
             assertTrue(manager.retryPull().isSuccess)
             assertEquals(2, harness.preferenceSyncRepository.pullApplyCallCount)
             assertEquals(
-                1_783_771_200_000L,
-                harness.tokenStorage.getLastSyncTimestamp(),
+                1_783_771_200_000L - SyncManager.PULL_CURSOR_OVERLAP_MS,
+                harness.tokenStorage.getPullCursor("user", harness.activeProfileId),
             )
             assertEquals(1, harness.syncRepository.atomicMergeCallCount)
         }
@@ -955,6 +957,8 @@ class SyncManagerProfilePreferencesTest {
         val preferenceSyncRepository = FakeProfilePreferenceSyncRepository()
         val externalActivityRepository = FakeExternalActivityRepository()
         val velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository()
+        val activeProfileId: String
+            get() = requireNotNull(profileRepository.activeProfile.value?.id)
 
         init {
             profileRepository.setActiveProfileForTest("profile-a")

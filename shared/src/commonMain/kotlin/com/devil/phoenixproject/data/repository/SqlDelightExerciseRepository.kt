@@ -156,6 +156,8 @@ class SqlDelightExerciseRepository(
                 preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
                 Logger.d { "Successfully imported $importedCount exercises" }
             }
+            // Data-gated (F-030): one indexed existence check, and the rewrite only runs when
+            // a row still references an archived catalogue id.
             exerciseImporter.remapLegacyCatalogueIds()
             Result.success(Unit)
         } catch (e: Exception) {

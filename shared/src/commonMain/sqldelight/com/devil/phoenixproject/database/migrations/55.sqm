@@ -1,0 +1,9 @@
+-- Migration 55: indexes for routine-group sync lookups and the legacy catalogue remap.
+-- Only columns every migrated database is guaranteed to have: WorkoutSession.routineSessionId
+-- (original schema) and RoutineExercise.exerciseId (rebuilt by 3.sqm/10.sqm).
+-- The profile-scoped indexes idx_session_profile_ts and idx_session_exercise are created by
+-- the post-open heal (SchemaManifest.manifestIndexes) instead: WorkoutSession.profile_id is a
+-- heal-only column (see 21.sqm), and onUpgrade runs before reconcileFullSchema, so a numbered
+-- migration that references it fails the database open on an unreconciled install.
+CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId);
+CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId);

@@ -666,7 +666,6 @@ fun WorkoutTab(
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
                         lastUsedWeight = workoutParameters.lastUsedWeightKg,
-                        prWeight = workoutParameters.prWeightKg,
                         formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410

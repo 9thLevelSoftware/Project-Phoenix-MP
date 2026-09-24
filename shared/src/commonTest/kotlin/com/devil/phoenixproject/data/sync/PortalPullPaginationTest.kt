@@ -231,7 +231,7 @@ class PortalPullPaginationTest {
         // The empty page's cursor is followed; the server repeating it trips the
         // repeated-cursor guard, which fails the pull instead of looping forever.
         assertIs<SyncState.PartialSuccess>(manager.syncState.value, "repeated cursor is a pull failure")
-        assertEquals(0L, tokenStorage.getLastSyncTimestamp(), "lastSync must not advance over unfetched pages")
+        assertEquals(0L, tokenStorage.getPullCursor("user-123", "default"), "lastSync must not advance over unfetched pages")
         assertEquals(
             2,
             fakeApi.pullCallCount,
@@ -276,7 +276,7 @@ class PortalPullPaginationTest {
     fun pullFailureOnSecondPageRestartsFromBeginningNextSync() = runTest {
         authenticate()
         val initial = 5000L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPullCursor("user-123", "default", initial)
 
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
@@ -296,7 +296,7 @@ class PortalPullPaginationTest {
         // lastSync must NOT advance when any page fails
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
+            tokenStorage.getPullCursor("user-123", "default"),
             "A failed page keeps lastSync at its pre-sync value so next sync re-sends the cursor from scratch",
         )
     }
@@ -304,12 +304,13 @@ class PortalPullPaginationTest {
     @Test
     fun pull429WithRetryAfterRetriesSameCursorAndCompletes() = runTest {
         authenticate()
-        val finalSyncTime = 3L
+        val page1SyncTime = 1_740_000_000_000L
+        val finalSyncTime = page1SyncTime + 3
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
             Result.success(
                 PortalSyncPullResponse(
-                    syncTime = 1L,
+                    syncTime = page1SyncTime,
                     hasMore = true,
                     nextCursor = "page-2",
                     routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
@@ -334,8 +335,11 @@ class PortalPullPaginationTest {
             fakeApi.pullCallCursors,
             "429 retry must re-request the same page cursor",
         )
-        // Stored lastSync is the earliest page syncTime of the pull (page 1 here).
-        assertEquals(1L, tokenStorage.getLastSyncTimestamp(), "completed pull should advance lastSync")
+        assertEquals(
+            page1SyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "completed pull stores the first page's syncTime minus the overlap",
+        )
         assertTrue(currentTime >= 1_000L, "retry-after delay should be honored before the retry")
     }
 
@@ -343,7 +347,7 @@ class PortalPullPaginationTest {
     fun pull429BeyondRetryCapFailsAndKeepsLastSync() = runTest {
         authenticate()
         val initialSyncTime = 7_000L
-        tokenStorage.setLastSyncTimestamp(initialSyncTime)
+        tokenStorage.setPullCursor("user-123", "default", initialSyncTime)
         fakeApi.pullResultsQueue = mutableListOf(
             Result.success(
                 PortalSyncPullResponse(
@@ -371,18 +375,19 @@ class PortalPullPaginationTest {
             "every capped retry should stay on the same page cursor",
         )
         assertEquals(5, fakeApi.pullCallCount, "page 2 should be attempted once plus three retries after page 1")
-        assertEquals(initialSyncTime, tokenStorage.getLastSyncTimestamp(), "failed pull must not advance lastSync")
+        assertEquals(initialSyncTime, tokenStorage.getPullCursor("user-123", "default"), "failed pull must not advance lastSync")
         assertTrue(currentTime >= 3_000L, "only the capped retries should incur Retry-After waits")
     }
 
     @Test
     fun pull503WithRetryAfterRetriesSameCursorAndCompletes() = runTest {
         authenticate()
-        val finalSyncTime = 9L
+        val page1SyncTime = 1_740_000_000_000L
+        val finalSyncTime = page1SyncTime + 9
         fakeApi.pullResultsQueue = mutableListOf(
             Result.success(
                 PortalSyncPullResponse(
-                    syncTime = 1L,
+                    syncTime = page1SyncTime,
                     hasMore = true,
                     nextCursor = "page-2",
                     routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
@@ -407,7 +412,11 @@ class PortalPullPaginationTest {
             fakeApi.pullCallCursors,
             "503 retry must re-request the same cursor",
         )
-        assertEquals(1L, tokenStorage.getLastSyncTimestamp(), "earliest page syncTime is stored")
+        assertEquals(
+            page1SyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "completed pull stores the first page's syncTime minus the overlap",
+        )
         assertTrue(currentTime >= 1_000L, "503 retry-after delay should be honored")
     }
 
@@ -471,7 +480,7 @@ class PortalPullPaginationTest {
         assertNotNull(known, "Pull must send knownEntityIds (parity sync)")
         assertEquals(listOf(s1, s2), known.sessionIds)
         assertEquals(listOf(r1), known.routineIds)
-        assertEquals(emptyList<String>(), known.cycleIds)
+        assertEquals(listOf(SyncManager.NIL_UUID_SENTINEL), known.cycleIds, "an empty known-id list sends the nil-UUID sentinel (R-22)")
         assertEquals(listOf(b1, b2), known.badgeIds)
         assertEquals(
             listOf(pr1),
@@ -565,10 +574,47 @@ class PortalPullPaginationTest {
         assertEquals(2, fakeApi.pullKnownEntityIdsHistory.size)
         assertEquals(listOf(localPr), fakeApi.pullKnownEntityIdsHistory[0].personalRecordIds)
         assertEquals(
-            listOf(localPr, page1Pr),
+            listOf(page1Pr, localPr),
             fakeApi.pullKnownEntityIdsHistory[1].personalRecordIds,
-            "IDs merged on page 1 must be sent on page 2 so a stuck cursor cannot replay them",
+            "IDs merged on page 1 must be sent on page 2 (newest first) so a stuck cursor cannot replay them",
         )
+    }
+
+    @Test
+    fun pagedPersonalRecordIdsSurviveTheParityCapWhenTheProfileIsAlreadyAtTheCap() = runTest {
+        // codex #856 P2: at MAX_PARITY_IDS local PRs, an id appended after page 1 was
+        // dropped by the cap, so page 2 re-delivered it until MAX_PAGES.
+        authenticate()
+        fakeSyncRepo.personalRecordIds = List(SyncConfig.MAX_PARITY_IDS) { i ->
+            "00000000-0000-4000-8000-" + i.toString().padStart(12, '0')
+        }
+        val page1Pr = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "pr-page-2",
+                    personalRecords = listOf(
+                        PullPersonalRecordDto(
+                            id = page1Pr,
+                            userId = "user-123",
+                            exerciseName = "Bench",
+                            updatedAt = "2026-07-08T14:24:09.648091+00:00",
+                        ),
+                    ),
+                ),
+            ),
+            Result.success(PortalSyncPullResponse(syncTime = 2L, hasMore = false)),
+        )
+
+        createManager().sync()
+
+        assertEquals(2, fakeApi.pullKnownEntityIdsHistory.size)
+        val page2 = fakeApi.pullKnownEntityIdsHistory[1].personalRecordIds
+        assertEquals(SyncConfig.MAX_PARITY_IDS, page2.size, "the request stays within the server cap")
+        assertTrue(page1Pr in page2, "page 1's id must survive the cap on page 2's request")
     }
 
     @Test
@@ -616,7 +662,8 @@ class PortalPullPaginationTest {
         }
 
         val totalSessionIds = SyncConfig.MAX_PARITY_IDS + 500
-        val bigSet = List(totalSessionIds) { fakeUuid(it) }
+        // Production getKnownPortalSessionIds returns newest-first; capParity then take()s.
+        val bigSet = List(totalSessionIds) { fakeUuid(it) }.reversed()
         fakeSyncRepo.sessionIds = bigSet
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
@@ -629,9 +676,9 @@ class PortalPullPaginationTest {
             known.sessionIds.size,
             "Large knownEntityIds payloads must be capped at MAX_PARITY_IDS to avoid server 413",
         )
-        // capParity() uses takeLast(), so the window is the most recent IDs.
-        assertEquals(fakeUuid(totalSessionIds - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
-        assertEquals(fakeUuid(totalSessionIds - 1), known.sessionIds.last())
+        // Newest-first list + take() keeps the most recent window.
+        assertEquals(fakeUuid(totalSessionIds - 1), known.sessionIds.first())
+        assertEquals(fakeUuid(totalSessionIds - SyncConfig.MAX_PARITY_IDS), known.sessionIds.last())
     }
 
     @Test
@@ -747,9 +794,9 @@ class PortalPullPaginationTest {
         assertTrue(result.isSuccess, "101-page pull with distinct cursors should succeed")
         assertEquals(pageCount, fakeApi.pullCallCount, "Should fire once per page")
         assertEquals(
-            1_740_000_000_000L,
-            tokenStorage.getLastSyncTimestamp(),
-            "Stored sync timestamp should be the earliest (first) page's syncTime",
+            1_740_000_000_000L - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "Stored pull cursor is the first page's syncTime minus the overlap",
         )
     }
 
@@ -759,7 +806,7 @@ class PortalPullPaginationTest {
         // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
         authenticate()
         val initial = 5000L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPullCursor("user-123", "default", initial)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         fakeApi.pullResultsQueue = mutableListOf(
@@ -796,7 +843,7 @@ class PortalPullPaginationTest {
         assertEquals(2, fakeApi.pullCallCount, "Two pages fetched before cursor repetition detected")
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
+            tokenStorage.getPullCursor("user-123", "default"),
             "Repeated cursor must not advance lastSync",
         )
     }
@@ -807,7 +854,7 @@ class PortalPullPaginationTest {
         // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
         authenticate()
         val initial = 5000L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPullCursor("user-123", "default", initial)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         fakeApi.pullResultsQueue = mutableListOf(
@@ -836,7 +883,7 @@ class PortalPullPaginationTest {
         assertEquals(1, fakeApi.pullCallCount, "One page fetched before blank cursor detected")
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
+            tokenStorage.getPullCursor("user-123", "default"),
             "Blank cursor must not advance lastSync",
         )
     }
@@ -848,7 +895,7 @@ class PortalPullPaginationTest {
         // SyncState.PartialSuccess with diagnostic pullError and unchanged lastSync.
         authenticate()
         val initial = 5000L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPullCursor("user-123", "default", initial)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         fakeApi.pullResultsQueue = mutableListOf(
@@ -876,7 +923,7 @@ class PortalPullPaginationTest {
         )
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
+            tokenStorage.getPullCursor("user-123", "default"),
             "Null cursor + hasMore=true must not advance lastSync",
         )
         assertEquals(1, fakeApi.pullCallCount)
@@ -911,9 +958,7 @@ class PortalPullPaginationTest {
         )
     }
 
-    // ==================== Delta pull: stored lastSync on the wire ====================
-
-    private val deltaKey = "user-123:default"
+    // ==================== Pull cursor on the wire ====================
 
     private fun routinePage(
         syncTime: Long,
@@ -931,10 +976,10 @@ class PortalPullPaginationTest {
     )
 
     @Test
-    fun deltaPullSendsStoredSyncTimeOnEveryPageAndStoresEarliestPageSyncTime() = runTest {
+    fun pullCursorSendsStoredValueOnEveryPageAndStoresFirstPageMinusOverlap() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.recordCompletedPull(stored, deltaKey)
+        tokenStorage.recordCompletedPull("user-123", "default", stored)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
             routinePage(stored + 10, "r1", nextCursor = "c1"),
@@ -944,11 +989,10 @@ class PortalPullPaginationTest {
         val manager = createManager()
         manager.sync()
 
-        assertEquals(listOf(stored, stored), fakeApi.pullCallLastSyncs, "every page carries the stored syncTime")
-        assertEquals(stored, tokenStorage.getLastSyncTimestamp(), "a failed page must not advance lastSync")
-        assertEquals(deltaKey, tokenStorage.getDeltaPullKey(), "a failed pull leaves the marker untouched")
+        assertEquals(listOf(stored, stored), fakeApi.pullCallLastSyncs, "every page carries the stored pull cursor")
+        assertEquals(stored, tokenStorage.getPullCursor("user-123", "default"), "a failed page must not advance the pull cursor")
 
-        // A long pull: the last page is served more than the 2-minute server overlap after the first.
+        // A long pull: the last page is served more than the overlap window after the first.
         val firstPageSyncTime = stored + 20
         val lastPageSyncTime = firstPageSyncTime + 10 * 60_000L
         fakeApi.pullCallLastSyncs.clear()
@@ -960,83 +1004,80 @@ class PortalPullPaginationTest {
         manager.sync()
 
         assertEquals(listOf(stored, stored, stored), fakeApi.pullCallLastSyncs, "no page syncTime is sent mid-pull")
+        val expectedCursor = firstPageSyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS
         assertEquals(
-            firstPageSyncTime,
-            tokenStorage.getLastSyncTimestamp(),
-            "stored lastSync is the earliest page syncTime, so rows edited during the pull are re-sent next time",
+            expectedCursor,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "stored pull cursor is the first page's syncTime minus the overlap, so rows edited during the pull are re-sent next time",
         )
-        assertEquals(firstPageSyncTime, manager.lastSyncTime.value)
+        assertEquals(expectedCursor, manager.lastSyncTime.value)
 
         fakeApi.pullCallLastSyncs.clear()
         fakeApi.pullResultsQueue = mutableListOf(routinePage(lastPageSyncTime + 1, "r4"))
         manager.sync()
-        assertEquals(listOf(firstPageSyncTime), fakeApi.pullCallLastSyncs, "next pull sends the newly stored syncTime")
+        assertEquals(listOf(expectedCursor), fakeApi.pullCallLastSyncs, "next pull sends the newly stored pull cursor")
     }
 
     @Test
-    fun firstPullAfterUpgradeSendsZeroUntilOneFullPullCompletes() = runTest {
+    fun firstPullWithNoCursorSendsZeroThenStoresAndReuses() = runTest {
         authenticate()
-        // Stored by an older build that always pulled with lastSync=0: no delta-pull marker.
-        val stored = 1_740_000_000_000L
-        tokenStorage.setLastSyncTimestamp(stored)
-        assertNull(tokenStorage.getDeltaPullKey())
+        assertEquals(0L, tokenStorage.getPullCursor("user-123", "default"))
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         val manager = createManager()
 
-        // Upgrade full pull fails: marker is not set, so the next sync retries the full pull.
+        // A failed pull leaves the cursor at 0, so the next pull is still a full pull.
         fakeApi.pullResultsQueue = mutableListOf(Result.failure(PortalApiException("boom", null, 500)))
         manager.sync()
-        assertNull(tokenStorage.getDeltaPullKey())
-        assertEquals(stored, tokenStorage.getLastSyncTimestamp())
+        assertEquals(0L, tokenStorage.getPullCursor("user-123", "default"))
 
-        val finalSyncTime = stored + 100
+        val finalSyncTime = 1_740_000_000_000L
         fakeApi.pullResultsQueue = mutableListOf(routinePage(finalSyncTime, "r1"))
         manager.sync()
-        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+        val expectedCursor = finalSyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS
+        assertEquals(expectedCursor, tokenStorage.getPullCursor("user-123", "default"))
 
         fakeApi.pullResultsQueue = mutableListOf(routinePage(finalSyncTime + 1, "r2"))
         manager.sync()
 
         assertEquals(
-            listOf(0L, 0L, finalSyncTime),
+            listOf(0L, 0L, expectedCursor),
             fakeApi.pullCallLastSyncs,
-            "full lastSync=0 pull until one completes after upgrade, then the stored syncTime",
+            "a profile with no cursor sends 0; after one complete pull it reuses the stored cursor",
         )
     }
 
     @Test
-    fun pullForDifferentProfileThanStoredLastSyncSendsZero() = runTest {
+    fun pullForDifferentProfileUsesItsOwnCursor() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.recordCompletedPull(stored, "user-123:profile-a")
-        fakeUserProfileRepo.setActiveProfileForTest(id = "profile-b")
-        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
-        fakeApi.pullResultsQueue = mutableListOf(routinePage(stored + 5, "r1"), routinePage(stored + 6, "r2"))
-
-        val manager = createManager()
-        manager.sync()
-        manager.sync()
-
-        assertEquals(
-            listOf(0L, stored + 5),
-            fakeApi.pullCallLastSyncs,
-            "a lastSync produced by another profile's pull must not skip this profile's known rows",
-        )
-        assertEquals("user-123:profile-b", tokenStorage.getDeltaPullKey())
-    }
-
-    @Test
-    fun pullForDifferentUserThanStoredLastSyncSendsZero() = runTest {
-        authenticate()
-        val stored = 1_740_000_000_000L
-        tokenStorage.recordCompletedPull(stored, "other-user:default")
+        // A cursor stored under a different profile id must not leak into this profile's pull.
+        tokenStorage.recordCompletedPull("user-123", "profile-other", stored)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(routinePage(stored + 5, "r1"))
 
         createManager().sync()
 
-        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs, "another account's lastSync must not be sent")
-        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs, "this profile has no cursor, so it sends 0")
+        assertEquals(stored, tokenStorage.getPullCursor("user-123", "profile-other"), "the other profile's cursor is untouched")
+        assertEquals(
+            (stored + 5) - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "this profile stores its own cursor from its own pull",
+        )
+    }
+
+    @Test
+    fun pullForDifferentUserUsesItsOwnCursor() = runTest {
+        authenticate()
+        val stored = 1_740_000_000_000L
+        tokenStorage.recordCompletedPull("other-user", "default", stored)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(routinePage(stored + 5, "r1"))
+
+        createManager().sync()
+
+        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs, "another account's cursor must not be sent")
+        assertEquals(stored, tokenStorage.getPullCursor("other-user", "default"), "the other account's cursor is untouched")
     }
 
     @Test
@@ -1044,7 +1085,7 @@ class PortalPullPaginationTest {
         // e.g. page 2 carries only customExercises (not decoded by mobile) with hasMore=true.
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
+        tokenStorage.setPullCursor("user-123", "default", stored) // upgrade state: no marker
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         val page1SyncTime = stored + 10
         fakeApi.pullResultsQueue = mutableListOf(
@@ -1059,15 +1100,18 @@ class PortalPullPaginationTest {
         assertEquals(3, fakeApi.pullCallCount, "the empty page's cursor is followed to the final page")
         assertEquals(listOf(null, "customExercises-c1", "customExercises-c2"), fakeApi.pullCallCursors)
         assertIs<SyncState.Success>(manager.syncState.value)
-        assertEquals(page1SyncTime, tokenStorage.getLastSyncTimestamp(), "completed pull stores page 1's syncTime")
-        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+        assertEquals(
+            page1SyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+            "completed pull stores page 1's syncTime minus the overlap",
+        )
     }
 
     @Test
     fun pagesWithOnlyDurableDeletionOrOwnershipEventAreFollowedToCompletion() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
+        tokenStorage.setPullCursor("user-123", "default", stored) // upgrade state: no marker
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         val firstPageSyncTime = stored + 10
         fakeApi.pullResultsQueue = mutableListOf(
@@ -1112,15 +1156,17 @@ class PortalPullPaginationTest {
         assertEquals(listOf(null, "deletions-c1", "ownership-c2"), fakeApi.pullCallCursors)
         assertEquals(listOf("ownership-1"), appliedOwnershipMutationIds)
         assertIs<SyncState.Success>(manager.syncState.value)
-        assertEquals(firstPageSyncTime, tokenStorage.getLastSyncTimestamp())
-        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+        assertEquals(
+            firstPageSyncTime - SyncManager.PULL_CURSOR_OVERLAP_MS,
+            tokenStorage.getPullCursor("user-123", "default"),
+        )
     }
 
     @Test
     fun emptyPageWithHasMoreThenFailureDoesNotAdvanceLastSyncOrMarker() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
+        tokenStorage.setPullCursor("user-123", "default", stored) // upgrade state: no marker
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
             routinePage(stored + 10, "r1", nextCursor = "c1"),
@@ -1131,15 +1177,14 @@ class PortalPullPaginationTest {
         manager.sync()
 
         assertIs<SyncState.PartialSuccess>(manager.syncState.value, "hasMore=true without a cursor fails the pull")
-        assertEquals(stored, tokenStorage.getLastSyncTimestamp(), "unfetched pages must not be skipped by lastSync")
-        assertNull(tokenStorage.getDeltaPullKey(), "marker must not be set by an incomplete pull")
+        assertEquals(stored, tokenStorage.getPullCursor("user-123", "default"), "unfetched pages must not be skipped by the pull cursor")
     }
 
     @Test
     fun truncatedExternalActivitiesForceTheNextPullToBeFull() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
-        tokenStorage.recordCompletedPull(stored, deltaKey)
+        tokenStorage.recordCompletedPull("user-123", "default", stored)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
             routinePage(stored + 10, "r1", externalActivitiesHasMore = true),
@@ -1149,13 +1194,13 @@ class PortalPullPaginationTest {
 
         val manager = createManager()
         manager.sync()
-        assertEquals(stored + 10, tokenStorage.getLastSyncTimestamp(), "push bound still advances")
-        assertNull(tokenStorage.getDeltaPullKey(), "truncated external activities drop the delta marker")
+        assertEquals(0L, tokenStorage.getPullCursor("user-123", "default"), "truncated external activities reset the pull cursor for a full re-pull")
 
         manager.sync()
         manager.sync()
+        val secondPageCursor = (stored + 20) - SyncManager.PULL_CURSOR_OVERLAP_MS
         assertEquals(
-            listOf(stored, 0L, stored + 20),
+            listOf(stored, 0L, secondPageCursor),
             fakeApi.pullCallLastSyncs,
             "after a truncated pull the next pull is a full lastSync=0 pull, then delta again",
         )

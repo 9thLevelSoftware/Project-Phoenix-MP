@@ -5,7 +5,7 @@ import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
-import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -16,13 +16,15 @@ import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
+    private lateinit var driver: app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
     private lateinit var database: PhoenixDatabase
     private lateinit var importer: ExerciseImporter
     private lateinit var repository: SqlDelightExerciseRepository
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         importer = ExerciseImporter(database)
         repository = SqlDelightExerciseRepository(
             database,
@@ -849,6 +851,59 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `importExercises remaps only when a row still references an archived catalogue id`() = runTest {
+        val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
+        // Catalogue already imported, so importExercises() only decides whether to remap.
+        prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+        val repo = SqlDelightExerciseRepository(database, importer, prefs)
+        val legacy = "ZZ92N8QsBdp6HCh3"
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        insertExercise(id = legacy, name = "Bench Press", muscleGroup = "Chest", equipment = "BAR", archived = 1L)
+        insertExercise(id = replacement, name = "Barbell Bench Press - Medium Grip", muscleGroup = "Chest", equipment = "BAR")
+        fun legacyPrCount() = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId(legacy)
+            .executeAsList()
+            .size
+        fun pending() = database.phoenixDatabaseQueries.selectArchivedStockExerciseIdsNeedingRemap().executeAsList()
+
+        insertPr(exerciseId = legacy, exerciseName = "Bench Press", weight = 80.0)
+        assertEquals(listOf(legacy), pending())
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(0, legacyPrCount(), "the first import remaps")
+
+        // Steady state: the gate finds nothing, so the remap does no work.
+        assertEquals(emptyList(), pending())
+        assertEquals(0, importer.remapLegacyCatalogueIds())
+        assertTrue(repo.importExercises().isSuccess)
+
+        // A row that arrives later still naming the legacy id (pull, restore) is healed.
+        insertPr(exerciseId = legacy, exerciseName = "Bench Press", weight = 70.0, prType = "MAX_VOLUME")
+        assertEquals(listOf(legacy), pending())
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(0, legacyPrCount(), "a late legacy-id row is remapped on the next call")
+        assertEquals(emptyList(), pending())
+    }
+
+    @Test
+    fun `the post-write heal propagates cancellation instead of swallowing it`() {
+        val cancelling = PhoenixDatabase(
+            object : app.cash.sqldelight.db.SqlDriver by driver {
+                override fun <R> executeQuery(
+                    identifier: Int?,
+                    sql: String,
+                    mapper: (app.cash.sqldelight.db.SqlCursor) -> app.cash.sqldelight.db.QueryResult<R>,
+                    parameters: Int,
+                    binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?,
+                ): app.cash.sqldelight.db.QueryResult<R> =
+                    throw kotlin.coroutines.cancellation.CancellationException("caller cancelled")
+            },
+        )
+        kotlin.test.assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
+            com.devil.phoenixproject.data.local.LegacyCatalogueRemapper.healAfterBulkWrite(cancelling, source = "test")
+        }
+    }
+
+    @Test
     fun `reimport keeps overlay name and aliases and preserves user fields`() = runTest {
         // Seed an older row carrying user data and the pre-rename name.
         insertExercise(
@@ -1017,6 +1072,45 @@ class SqlDelightExerciseRepositoryTest {
             "Locally Edited Name",
             database.phoenixDatabaseQueries.selectExerciseById("One_Leg_Barbell_Squat").executeAsOne().name,
         )
+    }
+
+    @Test
+    fun `a failed remap rolls back and is retried by the next call`() = runTest {
+        val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
+        prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+        val repo = SqlDelightExerciseRepository(database, importer, prefs)
+        val legacy = "ZZ92N8QsBdp6HCh3"
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        insertExercise(
+            id = legacy,
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+            timesPerformed = 4L,
+        )
+        insertExercise(id = replacement, name = "Barbell Bench Press - Medium Grip", muscleGroup = "Chest", equipment = "BAR")
+        insertPr(exerciseId = legacy, exerciseName = "Bench Press", weight = 80.0)
+        // The PR rewrite runs after the user-field merge in the same transaction; abort it.
+        executeRaw(
+            "CREATE TRIGGER abort_pr_remap BEFORE UPDATE OF exerciseId ON PersonalRecord " +
+                "BEGIN SELECT RAISE(ABORT, 'injected remap failure'); END",
+        )
+
+        assertTrue(repo.importExercises().isFailure)
+        // Atomic: the earlier user-field merge rolled back with the failed PR rewrite.
+        assertEquals(4, repository.getExerciseById(legacy)!!.timesPerformed)
+        assertEquals(0, repository.getExerciseById(replacement)!!.timesPerformed)
+        assertEquals(1, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId(legacy).executeAsList().size)
+
+        executeRaw("DROP TRIGGER abort_pr_remap")
+        assertTrue(repo.importExercises().isSuccess)
+        assertEquals(4, repository.getExerciseById(replacement)!!.timesPerformed)
+        assertTrue(database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId(legacy).executeAsList().isEmpty())
+    }
+
+    private fun executeRaw(sql: String) {
+        driver.execute(null, sql, 0)
     }
 
     private fun insertPr(

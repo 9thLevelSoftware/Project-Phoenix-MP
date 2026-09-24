@@ -727,6 +727,23 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
         }
     }
 
+    override suspend fun restampPendingCycleDeletion(cycleId: String, at: Long) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: return@transaction
+                if (cycle.deletedAt == null) return@transaction
+                val deletedAt = nextEditTimestamp(cycleId, at)
+                queries.softDeleteTrainingCycle(deletedAt = deletedAt, updatedAt = deletedAt, id = cycleId)
+                queries.markCycleDeletionPending(
+                    profileId = cycle.profile_id,
+                    accountId = null,
+                    deletedAt = deletedAt,
+                    cycleId = cycleId,
+                )
+            }
+        }
+    }
+
     // ==================== Cycle Days ====================
 
     override suspend fun getCycleDays(cycleId: String): List<CycleDay> = withContext(Dispatchers.IO) {

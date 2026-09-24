@@ -804,6 +804,12 @@ data class PortalDeletedCycleDto(
 data class PortalSyncPayload(
     val deviceId: String,
     val platform: String = "android",
+    /**
+     * Device-clock push watermark for this profile. The portal's push handler
+     * declares this field but never reads it (verified against `mobile-sync-push`):
+     * it is contract-inert, kept only for wire compatibility. The pull cursor is
+     * the field the portal actually honours, and it is sent on the *pull* request.
+     */
     val lastSync: Long,
     val sessions: List<PortalWorkoutSessionDto> = emptyList(),
     val telemetry: List<PortalRepTelemetryDto> = emptyList(),

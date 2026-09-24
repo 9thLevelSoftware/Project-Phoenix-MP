@@ -16,7 +16,7 @@ import kotlin.test.assertNull
  * placeholder on v0.9.2.
  *
  * Regression coverage for the LWW preservation guard added to
- * SqlDelightSyncRepository.mergeSessionsLww: when an incoming pull
+ * SqlDelightSyncRepository.mergePulledSessions: when an incoming pull
  * row has null detailed metric columns but the existing local row
  * has captured non-null metrics, the local values must be preserved
  * instead of being overwritten with null. This is the exact
@@ -43,7 +43,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves local peakForceConcentric when incoming is null`() = runTest {
+    fun `mergePulledSessions preserves local peakForceConcentric when incoming is null`() = runTest {
         setUp()
 
         // GIVEN: A locally recorded session with non-null detailed metrics.
@@ -99,7 +99,7 @@ class Issue591SyncLwwTest {
             // All metric fields are null on the incoming pull.
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(incoming),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -124,7 +124,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves all locally captured force metrics`() = runTest {
+    fun `mergePulledSessions preserves all locally captured force metrics`() = runTest {
         setUp()
 
         // GIVEN: A locally recorded session with true peak values and
@@ -168,7 +168,7 @@ class Issue591SyncLwwTest {
             avgForceConcentricB = 33f,
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(incoming),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -185,7 +185,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves biomechanics fields when incoming is null`() = runTest {
+    fun `mergePulledSessions preserves biomechanics fields when incoming is null`() = runTest {
         setUp()
 
         val sessionId = "issue-591-set-3"
@@ -220,7 +220,7 @@ class Issue591SyncLwwTest {
             exerciseName = "Bench Press",
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(incoming),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -237,7 +237,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww first-time pull with null metrics stores nulls - no preservation possible`() = runTest {
+    fun `mergePulledSessions first-time pull with null metrics stores nulls - no preservation possible`() = runTest {
         setUp()
 
         // No existing local row.
@@ -254,7 +254,7 @@ class Issue591SyncLwwTest {
             // No metrics.
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(incoming),
             updatedAtBySessionId = mapOf(sessionId to now),
         )
@@ -321,7 +321,7 @@ class Issue591SyncLwwTest {
             routineSessionId = portalParentId,
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(historicalProjection),
             updatedAtBySessionId = mapOf(componentId to now - 60_000L),
         )
@@ -329,7 +329,7 @@ class Issue591SyncLwwTest {
         val incoming = pulledSession(componentId, cableCount = 2)
         assertEquals(componentId, incoming.id)
         assertEquals(portalParentId, incoming.routineSessionId)
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(incoming),
             updatedAtBySessionId = mapOf(componentId to now + 60_000L),
         )
@@ -343,15 +343,15 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww stores pulled double cableCount over a portal-origin null`() = runTest {
+    fun `mergePulledSessions stores pulled double cableCount over a portal-origin null`() = runTest {
         setUp()
         val sessionId = "pr29-cable-2-over-null"
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(pulledSession(sessionId, cableCount = null)),
             updatedAtBySessionId = mapOf(sessionId to now - 60_000L),
         )
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(pulledSession(sessionId, cableCount = 2)),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -362,12 +362,12 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww does not replace a locally captured unknown cableCount`() = runTest {
+    fun `mergePulledSessions does not replace a locally captured unknown cableCount`() = runTest {
         setUp()
         val sessionId = "pr29-local-capture-unknown"
         insertLocalSession(localRowSession(sessionId, cableCount = null), updatedAt = now - 60_000L)
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(pulledSession(sessionId, cableCount = 2)),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -377,11 +377,11 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww inserts pulled double cableCount on a fresh device`() = runTest {
+    fun `mergePulledSessions inserts pulled double cableCount on a fresh device`() = runTest {
         setUp()
         val sessionId = "pr29-cable-2-fresh"
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(pulledSession(sessionId, cableCount = 2)),
             updatedAtBySessionId = mapOf(sessionId to now),
         )
@@ -392,12 +392,12 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww keeps local double cableCount when pulled cableCount is null`() = runTest {
+    fun `mergePulledSessions keeps local double cableCount when pulled cableCount is null`() = runTest {
         setUp()
         val sessionId = "pr29-null-over-cable-2"
         insertLocalSession(localRowSession(sessionId, cableCount = 2), updatedAt = now - 60_000L)
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = listOf(pulledSession(sessionId, cableCount = null)),
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
@@ -408,7 +408,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww updates portal origin without deleting metric children`() = runTest {
+    fun `mergePulledSessions updates portal origin without deleting metric children`() = runTest {
         setUp()
         val first = WorkoutSession(
             id = "portal-lww-child",
@@ -419,7 +419,7 @@ class Issue591SyncLwwTest {
             exerciseName = "Press",
             profileId = testProfileId,
         )
-        repository.mergeSessionsLww(listOf(first), mapOf(first.id to now))
+        repository.mergePulledSessions(listOf(first), mapOf(first.id to now))
         database.phoenixDatabaseQueries.insertMetric(
             sessionId = first.id,
             timestamp = now,
@@ -433,7 +433,7 @@ class Issue591SyncLwwTest {
             status = 0L,
         )
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             listOf(first.copy(duration = 20_000L)),
             mapOf(first.id to now + 1_000L),
         )
@@ -444,7 +444,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves local origin facts and tombstone`() = runTest {
+    fun `mergePulledSessions preserves local origin facts and tombstone`() = runTest {
         setUp()
         val local = WorkoutSession(
             id = "local-lww-capture",
@@ -460,7 +460,7 @@ class Issue591SyncLwwTest {
         insertLocalSession(local, updatedAt = now)
         database.phoenixDatabaseQueries.softDeleteSession(now + 1_000L, now + 1_000L, local.id)
 
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             listOf(
                 local.copy(
                     weightPerCableKg = 1f,
@@ -547,7 +547,7 @@ class Issue591SyncLwwTest {
      * preserves its locally captured metric column.
      */
     @Test
-    fun `mergeSessionsLww chunked batch lookup preserves metrics across all chunks`() = runTest {
+    fun `mergePulledSessions chunked batch lookup preserves metrics across all chunks`() = runTest {
         setUp()
 
         val chunkSize = 500
@@ -591,7 +591,7 @@ class Issue591SyncLwwTest {
                 profileId = testProfileId,
             )
         }
-        repository.mergeSessionsLww(
+        repository.mergePulledSessions(
             sessions = sessions,
             updatedAtBySessionId = sessions.associate { it.id to (now + 10_000_000L + it.timestamp) },
         )

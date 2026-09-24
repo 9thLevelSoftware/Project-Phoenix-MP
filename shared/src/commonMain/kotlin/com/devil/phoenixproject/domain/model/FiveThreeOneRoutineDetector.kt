@@ -51,6 +51,56 @@ object FiveThreeOneRoutineDetector {
         exercise.setReps == shape.reps && exercise.isAMRAP == shape.isAmrap
     }
 
+    /**
+     * The routine's single 5/3/1 main lift: the only [mainLiftId] match, or else the only
+     * match with a known 5/3/1 set shape. Shared by weekly regeneration and the cycle
+     * screen's missing-training-max notice so the two can never disagree.
+     */
+    fun resolveMainLift(exercises: List<RoutineExercise>): MainLiftResolution {
+        val matches = exercises.mapIndexedNotNull { index, exercise ->
+            val liftId = mainLiftId(exercise) ?: return@mapIndexedNotNull null
+            val storedId = exercise.exercise.id ?: return@mapIndexedNotNull null
+            MainLiftResolution.Found(index, liftId, storedId, hasKnownSetShape(exercise))
+        }
+        if (matches.isEmpty()) return MainLiftResolution.None
+        matches.groupBy { it.canonicalId }.entries.firstOrNull { it.value.size > 1 }?.let { (liftId, duplicates) ->
+            return MainLiftResolution.DuplicateLift(liftId, duplicates.map { it.index })
+        }
+        val shaped = matches.filter { it.hasFiveThreeOneSetShape }
+        return when {
+            matches.size == 1 -> matches.single()
+            shaped.size == 1 -> shaped.single()
+            else -> MainLiftResolution.MultipleCandidates(matches)
+        }
+    }
+
+    /** 5/3/1 cycles get the weekly training-max bump: the 5/3/1 template, or all four main lifts present. */
+    fun isFiveThreeOneCycle(templateId: String?, routines: List<Routine>): Boolean {
+        if (templateId == TEMPLATE_531_ID) return true
+        val matchedLiftIds = routines.asSequence()
+            .flatMap { it.exercises.asSequence() }
+            .mapNotNull { knownShapeMainLiftId(it) }
+            .toSet()
+        return matchedLiftIds.containsAll(MAIN_LIFT_IDS)
+    }
+
+    const val TEMPLATE_531_ID = "template_531"
+
+    sealed interface MainLiftResolution {
+        data object None : MainLiftResolution
+
+        data class Found(
+            val index: Int,
+            val canonicalId: String,
+            val storedId: String,
+            val hasFiveThreeOneSetShape: Boolean,
+        ) : MainLiftResolution
+
+        data class DuplicateLift(val canonicalId: String, val indexes: List<Int>) : MainLiftResolution
+
+        data class MultipleCandidates(val candidates: List<Found>) : MainLiftResolution
+    }
+
     private data class FiveThreeOneSetShape(
         val reps: List<Int?>,
         val isAmrap: Boolean,

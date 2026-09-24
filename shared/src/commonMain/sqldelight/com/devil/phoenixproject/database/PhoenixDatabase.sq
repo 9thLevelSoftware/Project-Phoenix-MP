@@ -127,6 +127,16 @@ CREATE TABLE WorkoutSession (
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
 CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
+-- History/analytics list (profile filter + newest first) and the legacy catalogue remap's
+-- exerciseId rewrite. profile_id is heal-only, so upgraded installs get these two from
+-- SchemaManifest.manifestIndexes rather than a numbered migration.
+CREATE INDEX idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC);
+CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
+-- Last weight for an exercise (exerciseId + profile predicate, newest first): serves the
+-- WHERE and the ORDER BY timestamp DESC LIMIT 1 without a sort. Also heal-only (profile_id).
+CREATE INDEX idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC);
+-- Routine-group lookups and sync repair (migration 55).
+CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -281,6 +291,7 @@ CREATE TABLE RoutineExercise (
 
 CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
 CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
+CREATE INDEX idx_routine_exercise_exercise ON RoutineExercise(exerciseId);
 
 -- ==================== CONNECTION LOGS ====================
 -- BLE connection debug logs for diagnosing connectivity issues
@@ -655,10 +666,34 @@ SELECT COUNT(*) FROM Exercise;
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
 
+-- LegacyCatalogueRemapper's gate: archived stock exercises that still carry user fields or
+-- are still referenced by any table the remap rewrites. Every probe is an indexed search
+-- (IndexQueryPlanTest pins it), so the steady state (empty result) costs one pass over the
+-- archived catalogue rows. Keep the table list in step with LegacyCatalogueRemapper.
+selectArchivedStockExerciseIdsNeedingRemap:
+SELECT e.id FROM Exercise e
+WHERE e.archived = 1 AND e.isCustom = 0
+AND (
+    e.isFavorite = 1 OR e.timesPerformed > 0 OR e.lastPerformed IS NOT NULL
+    OR e.one_rep_max_kg IS NOT NULL OR e.mvtOverrideMs IS NOT NULL
+    OR EXISTS (SELECT 1 FROM WorkoutSession WHERE WorkoutSession.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM RoutineExercise WHERE RoutineExercise.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM PersonalRecord WHERE PersonalRecord.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseSignature WHERE ExerciseSignature.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM AssessmentResult WHERE AssessmentResult.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate WHERE VelocityOneRepMaxEstimate.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseMvt WHERE ExerciseMvt.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ProgressionEvent WHERE ProgressionEvent.exercise_id = e.id)
+    OR EXISTS (SELECT 1 FROM ProfileExerciseBaseline WHERE ProfileExerciseBaseline.exercise_id = e.id)
+);
+
+-- A locally recorded row becomes dirty so the corrected id reaches the portal. A pulled
+-- (portalOrigin = 1) row is server-owned and must never be pushed back, so its local
+-- projection is corrected without advancing its generation.
 reassignWorkoutSessionExerciseId:
 UPDATE WorkoutSession
 SET exerciseId = :newId,
-    local_sync_generation = local_sync_generation + 1
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE exerciseId = :oldId;
 
 reassignRoutineExerciseId:
@@ -848,11 +883,11 @@ selectSessionUpdatedAt:
 SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 
 -- Issue #591 follow-up: batch-read the existing updatedAt for a list of
--- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
+-- session ids. Used by SqlDelightSyncRepository.mergePulledSessions so the
 -- LWW gate does not issue one round-trip per incoming pull row. Returns
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, local_sync_generation, synced_sync_generation
 FROM WorkoutSession
 WHERE id IN ?;
 
@@ -915,6 +950,62 @@ selectBackupSessionsSync:
 SELECT * FROM WorkoutSession
 WHERE deletedAt IS NULL;
 
+-- Backup restore (PR 22): carry the session's sync stamp, portal-origin marker and whether
+-- the exported generation had nothing pending (acknowledged), for either origin.
+-- - Acknowledged: the portal already holds exactly this content with its rep summaries,
+--   which a backup does not carry, so it restores clean. A pulled row restores 0/0
+--   exactly as a pull inserts it; a local row as synced (synced = local generation).
+--   Re-pushing it would make replace_session_children delete that rep data.
+-- - Not acknowledged (never uploaded, or edited after its last sync or pull, pulled rows
+--   included): stays dirty (local generation >= 1 from the insert, synced 0) and uploads.
+--   Neither a stamp nor portalOrigin is proof: an edit keeps both.
+-- Idempotent: run at insert and again after child sections re-dirty the row.
+restoreSessionSyncMarkers:
+UPDATE WorkoutSession
+SET portalOrigin = :portalOrigin,
+    updatedAt = :updatedAt,
+    local_sync_generation = CASE
+        WHEN :acknowledged = 1 AND :portalOrigin = 1 THEN 0
+        ELSE MAX(local_sync_generation, 1)
+    END,
+    synced_sync_generation = CASE
+        WHEN :acknowledged = 1 AND :portalOrigin = 1 THEN 0
+        WHEN :acknowledged = 1 THEN MAX(local_sync_generation, 1)
+        ELSE 0
+    END
+WHERE id = :id;
+
+-- Backup (PR 22 x PR 20): profiles a permanent delete has already finalized. The lasting
+-- evidence is PR 20's scrub signature (scrubProfileTombstones blanks the name of every
+-- routine / cycle / PR tombstone it keeps) on a profile whose row is gone. A MERGE removes
+-- the source row too but reassigns its routines, cycles and sessions and never scrubs, so
+-- it never matches; WorkoutDeletion rows are not evidence because a merge leaves them.
+-- 'default' is never inferred: legacy databases can hold default-scoped rows without a row.
+selectRemovedProfileIds:
+SELECT DISTINCT profile_id FROM (
+    SELECT profile_id FROM Routine WHERE deletedAt IS NOT NULL AND name = ''
+    UNION SELECT profile_id FROM TrainingCycle WHERE deletedAt IS NOT NULL AND name = ''
+    UNION SELECT profile_id FROM PersonalRecord WHERE deletedAt IS NOT NULL AND exerciseName = ''
+)
+WHERE profile_id != 'default'
+  AND profile_id NOT IN (SELECT id FROM UserProfile);
+
+-- Backup (PR 22): user-owned fields on stock catalogue rows. The catalogue itself ships
+-- with the app, so only rows carrying user state are exported.
+selectStockExerciseUserFields:
+SELECT id, isFavorite, mvtOverrideMs, one_rep_max_kg FROM Exercise
+WHERE isCustom = 0
+  AND (isFavorite = 1 OR mvtOverrideMs IS NOT NULL OR one_rep_max_kg IS NOT NULL)
+ORDER BY id;
+
+-- Restore fills user fields on an existing stock row without overwriting local choices.
+restoreStockExerciseUserFields:
+UPDATE Exercise SET
+    isFavorite = CASE WHEN isFavorite = 1 OR :isFavorite = 1 THEN 1 ELSE 0 END,
+    mvtOverrideMs = COALESCE(mvtOverrideMs, :mvtOverrideMs),
+    one_rep_max_kg = COALESCE(one_rep_max_kg, :oneRepMaxKg)
+WHERE id = :id AND isCustom = 0;
+
 -- Sync/migration version for code paths that need every local row,
 -- including tombstones.
 selectAllSessionsSync:
@@ -926,6 +1017,27 @@ SELECT id FROM WorkoutSession;
 
 selectRecentSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
+
+-- F-034: the newest :limit user-visible rows (same tombstone filter and order as
+-- selectAllSessions), so the History header can observe 20 rows instead of the whole
+-- history. Served by idx_session_profile_ts.
+selectRecentVisibleSessions:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC
+LIMIT :limit;
+
+-- F-034: last per-cable weight used for one exercise in this profile (newest
+-- user-visible session). Served by idx_session_exercise_profile_ts
+-- (exerciseId, profile_id, timestamp DESC): an index search with no ORDER BY sort.
+selectLastWeightForExercise:
+SELECT weightPerCableKg FROM WorkoutSession
+WHERE profile_id = :profileId
+AND exerciseId = :exerciseId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC
+LIMIT 1;
 
 selectSessionsByRoutineSessionId:
 SELECT * FROM WorkoutSession
@@ -967,7 +1079,9 @@ ORDER BY timestamp DESC
 LIMIT 1;
 
 selectSessionIdForPersonalRecord:
-SELECT id FROM WorkoutSession
+-- The PORTAL workout id (a routine set's parent routineSessionId), which is
+-- what a pushed personalRecords.sessionId must reference.
+SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession
 WHERE exerciseId = :exerciseId
 AND timestamp = :timestamp
 AND profile_id = :profileId
@@ -1082,6 +1196,12 @@ UPDATE WorkoutSession
 SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?,
     local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
+
+-- Target reps and RPE are session-level planning/RPE fields the user can edit after
+-- the fact. Leaves the sync generation untouched: callers that mean "this row is
+-- dirty again" must also markWorkoutComponentDirty.
+updateSessionTargetRepsAndRpe:
+UPDATE WorkoutSession SET targetReps = ?, rpe = ? WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
@@ -1255,6 +1375,20 @@ softDeletePRById:
 UPDATE PersonalRecord
 SET deletedAt = :deletedAt, updatedAt = :updatedAt
 WHERE id = :id AND profile_id = :profileId AND deletedAt IS NULL;
+
+-- PR 20: a record tombstoned locally under another profile (a permanently deleted
+-- profile keeps its PR tombstones) must not be re-inserted when the portal re-scopes
+-- it to Default. uuid is globally unique, so uuid rows are already blocked by
+-- insertPRIgnore; this also covers legacy rows pushed with their numeric id.
+countDeletedPersonalRecordInOtherProfile:
+SELECT COUNT(*) FROM PersonalRecord
+WHERE profile_id != :profileId
+  AND deletedAt IS NOT NULL
+  AND (
+    uuid = :clientId OR
+    serverId = :clientId OR
+    (uuid IS NULL AND CAST(id AS TEXT) = :clientId)
+  );
 
 -- Apply a pulled PR's deletion state with tombstone-aware LWW. A newer active
 -- update may restore a deleted row; an equal-time tombstone wins.
@@ -1574,6 +1708,62 @@ SELECT * FROM AssessmentResult WHERE profile_id = :profileId ORDER BY createdAt 
 deleteAssessmentResult:
 DELETE FROM AssessmentResult WHERE id = ?;
 
+-- PR 20: every profile-owned table without a cascade from UserProfile, for "Delete
+-- permanently". Kept on purpose, and NOT listed here:
+--   WorkoutSession (hard-deleted with a WorkoutDeletion tombstone), Routine / TrainingCycle /
+--   PersonalRecord (soft-deleted tombstones that block pull resurrection), WorkoutDeletion and
+--   CycleSyncState (the pending tombstones themselves), UserProfilePreferences (CASCADEs with
+--   the row at finalize), PendingProfileLocalCleanup (drained by the local-cleanup retry),
+--   and the ownership / recovery bookkeeping tables.
+-- PR 20: the tombstones a permanently deleted profile keeps (they block pull resurrection and
+-- carry the delete to the portal) are reduced to identity + deletion clock. Their user content
+-- and child graphs go, so neither the device nor a backup keeps what the user deleted.
+-- Routine deletes push by id; cycle deletes by id + clock (CycleSyncState); PR tombstones by
+-- uuid with the unique-key columns (exerciseId, workoutMode, prType, phase) intact.
+scrubProfileTombstones {
+    DELETE FROM Superset
+    WHERE routineId IN (SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM RoutineExercise
+    WHERE routineId IN (SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    UPDATE Routine SET name = '', description = ''
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+    DELETE FROM CycleDay
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM CycleProgress
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    DELETE FROM CycleProgression
+    WHERE cycle_id IN (SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NOT NULL);
+    UPDATE TrainingCycle SET name = '', description = NULL
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+    UPDATE PersonalRecord
+    SET exerciseName = '', weight = 0.0, reps = 0, oneRepMax = 0.0, volume = 0.0
+    WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+}
+
+purgeProfileOwnedRows {
+    DELETE FROM AssessmentResult WHERE profile_id = :profileId;
+    DELETE FROM VelocityOneRepMaxEstimate WHERE profile_id = :profileId;
+    DELETE FROM ExerciseMvt WHERE profile_id = :profileId;
+    DELETE FROM EarnedBadge WHERE profile_id = :profileId;
+    DELETE FROM StreakHistory WHERE profile_id = :profileId;
+    DELETE FROM GamificationStats WHERE profile_id = :profileId;
+    DELETE FROM RpgAttributes WHERE profile_id = :profileId;
+    DELETE FROM ProgressionEvent WHERE profile_id = :profileId;
+    DELETE FROM ProfileExerciseBaseline WHERE profile_id = :profileId;
+    DELETE FROM CycleConflictDraft WHERE original_profile_id = :profileId;
+    DELETE FROM RoutineGroup WHERE profile_id = :profileId;
+    DELETE FROM ActiveWorkoutRuntime WHERE profile_id = :profileId;
+    DELETE FROM ExternalActivity WHERE profileId = :profileId;
+    DELETE FROM ExternalBodyMeasurement WHERE profileId = :profileId;
+    DELETE FROM ExternalExerciseTemplateMapping WHERE profileId = :profileId;
+    DELETE FROM ExternalExerciseTemplate WHERE profileId = :profileId;
+    DELETE FROM ExternalRoutine WHERE profileId = :profileId;
+    DELETE FROM ExternalRoutineFolder WHERE profileId = :profileId;
+    DELETE FROM ExternalProgram WHERE profileId = :profileId;
+    DELETE FROM IntegrationStatus WHERE profileId = :profileId;
+    DELETE FROM IntegrationSyncCursor WHERE profileId = :profileId;
+}
+
 deleteAssessmentsByExercise:
 DELETE FROM AssessmentResult WHERE exerciseId = ?;
 
@@ -1791,10 +1981,6 @@ SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId
 selectUniqueWorkoutModes:
 SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
 
--- Get peak power from all workout metrics
-selectPeakPower:
-SELECT MAX(power) AS peakPower FROM MetricSample;
-
 -- Profile-scoped peak power (audit F019).
 selectPeakPowerForProfile:
 SELECT MAX(ms.power) AS peakPower FROM MetricSample ms
@@ -1807,6 +1993,46 @@ SELECT DISTINCT e.muscleGroup
 FROM WorkoutSession ws
 INNER JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.workingReps > 0;
+
+-- F-034 badge helpers: aggregate in SQL instead of loading every session. All use the
+-- row filter the old Kotlin helpers applied to selectAllSessions (profile-scoped,
+-- user-visible, workingReps > 0) and the device's local time zone.
+
+-- Workouts per local hour of day (0-23). The time-of-day badges apply their
+-- inclusive/exclusive hour ranges to these <=24 buckets.
+countWorkoutsByLocalHour:
+SELECT CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
+       COUNT(*) AS count
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+GROUP BY hour;
+
+-- Distinct local calendar days with a workout, as epoch days, ascending
+-- (comeback-after-a-break badge).
+selectWorkoutLocalEpochDays:
+SELECT DISTINCT CAST(julianday(date(timestamp / 1000, 'unixepoch', 'localtime')) - 2440587.5 AS INTEGER) AS epochDay
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+ORDER BY epochDay ASC;
+
+-- Start of the current local week (Monday 00:00 local) in epoch ms. Computed with SQLite's
+-- 'localtime' so the weekly badge uses the same zone source as the hour/day buckets above.
+selectLocalWeekStartMs:
+SELECT CAST(strftime('%s', date('now', 'localtime', '-6 days', 'weekday 1'), 'utc') AS INTEGER) * 1000;
+
+-- Workouts at or after :sinceMs (workouts-this-week badge).
+countWorkoutsSince:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
+AND timestamp >= :sinceMs;
+
+-- Largest single-session volume in kg, truncated per session like the old Kotlin
+-- helper: measured totalVolumeKg, else reps x per-cable weight x cable count (legacy
+-- rows without cableCount count one cable).
+selectMaxSingleSessionVolume:
+SELECT MAX(CAST(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1)) AS INTEGER)) AS maxVolume
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count workouts completed on weekends (profile-scoped)
 countWeekendWorkouts:
@@ -2067,6 +2293,26 @@ WHERE cycle_id = :cycleId
   AND dirty_generation = :generation
   AND acknowledged_generation < :generation
   AND pending_delete_updated_at IS NULL;
+
+-- PR 20: a cycle deleted while its profile was unbound kept account_id NULL; bind every
+-- still-pending deletion of the profile to the owner a permanent delete resolved.
+-- PR 20: a workout deleted while its profile was unbound kept owner_user_id NULL, which
+-- selectPendingWorkoutDeletionsForOwner never selects; bind the profile's still-pending
+-- local ones to the owner a permanent delete resolved.
+bindPendingWorkoutDeletionsForProfile:
+UPDATE WorkoutDeletion
+SET owner_user_id = :ownerUserId
+WHERE profile_id = :profileId
+  AND owner_user_id IS NULL
+  AND source = 'LOCAL'
+  AND acknowledged_at IS NULL;
+
+bindPendingCycleDeletionsForProfile:
+UPDATE CycleSyncState
+SET account_id = :accountId
+WHERE profile_id = :profileId
+  AND account_id IS NULL
+  AND pending_delete_updated_at IS NOT NULL;
 
 markCycleDeletionPending:
 UPDATE CycleSyncState
@@ -2331,6 +2577,9 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
+
+clearCompletedSetPr:
+UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
 
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet
@@ -2846,6 +3095,62 @@ WHERE owner_user_id = :ownerUserId
   AND entity_type = :entityType
   AND entity_id = :entityId
   AND transferred_at < :transferredAt;
+
+-- Entities the given portal user must never upload (PR 11 account-switch exclusions).
+-- Scoped by portal_user_id so one account's exclusion set cannot hide rows from
+-- another account that later signs in on the same install.
+CREATE TABLE SyncExcludedEntity (
+    portal_user_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    PRIMARY KEY (portal_user_id, entity_type, entity_id)
+);
+
+insertSyncExcludedEntity:
+INSERT OR IGNORE INTO SyncExcludedEntity(portal_user_id, entity_type, entity_id)
+VALUES (:portalUserId, :entityType, :entityId);
+
+selectSyncExcludedEntityIds:
+SELECT entity_id FROM SyncExcludedEntity
+WHERE portal_user_id = :portalUserId AND entity_type = :entityType;
+
+selectAllSyncExcludedEntities:
+SELECT * FROM SyncExcludedEntity
+ORDER BY portal_user_id, entity_type, entity_id;
+
+deleteSyncExcludedEntity:
+DELETE FROM SyncExcludedEntity
+WHERE portal_user_id = :portalUserId AND entity_type = :entityType AND entity_id = :entityId;
+
+deleteSyncExcludedEntitiesForUser:
+DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
+
+-- PR 11 account-switch classification for one profile's sessions. A session reached
+-- a portal account when it was pulled (portalOrigin = 1) or a push was acknowledged
+-- (synced_sync_generation > 0); updatedAt is only the legacy (pre-migration-49) signal
+-- because local edits such as a Just Lift tag also write it.
+selectAccountSwitchSessionRows:
+SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt, timestamp
+FROM WorkoutSession
+WHERE profile_id = :profileId;
+
+-- PR 11 account-switch / ownership-recovery enumeration. Includes soft-deleted rows:
+-- their tombstones are pushed too, so they must be classifiable.
+selectRoutinesForAccountSwitch:
+SELECT id, createdAt FROM Routine WHERE profile_id = :profileId;
+
+selectAllTrainingCyclesForAccountSwitch:
+SELECT id, created_at FROM TrainingCycle WHERE profile_id = :profileId;
+
+selectPersonalRecordsForAccountSwitch:
+SELECT id, uuid, achievedAt FROM PersonalRecord WHERE profile_id = :profileId;
+
+selectCustomExerciseIdsForAccountSwitch:
+SELECT id FROM Exercise WHERE isCustom = 1;
+
+-- needsSync = 0 means a push was acknowledged or the row was pulled: it reached an account.
+selectExternalActivitiesForAccountSwitch:
+SELECT id, needsSync, syncedAt FROM ExternalActivity WHERE profileId = :profileId;
 
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent
@@ -3584,6 +3889,39 @@ ORDER BY timestamp ASC;
 -- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
 -- of this query used a separate PulledWorkoutSession marker table that this
 -- schema does not carry.
+-- One-shot upgrade seeding (PR 10, codex #856): migration 49 gave every existing row
+-- local_sync_generation 1 / synced_sync_generation 0, so the all-profile loop would treat
+-- rows an older client already synchronized as new local captures. Only rows of
+-- :profileIds (the signed-in account's profiles) are touched, and only with real
+-- provenance that the portal already holds them:
+--   * `updatedAt` at or before the legacy cursor: the old client wrote `updatedAt` only
+--     when a row was pushed-and-accepted or pulled, so the row was covered by a
+--     completed sync; OR
+--   * `portalOrigin = 1`: the row was materialized by a pull (pushing it back could let
+--     replace_session_children erase the portal's richer set/rep data).
+-- Everything else stays dirty and is pushed: NULL `updatedAt` (never synced), and any
+-- row edited after the cursor — including a childless manual/zero-rep session whose tag
+-- was edited, which must not be mistaken for a pulled row.
+-- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
+-- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
+-- that newer generation.
+seedLegacySyncedGenerations:
+UPDATE WorkoutSession
+SET synced_sync_generation = local_sync_generation
+WHERE deletedAt IS NULL
+  AND profile_id IN :profileIds
+  AND local_sync_generation = 1
+  AND synced_sync_generation = 0
+  AND updatedAt IS NOT NULL
+  AND (
+    -- The old client synced ONLY its active profile against the one global cursor, so
+    -- `updatedAt <= cursor` is proof only for the profile the cursor belongs to (named by
+    -- the legacy delta-pull marker). Every other profile gets the pull-provenance rule.
+    (profile_id = :cursorProfileId AND updatedAt <= :legacyLastSync)
+    OR portalOrigin = 1
+  );
+
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
 WHERE profile_id = :profileId
@@ -3698,10 +4036,31 @@ AND profile_id = :profileId;
 updatePRServerId:
 UPDATE PersonalRecord SET serverId = ? WHERE id = ?;
 
--- Stamp pushed PRs with current updatedAt so they aren't re-sent on next sync
--- (Issue #528). Matches the WorkoutSession.updateSessionTimestamp pattern.
+-- Stamp pushed PRs so they aren't re-sent on next sync (Issue #528). The stamp is the
+-- push's gatherStartedAt, which becomes the profile's push watermark: the next gather
+-- selects `updatedAt > watermark`, so a stamp of `now` would re-select the row forever.
+-- Guarded like updateSessionTimestampsByIds: a row edited after the gather keeps its
+-- newer updatedAt and is re-sent.
+-- PR 20: before each final push of a pending-deletion profile, move its PR tombstones'
+-- clock past anything stored (a newer web edit, or the same tombstone already written on an
+-- earlier attempt, which the portal's equal-time rule would otherwise skip and not count).
+restampPersonalRecordTombstones:
+UPDATE PersonalRecord
+SET updatedAt = CASE WHEN updatedAt IS NULL OR updatedAt < :at THEN :at ELSE updatedAt + 1 END
+WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+
 updatePRTimestamp:
-UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
+UPDATE PersonalRecord SET updatedAt = :timestamp
+WHERE id IN :ids
+AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
+
+-- Stamp pushed routines that carry no updatedAt (backup-restored / legacy rows), which
+-- `updatedAt IS NULL` in selectRoutinesModifiedSince would otherwise re-select on every
+-- sync. Rows with a local edit time already fall below the next watermark by themselves.
+stampPushedRoutinesWithoutTimestamp:
+UPDATE Routine SET updatedAt = :timestamp
+WHERE id IN :ids
+AND updatedAt IS NULL;
 
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
@@ -4522,6 +4881,35 @@ INSERT OR REPLACE INTO IntegrationStatus(provider, status, lastSyncAt, errorMess
 VALUES (?, ?, ?, ?, ?);
 
 -- Parity Sync: Get all entity IDs for comparison with server
+-- PR 10 step 7 (R-19): distinct portal session ids (grouped routineSessionId,
+-- standalone row id) including soft-deleted tombstones, newest-first.
+-- Portal session ids that still have at least one live (not soft-deleted) row.
+-- Used to garbage-collect per-session sync fingerprints of deleted workouts.
+selectLivePortalSessionIdsByProfile:
+SELECT DISTINCT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL;
+
+selectKnownPortalSessionIdsByProfile:
+SELECT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+GROUP BY
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END
+ORDER BY MAX(timestamp) DESC;
+
 selectAllSessionIdsByProfile:
 SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 
@@ -4531,8 +4919,11 @@ SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 selectAllCycleIdsByProfile:
 SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL;
 
+-- The portal's badge parity query keys on `badgeId` (the portal UUID), not the
+-- local integer row id. Returning CAST(id AS TEXT) made filterUuids drop the whole
+-- list and forced the nil-UUID sentinel on every pull (S-5).
 selectAllBadgeIdsByProfile:
-SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
+SELECT badgeId FROM EarnedBadge WHERE profile_id = :profileId;
 
 selectAllPersonalRecordUuidsByProfile:
 SELECT uuid FROM PersonalRecord
@@ -4583,6 +4974,17 @@ SELECT * FROM SessionNotes WHERE routineSessionId = ?;
 
 selectSessionNotesForIds:
 SELECT * FROM SessionNotes WHERE routineSessionId IN :ids;
+
+-- PR 20: SessionNotes has no FK to WorkoutSession, so a permanently deleted profile's notes
+-- are removed explicitly: every portal workout the profile still holds (live or soft-deleted)
+-- and every one it deleted earlier, whose rows are gone but whose WorkoutDeletion remains.
+deleteSessionNotesForProfile:
+DELETE FROM SessionNotes
+WHERE routineSessionId IN (
+    SELECT portal_session_id FROM WorkoutDeletion WHERE profile_id = :profileId
+    UNION
+    SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession WHERE profile_id = :profileId
+);
 
 -- Full-table scan for backup export (small table; one row per routine session with notes).
 selectAllSessionNotesSync:

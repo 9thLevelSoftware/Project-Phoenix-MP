@@ -432,12 +432,29 @@ class ProfileViewModel(
         }
     }
 
-    fun deleteActiveProfile() {
+    /**
+     * "Merge into Default": the profile's data moves to Default.
+     *
+     * [inWorkoutSession] is a live read, re-checked by the repository after it holds the
+     * profile mutation barrier: deleting the active profile mid-workout would move the
+     * running lease onto a deleted id (codex 4082092571). A refusal is a visible delete
+     * failure; the dialog stays open.
+     */
+    fun deleteActiveProfile(inWorkoutSession: () -> Boolean = { false }) =
+        deleteActive { profileId -> profiles.deleteActiveProfile(profileId, blockedByLiveSession = inWorkoutSession) }
+
+    /** "Delete permanently" (PR 20): removed here and from the portal. Same live-workout guard. */
+    fun deleteActiveProfilePermanently(inWorkoutSession: () -> Boolean = { false }) =
+        deleteActive { profileId ->
+            profiles.deleteActiveProfilePermanently(profileId, blockedByLiveSession = inWorkoutSession)
+        }
+
+    private fun deleteActive(delete: suspend (String) -> Boolean) {
         val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return
         val profileId = currentMutationProfileId() ?: return
         if (!canDeleteProfile(uiReady.profile)) return
         startIdentityMutation(profileId, ProfileIdentityMutationKind.DELETE) {
-            if (profiles.deleteActiveProfile(profileId)) {
+            if (delete(profileId)) {
                 ProfileUiEvent.ProfileDeleted(profileId)
             } else {
                 ProfileUiEvent.IdentityUpdateFailed(
