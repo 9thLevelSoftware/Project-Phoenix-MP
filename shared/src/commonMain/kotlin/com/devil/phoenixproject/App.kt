@@ -67,12 +67,17 @@ import projectphoenix.shared.generated.resources.crash_report_message
 import projectphoenix.shared.generated.resources.crash_report_share
 import projectphoenix.shared.generated.resources.crash_report_title
 import projectphoenix.shared.generated.resources.startup_contact_support
+import projectphoenix.shared.generated.resources.startup_diagnostic_code
 import projectphoenix.shared.generated.resources.startup_dual_databases_message
 import projectphoenix.shared.generated.resources.startup_export_database_files
 import projectphoenix.shared.generated.resources.startup_export_failed
+import projectphoenix.shared.generated.resources.startup_local_data_preserved_title
+import projectphoenix.shared.generated.resources.startup_storage_attention_title
+import projectphoenix.shared.generated.resources.startup_storage_failed_message
+import projectphoenix.shared.generated.resources.startup_support_code
 
 private const val LAUNCH_SPLASH_DURATION_MS = 2_500L
-private const val SUPPORT_ISSUES_URL = "https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues"
+private const val SUPPORT_EMAIL = "support@phoenix-portal.com"
 private val DUAL_DATABASES_DIAGNOSTIC_CODE = "DB_${DatabaseMigrationFailureCode.DUAL_DATABASES.name}"
 
 internal enum class StartupSurface { EULA, SPLASH, MIGRATION_RETRY, MAIN }
@@ -89,6 +94,35 @@ internal fun startupSurface(
 }
 
 internal enum class StartupFailureAction { EXPORT_DATABASE_FILES, CONTACT_SUPPORT, RETRY }
+
+/**
+ * Issue #764: the conflict message tells users to send their database files to support
+ * privately, so the support action opens an email to that address (with both codes in the
+ * subject) instead of the public issue tracker.
+ */
+internal fun startupSupportMailtoUri(failure: StartupDependencyResolution.Failed): String {
+    val codes = listOfNotNull(failure.diagnosticCode, failure.supportCode).joinToString(" / ")
+    val subject = "Project Phoenix startup: $codes"
+    return "mailto:$SUPPORT_EMAIL?subject=${encodeMailtoComponent(subject)}"
+}
+
+/**
+ * Percent-encodes everything outside RFC 3986's unreserved set. That set is ASCII-only, so the
+ * check uses explicit ranges: a UTF-8 continuation byte maps to a char in U+FF80..U+FFFF, many of
+ * which Char.isLetterOrDigit() accepts.
+ */
+internal fun encodeMailtoComponent(value: String): String = buildString {
+    for (byte in value.encodeToByteArray()) {
+        val char = byte.toInt().toChar()
+        if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in "-._~") {
+            append(char)
+        } else {
+            append('%')
+            append("0123456789ABCDEF"[(byte.toInt() shr 4) and 0x0F])
+            append("0123456789ABCDEF"[byte.toInt() and 0x0F])
+        }
+    }
+}
 
 /**
  * Actions offered on the persisted-file startup failure screen. A database conflict stays
@@ -158,32 +192,39 @@ internal fun PersistedFileStartupFailureScreen(
             Text("Project Phoenix", color = Color(0xFFFF6B35), fontSize = 24.sp)
             Spacer(Modifier.height(16.dp))
             Text(
-                if (dualDatabases) "Local storage needs attention" else "Local data preserved",
+                stringResource(
+                    if (dualDatabases) {
+                        Res.string.startup_storage_attention_title
+                    } else {
+                        Res.string.startup_local_data_preserved_title
+                    },
+                ),
                 color = Color.White,
                 fontSize = 18.sp,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                if (dualDatabases) {
-                    stringResource(Res.string.startup_dual_databases_message)
-                } else {
-                    "Phoenix could not safely prepare local storage. Existing local data was left in place. " +
-                        "You can retry after resolving the device or storage issue."
-                },
+                stringResource(
+                    if (dualDatabases) {
+                        Res.string.startup_dual_databases_message
+                    } else {
+                        Res.string.startup_storage_failed_message
+                    },
+                ),
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                "Diagnostic code: ${failure.diagnosticCode}",
+                stringResource(Res.string.startup_diagnostic_code, failure.diagnosticCode),
                 color = Color(0xFFFF6B6B),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(8.dp),
             )
             failure.supportCode?.let { supportCode ->
                 Text(
-                    "Support code: $supportCode",
+                    stringResource(Res.string.startup_support_code, supportCode),
                     color = Color(0xFFFFD166),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(8.dp),
@@ -215,7 +256,7 @@ internal fun PersistedFileStartupFailureScreen(
                 }
             }
             if (StartupFailureAction.CONTACT_SUPPORT in actions) {
-                TextButton(onClick = { runCatching { uriHandler.openUri(SUPPORT_ISSUES_URL) } }) {
+                TextButton(onClick = { runCatching { uriHandler.openUri(startupSupportMailtoUri(failure)) } }) {
                     Text(stringResource(Res.string.startup_contact_support))
                 }
             }

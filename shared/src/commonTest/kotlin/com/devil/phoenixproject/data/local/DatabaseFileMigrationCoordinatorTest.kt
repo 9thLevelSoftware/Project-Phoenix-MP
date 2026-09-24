@@ -266,7 +266,8 @@ class DatabaseFileMigrationCoordinatorTest {
 
         assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET, failure.diagnosticReason)
         assertEquals(snapshot, failure.presenceSnapshot)
-        assertEquals(listOf("lock:start", "inspect", "lock:end"), operations.calls)
+        // #764: an uninspectable legacy candidate stops the recovery before anything else runs.
+        assertEquals(listOf("lock:start", "inspect", "probe:LEGACY", "lock:end"), operations.calls)
     }
 
     @Test
@@ -307,6 +308,146 @@ class DatabaseFileMigrationCoordinatorTest {
         assertEquals(allArtifacts, operations.artifacts())
         assertTrue(operations.sidecarsExist())
         assertEquals(List(2) { listOf("lock:start", "inspect", "lock:end") }.flatten(), operations.calls)
+    }
+
+    @Test
+    fun `issue 764 an empty legacy candidate beside a target with data is set aside and the target opens`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+            ),
+        )
+
+        val preparation = DatabaseFileMigrationCoordinator(operations).prepareTarget()
+
+        assertFalse(preparation.migratedThisLaunch)
+        assertEquals(listOf(DatabaseArtifact.LEGACY), operations.quarantined)
+        assertEquals(setOf(DatabaseArtifact.TARGET), operations.artifacts())
+        assertEquals(
+            listOf("lock:start", "inspect", "probe:LEGACY", "probe:TARGET", "quarantine:LEGACY", "inspect", "lock:end"),
+            operations.calls,
+        )
+    }
+
+    @Test
+    fun `issue 764 an empty target beside a legacy database with data is set aside and the legacy migrates`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+            ),
+        )
+
+        val preparation = DatabaseFileMigrationCoordinator(operations).prepareTarget()
+
+        assertTrue(preparation.migratedThisLaunch)
+        assertEquals(listOf(DatabaseArtifact.TARGET), operations.quarantined)
+        assertEquals(setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY), operations.artifacts())
+        // Both probes run before the first mutation of any file.
+        val firstMutation = operations.calls.indexOfFirst { it.startsWith("quarantine") }
+        assertTrue(operations.calls.indexOf("probe:LEGACY") < firstMutation)
+        assertTrue(operations.calls.indexOf("probe:TARGET") < firstMutation)
+        assertTrue(operations.calls.contains("move:LEGACY:TARGET"))
+    }
+
+    @Test
+    fun `issue 764 two empty candidates keep the target and set the legacy file aside`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+            ),
+        )
+
+        DatabaseFileMigrationCoordinator(operations).prepareTarget()
+
+        assertEquals(listOf(DatabaseArtifact.LEGACY), operations.quarantined)
+        assertEquals(setOf(DatabaseArtifact.TARGET), operations.artifacts())
+    }
+
+    @Test
+    fun `issue 764 conflicts that are not provably lossless stay fail closed without moving anything`() {
+        val unresolvable = listOf(
+            CandidateContent.HAS_USER_DATA to CandidateContent.HAS_USER_DATA,
+            CandidateContent.HAS_USER_DATA to CandidateContent.UNINSPECTABLE,
+            CandidateContent.EMPTY to CandidateContent.UNINSPECTABLE,
+            CandidateContent.UNINSPECTABLE to CandidateContent.EMPTY,
+        )
+        unresolvable.forEach { (legacy, target) ->
+            val operations = FakeDatabaseFileOperations(
+                artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+                contents = mapOf(DatabaseArtifact.LEGACY to legacy, DatabaseArtifact.TARGET to target),
+            )
+
+            val failure = assertFailsWith<DatabaseFileMigrationException> {
+                DatabaseFileMigrationCoordinator(operations).prepareTarget()
+            }
+
+            assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code, "$legacy/$target")
+            assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET, failure.diagnosticReason)
+            assertTrue(operations.quarantined.isEmpty(), "$legacy/$target moved a file")
+            assertEquals(setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET), operations.artifacts())
+        }
+    }
+
+    @Test
+    fun `issue 764 a recovery or staging file beside the conflict blocks the recovery before probing`() {
+        listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.STAGING).forEach { extra ->
+            val operations = FakeDatabaseFileOperations(
+                artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, extra),
+                contents = mapOf(
+                    DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                    DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+                ),
+            )
+
+            assertFailsWith<DatabaseFileMigrationException> {
+                DatabaseFileMigrationCoordinator(operations).prepareTarget()
+            }
+
+            assertTrue(operations.calls.none { it.startsWith("probe") || it.startsWith("quarantine") })
+        }
+    }
+
+    @Test
+    fun `issue 764 a failed set-aside keeps the same fail-closed error and the next launch finishes it`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            failOnceAt = "quarantine:LEGACY",
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+            ),
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> { coordinator.prepareTarget() }
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertEquals(setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET), operations.artifacts())
+
+        coordinator.prepareTarget()
+        assertEquals(setOf(DatabaseArtifact.TARGET), operations.artifacts())
+    }
+
+    @Test
+    fun `issue 764 a probe that throws counts as uninspectable`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            failAt = "probe:LEGACY",
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+            ),
+        )
+
+        assertFailsWith<DatabaseFileMigrationException> {
+            DatabaseFileMigrationCoordinator(operations).prepareTarget()
+        }
+        assertTrue(operations.quarantined.isEmpty())
     }
 
     @Test
@@ -570,7 +711,9 @@ class DatabaseFileMigrationCoordinatorTest {
         failOnceAt: String? = null,
         failures: Map<String, Throwable> = emptyMap(),
         private val presenceSnapshot: DatabasePresenceSnapshot? = null,
+        private val contents: Map<DatabaseArtifact, CandidateContent> = emptyMap(),
     ) : DatabaseFileOperations {
+        val quarantined = mutableListOf<DatabaseArtifact>()
         private val fallbackFingerprint = DatabaseFingerprint(
             fileSize = 16_384,
             userVersion = 42,
@@ -650,6 +793,19 @@ class DatabaseFileMigrationCoordinatorTest {
         override fun deleteLegacySidecars() {
             record("deleteLegacySidecars")
             legacySidecarsExist = false
+        }
+
+        override fun probeUserData(artifact: DatabaseArtifact): CandidateContent {
+            record("probe:$artifact")
+            return contents[artifact] ?: CandidateContent.UNINSPECTABLE
+        }
+
+        override fun quarantine(artifact: DatabaseArtifact, reason: DatabaseDiagnosticReason) {
+            record("quarantine:$artifact")
+            check(artifact in present) { "Missing quarantine source $artifact" }
+            present -= artifact
+            fingerprints -= artifact
+            quarantined += artifact
         }
 
         override fun <T> withExclusiveMigrationLock(block: () -> T): T {

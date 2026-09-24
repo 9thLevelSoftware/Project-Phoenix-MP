@@ -241,6 +241,26 @@ class StartupDependencyResolutionTest {
         }
     }
 
+    @Test
+    fun `issue 764 support action emails support with both codes instead of opening the public tracker`() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "DB_DUAL_DATABASES",
+            retryAllowed = true,
+            supportCode = "CANONICAL_LEGACY_TARGET",
+            cause = IllegalStateException("conflict"),
+        )
+
+        assertEquals(
+            "mailto:support@phoenix-portal.com?subject=Project%20Phoenix%20startup%3A%20DB_DUAL_DATABASES%20%2F%20CANONICAL_LEGACY_TARGET",
+            startupSupportMailtoUri(failure),
+        )
+    }
+
+    @Test
+    fun `mailto components percent-encode reserved and non-ascii characters`() {
+        assertEquals("a-b_c.d~e%20%26%3F%C3%A9", encodeMailtoComponent("a-b_c.d~e &?é"))
+    }
+
     private sealed interface RetryProbe {
         data object Ready : RetryProbe
     }

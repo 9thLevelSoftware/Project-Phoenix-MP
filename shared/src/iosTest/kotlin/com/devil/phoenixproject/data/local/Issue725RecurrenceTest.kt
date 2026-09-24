@@ -18,6 +18,8 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileType
+import platform.Foundation.NSFileTypeRegular
 
 @OptIn(ExperimentalForeignApi::class)
 class Issue725RecurrenceTest {
@@ -182,7 +184,7 @@ class Issue725RecurrenceTest {
     }
 
     @Test
-    fun libraryMainWithSqliterSidecarsReportsBoundedReasonWithoutMutation() {
+    fun libraryMainWithOrphanSqliterSidecarsQuarantinesSidecarsAndRelocates() {
         val setupDriver = NativeSqliteDriver(
             schema = PhoenixDatabase.Schema,
             name = DatabaseFileNames.LEGACY,
@@ -201,19 +203,24 @@ class Issue725RecurrenceTest {
         ensureSidecar(sqliterLegacy, "-wal")
         ensureSidecar(sqliterLegacy, "-shm")
 
-        val operations = IosDatabaseFileOperations()
-        val snapshot = operations.capturePresenceSnapshot()
-        val failure = assertFailsWith<DatabaseFileMigrationException> { operations.inspect() }
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Sidecar", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'sidecar-profile'"))
+        } finally {
+            driver.close()
+        }
 
-        assertEquals(DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS, failure.diagnosticReason)
-        assertEquals(snapshot, failure.presenceSnapshot)
-        assertTrue(fileManager.fileExistsAtPath(libraryLegacy))
-        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-wal"))
-        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-shm"))
+        assertFalse(fileManager.fileExistsAtPath(libraryLegacy))
+        assertFalse(fileManager.fileExistsAtPath("$sqliterLegacy-wal"))
+        assertFalse(fileManager.fileExistsAtPath("$sqliterLegacy-shm"))
+        val quarantined = quarantinedFiles()
+        assertTrue(quarantined.any { it.endsWith("/${DatabaseFileNames.LEGACY}-wal") }, "quarantined: $quarantined")
+        assertTrue(quarantined.any { it.endsWith("/${DatabaseFileNames.LEGACY}-shm") }, "quarantined: $quarantined")
+        assertFalse(quarantined.any { it.endsWith("/${DatabaseFileNames.LEGACY}") }, "quarantined: $quarantined")
     }
 
     @Test
-    fun trueDualLibraryAndSqliterLegacyMainsStillBlockWithoutDeleting() {
+    fun identicalLibraryAndSqliterLegacyCopiesKeepSqliterAndQuarantineLibrary() {
         val legacyDriver = NativeSqliteDriver(
             schema = PhoenixDatabase.Schema,
             name = DatabaseFileNames.LEGACY,
@@ -242,18 +249,85 @@ class Issue725RecurrenceTest {
             }
         }
 
+        val layout = IosDatabaseFileOperations().inspect()
+
+        assertTrue(layout.legacyExists)
+        assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
+        assertFalse(fileManager.fileExistsAtPath(libraryLegacy))
+        assertTrue(quarantinedFiles().any { it.endsWith("/${DatabaseFileNames.LEGACY}") })
+        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+    }
+
+    @Test
+    fun differingLibraryAndSqliterLegacyDatabasesWithUserDataStillBlockWithoutMutation() {
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Library")
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        val libraryLegacy = legacyLibraryRootPath()
+        moveArtifact(sqliterLegacy, libraryLegacy)
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Sqliter")
+
         val operations = IosDatabaseFileOperations()
         val snapshot = operations.capturePresenceSnapshot()
-        val failure = assertFailsWith<DatabaseFileMigrationException> {
-            operations.inspect()
-        }
+        val failure = assertFailsWith<DatabaseFileMigrationException> { operations.inspect() }
 
         assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
         assertEquals(DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY, failure.diagnosticReason)
         assertEquals(snapshot, failure.presenceSnapshot)
         assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
         assertTrue(fileManager.fileExistsAtPath(libraryLegacy))
-        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+        assertTrue(quarantinedFiles().isEmpty())
+        assertTrue(probeScratchFiles().isEmpty())
+    }
+
+    @Test
+    fun libraryLegacyWithUserDataReplacesEmptySqliterLegacy() {
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Library")
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        val libraryLegacy = legacyLibraryRootPath()
+        moveArtifact(sqliterLegacy, libraryLegacy)
+        createDatabase(DatabaseFileNames.LEGACY, profileName = null)
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Library", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'test-profile'"))
+        } finally {
+            driver.close()
+        }
+
+        assertFalse(fileManager.fileExistsAtPath(libraryLegacy))
+        assertTrue(quarantinedFiles().any { it.endsWith("/${DatabaseFileNames.LEGACY}") })
+        assertTrue(probeScratchFiles().isEmpty())
+    }
+
+    @Test
+    fun legacyWithUserDataReplacesEmptyPhoenixDatabase() {
+        createDatabase(DatabaseFileNames.TARGET, profileName = null)
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Legacy")
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Legacy", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'test-profile'"))
+        } finally {
+            driver.close()
+        }
+
+        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)))
+        assertTrue(quarantinedFiles().any { it.endsWith("/${DatabaseFileNames.TARGET}") })
+        assertTrue(probeScratchFiles().isEmpty())
+    }
+
+    @Test
+    fun legacyAndPhoenixDatabasesWithUserDataStillBlockWithoutMutation() {
+        createDatabase(DatabaseFileNames.TARGET, profileName = "Phoenix")
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Legacy")
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> { DriverFactory().createDriver() }
+
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)))
+        assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+        assertTrue(quarantinedFiles().isEmpty())
+        assertTrue(probeScratchFiles().isEmpty())
     }
 
     @Test
@@ -400,6 +474,42 @@ class Issue725RecurrenceTest {
         )
     }
 
+    /** A schema-created database; with [profileName] it also holds one user-created profile. */
+    private fun createDatabase(name: String, profileName: String?) {
+        val driver = NativeSqliteDriver(schema = PhoenixDatabase.Schema, name = name)
+        try {
+            // The driver opens its file lazily: write once so the database exists on disk.
+            driver.execute(null, "PRAGMA user_version = ${PhoenixDatabase.Schema.version}", 0)
+            if (profileName != null) {
+                driver.execute(
+                    null,
+                    "INSERT INTO UserProfile(id, name, colorIndex, createdAt, isActive) VALUES ('test-profile', '$profileName', 0, 1, 0)",
+                    0,
+                )
+            }
+        } finally {
+            driver.close()
+        }
+    }
+
+    private fun sqliterDirectory(): String =
+        DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null).substringBeforeLast('/')
+
+    /** Regular files under the quarantine folder, relative to it. */
+    private fun quarantinedFiles(): List<String> {
+        val root = "${sqliterDirectory()}/$DATABASE_QUARANTINE_DIRECTORY"
+        return fileManager.subpathsOfDirectoryAtPath(root, error = null).orEmpty()
+            .mapNotNull { it as? String }
+            .filter { relative ->
+                fileManager.attributesOfItemAtPath("$root/$relative", error = null)?.get(NSFileType) == NSFileTypeRegular
+            }
+    }
+
+    private fun probeScratchFiles(): List<String> =
+        fileManager.contentsOfDirectoryAtPath(sqliterDirectory(), error = null).orEmpty()
+            .mapNotNull { it as? String }
+            .filter { it.startsWith(DATABASE_PROBE_SCRATCH_PREFIX) }
+
     private fun rawDriver(name: String): NativeSqliteDriver = NativeSqliteDriver(
         DatabaseConfiguration(
             name = name,
@@ -470,6 +580,15 @@ class Issue725RecurrenceTest {
             deletePathAndSidecars(path)
         }
         deletePathAndSidecars(legacyLibraryRootPath())
+        for (scratch in probeScratchFiles()) {
+            deletePathAndSidecars("${sqliterDirectory()}/$scratch")
+        }
+        val quarantine = "${sqliterDirectory()}/$DATABASE_QUARANTINE_DIRECTORY"
+        if (fileManager.fileExistsAtPath(quarantine)) {
+            check(fileManager.removeItemAtPath(quarantine, error = null)) {
+                "Could not delete test quarantine folder at $quarantine"
+            }
+        }
     }
 
     private fun ensureSidecar(databasePath: String, suffix: String) {

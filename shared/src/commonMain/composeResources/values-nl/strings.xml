@@ -701,4 +701,14 @@
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
     <string name="label_previously_completed">Eerder voltooid</string>
     <string name="cd_filter_previously_completed">Eerder voltooide oefeningen filteren</string>
+    <!-- #764: startup storage failure screen -->
+    <string name="startup_storage_attention_title">Lokale opslag vraagt aandacht</string>
+    <string name="startup_local_data_preserved_title">Lokale gegevens behouden</string>
+    <string name="startup_storage_failed_message">Phoenix kon de lokale opslag niet veilig voorbereiden. Bestaande lokale gegevens zijn niet gewijzigd. Je kunt het opnieuw proberen zodra het apparaat- of opslagprobleem is opgelost.</string>
+    <string name="startup_dual_databases_message">Phoenix heeft meer dan één kopie van zijn lokale database gevonden en kon niet veilig bepalen welke bewaard moet worden, dus is geen van beide geopend. Er is niets verwijderd. Exporteer de databasebestanden om een kopie te bewaren en mail ze privé naar support@phoenix-portal.com, samen met de diagnose- en supportcode hieronder. De bestanden bevatten je trainingsgeschiedenis, dus voeg ze niet toe aan een openbaar issue. Opnieuw proberen controleert het opnieuw zodra support je heeft geholpen.</string>
+    <string name="startup_export_database_files">Databasebestanden exporteren</string>
+    <string name="startup_export_failed">De databasebestanden konden niet worden geëxporteerd. Er is niets gewijzigd; je kunt het opnieuw proberen.</string>
+    <string name="startup_contact_support">Support mailen</string>
+    <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
+    <string name="startup_support_code">Supportcode: %1$s</string>
 </resources>
