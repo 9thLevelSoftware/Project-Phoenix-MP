@@ -472,7 +472,6 @@ class DefaultWorkoutSessionManager(
             }
             override fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean = routineFlowManager.isSameExercise(a, b)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
-            override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
             override fun calculateNextExerciseName(
                 isSingleExercise: Boolean,
                 currentExercise: RoutineExercise?,

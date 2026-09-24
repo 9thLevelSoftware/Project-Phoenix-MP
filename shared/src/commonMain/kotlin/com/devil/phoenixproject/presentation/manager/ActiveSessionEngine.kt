@@ -4950,9 +4950,6 @@ class ActiveSessionEngine(
         /** Check if currently in a superset */
         fun isInSuperset(): Boolean
 
-        /** Check if at end of superset cycle */
-        fun isAtEndOfSupersetCycle(): Boolean
-
         /** Calculate next exercise name for rest timer display */
         fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String?
 

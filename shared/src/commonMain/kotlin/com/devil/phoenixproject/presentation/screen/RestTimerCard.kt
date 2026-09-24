@@ -88,7 +88,6 @@ import projectphoenix.shared.generated.resources.cd_drop_set_candidate_unavailab
 import projectphoenix.shared.generated.resources.cd_drop_set_retry_disabled
 import projectphoenix.shared.generated.resources.cd_end_workout
 import projectphoenix.shared.generated.resources.cd_reset_timer
-import projectphoenix.shared.generated.resources.cd_rest_timer
 import projectphoenix.shared.generated.resources.cd_skip_rest
 import projectphoenix.shared.generated.resources.drop_set_accepted_waiting
 import projectphoenix.shared.generated.resources.drop_set_candidate_unavailable
@@ -712,33 +711,6 @@ private fun formatRestTime(seconds: Int): String {
     val minutes = safeSeconds / 60
     val remainingSeconds = safeSeconds % 60
     return "$minutes:${remainingSeconds.toString().padStart(2, '0')}"
-}
-
-@Composable
-fun WorkoutParamItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(
-            icon,
-            contentDescription = stringResource(Res.string.cd_rest_timer),
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
 /**

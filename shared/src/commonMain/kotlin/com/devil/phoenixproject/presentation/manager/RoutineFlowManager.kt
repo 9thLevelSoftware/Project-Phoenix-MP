@@ -317,100 +317,10 @@ class RoutineFlowManager(
             }
         }
 
-    // ===== Superset Navigation Helpers (private) =====
-
-    private fun getCurrentSupersetExercises(): List<RoutineExercise> {
-        val routine = coordinator._loadedRoutine.value ?: return emptyList()
-        val currentExercise = getCurrentExercise() ?: return emptyList()
-        val supersetId = currentExercise.supersetId ?: return emptyList()
-
-        return routine.exercises
-            .filter { it.supersetId == supersetId }
-            .sortedBy { it.orderInSuperset }
-    }
-
     /**
      * Check if the current exercise is part of a superset.
      */
     internal fun isInSuperset(): Boolean = getCurrentExercise()?.supersetId != null
-
-    /**
-     * Get the next exercise index in the superset rotation.
-     */
-    private fun getNextSupersetExerciseIndex(): Int? {
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val currentExercise = getCurrentExercise() ?: return null
-        val supersetId = currentExercise.supersetId ?: return null
-
-        val supersetExercises = getCurrentSupersetExercises()
-        val currentPositionInSuperset = supersetExercises.indexOf(currentExercise)
-
-        if (currentPositionInSuperset < supersetExercises.size - 1) {
-            val nextSupersetExercise = supersetExercises[currentPositionInSuperset + 1]
-            return routine.exercises.indexOf(nextSupersetExercise)
-        }
-
-        return null
-    }
-
-    /**
-     * Get the first exercise in the current superset.
-     */
-    private fun getFirstSupersetExerciseIndex(): Int? {
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val supersetExercises = getCurrentSupersetExercises()
-        if (supersetExercises.isEmpty()) return null
-
-        return routine.exercises.indexOf(supersetExercises.first())
-    }
-
-    /**
-     * Check if we're at the end of a superset cycle.
-     */
-    internal fun isAtEndOfSupersetCycle(): Boolean {
-        val currentExercise = getCurrentExercise() ?: return false
-        if (currentExercise.supersetId == null) return false
-
-        val supersetExercises = getCurrentSupersetExercises()
-        return currentExercise == supersetExercises.lastOrNull()
-    }
-
-    /**
-     * Find the next exercise after the current one (or after the current superset).
-     */
-    private fun findNextExerciseAfterCurrent(): Int? {
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val currentExercise = getCurrentExercise() ?: return null
-        val currentSupersetId = currentExercise.supersetId
-
-        if (currentSupersetId != null) {
-            // Issue #334: Use display ordering to find next exercise after superset,
-            // handles non-contiguous superset members in the flat list.
-            val items = routine.getItems()
-            val currentSupersetItemIdx = items.indexOfFirst { item ->
-                item is RoutineItem.SupersetItem && item.superset.exercises.any {
-                    it.supersetId == currentSupersetId
-                }
-            }
-            if (currentSupersetItemIdx >= 0) {
-                for (i in (currentSupersetItemIdx + 1) until items.size) {
-                    val nextExercises = when (val item = items[i]) {
-                        is RoutineItem.Single -> listOf(item.exercise)
-
-                        is RoutineItem.SupersetItem ->
-                            item.superset.exercises.sortedBy { it.orderInSuperset }
-                    }
-                    val firstEx = nextExercises.firstOrNull() ?: continue
-                    val idx = routine.exercises.indexOf(firstEx)
-                    if (idx >= 0) return idx
-                }
-            }
-            return null
-        }
-
-        val nextIndex = coordinator._currentExerciseIndex.value + 1
-        return if (nextIndex < routine.exercises.size) nextIndex else null
-    }
 
     // ===== Unified Navigation Logic =====
 

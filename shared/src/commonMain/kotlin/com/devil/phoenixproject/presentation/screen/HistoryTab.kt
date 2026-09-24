@@ -37,7 +37,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -100,7 +99,6 @@ import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.cd_delete_routine
 import projectphoenix.shared.generated.resources.cd_delete_workout
-import projectphoenix.shared.generated.resources.cd_workout_session_icon
 import projectphoenix.shared.generated.resources.delete_all_sets
 import projectphoenix.shared.generated.resources.delete_routine_session_message
 import projectphoenix.shared.generated.resources.delete_routine_session_title
@@ -110,7 +108,6 @@ import projectphoenix.shared.generated.resources.detailed_metrics_not_captured
 import projectphoenix.shared.generated.resources.empty_no_history_all
 import projectphoenix.shared.generated.resources.empty_no_history_period
 import projectphoenix.shared.generated.resources.empty_no_history_title
-import projectphoenix.shared.generated.resources.equipment_rack_inline_context
 import projectphoenix.shared.generated.resources.equipment_rack_title
 
 private val historyRackJson = Json { ignoreUnknownKeys = true }
@@ -1177,64 +1174,6 @@ fun GroupedRoutineCard(
     }
 }
 
-/**
- * Compact version of WorkoutHistoryCard for displaying within the expanded GroupedRoutineCard
- */
-@Composable
-fun WorkoutSessionCard(
-    session: WorkoutSession,
-    weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
-    exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
-    onDelete: () -> Unit,
-) {
-    var exerciseName by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(session.exerciseId) {
-        val id = session.exerciseId
-        exerciseName = if (id != null) exerciseRepository.getExerciseById(id)?.name else null
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraSmall,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.small),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    exerciseName ?: "Just Lift",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, null, weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}/cable • ${session.totalReps} reps • ${session.mode}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                session.rackContextText(weightUnit, formatWeight)?.let { rackText ->
-                    Text(
-                        stringResource(Res.string.equipment_rack_inline_context, rackText),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Text(
-                formatDuration(session.duration),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
 @Composable
 private fun RackContextRow(
     session: WorkoutSession,
@@ -1296,58 +1235,6 @@ private fun WorkoutSession.decodeRackSnapshotItems(): List<RackItem> {
         emptyList()
     } catch (_: IllegalArgumentException) {
         emptyList()
-    }
-}
-
-@Composable
-fun MetricItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-fun EnhancedMetricItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            icon,
-            contentDescription = stringResource(Res.string.cd_workout_session_icon),
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(modifier = Modifier.width(Spacing.extraSmall))
-        Column(horizontalAlignment = Alignment.Start) {
-            Text(
-                value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -1414,11 +1301,4 @@ private fun formatTimestamp(timestamp: Long): String {
     val date = KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
     val time = KmpUtils.formatTimestamp(timestamp, "HH:mm")
     return "$date at $time"
-}
-
-private fun formatDuration(millis: Long): String {
-    val totalSeconds = millis / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
