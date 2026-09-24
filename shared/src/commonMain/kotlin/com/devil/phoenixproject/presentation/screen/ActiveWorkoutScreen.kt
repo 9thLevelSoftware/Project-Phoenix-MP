@@ -213,6 +213,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
+    // F-040: the save-failure Retry offer is collected by EnhancedMainScreen, the
+    // app-level scaffold, because the save runs after this route has navigated away.
+
     // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it
     // stays active across SetReady ↔ ActiveWorkout navigation during routines.
 

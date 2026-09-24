@@ -90,7 +90,8 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
         workoutSessionsToReturn.filter { session ->
-            updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true
+            session.id !in pulledSessionIdsWithoutLocalData &&
+                (updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true)
         }
 
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
@@ -114,7 +115,75 @@ class FakeSyncRepository : SyncRepository {
         acknowledgedWorkoutParentIdCalls += acceptedPortalSessionIds
     }
 
-    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
+    /**
+     * Live rows of a routine group that are NOT in [workoutSessionsToReturn] — i.e.
+     * siblings already stamped out of the delta window. Approximates
+     * selectSessionsByRoutineSessionIds together with [workoutSessionsToReturn].
+     */
+    var routineGroupSiblings: List<WorkoutSession> = emptyList()
+
+    /** Ids that carry the pulled-origin marker (portalOrigin = 1) and have no local children. */
+    var pulledSessionIdsWithoutLocalData: Set<String> = emptySet()
+
+    var getWorkoutSessionsByRoutineSessionIdsCalls: MutableList<List<String>> = mutableListOf()
+
+    override suspend fun getWorkoutSessionsByRoutineSessionIds(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): List<WorkoutSession> {
+        getWorkoutSessionsByRoutineSessionIdsCalls += routineSessionIds.toList()
+        val ids = routineSessionIds.toSet()
+        return (workoutSessionsToReturn + routineGroupSiblings)
+            .filter { it.routineSessionId in ids }
+            .distinctBy { it.id }
+    }
+
+    override suspend fun getBlockedRoutineGroupSiblings(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): Map<String, List<String>> {
+        val ids = routineSessionIds.toSet()
+        return (workoutSessionsToReturn + routineGroupSiblings)
+            .filter { it.routineSessionId in ids && it.id in pulledSessionIdsWithoutLocalData }
+            .distinctBy { it.id }
+            .groupBy({ it.routineSessionId!! }, { it.id })
+    }
+
+    /** routineSessionId → newest member timestamp, newest first. */
+    var routineGroupRepairCandidates: List<Pair<String, Long>> = emptyList()
+    var routineGroupRepairCalls: MutableList<Pair<Long, Int>> = mutableListOf()
+
+    override suspend fun getRoutineGroupRepairCandidates(
+        beforeTimestamp: Long,
+        limit: Int,
+        profileId: String,
+    ): List<Pair<String, Long>> {
+        routineGroupRepairCalls += beforeTimestamp to limit
+        return routineGroupRepairCandidates
+            .filter { it.second < beforeTimestamp }
+            .sortedByDescending { it.second }
+            .take(limit)
+    }
+
+    /** Portal session id → locally stored note. */
+    var sessionNotesByPortalId: MutableMap<String, String?> = mutableMapOf()
+
+    override suspend fun getSessionNotesForIds(portalSessionIds: Collection<String>): Map<String, String?> {
+        val ids = portalSessionIds.toSet()
+        return sessionNotesByPortalId.filterKeys { it in ids }
+    }
+
+    /**
+     * Mirrors `selectRoutinesModifiedSince` (`updatedAt > :timestamp OR updatedAt IS NULL`).
+     * The timestamp argument is production's `repairFrom` (the per-profile `pushWatermark`,
+     * or 0 while a legacy repair push is owed). Rows with a NULL `updatedAt` always match,
+     * the same way `insertRoutine` rows do.
+     */
+    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> =
+        routinesToReturn.filter { routine ->
+            val updatedAt = routine.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
 
     var deletedRoutineIdsToReturn: List<String> = emptyList()
     var deletedCycleIdsToReturn: List<String> = emptyList()
@@ -169,16 +238,53 @@ class FakeSyncRepository : SyncRepository {
         updatedSessionTimestamps[sessionId] = timestamp
     }
 
+    /**
+     * Rows edited (or inserted) after the push gathered its payload, keyed by id with
+     * the edit time. Mirrors updateSessionTimestampsByIds' guard: such a row keeps its
+     * newer updatedAt and is not stamped.
+     */
+    var sessionEditedAtById: MutableMap<String, Long> = mutableMapOf()
+
+    /** Rows whose `updatedAt` was cleared back to NULL so the next delta retries them. */
+    val clearedSessionTimestampIds: MutableSet<String> = mutableSetOf()
+
+    override suspend fun updateSessionTimestamps(
+        sessionIds: Collection<String>,
+        timestamp: Long,
+        gatherStartedAt: Long,
+        clearIds: Collection<String>,
+    ): Int {
+        clearIds.distinct().forEach { id ->
+            updatedSessionTimestamps.remove(id)
+            clearedSessionTimestampIds += id
+        }
+        var stamped = 0
+        sessionIds.distinct().forEach { id ->
+            val existing = sessionEditedAtById[id] ?: updatedSessionTimestamps[id]
+            if (existing != null && existing > gatherStartedAt) return@forEach
+            updateSessionTimestampCalls += id
+            updatedSessionTimestamps[id] = timestamp
+            stamped++
+        }
+        return stamped
+    }
+
     // Issue #528: capture PR stamp calls so SyncManagerTest can assert that
     // pushed PRs are stamped the same way pushed sessions are.
     var updatedPersonalRecordTimestamps: MutableMap<Long, Long> = mutableMapOf()
     var updatePersonalRecordTimestampCalls: MutableList<List<Long>> = mutableListOf()
     var lastUpdatePersonalRecordTimestamp: Long? = null
 
-    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long) {
         updatePersonalRecordTimestampCalls += prIds
         lastUpdatePersonalRecordTimestamp = timestamp
         prIds.forEach { id -> updatedPersonalRecordTimestamps[id] = timestamp }
+    }
+
+    val stampedRoutineIdCalls: MutableList<List<String>> = mutableListOf()
+
+    override suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long) {
+        stampedRoutineIdCalls += routineIds
     }
 
     // === Parity Sync: Entity ID lists (simulate local database content) ===
@@ -198,6 +304,88 @@ class FakeSyncRepository : SyncRepository {
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = personalRecordIds
+
+    val syncExcludedEntities: MutableMap<String, MutableMap<String, MutableSet<String>>> = mutableMapOf()
+    val recordAccountSwitchExclusionsCalls: MutableList<Triple<String, Boolean, Map<String, Long>>> = mutableListOf()
+
+    override suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    ) {
+        val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
+        val ids = byType.getOrPut(entityType) { mutableSetOf() }
+        ids += entityIds
+    }
+
+    override suspend fun getSyncExcludedEntityIds(portalUserId: String, entityType: String): Set<String> =
+        syncExcludedEntities[portalUserId]?.get(entityType)?.toSet() ?: emptySet()
+
+    override suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String?,
+        previousPortalUserIdsByProfile: Map<String, String>,
+    ) {
+        recordAccountSwitchExclusionsCalls += Triple(portalUserId, excludeAllExisting, previousPushWatermarks)
+        val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
+        fun exclude(entityType: String, entityId: String) {
+            byType.getOrPut(entityType) { mutableSetOf() } += entityId
+        }
+        val types = com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
+        for (profileId in profileIds) {
+            val watermark = previousPushWatermarks[profileId] ?: 0L
+            for (session in workoutSessionsToReturn) {
+                if (session.profileId != profileId) continue
+                val neverSynced = session.updatedAt == null
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.WORKOUT, session.id)
+                    session.routineSessionId?.let { exclude(types.WORKOUT, it) }
+                }
+            }
+            for (routine in routinesToReturn) {
+                if (routine.profileId != profileId) continue
+                val neverSynced = routine.createdAt > 0L && routine.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.ROUTINE, routine.id)
+                }
+            }
+            for (ctx in cyclesToReturn) {
+                val cycle = ctx.cycle
+                val neverSynced = cycle.createdAt > 0L && cycle.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.CYCLE, cycle.id)
+                }
+            }
+            for (record in fullPRsToReturn) {
+                val neverSynced = record.timestamp > 0L && record.timestamp > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.PERSONAL_RECORD, record.id.toString())
+                    record.uuid?.let { exclude(types.PERSONAL_RECORD, it) }
+                }
+            }
+            for (exercise in customExercisesToReturn) {
+                val idTime = com.devil.phoenixproject.data.sync.customExerciseIdTimestamp(exercise.clientId)
+                val neverSynced = idTime != null && idTime > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.CUSTOM_EXERCISE, exercise.clientId)
+                }
+            }
+        }
+    }
+
+    val recordOwnershipRecoveryExclusionsCalls: MutableList<Pair<Long, Set<String>>> = mutableListOf()
+
+    override suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    ) {
+        recordOwnershipRecoveryExclusionsCalls += createdAtOrBefore to entityTypes
+    }
 
     var hardDeletedRoutineIds: List<String> = emptyList()
     var hardDeletedCycleIds: List<String> = emptyList()
@@ -221,9 +409,16 @@ class FakeSyncRepository : SyncRepository {
         cycleServerVersionUpdates += versions
     }
 
+    /**
+     * Mirrors `selectPRsModifiedSince` (`updatedAt > ? OR updatedAt IS NULL`), same
+     * `repairFrom` contract as [getFullRoutinesModifiedSince].
+     */
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
         callLog += "getFullPRsModifiedSince"
-        return fullPRsToReturn
+        return fullPRsToReturn.filter { record ->
+            val updatedAt = record.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
     }
 
     override suspend fun backfillPhaseSpecificPRs(
@@ -246,7 +441,10 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
 
-    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
+    var assessmentsToReturn: List<AssessmentResult> = emptyList()
+
+    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> =
+        assessmentsToReturn.filter { it.profile_id == profileId }
 
     override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         // no-op for tests
@@ -254,10 +452,12 @@ class FakeSyncRepository : SyncRepository {
 
     var mergedPortalSessions: List<WorkoutSession> = emptyList()
     var mergePortalSessionsCallCount = 0
+    var lastMergePortalSessionsPushWatermark: Long = 0L
 
-    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) {
+    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>, pushWatermark: Long) {
         mergePortalSessionsCallCount++
         mergedPortalSessions = sessions
+        lastMergePortalSessionsPushWatermark = pushWatermark
     }
 
     var mergedPersonalRecords: List<PersonalRecordSyncDto> = emptyList()
@@ -318,6 +518,7 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergeWorkoutDeletions: List<PulledWorkoutDeletionDto> = emptyList()
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
+    var lastAtomicMergePushWatermark: Long = 0L
     var mergeSessionNotesCallCount = 0
     var lastMergedSessionNotes: Map<String, SessionNotesEntry> = emptyMap()
     var lastAtomicMergeSessionUpdatedAtById: Map<String, Long> = emptyMap()
@@ -341,6 +542,8 @@ class FakeSyncRepository : SyncRepository {
         serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
+        pushWatermark: Long,
+        pulledProvenance: Map<String, Collection<String>>,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
@@ -362,6 +565,7 @@ class FakeSyncRepository : SyncRepository {
         lastAtomicMergeProfileId = profileId
         lastMergedSessionNotes = sessionNotes
         lastAtomicMergeSessionUpdatedAtById = sessionUpdatedAtById
+        lastAtomicMergePushWatermark = pushWatermark
 
         // Also update the individual merge trackers for backward compatibility with existing tests
         // that check the individual merge call counts and captured data.

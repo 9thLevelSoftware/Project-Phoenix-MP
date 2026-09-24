@@ -40,6 +40,7 @@ fun PhoenixDatabase.seedExercise(
     muscleGroup: String = "Chest",
     equipment: String = "",
     isCustom: Boolean = false,
+    archived: Boolean = false,
 ) {
     if (phoenixDatabaseQueries.selectExerciseById(id).executeAsOneOrNull() != null) return
     phoenixDatabaseQueries.insertExercise(
@@ -58,7 +59,7 @@ fun PhoenixDatabase.seedExercise(
         gripWidth = null,
         minRepRange = null,
         popularity = 0.0,
-        archived = 0L,
+        archived = if (archived) 1L else 0L,
         isFavorite = 0L,
         isCustom = if (isCustom) 1L else 0L,
         timesPerformed = 0L,

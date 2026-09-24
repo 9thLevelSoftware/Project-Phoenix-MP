@@ -55,6 +55,7 @@ import com.devil.phoenixproject.util.shareDatabaseFiles
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -275,6 +276,19 @@ private fun MigrationRetryScreen(message: String, onRetry: () -> Unit) {
 }
 
 /**
+ * What a platform host shows while startup (database open, schema heal, required migrations)
+ * is still resolving on a background dispatcher. It needs no resolved dependencies, and it
+ * shows the same splash [AppContent] uses, so a slow cold start is never a blank screen.
+ * The saved theme isn't readable yet, so it uses the system theme.
+ */
+@Composable
+fun StartupPendingSurface() {
+    PhoenixTheme {
+        SplashScreen(visible = true)
+    }
+}
+
+/**
  * Shared app content. Platform hosts own DI/lifecycle scoping and pass
  * retained dependencies into this pure UI entry point.
  */
@@ -338,7 +352,7 @@ fun AppContent(
                 StartupSurface.MIGRATION_RETRY -> MigrationRetryScreen(
                     message = (migrationState as RequiredMigrationState.Failed).message,
                     onRetry = {
-                        scope.launch { migrationManager.retryRequiredMigrations() }
+                        scope.launch(Dispatchers.IO) { migrationManager.retryRequiredMigrations() }
                     },
                 )
 

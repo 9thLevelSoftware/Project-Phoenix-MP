@@ -193,10 +193,15 @@ class SyncTriggerManager(
                     // reserved for permanent/auth failures that need manual action.
                 }
 
+                // Ownership refusals and other permanent errors never auto-retry.
+                // OWNERSHIP_CONFLICT additionally leaves SyncState.OwnershipConflict
+                // holding, which attemptSync refuses to clear on its own.
+                SyncErrorCategory.OWNERSHIP_CONFLICT,
                 SyncErrorCategory.PERMANENT -> {
-                    // Don't retry, reset backoff
                     currentBackoffIndex = 0
-                    Logger.e { "SyncTrigger: Permanent error, not retrying: ${classified.message}" }
+                    Logger.e {
+                        "SyncTrigger: ${classified.category} error, not retrying: ${classified.message}"
+                    }
                     _hasPersistentError.value = true
                 }
 
@@ -272,11 +277,23 @@ class SyncTriggerManager(
             return
         }
 
+        // Account-switch hold (PR 11): never auto-sync while the user still has to
+        // pick how to treat pre-switch rows, or while an ownership refusal is open.
+        when (syncManager.syncState.value) {
+            is SyncState.AccountMismatch, is SyncState.OwnershipConflict -> {
+                Logger.d { "SyncTrigger: Skipping sync - account switch or ownership conflict pending" }
+                return
+            }
+            else -> Unit
+        }
+
         // Check premium status -- skip auto-sync for users confirmed as free.
         // Allow first sync attempt (lastSyncTime == 0) so premium status can be discovered.
         val user = syncManager.currentUser.value
         if (user?.isPremium == false && syncManager.lastSyncTime.value > 0) {
             Logger.d { "SyncTrigger: Skipping sync - not premium" }
+            // Show "Sync paused — subscription required" instead of a stale "Last synced".
+            syncManager.markPausedNotPremium()
             return
         }
 

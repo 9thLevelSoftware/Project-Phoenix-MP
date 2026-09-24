@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -30,31 +31,7 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
     override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                results.forEach { result ->
-                    queries.insertRepBiomechanics(
-                    sessionId = sessionId,
-                    repNumber = result.repNumber.toLong(),
-                    // VBT metrics
-                    mcvMmS = result.velocity.meanConcentricVelocityMmS.toDouble(),
-                    peakVelocityMmS = result.velocity.peakVelocityMmS.toDouble(),
-                    velocityZone = result.velocity.zone.name,
-                    velocityLossPercent = result.velocity.velocityLossPercent?.toDouble(),
-                    estimatedRepsRemaining = result.velocity.estimatedRepsRemaining?.toLong(),
-                    shouldStopSet = if (result.velocity.shouldStopSet) 1L else 0L,
-                    // Force curve
-                    normalizedForceN = result.forceCurve.normalizedForceN.toJsonString(),
-                    normalizedPositionPct = result.forceCurve.normalizedPositionPct.toJsonString(),
-                    stickingPointPct = result.forceCurve.stickingPointPct?.toDouble(),
-                    strengthProfile = result.forceCurve.strengthProfile.name,
-                    // Asymmetry
-                    asymmetryPercent = result.asymmetry.asymmetryPercent.toDouble(),
-                    dominantSide = result.asymmetry.dominantSide,
-                    avgLoadA = result.asymmetry.avgLoadA.toDouble(),
-                    avgLoadB = result.asymmetry.avgLoadB.toDouble(),
-                    // Metadata
-                    timestamp = result.timestamp,
-                    )
-                }
+                results.forEach { result -> queries.insertRepBiomechanicsRow(sessionId, result) }
                 queries.markWorkoutComponentDirty(sessionId)
             }
         }
@@ -112,4 +89,35 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
             }
         }
     }
+}
+
+/**
+ * The single RepBiomechanics insert. Shared with
+ * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
+ * transaction writes exactly the rows this repository would have written.
+ */
+internal fun PhoenixDatabaseQueries.insertRepBiomechanicsRow(sessionId: String, result: BiomechanicsRepResult) {
+    insertRepBiomechanics(
+        sessionId = sessionId,
+        repNumber = result.repNumber.toLong(),
+        // VBT metrics
+        mcvMmS = result.velocity.meanConcentricVelocityMmS.toDouble(),
+        peakVelocityMmS = result.velocity.peakVelocityMmS.toDouble(),
+        velocityZone = result.velocity.zone.name,
+        velocityLossPercent = result.velocity.velocityLossPercent?.toDouble(),
+        estimatedRepsRemaining = result.velocity.estimatedRepsRemaining?.toLong(),
+        shouldStopSet = if (result.velocity.shouldStopSet) 1L else 0L,
+        // Force curve
+        normalizedForceN = result.forceCurve.normalizedForceN.toJsonString(),
+        normalizedPositionPct = result.forceCurve.normalizedPositionPct.toJsonString(),
+        stickingPointPct = result.forceCurve.stickingPointPct?.toDouble(),
+        strengthProfile = result.forceCurve.strengthProfile.name,
+        // Asymmetry
+        asymmetryPercent = result.asymmetry.asymmetryPercent.toDouble(),
+        dominantSide = result.asymmetry.dominantSide,
+        avgLoadA = result.asymmetry.avgLoadA.toDouble(),
+        avgLoadB = result.asymmetry.avgLoadB.toDouble(),
+        // Metadata
+        timestamp = result.timestamp,
+    )
 }

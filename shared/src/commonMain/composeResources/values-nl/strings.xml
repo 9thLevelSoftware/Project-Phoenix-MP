@@ -643,6 +643,9 @@
     <string name="profile_recovery_message">Phoenix kan niet bevestigen welk profiel actief is. Probeer opnieuw voordat u doorgaat.</string>
     <string name="profile_recovery_retry_failed">Profielherstel is nog niet beschikbaar</string>
     <string name="profile_delete_reassign_message">&quot;%1$s&quot; verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Default verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="profile_delete_merge_action">Samenvoegen met Standaard</string>
+    <string name="profile_delete_permanent_action">Definitief verwijderen</string>
+    <string name="profile_delete_permanent_message">Of verwijder &quot;%1$s&quot; definitief: de trainingen, routines, cycli en records worden van dit apparaat en uit je portaalaccount verwijderd. Dit kan niet ongedaan worden gemaakt.</string>
     <string name="settings_video_behavior">Oefendemonstraties</string>
     <string name="settings_show_exercise_videos">Oefendemonstraties tonen</string>
     <string name="settings_show_exercise_videos_description">Toon oefendemonstraties; schakel dit uit op tragere apparaten</string>

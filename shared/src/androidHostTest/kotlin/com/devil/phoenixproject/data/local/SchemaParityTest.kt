@@ -103,6 +103,16 @@ class SchemaParityTest {
                 },
             )
         }
+
+        // Same names are not enough: a heal-only index (created by manifestIndexes on every
+        // upgraded install) with the wrong columns or order would still match by name.
+        val definitionDiffs = indexDefinitionDiffs(
+            expected = getIndexDefinitions(freshDriver),
+            actual = getIndexDefinitions(upgradeDriver),
+        )
+        if (definitionDiffs.isNotEmpty()) {
+            fail("Index definitions differ between fresh install and upgrade path:\n${definitionDiffs.joinToString("\n")}")
+        }
     }
 
     // ==================== TEST 2 ====================
@@ -110,6 +120,10 @@ class SchemaParityTest {
     @Test
     fun `every intermediate version upgrades cleanly with all manifest entries`() {
         val failures = mutableListOf<String>()
+        val freshIndexDefinitions = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).let { fresh ->
+            PhoenixDatabase.Schema.create(fresh)
+            getIndexDefinitions(fresh).also { fresh.close() }
+        }
 
         for (startVersion in 1L..EXPECTED_SCHEMA_VERSION - 1) {
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
@@ -127,12 +141,14 @@ class SchemaParityTest {
                     }
                 }
 
-                // Verify all manifestIndexes entries exist
+                // Verify all manifestIndexes entries exist, with the fresh-install definition
                 for (op in manifestIndexes) {
                     if (!indexExistsInDriver(driver, op.name)) {
                         failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: MISSING index ${op.name}"
                     }
                 }
+                indexDefinitionDiffs(expected = freshIndexDefinitions, actual = getIndexDefinitions(driver))
+                    .forEach { failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: $it" }
             } catch (e: Exception) {
                 failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: EXCEPTION ${e::class.simpleName}: ${e.message}"
             } finally {
@@ -1212,10 +1228,51 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 55 indexes migration-guaranteed columns and the heal adds the profile-scoped ones`() {
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 55) // migrations only: profile_id is still heal-only here
+            assertEquals(false, columnExistsInDriver(driver, "WorkoutSession", "profile_id"), scenario)
+
+            // Must succeed on an unreconciled install (onUpgrade runs before the heal): the
+            // migration may not reference the heal-only WorkoutSession.profile_id.
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 55)
+                assertEquals(listOf(true, true), results.map { it.success }, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 55, 56)
+            }
+
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_routine_session"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_routine_exercise_exercise"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_exercise_profile_ts"), scenario)
+
+            reconcileFullSchema(driver)
+
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_exercise_profile_ts"), scenario)
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 54L
+        private const val EXPECTED_SCHEMA_VERSION = 56L
+
+        /**
+         * A database built the way every existing user gets it: minimal v1 schema, each
+         * migration to the current version (resilient fallback included), then the post-open
+         * heal. Foreign keys stay off, as in production's migration window.
+         */
+        internal fun upgradedAndHealedDriver(): JdbcSqliteDriver =
+            JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { driver ->
+                SchemaParityTest().buildSchemaAtVersion(driver, EXPECTED_SCHEMA_VERSION)
+                reconcileFullSchema(driver)
+            }
 
         /** Pre-existing gaps (v5 predates MigrationStatements parity). Do not add to this list. */
         private val GRANDFATHERED_UNMIRRORED_SQM_COLUMNS = setOf(
@@ -1627,6 +1684,63 @@ class SchemaParityTest {
         )
         return indexes
     }
+
+    /**
+     * Index name -> normalised definition: table, key columns in order with DESC/collation,
+     * UNIQUE, and any partial-index WHERE clause. Built from PRAGMA index_xinfo so textual
+     * differences (IF NOT EXISTS, spacing) do not matter but shape differences do.
+     */
+    private fun getIndexDefinitions(driver: SqlDriver): Map<String, String> {
+        val rows = mutableListOf<Triple<String, String, String?>>()
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'",
+            mapper = { cursor ->
+                while (cursor.next().value) {
+                    rows += Triple(cursor.getString(0).orEmpty(), cursor.getString(1).orEmpty(), cursor.getString(2))
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return rows.associate { (name, table, sql) ->
+            val columns = mutableListOf<String>()
+            driver.executeQuery(
+                identifier = null,
+                sql = "PRAGMA index_xinfo('$name')",
+                mapper = { cursor ->
+                    while (cursor.next().value) {
+                        // seqno, cid, name, desc, coll, key
+                        if (cursor.getLong(5) != 1L) continue
+                        val column = cursor.getString(2) ?: "<expr>"
+                        val collation = cursor.getString(4)
+                            ?.takeUnless { it.equals("BINARY", ignoreCase = true) }
+                            ?.let { " COLLATE $it" }
+                            .orEmpty()
+                        val desc = if (cursor.getLong(3) == 1L) " DESC" else ""
+                        columns += column + collation + desc
+                    }
+                    QueryResult.Value(Unit)
+                },
+                parameters = 0,
+            )
+            val normalised = sql.orEmpty().replace(Regex("""\s+"""), " ").trim()
+            val unique = Regex("^CREATE UNIQUE", RegexOption.IGNORE_CASE).containsMatchIn(normalised)
+            val where = Regex("""\)\s+WHERE\s+(.*)$""", RegexOption.IGNORE_CASE).find(normalised)
+                ?.groupValues?.get(1)?.lowercase()
+            name to buildString {
+                append("$table(${columns.joinToString(", ")})")
+                if (unique) append(" UNIQUE")
+                if (where != null) append(" WHERE $where")
+            }
+        }
+    }
+
+    private fun indexDefinitionDiffs(expected: Map<String, String>, actual: Map<String, String>): List<String> =
+        expected.mapNotNull { (name, definition) ->
+            val found = actual[name] ?: return@mapNotNull null // missing indexes are reported by name
+            if (found == definition) null else "index $name: expected $definition but was $found"
+        }
 
     private fun columnExistsInDriver(driver: SqlDriver, table: String, column: String): Boolean {
         val columns = getColumns(driver, table)

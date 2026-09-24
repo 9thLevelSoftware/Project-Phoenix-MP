@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.migration
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
@@ -219,6 +220,9 @@ class MigrationManager(
     private suspend fun runMigrations() {
         refreshProfilesIfAvailable()
         runNonCriticalPersonalRecordRepair()
+        // Data-gated, so a no-op in the steady state; catches legacy catalogue ids that
+        // arrived while the app was last running (pull, restore) before any UI entry point.
+        LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "startup")
     }
 
     private fun runRequiredDataRepairs() {
@@ -467,7 +471,9 @@ class MigrationManager(
         val allRecordProfileIds = mutableSetOf<String>()
         driver?.executeQuery(
             identifier = null,
-            sql = "SELECT DISTINCT profile_id FROM PersonalRecord",
+            // Live rows only: a permanently deleted profile (PR 20) keeps its PR tombstones
+            // under its own id; moving them would hand them to another profile.
+            sql = "SELECT DISTINCT profile_id FROM PersonalRecord WHERE deletedAt IS NULL",
             mapper = { cursor ->
                 while (cursor.next().value) {
                     cursor.getString(0)?.let { allRecordProfileIds.add(it) }
@@ -484,7 +490,7 @@ class MigrationManager(
             var count = 0
             driver?.executeQuery(
                 identifier = null,
-                sql = "SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = ?",
+                sql = "SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = ? AND deletedAt IS NULL",
                 mapper = { cursor ->
                     if (cursor.next().value) {
                         count = cursor.getLong(0)?.toInt() ?: 0
