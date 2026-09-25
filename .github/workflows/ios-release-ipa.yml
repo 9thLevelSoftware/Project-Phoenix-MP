@@ -43,7 +43,9 @@ jobs:
 
   build-and-attach:
     needs: tests
-    runs-on: macos-26
+    # Kotlin/Native's release link needs 12 GiB of heap. macos-26 is ARM64
+    # with 7 GiB; use the 14 GiB Intel image to build the iosArm64 target.
+    runs-on: macos-26-intel
 
     steps:
       - name: Checkout repository
