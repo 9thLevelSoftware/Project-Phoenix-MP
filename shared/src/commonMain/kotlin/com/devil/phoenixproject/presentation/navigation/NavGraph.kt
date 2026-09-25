@@ -41,9 +41,9 @@ import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.insights_title
-import vitruvianprojectphoenix.shared.generated.resources.nav_profile
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.insights_title
+import projectphoenix.shared.generated.resources.nav_profile
 
 internal sealed interface AssessmentProfileDestinationState {
     data class Bound(val profileId: String) : AssessmentProfileDestinationState
@@ -331,6 +331,11 @@ fun NavGraph(
                             NavigationRoutes.StrengthAssessmentPicker.createRoute(profileId),
                         )
                     },
+                    onNavigateToExerciseDetail = { exerciseId ->
+                        navController.navigate(
+                            NavigationRoutes.ExerciseDetail.createRoute(exerciseId),
+                        )
+                    },
                 )
             }
 
@@ -385,6 +390,7 @@ fun NavGraph(
                     onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
                     onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    isInWorkoutSession = viewModel::isInWorkoutSessionNow,
                     themeMode = themeMode,
                 )
             }
@@ -485,6 +491,8 @@ fun NavGraph(
                     onBleCompatibilityModeChange = viewModel::setBleCompatibilityMode,
                     autoBackupEnabled = globalSettings.autoBackupEnabled,
                     onAutoBackupEnabledChange = viewModel::setAutoBackupEnabled,
+                    includeRawTelemetryInBackups = globalSettings.includeRawTelemetryInBackups,
+                    onIncludeRawTelemetryInBackupsChange = viewModel::setIncludeRawTelemetryInBackups,
                     backupStats = backupStats,
                     onOpenBackupFolder = viewModel::openBackupFolder,
                     backupDestination = globalSettings.backupDestination,
@@ -559,7 +567,7 @@ fun NavGraph(
                 )
             }
 
-            // Diagnostics screen - official-style machine diagnostics
+            // Diagnostics screen - machine diagnostics
             composable(
                 route = NavigationRoutes.Diagnostics.route,
                 enterTransition = {

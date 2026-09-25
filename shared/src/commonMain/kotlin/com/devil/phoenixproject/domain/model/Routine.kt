@@ -101,6 +101,10 @@ data class RoutineExercise(
     val perSetRestTime: Boolean = false,
     // Stall detection toggle - when true, auto-stops set after 5s movement stall/de-load
     val stallDetectionEnabled: Boolean = true,
+    // Offer a drop-set retry after stall failure (Issue #673). Default off.
+    val dropSetEnabled: Boolean = false,
+    // Per-cable kg floor for drop-set candidates; required when dropSetEnabled is true.
+    val dropSetMinWeightKg: Float? = null,
     // Rep count timing - when to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     val repCountTiming: RepCountTiming = RepCountTiming.TOP,
     // Stop at top (contracted position) — applies to fixed-rep sets only, not AMRAP/Just Lift
@@ -124,9 +128,37 @@ data class RoutineExercise(
     // Map of rackItemId -> RackItemBehavior. Items not in the map fall through
     // to the global RackItem.behavior. Serialized as JSON in the DB.
     val rackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    // Portal sync only: true when [duration] is known to be current (pulled on a build
+    // that stores durations, or edited locally). Populated by the sync push reader;
+    // false elsewhere. When false, a null duration is omitted from the push instead of
+    // being sent as an explicit "clear".
+    val durationSyncKnown: Boolean = false,
+    // Runtime only: a launch modifier may deliberately shorten an editor-valid timed
+    // duration below the editor minimum. This flag is never persisted or synced.
+    val isLaunchAdjustedDuration: Boolean = false,
 ) {
+    companion object {
+        const val MIN_TIMED_DURATION_SECONDS = 10
+        const val MAX_TIMED_DURATION_SECONDS = 300
+
+        fun supportedTimedDurationSeconds(seconds: Int?): Int? =
+            seconds?.takeIf { it in MIN_TIMED_DURATION_SECONDS..MAX_TIMED_DURATION_SECONDS }
+    }
+
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
+
+    /** Duration accepted from stored/editor/sync data. */
+    val supportedTimedDurationSeconds: Int?
+        get() = supportedTimedDurationSeconds(duration)
+
+    /** Duration accepted at execution, including a safe launch-time reduction. */
+    val executionTimedDurationSeconds: Int?
+        get() = if (isLaunchAdjustedDuration) {
+            duration?.takeIf { it in 1..MAX_TIMED_DURATION_SECONDS }
+        } else {
+            supportedTimedDurationSeconds
+        }
 
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
@@ -202,7 +234,7 @@ data class RoutineExercise(
 
 /**
  * Round to nearest 0.5kg increment.
- * Vitruvian machines use 0.5kg increments, so this ensures valid weight values.
+ * Phoenix machines use 0.5kg increments, so this ensures valid weight values.
  */
 private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 

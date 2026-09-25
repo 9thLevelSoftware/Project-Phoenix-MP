@@ -1,4 +1,4 @@
-// Top-level build file for Vitruvian Project Phoenix - Multiplatform
+// Top-level build file for Phoenix Project Phoenix - Multiplatform
 plugins {
     // Android plugins - apply false to configure in submodules
     alias(libs.plugins.android.application) apply false
@@ -26,7 +26,7 @@ allprojects {
         resolutionStrategy.dependencySubstitution {
             substitute(module("com.juul.kable:kable-core-android"))
                 .using(project(":third_party:kable-core-android-patched"))
-                .because("Phoenix #333: keep Kable's Android queue/callback path but use the official app's legacy GATT write shape")
+                .because("Phoenix #333: keep Kable's Android queue/callback path but use the machine's legacy GATT write shape")
             substitute(module("com.juul.kable:kable-core-android-debug"))
                 .using(project(":third_party:kable-core-android-patched"))
                 .because("Phoenix #333: debug Android variant must use the same patched Kable write path")
@@ -75,9 +75,6 @@ tasks.matching { it.name == "clean" }.configureEach {
     }
 }
 
-// Migration verifier re-enabled after fixing migration gaps (MVP audit, Batch B).
-// Previously disabled to work around duplicate columns and missing migrations.
-//
 // Windows workaround: SQLite JDBC's native loader uses java.io.tmpdir which may resolve
 // to C:\Windows (access-denied). Set the system property before the task executes so the
 // classloader-isolated worker inherits it from the daemon JVM.

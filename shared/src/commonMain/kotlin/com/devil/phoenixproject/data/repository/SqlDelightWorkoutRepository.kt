@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -19,7 +19,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
-import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -27,9 +26,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
+class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -98,6 +97,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         externalAddedLoadKg: Double,
         counterweightKg: Double,
         rackItemsJson: String,
+        portalOrigin: Long,
+        localSyncGeneration: Long,
+        syncedSyncGeneration: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -155,6 +157,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         externalAddedLoadKg = externalAddedLoadKg.toFloat(),
         counterweightKg = counterweightKg.toFloat(),
         rackItemsJson = rackItemsJson,
+        updatedAt = updatedAt,
     )
 
     private fun mapToRoutineBasic(
@@ -175,6 +178,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
     ): Routine = Routine(
         id = id,
         name = name,
+        description = description,
         exercises = emptyList(),
         createdAt = createdAt,
         updatedAt = updatedAt,
@@ -193,6 +197,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         profileId: String = "default",
         groupId: String? = null,
         updatedAt: Long? = null,
+        description: String = "",
     ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
@@ -219,22 +224,25 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                                 Logger.w {
                                     "Routine exercise had stale exerciseId=$exerciseId; resolved by name '${row.exerciseName}' -> ${byName.id} and healing row ${row.id}"
                                 }
-                                queries.updateRoutineExerciseId(byName.id, row.id)
+                                healRoutineExerciseId(byName.id, row.id)
                             }
                 } ?: exerciseRepository.findByName(row.exerciseName)
                     ?.also { byName ->
                         Logger.i {
                             "Routine exercise missing exerciseId for '${row.exerciseName}'; resolved to ${byName.id} and healing row ${row.id}"
                         }
-                        queries.updateRoutineExerciseId(byName.id, row.id)
+                        healRoutineExerciseId(byName.id, row.id)
                     }
 
                 val exercise = resolvedExercise ?: run {
+                    // Issue #774: never mint an exercise with a blank name; it crashes the
+                    // exercise picker. Fall back to the stored id, then a fixed label.
+                    val healedName = healedExerciseName(row.exerciseName, row.exerciseId)
                     // Self-healing: auto-create a custom exercise so exerciseId is never null.
                     // A null exerciseId breaks the entire PR tracking pipeline (#319).
                     val autoCreated = exerciseRepository.createCustomExercise(
                         Exercise(
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
                             isCustom = true,
@@ -247,7 +255,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                                 "(was null in RoutineExercise ${row.id})"
                         }
                         // Heal the DB row so subsequent loads don't repeat this
-                        queries.updateRoutineExerciseId(autoCreated.id!!, row.id)
+                        healRoutineExerciseId(autoCreated.id!!, row.id)
                         autoCreated
                     } else {
                         // Last resort: generate a synthetic ID to prevent null propagation
@@ -258,7 +266,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                         }
                         Exercise(
                             id = syntheticId,
-                            name = row.exerciseName,
+                            name = healedName,
                             muscleGroup = row.exerciseMuscleGroup,
                             muscleGroups = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
@@ -422,6 +430,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     defaultRackItemIds = defaultRackItemIds,
                     rackBehaviorOverrides = rackBehaviorOverrides,
                     scalingBasis = row.scalingBasis?.let { runCatching { ScalingBasis.valueOf(it) }.getOrNull() },
+                    dropSetEnabled = row.dropSetEnabled == 1L,
+                    dropSetMinWeightKg = row.dropSetMinWeightKg?.toFloat(),
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -432,6 +442,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         return Routine(
             id = routineId,
             name = name,
+            description = description,
             exercises = exercises,
             supersets = supersets,
             createdAt = createdAt,
@@ -558,65 +569,125 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
-            queries.insertSession(
-                id = session.id,
-                timestamp = session.timestamp,
-                mode = session.mode,
-                targetReps = session.reps.toLong(),
-                weightPerCableKg = session.weightPerCableKg.toDouble(),
-                progressionKg = session.progressionKg.toDouble(),
-                duration = session.duration,
-                totalReps = session.totalReps.toLong(),
-                warmupReps = session.warmupReps.toLong(),
-                workingReps = session.workingReps.toLong(),
-                isJustLift = if (session.isJustLift) 1L else 0L,
-                stopAtTop = if (session.stopAtTop) 1L else 0L,
-                eccentricLoad = session.eccentricLoad.toLong(),
-                echoLevel = session.echoLevel.toLong(),
-                exerciseId = session.exerciseId,
-                exerciseName = session.exerciseName,
-                routineSessionId = session.routineSessionId,
-                routineName = session.routineName,
-                routineId = session.routineId,
-                safetyFlags = session.safetyFlags.toLong(),
-                deloadWarningCount = session.deloadWarningCount.toLong(),
-                romViolationCount = session.romViolationCount.toLong(),
-                spotterActivations = session.spotterActivations.toLong(),
-                // New summary metrics
-                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                cableCount = session.cableCount?.toLong(),
-                estimatedCalories = session.estimatedCalories?.toDouble(),
-                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                peakWeightKg = session.peakWeightKg?.toDouble(),
-                rpe = session.rpe?.toLong(),
-                // Biomechanics summary
-                avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                dominantSide = session.dominantSide,
-                strengthProfile = session.strengthProfile,
-                // Form Check score
-                formScore = session.formScore?.toLong(),
-                // Multi-profile support
-                profile_id = session.profileId,
-                // Equipment-aware weight display
-                display_multiplier = session.displayMultiplier?.toLong(),
-                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                counterweightKg = session.counterweightKg.toDouble(),
-                rackItemsJson = session.rackItemsJson,
-            )
+            insertSessionRow(session)
         }
+    }
+
+    /**
+     * F-012: the whole completion in one transaction. See
+     * [WorkoutRepository.commitCompletedSet] for the contract; the guards here
+     * are the ones the former six-call sequence used, so a retry is a no-op.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
+                    insertSessionRow(session)
+                }
+                if (metrics.isNotEmpty()) {
+                    queries.deleteMetricsBySession(session.id)
+                    metrics.forEach { metric -> insertMetricRow(session.id, metric) }
+                }
+                if (completedSet != null &&
+                    queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
+                ) {
+                    queries.insertCompletedSetRow(completedSet)
+                }
+                queries.deleteRepMetricsBySession(session.id)
+                repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
+                queries.deleteRepBiomechanicsBySession(session.id)
+                repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+                // Main's newer sync-dirty contract: every child write marks its
+                // session. The atomic commit writes those children in one
+                // transaction, so it must dirty the session the same way the
+                // old per-repo calls did — otherwise a committed set never pushes.
+                queries.markWorkoutComponentDirty(session.id)
+            }
+        }
+    }
+
+    private fun insertSessionRow(session: WorkoutSession) {
+        queries.insertSession(
+            id = session.id,
+            timestamp = session.timestamp,
+            mode = session.mode,
+            targetReps = session.reps.toLong(),
+            weightPerCableKg = session.weightPerCableKg.toDouble(),
+            progressionKg = session.progressionKg.toDouble(),
+            duration = session.duration,
+            totalReps = session.totalReps.toLong(),
+            warmupReps = session.warmupReps.toLong(),
+            workingReps = session.workingReps.toLong(),
+            isJustLift = if (session.isJustLift) 1L else 0L,
+            stopAtTop = if (session.stopAtTop) 1L else 0L,
+            eccentricLoad = session.eccentricLoad.toLong(),
+            echoLevel = session.echoLevel.toLong(),
+            exerciseId = session.exerciseId,
+            exerciseName = session.exerciseName,
+            routineSessionId = session.routineSessionId,
+            routineName = session.routineName,
+            routineId = session.routineId,
+            safetyFlags = session.safetyFlags.toLong(),
+            deloadWarningCount = session.deloadWarningCount.toLong(),
+            romViolationCount = session.romViolationCount.toLong(),
+            spotterActivations = session.spotterActivations.toLong(),
+            // New summary metrics
+            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+            totalVolumeKg = session.totalVolumeKg?.toDouble(),
+            cableCount = session.cableCount?.toLong(),
+            estimatedCalories = session.estimatedCalories?.toDouble(),
+            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+            peakWeightKg = session.peakWeightKg?.toDouble(),
+            rpe = session.rpe?.toLong(),
+            // Biomechanics summary
+            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+            dominantSide = session.dominantSide,
+            strengthProfile = session.strengthProfile,
+            // Form Check score
+            formScore = session.formScore?.toLong(),
+            // Multi-profile support
+            profile_id = session.profileId,
+            // Equipment-aware weight display
+            display_multiplier = session.displayMultiplier?.toLong(),
+            externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+            counterweightKg = session.counterweightKg.toDouble(),
+            rackItemsJson = session.rackItemsJson,
+        )
+    }
+
+    private fun insertMetricRow(sessionId: String, metric: com.devil.phoenixproject.domain.model.WorkoutMetric) {
+        // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+        val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+        queries.insertMetric(
+            sessionId = sessionId,
+            timestamp = metric.timestamp,
+            position = metric.positionA.toDouble(),
+            positionB = metric.positionB.toDouble(),
+            velocity = metric.velocityA,
+            velocityB = metric.velocityB,
+            load = metric.loadA.toDouble(),
+            loadB = metric.loadB.toDouble(),
+            power = power.toDouble(),
+            status = metric.status.toLong(),
+        )
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
@@ -632,20 +703,113 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteSession(sessionId)
+            db.transaction {
+                val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
+                    ?: return@transaction
+                val portalSessionId = session.routineSessionId
+                    ?.takeIf { it.isNotBlank() }
+                    ?: session.id
+                val liveComponents = queries.selectLiveProfileWorkoutComponentsForDeletion(
+                    profileId = session.profile_id,
+                    portalSessionId = portalSessionId,
+                ).executeAsList()
+                val scope = if (session.routineSessionId.isNullOrBlank() || liveComponents.size <= 1) {
+                    WorkoutDeletionScope.WORKOUT
+                } else {
+                    WorkoutDeletionScope.COMPONENT
+                }
+                insertLocalDeletion(
+                    profileId = session.profile_id,
+                    scope = scope,
+                    portalSessionId = portalSessionId,
+                    componentSessionId = session.id.takeIf { scope == WorkoutDeletionScope.COMPONENT },
+                    deletedAt = currentTimeMillis(),
+                )
+                if (scope == WorkoutDeletionScope.WORKOUT) {
+                    queries.hardDeleteProfileWorkoutPortalParent(
+                        profileId = session.profile_id,
+                        portalSessionId = portalSessionId,
+                    )
+                } else {
+                    queries.hardDeleteWorkoutComponent(session.id)
+                }
+            }
         }
     }
 
-    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+    override suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String) {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(routineSessionId.isNotBlank()) { "routineSessionId must not be blank" }
         withContext(Dispatchers.IO) {
-            queries.deleteSessionsByRoutineSessionId(routineSessionId)
+            db.transaction {
+                val components = queries.selectLiveProfileWorkoutComponentsForDeletion(
+                    profileId = profileId,
+                    portalSessionId = routineSessionId,
+                ).executeAsList()
+                if (components.isEmpty()) return@transaction
+                insertLocalDeletion(
+                    profileId = profileId,
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = routineSessionId,
+                    componentSessionId = null,
+                    deletedAt = currentTimeMillis(),
+                )
+                queries.hardDeleteProfileWorkoutPortalParent(
+                    profileId = profileId,
+                    portalSessionId = routineSessionId,
+                )
+            }
         }
     }
 
-    override suspend fun deleteAllSessions() {
+    override suspend fun deleteAllSessions(profileId: String) {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
         withContext(Dispatchers.IO) {
-            queries.deleteAllSessions()
+            db.transaction {
+                val deletedAt = currentTimeMillis()
+                val portalSessionIds = queries
+                    .selectDistinctLiveWorkoutPortalParentsForProfile(profileId)
+                    .executeAsList()
+                portalSessionIds.forEach { portalSessionId ->
+                    insertLocalDeletion(
+                        profileId = profileId,
+                        scope = WorkoutDeletionScope.WORKOUT,
+                        portalSessionId = portalSessionId,
+                        componentSessionId = null,
+                        deletedAt = deletedAt,
+                    )
+                }
+                queries.hardDeleteAllWorkoutSessionsForProfile(profileId)
+            }
         }
+    }
+
+    override suspend fun discardSessionInternal(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.hardDeleteWorkoutComponent(sessionId)
+        }
+    }
+
+    private fun insertLocalDeletion(
+        profileId: String,
+        scope: WorkoutDeletionScope,
+        portalSessionId: String,
+        componentSessionId: String?,
+        deletedAt: Long,
+    ) {
+        val ownerUserId = queries.getProfileById(profileId)
+            .executeAsOneOrNull()
+            ?.supabase_user_id
+        queries.insertWorkoutDeletion(
+            mutationId = generateUUID(),
+            ownerUserId = ownerUserId,
+            profileId = profileId,
+            scope = scope.name,
+            portalSessionId = portalSessionId,
+            componentSessionId = componentSessionId,
+            deletedAt = deletedAt,
+            source = WorkoutDeletionSource.LOCAL.name,
+        )
     }
 
     override fun getAllRoutines(profileId: String): Flow<List<Routine>> = queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
@@ -664,6 +828,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                         routine.profileId,
                         routine.groupId,
                         updatedAt = routine.updatedAt,
+                        description = routine.description,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
@@ -672,45 +837,127 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             }
         }
 
+    /**
+     * Best-effort heal of a RoutineExercise.exerciseId. A failed write (e.g. a foreign-key
+     * violation) must not drop the exercise from the loaded routine: the caller keeps the
+     * resolved exercise and the row stays unhealed until the next load (F-083).
+     */
+    private fun healRoutineExerciseId(exerciseId: String?, rowId: String) {
+        try {
+            queries.updateRoutineExerciseId(exerciseId, rowId)
+        } catch (e: Exception) {
+            Logger.w(e) { "Could not heal exerciseId for routine exercise $rowId; keeping the unhealed row" }
+        }
+    }
+
     override suspend fun saveRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
             // Generate a UUID for the routine if not provided
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
             db.transaction {
-                // Upsert the routine (handles both new and existing routines)
-                queries.upsertRoutine(
-                    id = routineId,
-                    name = routine.name,
-                    description = "", // Default empty description
-                    createdAt = routine.createdAt,
-                    lastUsed = routine.lastUsed,
-                    useCount = routine.useCount.toLong(),
-                    updatedAt = currentTimeMillis(),
-                    profile_id = routine.profileId,
-                    groupId = routine.groupId,
-                )
-
-                // Delete existing supersets and exercises before re-inserting
-                queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineExercises(routineId)
-
-                // Insert all supersets
-                routine.supersets.forEach { superset ->
-                    insertSuperset(routineId, superset)
-                }
-
-                // Insert all exercises
-                routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
-                }
+                writeRoutineRows(routine, routineId)
             }
 
             Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
         }
     }
 
-    private fun insertRoutineExercise(routineId: String, exercise: RoutineExercise, index: Int) {
+    /** The routine row, then its supersets and exercises. Callers run it inside a transaction. */
+    private fun writeRoutineRows(routine: Routine, routineId: String) {
+        // Upsert in place: UPDATE, then INSERT OR IGNORE. A REPLACE would cascade-delete
+        // the routine and null CycleDay.routine_id for any training cycle using it.
+        val updatedAt = currentTimeMillis()
+        queries.updateRoutineFields(
+            name = routine.name,
+            description = routine.description,
+            createdAt = routine.createdAt,
+            lastUsed = routine.lastUsed,
+            useCount = routine.useCount.toLong(),
+            updatedAt = updatedAt,
+            profile_id = routine.profileId,
+            groupId = routine.groupId,
+            id = routineId,
+        )
+        queries.insertRoutineIgnore(
+            id = routineId,
+            name = routine.name,
+            description = routine.description,
+            createdAt = routine.createdAt,
+            lastUsed = routine.lastUsed,
+            useCount = routine.useCount.toLong(),
+            updatedAt = updatedAt,
+            profile_id = routine.profileId,
+            groupId = routine.groupId,
+        )
+
+        // Delete existing supersets and exercises before re-inserting
+        val previousDurations = snapshotRoutineExerciseDurations(routineId)
+        queries.deleteSupersetsByRoutine(routineId)
+        queries.deleteRoutineExercises(routineId)
+
+        // Supersets first: RoutineExercise.supersetId references them.
+        routine.supersets.forEach { superset ->
+            insertSuperset(routineId, superset)
+        }
+
+        routine.exercises.forEachIndexed { index, exercise ->
+            insertRoutineExercise(routineId, exercise, index, previousDurations)
+        }
+    }
+
+    override suspend fun getRoutineHeaders(profileId: String): List<Routine> = withContext(Dispatchers.IO) {
+        queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic).executeAsList()
+    }
+
+    override suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup> = withContext(Dispatchers.IO) {
+        queries.selectAllRoutineGroups(profileId = profileId, mapper = ::mapToRoutineGroup).executeAsList()
+    }
+
+    override suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                // The preview was read outside this transaction; a target deleted or moved since
+                // then must not be resurrected or written into another profile.
+                for (routineId in overwriteRoutineIds) {
+                    val row = queries.selectRoutineById(routineId).executeAsOneOrNull()
+                    if (row == null || row.profile_id != profileId || row.deletedAt != null) {
+                        throw RoutineCsvImportConflictException(routineId)
+                    }
+                }
+                for (group in newGroups) {
+                    queries.insertRoutineGroup(
+                        id = group.id,
+                        name = group.name,
+                        orderIndex = group.orderIndex.toLong(),
+                        createdAt = group.createdAt,
+                        profile_id = profileId,
+                    )
+                }
+                for (routine in routines) {
+                    writeRoutineRows(routine.copy(profileId = profileId), routine.id)
+                }
+            }
+            Logger.d { "Committed CSV import: ${routines.size} routines, ${newGroups.size} new groups" }
+        }
+    }
+
+    /** Local (duration, durationSyncKnown) per routine exercise id, read before a delete-and-reinsert. */
+    private fun snapshotRoutineExerciseDurations(routineId: String): Map<String, Pair<Long?, Long>> =
+        queries.selectExercisesByRoutine(routineId).executeAsList()
+            .associate { it.id to (it.duration to it.durationSyncKnown) }
+
+    private fun insertRoutineExercise(
+        routineId: String,
+        exercise: RoutineExercise,
+        index: Int,
+        previousDurations: Map<String, Pair<Long?, Long>>,
+    ) {
         // Generate a UUID for the exercise if not provided
         val exerciseRowId = exercise.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
@@ -777,7 +1024,27 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             // #635: persist the explicit flag so reloads and sync keep the exact
             // classification (null = derive from equipment, pre-migration behavior)
             isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L },
+            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
         )
+
+        // Portal sync (PR 13): the duration is known to be current when this build
+        // created the row, when it was already known, or when the user changed it.
+        // An untouched row from an older build keeps "unknown" so a stale NULL is not
+        // pushed as an explicit clear.
+        val previous = previousDurations[exerciseRowId]
+        val durationSyncState = when {
+            previous == null ||
+                previous.second == 1L ||
+                previous.first != exercise.duration?.toLong() -> 1L
+            // Preserve both legacy-unknown (0) and observed-malformed (2) when an
+            // unrelated local edit rewrites the row. State 2 prevents another full
+            // pull while still omitting a null duration from the next push.
+            else -> previous.second
+        }
+        if (durationSyncState != 0L) {
+            queries.updateRoutineExerciseDurationSyncKnown(durationSyncState, exerciseRowId)
+        }
     }
 
     private fun insertSuperset(routineId: String, superset: Superset) {
@@ -799,12 +1066,13 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 // Update the routine
                 queries.updateRoutineById(
                     name = routine.name,
-                    description = "", // Keep description empty for now
+                    description = routine.description,
                     updatedAt = currentTimeMillis(),
                     id = routineId,
                 )
 
                 // Delete existing supersets and exercises, then re-insert
+                val previousDurations = snapshotRoutineExerciseDurations(routineId)
                 queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineExercises(routineId)
 
@@ -815,7 +1083,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
+                    insertRoutineExercise(routineId, exercise, index, previousDurations)
                 }
             }
 
@@ -862,21 +1130,24 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 basicRoutine.profileId,
                 basicRoutine.groupId,
                 updatedAt = basicRoutine.updatedAt,
+                description = basicRoutine.description,
             )
         }
     }
 
     // ==================== ROUTINE GROUP CRUD ====================
 
-    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> = queries.selectAllRoutineGroups(profileId = profileId) { id, name, orderIndex, createdAt, profile_id ->
+    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> =
+        queries.selectAllRoutineGroups(profileId = profileId, mapper = ::mapToRoutineGroup).asFlow().mapToList(Dispatchers.IO)
+
+    private fun mapToRoutineGroup(id: String, name: String, orderIndex: Long, createdAt: Long, profileId: String): RoutineGroup =
         RoutineGroup(
             id = id,
             name = name,
             orderIndex = orderIndex.toInt(),
             createdAt = createdAt,
-            profileId = profile_id,
+            profileId = profileId,
         )
-    }.asFlow().mapToList(Dispatchers.IO)
 
     suspend fun saveRoutineGroup(group: RoutineGroup) {
         withContext(Dispatchers.IO) {
@@ -958,118 +1229,27 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         )
     }.asFlow().mapToList(Dispatchers.IO)
 
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
-        withContext(Dispatchers.IO) {
-            if (exerciseId.isBlank() || reps <= 0) return@withContext
-
-            val timestamp = currentTimeMillis()
-            val newVolume = weightKg * reps
-            val exercise = exerciseRepository.getExerciseById(exerciseId)
-            val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.displayMultiplier
-
-            val combinedPhase = "COMBINED"
-
-            val defaultProfileId = profileId.ifBlank { "default" }
-
-            val currentWeightPR = queries.selectPR(
-                exerciseId,
-                mode,
-                PRType.MAX_WEIGHT.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val currentVolumePR = queries.selectPR(
-                exerciseId,
-                mode,
-                PRType.MAX_VOLUME.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
-            val currentVolume = (currentVolumePR?.weight?.toFloat() ?: 0f) * (currentVolumePR?.reps?.toInt() ?: 0)
-            val isNewVolumePR = newVolume > currentVolume
-
-            if (!isNewWeightPR && !isNewVolumePR) return@withContext
-
-            val oneRepMax = OneRepMaxCalculator.estimate(weightKg, reps)
-
-            if (isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_WEIGHT.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentWeightPR?.uuid ?: generateUUID(),
-                )
-            }
-
-            if (isNewVolumePR && !isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_VOLUME.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentVolumePR?.uuid ?: generateUUID(),
-                )
-            }
-
-            // Sync 1RM to Exercise table for %-based training features
-            val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-            if (oneRepMax > currentExercise1RM) {
-                queries.updateOneRepMax(
-                    one_rep_max_kg = oneRepMax.toDouble(),
-                    id = exerciseId,
-                )
-            }
-        }
-    }
-
     override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {
-            metrics.forEach { metric ->
-                // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
-                val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-                queries.insertMetric(
-                    sessionId = sessionId,
-                    timestamp = metric.timestamp,
-                    position = metric.positionA.toDouble(),
-                    positionB = metric.positionB.toDouble(),
-                    velocity = metric.velocityA,
-                    velocityB = metric.velocityB,
-                    load = metric.loadA.toDouble(),
-                    loadB = metric.loadB.toDouble(),
-                    power = power.toDouble(),
-                    status = metric.status.toLong(),
-                )
+            db.transaction {
+                queries.deleteMetricsBySession(sessionId)
+                metrics.forEach { metric -> insertMetricRow(sessionId, metric) }
+                queries.markWorkoutComponentDirty(sessionId)
             }
         }
     }
 
     // ========== New methods for full parity ==========
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentVisibleSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
         .asFlow()
         .mapToList(Dispatchers.IO)
+
+    override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = withContext(Dispatchers.IO) {
+        queries.selectLastWeightForExercise(profileId = profileId, exerciseId = exerciseId)
+            .executeAsOneOrNull()
+            ?.toFloat()
+    }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = withContext(Dispatchers.IO) {
         queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
@@ -1159,22 +1339,25 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun savePhaseStatistics(sessionId: String, stats: com.devil.phoenixproject.domain.model.HeuristicStatistics) {
         withContext(Dispatchers.IO) {
-            queries.insertPhaseStatistics(
-                sessionId = sessionId,
-                concentricKgAvg = stats.concentric.kgAvg.toDouble(),
-                concentricKgMax = stats.concentric.kgMax.toDouble(),
-                concentricVelAvg = stats.concentric.velAvg.toDouble(),
-                concentricVelMax = stats.concentric.velMax.toDouble(),
-                concentricWattAvg = stats.concentric.wattAvg.toDouble(),
-                concentricWattMax = stats.concentric.wattMax.toDouble(),
-                eccentricKgAvg = stats.eccentric.kgAvg.toDouble(),
-                eccentricKgMax = stats.eccentric.kgMax.toDouble(),
-                eccentricVelAvg = stats.eccentric.velAvg.toDouble(),
-                eccentricVelMax = stats.eccentric.velMax.toDouble(),
-                eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
-                eccentricWattMax = stats.eccentric.wattMax.toDouble(),
-                timestamp = stats.timestamp,
-            )
+            db.transaction {
+                queries.insertPhaseStatistics(
+                    sessionId = sessionId,
+                    concentricKgAvg = stats.concentric.kgAvg.toDouble(),
+                    concentricKgMax = stats.concentric.kgMax.toDouble(),
+                    concentricVelAvg = stats.concentric.velAvg.toDouble(),
+                    concentricVelMax = stats.concentric.velMax.toDouble(),
+                    concentricWattAvg = stats.concentric.wattAvg.toDouble(),
+                    concentricWattMax = stats.concentric.wattMax.toDouble(),
+                    eccentricKgAvg = stats.eccentric.kgAvg.toDouble(),
+                    eccentricKgMax = stats.eccentric.kgMax.toDouble(),
+                    eccentricVelAvg = stats.eccentric.velAvg.toDouble(),
+                    eccentricVelMax = stats.eccentric.velMax.toDouble(),
+                    eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
+                    eccentricWattMax = stats.eccentric.wattMax.toDouble(),
+                    timestamp = stats.timestamp,
+                )
+                queries.markWorkoutComponentDirty(sessionId)
+            }
             Logger.d { "Saved phase statistics for session $sessionId" }
         }
     }
@@ -1235,3 +1418,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         )
     }.asFlow().mapToList(Dispatchers.IO)
 }
+
+/** Name given to a healed routine exercise whose stored name and id are both blank (#774). */
+internal const val UNKNOWN_EXERCISE_NAME = "Unknown exercise"
+
+internal fun healedExerciseName(storedName: String, exerciseId: String?): String =
+    storedName.trim().ifEmpty { exerciseId?.trim()?.takeIf(String::isNotEmpty) ?: UNKNOWN_EXERCISE_NAME }

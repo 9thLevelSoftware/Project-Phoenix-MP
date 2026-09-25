@@ -8,16 +8,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -32,26 +29,18 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -66,20 +55,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -93,52 +83,47 @@ import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
-import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
+import com.devil.phoenixproject.presentation.manager.actionIdentity
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
-import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
-import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_skip
-import vitruvianprojectphoenix.shared.generated.resources.action_tag
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_title
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_set_progress
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant_percent
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_volume
-import vitruvianprojectphoenix.shared.generated.resources.cd_configure_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_lost
-import vitruvianprojectphoenix.shared.generated.resources.cd_disconnect
-import vitruvianprojectphoenix.shared.generated.resources.cd_scan_devices
-import vitruvianprojectphoenix.shared.generated.resources.cd_start_new_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_stop_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_workout_completed
-import vitruvianprojectphoenix.shared.generated.resources.cd_workout_error
-import vitruvianprojectphoenix.shared.generated.resources.connecting
-import vitruvianprojectphoenix.shared.generated.resources.disconnect
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_message
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_title
-import vitruvianprojectphoenix.shared.generated.resources.label_per_cable
-import vitruvianprojectphoenix.shared.generated.resources.not_connected
-import vitruvianprojectphoenix.shared.generated.resources.reconnect
-import vitruvianprojectphoenix.shared.generated.resources.save_set
-import vitruvianprojectphoenix.shared.generated.resources.scan
-import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
-import vitruvianprojectphoenix.shared.generated.resources.stop_workout
-import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
-import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_skip
+import projectphoenix.shared.generated.resources.action_tag
+import projectphoenix.shared.generated.resources.bodyweight_effective_load
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
+import projectphoenix.shared.generated.resources.bodyweight_no_weight_volume
+import projectphoenix.shared.generated.resources.bodyweight_reps_completed
+import projectphoenix.shared.generated.resources.bodyweight_reps_title
+import projectphoenix.shared.generated.resources.bodyweight_set_progress
+import projectphoenix.shared.generated.resources.bodyweight_variant
+import projectphoenix.shared.generated.resources.bodyweight_variant_percent
+import projectphoenix.shared.generated.resources.bodyweight_volume
+import projectphoenix.shared.generated.resources.cd_connection_lost
+import projectphoenix.shared.generated.resources.cd_start_new_workout
+import projectphoenix.shared.generated.resources.cd_stop_workout
+import projectphoenix.shared.generated.resources.cd_workout_completed
+import projectphoenix.shared.generated.resources.cd_workout_error
+import projectphoenix.shared.generated.resources.reconnect
+import projectphoenix.shared.generated.resources.save_set
+import projectphoenix.shared.generated.resources.tag_lift_message
+import projectphoenix.shared.generated.resources.tag_lift_title
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -146,7 +131,7 @@ import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
  *
  * @param state Consolidated UI state
  * @param actions Callback interface for UI events
- * @param exerciseRepository Repository for loading exercise details/videos
+ * @param exerciseRepository Repository for loading exercise details/images
  * @param hapticEvents Optional flow for triggering haptic feedback
  */
 @Composable
@@ -171,7 +156,7 @@ fun WorkoutTab(
         weightUnit = state.weightUnit,
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
-        isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
+        machineTeardownState = state.machineTeardownState,
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
         currentExerciseIndex = state.currentExerciseIndex,
@@ -190,8 +175,13 @@ fun WorkoutTab(
         onCancelScan = actions::onCancelScan,
         onDisconnect = actions::onDisconnect,
         onStartWorkout = actions::onStartWorkout,
+        onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
+        onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
-        onSkipRest = actions::onSkipRest,
+        onSkipRest = { actions.onSkipRest() },
+        onSkipRestWithIdentity = { identity -> actions.onSkipRest(identity) },
+        onAcceptDropSet = actions::onAcceptDropSet,
+        onDeclineDropSet = actions::onDeclineDropSet,
         onExtendRest = actions::onExtendRest,
         onToggleRestPause = actions::onToggleRestPause,
         onResetRest = actions::onResetRest,
@@ -201,11 +191,12 @@ fun WorkoutTab(
         onResetForNewWorkout = actions::onResetForNewWorkout,
         onStartNextExercise = actions::onStartNextExercise,
         onUpdateParameters = actions::onUpdateParameters,
-        onShowWorkoutSetupDialog = actions::onShowWorkoutSetupDialog,
-        onHideWorkoutSetupDialog = actions::onHideWorkoutSetupDialog,
+        onUpdateRackSelection = actions::onUpdateRackSelection,
+        onUpdateRackBehaviorOverrides = actions::onUpdateRackBehaviorOverrides,
+        rackItems = state.rackItems,
+        activeRackItemIds = state.activeRackItemIds,
+        activeRackBehaviorOverrides = state.activeRackBehaviorOverrides,
         modifier = modifier,
-        showConnectionCard = state.showConnectionCard,
-        showWorkoutSetupCard = state.showWorkoutSetupCard,
         loadBaselineA = state.loadBaselineA,
         loadBaselineB = state.loadBaselineB,
         timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
@@ -226,6 +217,8 @@ fun WorkoutTab(
         weightStepKg = state.weightStepKg,
         rackLoadAdjustment = state.rackLoadAdjustment,
         currentWarmupSetIndex = state.currentWarmupSetIndex,
+        restTransitionPlan = state.restTransitionPlan,
+        recentJustLiftExerciseIds = state.recentJustLiftExerciseIds,
     )
 }
 
@@ -248,7 +241,7 @@ fun WorkoutTab(
     weightUnit: WeightUnit,
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
-    isWorkoutSetupDialogVisible: Boolean = false,
+    machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
@@ -256,7 +249,7 @@ fun WorkoutTab(
     skippedExercises: Set<Int> = emptySet(),
     completedExercises: Set<Int> = emptySet(),
     autoplayEnabled: Boolean = false,
-    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
+    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Manual: wait for the user)
     onJumpToExercise: (Int) -> Unit = {},
     canGoBack: Boolean = false,
     canSkipForward: Boolean = false,
@@ -267,8 +260,13 @@ fun WorkoutTab(
     onCancelScan: () -> Unit,
     onDisconnect: () -> Unit,
     onStartWorkout: () -> Unit,
+    onRetryWorkoutTeardown: () -> Unit = {},
+    onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { onSkipRest() },
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
+    onDeclineDropSet: (RestActionIdentity) -> Unit = {},
     onExtendRest: (Int) -> Unit = {},
     onToggleRestPause: () -> Unit = {},
     onResetRest: () -> Unit = {},
@@ -278,11 +276,9 @@ fun WorkoutTab(
     onResetForNewWorkout: () -> Unit,
     onStartNextExercise: () -> Unit = {},
     onUpdateParameters: (WorkoutParameters) -> Unit,
-    onShowWorkoutSetupDialog: () -> Unit = {},
-    onHideWorkoutSetupDialog: () -> Unit = {},
+    onUpdateRackSelection: (List<String>) -> Unit = {},
+    onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
     modifier: Modifier = Modifier,
-    showConnectionCard: Boolean = true,
-    showWorkoutSetupCard: Boolean = true,
     loadBaselineA: Float = 0f,
     loadBaselineB: Float = 0f,
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
@@ -310,6 +306,11 @@ fun WorkoutTab(
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     // Issue #646: -1 means not currently in variable warm-up phase
     currentWarmupSetIndex: Int = -1,
+    restTransitionPlan: RestTransitionPlan? = null,
+    rackItems: List<RackItem> = emptyList(),
+    activeRackItemIds: List<String> = emptyList(),
+    activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    recentJustLiftExerciseIds: List<String> = emptyList(),
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -379,27 +380,14 @@ fun WorkoutTab(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Connection Card (conditionally shown)
-            if (showConnectionCard) {
-                ConnectionCard(
-                    connectionState = connectionState,
-                    onScan = onScan,
-                    onCancelScan = onCancelScan,
-                    onDisconnect = onDisconnect,
-                )
-            }
+            WorkoutStartGateNotice(
+                state = machineTeardownState,
+                onRetry = onRetryWorkoutTeardown,
+                onReconnect = onReconnectWorkoutTeardown,
+            )
 
             if (connectionState is ConnectionState.Connected) {
-                // Show setup button when in Idle state, otherwise show workout controls
                 when (workoutState) {
-                    is WorkoutState.Idle -> {
-                        if (showWorkoutSetupCard) {
-                            WorkoutSetupCard(
-                                onShowWorkoutSetupDialog = onShowWorkoutSetupDialog,
-                            )
-                        }
-                    }
-
                     is WorkoutState.Error -> {
                         ErrorCard(message = workoutState.message)
                     }
@@ -410,26 +398,12 @@ fun WorkoutTab(
                             currentExerciseIndex = currentExerciseIndex,
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
+                            machineTeardownState = machineTeardownState,
                         )
                     }
 
                     else -> {}
                 }
-
-                // Display state-specific cards (only non-overlay cards)
-//                when (workoutState) {
-//                    is WorkoutState.Active -> {
-//                         // Legacy cards removed in favor of HUD
-//                    }
-//                    else -> {}
-//                }
-//
-//                // Only show live metrics after warmup is complete
-//                if (workoutState is WorkoutState.Active
-//                    && currentMetric != null
-//                    && repCount.isWarmupComplete) {
-//                    // Legacy LiveMetricsCard removed
-//                }
             }
 
             // Show "Workout Paused" card when connection is lost during an active workout (Issue #42)
@@ -554,6 +528,7 @@ fun WorkoutTab(
                         if (showExerciseTagPicker && summarySessionId != null) {
                             MiniExercisePickerDialog(
                                 exerciseRepository = exerciseRepository,
+                                recentExerciseIds = recentJustLiftExerciseIds,
                                 onDismiss = { showExerciseTagPicker = false },
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
@@ -639,18 +614,44 @@ fun WorkoutTab(
                         nextExerciseReps = workoutParameters.reps,
                         nextExerciseProgressionKg = if (showNextProgression) workoutParameters.progressionRegressionKg else null,
                         nextExerciseMode = workoutParameters.programMode.displayName,
+                        rackItems = rackItems,
+                        activeRackItemIds = activeRackItemIds,
+                        behaviorOverrides = activeRackBehaviorOverrides,
+                        onRackSelectionChange = onUpdateRackSelection,
+                        onRackBehaviorOverrideChange = onUpdateRackBehaviorOverrides,
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
                         lastUsedWeight = workoutParameters.lastUsedWeightKg,
-                        prWeight = workoutParameters.prWeightKg,
                         formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410
+                        // KD-9: rest-screen weight slider is bounded by the connected trainer.
+                        maxWeightPerCableKg = CommandLimits.maxWeightPerCableKg(
+                            (connectionState as? ConnectionState.Connected)?.hardwareModel,
+                        ),
                         isSupersetTransition = workoutState.isSupersetTransition,
                         supersetLabel = workoutState.supersetLabel,
                         isRestPaused = isRestPaused,
-                        onSkipRest = onSkipRest,
+                        dropSetOffer = dropSetOfferUiState(
+                            plan = restTransitionPlan,
+                            teardown = machineTeardownState,
+                            exerciseDisplayName = workoutState.nextExerciseName,
+                            failedSetNumber = workoutState.currentSet,
+                            failedConfiguredWeightPerCableKg = workoutParameters.lastUsedWeightKg
+                                ?: workoutParameters.weightPerCableKg,
+                            minimumWeightPerCableKg = 0f,
+                        ),
+                        onAcceptDropSet = onAcceptDropSet,
+                        onDeclineDropSet = onDeclineDropSet,
+                        onSkipRest = {
+                            val identity = restTransitionPlan?.actionIdentity()
+                            if (identity != null) {
+                                onSkipRestWithIdentity(identity)
+                            } else {
+                                onSkipRest()
+                            }
+                        },
                         onExtendRest = onExtendRest,
                         onToggleRestPause = onToggleRestPause,
                         onResetRest = onResetRest,
@@ -749,23 +750,6 @@ fun WorkoutTab(
             }
         }
     }
-
-    // Show the workout setup dialog
-    if (isWorkoutSetupDialogVisible) {
-        WorkoutSetupDialog(
-            workoutParameters = workoutParameters,
-            weightUnit = weightUnit,
-            exerciseRepository = exerciseRepository,
-            kgToDisplay = kgToDisplay,
-            displayToKg = displayToKg,
-            onUpdateParameters = onUpdateParameters,
-            onStartWorkout = {
-                onStartWorkout()
-                onHideWorkoutSetupDialog()
-            },
-            onDismiss = onHideWorkoutSetupDialog,
-        )
-    }
 }
 
 /**
@@ -803,53 +787,6 @@ private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
-        }
-    }
-}
-
-/**
- * Workout Setup Card - shown when connected and idle
- */
-@Composable
-private fun WorkoutSetupCard(onShowWorkoutSetupDialog: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Workout Setup",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-            Button(
-                onClick = onShowWorkoutSetupDialog,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = MaterialTheme.shapes.medium,
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 4.dp,
-                    pressedElevation = 2.dp,
-                ),
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = stringResource(Res.string.cd_configure_workout))
-                Spacer(modifier = Modifier.width(Spacing.small))
-                Text(
-                    "Setup Workout",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
         }
     }
 }
@@ -985,13 +922,13 @@ private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, re
 /**
  * Completed Card - shown when workout/exercise is complete
  */
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun CompletedCard(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
+    machineTeardownState: MachineTeardownState,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1015,8 +952,11 @@ private fun CompletedCard(
         ) {
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = if (reduceMotion) EnterTransition.None
-                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+                enter = if (reduceMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn()
+                },
             ) {
                 Icon(
                     Icons.Default.CheckCircle,
@@ -1037,14 +977,18 @@ private fun CompletedCard(
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
-            if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
+            val startGate = machineTeardownState.toStartGatePresentation()
+            val nextExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex + 1)
+            val nextExerciseStartGate = machineTeardownState.toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            )
+            if (hasMoreExercises && nextExercise != null) {
                 // Show next exercise preview
-                val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
+                        contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                     ),
                     shape = MaterialTheme.shapes.small,
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -1054,7 +998,7 @@ private fun CompletedCard(
                             "Next Exercise",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.small))
@@ -1062,13 +1006,13 @@ private fun CompletedCard(
                         Text(
                             nextExercise.exercise.name,
                             style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Text(
                             formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.medium))
@@ -1078,6 +1022,7 @@ private fun CompletedCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
+                            enabled = nextExerciseStartGate.startEnabled,
                             shape = MaterialTheme.shapes.medium,
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
@@ -1085,7 +1030,11 @@ private fun CompletedCard(
                             ),
                         ) {
                             Text(
-                                "Start Next Exercise",
+                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "Start Next Exercise"
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -1099,6 +1048,7 @@ private fun CompletedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
+                    enabled = startGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -1108,7 +1058,11 @@ private fun CompletedCard(
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.cd_start_new_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Start New Workout",
+                        if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start New Workout"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1137,10 +1091,11 @@ private fun BodyweightRepEntryDialog(
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
-        (entry.bodyWeightKg * selectedVariant.percentage +
-            rackLoadAdjustment.externalAddedLoadKg -
-            rackLoadAdjustment.counterweightKg
-        ).coerceAtLeast(0f)
+        (
+            entry.bodyWeightKg * selectedVariant.percentage +
+                rackLoadAdjustment.externalAddedLoadKg -
+                rackLoadAdjustment.counterweightKg
+            ).coerceAtLeast(0f)
     } else {
         0f
     }
@@ -1260,602 +1215,6 @@ private fun BodyweightRepEntryDialog(
             }
         },
     )
-}
-
-/**
- * Connection Card - shows connection status and controls
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCancelScan: () -> Unit, onDisconnect: () -> Unit) {
-    var showDisconnectDialog by remember { mutableStateOf(false) }
-
-    // Disconnect confirmation dialog
-    if (showDisconnectDialog) {
-        AlertDialog(
-            onDismissRequest = { showDisconnectDialog = false },
-            icon = { Icon(Icons.Default.BluetoothDisabled, contentDescription = null) },
-            title = { Text(stringResource(Res.string.disconnect_title)) },
-            text = {
-                Text(stringResource(Res.string.disconnect_message))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDisconnectDialog = false
-                        onDisconnect()
-                    },
-                ) {
-                    Text(stringResource(Res.string.disconnect), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDisconnectDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
-        )
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Connection",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            when (connectionState) {
-                is ConnectionState.Disconnected -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(stringResource(Res.string.not_connected), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Button(onClick = onScan) {
-                            Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_scan_devices))
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.scan))
-                        }
-                    }
-                }
-
-                is ConnectionState.Scanning -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            LoadingIndicator(LoadingIndicatorSize.Medium)
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.scanning_for_devices))
-                        }
-                        TextButton(onClick = onCancelScan) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
-                    }
-                }
-
-                is ConnectionState.Connecting -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            LoadingIndicator(LoadingIndicatorSize.Medium)
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.connecting))
-                        }
-                        TextButton(onClick = onCancelScan) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
-                    }
-                }
-
-                is ConnectionState.Connected -> {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                            ) {
-                                Icon(
-                                    Icons.Default.Bluetooth,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Column {
-                                    Text(
-                                        connectionState.deviceName,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        connectionState.deviceAddress,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            FilledTonalIconButton(
-                                onClick = { showDisconnectDialog = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                ),
-                            ) {
-                                Icon(
-                                    Icons.Default.BluetoothDisabled,
-                                    contentDescription = stringResource(Res.string.cd_disconnect),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                is ConnectionState.Error -> {
-                    Text(
-                        "Error: ${connectionState.message}",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Rep Counter Card - displays current rep count
- *
- * Visual feedback flow (matches parent repo):
- * - hasPendingRep: At TOP (concentric peak) - show next rep number in grey
- * - !hasPendingRep: At BOTTOM (confirmed) - show current rep in full color
- */
-@Composable
-fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
-        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.large),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Determine display values for working reps:
-            // - hasPendingRep: At TOP (concentric peak) - show next rep number in grey
-            // - !hasPendingRep: At BOTTOM (confirmed) - show current rep in full color
-            val (countText, isPending) = if (repCount.isWarmupComplete) {
-                if (repCount.hasPendingRep) {
-                    // At TOP - show PENDING rep (next number, will be confirmed at bottom)
-                    Pair((repCount.workingReps + 1).toString(), true)
-                } else {
-                    // At BOTTOM or idle - show CONFIRMED rep count
-                    Pair(repCount.workingReps.toString(), false)
-                }
-            } else {
-                Pair("${repCount.warmupReps} / ${workoutParameters.warmupReps}", false)
-            }
-
-            // Show AMRAP indicator when in AMRAP mode and warmup is complete
-            if (workoutParameters.isAMRAP && repCount.isWarmupComplete) {
-                Badge(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(bottom = Spacing.small),
-                ) {
-                    Text(
-                        text = "AMRAP",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            val labelText = when {
-                !repCount.isWarmupComplete -> "WARMUP"
-                workoutParameters.isAMRAP -> "REPS (As Many As Possible)"
-                else -> "REPS"
-            }
-
-            Text(
-                text = labelText,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Rep count display with pending state (grey when at TOP, colored when confirmed)
-            Text(
-                text = countText,
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (isPending) {
-                    // Grey color for pending rep (at TOP, waiting for eccentric)
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
-                } else {
-                    // Full color for confirmed rep (at BOTTOM, completed)
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                },
-            )
-        }
-    }
-}
-
-/**
- * Live Metrics Card - displays real-time workout metrics
- */
-@Composable
-fun LiveMetricsCard(metric: WorkoutMetric, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
-    val windowSizeClass = LocalWindowSizeClass.current
-    val labelWidth = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 80.dp
-        WindowWidthSizeClass.Medium -> 65.dp
-        WindowWidthSizeClass.Compact -> 50.dp
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Live Metrics",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Current Load - show per-cable resistance
-            Text(
-                formatWeight(metric.totalLoad / 2f, weightUnit),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                stringResource(Res.string.label_per_cable),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Cable Position Bars
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    "Cable Positions",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = Spacing.extraSmall),
-                )
-
-                // Cable A Position Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "A",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp),
-                    )
-                    LinearProgressIndicator(
-                        progress = { (metric.positionA / 1000f).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                    Text(
-                        "${metric.positionA.toInt()}mm",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.extraSmall))
-
-                // Cable B Position Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "B",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp),
-                    )
-                    LinearProgressIndicator(
-                        progress = { (metric.positionB / 1000f).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(8.dp),
-                        color = MaterialTheme.colorScheme.secondary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                    Text(
-                        "${metric.positionB.toInt()}mm",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Vertical cable position bar for left/right side display
- */
-@Composable
-fun VerticalCablePositionBar(
-    label: String,
-    currentPosition: Int,
-    minPosition: Int?,
-    maxPosition: Int?,
-    isActive: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // Label at top
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
-
-        // Vertical bar container
-        BoxWithConstraints(
-            modifier = Modifier
-                .weight(1f)
-                .width(40.dp)
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            val barHeight = maxHeight
-
-            // Calculate positions as fractions
-            val maxPos = 1000
-            val currentProgress = (currentPosition / maxPos.toFloat()).coerceIn(0f, 1f)
-            val minProgress = minPosition?.let { (it / maxPos.toFloat()).coerceIn(0f, 1f) }
-            val maxProgress = maxPosition?.let { (it / maxPos.toFloat()).coerceIn(0f, 1f) }
-
-            // Range zone visualization
-            if (minProgress != null && maxProgress != null && maxProgress > minProgress) {
-                val rangeHeight = maxProgress - minProgress
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(barHeight * rangeHeight)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                )
-            }
-
-            // Current position fill (from bottom up)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(barHeight * currentProgress)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        if (isActive) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        },
-                    ),
-            )
-
-            // Range markers
-            if (minProgress != null && maxProgress != null && maxProgress > minProgress) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * maxProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                )
-            }
-        }
-
-        // Position value at bottom
-        Text(
-            text = "${currentPosition / 10}%",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
-}
-
-/**
- * Current Exercise Card - Shows exercise details during active workout
- */
-@Composable
-fun CurrentExerciseCard(
-    loadedRoutine: Routine?,
-    currentExerciseIndex: Int,
-    workoutParameters: WorkoutParameters,
-    exerciseRepository: ExerciseRepository,
-    enableVideoPlayback: Boolean,
-    formatWeight: (Float) -> String,
-    kgToDisplay: (Float) -> Float,
-    weightUnit: WeightUnit,
-) {
-    // Get current exercise from routine if available
-    val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-
-    // Get exercise entity and video for display
-    // Issue #142: Key the remember on currentExerciseIndex so state resets when exercise changes.
-    var exerciseEntity by remember(currentExerciseIndex) { mutableStateOf<Exercise?>(null) }
-    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
-
-    // Load exercise and video data
-    // Issue #142: Include currentExerciseIndex in the key to ensure video reloads when
-    // navigating to a different exercise position. This handles cases where the same
-    // exercise appears multiple times in a routine (same exercise.id but different index).
-    LaunchedEffect(currentExerciseIndex, currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
-        // Clear stale data first
-        exerciseEntity = null
-        videoEntity = null
-        // Load new exercise and video data
-        val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
-        if (exerciseId != null) {
-            try {
-                exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
-                videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
-            } catch (e: Exception) {
-                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/video for $exerciseId: ${e.message}" }
-            }
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            // Exercise name
-            Text(
-                text = currentExercise?.exercise?.name ?: exerciseEntity?.name ?: "Exercise",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Exercise details
-            if (currentExercise != null) {
-                val repsText = if (currentExercise.setReps.isEmpty()) {
-                    "No sets configured"
-                } else if (currentExercise.setReps.all { it == currentExercise.setReps.first() }) {
-                    "${currentExercise.setReps.size}x${currentExercise.setReps.first()}"
-                } else {
-                    currentExercise.setReps.joinToString(", ")
-                }
-
-                val isExerciseEcho = currentExercise.programMode == ProgramMode.Echo
-                val descriptionText = if (isExerciseEcho) {
-                    "$repsText reps - ${currentExercise.programMode.displayName} - Adaptive"
-                } else {
-                    val weightText = if (currentExercise.setWeightsPerCableKg.isNotEmpty()) {
-                        val displayWeights = currentExercise.setWeightsPerCableKg.map { kgToDisplay(it) }
-                        val minWeight = displayWeights.minOrNull() ?: 0f
-                        val maxWeight = displayWeights.maxOrNull() ?: 0f
-                        val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-
-                        if (minWeight == maxWeight) {
-                            "${formatFloat(minWeight, 1)} $weightSuffix/cable"
-                        } else {
-                            "${formatFloat(minWeight, 1)}-${formatFloat(maxWeight, 1)} $weightSuffix/cable"
-                        }
-                    } else {
-                        "${formatWeight(currentExercise.weightPerCableKg)}/cable"
-                    }
-
-                    "$repsText @ $weightText - ${currentExercise.programMode.displayName}"
-                }
-
-                Text(
-                    text = descriptionText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            } else {
-                val descriptionText = if (workoutParameters.isEchoMode) {
-                    "${workoutParameters.reps} reps - ${workoutParameters.programMode.displayName} - Adaptive"
-                } else {
-                    "${workoutParameters.reps} reps @ ${formatWeight(
-                        workoutParameters.weightPerCableKg,
-                    )}/cable - ${workoutParameters.programMode.displayName}"
-                }
-
-                Text(
-                    text = descriptionText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            // Video player - shows exercise demonstration video or placeholder
-            if (enableVideoPlayback) {
-                Spacer(modifier = Modifier.height(Spacing.medium))
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(MaterialTheme.shapes.small),
-                )
-            }
-        }
-    }
 }
 
 /**

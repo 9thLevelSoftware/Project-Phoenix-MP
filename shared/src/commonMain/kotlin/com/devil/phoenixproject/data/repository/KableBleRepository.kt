@@ -13,15 +13,14 @@ import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
-import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.toVitruvianHex
+import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
-import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.rethrowIfCancellation
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -160,10 +159,7 @@ class KableBleRepository : BleRepository {
         onReconnectionRequested = { request ->
             publishSafetyEvent(_reconnectionRequested, request, BleCriticalEventType.RECONNECTION_REQUEST)
         },
-        onCommandResponse = { _ -> /* no external consumer currently */ },
         onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
-        onRepEventFromRx = { data -> parseRepNotification(data) },
-        onMetricFromRx = { data -> parseMetricsPacket(data) },
         onDiagnosticData = { packet -> publishDiagnostics(packet) },
     )
 
@@ -201,42 +197,11 @@ class KableBleRepository : BleRepository {
     }
 
     // ===== High-level workout control =====
-    override suspend fun sendInitSequence(): Result<Unit> {
-        log.i { "Sending initialization sequence" }
-        return try {
-            val initCmd = byteArrayOf(0x01, 0x00, 0x00, 0x00)
-            sendWorkoutCommand(initCmd)
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to send init sequence: ${e.message}" }
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
-        stopDiscoMode()
-
-        log.i { "Starting workout with params: type=${params.programMode}, weight=${params.weightPerCableKg}kg" }
-        return try {
-            val modeCode = params.programMode.modeValue.toByte()
-            val weightBytes = (params.weightPerCableKg * 100).toInt()
-            val weightLow = (weightBytes and 0xFF).toByte()
-            val weightHigh = ((weightBytes shr 8) and 0xFF).toByte()
-
-            val startCmd = byteArrayOf(0x02, modeCode, weightLow, weightHigh)
-            val result = sendWorkoutCommand(startCmd)
-
-            if (result.isSuccess) {
-                startActiveWorkoutPolling()
-            }
-
-            result
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to start workout: ${e.message}" }
-            Result.failure(e)
-        }
-    }
+    // F-010/F-059: startWorkout(params) and sendInitSequence() were deleted here and from
+    // BleRepository. They hand-built command bytes without passing through
+    // WorkoutCommandValidator, had no production callers, and stood beside the validated
+    // path as a ready-made bypass. The only supported start path builds its frame through
+    // BlePacketFactory (which validates) and sends it with sendWorkoutCommand.
 
     override suspend fun stopWorkout(): Result<Unit> {
         log.i { "Stopping workout" }
@@ -250,28 +215,22 @@ class KableBleRepository : BleRepository {
             // polling, but surface a send failure so the caller can react.
             val sendResult = sendWorkoutCommand(resetCmd)
             delay(50)
-
+            sendResult
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e { "Failed to stop workout: ${error.message}" }
+            Result.failure(error)
+        } finally {
             log.d { "Stopping polling after RESET..." }
             stopPolling()
-
-            sendResult.fold(
-                onSuccess = { Result.success(Unit) },
-                onFailure = { cause ->
-                    log.e { "RESET command failed to send; polling stopped but machine may not be reset: ${cause.message}" }
-                    Result.failure(cause)
-                },
-            )
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to stop workout: ${e.message}" }
-            Result.failure(e)
         }
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
         return try {
-            val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            val stopPacket = BlePacketFactory.createSoftStopPacket()
             log.d { "Sending StopPacket (0x50)..." }
             sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
@@ -333,60 +292,6 @@ class KableBleRepository : BleRepository {
 
     // ===== Parsing methods (stay in facade) =====
 
-    /** Parse metrics packet from RX notifications (0x01). Delegates to [parseMonitorPacket] for unit consistency. */
-    private fun parseMetricsPacket(data: ByteArray) {
-        if (data.size < 17) return
-        try {
-            val monitor = parseMonitorPacket(data.copyOfRange(1, data.size)) ?: return
-            val currentTime = currentTimeMillis()
-            val rawVelocityA = monitor.firmwareVelA / 10.0
-            val rawVelocityB = monitor.firmwareVelB / 10.0
-            val metric = WorkoutMetric(
-                timestamp = currentTime,
-                loadA = monitor.loadA,
-                loadB = monitor.loadB,
-                positionA = monitor.posA,
-                positionB = monitor.posB,
-                velocityA = rawVelocityA,
-                velocityB = rawVelocityB,
-            )
-            _metricsFlow.tryEmit(metric)
-            handleDetector.processMetric(metric)
-        } catch (e: Exception) {
-            log.e { "Error parsing metrics: ${e.message}" }
-        }
-    }
-
-    /** Parse rep notification from RX characteristic (with opcode 0x02 prefix). */
-    private fun parseRepNotification(data: ByteArray) {
-        try {
-            val currentTime = currentTimeMillis()
-            val notification = parseRepPacket(data, hasOpcodePrefix = true, timestamp = currentTime)
-
-            if (notification == null) {
-                log.w { "Rep notification too short: ${data.size} bytes (minimum 7)" }
-                return
-            }
-
-            if (notification.isLegacyFormat) {
-                log.w { "Rep notification (LEGACY 6-byte format - Issue #187 fallback):" }
-                log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
-                log.w { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
-            } else {
-                log.d { "Rep notification (24-byte format, RX):" }
-                log.d { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
-                log.d { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
-                log.d { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
-                log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
-            }
-
-            val emitted = publishRepEvent(notification, source = "rx")
-            log.d { "Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
-        } catch (e: Exception) {
-            log.e { "Error parsing rep notification: ${e.message}" }
-        }
-    }
-
     /** Parse rep data from REPS characteristic notifications (NO opcode prefix). */
     private fun parseRepsCharacteristicData(data: ByteArray) {
         try {
@@ -399,13 +304,13 @@ class KableBleRepository : BleRepository {
             }
 
             log.i { "REPS CHAR notification: ${data.size} bytes" }
-            log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+            log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
 
             if (notification.isLegacyFormat) {
                 log.w { "REPS (LEGACY 6-byte format):" }
                 log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
             } else {
-                log.i { "REPS (24-byte official format):" }
+                log.i { "REPS (24-byte modern format):" }
                 log.i { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
                 log.i { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
                 log.i { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }

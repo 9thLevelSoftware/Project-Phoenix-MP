@@ -21,12 +21,12 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.mode_echo
-import vitruvianprojectphoenix.shared.generated.resources.mode_eccentric_only
-import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
-import vitruvianprojectphoenix.shared.generated.resources.mode_pump
-import vitruvianprojectphoenix.shared.generated.resources.mode_tut
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.mode_echo
+import projectphoenix.shared.generated.resources.mode_eccentric_only
+import projectphoenix.shared.generated.resources.mode_old_school
+import projectphoenix.shared.generated.resources.mode_pump
+import projectphoenix.shared.generated.resources.mode_tut
 
 /**
  * Segmented pill selector for workout modes.

@@ -2,9 +2,12 @@ package com.devil.phoenixproject.e2e
 
 import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -12,19 +15,22 @@ import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.testutil.FakeActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.testutil.fakeMachineSafetyCoordinator
 import com.devil.phoenixproject.testutil.FakeDataBackupManager
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
-import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -50,6 +56,7 @@ class WorkoutFlowE2ETest {
     private lateinit var fakeWorkoutRepository: FakeWorkoutRepository
     private lateinit var fakeExerciseRepository: FakeExerciseRepository
     private lateinit var fakePersonalRecordRepository: FakePersonalRecordRepository
+    private lateinit var fakeBaselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var fakePreferencesManager: FakePreferencesManager
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
@@ -67,13 +74,14 @@ class WorkoutFlowE2ETest {
         fakeWorkoutRepository = FakeWorkoutRepository()
         fakeExerciseRepository = FakeExerciseRepository()
         fakePersonalRecordRepository = FakePersonalRecordRepository()
+        fakeBaselineRepository = FakeProfileExerciseBaselineRepository()
         fakePreferencesManager = FakePreferencesManager()
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeBaselineRepository, FakeVelocityOneRepMaxRepository())
         fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
         profileEquipmentRackRepository = ProfileEquipmentRackRepository(
             fakeUserProfileRepository,
@@ -85,11 +93,14 @@ class WorkoutFlowE2ETest {
             workoutRepository = fakeWorkoutRepository,
             exerciseRepository = fakeExerciseRepository,
             personalRecordRepository = fakePersonalRecordRepository,
+            profileExerciseBaselineRepository = fakeBaselineRepository,
             repCounter = repCounter,
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
+            activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
@@ -128,7 +139,13 @@ class WorkoutFlowE2ETest {
                 hasEstimates = { _, _ -> false },
                 computeAllTime = { _, _, _ -> null },
             ),
+            machineSafetyCoordinator = fakeMachineSafetyCoordinator(kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher), fakeBleRepository),
         )
+        val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("elapsedRealtimeProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)
     }
@@ -341,7 +358,7 @@ class WorkoutFlowE2ETest {
         advanceUntilIdle()
 
         localRobot.verifyWorkoutActive()
-        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        // Activation sends CONFIG (0x04) only; the legacy START (0x03) command is not sent.
         kotlin.test.assertEquals(1, fakeBleRepository.commandsReceived.size)
         kotlin.test.assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
         kotlin.test.assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })

@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 /**
  * Source-level contract test for the dark + Material You clamp wired into [Theme.kt].
  *
- * The fix for issue #640 only takes effect if `VitruvianTheme` calls
+ * The fix for issue #640 only takes effect if `PhoenixTheme` calls
  * `clampDynamicDarkScheme(dynamic, DarkColorScheme)` on the dark branch and *only*
  * the dark branch. A contract test is the right tool here: a Robolectric / Compose
  * runtime round-trip would not exercise any additional code paths, and the
@@ -37,7 +37,7 @@ class MaterialYouDarkClampContractTest {
 
     @Test
     fun darkBranch_invokesClampDynamicDarkScheme() {
-        // The dark branch of `VitruvianTheme` must call `clampDynamicDarkScheme` with
+        // The dark branch of `PhoenixTheme` must call `clampDynamicDarkScheme` with
         // the dynamic dark scheme and the static `DarkColorScheme` as the fallback.
         // This is the single line of glue that makes the fix for issue #640 take
         // effect at the theme boundary.

@@ -26,8 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Exercise Navigator component for routine navigation.
@@ -186,66 +186,6 @@ private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, is
                     modifier = Modifier.size(8.dp),
                 )
             }
-        }
-    }
-}
-
-/**
- * Compact inline exercise navigator for tighter spaces.
- * Shows just prev/next buttons with current exercise number.
- */
-@Composable
-fun CompactExerciseNavigator(
-    currentIndex: Int,
-    totalExercises: Int,
-    currentExerciseName: String,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    canGoBack: Boolean,
-    canSkipForward: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onPrevious,
-            enabled = canGoBack,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(Res.string.cd_previous),
-            )
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(
-                text = currentExerciseName,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${currentIndex + 1} of $totalExercises",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        IconButton(
-            onClick = onNext,
-            enabled = canSkipForward,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(Res.string.cd_next),
-            )
         }
     }
 }

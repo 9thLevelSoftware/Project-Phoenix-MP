@@ -45,14 +45,14 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_active_selection
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_added_short
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_counterweight_short
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_display_only_short
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_manage
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_none_selected
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.equipment_rack_active_selection
+import projectphoenix.shared.generated.resources.equipment_rack_behavior_added_short
+import projectphoenix.shared.generated.resources.equipment_rack_behavior_counterweight_short
+import projectphoenix.shared.generated.resources.equipment_rack_behavior_display_only_short
+import projectphoenix.shared.generated.resources.equipment_rack_manage
+import projectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
+import projectphoenix.shared.generated.resources.equipment_rack_none_selected
 
 /**
  * Collapsible equipment rack summary row with optional per-item behavior overrides.

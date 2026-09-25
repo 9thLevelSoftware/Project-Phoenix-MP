@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.devil.phoenixproject.presentation.components.charts
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,8 +26,8 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Radar/Spider Chart

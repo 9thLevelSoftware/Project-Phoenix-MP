@@ -68,7 +68,7 @@ if result.stdout.strip() != raw:
 
 expected_regular_files = (
     root / ".github/scripts/phantom-harness.sh",
-    root / "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj",
+    root / "iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj",
     root / "shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt",
 )
 for path in expected_regular_files:
@@ -78,7 +78,7 @@ for path in expected_regular_files:
         raise SystemExit(1)
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
         raise SystemExit(1)
-project_dir = root / "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj"
+project_dir = root / "iosApp/PhoenixApp/PhoenixApp.xcodeproj"
 try:
     project_info = os.lstat(project_dir)
 except OSError:
@@ -95,9 +95,9 @@ if [[ -n "${PHOENIX_HARNESS_REPO_ROOT-}" ]]; then
         fail 'PHOENIX_HARNESS_REPO_ROOT must be the canonical current git worktree with trusted runner, project, and fixture files'
     fi
 fi
-PROJECT_DIR="$REPO_ROOT/iosApp/VitruvianPhoenix"
-PROJECT="$PROJECT_DIR/VitruvianPhoenix.xcodeproj"
-SCHEME="VitruvianPhoenix"
+PROJECT_DIR="$REPO_ROOT/iosApp/PhoenixApp"
+PROJECT="$PROJECT_DIR/PhoenixApp.xcodeproj"
+SCHEME="PhoenixApp"
 BUNDLE_ID="com.devil.phoenixproject.projectphoenix"
 TEST_CLASS="PhantomJustLiftFlowUITests"
 TEST_METHOD="testHomeToJustLiftToPhantomConnected"

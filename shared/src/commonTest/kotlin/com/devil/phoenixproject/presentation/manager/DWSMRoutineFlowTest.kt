@@ -4,11 +4,14 @@ import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
@@ -20,8 +23,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -409,6 +414,47 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun enterSetReady_legacyLastSetAmrapUsesExerciseFlag() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-legacy-amrap",
+            name = "Legacy AMRAP",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-legacy-amrap",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8),
+                    weightPerCableKg = 30f,
+                    setWeightsPerCableKg = listOf(30f, 30f),
+                    programMode = ProgramMode.OldSchool,
+                    isAMRAP = true,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.enterSetReady(0, 0)
+        assertEquals(
+            false,
+            harness.dwsm.coordinator.workoutParameters.value.isAMRAP,
+            "Legacy last-set AMRAP must stay finite on earlier sets.",
+        )
+
+        harness.dwsm.enterSetReady(0, 1)
+        assertEquals(
+            true,
+            harness.dwsm.coordinator.workoutParameters.value.isAMRAP,
+            "Legacy last-set AMRAP must apply when entering the last configured set.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
     fun enterSetReady_secondSet_incrementsSetIndex() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = WorkoutStateFixtures.createTestRoutine(setsPerExercise = 3)
@@ -501,7 +547,7 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
-    fun enterSetReady_clampsOutOfRangeRoutineProgressionToControlRange() = runTest {
+    fun enterSetReady_surfacesStoredProgressionUnchangedAndLeavesTheBoundToTheCommand() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = Routine(
             id = "routine-progress-set-ready-clamp",
@@ -526,14 +572,17 @@ class DWSMRoutineFlowTest {
         advanceUntilIdle()
         harness.dwsm.enterSetReady(0, 0)
 
+        // KD-9: entering Set Ready no longer carries its own copy of the +/-3kg bound. The
+        // stored value is surfaced as it is, and CommandLimits.resolve bounds the frame at
+        // command-resolution time with a user-visible notice (StoredRoutineLimitsTest).
         val state = harness.dwsm.coordinator.routineFlowState.value
         assertIs<RoutineFlowState.SetReady>(state)
-        assertEquals(3f, state.adjustedProgressionKg)
-        assertEquals(3f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(5f, state.adjustedProgressionKg)
+        assertEquals(5f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
         assertEquals(
             5f,
             routine.exercises.single().progressionKg,
-            "Clamping the runtime Set Ready value must not mutate the saved routine default.",
+            "Entering Set Ready must not mutate the saved routine default.",
         )
         harness.cleanup()
     }
@@ -688,6 +737,67 @@ class DWSMRoutineFlowTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `Issue687 routine Set Ready start creates one guarded routine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(routine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(routine.id, harness.coordinator.currentRoutineId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 temporary single Set Ready start creates one guarded nonroutine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val tempRoutine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1).copy(
+                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}issue-687",
+            )
+            tempRoutine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(tempRoutine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(tempRoutine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(null, harness.coordinator.currentRoutineId)
+            assertEquals(null, harness.coordinator.currentRoutineSessionId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
     // ===== C. Navigation =====
 
     @Test
@@ -700,13 +810,9 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Characterization: advanceToNextExercise calls jumpToExercise which sends BLE
-        // commands, navigates, then auto-starts a workout (skipCountdown=false).
-        // Using advanceTimeBy instead of advanceUntilIdle because the auto-started workout
-        // re-awakens init block collectors and creates an infinite re-dispatch loop.
-        // 7s covers: BLE delays (250ms) + countdown (5s) + START delay (100ms) + margin.
+        // Exercise navigation enters Set Ready without starting a workout.
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -714,6 +820,8 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After advance, selected exercise should be the second exercise",
         )
+        assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 
@@ -736,11 +844,229 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After jumpToExercise(2), selected exercise should be the third exercise",
         )
-
-        // Stop the auto-started workout to clean up monitoring coroutines
-        harness.dwsm.stopWorkout(exitingWorkout = true)
-        advanceUntilIdle()
+        val ready = assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(2, ready.exerciseIndex)
+        assertEquals(0, ready.setIndex)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
+    }
+
+    @Test
+    fun jumpToExercise_clearsWorkingRepsSoSecondJumpDoesNotMarkDestinationCompleted() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.coordinator._repCount.value = RepCount(workingReps = 8, totalReps = 8)
+
+        harness.dwsm.jumpToExercise(1)
+        advanceUntilIdle()
+
+        assertEquals(0, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertTrue(0 in harness.dwsm.coordinator.completedExercises.value)
+
+        harness.dwsm.jumpToExercise(2)
+        advanceUntilIdle()
+
+        assertEquals(0, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertFalse(
+            1 in harness.dwsm.coordinator.completedExercises.value,
+            "A second jump before START must not mark the unstarted destination as completed.",
+        )
+        assertTrue(1 in harness.dwsm.coordinator.skippedExercises.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun jumpToExercise_discardsRestEditedProgressionForDestination() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-jump-rest-progress",
+            name = "Jump Rest Progress",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-jump-rest-first",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 32f,
+                    setWeightsPerCableKg = listOf(32f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = 2.5f,
+                ),
+                RoutineExercise(
+                    id = "re-jump-rest-second",
+                    exercise = TestFixtures.bicepCurl,
+                    orderIndex = 1,
+                    setReps = listOf(10),
+                    weightPerCableKg = 18f,
+                    setWeightsPerCableKg = listOf(18f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = -1.25f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 30,
+            nextExerciseName = TestFixtures.bicepCurl.name,
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1,
+        )
+        harness.dwsm.updateWorkoutParameters(
+            harness.dwsm.coordinator.workoutParameters.value.copy(progressionRegressionKg = 2.5f),
+        )
+        assertTrue(harness.dwsm.coordinator._userAdjustedWeightDuringRest)
+
+        harness.dwsm.jumpToExercise(1)
+        advanceUntilIdle()
+
+        val ready = assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(-1.25f, ready.adjustedProgressionKg)
+        assertEquals(
+            -1.25f,
+            harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg,
+            "Jumping exercises must load the destination progression, not a rest edit from the previous exercise.",
+        )
+        assertEquals(false, harness.dwsm.coordinator._userAdjustedWeightDuringRest)
+        harness.cleanup()
+    }
+
+    @Test
+    fun jumpToExercise_reinitializesWarmupsWhenRestartingCurrentExercise() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-jump-warmup-restart",
+            name = "Jump Warmup Restart",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-jump-warmup",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 40f,
+                    setWeightsPerCableKg = listOf(40f),
+                    programMode = ProgramMode.OldSchool,
+                    warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50)),
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        assertEquals(0, harness.dwsm.coordinator.currentWarmupSetIndex.value)
+
+        harness.dwsm.coordinator._currentWarmupSetIndex.value = -1
+        harness.dwsm.jumpToExercise(0)
+        advanceUntilIdle()
+
+        assertEquals(
+            0,
+            harness.dwsm.coordinator.currentWarmupSetIndex.value,
+            "Restarting the current exercise from the navigator must reinitialize its warm-up sets.",
+        )
+        assertEquals(1, harness.dwsm.coordinator.totalWarmupSets.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun jumpToExercise_preservesLegacyAmrapOnSingleSetDestination() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-jump-legacy-amrap",
+            name = "Jump Legacy AMRAP",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-jump-amrap-first",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 30f,
+                    setWeightsPerCableKg = listOf(30f),
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-jump-amrap-second",
+                    exercise = TestFixtures.bicepCurl,
+                    orderIndex = 1,
+                    setReps = listOf(10),
+                    weightPerCableKg = 15f,
+                    setWeightsPerCableKg = listOf(15f),
+                    programMode = ProgramMode.OldSchool,
+                    isAMRAP = true,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.jumpToExercise(1)
+        advanceUntilIdle()
+
+        assertEquals(
+            true,
+            harness.dwsm.coordinator.workoutParameters.value.isAMRAP,
+            "Jumping onto a single-set legacy AMRAP exercise must keep isAMRAP for START.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `jump successor does not navigate or start until reset succeeds`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetResult = CompletableDeferred<Result<Unit>>()
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._workoutState.value = WorkoutState.Idle
+            val outgoingExecutionId = harness.activeSessionEngine.currentExecutionLeaseForTest().executionId
+            harness.fakeBleRepo.stopWorkoutBlock = { resetResult.await() }
+
+            harness.dwsm.jumpToExercise(2)
+            runCurrent()
+
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(0, harness.fakeBleRepo.stopPacketCallCount)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(
+                outgoingExecutionId,
+                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId,
+            )
+
+            resetResult.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(2, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(
+                outgoingExecutionId,
+                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId,
+                "Jump must not mint a destination execution lease before START",
+            )
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test
@@ -784,10 +1110,9 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Characterization: skipCurrentExercise calls jumpToExercise which auto-starts
-        // a workout after navigation. advanceTimeBy avoids infinite re-dispatch loop.
+        // Skipping navigates through jumpToExercise and lands on Set Ready.
         harness.dwsm.skipCurrentExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -795,6 +1120,8 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After skip, selected exercise should be the second exercise",
         )
+        assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 
@@ -856,6 +1183,85 @@ class DWSMRoutineFlowTest {
         harness.cleanup()
     }
 
+    /**
+     * Issue #689: Regression test for the autoplay exercise-boundary transition.
+     *
+     * ActiveSessionEngine.startNextSetOrExercise must replace the preceding exercise's
+     * stopAtTop and repCountTiming values with the next RoutineExercise's values.
+     */
+    @Test
+    fun startNextSet_propagatesPerExerciseStopAtTopAndRepCountTiming() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise0 = TestFixtures.allExercises[0]
+        val exercise1 = TestFixtures.allExercises[1]
+        val routine = Routine(
+            id = "test-689-autoplay-stopAtTop-repCountTiming",
+            name = "Issue689 Autoplay Regression",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-0-stopAtTop-true",
+                    exercise = exercise0,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    stopAtTop = true,
+                    repCountTiming = RepCountTiming.TOP,
+                ),
+                RoutineExercise(
+                    id = "re-1-stopAtTop-false",
+                    exercise = exercise1,
+                    orderIndex = 1,
+                    setReps = listOf(12),
+                    weightPerCableKg = 15f,
+                    stopAtTop = false,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        // Exercise 0 has the values that the report says leaked into later exercises.
+        assertEquals(true, harness.dwsm.coordinator.workoutParameters.value.stopAtTop)
+        assertEquals(RepCountTiming.TOP, harness.dwsm.coordinator.workoutParameters.value.repCountTiming)
+
+        // Simulate a completed rest countdown advancing from exercise 0 to exercise 1.
+        harness.setActiveSummaryCountdownSeconds(0)
+        harness.dwsm.coordinator._currentExerciseIndex.value = 0
+        harness.dwsm.coordinator._currentSetIndex.value = 0
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = exercise1.displayName,
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1,
+        )
+
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(
+            false,
+            params.stopAtTop,
+            "stopAtTop must not leak from exercise 0 to exercise 1 (Issue #689 regression)",
+        )
+        assertEquals(
+            RepCountTiming.BOTTOM,
+            params.repCountTiming,
+            "repCountTiming must not leak from exercise 0 to exercise 1 (Issue #689 regression)",
+        )
+        assertEquals(
+            exercise1.id,
+            params.selectedExerciseId,
+            "Selected exercise should advance to exercise 1",
+        )
+        harness.cleanup()
+    }
+
     @Test
     fun goToPreviousExercise_navigatesBackward() = runTest {
         val harness = DWSMTestHarness(this)
@@ -866,24 +1272,17 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Advance to exercise 1 (jumpToExercise auto-starts a workout).
-        // advanceTimeBy avoids infinite re-dispatch loop from init block interaction.
+        // Advance to exercise 1; jump navigation lands on Set Ready.
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         assertEquals(
             routine.exercises[1].exercise.id,
             harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId,
         )
 
-        // Characterization: jumpToExercise blocks during Active state (Issue #125).
-        // Must stop the auto-started workout before navigating again.
-        // Use exitingWorkout=false to preserve _loadedRoutine (true clears it).
-        harness.dwsm.stopWorkout(exitingWorkout = false)
-        advanceTimeBy(1000)
-
-        // Now go back (state is SetSummary, not Active, so jumpToExercise won't be blocked)
+        // Now go back while Set Ready is idle.
         harness.dwsm.goToPreviousExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -960,24 +1359,16 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Navigate through all 3 exercises.
-        // Characterization: jumpToExercise auto-starts a workout (Active state) and
-        // blocks further navigation (Issue #125). Must stop between navigations.
-        // Use exitingWorkout=false to preserve _loadedRoutine (true clears it).
-        // advanceTimeBy avoids infinite re-dispatch loop from init block interaction.
+        // Navigate through all 3 exercises without starting a set.
         val exerciseIds = mutableListOf<String?>()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
-        // Stop the auto-started workout so next navigation isn't blocked
-        harness.dwsm.stopWorkout(exitingWorkout = false)
-        advanceTimeBy(1000)
-
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
         assertEquals(3, exerciseIds.size, "Should have visited 3 exercises")
@@ -1722,6 +2113,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -1792,6 +2184,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()

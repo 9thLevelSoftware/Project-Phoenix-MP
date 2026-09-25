@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
-import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.testutil.FakeSyncTriggerTarget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -9,750 +9,319 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 
 /**
- * Unit tests for SyncTriggerManager.
- *
- * Tests the exponential backoff logic, retry storm prevention, and error category handling.
- * Uses minimal test doubles that implement the exact interface SyncTriggerManager requires.
+ * Unit tests for the production [SyncTriggerManager] (issue #869: these used to exercise a
+ * hand-copied mirror that had drifted from the real class).
  *
  * Key behaviors tested:
  * - Exponential backoff: 5 -> 15 -> 30 -> 60 minutes on transient errors
- * - Retry storm prevention: 3 consecutive failures triggers persistent error
- * - Auth errors: Clear auth state, don't retry
+ * - Auth errors: signal re-login, don't retry
  * - Permanent errors: Don't retry, reset backoff
  * - Network errors: Wait for connectivity restoration
  * - Success: Reset all backoff state
+ * - Account-switch/ownership holds and sync() throwing
  */
 class SyncTriggerManagerTest {
 
-    // ==================== Test Doubles ====================
-
-    /**
-     * Minimal test double for SyncManager that exposes only what SyncTriggerManager needs.
-     */
-    private class TestSyncManager {
-        private val _isAuthenticated = MutableStateFlow(true)
-        val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
-
-        private val _currentUser = MutableStateFlow<PortalUser?>(
-            PortalUser(id = "test", email = "test@test.com", displayName = "Test", isPremium = true),
-        )
-        val currentUser: StateFlow<PortalUser?> = _currentUser
-
-        private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
-        val syncState: StateFlow<SyncState> = _syncState
-
-        private val _lastSyncTime = MutableStateFlow(1000L) // Non-zero to bypass first-sync check
-        val lastSyncTime: StateFlow<Long> = _lastSyncTime
-
-        var syncResult: Result<Long> = Result.success(currentTimeMillis())
-        var syncCallCount = 0
-
-        /** If set, sync() will preserve this state instead of setting Success */
-        var preserveSyncState = false
-
-        suspend fun sync(): Result<Long> {
-            syncCallCount++
-            // Only update to Success if we're not preserving a custom state (like PartialSuccess)
-            if (syncResult.isSuccess && !preserveSyncState) {
-                _syncState.value = SyncState.Success(syncResult.getOrThrow())
-            }
-            return syncResult
-        }
-
-        fun setAuthenticated(value: Boolean) {
-            _isAuthenticated.value = value
-        }
-
-        fun setPremium(isPremium: Boolean) {
-            _currentUser.value = _currentUser.value?.copy(isPremium = isPremium)
-        }
-
-        fun setSyncState(state: SyncState) {
-            _syncState.value = state
-        }
-
-        fun setLastSyncTime(time: Long) {
-            _lastSyncTime.value = time
-        }
-
-        // Mimics SyncManager.refreshPremiumStatusFromServer() — a suspend API call
-        // that can throw raw (Ktor/IO) and is NOT wrapped in Result. This is the
-        // real crash path for issue #566 when the network stack fails after wake.
-        var refreshPremiumStatusThrows: Throwable? = null
-        var refreshPremiumCallCount = 0
-
-        suspend fun refreshPremiumStatusFromServer() {
-            refreshPremiumCallCount++
-            refreshPremiumStatusThrows?.let { throw it }
-        }
-    }
-
-    /**
-     * Minimal test double for ConnectivityChecker.
-     */
-    private class TestConnectivityChecker {
+    private class Fixture {
+        val target = FakeSyncTriggerTarget()
         var online = true
-        fun isOnline(): Boolean = online
-    }
-
-    /**
-     * Testable subclass of SyncTriggerManager that allows dependency injection of test doubles.
-     */
-    private class TestableSyncTriggerManager(
-        private val testSyncManager: TestSyncManager,
-        private val testConnectivityChecker: TestConnectivityChecker,
-    ) {
-        // Mirror the internal state from real SyncTriggerManager
-        private var consecutiveFailures: Int = 0
-        private var currentBackoffIndex: Int = 0
-        private var lastErrorCategory: SyncErrorCategory? = null
-        private var lastErrorMessage: String? = null
-        private var isWaitingForConnectivity: Boolean = false
-        private var lastSyncAttemptMillis: Long = 0
-
-        private val _hasPersistentError = MutableStateFlow(false)
-        val hasPersistentError: StateFlow<Boolean> = _hasPersistentError
-
-        private val _retryState = MutableStateFlow(RetryState())
-        val retryState: StateFlow<RetryState> = _retryState
-
-        companion object {
-            const val MAX_CONSECUTIVE_FAILURES = 3
-            val BACKOFF_SCHEDULE_MINUTES = listOf(5, 15, 30, 60)
-        }
-
-        /**
-         * Simulates onWorkoutCompleted - bypasses throttle
-         */
-        suspend fun onWorkoutCompleted() {
-            attemptSync(bypassThrottle = true)
-        }
-
-        /**
-         * Simulates onAppForeground - respects throttle.
-         *
-         * Mirrors the issue #566 fix: the body is wrapped in try/catch so a raw
-         * throwable from refreshPremiumStatusFromServer() (the real crash path)
-         * is recorded via onSyncFailure() and does NOT propagate, while
-         * CancellationException is rethrown to preserve cancellation semantics.
-         */
-        suspend fun onAppForeground() {
-            try {
-                if (testSyncManager.isAuthenticated.value) {
-                    testSyncManager.refreshPremiumStatusFromServer()
-                }
-                attemptSync(bypassThrottle = false)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                onSyncFailure(e)
-            }
-        }
-
-        /**
-         * Simulates onConnectivityRestored
-         */
-        suspend fun onConnectivityRestored() {
-            if (isWaitingForConnectivity) {
-                isWaitingForConnectivity = false
-                attemptSync(bypassThrottle = true)
-            }
-        }
-
-        /**
-         * Clears error state
-         */
-        fun clearError() {
-            consecutiveFailures = 0
-            currentBackoffIndex = 0
-            lastErrorCategory = null
-            lastErrorMessage = null
-            isWaitingForConnectivity = false
-            _hasPersistentError.value = false
-            updateRetryState()
-        }
-
-        // Expose internal state for testing
-        fun getBackoffIndex(): Int = currentBackoffIndex
-        fun getConsecutiveFailures(): Int = consecutiveFailures
-        fun getLastErrorCategory(): SyncErrorCategory? = lastErrorCategory
-        fun isWaitingForConnectivity(): Boolean = isWaitingForConnectivity
-
-        private suspend fun attemptSync(bypassThrottle: Boolean) {
-            // Check authentication
-            if (!testSyncManager.isAuthenticated.value) {
-                return
-            }
-
-            // Check premium status
-            val user = testSyncManager.currentUser.value
-            if (user?.isPremium == false && testSyncManager.lastSyncTime.value > 0) {
-                return
-            }
-
-            // Check connectivity
-            if (!testConnectivityChecker.isOnline()) {
-                isWaitingForConnectivity = true
-                updateRetryState()
-                return
-            }
-
-            // Check if waiting for connectivity
-            if (isWaitingForConnectivity && !bypassThrottle) {
-                return
-            }
-
-            // Check persistent error
-            if (_hasPersistentError.value && !bypassThrottle) {
-                return
-            }
-
-            // Attempt sync
-            val result = testSyncManager.sync()
-
-            if (result.isSuccess) {
-                val state = testSyncManager.syncState.value
-                if (state is SyncState.PartialSuccess) {
-                    onSyncFailure(PortalApiException(state.pullError ?: "Pull failed"))
-                } else {
-                    onSyncSuccess()
-                }
-            } else {
-                val error = result.exceptionOrNull()
-                onSyncFailure(error)
-            }
-        }
-
-        private fun onSyncFailure(error: Throwable?) {
-            val classified = if (error is Exception) {
-                classifyError(error, "Sync")
-            } else {
-                ClassifiedSyncError(
-                    category = SyncErrorCategory.TRANSIENT,
-                    message = error?.message ?: "Unknown error",
-                    isRetryable = true,
-                    cause = error,
-                )
-            }
-
-            consecutiveFailures++
-            lastErrorCategory = classified.category
-            lastErrorMessage = classified.message
-
-            when (classified.category) {
-                SyncErrorCategory.TRANSIENT -> {
-                    if (currentBackoffIndex < BACKOFF_SCHEDULE_MINUTES.size) {
-                        currentBackoffIndex++
-                    }
-                }
-
-                SyncErrorCategory.PERMANENT -> {
-                    currentBackoffIndex = 0
-                    _hasPersistentError.value = true
-                }
-
-                SyncErrorCategory.NETWORK -> {
-                    isWaitingForConnectivity = true
-                }
-
-                SyncErrorCategory.AUTH -> {
-                    currentBackoffIndex = 0
-                    _hasPersistentError.value = true
-                }
-            }
-
-            // Check for retry storm
-            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES &&
-                classified.category == SyncErrorCategory.TRANSIENT
-            ) {
-                _hasPersistentError.value = true
-            }
-
-            updateRetryState()
-        }
-
-        private fun onSyncSuccess() {
-            consecutiveFailures = 0
-            currentBackoffIndex = 0
-            lastErrorCategory = null
-            lastErrorMessage = null
-            isWaitingForConnectivity = false
-            _hasPersistentError.value = false
-            updateRetryState()
-        }
-
-        private fun updateRetryState() {
-            val nextDelayMinutes = if (currentBackoffIndex > 0) {
-                BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                    BACKOFF_SCHEDULE_MINUTES.last()
-                }
-            } else {
-                null
-            }
-
-            _retryState.value = RetryState(
-                retryCount = consecutiveFailures,
-                nextRetryDelayMinutes = nextDelayMinutes,
-                nextRetryAtMillis = null, // Simplified for testing
-                lastErrorCategory = lastErrorCategory,
-                lastErrorMessage = lastErrorMessage,
-                isWaitingForConnectivity = isWaitingForConnectivity,
-                requiresReLogin = lastErrorCategory == SyncErrorCategory.AUTH,
-            )
-        }
+        var now = 1_000_000L
+        val trigger = SyncTriggerManager(
+            syncManager = target,
+            isOnline = { online },
+            nowMillis = { now },
+        )
+        val retry: RetryState get() = trigger.retryState.value
     }
 
     // ==================== Backoff Progression Tests ====================
 
     @Test
     fun backoffIndexProgressesOnTransientError() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Server error", null, 500))
 
-        // Set up transient error (500 server error)
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
-
-        // First transient error
-        triggerManager.onWorkoutCompleted()
-        assertEquals(1, triggerManager.getBackoffIndex(), "Backoff should be 1 after first error")
-        assertEquals(
-            5,
-            triggerManager.retryState.value.nextRetryDelayMinutes,
-            "Delay should be 5 minutes",
-        )
-
-        // Second transient error
-        triggerManager.onWorkoutCompleted()
-        assertEquals(2, triggerManager.getBackoffIndex(), "Backoff should be 2 after second error")
-        assertEquals(
-            15,
-            triggerManager.retryState.value.nextRetryDelayMinutes,
-            "Delay should be 15 minutes",
-        )
-
-        // Third transient error
-        triggerManager.onWorkoutCompleted()
-        assertEquals(3, triggerManager.getBackoffIndex(), "Backoff should be 3 after third error")
-        assertEquals(
-            30,
-            triggerManager.retryState.value.nextRetryDelayMinutes,
-            "Delay should be 30 minutes",
-        )
-
-        // Fourth transient error
-        triggerManager.onWorkoutCompleted()
-        assertEquals(4, triggerManager.getBackoffIndex(), "Backoff should be 4 after fourth error")
-        assertEquals(
-            60,
-            triggerManager.retryState.value.nextRetryDelayMinutes,
-            "Delay should be 60 minutes",
-        )
-
-        // Fifth error - should stay at max
-        triggerManager.onWorkoutCompleted()
-        assertEquals(4, triggerManager.getBackoffIndex(), "Backoff should stay at max (4)")
-        assertEquals(
-            60,
-            triggerManager.retryState.value.nextRetryDelayMinutes,
-            "Delay should stay at 60 minutes",
-        )
+        listOf(5, 15, 30, 60, 60).forEachIndexed { attempt, expectedDelay ->
+            f.trigger.onWorkoutCompleted()
+            assertEquals(expectedDelay, f.retry.nextRetryDelayMinutes, "delay after failure ${attempt + 1}")
+            assertEquals(attempt + 1, f.retry.retryCount)
+        }
     }
 
     @Test
     fun backoffResetsOnSuccess() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Server error", null, 500))
+        f.trigger.onWorkoutCompleted()
+        f.trigger.onWorkoutCompleted()
+        assertEquals(15, f.retry.nextRetryDelayMinutes)
+        assertEquals(2, f.retry.retryCount)
 
-        // Build up backoff with transient errors
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
-        triggerManager.onWorkoutCompleted()
-        triggerManager.onWorkoutCompleted()
-        assertEquals(2, triggerManager.getBackoffIndex(), "Should have backoff index 2")
-        assertEquals(2, triggerManager.getConsecutiveFailures(), "Should have 2 consecutive failures")
+        f.target.syncResult = Result.success(2L)
+        f.trigger.onWorkoutCompleted()
 
-        // Now succeed
-        syncManager.syncResult = Result.success(currentTimeMillis())
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(0, triggerManager.getBackoffIndex(), "Backoff should reset to 0 on success")
-        assertEquals(0, triggerManager.getConsecutiveFailures(), "Failures should reset to 0")
-        assertNull(triggerManager.getLastErrorCategory(), "Error category should be null")
-        assertNull(triggerManager.retryState.value.nextRetryDelayMinutes, "No retry delay needed")
+        assertNull(f.retry.nextRetryDelayMinutes, "No retry delay after a clean success")
+        assertEquals(0, f.retry.retryCount, "Failures should reset to 0")
+        assertNull(f.retry.lastErrorCategory, "Error category should be null")
     }
 
-    // ==================== Retry Storm Prevention Tests ====================
+    // ==================== Persistent Error Tests ====================
 
     @Test
-    fun maxConsecutiveFailuresTriggersRetryStormPrevention() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+    fun transientFailuresNeverLatchThePersistentError() = runTest {
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Server error", null, 500))
 
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
+        repeat(5) { f.trigger.onWorkoutCompleted() }
 
-        // First two failures - no persistent error yet
-        triggerManager.onWorkoutCompleted()
-        assertFalse(
-            triggerManager.hasPersistentError.value,
-            "Should not have persistent error after 1 failure",
-        )
-
-        triggerManager.onWorkoutCompleted()
-        assertFalse(
-            triggerManager.hasPersistentError.value,
-            "Should not have persistent error after 2 failures",
-        )
-
-        // Third failure - triggers retry storm prevention
-        triggerManager.onWorkoutCompleted()
-        assertTrue(
-            triggerManager.hasPersistentError.value,
-            "Should have persistent error after 3 consecutive failures",
-        )
-        assertEquals(3, triggerManager.getConsecutiveFailures())
+        assertFalse(f.trigger.hasPersistentError.value, "Transient failures only ratchet backoff")
+        assertEquals(5, f.retry.retryCount)
     }
 
     @Test
-    fun retryStormClearedOnManualReset() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+    fun persistentErrorClearedOnManualReset() = runTest {
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Bad request", null, 400))
+        f.trigger.onWorkoutCompleted()
+        assertTrue(f.trigger.hasPersistentError.value, "Should have persistent error")
 
-        // Trigger retry storm
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
-        repeat(3) { triggerManager.onWorkoutCompleted() }
-        assertTrue(triggerManager.hasPersistentError.value, "Should have persistent error")
+        f.trigger.clearError()
 
-        // Manual clear
-        triggerManager.clearError()
-
-        assertFalse(
-            triggerManager.hasPersistentError.value,
-            "Persistent error should be cleared",
-        )
-        assertEquals(0, triggerManager.getBackoffIndex(), "Backoff should be reset")
-        assertEquals(0, triggerManager.getConsecutiveFailures(), "Failures should be reset")
+        assertFalse(f.trigger.hasPersistentError.value, "Persistent error should be cleared")
+        assertNull(f.retry.nextRetryDelayMinutes, "Backoff should be reset")
+        assertEquals(0, f.retry.retryCount, "Failures should be reset")
+        assertNull(f.retry.lastErrorCategory)
     }
 
     // ==================== Connectivity Tests ====================
 
     @Test
     fun connectivityRestoredTriggersSync() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.online = false
+        f.trigger.onAppForeground()
 
-        // Start offline
-        connectivity.online = false
-        triggerManager.onAppForeground()
+        assertTrue(f.retry.isWaitingForConnectivity, "Should be waiting for connectivity when offline")
+        assertEquals(0, f.target.syncCallCount, "Sync should not be called when offline")
 
-        assertTrue(
-            triggerManager.isWaitingForConnectivity(),
-            "Should be waiting for connectivity when offline",
-        )
-        assertEquals(0, syncManager.syncCallCount, "Sync should not be called when offline")
+        f.online = true
+        f.trigger.onConnectivityRestored()
 
-        // Restore connectivity
-        connectivity.online = true
-        syncManager.syncResult = Result.success(currentTimeMillis())
-        triggerManager.onConnectivityRestored()
+        assertFalse(f.retry.isWaitingForConnectivity, "Should no longer be waiting for connectivity")
+        assertEquals(1, f.target.syncCallCount, "Sync should be called on connectivity restore")
+    }
 
-        assertFalse(
-            triggerManager.isWaitingForConnectivity(),
-            "Should no longer be waiting for connectivity",
-        )
-        assertEquals(1, syncManager.syncCallCount, "Sync should be called on connectivity restore")
+    @Test
+    fun connectivityRestoredDoesNothingWhenNotWaiting() = runTest {
+        val f = Fixture()
+
+        f.trigger.onConnectivityRestored()
+
+        assertEquals(0, f.target.syncCallCount)
     }
 
     @Test
     fun networkErrorSetsWaitingForConnectivity() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
-
-        // Simulate network error (not an HTTP status - classified as NETWORK)
-        // Use an exception name containing "Connection" to trigger NETWORK category
+        val f = Fixture()
+        // A class name containing "Connection" classifies as NETWORK.
         class ConnectionException(message: String) : Exception(message)
-        syncManager.syncResult = Result.failure(ConnectionException("Connection refused"))
+        f.target.syncResult = Result.failure(ConnectionException("Connection refused"))
 
-        triggerManager.onWorkoutCompleted()
+        f.trigger.onWorkoutCompleted()
 
-        assertEquals(
-            SyncErrorCategory.NETWORK,
-            triggerManager.getLastErrorCategory(),
-            "Should classify as NETWORK error",
-        )
-        assertTrue(
-            triggerManager.isWaitingForConnectivity(),
-            "Should be waiting for connectivity after network error",
-        )
-        // Network errors don't increment backoff
-        assertEquals(0, triggerManager.getBackoffIndex(), "Backoff should not increase for network errors")
+        assertEquals(SyncErrorCategory.NETWORK, f.retry.lastErrorCategory, "Should classify as NETWORK error")
+        assertTrue(f.retry.isWaitingForConnectivity, "Should be waiting for connectivity after network error")
+        assertNull(f.retry.nextRetryDelayMinutes, "Backoff should not increase for network errors")
     }
 
     // ==================== Permanent Error Tests ====================
 
     @Test
     fun permanentErrorDoesNotTriggerBackoff() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Bad request", null, 400))
 
-        // 400 Bad Request is a permanent error
-        syncManager.syncResult = Result.failure(PortalApiException("Bad request", null, 400))
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(
-            SyncErrorCategory.PERMANENT,
-            triggerManager.getLastErrorCategory(),
-            "Should classify as PERMANENT error",
-        )
-        assertEquals(
-            0,
-            triggerManager.getBackoffIndex(),
-            "Backoff should NOT increase for permanent errors",
-        )
-        assertTrue(
-            triggerManager.hasPersistentError.value,
-            "Should set persistent error for permanent errors",
-        )
+        assertEquals(SyncErrorCategory.PERMANENT, f.retry.lastErrorCategory, "Should classify as PERMANENT error")
+        assertNull(f.retry.nextRetryDelayMinutes, "Backoff should NOT increase for permanent errors")
+        assertTrue(f.trigger.hasPersistentError.value, "Should set persistent error for permanent errors")
     }
 
     @Test
     fun permanentErrorResetsExistingBackoff() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Server error", null, 500))
+        f.trigger.onWorkoutCompleted()
+        f.trigger.onWorkoutCompleted()
+        assertEquals(15, f.retry.nextRetryDelayMinutes, "Should have backoff from transient errors")
 
-        // First, build up some backoff with transient errors
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
-        triggerManager.onWorkoutCompleted()
-        triggerManager.onWorkoutCompleted()
-        assertEquals(2, triggerManager.getBackoffIndex(), "Should have backoff from transient errors")
+        f.target.syncResult = Result.failure(PortalApiException("Not found", null, 404))
+        f.trigger.onWorkoutCompleted()
 
-        // Now trigger a permanent error
-        syncManager.syncResult = Result.failure(PortalApiException("Not found", null, 404))
-        triggerManager.clearError() // Clear the retry storm from previous failures
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(
-            0,
-            triggerManager.getBackoffIndex(),
-            "Permanent error should reset backoff to 0",
-        )
+        assertNull(f.retry.nextRetryDelayMinutes, "Permanent error should reset backoff")
     }
 
     // ==================== Auth Error Tests ====================
 
     @Test
-    fun authErrorClearsAndDoesNotRetry() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+    fun authErrorSignalsReLoginAndDoesNotRetry() = runTest {
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Unauthorized", null, 401))
 
-        // 401 Unauthorized is an auth error
-        syncManager.syncResult = Result.failure(PortalApiException("Unauthorized", null, 401))
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(
-            SyncErrorCategory.AUTH,
-            triggerManager.getLastErrorCategory(),
-            "Should classify as AUTH error",
-        )
-        assertEquals(
-            0,
-            triggerManager.getBackoffIndex(),
-            "Auth errors should NOT increase backoff",
-        )
-        assertTrue(
-            triggerManager.hasPersistentError.value,
-            "Auth errors should set persistent error (requires re-login)",
-        )
-        assertTrue(
-            triggerManager.retryState.value.requiresReLogin,
-            "Retry state should indicate re-login required",
-        )
+        assertEquals(SyncErrorCategory.AUTH, f.retry.lastErrorCategory, "Should classify as AUTH error")
+        assertNull(f.retry.nextRetryDelayMinutes, "Auth errors should NOT increase backoff")
+        assertTrue(f.trigger.hasPersistentError.value, "Auth errors should set persistent error")
+        assertTrue(f.retry.requiresReLogin, "Retry state should indicate re-login required")
     }
 
     @Test
     fun authErrorResetsExistingBackoff() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Server error", null, 500))
+        f.trigger.onWorkoutCompleted()
+        assertEquals(5, f.retry.nextRetryDelayMinutes)
 
-        // Build up backoff
-        syncManager.syncResult = Result.failure(PortalApiException("Server error", null, 500))
-        triggerManager.onWorkoutCompleted()
-        assertEquals(1, triggerManager.getBackoffIndex())
+        f.target.syncResult = Result.failure(PortalApiException("Token expired", null, 401))
+        f.trigger.onWorkoutCompleted()
 
-        // Auth error resets backoff
-        syncManager.syncResult = Result.failure(PortalApiException("Token expired", null, 401))
-        triggerManager.clearError()
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(0, triggerManager.getBackoffIndex(), "Auth error should reset backoff")
+        assertNull(f.retry.nextRetryDelayMinutes, "Auth error should reset backoff")
     }
 
     // ==================== Edge Cases ====================
 
     @Test
     fun partialSuccessTreatedAsTransientFailure() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
-
-        // Simulate partial success (push OK, pull failed)
-        // Set preserveSyncState so sync() doesn't overwrite with Success
-        syncManager.preserveSyncState = true
-        syncManager.syncResult = Result.success(currentTimeMillis())
-        syncManager.setSyncState(
+        val f = Fixture()
+        f.target.preserveSyncState = true
+        f.target.setSyncState(
             SyncState.PartialSuccess(
                 pushSucceeded = true,
                 pullSucceeded = false,
-                lastSyncTime = currentTimeMillis(),
+                lastSyncTime = 1L,
                 pullError = "Network timeout on pull",
             ),
         )
 
-        triggerManager.onWorkoutCompleted()
+        f.trigger.onWorkoutCompleted()
 
-        // Partial success is treated as transient failure
-        assertEquals(1, triggerManager.getBackoffIndex(), "Partial success should trigger backoff")
-        assertEquals(1, triggerManager.getConsecutiveFailures(), "Should count as a failure")
+        assertEquals(5, f.retry.nextRetryDelayMinutes, "Partial success should trigger backoff")
+        assertEquals(1, f.retry.retryCount, "Should count as a failure")
+    }
+
+    @Test
+    fun syncThatThrowsIsRecordedAsAFailureInsteadOfEscaping() = runTest {
+        val f = Fixture()
+        f.target.syncThrows = IllegalStateException("repository blew up")
+
+        f.trigger.onWorkoutCompleted()
+
+        assertEquals(1, f.target.syncCallCount)
+        assertEquals(1, f.retry.retryCount)
+        assertNotNull(f.retry.lastErrorCategory)
     }
 
     @Test
     fun backoffScheduleMatchesDocumentedValues() {
-        // Verify the documented backoff schedule: 5 -> 15 -> 30 -> 60 minutes
-        assertEquals(
-            listOf(5, 15, 30, 60),
-            SyncTriggerManager.BACKOFF_SCHEDULE_MINUTES,
-            "Backoff schedule should be [5, 15, 30, 60] minutes",
-        )
+        assertEquals(listOf(5, 15, 30, 60), SyncTriggerManager.BACKOFF_SCHEDULE_MINUTES)
     }
 
     @Test
     fun notAuthenticatedSkipsSync() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.setAuthenticated(false)
 
-        syncManager.setAuthenticated(false)
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
+        assertEquals(0, f.target.syncCallCount, "Sync should not be called when not authenticated")
+    }
 
-        assertEquals(0, syncManager.syncCallCount, "Sync should not be called when not authenticated")
+    @Test
+    fun accountSwitchAndOwnershipHoldsSkipSync() = runTest {
+        listOf(
+            SyncState.AccountMismatch("old", "old@x", "new", "new@x"),
+            SyncState.OwnershipConflict("owned elsewhere"),
+        ).forEach { hold ->
+            val f = Fixture()
+            f.target.setSyncState(hold)
+
+            f.trigger.onWorkoutCompleted()
+
+            assertEquals(0, f.target.syncCallCount, "$hold must hold auto-sync")
+            assertEquals(hold, f.target.syncState.value)
+        }
     }
 
     @Test
     fun notPremiumSkipsSyncAfterFirstSync() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.setPremium(false)
+        f.target.setLastSyncTime(1000L)
 
-        syncManager.setPremium(false)
-        syncManager.setLastSyncTime(1000L) // Non-zero = not first sync
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(0, syncManager.syncCallCount, "Sync should be skipped for non-premium after first sync")
+        assertEquals(0, f.target.syncCallCount, "Sync should be skipped for non-premium after first sync")
+        assertEquals(1, f.target.markPausedNotPremiumCallCount)
+        assertEquals(SyncState.NotPremium, f.target.syncState.value, "Skip must show the paused state")
     }
 
     @Test
     fun notPremiumAllowsFirstSync() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.setPremium(false)
+        f.target.setLastSyncTime(0L)
 
-        syncManager.setPremium(false)
-        syncManager.setLastSyncTime(0L) // Zero = first sync allowed
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(1, syncManager.syncCallCount, "First sync should be allowed for non-premium")
+        assertEquals(1, f.target.syncCallCount, "First sync should be allowed for non-premium")
     }
 
     @Test
     fun rateLimitedErrorIsTransientAndRetryable() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.syncResult = Result.failure(PortalApiException("Rate limited", null, 429))
 
-        // 429 Too Many Requests
-        syncManager.syncResult = Result.failure(PortalApiException("Rate limited", null, 429))
+        f.trigger.onWorkoutCompleted()
 
-        triggerManager.onWorkoutCompleted()
-
-        assertEquals(
-            SyncErrorCategory.TRANSIENT,
-            triggerManager.getLastErrorCategory(),
-            "429 should be TRANSIENT",
-        )
-        assertEquals(1, triggerManager.getBackoffIndex(), "Should trigger backoff")
-        assertFalse(
-            triggerManager.hasPersistentError.value,
-            "Single rate limit should not trigger persistent error",
-        )
+        assertEquals(SyncErrorCategory.TRANSIENT, f.retry.lastErrorCategory, "429 should be TRANSIENT")
+        assertEquals(5, f.retry.nextRetryDelayMinutes, "Should trigger backoff")
+        assertFalse(f.trigger.hasPersistentError.value, "Rate limiting should not latch a persistent error")
     }
 
     // ==================== Issue #566 Foreground Crash Containment Tests ====================
 
     /**
-     * Issue #566: a raw throwable from refreshPremiumStatusFromServer() (the real
-     * crash path — a suspend API call not wrapped in Result) must be recorded in
-     * RetryState via onSyncFailure() and must NOT propagate out of onAppForeground().
+     * Issue #566: a raw throwable from refreshPremiumStatusFromServer() must be recorded in
+     * RetryState and must NOT propagate out of onAppForeground().
      */
     @Test
     fun onAppForegroundRecordsFailureAndDoesNotPropagateWhenPremiumRefreshThrows() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
-
+        val f = Fixture()
         class SimulatedPremiumRefreshCrash(message: String) : Exception(message)
-        syncManager.refreshPremiumStatusThrows =
-            SimulatedPremiumRefreshCrash("simulated premium refresh failure after wake")
+        f.target.refreshPremiumStatusThrows = SimulatedPremiumRefreshCrash("simulated premium refresh failure after wake")
 
-        // Must not throw — the throwable is contained by onAppForeground()'s try/catch.
-        triggerManager.onAppForeground()
+        f.trigger.onAppForeground()
 
-        assertEquals(1, syncManager.refreshPremiumCallCount, "Premium refresh should have been attempted")
-        assertEquals(0, syncManager.syncCallCount, "attemptSync should not be reached after premium refresh threw")
-        assertEquals(1, triggerManager.getConsecutiveFailures(), "Foreground failure should be recorded")
-        assertEquals(1, triggerManager.retryState.value.retryCount, "RetryState should reflect the foreground failure")
-        assertNotNull(triggerManager.getLastErrorCategory(), "Error category should be classified and recorded")
+        assertEquals(1, f.target.refreshPremiumCallCount, "Premium refresh should have been attempted")
+        assertEquals(0, f.target.syncCallCount, "attemptSync should not be reached after premium refresh threw")
+        assertEquals(1, f.retry.retryCount, "RetryState should reflect the foreground failure")
+        assertNotNull(f.retry.lastErrorCategory, "Error category should be classified and recorded")
     }
 
-    /**
-     * Issue #566: CancellationException must be rethrown by onAppForeground() so
-     * coroutine cancellation semantics are preserved, and must NOT be recorded as
-     * a sync failure.
-     */
+    /** Issue #566: cancellation propagates and is not recorded as a sync failure. */
     @Test
     fun onAppForegroundRethrowsCancellationException() = runTest {
-        val syncManager = TestSyncManager()
-        val connectivity = TestConnectivityChecker()
-        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+        val f = Fixture()
+        f.target.refreshPremiumStatusThrows = CancellationException("lifecycle cancelled")
 
-        syncManager.refreshPremiumStatusThrows = CancellationException("lifecycle cancelled")
+        assertFailsWith<CancellationException> { f.trigger.onAppForeground() }
 
-        assertFailsWith<CancellationException> {
-            triggerManager.onAppForeground()
-        }
-
-        assertEquals(1, syncManager.refreshPremiumCallCount, "Premium refresh should have been attempted")
-        assertEquals(
-            0,
-            triggerManager.getConsecutiveFailures(),
-            "CancellationException must not be recorded as a sync failure",
-        )
+        assertEquals(1, f.target.refreshPremiumCallCount, "Premium refresh should have been attempted")
+        assertEquals(0, f.retry.retryCount, "CancellationException must not be recorded as a sync failure")
     }
 }

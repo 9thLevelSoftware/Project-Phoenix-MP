@@ -12,7 +12,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_IMAGE="$SCRIPT_DIR/AppIcon1024.png"
-ASSETS_DIR="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix/Assets.xcassets"
+ASSETS_DIR="$SCRIPT_DIR/PhoenixApp/PhoenixApp/Assets.xcassets"
 
 echo "Setting up launch screen assets..."
 echo ""

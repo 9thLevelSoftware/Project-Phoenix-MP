@@ -1,11 +1,19 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
-import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
+import com.devil.phoenixproject.data.repository.RepMetricRepository
+import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -28,6 +36,9 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     private val sessions = mutableMapOf<String, WorkoutSession>()
     private val routines = mutableMapOf<String, Routine>()
+
+    /** Routine groups by id; the SQL repository keeps these outside the interface. */
+    val routineGroups = mutableMapOf<String, RoutineGroup>()
     private val metrics = mutableMapOf<String, List<WorkoutMetric>>()
     private val personalRecords = mutableMapOf<String, PersonalRecordEntity>()
     private val phaseStatistics = mutableMapOf<String, PhaseStatisticsData>()
@@ -37,7 +48,20 @@ class FakeWorkoutRepository : WorkoutRepository {
     private val _personalRecordsFlow = MutableStateFlow<List<PersonalRecordEntity>>(emptyList())
     private val _phaseStatisticsFlow = MutableStateFlow<List<PhaseStatisticsData>>(emptyList())
 
+    /**
+     * The sibling fakes [commitCompletedSet] writes through. Production keeps
+     * these tables in one database, so one repository can commit them together;
+     * the harness wires the equivalent here.
+     */
+    var completedSetRepository: CompletedSetRepository? = null
+    var repMetricRepository: RepMetricRepository? = null
+    var biomechanicsRepository: BiomechanicsRepository? = null
+
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
+    val saveSessionAttempts = mutableListOf<WorkoutSession>()
+    val saveMetricsAttempts = mutableListOf<Pair<String, List<WorkoutMetric>>>()
+    var beforeSaveSession: suspend (WorkoutSession) -> Unit = {}
+    var afterSaveSession: suspend (WorkoutSession) -> Unit = {}
     var recentCompletedFailure: Throwable? = null
     var mostRecentCompletedExerciseFailure: Throwable? = null
 
@@ -73,6 +97,13 @@ class FakeWorkoutRepository : WorkoutRepository {
         personalRecords.clear()
         phaseStatistics.clear()
         recentCompletedRequests.clear()
+        saveSessionAttempts.clear()
+        saveMetricsAttempts.clear()
+        beforeSaveSession = {}
+        afterSaveSession = {}
+        completedSetRepository = null
+        repMetricRepository = null
+        biomechanicsRepository = null
         recentCompletedFailure = null
         mostRecentCompletedExerciseFailure = null
         updateSessionsFlow()
@@ -106,16 +137,16 @@ class FakeWorkoutRepository : WorkoutRepository {
     //   deletedAt IS NULL AND (workingReps > 0 OR totalReps > 0)
     // so unit tests using this fake exercise the same data the
     // production SqlDelightWorkoutRepository returns.
-    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> =
-        _sessionsFlow.map { all ->
-            all.filter { session ->
-                // No deletedAt field on WorkoutSession today; when soft
-                // delete lands, gate on it here too. For now the in-memory
-                // fake never stores deleted rows, so only the rep guard is
-                // required to match the SQL behavior.
-                session.workingReps > 0 || session.totalReps > 0
-            }
+    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow.map { all ->
+        all.filter { session ->
+            // No deletedAt field on WorkoutSession today; when soft
+            // delete lands, gate on it here too. For now the in-memory
+            // fake never stores deleted rows, so only the profile and
+            // positive-rep guards are required to match the SQL behavior.
+            session.profileId == profileId &&
+                (session.workingReps > 0 || session.totalReps > 0)
         }
+    }
 
     override suspend fun getRecentCompletedSessionsForExercise(
         exerciseId: String,
@@ -158,8 +189,50 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
 
     override suspend fun saveSession(session: WorkoutSession) {
+        saveSessionAttempts += session
+        beforeSaveSession(session)
         sessions[session.id] = session
         updateSessionsFlow()
+        afterSaveSession(session)
+    }
+
+    /**
+     * In-memory stand-in for the production single transaction. It cannot be
+     * atomic — the fakes are plain maps — so it keeps the production ORDER and
+     * GUARDS instead, and reaches the sibling fakes through
+     * [completedSetRepository] / [repMetricRepository] / [biomechanicsRepository]
+     * so every existing assertion on them (and every injected failure hook)
+     * still sees exactly what the step-by-step save produced.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    ) {
+        if (getSession(session.id) == null) {
+            saveSession(session)
+        }
+        if (metrics.isNotEmpty()) {
+            saveMetrics(session.id, metrics)
+        }
+        val completedSetRepo = completedSetRepository
+        if (completedSet != null && completedSetRepo != null) {
+            val alreadySaved = completedSetRepo.getCompletedSets(session.id)
+                .any { it.id == completedSet.id }
+            if (!alreadySaved) {
+                completedSetRepo.saveCompletedSet(completedSet)
+            }
+        }
+        repMetricRepository?.let { repo ->
+            repo.deleteRepMetrics(session.id)
+            if (repMetrics.isNotEmpty()) repo.saveRepMetrics(session.id, repMetrics)
+        }
+        biomechanicsRepository?.let { repo ->
+            repo.deleteRepBiomechanics(session.id)
+            if (repBiomechanics.isNotEmpty()) repo.saveRepBiomechanics(session.id, repBiomechanics)
+        }
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
@@ -178,13 +251,22 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override suspend fun deleteAllSessions() {
-        sessions.clear()
-        metrics.clear()
+    override suspend fun discardSessionInternal(sessionId: String) {
+        sessions.remove(sessionId)
+        metrics.remove(sessionId)
         updateSessionsFlow()
     }
 
-    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+    override suspend fun deleteAllSessions(profileId: String) {
+        val matchingIds = sessions.values.filter { it.profileId == profileId }.map { it.id }
+        matchingIds.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
+        updateSessionsFlow()
+    }
+
+    override suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String) {
         // Issue #591 follow-up: remove every session belonging to the
         // routine session id, including any zero-rep / ghost rows that
         // `getHistoryVisibleSessions` would have filtered out. Mirrors
@@ -192,7 +274,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         // group level) without the SQL deletedAt bookkeeping the
         // production repository maintains.
         val matchingIds = sessions.entries
-            .filter { (_, session) -> session.routineSessionId == routineSessionId }
+            .filter { (_, session) ->
+                session.profileId == profileId && session.routineSessionId == routineSessionId
+            }
             .map { it.key }
         matchingIds.forEach { id ->
             sessions.remove(id)
@@ -202,6 +286,13 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = _sessionsFlow.map { it.take(limit) }
+
+    // Mirrors the engine's previous in-memory lookup over getAllSessions (this fake's
+    // getAllSessions is not profile-filtered either).
+    override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = _sessionsFlow.value
+        .filter { it.exerciseId == exerciseId }
+        .maxByOrNull { it.timestamp }
+        ?.weightPerCableKg
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
@@ -246,6 +337,26 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override suspend fun getRoutineById(routineId: String): Routine? = routines[routineId]
 
+    override suspend fun getRoutineHeaders(profileId: String): List<Routine> =
+        routines.values.filter { it.profileId == profileId }.map { it.copy(exercises = emptyList(), supersets = emptyList()) }
+
+    override suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup> =
+        routineGroups.values.filter { it.profileId == profileId }.sortedBy { it.orderIndex }
+
+    override suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    ) {
+        for (routineId in overwriteRoutineIds) {
+            if (this.routines[routineId]?.profileId != profileId) throw RoutineCsvImportConflictException(routineId)
+        }
+        newGroups.forEach { routineGroups[it.id] = it.copy(profileId = profileId) }
+        routines.forEach { this.routines[it.id] = it.copy(profileId = profileId) }
+        updateRoutinesFlow()
+    }
+
     override suspend fun markRoutineUsed(routineId: String) {
         routines[routineId]?.let { routine ->
             routines[routineId] = routine.copy(
@@ -260,26 +371,9 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
 
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
-        val key = "$exerciseId-$mode"
-        val existing = personalRecords[key]
-        val newVolume = weightKg * reps
-
-        if (existing == null || newVolume > existing.weightPerCableKg * existing.reps) {
-            personalRecords[key] = PersonalRecordEntity(
-                id = existing?.id ?: personalRecords.size.toLong(),
-                exerciseId = exerciseId,
-                weightPerCableKg = weightKg,
-                reps = reps,
-                timestamp = currentTimeMillis(),
-                workoutMode = mode,
-            )
-            updatePersonalRecordsFlow()
-        }
-    }
-
     override suspend fun saveMetrics(sessionId: String, metrics: List<WorkoutMetric>) {
-        this.metrics[sessionId] = metrics
+        saveMetricsAttempts += sessionId to metrics.toList()
+        this.metrics[sessionId] = metrics.toList()
     }
 
     override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> = MutableStateFlow(metrics[sessionId] ?: emptyList())
@@ -335,14 +429,13 @@ class FakeWorkoutRepository : WorkoutRepository {
             )
         }
 
-    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
-        sessions.values
-            .filter { s ->
-                s.profileId == profileId &&
-                    s.avgMcvMmS != null &&
-                    s.workingReps > 0 &&
-                    s.exerciseId != null
-            }
-            .map { it.exerciseId!! }
-            .distinct()
+    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> = sessions.values
+        .filter { s ->
+            s.profileId == profileId &&
+                s.avgMcvMmS != null &&
+                s.workingReps > 0 &&
+                s.exerciseId != null
+        }
+        .map { it.exerciseId!! }
+        .distinct()
 }

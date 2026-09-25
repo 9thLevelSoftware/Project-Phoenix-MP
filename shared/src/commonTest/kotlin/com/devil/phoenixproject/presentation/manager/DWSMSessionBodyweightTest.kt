@@ -50,7 +50,7 @@ class DWSMSessionBodyweightTest {
                 orderIndex = 0,
                 setReps = listOf(10, 10),
                 weightPerCableKg = 0f,
-                duration = 1,
+                duration = 10,
                 setRestSeconds = listOf(0, 0),
             ),
         ),
@@ -73,7 +73,7 @@ class DWSMSessionBodyweightTest {
                 orderIndex = 1,
                 setReps = listOf(10),
                 weightPerCableKg = 0f,
-                duration = 1,
+                duration = 10,
             ),
         ),
     )
@@ -306,7 +306,7 @@ class DWSMSessionBodyweightTest {
             advanceUntilIdle()
 
             harness.dwsm.startWorkout(skipCountdown = true)
-            advanceTimeBy(1_100)
+            advanceTimeBy(10_100)
             runCurrent()
 
             val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
@@ -335,7 +335,7 @@ class DWSMSessionBodyweightTest {
             harness.dwsm.updateActiveRackSelection(listOf(v.id))
 
             harness.dwsm.startWorkout(skipCountdown = true)
-            advanceTimeBy(1_100)
+            advanceTimeBy(10_100)
             runCurrent()
 
             val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)

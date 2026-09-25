@@ -3,9 +3,12 @@ package com.devil.phoenixproject.presentation.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * Behavior contract guarding the rendered chrome luminance invariant under
@@ -93,5 +96,79 @@ class RoutinesChromeLuminanceContractTest {
                     "bypass the issue #640 dark-surface clamp.",
             )
         }
+    }
+
+    @Test
+    fun structuralContainer_readsSurfaceContainerHighest() {
+        val scheme = chromeScheme().copy(surfaceContainerHighest = Color(0xFF345678))
+        assertEquals(
+            scheme.surfaceContainerHighest,
+            phoenixStructuralContainerColor(scheme),
+            "Large workout chrome must read surfaceContainerHighest so the #640 clamp applies.",
+        )
+    }
+
+    @Test
+    fun structuralContent_readsOnSurface() {
+        val scheme = chromeScheme().copy(onSurface = Color(0xFFABCDEF))
+        assertEquals(
+            scheme.onSurface,
+            phoenixStructuralContentColor(scheme),
+            "Structural chrome content must read onSurface, not onPrimaryContainer.",
+        )
+    }
+
+    @Test
+    fun workoutTab_liveHudAndConnectionChipAvoidUnclampedPrimaryContainer() {
+        var dir = File(System.getProperty("user.dir") ?: ".")
+        while (!File(dir, "shared/src/commonMain").exists()) {
+            dir = dir.parentFile ?: break
+        }
+        val workoutTab = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
+        ).readText()
+        val workoutHud = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt",
+        ).readText()
+        val connectionChip = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
+        ).readText()
+            .substringAfter("private fun ConnectionStatusIndicator(")
+            .substringBefore("private fun isSingleExerciseRoute")
+        val completedCard = workoutTab.substringAfter("private fun CompletedCard(")
+            .substringBefore("Show next exercise preview")
+        assertTrue(
+            completedCard.contains("surfaceContainerHighest"),
+            "CompletedCard must fill from surfaceContainerHighest so the #640 clamp applies.",
+        )
+        assertFalse(
+            completedCard.contains("colorScheme.primaryContainer"),
+            "CompletedCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        assertFalse(
+            connectionChip.contains("colorScheme.primaryContainer"),
+            "Top-bar ConnectionStatusIndicator must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        val hudStatsCards = workoutHud.substringAfter("// Load Section").substringBefore("// Position Section")
+        assertTrue(
+            hudStatsCards.contains("surfaceContainerHigh"),
+            "WorkoutHud live metric cards must fill from clamped surfaceContainerHigh.",
+        )
+        assertFalse(
+            hudStatsCards.contains("colorScheme.primaryContainer"),
+            "WorkoutHud live metric cards must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        assertTrue(
+            workoutHud.contains("EnhancedCablePositionBar"),
+            "WorkoutHud must compose EnhancedCablePositionBar, the live replacement for VerticalCablePositionBar.",
+        )
+        val nextPreview = workoutTab.substringAfter("Show next exercise preview").substringBefore("hasMoreExercises && nextExercise == null")
+        assertTrue(
+            nextPreview.contains("phoenixStructuralContainerColor"),
+            "Next-exercise preview card must call phoenixStructuralContainerColor.",
+        )
     }
 }

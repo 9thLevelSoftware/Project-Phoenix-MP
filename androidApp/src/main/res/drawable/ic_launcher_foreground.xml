@@ -8,6 +8,6 @@
     <item
         android:width="68dp"
         android:height="68dp"
-        android:drawable="@drawable/vitphoe_logo_foreground"
+        android:drawable="@drawable/phoenix_logo_foreground"
         android:gravity="center" />
 </layer-list>

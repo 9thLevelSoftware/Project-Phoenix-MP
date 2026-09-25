@@ -19,7 +19,7 @@
 -- Without this, a user who crashed mid-migration would crash again on "table already exists"
 DROP TABLE IF EXISTS RoutineExercise_new;
 
--- Create Superset table (matches schema in VitruvianDatabase.sq)
+-- Create Superset table (matches schema in PhoenixDatabase.sq)
 CREATE TABLE Superset (
     id TEXT PRIMARY KEY NOT NULL,
     routineId TEXT NOT NULL,

@@ -1,14 +1,17 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
@@ -39,6 +42,13 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
+actual val autoBackupLocationNote: String? = null
+
+// Matches getSessionBackupDirectory(): <app Documents>/PhoenixBackups.
+actual val defaultBackupLocationLabel: String = "Documents/PhoenixBackups"
+
+actual val canOpenBackupFolder: Boolean = true
+
 /**
  * iOS implementation of DataBackupManager.
  * Uses NSFileManager for file operations and Documents directory for storage.
@@ -50,12 +60,24 @@ import platform.darwin.dispatch_get_main_queue
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosDataBackupManager(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
     userProfileRepository: UserProfileRepository,
-) : BaseDataBackupManager(database, profilePreferencesRepository, userProfileRepository) {
+    portalTokenStorage: PortalTokenStorage,
+    pendingProfileDeletionStore: PendingProfileDeletionStore,
+) : BaseDataBackupManager(
+    database,
+    profilePreferencesRepository,
+    userProfileRepository,
+    portalTokenStorage,
+    preferencesManager,
+    pendingProfileDeletionStore,
+) {
+
+    override val includeRawTelemetryInBackups: Boolean
+        get() = preferencesManager.preferencesFlow.value.includeRawTelemetryInBackups
 
     private val fileManager = NSFileManager.defaultManager
 
@@ -272,7 +294,7 @@ class IosDataBackupManager(
             .replace("-", "") + "_" +
             KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
                 .replace(":", "")
-        val fileName = "vitruvian_backup_$timestamp.json"
+        val fileName = "phoenix_backup_$timestamp.json"
         val tempDir = NSTemporaryDirectory()
         return BackupJsonWriter("$tempDir$fileName")
     }
@@ -309,55 +331,17 @@ class IosDataBackupManager(
         }
     }
 
-    // Legacy save path (kept for backward compatibility)
-    override suspend fun saveToFile(backup: BackupData): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val jsonString = json.encodeToString(backup)
-            val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
-                .replace("-", "") + "_" +
-                KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
-                    .replace(":", "")
-            val fileName = "vitruvian_backup_$timestamp.json"
-            val filePath = "$backupDirectory/$fileName"
-
-            val data = NSString.create(string = jsonString).dataUsingEncoding(NSUTF8StringEncoding)
-                ?: throw Exception("Failed to encode backup data")
-
-            val success = data.writeToFile(filePath, atomically = true)
-            if (!success) {
-                throw Exception("Failed to write backup file")
-            }
-
-            Result.success(filePath)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val attrs = fileManager.attributesOfItemAtPath(filePath, error = null)
-            val fileSize = (attrs?.get(NSFileSize) as? NSNumber)?.longValue
-
-            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
-                // Small file: use proven non-streaming path
-                val data = NSData.dataWithContentsOfFile(filePath)
-                    ?: throw Exception("Cannot read file")
-                val jsonString = NSString.create(data, NSUTF8StringEncoding)?.toString()
-                    ?: throw Exception("Cannot decode file contents")
-                importFromJson(jsonString)
-            } else {
-                // Large file or unknown size: streaming import to avoid OOM
-                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
-                val source = FileBackupStreamSource(filePath)
-                try {
-                    source.open()
-                    importFromStream(source)
-                } finally {
-                    source.close()
-                }
+            val source = FileBackupStreamSource(filePath)
+            try {
+                source.open()
+                importFromStream(source)
+            } finally {
+                source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

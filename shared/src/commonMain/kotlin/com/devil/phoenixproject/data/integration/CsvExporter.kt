@@ -77,22 +77,15 @@ object CsvExporter {
      * Returns a [LinkedHashMap] preserving insertion order so CSV rows stay chronological.
      */
     internal fun groupSessions(sessions: List<WorkoutSession>): LinkedHashMap<String, List<WorkoutSession>> {
-        val result = LinkedHashMap<String, List<WorkoutSession>>()
         val routineGroups = mutableMapOf<String, MutableList<WorkoutSession>>()
-
         for (session in sessions) {
             val routineId = session.routineSessionId
             if (routineId != null) {
                 routineGroups.getOrPut(routineId) { mutableListOf() }.add(session)
-            } else {
-                // Standalone: one group per session, keyed by session id
-                result[session.id] = listOf(session)
             }
         }
 
-        // Insert routine groups in the order of their first session's appearance.
-        // We need to merge them at the correct position relative to standalones.
-        // Rebuild result respecting original session order.
+        // Rebuild in original session order so routine groups appear at first sighting.
         val orderedResult = LinkedHashMap<String, List<WorkoutSession>>()
         val seenRoutines = mutableSetOf<String>()
 
@@ -207,17 +200,34 @@ object CsvExporter {
     }
 
     /**
-     * Escape a CSV field value per RFC 4180. Wraps in double-quotes if the value
+     * Escape a text CSV field value per RFC 4180. Wraps in double-quotes if the value
      * contains a comma, double-quote, newline, or carriage return. Internal
      * double-quotes are doubled.
+     *
+     * Text starting with `=`, `+`, `-`, `@`, tab or carriage return (the OWASP CSV-injection
+     * set) is prefixed with `'` so spreadsheet apps show it as text instead of evaluating
+     * it as a formula (CSV formula injection via exercise or routine names). Only text
+     * columns go through here; numeric columns (set order, weight, reps, signed progress)
+     * are appended as-is, so negative numbers stay numbers. Also used by the Analytics
+     * CSV exports (util/CsvExporter platform implementations).
      */
     internal fun escapeCsvField(value: String): String {
-        val needsQuoting = value.contains(',') || value.contains('"') ||
-            value.contains('\n') || value.contains('\r')
+        val text = if (value.isNotEmpty() && value[0] in FORMULA_PREFIXES) "'$value" else value
+        val needsQuoting = text.contains(',') || text.contains('"') ||
+            text.contains('\n') || text.contains('\r')
         return if (needsQuoting) {
-            "\"${value.replace("\"", "\"\"")}\""
+            "\"${text.replace("\"", "\"\"")}\""
         } else {
-            value
+            text
         }
     }
+
+    /**
+     * Undo [escapeCsvField]'s formula guard when re-importing our own exports: drops one
+     * leading `'` when it is followed by a formula prefix character. Other text is unchanged.
+     */
+    internal fun unescapeFormulaGuard(value: String): String =
+        if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_PREFIXES) value.substring(1) else value
+
+    private const val FORMULA_PREFIXES = "=+-@\t\r"
 }

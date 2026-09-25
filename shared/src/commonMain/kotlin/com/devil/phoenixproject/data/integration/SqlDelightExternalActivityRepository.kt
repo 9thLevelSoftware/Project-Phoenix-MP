@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.integration
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
@@ -19,9 +19,9 @@ import kotlinx.coroutines.withContext
  * All database operations run on [Dispatchers.IO].
  * INTEGER columns in SQLDelight-generated types are Kotlin Long.
  */
-class SqlDelightExternalActivityRepository(db: VitruvianDatabase) : ExternalActivityRepository {
+class SqlDelightExternalActivityRepository(db: PhoenixDatabase) : ExternalActivityRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // ─── Mapping helpers ──────────────────────────────────────────────
 

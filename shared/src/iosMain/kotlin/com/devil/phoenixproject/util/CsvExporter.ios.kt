@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -42,7 +43,7 @@ class IosCsvExporter : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
                 val formattedOneRM = formatWeight(oneRM, weightUnit)
                 val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                appendLine("\"$exerciseName\",${pr.phase.name},$formattedWeight,${pr.reps},$formattedOneRM,$date")
+                appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(date)}")
             }
         }
 
@@ -64,7 +65,7 @@ class IosCsvExporter : CsvExporter {
                 val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
                 val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
                 val time = KmpUtils.formatTimestamp(session.timestamp, "HH:mm")
-                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
                 val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
                 val effectiveWeight = if (isEchoMode) {
                     session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
@@ -79,7 +80,7 @@ class IosCsvExporter : CsvExporter {
                     else -> "0"
                 }
                 appendLine(
-                    "$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds",
+                    "${escapeCsv(date)},${escapeCsv(time)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${escapeCsv(formattedWeight)},${escapeCsv(progression)},${session.reps},$durationSeconds",
                 )
             }
         }
@@ -121,7 +122,7 @@ class IosCsvExporter : CsvExporter {
                     }
                     previousOneRM = oneRM
 
-                    appendLine("\"$exerciseName\",${pr.phase.name},$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
+                    appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(improvement)}")
                 }
             }
         }
@@ -191,4 +192,6 @@ class IosCsvExporter : CsvExporter {
 
         return filePath
     }
+
+    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 }

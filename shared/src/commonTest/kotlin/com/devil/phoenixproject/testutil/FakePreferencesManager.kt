@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.preferences.JustLiftDefaults
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.VulgarTier
@@ -25,12 +26,14 @@ class FakePreferencesManager : PreferencesManager {
     private var justLiftDefaults = JustLiftDefaults()
     // Issue #611 (PR-followup #613): backing field for the 18+ modal one-shot flag.
     private var _adultsOnlyPrompted: Boolean = false
+    private var exerciseCatalogSource: String = ""
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
         exerciseDefaults.clear()
         justLiftDefaults = JustLiftDefaults()
         _adultsOnlyPrompted = false
+        exerciseCatalogSource = ""
     }
 
     fun setPreferences(preferences: UserPreferences) {
@@ -47,6 +50,16 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setEnableVideoPlayback(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(enableVideoPlayback = enabled)
+    }
+
+    override fun getExerciseCatalogSource(): String = exerciseCatalogSource
+
+    override suspend fun setExerciseCatalogSource(source: String) {
+        exerciseCatalogSource = source
+    }
+
+    override suspend fun setLastConnectedModel(model: PhoenixModel) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(lastConnectedModel = model)
     }
 
     suspend fun setBeepsEnabled(enabled: Boolean) {
@@ -129,6 +142,18 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setAutoBackupEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoBackupEnabled = enabled)
+    }
+
+    var oneShotResetCount = 0
+        private set
+
+    override suspend fun resetOneShotWorkAfterRestore() {
+        oneShotResetCount++
+        _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = false)
+    }
+
+    override suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(includeRawTelemetryInBackups = enabled)
     }
 
     override suspend fun setLanguage(language: String) {

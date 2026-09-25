@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,12 +47,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.sync.AuthEvent
+import com.devil.phoenixproject.data.sync.AccountSwitchChoice
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.presentation.components.AppleIcon
 import com.devil.phoenixproject.presentation.components.GoogleIcon
@@ -58,23 +63,84 @@ import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_login
-import vitruvianprojectphoenix.shared.generated.resources.auth_apple
-import vitruvianprojectphoenix.shared.generated.resources.auth_apple_failed
-import vitruvianprojectphoenix.shared.generated.resources.auth_google
-import vitruvianprojectphoenix.shared.generated.resources.auth_google_failed
-import vitruvianprojectphoenix.shared.generated.resources.auth_or_continue_with
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.label_email
-import vitruvianprojectphoenix.shared.generated.resources.label_password
-import vitruvianprojectphoenix.shared.generated.resources.label_premium
-import vitruvianprojectphoenix.shared.generated.resources.last_synced
-import vitruvianprojectphoenix.shared.generated.resources.never_synced
-import vitruvianprojectphoenix.shared.generated.resources.phoenix_portal
-import vitruvianprojectphoenix.shared.generated.resources.sync_now
-import vitruvianprojectphoenix.shared.generated.resources.syncing
-import vitruvianprojectphoenix.shared.generated.resources.unlink_account
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.account_switch_exclude_all
+import projectphoenix.shared.generated.resources.account_switch_message
+import projectphoenix.shared.generated.resources.account_switch_title
+import projectphoenix.shared.generated.resources.account_switch_upload_never_synced
+import projectphoenix.shared.generated.resources.action_login
+import projectphoenix.shared.generated.resources.ownership_conflict_action
+import projectphoenix.shared.generated.resources.ownership_conflict_message
+import projectphoenix.shared.generated.resources.ownership_conflict_title
+import projectphoenix.shared.generated.resources.auth_apple
+import projectphoenix.shared.generated.resources.auth_apple_failed
+import projectphoenix.shared.generated.resources.auth_google
+import projectphoenix.shared.generated.resources.auth_google_failed
+import projectphoenix.shared.generated.resources.auth_or_continue_with
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.delete_portal_account
+import projectphoenix.shared.generated.resources.delete_portal_account_caption
+import projectphoenix.shared.generated.resources.label_email
+import projectphoenix.shared.generated.resources.label_password
+import projectphoenix.shared.generated.resources.label_premium
+import projectphoenix.shared.generated.resources.last_synced
+import projectphoenix.shared.generated.resources.never_synced
+import projectphoenix.shared.generated.resources.phoenix_portal
+import projectphoenix.shared.generated.resources.sync_now
+import projectphoenix.shared.generated.resources.sync_paused_subscription_required
+import projectphoenix.shared.generated.resources.syncing
+import projectphoenix.shared.generated.resources.unlink_account
+
+/**
+ * Account deletion lives on the portal (F-080, owner decision: no in-app deletion).
+ * `/profile` hosts the Danger Zone flow with its 30-day grace period.
+ */
+internal const val PORTAL_ACCOUNT_DELETION_URL = "https://phoenix-portal.com/profile"
+
+@Composable
+private fun AccountSwitchDialog(
+    previousUserLabel: String,
+    newUserLabel: String,
+    onUploadNeverSynced: () -> Unit,
+    onExcludeAllExisting: () -> Unit,
+) {
+    AlertDialog(
+        // Choice is required: sync stays paused until one is picked.
+        onDismissRequest = { },
+        title = { Text(stringResource(Res.string.account_switch_title)) },
+        text = {
+            Text(stringResource(Res.string.account_switch_message, newUserLabel, previousUserLabel))
+        },
+        confirmButton = {
+            TextButton(onClick = onUploadNeverSynced) {
+                Text(stringResource(Res.string.account_switch_upload_never_synced))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onExcludeAllExisting) {
+                Text(stringResource(Res.string.account_switch_exclude_all))
+            }
+        },
+    )
+}
+
+@Composable
+private fun OwnershipConflictDialog(
+    message: String,
+    onStopUploading: () -> Unit,
+) {
+    AlertDialog(
+        // Terminal until the recovery action is taken.
+        onDismissRequest = { },
+        title = { Text(stringResource(Res.string.ownership_conflict_title)) },
+        text = { Text(stringResource(Res.string.ownership_conflict_message, message)) },
+        confirmButton = {
+            TextButton(onClick = onStopUploading) {
+                Text(stringResource(Res.string.ownership_conflict_action))
+            }
+        },
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,6 +162,24 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
     val currentUser by viewModel.currentUser.collectAsState()
     val syncState by viewModel.syncState.collectAsState()
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
+
+    when (val state = syncState) {
+        is SyncState.AccountMismatch -> AccountSwitchDialog(
+            previousUserLabel = state.previousUserLabel,
+            newUserLabel = state.newUserLabel,
+            onUploadNeverSynced = {
+                viewModel.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+            },
+            onExcludeAllExisting = {
+                viewModel.resolveAccountMismatch(AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+            },
+        )
+        is SyncState.OwnershipConflict -> OwnershipConflictDialog(
+            message = state.message,
+            onStopUploading = { viewModel.stopUploadingPreSwitchData() },
+        )
+        else -> Unit
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -143,6 +227,9 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                // Scrolls so the account-deletion row stays reachable on short screens
+                // (landscape, small displays, large font scale).
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -246,12 +333,7 @@ private fun LinkedAccountContent(
                     )
                 }
 
-                is SyncState.NotPremium -> {
-                    Text(
-                        text = "Premium subscription required for sync",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                is SyncState.NotPremium -> SyncPausedStatus(lastSyncTime)
 
                 is SyncState.NotAuthenticated -> {
                     Text(
@@ -272,6 +354,20 @@ private fun LinkedAccountContent(
                     Text(
                         text = "Sync partially complete — pull failed: ${syncState.pullError ?: "unknown error"}",
                         color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+
+                is SyncState.AccountMismatch -> {
+                    Text(
+                        text = "Sync paused: this phone's data belongs to another account",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                is SyncState.OwnershipConflict -> {
+                    Text(
+                        text = "Upload refused: ${syncState.message}",
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -306,7 +402,42 @@ private fun LinkedAccountContent(
                     color = MaterialTheme.colorScheme.tertiary,
                 )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val uriHandler = LocalUriHandler.current
+            TextButton(
+                onClick = { runCatching { uriHandler.openUri(PORTAL_ACCOUNT_DELETION_URL) } },
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(
+                    text = stringResource(Res.string.delete_portal_account),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Text(
+                text = stringResource(Res.string.delete_portal_account_caption),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
         }
+    }
+}
+
+/** "Sync paused — subscription required", with the last successful sync kept as secondary text. */
+@Composable
+private fun SyncPausedStatus(lastSyncTime: Long) {
+    Text(
+        text = stringResource(Res.string.sync_paused_subscription_required),
+        color = MaterialTheme.colorScheme.error,
+    )
+    if (lastSyncTime > 0) {
+        Text(
+            text = stringResource(Res.string.last_synced, formatSyncTimestamp(lastSyncTime)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

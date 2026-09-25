@@ -26,8 +26,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(os.environ.get("PHOENIX_PREVIEW_LAUNCH_SCRIPT_DIR", "")).resolve()
 REPO_ROOT = (SCRIPT_DIR / "../..").resolve()
 FIXTURE_RELATIVE = Path("shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt")
-PROJECT_RELATIVE = Path("iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj")
-CONFIG_RELATIVE = Path("iosApp/VitruvianPhoenix/Config/Supabase.xcconfig")
+PROJECT_RELATIVE = Path("iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj")
+CONFIG_RELATIVE = Path("iosApp/PhoenixApp/Config/Supabase.xcconfig")
 GRADLEW_RELATIVE = Path("gradlew")
 EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
 EXPECTED_BUNDLE_ID = "com.devil.phoenixproject.projectphoenix"
@@ -656,7 +656,7 @@ def launch(requested_worktree):
             config_file_identity = config_identity(target)
         derived_data = private_root / "derived-data"
         derived_data.mkdir(mode=0o700)
-        project = target / "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj"
+        project = target / "iosApp/PhoenixApp/PhoenixApp.xcodeproj"
         run_tool(
             private_root,
             "xcodebuild-build",
@@ -665,7 +665,7 @@ def launch(requested_worktree):
                 "-project",
                 str(project),
                 "-scheme",
-                "VitruvianPhoenix",
+                "PhoenixApp",
                 "-configuration",
                 "Debug",
                 "-sdk",
@@ -682,7 +682,7 @@ def launch(requested_worktree):
             target,
             environment,
         )
-        app = derived_data / "Build/Products/Debug-iphonesimulator/VitruvianPhoenix.app"
+        app = derived_data / "Build/Products/Debug-iphonesimulator/PhoenixApp.app"
         validate_app(app)
         run_tool(private_root, "simulator-install", ["xcrun", "simctl", "install", udid, str(app)], target, environment)
         installed = True

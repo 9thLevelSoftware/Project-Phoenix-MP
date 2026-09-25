@@ -27,7 +27,7 @@ The fixture branch must not contain `shared/src/commonMain/sqldelight/com/devil/
 $env:JAVA_HOME = 'C:\Users\dasbl\AppData\Local\Programs\Android Studio\jbr'
 $env:ANDROID_HOME = 'C:\Users\dasbl\AppData\Local\Android\Sdk'
 if (Test-Path shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm) { throw '42.sqm must be absent' }
-.\gradlew.bat '-Pskip.supabase.check=true' --offline :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest :androidApp:assembleDebug --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' --offline :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest :androidApp:assembleDebug --rerun-tasks --console=plain
 ```
 
 ## Create the disposable API-36 AVD
@@ -60,12 +60,12 @@ $apk = (Resolve-Path 'androidApp/build/outputs/apk/debug/androidApp-debug.apk')
 The app must launch once before injection so that its schema-42 database and private data directory exist. Inject while it is stopped, then save the named snapshot.
 
 ```powershell
-$xml = (Resolve-Path '..\profile-readiness\docs\qa\fixtures\profile-schema42\vitruvian_preferences.xml')
-& $adb push $xml /data/local/tmp/vitruvian_preferences.xml
+$xml = (Resolve-Path '..\profile-readiness\docs\qa\fixtures\profile-schema42\phoenix_preferences.xml')
+& $adb push $xml /data/local/tmp/phoenix_preferences.xml
 & $adb shell run-as $package mkdir -p shared_prefs
-& $adb shell run-as $package cp /data/local/tmp/vitruvian_preferences.xml shared_prefs/vitruvian_preferences.xml
-& $adb shell run-as $package chmod 600 shared_prefs/vitruvian_preferences.xml
-& $adb shell run-as $package cat shared_prefs/vitruvian_preferences.xml
+& $adb shell run-as $package cp /data/local/tmp/phoenix_preferences.xml shared_prefs/phoenix_preferences.xml
+& $adb shell run-as $package chmod 600 shared_prefs/phoenix_preferences.xml
+& $adb shell run-as $package cat shared_prefs/phoenix_preferences.xml
 & $adb emu avd snapshot save phoenix-schema42-v1
 & $adb emu avd snapshot list
 ```
@@ -114,15 +114,15 @@ $upgradeApk = (Resolve-Path '..\profile-readiness\androidApp\build\outputs\apk\d
 $migrationDeadline = [DateTime]::UtcNow.AddSeconds(60)
 $migrationReady = $false
 do {
-    $migrationLine = & $adb shell run-as $package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/vitruvian_preferences.xml 2>$null
+    $migrationLine = & $adb shell run-as $package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/phoenix_preferences.xml 2>$null
     $migrationReady = $LASTEXITCODE -eq 0 -and $migrationLine -match 'value="true"'
     if (-not $migrationReady) { Start-Sleep -Seconds 1 }
 } while (-not $migrationReady -and [DateTime]::UtcNow -lt $migrationDeadline)
 if (-not $migrationReady) { throw 'Timed out after 60 seconds waiting for required profile preference migration' }
 & $adb shell am force-stop $package
-& $adb shell run-as $package sqlite3 databases/vitruvian.db 'PRAGMA user_version;'
-& $adb shell run-as $package sqlite3 databases/vitruvian.db 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'
-& $adb shell run-as $package cat shared_prefs/vitruvian_preferences.xml
+& $adb shell run-as $package sqlite3 databases/phoenix.db 'PRAGMA user_version;'
+& $adb shell run-as $package sqlite3 databases/phoenix.db 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'
+& $adb shell run-as $package cat shared_prefs/phoenix_preferences.xml
 ```
 
 The post-upgrade database must be on the current schema, each existing profile row must have `legacy_migration_version = 1`, and the sentinel values from the tracked XML must appear in the corresponding profile preference sections.

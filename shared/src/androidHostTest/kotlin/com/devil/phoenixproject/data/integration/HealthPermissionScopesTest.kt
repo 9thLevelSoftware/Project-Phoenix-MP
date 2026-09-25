@@ -80,11 +80,10 @@ class HealthPermissionScopesTest {
 
     @Test
     fun workoutExportRequestedHealthPermissions_doesNotIncludeBodyWeightRead() {
-        // The post-onboarding workout-export retry path
-        // ([com.devil.phoenixproject.presentation.components.OptionalPermissionsHandler])
-        // only requests workout write + optional calories. Sneaking body-weight
-        // read into this set would degrade onboarding UX with an unrelated
-        // permission for users who never enabled the body-weight feature.
+        // The workout-export retry path only requests workout write + optional
+        // calories. Sneaking body-weight read into this set would degrade the
+        // permission prompt with an unrelated permission for users who never
+        // enabled the body-weight feature.
         assertFalse(
             workoutExportRequestedHealthPermissions.contains(weightReadPermission),
             "workoutExportRequestedHealthPermissions must NOT request body-weight read; onboarding only needs workout-export permissions.",

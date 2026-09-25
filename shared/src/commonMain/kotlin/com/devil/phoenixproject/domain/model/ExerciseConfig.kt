@@ -34,7 +34,8 @@ data class ExerciseConfig(
         fun fromTemplate(exerciseName: String, suggestedMode: ProgramMode?, oneRepMaxKg: Float? = null): ExerciseConfig {
             val mode = suggestedMode ?: ProgramMode.OldSchool
             // Default weight is 70% of 1RM if available
-            val weight = oneRepMaxKg?.let { (it * 0.70f * 2).toInt() / 2f } ?: 0f
+            // Keep confirmation aligned with runtime's nearest-half-kg policy.
+            val weight = oneRepMaxKg?.let { kotlin.math.round(it * 0.70f * 2f) / 2f } ?: 0f
 
             return ExerciseConfig(
                 exerciseName = exerciseName,

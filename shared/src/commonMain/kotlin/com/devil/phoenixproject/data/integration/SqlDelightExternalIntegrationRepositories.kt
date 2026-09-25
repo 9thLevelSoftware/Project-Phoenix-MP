@@ -3,10 +3,9 @@ package com.devil.phoenixproject.data.integration
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
-import com.devil.phoenixproject.domain.model.ExternalExerciseTemplateMapping
 import com.devil.phoenixproject.domain.model.ExternalProgram
 import com.devil.phoenixproject.domain.model.ExternalProgramStats
 import com.devil.phoenixproject.domain.model.ExternalRoutine
@@ -27,8 +26,8 @@ private fun List<String>.encodeList(): String = joinToString(LIST_SEPARATOR)
 private fun String.decodeList(): List<String> = split(LIST_SEPARATOR).filter { it.isNotBlank() }
 private fun providerFromKey(key: String): IntegrationProvider = IntegrationProvider.fromKey(key) ?: IntegrationProvider.UNKNOWN
 
-class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRoutineRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalRoutineRepository(db: PhoenixDatabase) : ExternalRoutineRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalRoutine.toDomain(
         exercises: List<ExternalRoutineExercise>,
@@ -234,8 +233,8 @@ class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRouti
     }
 }
 
-class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgramRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalProgramRepository(db: PhoenixDatabase) : ExternalProgramRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalProgram.toDomain(): ExternalProgram = ExternalProgram(
         id = id,
@@ -375,8 +374,8 @@ class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgr
     }
 }
 
-class SqlDelightExternalMeasurementRepository(db: VitruvianDatabase) : ExternalMeasurementRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalMeasurementRepository(db: PhoenixDatabase) : ExternalMeasurementRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalBodyMeasurement.toDomain(): ExternalBodyMeasurement = ExternalBodyMeasurement(
         id = id,
@@ -433,8 +432,8 @@ class SqlDelightExternalMeasurementRepository(db: VitruvianDatabase) : ExternalM
     }
 }
 
-class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : ExternalExerciseTemplateRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalExerciseTemplateRepository(db: PhoenixDatabase) : ExternalExerciseTemplateRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalExerciseTemplate.toDomain(): ExternalExerciseTemplate = ExternalExerciseTemplate(
         id = id,
@@ -448,17 +447,6 @@ class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : Exte
         rawData = rawData,
         updatedAt = updatedAt,
         profileId = profileId,
-    )
-
-    private fun com.devil.phoenixproject.database.ExternalExerciseTemplateMapping.toDomain(): ExternalExerciseTemplateMapping = ExternalExerciseTemplateMapping(
-        id = id,
-        provider = providerFromKey(provider),
-        externalTemplateId = externalTemplateId,
-        localExerciseId = localExerciseId,
-        profileId = profileId,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-        rawData = rawData,
     )
 
     override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> {
@@ -504,34 +492,6 @@ class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : Exte
         }
     }
 
-    override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? = withContext(Dispatchers.IO) {
-        queries.getExternalExerciseTemplateBySyncKey(provider.key, externalId, profileId).executeAsOneOrNull()?.toDomain()
-    }
-
-    override suspend fun upsertMapping(mapping: ExternalExerciseTemplateMapping) = withContext(Dispatchers.IO) {
-        queries.upsertExternalExerciseTemplateMapping(
-            id = mapping.id,
-            provider = mapping.provider.key,
-            externalTemplateId = mapping.externalTemplateId,
-            localExerciseId = mapping.localExerciseId,
-            profileId = mapping.profileId,
-            createdAt = mapping.createdAt,
-            updatedAt = mapping.updatedAt,
-            rawData = mapping.rawData,
-        )
-        Unit
-    }
-
-    override suspend fun findMapping(
-        provider: IntegrationProvider,
-        externalTemplateId: String,
-        profileId: String,
-    ): ExternalExerciseTemplateMapping? = withContext(Dispatchers.IO) {
-        queries.getExternalExerciseTemplateMapping(provider.key, externalTemplateId, profileId)
-            .executeAsOneOrNull()
-            ?.toDomain()
-    }
-
     override suspend fun deleteProviderTemplates(provider: IntegrationProvider, profileId: String) = withContext(Dispatchers.IO) {
         queries.transaction {
             queries.deleteExternalExerciseTemplateMappingsByProvider(provider.key, profileId)
@@ -540,8 +500,8 @@ class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : Exte
     }
 }
 
-class SqlDelightIntegrationSyncCursorRepository(db: VitruvianDatabase) : IntegrationSyncCursorRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightIntegrationSyncCursorRepository(db: PhoenixDatabase) : IntegrationSyncCursorRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.IntegrationSyncCursor.toDomain(): IntegrationSyncCursor = IntegrationSyncCursor(
         provider = providerFromKey(provider),

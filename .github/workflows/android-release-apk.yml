@@ -22,6 +22,11 @@ on:
       versionCodeOverride:
         required: false
         type: string
+      skip_tests:
+        description: 'Set by release-all workflows, which already ran the release test gate.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write  # Required to upload release assets
@@ -31,41 +36,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  tests:
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      ref: ${{ inputs.source_ref }}
+      skip: ${{ inputs.skip_tests || false }}
+
   build-and-attach:
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Authenticate to Google Play API
         id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           credentials_json: '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}'
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/androidpublisher
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
       - name: Verify target release
         env:
@@ -107,7 +109,13 @@ jobs:
             exit 1
           fi
 
+          # Google Play intermittently returns 5xx while reading track state.
+          # curl retries transient HTTP failures with bounded exponential backoff.
           TRACKS_RESPONSE="$(curl --silent --show-error --fail \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --retry 4 \
+            --retry-max-time 45 \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits/$EDIT_ID/tracks")"
           PLAY_MAX_VERSION_CODE="$(printf '%s' "$TRACKS_RESPONSE" | jq -r '[.tracks[]?.releases[]?.versionCodes[]? | tonumber] | max // empty')"
@@ -192,11 +200,23 @@ jobs:
           echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
           echo "Renamed APK to: $NEW_NAME"
 
-      - name: Upload APK to release
+      # This workflow may build a historical tag, whose checkout predates the helper.
+      # Fetch it from the immutable workflow revision rather than the build checkout.
+      - name: Fetch pinned release asset replacement helper
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ inputs.release_tag }}" \
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/replace_release_asset.py" \
+            --output "$RUNNER_TEMP/replace_release_asset.py"
+          python3 -m py_compile "$RUNNER_TEMP/replace_release_asset.py"
+
+      - name: Stage and promote APK on release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 "$RUNNER_TEMP/replace_release_asset.py" \
+            "${{ inputs.release_tag }}" \
             "${{ steps.rename_apk.outputs.apk_path }}" \
-            --clobber
-          echo "Successfully uploaded APK to release ${{ inputs.release_tag }}"
+            "ProjectPhoenix-${{ inputs.release_tag }}.apk"

@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.qa
 
-import com.devil.phoenixproject.VitruvianApp
+import com.devil.phoenixproject.PhoenixApp
 import com.devil.phoenixproject.data.repository.AssessmentRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -11,11 +11,11 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import org.koin.core.context.loadKoinModules
 import org.koin.dsl.module
 
-class ProfileQaDebugApp : VitruvianApp() {
+class ProfileQaDebugApp : PhoenixApp() {
     override fun onCreate() {
         super.onCreate()
 
@@ -31,7 +31,7 @@ class ProfileQaDebugApp : VitruvianApp() {
                         personalRecordRepository = get<PersonalRecordRepository>(),
                         assessmentRepository = get<AssessmentRepository>(),
                         velocityOneRepMaxRepository = get<VelocityOneRepMaxRepository>(),
-                        database = get<VitruvianDatabase>(),
+                        database = get<PhoenixDatabase>(),
                     )
                 }
                 single<PortalApiClient> {

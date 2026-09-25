@@ -2,9 +2,12 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -17,9 +20,9 @@ import kotlinx.coroutines.withContext
  * SQLDelight implementation of CompletedSetRepository.
  * Handles both planned sets (templates) and completed sets (actual performance).
  */
-class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepository {
+class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : CompletedSetRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // ==================== Mapping Functions ====================
 
@@ -47,24 +50,30 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         id: String,
         sessionId: String,
         plannedSetId: String?,
+        routineExerciseId: String?,
         setNumber: Long,
         setType: String,
+        attemptNumber: Long,
         actualReps: Long,
         actualWeightKg: Double,
         loggedRpe: Long?,
         isPr: Long,
         completedAt: Long,
+        setEndReason: String,
     ): CompletedSet = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = plannedSetId,
+        routineExerciseId = routineExerciseId,
         setNumber = setNumber.toInt(),
         setType = SetType.valueOf(setType),
+        attemptNumber = attemptNumber.toInt().coerceAtLeast(1),
         actualReps = actualReps.toInt(),
         actualWeightKg = actualWeightKg.toFloat(),
         loggedRpe = loggedRpe?.toInt(),
         isPr = isPr == 1L,
         completedAt = completedAt,
+        setEndReason = SetEndReason.fromPersisted(setEndReason),
     )
 
     // ==================== Planned Sets ====================
@@ -156,29 +165,38 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
     }
 
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
-        queries.selectRecentCompletedSetsForExercise(
+        val routineSessionBySessionId = mutableMapOf<String, String?>()
+        val sets = queries.selectRecentCompletedSetsForExercise(
             exerciseId,
             profileId,
-            limit.toLong(),
-            ::mapToCompletedSet,
-        )
-            .executeAsList()
+            limit.coerceAtLeast(1).toLong(),
+        ) { id, sessionId, plannedSetId, routineExerciseId, setNumber, setType, attemptNumber, actualReps, actualWeightKg, loggedRpe, isPr, completedAt, setEndReason, routineSessionId ->
+            routineSessionBySessionId[sessionId] = routineSessionId
+            mapToCompletedSet(
+                id,
+                sessionId,
+                plannedSetId,
+                routineExerciseId,
+                setNumber,
+                setType,
+                attemptNumber,
+                actualReps,
+                actualWeightKg,
+                loggedRpe,
+                isPr,
+                completedAt,
+                setEndReason,
+            )
+        }.executeAsList()
+        collapseCompletedSetsToLatestLogicalAttempts(sets, routineSessionBySessionId::get)
     }
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
         withContext(Dispatchers.IO) {
-            queries.insertCompletedSet(
-                id = set.id,
-                session_id = set.sessionId,
-                planned_set_id = set.plannedSetId,
-                set_number = set.setNumber.toLong(),
-                set_type = set.setType.name,
-                actual_reps = set.actualReps.toLong(),
-                actual_weight_kg = set.actualWeightKg.toDouble(),
-                logged_rpe = set.loggedRpe?.toLong(),
-                is_pr = if (set.isPr) 1L else 0L,
-                completed_at = set.completedAt,
-            )
+            db.transaction {
+                queries.insertCompletedSetRow(set)
+                queries.markWorkoutComponentDirty(set.sessionId)
+            }
         }
     }
 
@@ -200,6 +218,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 completed_at = completedAt,
                 id = existing.id,
             )
+            queries.markWorkoutComponentDirty(session.id)
             return@withContext existing.copy(
                 setType = setType,
                 actualReps = actualReps,
@@ -222,65 +241,115 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
             completedAt = completedAt,
         )
 
-        queries.insertCompletedSet(
-            id = completedSet.id,
-            session_id = completedSet.sessionId,
-            planned_set_id = completedSet.plannedSetId,
-            set_number = completedSet.setNumber.toLong(),
-            set_type = completedSet.setType.name,
-            actual_reps = completedSet.actualReps.toLong(),
-            actual_weight_kg = completedSet.actualWeightKg.toDouble(),
-            logged_rpe = completedSet.loggedRpe?.toLong(),
-            is_pr = if (completedSet.isPr) 1L else 0L,
-            completed_at = completedSet.completedAt,
-        )
+        queries.insertCompletedSetRow(completedSet)
+        queries.markWorkoutComponentDirty(session.id)
 
         completedSet
     }
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
         withContext(Dispatchers.IO) {
-            sets.forEach { set ->
-                queries.insertCompletedSet(
-                    id = set.id,
-                    session_id = set.sessionId,
-                    planned_set_id = set.plannedSetId,
-                    set_number = set.setNumber.toLong(),
-                    set_type = set.setType.name,
-                    actual_reps = set.actualReps.toLong(),
-                    actual_weight_kg = set.actualWeightKg.toDouble(),
-                    logged_rpe = set.loggedRpe?.toLong(),
-                    is_pr = if (set.isPr) 1L else 0L,
-                    completed_at = set.completedAt,
-                )
+            db.transaction {
+                sets.forEach { set -> queries.insertCompletedSetRow(set) }
+                sets.mapTo(linkedSetOf()) { it.sessionId }.forEach(queries::markWorkoutComponentDirty)
             }
         }
     }
 
+    override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = withContext(Dispatchers.IO) {
+        queries.selectNextCompletedSetAttemptNumber(
+            routineSessionId = key.routineSessionId,
+            routineExerciseId = key.routineExerciseId,
+            setIndex = key.setIndex.toLong(),
+            setKind = key.setKind.name,
+        ).executeAsOne().toInt()
+    }
+
+    override suspend fun isAttemptDurable(
+        stableSessionId: String,
+        key: LogicalSetKey,
+        attemptNumber: Int,
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (attemptNumber < 1) return@withContext false
+        queries.countDurableCompletedSetAttempt(
+            stableSessionId = stableSessionId,
+            routineSessionId = key.routineSessionId,
+            routineExerciseId = key.routineExerciseId,
+            setIndex = key.setIndex.toLong(),
+            setKind = key.setKind.name,
+            attemptNumber = attemptNumber.toLong(),
+        ).executeAsOne() > 0L
+    }
+
     override suspend fun updateRpe(setId: String, rpe: Int) {
         withContext(Dispatchers.IO) {
-            queries.updateCompletedSetRpe(
-                logged_rpe = rpe.toLong(),
-                id = setId,
-            )
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.updateCompletedSetRpe(logged_rpe = rpe.toLong(), id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun markAsPr(setId: String) {
         withContext(Dispatchers.IO) {
-            queries.markCompletedSetAsPr(id = setId)
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.markCompletedSetAsPr(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
+        }
+    }
+
+    override suspend fun clearPr(setId: String) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.clearCompletedSetPr(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun deleteCompletedSet(setId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteCompletedSet(id = setId)
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.deleteCompletedSet(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun deleteCompletedSetsForSession(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteCompletedSetsBySession(session_id = sessionId)
+            db.transaction {
+                queries.deleteCompletedSetsBySession(session_id = sessionId)
+                queries.markWorkoutComponentDirty(sessionId)
+            }
         }
     }
+}
+
+/**
+ * The single CompletedSet insert. Shared with
+ * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
+ * transaction writes exactly the row this repository would have written.
+ */
+internal fun PhoenixDatabaseQueries.insertCompletedSetRow(set: CompletedSet) {
+    insertCompletedSet(
+        id = set.id,
+        session_id = set.sessionId,
+        planned_set_id = set.plannedSetId,
+        routine_exercise_id = set.routineExerciseId,
+        set_number = set.setNumber.toLong(),
+        set_type = set.setType.name,
+        attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
+        actual_reps = set.actualReps.toLong(),
+        actual_weight_kg = set.actualWeightKg.toDouble(),
+        logged_rpe = set.loggedRpe?.toLong(),
+        is_pr = if (set.isPr) 1L else 0L,
+        completed_at = set.completedAt,
+        set_end_reason = set.setEndReason.name,
+    )
 }

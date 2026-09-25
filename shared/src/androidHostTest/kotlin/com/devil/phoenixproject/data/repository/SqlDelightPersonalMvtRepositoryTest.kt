@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -9,10 +9,10 @@ import kotlin.test.assertNull
 
 class SqlDelightPersonalMvtRepositoryTest {
 
-    private fun createInMemoryTestDatabase(): VitruvianDatabase = createTestDatabase()
+    private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
 
-    private fun seedExercise(db: VitruvianDatabase, id: String) {
-        db.vitruvianDatabaseQueries.insertExercise(
+    private fun seedExercise(db: PhoenixDatabase, id: String) {
+        db.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = id,
             displayName = null,

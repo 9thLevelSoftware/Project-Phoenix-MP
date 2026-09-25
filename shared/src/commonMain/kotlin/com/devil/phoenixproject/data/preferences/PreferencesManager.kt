@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleCompatibilityMode
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
@@ -108,10 +109,28 @@ interface PreferencesManager {
 
     suspend fun setEnableVideoPlayback(enabled: Boolean)
     suspend fun setAutoBackupEnabled(enabled: Boolean)
+    suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean)
     suspend fun setBackupDestination(destination: BackupDestination)
     suspend fun setLanguage(language: String)
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
+
+    /**
+     * Post-restore one-shot reset (PR 22). A backup restore can bring back rows that one-shot
+     * startup work never processed on this install, so every settings-held "done" marker for
+     * work that derives from or rewrites stored rows is cleared here and that work runs again
+     * on next launch. Add each new marker of that kind (e.g. a catalogue-remap version) here.
+     */
+    suspend fun resetOneShotWorkAfterRestore()
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
+    fun getExerciseCatalogSource(): String
+    suspend fun setExerciseCatalogSource(source: String)
+
+    /**
+     * Remember the trainer model this install last connected to (KD-9).
+     * Planning/editor screens read it from [preferencesFlow] to pick a per-cable ceiling
+     * while offline. Machine commands always use the LIVE connected model instead.
+     */
+    suspend fun setLastConnectedModel(model: PhoenixModel)
 
     @Deprecated("Legacy migration read only")
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
@@ -156,6 +175,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_REP_SOUND_ENABLED = "rep_sound_enabled"
         private const val KEY_MOTION_START = "motion_start_enabled"
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+        private const val KEY_BACKUP_INCLUDE_RAW_TELEMETRY = "backup_include_raw_telemetry"
         private const val KEY_BACKUP_DESTINATION = "backup_destination"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
@@ -179,11 +199,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         // One-shot decline-remember flag, read at the modal-call site only (not in UserPreferences).
         private const val KEY_ADULTS_ONLY_PROMPTED = "adults_only_prompted"
 
-        // Permissions onboarding (health + microphone)
-        private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
-
         // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
+
+        private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
+        private const val KEY_LAST_CONNECTED_MODEL = "last_connected_model"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -221,6 +241,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true),
             motionStartEnabled = settings.getBoolean(KEY_MOTION_START, false),
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
+            includeRawTelemetryInBackups = settings.getBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, false),
             backupDestination = BackupDestination.fromJson(settings.getStringOrNull(KEY_BACKUP_DESTINATION)),
             language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
@@ -255,6 +276,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
                 // before any preference flow is collected, so sync it at load time.
                 BleCompatibilityMode.setting = it
             },
+            lastConnectedModel = settings.getStringOrNull(KEY_LAST_CONNECTED_MODEL)
+                ?.let { stored -> PhoenixModel.entries.find { model -> model.name == stored } }
+                ?: PhoenixModel.Unknown,
         )
     }
 
@@ -313,12 +337,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     internal suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
-    }
-
-    fun isPermissionsOnboardingShown(): Boolean = settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
-
-    fun setPermissionsOnboardingShown(shown: Boolean) {
-        settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
     }
 
     @Deprecated("Legacy migration read only")
@@ -474,6 +492,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(autoBackupEnabled = enabled) }
     }
 
+    override suspend fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        settings.putBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, enabled)
+        updateAndEmit { copy(includeRawTelemetryInBackups = enabled) }
+    }
+
     override suspend fun setBackupDestination(destination: BackupDestination) {
         settings.putString(KEY_BACKUP_DESTINATION, destination.toJson())
         updateAndEmit { copy(backupDestination = destination) }
@@ -533,6 +556,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         val clamped = percent.coerceIn(50, 120)
         settings.putInt(KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR, clamped)
         updateAndEmit { copy(defaultRoutineExerciseWeightPercentOfPR = clamped) }
+    }
+
+    override suspend fun resetOneShotWorkAfterRestore() {
+        settings.remove(KEY_VELOCITY_1RM_BACKFILL_DONE)
+        updateAndEmit { copy(velocityOneRepMaxBackfillDone = false) }
     }
 
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
@@ -613,6 +641,19 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         // Confirmed implies prompted (the one-shot decline-remember flag is irrelevant after confirm).
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, true)
         updateAndEmit { copy(adultsOnlyConfirmed = confirmed) }
+    }
+
+    override fun getExerciseCatalogSource(): String =
+        settings.getString(KEY_EXERCISE_CATALOG_SOURCE, "")
+
+    override suspend fun setExerciseCatalogSource(source: String) {
+        settings.putString(KEY_EXERCISE_CATALOG_SOURCE, source)
+    }
+
+    override suspend fun setLastConnectedModel(model: PhoenixModel) {
+        if (_preferencesFlow.value.lastConnectedModel == model) return
+        settings.putString(KEY_LAST_CONNECTED_MODEL, model.name)
+        updateAndEmit { copy(lastConnectedModel = model) }
     }
 
     override suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {

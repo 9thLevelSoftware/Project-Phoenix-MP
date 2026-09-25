@@ -12,7 +12,7 @@ import kotlinx.coroutines.sync.withLock
  * Serializes all BLE operations through a single Mutex.
  * Prevents interleaving that causes fault 16384 (Issue #222).
  *
- * The parent repo (VitruvianRedux) uses Nordic BLE library's .enqueue()
+ * The parent repo (PhoenixRedux) uses Nordic BLE library's .enqueue()
  * which provides automatic serialization. Kable has no such feature,
  * so we must serialize manually via Mutex.
  *

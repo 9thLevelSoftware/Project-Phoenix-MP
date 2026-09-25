@@ -2,11 +2,11 @@ package com.devil.phoenixproject.domain.model
 
 import androidx.compose.runtime.Composable
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_epic
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_hard
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_harder
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.echo_level_epic
+import projectphoenix.shared.generated.resources.echo_level_hard
+import projectphoenix.shared.generated.resources.echo_level_harder
+import projectphoenix.shared.generated.resources.echo_level_hardest
 
 /**
  * Locale-aware label helpers for percentage UI, including the Echo-mode block

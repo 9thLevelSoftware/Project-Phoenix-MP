@@ -41,7 +41,9 @@ data class ProfileMergeExerciseMvt(
 
 object ProfileDeletionMergePolicy {
     val directProfileOwnedTables: Set<String> = setOf(
+        "ActiveWorkoutRuntime",
         "AssessmentResult",
+        "CycleSyncState",
         "EarnedBadge",
         "ExerciseMvt",
         "ExternalActivity",
@@ -56,6 +58,7 @@ object ProfileDeletionMergePolicy {
         "IntegrationSyncCursor",
         "PendingProfileLocalCleanup",
         "PersonalRecord",
+        "ProfileExerciseBaseline",
         "ProgressionEvent",
         "Routine",
         "RoutineGroup",
@@ -64,6 +67,7 @@ object ProfileDeletionMergePolicy {
         "TrainingCycle",
         "UserProfilePreferences",
         "VelocityOneRepMaxEstimate",
+        "WorkoutDeletion",
         "WorkoutSession",
     )
 

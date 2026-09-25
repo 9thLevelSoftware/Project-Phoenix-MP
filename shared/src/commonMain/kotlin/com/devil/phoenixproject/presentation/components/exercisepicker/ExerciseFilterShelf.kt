@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
@@ -22,10 +24,38 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
+
+/**
+ * Issue #883: the equipment chips the picker advertises.
+ *
+ * Contract (regression-tested in EquipmentChipContractTest): every chip must map through
+ * [com.devil.phoenixproject.presentation.components.getEquipmentDatabaseValues] to tokens
+ * that at least one row the app can produce actually carries — otherwise it is a dead
+ * filter like the one reported in #883. Current producers: the bundled catalogue
+ * (BARBELL/CABLE/BODYWEIGHT/...), the issue #883 supplemental belt seed (BELT), and custom
+ * exercises (HANDLES for cable rows, BODYWEIGHT otherwise — CreateExerciseDialog).
+ *
+ * The #883 chip audit retired "Short Bar", "Rope", "Ankle Strap", and "Bench": no seed row,
+ * custom-exercise path, or wger refresh can ever carry SHORT_BAR / ROPE / ANKLE_STRAP /
+ * STRAPS / BENCH, so those chips only ever showed an empty list. Their token aliases remain
+ * in `getEquipmentDatabaseValues` and `formatEquipmentCompact` so legacy custom rows restored
+ * from old backups still render and filter by name search. "Belt" stays and is now backed by
+ * the supplemental seed; "Bodyweight" stays (isBodyweight flag branch); "Handles" stays
+ * because every custom cable exercise carries the HANDLES token.
+ */
+internal val EQUIPMENT_FILTER_CHIPS: List<String> = listOf(
+    "Long Bar",
+    "Handles",
+    "Belt",
+    "Cable",
+    "Bodyweight",
+)
 
 /**
  * Unified horizontal filter shelf combining favorites, custom, muscle, and equipment filters.
@@ -37,6 +67,16 @@ fun ExerciseFilterShelf(
     onToggleFavorites: () -> Unit,
     showCustomOnly: Boolean,
     onToggleCustom: () -> Unit,
+    showCustomFilter: Boolean = true,
+    enableEssentialsFilter: Boolean = false,
+    showEssentialsOnly: Boolean = false,
+    onToggleEssentials: () -> Unit = {},
+    enableRecentFilter: Boolean = false,
+    showRecentOnly: Boolean = false,
+    onToggleRecent: () -> Unit = {},
+    enablePreviouslyCompletedFilter: Boolean = false,
+    showPreviouslyCompletedOnly: Boolean = false,
+    onTogglePreviouslyCompleted: () -> Unit = {},
     selectedMuscles: Set<String>,
     onToggleMuscle: (String) -> Unit,
     selectedEquipment: Set<String>,
@@ -45,20 +85,14 @@ fun ExerciseFilterShelf(
     modifier: Modifier = Modifier,
 ) {
     val muscleGroups = listOf("Chest", "Back", "Legs", "Shoulders", "Arms", "Core")
-    val equipmentTypes =
-        listOf(
-            "Long Bar",
-            "Short Bar",
-            "Handles",
-            "Rope",
-            "Belt",
-            "Ankle Strap",
-            "Bench",
-            "Bodyweight",
-        )
+    // Issue #883: see EQUIPMENT_FILTER_CHIPS for the chip contract and retired chips.
+    val equipmentTypes = EQUIPMENT_FILTER_CHIPS
 
-    val hasActiveFilters = showFavoritesOnly || showCustomOnly ||
-        selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
+    val previouslyCompletedDescription =
+        stringResource(Res.string.cd_filter_previously_completed)
+    val essentialsDescription = stringResource(Res.string.cd_filter_essentials)
+    val hasActiveFilters = showFavoritesOnly || showCustomOnly || showPreviouslyCompletedOnly || showEssentialsOnly ||
+        (enableRecentFilter && showRecentOnly) || selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -108,24 +142,88 @@ fun ExerciseFilterShelf(
             )
         }
 
+        // Recent chip (#850): exercises most recently used to tag Just Lift sets
+        if (enableRecentFilter) {
+            item {
+                FilterChip(
+                    selected = showRecentOnly,
+                    onClick = onToggleRecent,
+                    label = { Text(stringResource(Res.string.label_recent)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+
+        // Essentials chip (#770): opt-in, built-in common-movement set
+        if (enableEssentialsFilter) {
+            item {
+                FilterChip(
+                    selected = showEssentialsOnly,
+                    onClick = onToggleEssentials,
+                    label = { Text(stringResource(Res.string.label_essentials)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.FitnessCenter,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    modifier = Modifier.semantics { contentDescription = essentialsDescription },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+
         // Custom chip
-        item {
-            FilterChip(
-                selected = showCustomOnly,
-                onClick = onToggleCustom,
-                label = { Text(stringResource(Res.string.label_custom)) },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+        if (showCustomFilter) {
+            item {
+                FilterChip(
+                    selected = showCustomOnly,
+                    onClick = onToggleCustom,
+                    label = { Text(stringResource(Res.string.label_custom)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+
+        if (enablePreviouslyCompletedFilter) {
+            item {
+                FilterChip(
+                    selected = showPreviouslyCompletedOnly,
+                    onClick = onTogglePreviouslyCompleted,
+                    label = { Text(stringResource(Res.string.label_previously_completed)) },
+                    modifier = Modifier.semantics {
+                        contentDescription = previouslyCompletedDescription
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         }
 
         // Divider

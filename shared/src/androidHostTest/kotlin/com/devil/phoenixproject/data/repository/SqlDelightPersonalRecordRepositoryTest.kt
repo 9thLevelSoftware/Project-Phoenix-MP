@@ -1,28 +1,33 @@
 package com.devil.phoenixproject.data.repository
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 
 class SqlDelightPersonalRecordRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightPersonalRecordRepository
+    private lateinit var baselineRepository: SqlDelightProfileExerciseBaselineRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
         repository = SqlDelightPersonalRecordRepository(database)
-        insertExercise(id = "bench", name = "Bench Press")
+        insertExerciseIfAbsent(id = "bench", name = "Bench Press")
     }
 
     @Test
@@ -51,6 +56,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     @Test
     fun `updatePRsIfBetter uses achieved load for weight PR and conservative load for volume PR`() = runTest {
+        baselineRepository.set("default", "bench", 42.25f, updatedAt = 500L)
         repository.updatePRsIfBetter(
             exerciseId = "bench",
             weightPRWeightPerCableKg = 60f,
@@ -63,20 +69,14 @@ class SqlDelightPersonalRecordRepositoryTest {
 
         val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
         val volumePr = repository.getVolumePR("bench", "Old School", profileId = "default")
-        val exercise = database.vitruvianDatabaseQueries.selectExerciseById(
-            "bench",
-        ).executeAsOneOrNull()
+        val baseline = baselineRepository.get("default", "bench")
 
         assertEquals(60f, weightPr?.weightPerCableKg)
         assertEquals(300f, weightPr?.volume)
         assertEquals(50f, volumePr?.weightPerCableKg)
         assertEquals(250f, volumePr?.volume)
-        assertEquals(
-            // Canonical hybrid: reps=5 ≤ 10 → Brzycki = 60 × 36/(37-5) = 67.5
-            // (was epley(60,5)=70.0; updated to reflect OneRepMaxCalculator.estimate)
-            OneRepMaxCalculator.estimate(60f, 5).toDouble(),
-            exercise?.one_rep_max_kg,
-        )
+        assertEquals(42.25f, baseline?.oneRepMaxPerCableKg, "saving a PR must not overwrite the explicit baseline")
+        assertEquals(1L, baseline?.revision)
     }
 
     @Test
@@ -112,7 +112,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     @Test
     fun `normalized lookup reads legacy mode rows before migration cleanup`() = runTest {
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "bench",
             exerciseName = "Bench Press",
             weight = 55.0,
@@ -134,7 +134,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(55f, canonical?.weightPerCableKg)
         assertEquals(canonical?.id, legacy?.id)
         assertNull(
-            database.vitruvianDatabaseQueries.selectPR(
+            database.phoenixDatabaseQueries.selectPR(
                 "bench",
                 "Old School",
                 PRType.MAX_WEIGHT.name,
@@ -147,20 +147,20 @@ class SqlDelightPersonalRecordRepositoryTest {
     /**
      * Issue #319: Proves that db.transaction {} in updatePRsIfBetterInternal is atomic.
      *
-     * Strategy: Install a SQLite trigger that makes the 1RM-sync UPDATE fail AFTER
-     * the weight-PR and volume-PR upserts have already executed inside the same
-     * transaction. If the transaction is truly atomic, the PR upserts are rolled
-     * back and the database remains clean.
+     * Strategy: Install a SQLite trigger that makes the volume-PR insert fail after
+     * the weight-PR upsert has executed in the same transaction. If the transaction
+     * is truly atomic, the weight PR is rolled back and the database remains clean.
      */
     @Test
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
         // Create a dedicated database with driver reference for raw SQL trigger injection
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val testDb = VitruvianDatabase(driver)
+        val driver = createTestDriver()
+        val testDb = PhoenixDatabase(driver)
+        testDb.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        val testBaselineRepository = SqlDelightProfileExerciseBaselineRepository(testDb)
         val testRepo = SqlDelightPersonalRecordRepository(testDb)
 
-        testDb.vitruvianDatabaseQueries.insertExercise(
+        testDb.phoenixDatabaseQueries.insertExercise(
             id = "squat", name = "Squat", displayName = null, description = null,
             created = 0L, muscleGroup = "Legs", muscleGroups = "Legs",
             muscles = null, equipment = "BAR", movement = null,
@@ -172,17 +172,17 @@ class SqlDelightPersonalRecordRepositoryTest {
             isBodyweight = null,
         )
 
-        // Trigger fires on the 1RM sync (third write in the transaction),
-        // AFTER weight-PR and volume-PR upserts have already executed.
+        // Trigger fires on the second PR write, after the weight PR was inserted.
         driver.execute(
             null,
-            "CREATE TRIGGER fail_1rm_update BEFORE UPDATE OF one_rep_max_kg ON Exercise " +
-                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated 1RM sync failure'); END",
+            "CREATE TRIGGER fail_volume_pr BEFORE INSERT ON PersonalRecord " +
+                "WHEN NEW.prType = 'MAX_VOLUME' " +
+                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated volume PR failure'); END",
             0,
         )
 
         // This call beats both weight and volume PRs (first-ever for this exercise),
-        // so the transaction will: upsert weight PR → upsert volume PR → update 1RM (BOOM).
+        // so the transaction will: upsert weight PR → upsert volume PR (BOOM).
         val result = testRepo.updatePRsIfBetter(
             exerciseId = "squat",
             weightPRWeightPerCableKg = 80f,
@@ -206,12 +206,13 @@ class SqlDelightPersonalRecordRepositoryTest {
             "Volume PR must not survive a rolled-back transaction",
         )
 
-        // Exercise 1RM should remain null (trigger prevented the UPDATE)
-        val exercise = testDb.vitruvianDatabaseQueries.selectExerciseById("squat").executeAsOneOrNull()
-        assertNull(exercise?.one_rep_max_kg, "Exercise 1RM should still be null after rollback")
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "Scoped baseline should still be absent after rollback",
+        )
 
         // Positive control: remove trigger, verify the exact same call now succeeds
-        driver.execute(null, "DROP TRIGGER fail_1rm_update", 0)
+        driver.execute(null, "DROP TRIGGER fail_volume_pr", 0)
 
         val successResult = testRepo.updatePRsIfBetter(
             exerciseId = "squat",
@@ -227,10 +228,150 @@ class SqlDelightPersonalRecordRepositoryTest {
             testRepo.getWeightPR("squat", "Old School", profileId = "default"),
             "Weight PR should exist after successful write",
         )
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "saving a PR must not create a training baseline",
+        )
     }
 
-    private fun insertExercise(id: String, name: String) {
-        database.vitruvianDatabaseQueries.insertExercise(
+    @Test
+    fun `deleting a PR hides it from product reads and retains a sync tombstone`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 65f,
+            volumePRWeightPerCableKg = 65f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val weightPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+
+        repository.deletePR(weightPr.id, "default")
+
+        assertNull(repository.getWeightPR("bench", "Old School", "default"))
+        val retainedTombstone = database.phoenixDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId = "default")
+            .executeAsList()
+            .single { it.id == weightPr.id }
+        assertNotNull(retainedTombstone.deletedAt)
+        assertEquals(retainedTombstone.deletedAt, retainedTombstone.updatedAt)
+    }
+
+    @Test
+    fun `beating a deleted PR restores its stable sync uuid`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 65f,
+            volumePRWeightPerCableKg = 65f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val deletedPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        val stableUuid = assertNotNull(deletedPr.uuid)
+        repository.deletePR(deletedPr.id, "default")
+
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 70f,
+            volumePRWeightPerCableKg = 70f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 3_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val restoredPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        assertEquals(stableUuid, restoredPr.uuid)
+        assertEquals(70f, restoredPr.weightPerCableKg)
+    }
+
+    @Test
+    fun `a lower valid PR replaces a deleted outlier with its stable sync uuid`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 100f,
+            volumePRWeightPerCableKg = 100f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val deletedPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        val stableUuid = assertNotNull(deletedPr.uuid)
+        repository.deletePR(deletedPr.id, "default")
+
+        val result = repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 90f,
+            volumePRWeightPerCableKg = 90f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 3_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val replacementPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        assertTrue(result.contains(PRType.MAX_WEIGHT))
+        assertEquals(stableUuid, replacementPr.uuid)
+        assertEquals(90f, replacementPr.weightPerCableKg)
+    }
+
+    @Test
+    fun `PR grouping and best PR ignore a phase peak-force row heavier than the max-weight PR`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 60f,
+            volumePRWeightPerCableKg = 60f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 1_000L,
+            profileId = "default",
+        ).getOrThrow()
+        // Peak eccentric force routinely exceeds the commanded load; it is a
+        // different metric and must never be shown or exported as the PR (FP-5).
+        repository.updatePhaseSpecificPRs(
+            exerciseId = "bench",
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            reps = 5,
+            peakConcentricForceKg = 0f,
+            peakEccentricForceKg = 95f,
+            profileId = "default",
+        ).getOrThrow()
+
+        val grouped = repository.getAllPRsGrouped("default").first()
+        val benchPr = assertNotNull(grouped.singleOrNull { it.exerciseId == "bench" })
+        assertEquals(60f, benchPr.weightPerCableKg)
+        assertEquals(PRType.MAX_WEIGHT, benchPr.prType)
+        assertEquals(WorkoutPhase.COMBINED, benchPr.phase)
+
+        assertEquals(60f, repository.getBestPR("bench", profileId = "default")?.weightPerCableKg)
+    }
+
+    @Test
+    fun `PR grouping ignores the COMBINED volume row even when it is heavier`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 50f,
+            volumePRWeightPerCableKg = 80f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 1_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val benchPr = assertNotNull(
+            repository.getAllPRsGrouped("default").first().singleOrNull { it.exerciseId == "bench" },
+        )
+        assertEquals(PRType.MAX_WEIGHT, benchPr.prType)
+        assertEquals(50f, benchPr.weightPerCableKg)
+    }
+
+    private fun insertExerciseIfAbsent(id: String, name: String) {
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,
             name = name,
             displayName = null,

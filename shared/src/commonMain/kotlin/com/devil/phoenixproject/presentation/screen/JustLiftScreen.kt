@@ -113,28 +113,29 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.CommandLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_close_workout
-import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_beast_desc
-import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_desc
-import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
-import vitruvianprojectphoenix.shared.generated.resources.echo_level
-import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_beast
-import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_standard
-import vitruvianprojectphoenix.shared.generated.resources.label_live
-import vitruvianprojectphoenix.shared.generated.resources.mode_echo
-import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
-import vitruvianprojectphoenix.shared.generated.resources.mode_pump
-import vitruvianprojectphoenix.shared.generated.resources.mode_tut
-import vitruvianprojectphoenix.shared.generated.resources.autostart_connect_prompt
-import vitruvianprojectphoenix.shared.generated.resources.autostart_grab_handles
-import vitruvianprojectphoenix.shared.generated.resources.autostart_ready
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_close_workout
+import projectphoenix.shared.generated.resources.config_mode_tut_beast_desc
+import projectphoenix.shared.generated.resources.config_mode_tut_desc
+import projectphoenix.shared.generated.resources.eccentric_load
+import projectphoenix.shared.generated.resources.eccentric_load_helper
+import projectphoenix.shared.generated.resources.echo_level
+import projectphoenix.shared.generated.resources.just_lift_tut_beast
+import projectphoenix.shared.generated.resources.just_lift_tut_standard
+import projectphoenix.shared.generated.resources.label_live
+import projectphoenix.shared.generated.resources.mode_echo
+import projectphoenix.shared.generated.resources.mode_old_school
+import projectphoenix.shared.generated.resources.mode_pump
+import projectphoenix.shared.generated.resources.mode_tut
+import projectphoenix.shared.generated.resources.autostart_connect_prompt
+import projectphoenix.shared.generated.resources.autostart_grab_handles
+import projectphoenix.shared.generated.resources.autostart_ready
+import projectphoenix.shared.generated.resources.rep_count_timing
+import projectphoenix.shared.generated.resources.rep_count_timing_bottom
+import projectphoenix.shared.generated.resources.rep_count_timing_top
 
 /**
  * Just Lift screen - quick workout configuration.
@@ -226,7 +227,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Enable handle detection for auto-start when connected (matches official app)
+    // Enable handle detection for auto-start when connected
     val connectionState by viewModel.connectionState.collectAsState()
 
     // Single consolidated effect for handle detection (Issue: iOS autostart race condition fix)
@@ -240,9 +241,17 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Reset workout state if entering Just Lift with any non-Idle state (matches official app)
-    LaunchedEffect(workoutState) {
-        if (workoutState !is WorkoutState.Idle && workoutState !is WorkoutState.Active) {
+    // Prepare the workout once when entering Just Lift. Do not key this on
+    // workoutState: Initializing and Countdown are states owned by the current
+    // auto-start execution and must not trigger a reset.
+    //
+    // Use rememberSaveable to survive process death: if the screen is recreated
+    // after the process dies, this flag is restored as true and the reset is
+    // skipped, preserving the in-flight auto-start execution.
+    var hasPreparedSession by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!hasPreparedSession) {
+            hasPreparedSession = true
             viewModel.prepareForJustLift()
         }
     }
@@ -322,7 +331,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .padding(horizontal = Spacing.medium, vertical = Spacing.small)
-                .then(if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState) else Modifier),
+                // The configuration can overflow even on a normal-size 375x667 portrait
+                // screen after app chrome and mode cards are measured. Keep scrolling
+                // independent from accessibility presentation choices.
+                .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             // Pinned header: auto-start status + workout mode (never clipped by lower content)
@@ -466,18 +478,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
             val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
             val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
-            val flexibleBodyModifier = if (useCompactAccessibility) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            }
             if (showWeightAndProgression) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f))
                         // Issue #571: belt-and-braces vertical separation between the two
                         // weight cards when stacked, so the wheel's bottom edge is
                         // unambiguously above the slider's top edge even if the inner
@@ -497,18 +501,21 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-                        val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f
+                        // KD-9: bound by the CONNECTED trainer, like every other live slider.
+                        val maxWeightKg = CommandLimits.maxWeightPerCableKg(
+                            (connectionState as? ConnectionState.Connected)?.hardwareModel,
+                        )
+                        val maxWeight = viewModel.kgToDisplay(maxWeightKg, weightUnit)
                         val weightStep = viewModel.kgToDisplay(userPreferences.effectiveWeightIncrementKg, weightUnit)
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
 
                         Box(
                             modifier = Modifier
-                                .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.weight(1f))
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -550,8 +557,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 // Weight Change Per Rep Card
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f)),
+                        .fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -559,13 +565,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
-                        verticalArrangement = if (useCompactAccessibility || stackWeightCards) {
-                            Arrangement.spacedBy(Spacing.small)
-                        } else {
-                            Arrangement.SpaceEvenly
-                        },
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Text(
                             "Weight Change Per Rep",
@@ -587,7 +589,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             val isEchoMode = selectedMode is WorkoutMode.Echo
             if (isEchoMode) {
                 Card(
-                    modifier = flexibleBodyModifier,
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -595,7 +597,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -796,7 +798,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             }
         }
 
-        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        // Connection error dialog
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,

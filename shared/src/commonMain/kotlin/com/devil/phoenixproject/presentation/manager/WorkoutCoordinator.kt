@@ -13,8 +13,8 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -22,7 +22,10 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
+import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -32,6 +35,60 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+
+/**
+ * Append-only buffer for the samples collected during a single set.
+ *
+ * [append] is O(1). The live-set BLE path appends a sample on every monitor poll,
+ * so the copy-on-append `MutableStateFlow<List<T>>` this replaces made a set
+ * quadratic in its own sample count (a long Just Lift set allocates and copies
+ * the whole list thousands of times). Nothing ever observed those flows as
+ * flows — every reader took `.value` — so the flow machinery is gone with them.
+ *
+ * **Threading: the lock is required, not optional — do not remove it.** [append]
+ * and [clear] run on the engine's `scope` (the ViewModel's main dispatcher), but
+ * [snapshot] is also reached from `Dispatchers.Default` on a shipped path, while
+ * that main-thread collector is still appending:
+ *
+ * `ActiveSessionEngine.processBiomechanicsForRep` → `scope.launch(biomechanicsDispatcher)`
+ * → `evaluateLatestVbtResult` → (VBT auto-end on velocity loss)
+ * `handleSetCompletion(lease, VBT_AUTO_END)` → `captureExitSnapshot` →
+ * `buildExitSnapshot`, which snapshots **both** buffers with no dispatcher switch
+ * in between. (`processBiomechanicsForRep` snapshots before its own `launch`; the
+ * VBT continuation does not.)
+ *
+ * Without the lock that is a real data race on the live rep-scoring path: an
+ * unsynchronised `ArrayList` loses concurrent appends outright and hands the
+ * reader a torn or null-padded copy. `CollectedMetricsBufferConcurrencyTest`
+ * (androidHostTest) fails on both counts if `withLock` is deleted. Uncontended
+ * the lock still costs far less than the per-sample copy it replaces.
+ *
+ * [snapshot] returns a private copy, so a caller may hold and iterate it while
+ * the collector keeps appending.
+ *
+ * [size] and [isEmpty] exist for logging and test assertions; the live path only
+ * uses [append], [snapshot] and [clear].
+ */
+internal class CollectedMetricsBuffer<T> {
+    private val lock = reentrantLock()
+    private val items = ArrayList<T>() // guarded by lock
+
+    val size: Int get() = lock.withLock { items.size }
+
+    fun isEmpty(): Boolean = lock.withLock { items.isEmpty() }
+
+    fun append(item: T) {
+        lock.withLock { items.add(item) }
+    }
+
+    fun snapshot(): List<T> = lock.withLock {
+        if (items.isEmpty()) emptyList() else ArrayList(items)
+    }
+
+    fun clear() {
+        lock.withLock { items.clear() }
+    }
+}
 
 internal data class VbtRuntimeSettings(
     val enabled: Boolean = true,
@@ -58,6 +115,9 @@ class WorkoutCoordinator(
     velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,
 ) {
+    internal val _restTransitionPlan = MutableStateFlow<RestTransitionPlan?>(null)
+    internal val restTransitionPlan: StateFlow<RestTransitionPlan?> = _restTransitionPlan.asStateFlow()
+
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
         const val AUTO_STOP_DURATION_SECONDS = 2.5f
@@ -67,7 +127,7 @@ class WorkoutCoordinator(
 
         /**
          * Two-tier velocity hysteresis for stall detection (Issue #204, #216)
-         * Matches official app behavior to prevent timer toggling near threshold:
+         * Hysteresis prevents the stall timer toggling near the threshold:
          * - Below LOW (<2.5): start/continue stall timer (user is stopped)
          * - Above HIGH (>10): reset stall timer (user is clearly moving)
          * - Between LOW and HIGH (>=2.5 and <=10): maintain current state (hysteresis band)
@@ -89,6 +149,18 @@ class WorkoutCoordinator(
          * when transitioning from a normal rep-based exercise to an AMRAP exercise.
          */
         const val AMRAP_STARTUP_GRACE_MS = 8000L
+
+        /**
+         * Issue #712 / F-070: bounded auto-end fallback for a set with no rep target
+         * (AMRAP / Just Lift) whose warm-up reps the machine never reported.
+         *
+         * Every auto-stop path is gated on warm-up completion, so such a set cannot end
+         * by itself at all — the user's only exit is Stop Set, with no cue explaining why.
+         * Once real movement has been seen and the handles have then been continuously at
+         * rest for this long, the set ends on its own. 10 s is the owner's decision: far
+         * longer than any pause inside a rep, so it can never end a set still being worked.
+         */
+        const val AMRAP_WARMUP_FALLBACK_MS = 10_000L
     }
 
     // ===== BLE Error Events =====
@@ -110,6 +182,71 @@ class WorkoutCoordinator(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
+
+    // KD-9: the "command was capped" notice. This is state, not an event, because the
+    // screen that shows it is often not composed yet when the command is sent: Just Lift
+    // skips the countdown and only navigates to ActiveWorkoutScreen once the state turns
+    // Active, so a replay-0 SharedFlow emission would be dropped. The arriving screen
+    // drains it with consumeCommandLimitNotice().
+    internal val _commandLimitNotice = MutableStateFlow<String?>(null)
+    val commandLimitNotice: StateFlow<String?> = _commandLimitNotice
+
+    fun consumeCommandLimitNotice() {
+        _commandLimitNotice.value = null
+    }
+
+    /**
+     * F-040: the stable session id of a completion whose commit failed, or null.
+     *
+     * A drainable StateFlow rather than a one-shot event, because the commit can
+     * fail after teardown has already moved the UI on, and a replay-0 emission
+     * to a screen that is not composed yet is simply dropped. The screen that
+     * shows the failure drains it (back to null) once it has offered Retry, so
+     * the offer is made exactly once.
+     */
+    internal val _workoutSaveFailureSessionId = MutableStateFlow<String?>(null)
+    val workoutSaveFailureSessionId: StateFlow<String?> = _workoutSaveFailureSessionId.asStateFlow()
+
+    /**
+     * The same offer as [workoutSaveFailureSessionId], but every publication is a
+     * DISTINCT value (the attempt number increases). A Retry that fails again
+     * re-offers the same session id; a StateFlow of just the id conflates that
+     * into "unchanged" and a collector keyed on it never re-runs, so the second
+     * failure is never shown (codex 4081208485). The UI keys on this instead.
+     */
+    val workoutSaveFailureOffer: StateFlow<WorkoutSaveFailureOffer?> get() = _workoutSaveFailureOffer.asStateFlow()
+    private val _workoutSaveFailureOffer = MutableStateFlow<WorkoutSaveFailureOffer?>(null)
+
+    // Every failed commit still waiting for the user, oldest first. Only the head is
+    // published; draining it publishes the next, so a second failure raised while the
+    // first offer is on screen is never lost (codex 4080104672).
+    private val saveFailureLock = Any()
+    private val pendingSaveFailures = LinkedHashSet<String>()
+    private var saveFailureOfferAttempt = 0L
+
+    /** Queue [sessionId]'s failed commit and publish it if no other offer is showing. */
+    internal fun offerWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
+        pendingSaveFailures.add(sessionId)
+        if (_workoutSaveFailureSessionId.value == null) publishSaveFailure(pendingSaveFailures.first())
+    }
+
+    /**
+     * Drop [sessionId]'s offer (its save succeeded, was retried, or was dismissed) and,
+     * if it was the one on screen, publish the next queued failure. A different
+     * session's visible offer is left intact.
+     */
+    internal fun withdrawWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
+        pendingSaveFailures.remove(sessionId)
+        if (_workoutSaveFailureSessionId.value == sessionId) publishSaveFailure(pendingSaveFailures.firstOrNull())
+    }
+
+    // Caller holds saveFailureLock.
+    private fun publishSaveFailure(sessionId: String?) {
+        _workoutSaveFailureSessionId.value = sessionId
+        _workoutSaveFailureOffer.value = sessionId?.let {
+            WorkoutSaveFailureOffer(sessionId = it, attempt = ++saveFailureOfferAttempt)
+        }
+    }
 
     // ===== Workout State =====
 
@@ -177,11 +314,25 @@ class WorkoutCoordinator(
         _workoutState,
         _routineFlowState,
         _justLiftRestCountdown,
-    ) { ws, rfs, restCountdown ->
+    ) { ws, rfs, restCountdown -> inWorkoutSession(ws, rfs, restCountdown) }
+
+    /**
+     * The current value of [isInWorkoutSession], read synchronously. A profile switch
+     * re-checks this after it acquires the profile mutation barrier, where no
+     * collector is running (codex 4081312853).
+     */
+    fun isInWorkoutSessionNow(): Boolean =
+        inWorkoutSession(_workoutState.value, _routineFlowState.value, _justLiftRestCountdown.value)
+
+    private fun inWorkoutSession(
+        ws: WorkoutState,
+        rfs: RoutineFlowState,
+        restCountdown: Int?,
+    ): Boolean {
         val workoutInProgress = ws !is WorkoutState.Idle && ws !is WorkoutState.Completed
         val betweenRoutineSets = rfs is RoutineFlowState.SetReady
         val betweenJustLiftSets = ws is WorkoutState.Idle && (restCountdown ?: 0) > 0
-        workoutInProgress || betweenRoutineSets || betweenJustLiftSets
+        return workoutInProgress || betweenRoutineSets || betweenJustLiftSets
     }
 
     // ===== Metrics State =====
@@ -371,11 +522,13 @@ class WorkoutCoordinator(
     internal var workoutStartTime: Long = 0
     internal var warmupCompleteTimeMs: Long = 0 // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
-    internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
+    internal val collectedMetrics = CollectedMetricsBuffer<WorkoutMetric>()
 
-    // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
-    // across coroutine dispatchers during rep processing and set completion
-    internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
+    // C3: rep processing and set completion iterate a private snapshot() copy while the
+    // collector keeps appending, and buildExitSnapshot reads BOTH buffers off the main
+    // dispatcher on the VBT auto-end path — CollectedMetricsBuffer's lock is what makes
+    // that safe. See its KDoc before touching it.
+    internal val setRepMetrics = CollectedMetricsBuffer<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null
@@ -409,9 +562,6 @@ class WorkoutCoordinator(
     // Uses MutableStateFlow for thread-safe compareAndSet across KMP targets
     internal val stopWorkoutInProgress = MutableStateFlow(false)
 
-    // Guard to prevent duplicate auto-completion when rep target is reached
-    internal val setCompletionInProgress = MutableStateFlow(false)
-
     // Issue #355: Guard to prevent duplicate proceedFromSummary() calls on iOS
     // When app foregrounds, both manager-level fallback AND UI-level countdown can fire
     internal val proceedFromSummaryInProgress = MutableStateFlow(false)
@@ -443,6 +593,34 @@ class WorkoutCoordinator(
     @Volatile
     internal var deferAutoStopDeadlineMs = 0L
 
+    // Issue #712 / F-070: state for the warm-up auto-end fallback of a set with no rep
+    // target. It is maintained on every Active metric sample INDEPENDENTLY of the warm-up
+    // gate, because the gated countdowns (autoStopStartTime, stallStartTime) are cleared
+    // on every sample while the gate is shut and so can never measure this window.
+
+    /**
+     * Sample-clock timestamp at which the handles last settled to rest; 0L = not at rest.
+     * On the metric clock (WorkoutMetric.timestamp), which is the same wall clock in
+     * production and the only one a test can drive.
+     */
+    @Volatile
+    internal var handlesAtRestSinceMs: Long = 0L
+
+    /**
+     * True once this set has shown real movement — a counted or pending rep, or a position
+     * range past MIN_RANGE_THRESHOLD, observed on a sample with the handles off the rack.
+     * Never cleared mid-set: the fallback must not end a set the user never started.
+     */
+    @Volatile
+    internal var observedSetMovement: Boolean = false
+
+    /**
+     * True while the warm-up fallback's conditions all hold. Recomputed on every sample and
+     * deliberately NOT latched: one sample with the handles off the rack closes it again.
+     */
+    @Volatile
+    internal var amrapWarmupFallbackOpen: Boolean = false
+
     /**
      * Fully reset auto-stop / stall / defer state for a new workout or set.
      *
@@ -459,6 +637,9 @@ class WorkoutCoordinator(
         isCurrentlyStalled = false
         stallArmedByDeload = false
         deferAutoStopDeadlineMs = 0L
+        handlesAtRestSinceMs = 0L
+        observedSetMovement = false
+        amrapWarmupFallbackOpen = false
         _autoStopState.value = AutoStopUiState()
     }
 
@@ -568,7 +749,41 @@ class WorkoutCoordinator(
      * Processes each rep's MetricSamples and exposes results via StateFlow.
      * Reset between sets via ActiveSessionEngine.
      */
-    val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
+    private val biomechanicsLock = Any()
+    private val _latestBiomechanicsResult = MutableStateFlow<BiomechanicsRepResult?>(null)
+    var biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
+        private set
+
+    internal fun installBiomechanicsEngine(engine: BiomechanicsEngine) = withPlatformLock(biomechanicsLock) {
+        biomechanicsEngine = engine
+        _latestBiomechanicsResult.value = null
+    }
+
+    internal fun publishBiomechanicsResult(
+        engine: BiomechanicsEngine,
+        result: BiomechanicsRepResult,
+    ): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== engine) return@withPlatformLock false
+        _latestBiomechanicsResult.value = result
+        true
+    }
+
+    internal fun resetBiomechanicsEngine(engine: BiomechanicsEngine = biomechanicsEngine): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== engine) return@withPlatformLock false
+        engine.reset()
+        _latestBiomechanicsResult.value = null
+        true
+    }
+
+    internal fun detachBiomechanicsEngine(
+        expected: BiomechanicsEngine,
+        replacement: BiomechanicsEngine,
+    ): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== expected) return@withPlatformLock false
+        biomechanicsEngine = replacement
+        _latestBiomechanicsResult.value = null
+        true
+    }
 
     internal fun updateVbtSettings(
         vbtEnabled: Boolean,
@@ -576,12 +791,14 @@ class WorkoutCoordinator(
         autoEnd: Boolean,
     ) {
         require(thresholdPercent in 10f..50f)
-        biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
-        _vbtRuntimeSettings.value = VbtRuntimeSettings(
-            enabled = vbtEnabled,
-            velocityLossThresholdPercent = thresholdPercent,
-            autoEndOnVelocityLoss = autoEnd,
-        )
+        withPlatformLock(biomechanicsLock) {
+            biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
+            _vbtRuntimeSettings.value = VbtRuntimeSettings(
+                enabled = vbtEnabled,
+                velocityLossThresholdPercent = thresholdPercent,
+                autoEndOnVelocityLoss = autoEnd,
+            )
+        }
     }
 
     /**
@@ -594,8 +811,11 @@ class WorkoutCoordinator(
 
     /**
      * Latest biomechanics result for HUD display.
-     * Delegates to biomechanicsEngine.latestRepResult.
+     * Stable across the per-execution biomechanics engines installed by ActiveSessionEngine.
      */
-    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
-        get() = biomechanicsEngine.latestRepResult
+    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?> =
+        _latestBiomechanicsResult.asStateFlow()
 }
+
+/** One published save-failure offer; [attempt] makes every publication distinct. */
+data class WorkoutSaveFailureOffer(val sessionId: String, val attempt: Long)

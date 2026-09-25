@@ -76,21 +76,21 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.auto_scroll
-import vitruvianprojectphoenix.shared.generated.resources.cd_clear_logs
-import vitruvianprojectphoenix.shared.generated.resources.cd_clear_search
-import vitruvianprojectphoenix.shared.generated.resources.cd_export_logs
-import vitruvianprojectphoenix.shared.generated.resources.cd_search
-import vitruvianprojectphoenix.shared.generated.resources.clear_all
-import vitruvianprojectphoenix.shared.generated.resources.clear_logs_message
-import vitruvianprojectphoenix.shared.generated.resources.clear_logs_title
-import vitruvianprojectphoenix.shared.generated.resources.copy_to_clipboard
-import vitruvianprojectphoenix.shared.generated.resources.export_logs
-import vitruvianprojectphoenix.shared.generated.resources.log_level_count
-import vitruvianprojectphoenix.shared.generated.resources.logs_ready_to_export
-import vitruvianprojectphoenix.shared.generated.resources.search_logs
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.auto_scroll
+import projectphoenix.shared.generated.resources.cd_clear_logs
+import projectphoenix.shared.generated.resources.cd_clear_search
+import projectphoenix.shared.generated.resources.cd_export_logs
+import projectphoenix.shared.generated.resources.cd_search
+import projectphoenix.shared.generated.resources.clear_all
+import projectphoenix.shared.generated.resources.clear_logs_message
+import projectphoenix.shared.generated.resources.clear_logs_title
+import projectphoenix.shared.generated.resources.copy_to_clipboard
+import projectphoenix.shared.generated.resources.export_logs
+import projectphoenix.shared.generated.resources.log_level_count
+import projectphoenix.shared.generated.resources.logs_ready_to_export
+import projectphoenix.shared.generated.resources.search_logs
 
 /**
  * Connection logs screen - shows BLE connection history with filtering.

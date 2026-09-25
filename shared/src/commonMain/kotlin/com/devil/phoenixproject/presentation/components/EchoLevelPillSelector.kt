@@ -30,8 +30,8 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.rest_echo_level
 
 /**
  * Shared pill selector for Echo level (Hard / Harder / Hardest / Epic).

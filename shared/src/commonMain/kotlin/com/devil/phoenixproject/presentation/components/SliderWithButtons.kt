@@ -27,9 +27,9 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_decrease
-import vitruvianprojectphoenix.shared.generated.resources.cd_increase
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_decrease
+import projectphoenix.shared.generated.resources.cd_increase
 
 /**
  * Hybrid slider with fine-tuning +/- buttons
@@ -55,7 +55,9 @@ fun SliderWithButtons(
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
     val shouldStackHeader = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact && fontScale >= 1.15f
-    val formattedValue = formatValue(value)
+    // KD-9: the range can be narrower than the incoming value (a stored 105 kg/cable set on a
+    // 100 kg V-Form). Label what the slider actually represents, not the out-of-range value.
+    val formattedValue = formatValue(value.coerceIn(valueRange))
 
     Column(
         modifier = modifier.fillMaxWidth(),

@@ -6,5 +6,5 @@ Phoenix substitutes only the Android variant of Kable with this project. The com
 metadata and non-Android variants still come from the upstream `kable-core`
 dependency. The local patch is intentionally narrow: Android characteristic
 writes use the legacy one-argument `BluetoothGatt.writeCharacteristic(...)`
-path on all API levels, matching the official Vitruvian app while preserving
+path on all API levels, which is the write shape the trainer firmware reliably accepts, while preserving
 Kable's operation guard and callback handling.

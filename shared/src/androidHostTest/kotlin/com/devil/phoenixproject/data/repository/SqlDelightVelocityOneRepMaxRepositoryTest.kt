@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
@@ -12,10 +12,10 @@ import kotlinx.coroutines.test.runTest
 
 class SqlDelightVelocityOneRepMaxRepositoryTest {
 
-    private fun createInMemoryTestDatabase(): VitruvianDatabase = createTestDatabase()
+    private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
 
-    private fun seedExercise(db: VitruvianDatabase, id: String) {
-        db.vitruvianDatabaseQueries.insertExercise(
+    private fun seedExercise(db: PhoenixDatabase, id: String) {
+        db.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = id,
             displayName = null,

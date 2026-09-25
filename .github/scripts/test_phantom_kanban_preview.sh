@@ -198,7 +198,7 @@ def make_deleted_resource_patch(path, repo, resource, payload):
 
 
 def make_nul_swift_patch(path):
-    name = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Opaque.swift"
+    name = "iosApp/PhoenixApp/PhoenixApp/Opaque.swift"
     write_private(path, (
         f"diff --git a/{name} b/{name}\n"
         "new file mode 100644\n"

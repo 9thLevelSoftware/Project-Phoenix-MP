@@ -1,11 +1,134 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 class PortalPullAdapterTest {
+
+    @Test
+    fun `complete cycle push round trips through pull wire DTO`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-round-trip",
+            name = "Round trip",
+            days = listOf(
+                CycleDay(
+                    id = "day-round-trip",
+                    cycleId = "cycle-round-trip",
+                    dayNumber = 1,
+                    name = "Day one",
+                    routineId = "routine-1",
+                    isRestDay = false,
+                    echoLevel = EchoLevel.EPIC,
+                    eccentricLoadPercent = 140,
+                ),
+            ),
+        )
+        val progress = CycleProgress(
+            id = "local-progress-id",
+            cycleId = cycle.id,
+            currentDayNumber = 2,
+            lastCompletedDate = 200L,
+            cycleStartDate = 100L,
+            lastAdvancedAt = 150L,
+            completedDays = setOf(3, 1),
+            missedDays = setOf(4, 2),
+            rotationCount = 6,
+        )
+        val pushed = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = cycle,
+                progress = progress,
+                progression = CycleProgression(
+                    cycleId = cycle.id,
+                    frequencyCycles = 4,
+                    weightIncreasePercent = 3f,
+                    echoLevelIncrease = true,
+                    eccentricLoadIncreasePercent = 15,
+                ),
+            ),
+            userId = "user-1",
+        )
+
+        val pulled = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            normalizedPullWireJson(pushed),
+        )
+
+        assertEquals(true, pulled.progressionSettingsPresent)
+        assertEquals(pushed.progressionSettings, pulled.progressionSettings)
+        assertEquals(true, pulled.progressStatePresent)
+        assertEquals(pushed.progressState, pulled.progressState)
+        with(pulled.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertEquals(EchoLevel.EPIC.name, echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertEquals(140, eccentricLoadPercent)
+        }
+    }
+
+    @Test
+    fun `cycle pull distinguishes legacy omission from authoritative clears`() {
+        val legacy = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            """{"id":"legacy-cycle","name":"Legacy","days":[{"id":"legacy-day"}]}""",
+        )
+        assertNull(legacy.progressionSettingsPresent)
+        assertNull(legacy.progressionSettings)
+        assertNull(legacy.progressStatePresent)
+        assertNull(legacy.progressState)
+        with(legacy.days.single()) {
+            assertNull(echoLevelPresent)
+            assertNull(echoLevel)
+            assertNull(eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
+
+        val clearCycle = TrainingCycle.create(
+            id = "clear-cycle",
+            name = "Clear",
+            days = listOf(CycleDay.restDay(cycleId = "clear-cycle", dayNumber = 1)),
+        )
+        val pushedClear = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(clearCycle, progress = null),
+            userId = "user-1",
+        )
+        val pulledClear = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            normalizedPullWireJson(pushedClear),
+        )
+
+        assertEquals(true, pulledClear.progressionSettingsPresent)
+        assertNull(pulledClear.progressionSettings)
+        assertEquals(true, pulledClear.progressStatePresent)
+        assertNull(pulledClear.progressState)
+        with(pulledClear.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertNull(echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
+    }
+
+    /** The portal normalizes the push ISO clock to epoch milliseconds in pull responses. */
+    private fun normalizedPullWireJson(pushed: PortalTrainingCycleSyncDto): String {
+        val pushWire = PortalWireJson.parseToJsonElement(
+            PortalWireJson.encodeToString(PortalTrainingCycleSyncDto.serializer(), pushed),
+        ).jsonObject
+        val updatedAtMillis = Instant.parse(requireNotNull(pushed.updatedAt)).toEpochMilliseconds()
+        return JsonObject(pushWire + ("updatedAt" to JsonPrimitive(updatedAtMillis))).toString()
+    }
 
     // ========== portalModeToMobileMode ==========
 
@@ -117,6 +240,46 @@ class PortalPullAdapterTest {
     fun `parseEchoLevel is case insensitive`() {
         assertEquals(0L, PortalPullAdapter.parseEchoLevel("hard"))
         assertEquals(3L, PortalPullAdapter.parseEchoLevel("Epic"))
+    }
+
+    // ========== PullRoutineExerciseDto.durationSeconds ==========
+
+    private fun decodeSingleExercise(exerciseJson: String): PullRoutineExerciseDto =
+        PortalWireJson.decodeFromString(
+            PullRoutineDto.serializer(),
+            """{"id":"routine-1","name":"R","exercises":[$exerciseJson]}""",
+        ).exercises.single()
+
+    @Test
+    fun `pulled routine exercise decodes durationSeconds`() {
+        val dto = decodeSingleExercise("""{"id":"rex-1","durationSeconds":45}""")
+
+        assertEquals(45, dto.durationSeconds)
+        assertTrue(dto.durationSecondsPresent)
+    }
+
+    @Test
+    fun `pulled routine exercise tells an explicit null from an absent durationSeconds`() {
+        val explicitNull = decodeSingleExercise("""{"id":"rex-1","durationSeconds":null}""")
+        val absent = decodeSingleExercise("""{"id":"rex-2"}""")
+
+        assertNull(explicitNull.durationSeconds)
+        assertTrue(explicitNull.durationSecondsPresent)
+        assertNull(absent.durationSeconds)
+        assertFalse(absent.durationSecondsPresent)
+    }
+
+    @Test
+    fun `sanitizeDurationSeconds accepts only the app supported duration range`() {
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(-5))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(0))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(9))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(null))
+        assertEquals(10, PortalSyncAdapter.sanitizeDurationSeconds(10))
+        assertEquals(45, PortalSyncAdapter.sanitizeDurationSeconds(45))
+        assertEquals(300, PortalSyncAdapter.sanitizeDurationSeconds(300))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(301))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(Int.MAX_VALUE))
     }
 
     // ========== toRoutineSyncDto ==========
@@ -299,6 +462,23 @@ class PortalPullAdapterTest {
         assertEquals(5, result.reps)
     }
 
+    @Test
+    fun `toPersonalRecordSyncDto preserves portal deletion and LWW timestamps`() {
+        val pr = PullPersonalRecordDto(
+            id = "pr-row-uuid",
+            exerciseName = "Bench Press",
+            recordType = "MAX_WEIGHT",
+            achievedAt = "2026-01-01T00:00:00Z",
+            updatedAt = "2026-01-02T00:00:00Z",
+            deletedAt = "2026-01-03T00:00:00Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "catalog-bench")
+
+        assertEquals(1767312000000L, result.updatedAt)
+        assertEquals(1767398400000L, result.deletedAt)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makePullRoutineDto(
@@ -369,5 +549,50 @@ class PortalPullAdapterTest {
         // A reasonable "recent" epoch: 2025-01-01T00:00:00Z = 1735689600000
         // Tests just need to verify the value is "recent", not exact
         return 1735689600000L
+    }
+
+    // ========== cycle server versions (baseUpdatedAt contract) ==========
+
+    @Test
+    fun `pulled cycle updatedAt decodes verbatim with full precision`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1,"cycles":[{"id":"c1","name":"C","updatedAt":"2026-09-19T10:11:12.123456+00:00"}]}""",
+        )
+        assertEquals("2026-09-19T10:11:12.123456+00:00", response.cycles.single().updatedAt)
+    }
+
+    @Test
+    fun `numeric cycle updatedAt remains readable during wire contract transition`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1,"cycles":[{"id":"c1","name":"C","updatedAt":1758276672123}]}""",
+        )
+
+        assertEquals("2025-09-19T10:11:12.123Z", response.cycles.single().updatedAt)
+    }
+
+    @Test
+    fun `pulled cycle without updatedAt from an older portal decodes as null`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1,"cycles":[{"id":"c1","name":"C"}]}""",
+        )
+        assertNull(response.cycles.single().updatedAt)
+    }
+
+    @Test
+    fun `push response cycleVersions decodes and defaults to empty on older portals`() {
+        val withVersions = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-09-19T00:00:00Z","cycleVersions":{"c1":"2026-09-19T10:11:12.123456+00:00"}}""",
+        )
+        assertEquals(mapOf("c1" to "2026-09-19T10:11:12.123456+00:00"), withVersions.cycleVersions)
+
+        val legacy = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-09-19T00:00:00Z"}""",
+        )
+        assertTrue(legacy.cycleVersions.isEmpty())
     }
 }

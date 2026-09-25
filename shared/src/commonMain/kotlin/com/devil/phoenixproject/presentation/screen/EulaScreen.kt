@@ -27,10 +27,10 @@ import com.devil.phoenixproject.presentation.util.eulaCanAccept
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_eula_accept
-import vitruvianprojectphoenix.shared.generated.resources.cd_eula_age_confirmation
-import vitruvianprojectphoenix.shared.generated.resources.cd_eula_content
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_eula_accept
+import projectphoenix.shared.generated.resources.cd_eula_age_confirmation
+import projectphoenix.shared.generated.resources.cd_eula_content
 
 /**
  * Full-screen EULA acceptance screen.
@@ -310,7 +310,7 @@ private fun EulaContent() {
             content = null,
         )
         Text(
-            text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY VITRUVIAN INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
+            text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY PHOENIX INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = onSurface,
                 fontWeight = FontWeight.Bold,

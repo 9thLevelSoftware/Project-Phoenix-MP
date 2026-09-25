@@ -1,10 +1,8 @@
 package com.devil.phoenixproject.di
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.migration.MigrationManager
 import org.koin.core.context.startKoin
 import org.koin.dsl.KoinAppDeclaration
-import org.koin.mp.KoinPlatform
 
 fun initKoin(appDeclaration: KoinAppDeclaration = {}) = startKoin {
     appDeclaration()
@@ -31,22 +29,5 @@ internal fun doInitKoinInternal() {
         Logger.e { "iOS: Exception: ${e::class.simpleName}" }
         Logger.e { "iOS: Message: ${e.message}" }
         throw e
-    }
-}
-
-/**
- * Helper function for iOS to run migrations after Koin initialization.
- * Call this from Swift: KoinInitKt.runMigrations()
- * This mirrors Android's VitruvianApp.onCreate() migration call.
- */
-fun runMigrations() {
-    Logger.i { "iOS: Starting required migration gate..." }
-    try {
-        val koin = KoinPlatform.getKoin()
-        val migrationManager = koin.get<MigrationManager>()
-        migrationManager.checkAndRunMigrations()
-        Logger.i { "iOS: Required migration gate started" }
-    } catch (e: Exception) {
-        Logger.e(e) { "Failed to start required migrations on iOS" }
     }
 }

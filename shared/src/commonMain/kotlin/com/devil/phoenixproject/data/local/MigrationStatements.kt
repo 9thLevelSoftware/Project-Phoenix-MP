@@ -515,6 +515,25 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
     19 -> listOf(
         "ALTER TABLE PersonalRecord ADD COLUMN phase TEXT NOT NULL DEFAULT 'COMBINED'",
         "DROP INDEX IF EXISTS idx_pr_unique",
+        """
+        DELETE FROM PersonalRecord
+        WHERE id IN (
+            SELECT duplicate.id
+            FROM PersonalRecord AS duplicate
+            WHERE EXISTS (
+                SELECT 1
+                FROM PersonalRecord AS keeper
+                WHERE keeper.exerciseId = duplicate.exerciseId
+                  AND keeper.workoutMode = duplicate.workoutMode
+                  AND keeper.prType = duplicate.prType
+                  AND keeper.phase = duplicate.phase
+                  AND (
+                      keeper.achievedAt > duplicate.achievedAt
+                      OR (keeper.achievedAt = duplicate.achievedAt AND keeper.id > duplicate.id)
+                  )
+            )
+        )
+        """.trimIndent(),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)",
     )
 
@@ -703,6 +722,32 @@ WHERE gs.rowid = (
     31 -> listOf(
         "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER",
         "DROP INDEX IF EXISTS idx_external_activity_dedup",
+        """
+        DELETE FROM ExternalActivity
+        WHERE id IN (
+            SELECT duplicate.id
+            FROM ExternalActivity AS duplicate
+            WHERE EXISTS (
+                SELECT 1
+                FROM ExternalActivity AS keeper
+                WHERE keeper.provider = duplicate.provider
+                  AND keeper.externalId = duplicate.externalId
+                  AND keeper.profileId = duplicate.profileId
+                  AND (
+                      keeper.syncedAt > duplicate.syncedAt
+                      OR (
+                          keeper.syncedAt = duplicate.syncedAt
+                          AND keeper.startedAt > duplicate.startedAt
+                      )
+                      OR (
+                          keeper.syncedAt = duplicate.syncedAt
+                          AND keeper.startedAt = duplicate.startedAt
+                          AND keeper.id > duplicate.id
+                      )
+                  )
+            )
+        )
+        """.trimIndent(),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
         """CREATE TABLE IF NOT EXISTS ExternalRoutine (
             id TEXT NOT NULL PRIMARY KEY,
@@ -917,24 +962,16 @@ WHERE gs.rowid = (
     39 -> listOf(
         "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER",
         "ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER",
-        """UPDATE Exercise SET isBodyweight = 0 WHERE id IN (
-        'UjIGHxCav-lS9B2I',
-        'enuJ_FgAzXDLAweK',
-        'KoL_gx00nuf2wncV',
-        'kSLyRg4bjLuzTeIM',
-        '2nTn2QR6MyezFYmK',
-        'fAglxv8VMaisUTyo'
+        """UPDATE Exercise SET isBodyweight = 0
+    WHERE isCustom = 0 AND TRIM(name) IN (
+        'Squat',
+        'Good Morning',
+        'Medial Delt Twist',
+        'Kneeling 45 Degree Kickback',
+        'Just Lift exercise'
     )""",
         """UPDATE RoutineExercise SET isBodyweight = 1, exerciseEquipment = ''
     WHERE exerciseEquipment = 'Bodyweight'""",
-        """UPDATE RoutineExercise SET isBodyweight = 0 WHERE exerciseId IN (
-        'UjIGHxCav-lS9B2I',
-        'enuJ_FgAzXDLAweK',
-        'KoL_gx00nuf2wncV',
-        'kSLyRg4bjLuzTeIM',
-        '2nTn2QR6MyezFYmK',
-        'fAglxv8VMaisUTyo'
-    )""",
         """UPDATE RoutineExercise SET isBodyweight = 0
     WHERE isBodyweight IS NULL AND TRIM(exerciseName) IN (
         'Squat',
@@ -1014,6 +1051,230 @@ WHERE gs.rowid = (
     )""",
         """INSERT OR IGNORE INTO UserProfilePreferences(profile_id)
     SELECT id FROM UserProfile""",
+    )
+
+    // Migration 43: replace streamed demo videos with openly-licensed still images.
+    // Mirrors 43.sqm exactly.
+    43 -> listOf(
+        "DELETE FROM ExerciseVideo",
+        "DROP TABLE IF EXISTS ExerciseVideo",
+        """CREATE TABLE ExerciseImage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        url TEXT NOT NULL,
+        sortOrder INTEGER NOT NULL,
+        FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+        "CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId)",
+        "UPDATE Exercise SET archived = 1 WHERE isCustom = 0",
+    )
+
+    // Migration 44: Add set_end_reason to CompletedSet (Issue #673 PR 1)
+    // Mirrors 44.sqm exactly.
+    44 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
+    )
+
+    // Migration 45: Persist routine occurrence and logical attempt identity (Issue #673 PR 2)
+    // Mirrors 45.sqm exactly.
+    45 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+        "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+        """CREATE TABLE ActiveWorkoutRuntime (
+        profile_id TEXT NOT NULL,
+        routine_session_id TEXT NOT NULL,
+        document_version INTEGER NOT NULL,
+        runtime_json TEXT NOT NULL,
+        updated_at_epoch_ms INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, routine_session_id)
+    )""",
+    )
+
+    // Migration 46: Opt-in drop-set offer configuration (Issue #673 PR 3)
+    // Mirrors 46.sqm exactly.
+    46 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
+    )
+
+    // Migration 47: durable trainer-keyed machine safety obligation (#769)
+    // Mirrors 47.sqm exactly.
+    47 -> listOf(
+        """CREATE TABLE MachineSafetyHazard (
+        trainer_address TEXT NOT NULL PRIMARY KEY,
+        generation INTEGER NOT NULL,
+        document_version INTEGER NOT NULL,
+        hazard_json TEXT NOT NULL,
+        updated_at_epoch_ms INTEGER NOT NULL
+    )""",
+    )
+
+    // Migration 48: non-destructive session sync provenance and scoped baselines.
+    // Mirrors 48.sqm exactly.
+    48 -> listOf(
+        "ALTER TABLE WorkoutSession ADD COLUMN portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1))",
+        """CREATE TABLE ProfileExerciseBaseline (
+        profile_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        one_rep_max_per_cable_kg REAL,
+        updated_at INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+        PRIMARY KEY (profile_id, exercise_id),
+        FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+        FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+        "CREATE INDEX idx_profile_exercise_baseline_exercise ON ProfileExerciseBaseline(exercise_id)",
+    )
+
+    // Migration 49: durable startup recovery, ownership transfer, and workout sync operations.
+    // Mirrors 49.sqm exactly.
+    49 -> listOf(
+        "ALTER TABLE WorkoutSession ADD COLUMN local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0)",
+        """ALTER TABLE WorkoutSession ADD COLUMN synced_sync_generation INTEGER NOT NULL DEFAULT 0
+        CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)""",
+        """CREATE TABLE AppliedDataRepair (
+        repair_key TEXT PRIMARY KEY NOT NULL,
+        applied_at INTEGER NOT NULL
+    )""",
+        """CREATE TABLE PendingProfileRecovery (
+        recovery_id TEXT PRIMARY KEY NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
+        source_key TEXT NOT NULL UNIQUE,
+        source_profile_id TEXT,
+        source_profile_name TEXT NOT NULL,
+        owner_user_id TEXT,
+        counts_json TEXT NOT NULL,
+        discovered_at INTEGER NOT NULL,
+        resolved_at INTEGER
+    )""",
+        """CREATE TABLE OwnershipTransferOutbox (
+        mutation_id TEXT PRIMARY KEY NOT NULL,
+        owner_user_id TEXT NOT NULL,
+        source_profile_id TEXT,
+        target_profile_id TEXT NOT NULL,
+        workout_session_ids_json TEXT NOT NULL,
+        routine_ids_json TEXT NOT NULL,
+        cycle_ids_json TEXT NOT NULL,
+        personal_record_ids_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        acknowledged_at INTEGER,
+        CHECK(
+            workout_session_ids_json <> '[]' OR
+            routine_ids_json <> '[]' OR
+            cycle_ids_json <> '[]' OR
+            personal_record_ids_json <> '[]'
+        )
+    )""",
+        """CREATE TABLE AppliedOwnershipEvent (
+        owner_user_id TEXT NOT NULL,
+        mutation_id TEXT NOT NULL,
+        canonical_body_hash TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY (owner_user_id, mutation_id)
+    )""",
+        """CREATE TABLE WorkoutDeletion (
+        mutation_id TEXT NOT NULL PRIMARY KEY,
+        owner_user_id TEXT,
+        profile_id TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK(scope IN ('COMPONENT', 'WORKOUT')),
+        portal_session_id TEXT NOT NULL,
+        component_session_id TEXT,
+        deleted_at INTEGER NOT NULL,
+        acknowledged_at INTEGER,
+        source TEXT NOT NULL CHECK(source IN ('LOCAL', 'REMOTE')),
+        CHECK(
+            (scope = 'COMPONENT' AND component_session_id IS NOT NULL) OR
+            (scope = 'WORKOUT' AND component_session_id IS NULL)
+        )
+    )""",
+        """CREATE INDEX idx_workout_deletion_pending
+        ON WorkoutDeletion(owner_user_id, profile_id, source, acknowledged_at, deleted_at, mutation_id)""",
+        """CREATE INDEX idx_workout_deletion_target
+        ON WorkoutDeletion(owner_user_id, portal_session_id, component_session_id, scope)""",
+    )
+
+    // Migration 50: cycle LWW clocks, durable generations/deletions, and conflict drafts.
+    // The fallback first heals profile_id because that legacy column is reconciled
+    // outside numbered migrations; a direct old-version upgrade can otherwise fail
+    // the CycleSyncState seed before on-open reconciliation gets a chance to run.
+    50 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+        "ALTER TABLE TrainingCycle ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0",
+        "UPDATE TrainingCycle SET updatedAt = created_at WHERE updatedAt = 0",
+        """CREATE TABLE CycleSyncState (
+        cycle_id TEXT PRIMARY KEY NOT NULL,
+        profile_id TEXT NOT NULL,
+        account_id TEXT,
+        dirty_generation INTEGER NOT NULL DEFAULT 1,
+        acknowledged_generation INTEGER NOT NULL DEFAULT 0,
+        pending_delete_updated_at INTEGER,
+        pending_delete_generation INTEGER,
+        FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+    )""",
+        """INSERT INTO CycleSyncState(
+        cycle_id, profile_id, account_id, dirty_generation, acknowledged_generation,
+        pending_delete_updated_at, pending_delete_generation
+    )
+    SELECT id, profile_id, NULL, 1, 0, deletedAt, CASE WHEN deletedAt IS NULL THEN NULL ELSE 1 END
+    FROM TrainingCycle""",
+        """CREATE TABLE CycleConflictDraft (
+        id TEXT PRIMARY KEY NOT NULL,
+        cycle_id TEXT NOT NULL,
+        original_profile_id TEXT NOT NULL,
+        rejected_updated_at INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        resolution TEXT
+    )""",
+        """CREATE INDEX idx_cycle_conflict_draft_profile_cycle
+        ON CycleConflictDraft(original_profile_id, cycle_id)""",
+    )
+
+    // Migration 51: retained account ownership claims for transferred stable entities.
+    // Mirrors 51.sqm exactly.
+    51 -> listOf(
+        """CREATE TABLE LocalOwnershipClaim (
+        owner_user_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('WORKOUT', 'ROUTINE', 'CYCLE', 'PERSONAL_RECORD')),
+        entity_id TEXT NOT NULL,
+        mutation_id TEXT NOT NULL,
+        source_profile_id TEXT,
+        target_profile_id TEXT NOT NULL,
+        transferred_at INTEGER NOT NULL,
+        PRIMARY KEY (owner_user_id, entity_type, entity_id)
+    )""",
+        """CREATE INDEX idx_local_ownership_claim_mutation
+        ON LocalOwnershipClaim(owner_user_id, mutation_id)""",
+    )
+
+    // Migration 52: portal version of each training cycle (sent as baseUpdatedAt).
+    // Mirrors 52.sqm exactly.
+    52 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT",
+    )
+
+    // Migration 53: remember whether routine duration is authoritative for sync.
+    // Mirrors 53.sqm exactly.
+    53 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0",
+    )
+
+    // Migration 54: entities the current portal user must never upload after an
+    // account switch. Mirrors 54.sqm exactly.
+    54 -> listOf(
+        """CREATE TABLE SyncExcludedEntity (
+        portal_user_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        PRIMARY KEY (portal_user_id, entity_type, entity_id)
+    )""",
+    )
+
+    // Migration 55: routine-group and catalogue-remap indexes on migration-guaranteed
+    // columns (the profile_id-scoped ones are heal-only). Mirrors 55.sqm exactly.
+    55 -> listOf(
+        "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
     )
 
     else -> emptyList()

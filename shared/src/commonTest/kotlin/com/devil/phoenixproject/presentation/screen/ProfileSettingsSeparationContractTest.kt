@@ -86,7 +86,6 @@ class ProfileSettingsSeparationContractTest {
         "onAdultsOnlyPromptedChange",
         "onPlayDominatrixUnlockSound",
         "onNavigateToBadges",
-        "UserProfileRepository",
         "ExternalMeasurementRepository",
         "SafeWordCalibrationDialog",
         "AdultsOnlyConfirmDialog",
@@ -161,7 +160,7 @@ class ProfileSettingsSeparationContractTest {
                 onEnableVideoPlaybackChange: (Boolean) -> Unit,
                 onThemeModeChange: (ThemeMode) -> Unit,
                 onDynamicColorEnabledChange: (Boolean) -> Unit,
-                onDeleteAllWorkouts: () -> Unit,
+                onDeleteAllWorkouts: (String) -> Unit,
                 onNavigateToConnectionLogs: () -> Unit,
                 onNavigateToDiagnostics: () -> Unit,
                 onNavigateToLinkAccount: () -> Unit,
@@ -174,6 +173,8 @@ class ProfileSettingsSeparationContractTest {
                 onBleCompatibilityModeChange: (BleCompatibilitySetting) -> Unit,
                 autoBackupEnabled: Boolean,
                 onAutoBackupEnabledChange: (Boolean) -> Unit,
+                includeRawTelemetryInBackups: Boolean,
+                onIncludeRawTelemetryInBackupsChange: (Boolean) -> Unit,
                 backupStats: BackupStats?,
                 onOpenBackupFolder: () -> Unit,
                 backupDestination: BackupDestination,
@@ -189,11 +190,22 @@ class ProfileSettingsSeparationContractTest {
 
     @Test
     fun settingsContainsNoCanonicalProfileOwnedSymbolOrModalState() {
+        val settingsTab = functionSource(source(settingsPath), "SettingsTab")
         assertNoCanonicalSymbols(
-            functionSource(source(settingsPath), "SettingsTab"),
+            settingsTab,
             settingsForbiddenSymbols,
             "SettingsTab",
         )
+        // Durable delete-all is the narrow profile-aware exception in global Settings: the
+        // confirmation must retain the profile shown when the user opened it. Recovery UI is
+        // likewise hosted here, while canonical preference editing remains on ProfileScreen.
+        listOf(
+            "val userProfileRepository: UserProfileRepository = koinInject()",
+            "val activeProfile by userProfileRepository.activeProfile.collectAsState()",
+            "onClick = { deleteAllTarget = activeProfile }",
+            "onDeleteAllWorkouts(targetProfile.id)",
+            "ProfileRecoverySettingsSection(",
+        ).forEach { permittedScope -> assertContains(settingsTab, permittedScope) }
     }
 
     @Test
@@ -247,6 +259,7 @@ class ProfileSettingsSeparationContractTest {
             "onNavigateToLinkAccount",
             "onNavigateToIntegrations",
             "autoBackupEnabled",
+            "includeRawTelemetryInBackups",
             "backupDestination",
             "backupStats",
             "onOpenBackupFolder",
@@ -349,6 +362,7 @@ class ProfileSettingsSeparationContractTest {
             "dynamicColorEnabled = dynamicColorEnabled",
             "bleCompatibilityMode = globalSettings.bleCompatibilityMode",
             "autoBackupEnabled = globalSettings.autoBackupEnabled",
+            "includeRawTelemetryInBackups = globalSettings.includeRawTelemetryInBackups",
             "backupStats = backupStats",
             "backupDestination = globalSettings.backupDestination",
             "selectedLanguage = globalSettings.language",
@@ -367,6 +381,7 @@ class ProfileSettingsSeparationContractTest {
             "onTestSounds" to "testSounds",
             "onBleCompatibilityModeChange" to "setBleCompatibilityMode",
             "onAutoBackupEnabledChange" to "setAutoBackupEnabled",
+            "onIncludeRawTelemetryInBackupsChange" to "setIncludeRawTelemetryInBackups",
             "onOpenBackupFolder" to "openBackupFolder",
             "onBackupDestinationChange" to "setBackupDestination",
             "onLanguageChange" to "setLanguage",
@@ -441,6 +456,7 @@ class ProfileSettingsSeparationContractTest {
                 enableVideoPlayback = enableVideoPlayback,
                 bleCompatibilityMode = bleCompatibilityMode,
                 autoBackupEnabled = autoBackupEnabled,
+                includeRawTelemetryInBackups = includeRawTelemetryInBackups,
                 backupDestination = backupDestination,
                 language = language,
             )

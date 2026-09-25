@@ -1,19 +1,19 @@
 package com.devil.phoenixproject.data.repository
 
-import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
-import com.devil.phoenixproject.data.sync.AuthEvent
+import com.devil.phoenixproject.data.sync.PendingAccountMismatch
 import com.devil.phoenixproject.data.sync.PortalApiClient
-import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.data.sync.commitPortalIdentityUnderProfileMutationBarrier
 import com.devil.phoenixproject.data.sync.toPortalAuthResponse
 import io.ktor.http.Url
 import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -35,13 +35,51 @@ import kotlinx.coroutines.launch
  * as the process. However, [close] should still be called during DI cleanup or testing to ensure
  * clean shutdown of background jobs (session restoration, auth state derivation).
  */
-class PortalAuthRepository(
+class PortalAuthRepository private constructor(
     private val apiClient: PortalApiClient,
     private val tokenStorage: PortalTokenStorage,
     private val userProfileRepository: UserProfileRepository,
     private val supabaseConfig: SupabaseConfig,
-    private val oauthLauncher: OAuthLauncher,
+    private val launchOAuth: suspend (String, String) -> Result<String>,
+    private val profileMutationBarrier: ProfileMutationBarrier,
+    private val pendingAccountMismatch: PendingAccountMismatch,
 ) : AuthRepository {
+
+    constructor(
+        apiClient: PortalApiClient,
+        tokenStorage: PortalTokenStorage,
+        userProfileRepository: UserProfileRepository,
+        supabaseConfig: SupabaseConfig,
+        oauthLauncher: OAuthLauncher,
+        profileMutationBarrier: ProfileMutationBarrier,
+        pendingAccountMismatch: PendingAccountMismatch,
+    ) : this(
+        apiClient,
+        tokenStorage,
+        userProfileRepository,
+        supabaseConfig,
+        oauthLauncher::launch,
+        profileMutationBarrier,
+        pendingAccountMismatch,
+    )
+
+    internal constructor(
+        apiClient: PortalApiClient,
+        tokenStorage: PortalTokenStorage,
+        userProfileRepository: UserProfileRepository,
+        supabaseConfig: SupabaseConfig,
+        profileMutationBarrier: ProfileMutationBarrier,
+        launchOAuth: suspend (String, String) -> Result<String>,
+        pendingAccountMismatch: PendingAccountMismatch,
+    ) : this(
+        apiClient,
+        tokenStorage,
+        userProfileRepository,
+        supabaseConfig,
+        launchOAuth,
+        profileMutationBarrier,
+        pendingAccountMismatch,
+    )
 
     companion object {
         /**
@@ -96,24 +134,15 @@ class PortalAuthRepository(
 
     override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> {
         val displayName = email.substringBefore("@")
-        return apiClient.signUp(email, password, displayName)
-            .onSuccess { goTrueResponse ->
-                tokenStorage.saveGoTrueAuth(goTrueResponse)
-                linkUserProfile(goTrueResponse.user.id)
-            }
-            .map { goTrueResponse ->
-                goTrueResponse.toPortalAuthResponse().user.toAuthUser()
-            }
+        val response = apiClient.signUp(email, password, displayName)
+            .getOrElse { return Result.failure(it) }
+        return commitAuthenticatedIdentity(response)
     }
 
-    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> = apiClient.signIn(email, password)
-        .onSuccess { goTrueResponse ->
-            tokenStorage.saveGoTrueAuth(goTrueResponse)
-            linkUserProfile(goTrueResponse.user.id)
-        }
-        .map { goTrueResponse ->
-            goTrueResponse.toPortalAuthResponse().user.toAuthUser()
-        }
+    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> {
+        val response = apiClient.signIn(email, password).getOrElse { return Result.failure(it) }
+        return commitAuthenticatedIdentity(response)
+    }
 
     override suspend fun signInWithGoogle(): Result<AuthUser> = signInWithOAuth(OAuthProvider.GOOGLE)
 
@@ -137,7 +166,7 @@ class PortalAuthRepository(
             redirectUrl = OAUTH_CALLBACK_URL,
         )
 
-        val callbackResult = oauthLauncher.launch(authorizeUrl, OAUTH_CALLBACK_SCHEME)
+        val callbackResult = launchOAuth(authorizeUrl, OAUTH_CALLBACK_SCHEME)
         val callbackUrl = callbackResult.getOrElse { return Result.failure(it) }
 
         // Defence-in-depth: Android deep-link schemes can be invoked by any
@@ -152,14 +181,9 @@ class PortalAuthRepository(
                 Exception(extractErrorMessage(callbackUrl) ?: "OAuth callback missing auth code"),
             )
 
-        return apiClient.exchangeOAuthCode(authCode = code, codeVerifier = pkce.verifier)
-            .onSuccess { goTrueResponse ->
-                tokenStorage.saveGoTrueAuth(goTrueResponse)
-                linkUserProfile(goTrueResponse.user.id)
-            }
-            .map { goTrueResponse ->
-                goTrueResponse.toPortalAuthResponse().user.toAuthUser()
-            }
+        val response = apiClient.exchangeOAuthCode(authCode = code, codeVerifier = pkce.verifier)
+            .getOrElse { return Result.failure(it) }
+        return commitAuthenticatedIdentity(response)
     }
 
     private fun isExpectedOAuthCallback(callbackUrl: String): Boolean = isExpectedOAuthCallbackUrl(
@@ -177,36 +201,18 @@ class PortalAuthRepository(
 
     override suspend fun signOut(): Result<Unit> {
         apiClient.signOut()
-        tokenStorage.clearAuth()
+        profileMutationBarrier.withExclusive { tokenStorage.clearAuth() }
         return Result.success(Unit)
     }
 
-    override suspend fun refreshSession(): Result<Unit> {
-        val refreshToken = tokenStorage.getRefreshToken()
-            ?: return Result.failure(Exception("No refresh token available"))
-
-        return apiClient.refreshToken(refreshToken)
-            .onSuccess { goTrueResponse ->
-                tokenStorage.saveGoTrueAuth(goTrueResponse)
-            }
-            .map { }
-            .onFailure { error ->
-                // F003: classify by structured HTTP status, not brittle, case-
-                // sensitive message substrings. GoTrue/Portal permanent auth
-                // failures surface as PortalApiException with statusCode 401/403
-                // (messages like "Invalid Refresh Token"/"JWT expired" would slip
-                // past the old substring check, leaving the app falsely
-                // "authenticated"). Clear auth and emit SessionExpired only for
-                // definitive auth failures; preserve tokens for transient/network
-                // failures so a later retry can refresh.
-                val isPermanentAuthFailure = error is PortalApiException &&
-                    (error.statusCode == 401 || error.statusCode == 403)
-                if (isPermanentAuthFailure) {
-                    tokenStorage.clearAuthWithEvent(
-                        AuthEvent.SessionExpired(error.message ?: "Session expired - please log in again"),
-                    )
-                }
-            }
+    /**
+     * Delegates to [PortalApiClient.refreshIfNeeded] so start-up refresh shares the
+     * client's refresh mutex (no duplicate use of one refresh token) and its
+     * failure policy: a revoked/rotated refresh token (GoTrue 400) clears auth and
+     * emits SessionExpired; transient/network failures keep the tokens.
+     */
+    override suspend fun refreshSession(): Result<Unit> = profileMutationBarrier.withExclusive {
+        apiClient.refreshIfNeeded()
     }
 
     /**
@@ -225,15 +231,22 @@ class PortalAuthRepository(
         return Result.success(Unit)
     }
 
-    private suspend fun linkUserProfile(supabaseUserId: String) {
-        try {
-            val activeProfile = userProfileRepository.activeProfile.value
-            if (activeProfile != null && activeProfile.supabaseUserId != supabaseUserId) {
-                userProfileRepository.linkToSupabase(activeProfile.id, supabaseUserId)
-            }
-        } catch (e: Exception) {
-            Logger.w("PortalAuthRepository") { "Failed to link user profile: ${e.message}" }
+    private suspend fun commitAuthenticatedIdentity(
+        response: com.devil.phoenixproject.data.sync.GoTrueAuthResponse,
+    ): Result<AuthUser> = try {
+        profileMutationBarrier.withExclusive {
+            commitPortalIdentityUnderProfileMutationBarrier(
+                response,
+                tokenStorage,
+                userProfileRepository,
+                pendingAccountMismatch,
+            )
         }
+        Result.success(response.toPortalAuthResponse().user.toAuthUser())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 
     fun close() {

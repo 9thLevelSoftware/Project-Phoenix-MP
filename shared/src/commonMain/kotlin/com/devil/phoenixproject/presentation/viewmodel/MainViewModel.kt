@@ -8,6 +8,10 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -16,6 +20,8 @@ import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -25,24 +31,25 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
-import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -56,36 +63,67 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
+import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.components.exercisepicker.recentJustLiftExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyHazardIdentity
+import com.devil.phoenixproject.presentation.manager.MachineSafetyRecoveryRequestResult
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
+import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscardResult
+import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
+import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.currentProfileTestSoundEvents
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DataBackupManager
+import kotlin.coroutines.resume
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -99,6 +137,7 @@ data class SettingsGlobalUiState(
     val enableVideoPlayback: Boolean,
     val bleCompatibilityMode: BleCompatibilitySetting,
     val autoBackupEnabled: Boolean,
+    val includeRawTelemetryInBackups: Boolean,
     val backupDestination: BackupDestination,
     val language: String,
 )
@@ -107,25 +146,399 @@ private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
     enableVideoPlayback = enableVideoPlayback,
     bleCompatibilityMode = bleCompatibilityMode,
     autoBackupEnabled = autoBackupEnabled,
+    includeRawTelemetryInBackups = includeRawTelemetryInBackups,
     backupDestination = backupDestination,
     language = language,
 )
 
-class MainViewModel constructor(
+internal enum class RoutineResumeRetryAction {
+    RESUME,
+    DISCARD,
+}
+
+internal enum class RoutineResumeEntryPoint {
+    DAILY_ROUTINES,
+    HOME_CYCLE,
+    TRAINING_CYCLES,
+}
+
+internal class RoutineResumeActionAuthority(
+    val entryPoint: RoutineResumeEntryPoint,
+    private val actionToken: Int,
+    private val currentToken: () -> Int,
+    contextIsCurrent: () -> Boolean,
+) {
+    private val contextPredicate = contextIsCurrent
+
+    fun tokenIsCurrent(): Boolean = currentToken() == actionToken
+
+    fun contextIsCurrent(): Boolean = contextPredicate()
+
+    fun isCurrent(): Boolean = tokenIsCurrent() && contextIsCurrent()
+
+    suspend fun awaitCurrentPublication(
+        load: suspend (publicationStillCurrent: () -> Boolean) -> Boolean,
+    ): Boolean {
+        if (!isCurrent()) return false
+        val loaded = try {
+            load(::isCurrent)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+        return loaded && isCurrent()
+    }
+
+    fun mayCommitInMemory(handleStillCurrent: Boolean): Boolean = isCurrent() && handleStillCurrent
+
+    fun validateCurrentContext(
+        contextIsValid: Boolean,
+        onCurrentInvalid: () -> Unit,
+    ): Boolean {
+        if (!isCurrent()) return false
+        if (!contextIsValid) {
+            onCurrentInvalid()
+            return false
+        }
+        return true
+    }
+}
+
+internal class RoutineResumeOperationGate {
+    private var token: Int = 0
+    private var job: Job? = null
+
+    val currentToken: Int
+        get() = token
+
+    fun launch(
+        scope: CoroutineScope,
+        block: suspend (actionToken: Int) -> Unit,
+    ): Int {
+        job?.cancel()
+        token += 1
+        val actionToken = token
+        job = scope.launch { block(actionToken) }
+        return actionToken
+    }
+
+    fun supersede() {
+        job?.cancel()
+        job = null
+        token += 1
+    }
+}
+
+internal sealed interface RoutineResumeUiDecision {
+    data object ResumeInMemory : RoutineResumeUiDecision
+    data object NavigateActiveWorkout : RoutineResumeUiDecision
+    data class NavigateManualSetReady(
+        val exerciseIndex: Int,
+        val setIndex: Int,
+    ) : RoutineResumeUiDecision
+    data object EnterFreshRoutine : RoutineResumeUiDecision
+    data class RetainDialog(val retryAction: RoutineResumeRetryAction) : RoutineResumeUiDecision
+    data object DismissDialog : RoutineResumeUiDecision
+}
+
+internal sealed interface RoutineResumeUiOperation {
+    val handle: RoutineResumeHandle
+
+    data class Resume(override val handle: RoutineResumeHandle) : RoutineResumeUiOperation
+    data class Restart(override val handle: RoutineResumeHandle) : RoutineResumeUiOperation
+    data class RetryManualLoad(
+        override val handle: RoutineResumeHandle.Persisted,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+    ) : RoutineResumeUiOperation
+}
+
+internal sealed interface RoutineResumeUiOutcome {
+    data object NavigateActiveWorkout : RoutineResumeUiOutcome
+    data object StartAndNavigateActiveWorkout : RoutineResumeUiOutcome
+    data class EnterSetReady(val exerciseIndex: Int, val setIndex: Int) : RoutineResumeUiOutcome
+    data class EnterDailyOverview(val routine: Routine) : RoutineResumeUiOutcome
+    data class RetainDialog(val retryAction: RoutineResumeRetryAction) : RoutineResumeUiOutcome
+    data object DismissDialog : RoutineResumeUiOutcome
+    data object ConnectionFailed : RoutineResumeUiOutcome
+    data class LoadFailed(
+        val retryOperation: RoutineResumeUiOperation.RetryManualLoad? = null,
+    ) : RoutineResumeUiOutcome
+    data object StaleNoOp : RoutineResumeUiOutcome
+}
+
+internal sealed interface RoutineResumeCompletionDisposition {
+    data object IgnoreStaleToken : RoutineResumeCompletionDisposition
+    data object UnlockRetainedDialog : RoutineResumeCompletionDisposition
+    data class Apply(val outcome: RoutineResumeUiOutcome) : RoutineResumeCompletionDisposition
+}
+
+internal fun classifyRoutineResumeCompletion(
+    tokenCurrent: Boolean,
+    contextCurrent: Boolean,
+    outcome: RoutineResumeUiOutcome,
+): RoutineResumeCompletionDisposition = when {
+    !tokenCurrent -> RoutineResumeCompletionDisposition.IgnoreStaleToken
+
+    !contextCurrent || outcome == RoutineResumeUiOutcome.StaleNoOp ->
+        RoutineResumeCompletionDisposition.UnlockRetainedDialog
+
+    else -> RoutineResumeCompletionDisposition.Apply(outcome)
+}
+
+internal interface RoutineResumeUiPort {
+    suspend fun resume(handle: RoutineResumeHandle): ActiveWorkoutRuntimeResumeResult
+    suspend fun discard(handle: RoutineResumeHandle): RoutineResumeDiscardResult
+    suspend fun awaitConnection(): Boolean
+    fun isInMemoryHandleCurrent(handle: RoutineResumeHandle.InMemory): Boolean
+    suspend fun loadDailyRoutine(
+        routine: Routine,
+        publicationStillCurrent: () -> Boolean,
+    ): Boolean
+    suspend fun loadCycleRoutine(
+        routine: Routine,
+        cycleId: String,
+        dayNumber: Int,
+        publicationStillCurrent: () -> Boolean,
+    ): Boolean
+}
+
+internal suspend fun runRoutineResumeUiOperation(
+    operation: RoutineResumeUiOperation,
+    authority: RoutineResumeActionAuthority,
+    port: RoutineResumeUiPort,
+): RoutineResumeUiOutcome {
+    if (!authority.isCurrent()) return RoutineResumeUiOutcome.StaleNoOp
+    val decision = when (operation) {
+        is RoutineResumeUiOperation.Resume ->
+            routineResumeUiDecision(operation.handle, port.resume(operation.handle))
+
+        is RoutineResumeUiOperation.Restart ->
+            routineResumeDiscardUiDecision(port.discard(operation.handle))
+
+        is RoutineResumeUiOperation.RetryManualLoad ->
+            RoutineResumeUiDecision.NavigateManualSetReady(
+                exerciseIndex = operation.exerciseIndex,
+                setIndex = operation.setIndex,
+            )
+    }
+    if (!authority.isCurrent()) return RoutineResumeUiOutcome.StaleNoOp
+    return routeRoutineResumeUiDecision(
+        handle = operation.handle,
+        decision = decision,
+        authority = authority,
+        port = port,
+    )
+}
+
+private suspend fun routeRoutineResumeUiDecision(
+    handle: RoutineResumeHandle,
+    decision: RoutineResumeUiDecision,
+    authority: RoutineResumeActionAuthority,
+    port: RoutineResumeUiPort,
+): RoutineResumeUiOutcome = when (decision) {
+    RoutineResumeUiDecision.NavigateActiveWorkout ->
+        RoutineResumeUiOutcome.NavigateActiveWorkout
+
+    is RoutineResumeUiDecision.NavigateManualSetReady -> {
+        val loaded = when (authority.entryPoint) {
+            RoutineResumeEntryPoint.DAILY_ROUTINES -> authority.awaitCurrentPublication { stillCurrent ->
+                port.loadDailyRoutine(handle.selectedRoutine, stillCurrent)
+            }
+
+            RoutineResumeEntryPoint.HOME_CYCLE,
+            RoutineResumeEntryPoint.TRAINING_CYCLES,
+            -> {
+                val cycleId = handle.cycleId?.takeIf(String::isNotBlank)
+                val dayNumber = handle.cycleDayNumber?.takeIf { it > 0 }
+                if (cycleId == null || dayNumber == null) {
+                    return if (authority.isCurrent()) {
+                        RoutineResumeUiOutcome.DismissDialog
+                    } else {
+                        RoutineResumeUiOutcome.StaleNoOp
+                    }
+                }
+                authority.awaitCurrentPublication { stillCurrent ->
+                    port.loadCycleRoutine(
+                        routine = handle.selectedRoutine,
+                        cycleId = cycleId,
+                        dayNumber = dayNumber,
+                        publicationStillCurrent = stillCurrent,
+                    )
+                }
+            }
+        }
+        when {
+            !authority.isCurrent() -> RoutineResumeUiOutcome.StaleNoOp
+
+            !loaded -> RoutineResumeUiOutcome.LoadFailed(
+                retryOperation = (handle as? RoutineResumeHandle.Persisted)?.let { persisted ->
+                    RoutineResumeUiOperation.RetryManualLoad(
+                        handle = persisted,
+                        exerciseIndex = decision.exerciseIndex,
+                        setIndex = decision.setIndex,
+                    )
+                },
+            )
+
+            else -> RoutineResumeUiOutcome.EnterSetReady(decision.exerciseIndex, decision.setIndex)
+        }
+    }
+
+    RoutineResumeUiDecision.ResumeInMemory -> {
+        val inMemory = handle as? RoutineResumeHandle.InMemory
+            ?: return RoutineResumeUiOutcome.DismissDialog
+        if (!port.isInMemoryHandleCurrent(inMemory)) {
+            return RoutineResumeUiOutcome.DismissDialog
+        }
+        val connected = port.awaitConnection()
+        when {
+            !authority.isCurrent() -> RoutineResumeUiOutcome.StaleNoOp
+
+            !port.isInMemoryHandleCurrent(inMemory) -> RoutineResumeUiOutcome.DismissDialog
+
+            !connected -> RoutineResumeUiOutcome.ConnectionFailed
+
+            authority.entryPoint == RoutineResumeEntryPoint.DAILY_ROUTINES ->
+                RoutineResumeUiOutcome.StartAndNavigateActiveWorkout
+
+            else -> RoutineResumeUiOutcome.EnterSetReady(inMemory.exerciseIndex, inMemory.setIndex)
+        }
+    }
+
+    RoutineResumeUiDecision.EnterFreshRoutine -> enterFreshRoutineFromResume(
+        handle = handle,
+        authority = authority,
+        port = port,
+    )
+
+    is RoutineResumeUiDecision.RetainDialog ->
+        RoutineResumeUiOutcome.RetainDialog(decision.retryAction)
+
+    RoutineResumeUiDecision.DismissDialog -> RoutineResumeUiOutcome.DismissDialog
+}
+
+private suspend fun enterFreshRoutineFromResume(
+    handle: RoutineResumeHandle,
+    authority: RoutineResumeActionAuthority,
+    port: RoutineResumeUiPort,
+): RoutineResumeUiOutcome {
+    if (!authority.isCurrent()) return RoutineResumeUiOutcome.StaleNoOp
+    if (authority.entryPoint == RoutineResumeEntryPoint.DAILY_ROUTINES) {
+        return RoutineResumeUiOutcome.EnterDailyOverview(handle.selectedRoutine)
+    }
+    return runFreshCycleUiOperation(
+        routine = handle.selectedRoutine,
+        cycleId = handle.cycleId,
+        dayNumber = handle.cycleDayNumber,
+        authority = authority,
+        port = port,
+    )
+}
+
+internal suspend fun runFreshCycleUiOperation(
+    routine: Routine,
+    cycleId: String?,
+    dayNumber: Int?,
+    authority: RoutineResumeActionAuthority,
+    port: RoutineResumeUiPort,
+): RoutineResumeUiOutcome {
+    if (!authority.isCurrent()) return RoutineResumeUiOutcome.StaleNoOp
+    if (authority.entryPoint == RoutineResumeEntryPoint.DAILY_ROUTINES) {
+        return RoutineResumeUiOutcome.DismissDialog
+    }
+    val exactCycleId = cycleId?.takeIf(String::isNotBlank)
+        ?: return RoutineResumeUiOutcome.DismissDialog
+    val exactDayNumber = dayNumber?.takeIf { it > 0 }
+        ?: return RoutineResumeUiOutcome.DismissDialog
+    val connected = port.awaitConnection()
+    if (!authority.isCurrent()) return RoutineResumeUiOutcome.StaleNoOp
+    if (!connected) return RoutineResumeUiOutcome.ConnectionFailed
+    val loaded = authority.awaitCurrentPublication { stillCurrent ->
+        port.loadCycleRoutine(
+            routine = routine,
+            cycleId = exactCycleId,
+            dayNumber = exactDayNumber,
+            publicationStillCurrent = stillCurrent,
+        )
+    }
+    return when {
+        !authority.isCurrent() -> RoutineResumeUiOutcome.StaleNoOp
+        !loaded -> RoutineResumeUiOutcome.LoadFailed()
+        else -> RoutineResumeUiOutcome.EnterSetReady(0, 0)
+    }
+}
+
+internal fun routineResumeUiDecision(
+    handle: RoutineResumeHandle,
+    result: ActiveWorkoutRuntimeResumeResult,
+): RoutineResumeUiDecision = when (result) {
+    ActiveWorkoutRuntimeResumeResult.RestoredRest ->
+        if (handle is RoutineResumeHandle.Persisted) {
+            RoutineResumeUiDecision.NavigateActiveWorkout
+        } else {
+            RoutineResumeUiDecision.DismissDialog
+        }
+
+    is ActiveWorkoutRuntimeResumeResult.ManualSetReady ->
+        if (handle is RoutineResumeHandle.Persisted) {
+            RoutineResumeUiDecision.NavigateManualSetReady(
+                exerciseIndex = result.exerciseIndex,
+                setIndex = result.setIndex,
+            )
+        } else {
+            RoutineResumeUiDecision.DismissDialog
+        }
+
+    ActiveWorkoutRuntimeResumeResult.FreshStart ->
+        if (handle is RoutineResumeHandle.Persisted) {
+            RoutineResumeUiDecision.EnterFreshRoutine
+        } else {
+            RoutineResumeUiDecision.DismissDialog
+        }
+
+    ActiveWorkoutRuntimeResumeResult.Missing -> when (handle) {
+        is RoutineResumeHandle.InMemory -> RoutineResumeUiDecision.ResumeInMemory
+        is RoutineResumeHandle.Persisted -> RoutineResumeUiDecision.EnterFreshRoutine
+    }
+
+    ActiveWorkoutRuntimeResumeResult.RetryableFailure ->
+        RoutineResumeUiDecision.RetainDialog(RoutineResumeRetryAction.RESUME)
+
+    ActiveWorkoutRuntimeResumeResult.Superseded -> RoutineResumeUiDecision.DismissDialog
+}
+
+internal fun routineResumeDiscardUiDecision(
+    result: RoutineResumeDiscardResult,
+): RoutineResumeUiDecision = when (result) {
+    RoutineResumeDiscardResult.Discarded,
+    RoutineResumeDiscardResult.Missing,
+    -> RoutineResumeUiDecision.EnterFreshRoutine
+
+    RoutineResumeDiscardResult.RetryableFailure ->
+        RoutineResumeUiDecision.RetainDialog(RoutineResumeRetryAction.DISCARD)
+
+    RoutineResumeDiscardResult.Superseded -> RoutineResumeUiDecision.DismissDialog
+}
+
+class MainViewModel(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
     val personalRecordRepository: PersonalRecordRepository,
+    private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
+    private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
+    private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
     private val syncTriggerManager: SyncTriggerManager? = null,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase = ApplyRoutineModifierUseCase(personalRecordRepository, exerciseRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -140,9 +553,20 @@ class MainViewModel constructor(
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    // Issue #882: placed after velocityOneRepMaxRepository so the default can delegate
+    // baseline lookup to the canonical ResolveRoutineScalingBaselineUseCase.
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
+        ApplyRoutineModifierUseCase(
+            personalRecordRepository,
+            profileExerciseBaselineRepository,
+            velocityOneRepMaxRepository,
+        ),
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
+    internal val machineSafetyCoordinator: MachineSafetyCoordinator,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
+    private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -163,6 +587,94 @@ class MainViewModel constructor(
         userProfileRepository.activeProfile
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
+
+    // Name of the same profile, so a profile-scoped destructive action can say whose data
+    // it deletes ("Delete all workouts for <profile>").
+    val activeProfileName: StateFlow<String> =
+        userProfileRepository.activeProfile
+            .map { it?.name?.takeIf(String::isNotBlank) ?: "Default" }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
+
+    /**
+     * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever
+     * using a prior profile's history during an active-profile transition.
+     */
+    val completedExerciseIdsState: StateFlow<CompletedExerciseIdsState> =
+        userProfileRepository.activeProfileContext
+            .flatMapLatest { context ->
+                when (context) {
+                    is ActiveProfileContext.Switching -> flowOf(
+                        CompletedExerciseIdsState(
+                            profileId = context.targetProfileId,
+                            isLoading = true,
+                        ),
+                    )
+
+                    is ActiveProfileContext.Ready ->
+                        workoutRepository.getHistoryVisibleSessions(context.profile.id)
+                            .map { sessions ->
+                                CompletedExerciseIdsState(
+                                    profileId = context.profile.id,
+                                    ids = completedExerciseIdsFromHistory(sessions),
+                                    isLoading = false,
+                                )
+                            }
+                            .onStart {
+                                emit(
+                                    CompletedExerciseIdsState(
+                                        profileId = context.profile.id,
+                                        isLoading = true,
+                                    ),
+                                )
+                            }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = CompletedExerciseIdsState(profileId = null, isLoading = true),
+            )
+
+    /**
+     * The active profile's exercises most recently used to tag Just Lift sets, newest first
+     * (#850). Empty while the profile is switching, so the picker never shows another
+     * profile's list. A profile without a stored list is seeded once from its history, as soon
+     * as that history holds a tagged Just Lift set.
+     */
+    val recentJustLiftExerciseIds: StateFlow<List<String>> =
+        userProfileRepository.activeProfileContext
+            .flatMapLatest { context ->
+                val store = recentJustLiftExerciseStore
+                when {
+                    store == null || context !is ActiveProfileContext.Ready -> flowOf(emptyList())
+                    else -> flow {
+                        val profileId = context.profile.id
+                        if (!store.hasEntry(profileId)) {
+                            // Seed from the first history holding a tagged Just Lift set. An empty
+                            // history is not stored, so sessions a first sync pulls in later still
+                            // seed the list; a tag recorded meanwhile creates it and ends the wait.
+                            combine(
+                                store.observe(profileId),
+                                workoutRepository.getHistoryVisibleSessions(profileId),
+                            ) { _, sessions -> recentJustLiftExerciseIdsFromHistory(sessions) }
+                                .first { seed -> seed.isNotEmpty() || store.hasEntry(profileId) }
+                                .let { seed -> if (seed.isNotEmpty()) store.initializeIfAbsent(profileId, seed) }
+                        }
+                        emitAll(store.observe(profileId))
+                    }.catch { error ->
+                        // Only this profile's list is lost; later profile switches still load.
+                        Logger.e(error) { "Failed to load recent Just Lift exercises" }
+                        emit(emptyList())
+                    }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                // Drop the cached list when collection stops: a profile switch made while no
+                // screen collects must not replay the previous profile's list on return.
+                started = SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0),
+                initialValue = emptyList(),
+            )
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager: GamificationManager = GamificationManager(
@@ -194,11 +706,14 @@ class MainViewModel constructor(
         workoutRepository = workoutRepository,
         exerciseRepository = exerciseRepository,
         personalRecordRepository = personalRecordRepository,
+        profileExerciseBaselineRepository = profileExerciseBaselineRepository,
         repCounter = repCounter,
         preferencesManager = preferencesManager,
         gamificationManager = gamificationManager,
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = activeWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
@@ -216,6 +731,9 @@ class MainViewModel constructor(
         workoutServiceController = workoutServiceController,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
+        machineSafetyCoordinator = machineSafetyCoordinator,
+        profileRecoveryActivityTracker = profileRecoveryActivityTracker,
+        recentJustLiftExerciseStore = recentJustLiftExerciseStore,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -232,11 +750,16 @@ class MainViewModel constructor(
     // ===== Workout State Delegation =====
 
     val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
+    val machineTeardownState: StateFlow<MachineTeardownState>
+        get() = workoutSessionManager.machineTeardownState
     val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive
     val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.coordinator.routineFlowState
 
     /** Issue #348: Session-scoped flag covering active sets AND between-set routine screens */
     val isInWorkoutSession get() = workoutSessionManager.coordinator.isInWorkoutSession
+
+    /** Live, synchronous read of [isInWorkoutSession] for the profile-switch guard. */
+    fun isInWorkoutSessionNow(): Boolean = workoutSessionManager.coordinator.isInWorkoutSessionNow()
     val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
     val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
@@ -253,6 +776,44 @@ class MainViewModel constructor(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+
+    /**
+     * KD-9: "the command was capped" notice, held as state so the screen that shows it can
+     * arrive after the command was sent (Just Lift skips the countdown). Drained by the
+     * screen that displays it.
+     */
+    val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
+
+    fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
+
+    /**
+     * F-040: the session id of a completion whose commit failed, or null. The
+     * screen that shows it offers Retry and then drains it, so the offer is
+     * made exactly once even though the failure can outlive the screen.
+     */
+    val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
+
+    /**
+     * The offer as a distinct value per publication, so a Retry that fails again is
+     * shown again. The Retry snackbar keys on this.
+     */
+    val workoutSaveFailureOffer: StateFlow<WorkoutSaveFailureOffer?> get() = workoutSessionManager.coordinator.workoutSaveFailureOffer
+
+    /**
+     * Retry the failed commit of [sessionId]. Returns false when the retained
+     * snapshot is gone or another attempt already owns it — there is then
+     * nothing left to retry. The offer is dropped either way.
+     */
+    fun retryWorkoutSave(sessionId: String): Boolean {
+        dismissWorkoutSaveFailure(sessionId)
+        return workoutSessionManager.activeSessionEngine.retryWorkoutExitPersistence(sessionId)
+    }
+
+    /** Drop the save-failure offer for [sessionId] without retrying. */
+    fun dismissWorkoutSaveFailure(sessionId: String) {
+        workoutSessionManager.coordinator.withdrawWorkoutSaveFailure(sessionId)
+    }
+
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
@@ -281,6 +842,7 @@ class MainViewModel constructor(
     val isAutoConnecting: StateFlow<Boolean> get() = bleConnectionManager.isAutoConnecting
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
+    val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
 
     fun startScanning() = bleConnectionManager.startScanning()
     fun stopScanning() = bleConnectionManager.stopScanning()
@@ -289,20 +851,71 @@ class MainViewModel constructor(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
-    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
-    fun reconnectInterruptedWorkout() {
-        bleConnectionManager.dismissConnectionLostAlert()
-        bleConnectionManager.ensureConnection(
-            onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
-            onFailed = {},
-        )
+    fun dismissMachineSafetyWarning() {
+        viewModelScope.launch { machineSafetyCoordinator.hideTemporarily() }
     }
+    fun requestMachineSafetyRecovery(identity: MachineSafetyHazardIdentity?) {
+        viewModelScope.launch {
+            val requestedIdentity = identity ?: run {
+                machineSafetyCoordinator.surfaceStoredHazard()
+                (machineSafetyCoordinator.uiState.value as? MachineSafetyUiState.Visible)?.identity
+            }
+            val result = if (requestedIdentity == null) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD
+            } else {
+                machineSafetyCoordinator.requestReleaseRecovery(requestedIdentity)
+            }
+            when (result) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "No stored machine recovery was found. Confirm the machine is unloaded before starting again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STALE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "The machine safety warning changed. Review it and try again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STARTED,
+                MachineSafetyRecoveryRequestResult.ALREADY_IN_PROGRESS -> Unit
+            }
+        }
+    }
+    fun acknowledgeMachineSafetyUnloaded(identity: MachineSafetyHazardIdentity) {
+        viewModelScope.launch { machineSafetyCoordinator.acknowledgeUnloaded(identity) }
+    }
+    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun cancelConnection() = bleConnectionManager.cancelConnection()
 
     // ===== History Delegation =====
 
     val workoutHistory: StateFlow<List<WorkoutSession>> get() = historyManager.workoutHistory
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> get() = historyManager.allWorkoutSessions
+
+    /**
+     * Recent sessions for a specific exercise, filtered by profile.
+     * Returns the latest [limit] sessions sorted by timestamp descending.
+     * Used by ExerciseQuickHistoryCard in SetReadyScreen.
+     */
+    fun recentSessionsForExercise(
+        exerciseId: String?,
+        profileId: String?,
+        limit: Int = 5,
+    ): StateFlow<List<WorkoutSession>> = historyManager.allWorkoutSessions
+        .map { sessions ->
+            if (profileId == null || exerciseId == null) {
+                emptyList()
+            } else {
+                sessions
+                    .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+                    .filter { it.workingReps > 0 || it.totalReps > 0 }
+                    .sortedWith(
+                        compareByDescending<WorkoutSession> { it.timestamp }
+                            .thenByDescending { it.id },
+                    )
+                    .take(limit)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
@@ -318,9 +931,10 @@ class MainViewModel constructor(
      * so zero-rep ghost rows hidden by `getHistoryVisibleSessions` are
      * soft-deleted along with the visible sets.
      */
-    fun deleteRoutineWorkouts(routineSessionId: String) = historyManager.deleteRoutineWorkouts(routineSessionId)
+    fun deleteRoutineWorkouts(profileId: String, routineSessionId: String) =
+        historyManager.deleteRoutineWorkouts(profileId, routineSessionId)
 
-    fun deleteAllWorkouts() = historyManager.deleteAllWorkouts()
+    fun deleteAllWorkouts(profileId: String) = historyManager.deleteAllWorkouts(profileId)
 
     // ===== Settings Delegation =====
 
@@ -345,6 +959,10 @@ class MainViewModel constructor(
     fun setAutoBackupEnabled(enabled: Boolean) {
         settingsManager.setAutoBackupEnabled(enabled)
         refreshBackupStats()
+    }
+
+    fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        settingsManager.setIncludeRawTelemetryInBackups(enabled)
     }
 
     fun setBackupDestination(destination: BackupDestination) {
@@ -387,24 +1005,38 @@ class MainViewModel constructor(
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = workoutSessionManager.updateActiveRackBehaviorOverrides(overrides)
     fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()
     fun saveRackItem(item: RackItem) {
-        viewModelScope.launch {
-            equipmentRackRepository.upsert(item)
+        val mutation = workoutSessionManager.beginConfigurationInputMutation()
+        val job = viewModelScope.launch {
+            try {
+                equipmentRackRepository.upsert(item)
+            } finally {
+                workoutSessionManager.endConfigurationInputMutation(mutation)
+            }
         }
+        job.invokeOnCompletion { workoutSessionManager.endConfigurationInputMutation(mutation) }
     }
 
     fun deleteRackItem(id: String) {
-        viewModelScope.launch {
-            equipmentRackRepository.delete(id)
-            val activeIds = activeRackItemIds.value
-            val remainingActiveIds = activeIds.filterNot { it == id }
-            if (remainingActiveIds.size != activeIds.size) {
-                updateActiveRackSelection(remainingActiveIds)
+        val mutation = workoutSessionManager.beginConfigurationInputMutation()
+        val job = viewModelScope.launch {
+            try {
+                equipmentRackRepository.delete(id)
+                val activeIds = activeRackItemIds.value
+                val remainingActiveIds = activeIds.filterNot { it == id }
+                if (remainingActiveIds.size != activeIds.size) {
+                    updateActiveRackSelection(remainingActiveIds)
+                }
+            } finally {
+                workoutSessionManager.endConfigurationInputMutation(mutation)
             }
         }
+        job.invokeOnCompletion { workoutSessionManager.endConfigurationInputMutation(mutation) }
     }
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
+    fun retryWorkoutTeardown() = workoutSessionManager.retryMachineTeardown()
+    fun reconnectWorkoutTeardown() = workoutSessionManager.reconnectWorkoutTeardown(bleConnectionManager)
 
     // Issue #627: Delegates read-only stop-in-progress flag to suppress resume-bounce.
     fun isStoppingWorkout(): Boolean = workoutSessionManager.isStoppingWorkout
@@ -419,6 +1051,10 @@ class MainViewModel constructor(
     fun resetLoadBaseline() = workoutSessionManager.resetLoadBaseline()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
     fun skipRest() = workoutSessionManager.skipRest()
+    fun skipRest(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.SkipRest(identity))
+    fun acceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Accept(identity, percentage))
+    fun declineDropSet(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Decline(identity))
+    val restTransitionPlan get() = workoutSessionManager.restTransitionPlan
     fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
     fun toggleRestPause() = workoutSessionManager.toggleRestPause()
     fun resetRestTimer() = workoutSessionManager.resetRestTimer()
@@ -444,15 +1080,15 @@ class MainViewModel constructor(
      * back to the DB — the StateFlow intentionally filters out "cycle_routine_"-prefixed
      * template-cycle routines (issue #620), which must still be loadable for editing.
      */
-    suspend fun getRoutineById(routineId: String): Routine? =
-        workoutSessionManager.getRoutineById(routineId)
-            ?: workoutRepository.getRoutineById(routineId)
+    suspend fun getRoutineById(routineId: String): Routine? = workoutSessionManager.getRoutineById(routineId)
+        ?: workoutRepository.getRoutineById(routineId)
     fun saveRoutine(routine: Routine) = workoutSessionManager.saveRoutine(routine)
     fun updateRoutine(routine: Routine) = workoutSessionManager.updateRoutine(routine)
     fun saveRackBehaviorOverridesForExercise(
         exerciseIndex: Int,
         overrides: Map<String, RackItemBehavior>,
     ) {
+        workoutSessionManager.supersedeConfigurationInputIntent()
         val routine = loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val updatedActiveRoutine = routine.withRackBehaviorOverrides(
@@ -460,8 +1096,7 @@ class MainViewModel constructor(
             exerciseId = exercise.id,
             overrides = overrides,
         ) ?: return
-        workoutSessionManager.coordinator._loadedRoutine.value = updatedActiveRoutine
-        updateActiveRackBehaviorOverrides(overrides)
+        workoutSessionManager.updateLoadedRoutineRackBehaviorOverrides(updatedActiveRoutine, overrides)
         viewModelScope.launch {
             try {
                 val storedRoutine = workoutRepository.getRoutineById(routine.id)
@@ -545,6 +1180,7 @@ class MainViewModel constructor(
     fun confirmSessionBodyWeight(weightKg: Float?, saveToProfile: Boolean) = workoutSessionManager.confirmSessionBodyWeight(weightKg, saveToProfile)
     fun skipSessionBodyWeightPrompt() = workoutSessionManager.skipSessionBodyWeightPrompt()
     fun returnToOverview() = workoutSessionManager.returnToOverview()
+
     /**
      * Returns the navigation route to pop to when exiting the current routine flow.
      *
@@ -559,12 +1195,11 @@ class MainViewModel constructor(
      *   viewModel.exitRoutineFlow()                     // 2. clears origin
      *   navController.popBackStack(dest, false)         // 3. navigate
      */
-    fun routineExitDestination(): String =
-        if (workoutSessionManager.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
-            NavigationRoutes.TrainingCycles.route
-        } else {
-            NavigationRoutes.DailyRoutines.route
-        }
+    fun routineExitDestination(): String = if (workoutSessionManager.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+        NavigationRoutes.TrainingCycles.route
+    } else {
+        NavigationRoutes.DailyRoutines.route
+    }
 
     fun exitRoutineFlow() = workoutSessionManager.exitRoutineFlow()
     fun showRoutineComplete() = workoutSessionManager.showRoutineComplete()
@@ -572,6 +1207,66 @@ class MainViewModel constructor(
     fun getCurrentExercise(): RoutineExercise? = workoutSessionManager.getCurrentExercise()
     fun hasResumableProgress(routineId: String): Boolean = workoutSessionManager.hasResumableProgress(routineId)
     fun getResumableProgressInfo(): ResumableProgressInfo? = workoutSessionManager.getResumableProgressInfo()
+    suspend fun discoverRoutineResume(
+        routine: Routine,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String? = null,
+        cycleDayNumber: Int? = null,
+    ): RoutineResumeDiscovery = workoutSessionManager.discoverRoutineResume(
+        routine = routine,
+        launchOrigin = launchOrigin,
+        cycleId = cycleId,
+        cycleDayNumber = cycleDayNumber,
+    )
+    suspend fun resumeRoutine(handle: RoutineResumeHandle): ActiveWorkoutRuntimeResumeResult = workoutSessionManager.resumeRoutine(handle)
+    fun isRoutineResumeHandleCurrent(handle: RoutineResumeHandle.InMemory): Boolean = workoutSessionManager.isRoutineResumeHandleCurrent(handle)
+    internal fun isRoutineResumeProfileCurrent(profileId: String): Boolean = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+        ?.profile?.id == profileId
+    suspend fun discardRoutineResume(handle: RoutineResumeHandle): RoutineResumeDiscardResult = workoutSessionManager.discardRoutineResume(handle)
+
+    internal fun routineResumeUiPort(): RoutineResumeUiPort = object : RoutineResumeUiPort {
+        override suspend fun resume(handle: RoutineResumeHandle): ActiveWorkoutRuntimeResumeResult = resumeRoutine(handle)
+
+        override suspend fun discard(handle: RoutineResumeHandle): RoutineResumeDiscardResult = discardRoutineResume(handle)
+
+        override suspend fun awaitConnection(): Boolean = suspendCancellableCoroutine { continuation ->
+            val completed = atomic(false)
+            ensureConnection(
+                onConnected = {
+                    if (completed.compareAndSet(expect = false, update = true)) {
+                        continuation.resume(true)
+                    }
+                },
+                onFailed = {
+                    if (completed.compareAndSet(expect = false, update = true)) {
+                        continuation.resume(false)
+                    }
+                },
+            )
+        }
+
+        override fun isInMemoryHandleCurrent(handle: RoutineResumeHandle.InMemory): Boolean = isRoutineResumeHandleCurrent(handle)
+
+        override suspend fun loadDailyRoutine(
+            routine: Routine,
+            publicationStillCurrent: () -> Boolean,
+        ): Boolean = workoutSessionManager.loadRoutineForResumeAsync(
+            routine = routine,
+            publicationStillCurrent = publicationStillCurrent,
+        )
+
+        override suspend fun loadCycleRoutine(
+            routine: Routine,
+            cycleId: String,
+            dayNumber: Int,
+            publicationStillCurrent: () -> Boolean,
+        ): Boolean = workoutSessionManager.loadRoutineFromCycleForResumeAsync(
+            routine = routine,
+            cycleId = cycleId,
+            dayNumber = dayNumber,
+            publicationStillCurrent = publicationStillCurrent,
+        )
+    }
     fun hasNextStep(exerciseIndex: Int, setIndex: Int): Boolean = workoutSessionManager.hasNextStep(exerciseIndex, setIndex)
     fun hasPreviousStep(exerciseIndex: Int, setIndex: Int): Boolean = workoutSessionManager.hasPreviousStep(exerciseIndex, setIndex)
     fun setReadyPrev() = workoutSessionManager.setReadyPrev()
@@ -594,7 +1289,6 @@ class MainViewModel constructor(
     fun decrementWeight(amount: Float = 0.5f) = workoutSessionManager.decrementWeight(amount)
     fun setWeightPreset(presetWeightKg: Float) = workoutSessionManager.setWeightPreset(presetWeightKg)
     suspend fun getLastWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getLastWeightForExercise(exerciseId)
-    suspend fun getPrWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getPrWeightForExercise(exerciseId)
 
     // ===== Just Lift / Handle Detection Delegation =====
 
@@ -651,11 +1345,6 @@ class MainViewModel constructor(
         _topBarBackAction.value = null
     }
 
-    // ===== Workout Setup Dialog (stays here - pure UI state) =====
-
-    private val _isWorkoutSetupDialogVisible = MutableStateFlow(false)
-    val isWorkoutSetupDialogVisible: StateFlow<Boolean> = _isWorkoutSetupDialogVisible.asStateFlow()
-
     // ===== Disco Mode (Easter Egg - stays here) =====
 
     val discoModeActive: StateFlow<Boolean> = bleRepository.discoModeActive
@@ -698,6 +1387,26 @@ class MainViewModel constructor(
     // ===== Velocity-1RM Backfill (Issue #517) =====
 
     init {
+        viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
+        // KD-9: remember the model we connect to, so the offline planning/editor sliders
+        // can use that trainer's per-cable ceiling. Unknown is never stored: it would
+        // narrow a known Trainer+ owner's planning range on a bad name read.
+        viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                val model = (state as? ConnectionState.Connected)?.hardwareModel
+                if (model != null && model != PhoenixModel.Unknown) {
+                    preferencesManager.setLastConnectedModel(model)
+                }
+            }
+        }
+        viewModelScope.launch {
+            bleRepository.reconnectionRequested.collect { request ->
+                machineSafetyCoordinator.recordUnexpectedDisconnect(
+                    trainerAddress = request.deviceAddress,
+                    trainerName = request.deviceName,
+                )
+            }
+        }
         // Run once at startup: backfill velocity-1RM estimates for historical sets.
         // Gated by a run-once preference flag so it never re-runs after the first successful pass.
         //
@@ -745,21 +1454,50 @@ class MainViewModel constructor(
 
     override fun onCleared() {
         super.onCleared()
-        workoutSessionManager.cleanup()
         bleConnectionManager.cancelConnectionJob()
+        // Read before cleanup(), which invalidates the lease. Mid-set or mid-teardown
+        // the trainer may still be resisting after the link drops, so try a RESET first.
+        // A RESET is attempted only while the link is up: off-link it can only fail, and
+        // skipping it keeps cleanup() (and the workout foreground service stop) immediate.
+        val holdsMachineLease = (
+            workoutState.value !is WorkoutState.Idle ||
+                workoutSessionManager.machineTeardownState.value !is MachineTeardownState.Ready
+            ) && bleRepository.connectionState.value is ConnectionState.Connected
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
-        // Use NonCancellable context since viewModelScope may be cancelled during onCleared
+        // Use NonCancellable context since viewModelScope may be cancelled during onCleared.
+        // Without a lease nothing here suspends before cleanup(), so on Main.immediate the
+        // no-lease path still runs cleanup() synchronously inside onCleared, as it always did.
+        // With a lease this body can outlive the ViewModel by up to the GATT timeout.
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            if (holdsMachineLease) {
+                // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
+                // row, and this unconfirmed exit must keep it so the relaunch warning fires.
+                try {
+                    val result = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        bleRepository.stopWorkout()
+                    }
+                    if (result?.isSuccess == true) {
+                        Logger.i { "RESET before ViewModel teardown confirmed" }
+                    } else {
+                        // The machine may still be resisting: this is the line a field log is read for.
+                        Logger.w { "RESET before ViewModel teardown NOT confirmed: ${result ?: "timed out"}" }
+                    }
+                } catch (e: Exception) {
+                    // Cancellation is absorbed on purpose (no rethrowIfCancellation here): the body is
+                    // NonCancellable, and rethrowing would skip cleanup() and leave the radio connected.
+                    Logger.e(e) { "RESET before ViewModel teardown failed, machine may still be loaded" }
+                }
+            }
+            workoutSessionManager.cleanup()
             try {
                 bleRepository.disconnect()
                 Logger.i { "BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
             }
+            Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
-
-        Logger.i { "MainViewModel cleared, all jobs cancelled" }
     }
 }

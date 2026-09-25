@@ -18,10 +18,7 @@ build/
 # Local configuration
 local.properties
 *.local.properties
-# fix(audit): C1 — cover Supabase.xcconfig in any location under VitruvianPhoenix
-# so a stray sibling file doesn't leak the anon key again.
-iosApp/VitruvianPhoenix/**/Supabase.xcconfig
-iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+iosApp/PhoenixApp/**/Supabase.xcconfig
 
 # Kotlin
 .kotlin/
@@ -39,8 +36,8 @@ iosApp/**/*.xcworkspace/
 **/*.xcuserstate
 **/project.xcworkspace/xcuserdata/
 iosApp/**/DerivedData/
-iosApp/VitruvianPhoenix/compose-resources/
-iosApp/VitruvianPhoenix/VitruvianPhoenix/compose-resources/
+iosApp/PhoenixApp/compose-resources/
+iosApp/PhoenixApp/PhoenixApp/compose-resources/
 
 # Desktop
 /out/
@@ -77,12 +74,6 @@ CHANGELOG.md
 opencode.json
 review-prompt.txt
 
-# Reference/decompiled code (not for distribution)
-/reference/
-/vitruvian-decompiled/
-/scripts/
-/apktool.jar
-/vitruvian-official.apk
 /parent repo/
 
 # Git worktrees
@@ -112,12 +103,8 @@ bugreport-*.zip
 
 # Codeboarding cache
 .codeboarding/cache/
-.almanac/runs/
-.almanac/index.db
 
-# iOS Phantom real-app harness outputs.  Keep generated evidence and local
-# proposal state out of git without ignoring the tracked .github scripts or
-# repository documentation.
+# iOS Phantom real-app harness outputs. Keep evidence and local proposal state out of git.
 /phantom-evidence/
 /phantom-artifacts/
 **/phantom-evidence/
@@ -133,7 +120,17 @@ bugreport-*.zip
 /proposal-worktree/
 /proposal-worktrees/
 
-# Local-only simulator configuration.  Keep the tracked base xcconfig and
-# example files visible; only harness-specific overrides are ignored.
+# Harness-local simulator and legacy app checkout overrides.
 iosApp/VitruvianPhoenix/Config/Simulator.local.xcconfig
 iosApp/VitruvianPhoenix/Config/PhantomSimulator.local.xcconfig
+iosApp/PhoenixApp/Config/Simulator.local.xcconfig
+iosApp/PhoenixApp/Config/PhantomSimulator.local.xcconfig
+
+# Keep scratch reference artifacts and local almanac state ignored.
+/reference/
+/vitruvian-decompiled/
+/scripts/
+/apktool.jar
+/vitruvian-official.apk
+.almanac/runs/
+.almanac/index.db

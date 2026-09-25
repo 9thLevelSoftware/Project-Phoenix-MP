@@ -23,6 +23,11 @@ on:
       submitForReview:
         required: false
         type: boolean
+      skip_tests:
+        description: 'Set by release-all workflows, which already ran the release test gate.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,41 +37,38 @@ concurrency:
   cancel-in-progress: true  # Cancel older Play Store builds if a new push comes in
 
 jobs:
+  tests:
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      ref: ${{ inputs.source_ref }}
+      skip: ${{ inputs.skip_tests || false }}
+
   build-and-upload:
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Authenticate to Google Play API
         id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           credentials_json: '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}'
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/androidpublisher
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
       - name: Resolve monotonic version code from Google Play
         id: version
@@ -103,7 +105,13 @@ jobs:
             exit 1
           fi
 
+          # Google Play intermittently returns 5xx while reading track state.
+          # curl retries transient HTTP failures with bounded exponential backoff.
           TRACKS_RESPONSE="$(curl --silent --show-error --fail \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --retry 4 \
+            --retry-max-time 45 \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits/$EDIT_ID/tracks")"
           PLAY_MAX_VERSION_CODE="$(printf '%s' "$TRACKS_RESPONSE" | jq -r '[.tracks[]?.releases[]?.versionCodes[]? | tonumber] | max // empty')"
@@ -191,7 +199,7 @@ jobs:
           done
 
       - name: Upload to Play Store Open Testing and Submit for Review
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.devil.phoenixproject

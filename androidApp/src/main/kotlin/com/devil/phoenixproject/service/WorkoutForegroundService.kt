@@ -23,7 +23,7 @@ import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
 class WorkoutForegroundService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "vitruvian_workout_channel"
+        const val CHANNEL_ID = "phoenix_workout_channel"
         const val NOTIFICATION_ID = 1
 
         private val log = Logger.withTag("WorkoutForegroundService")

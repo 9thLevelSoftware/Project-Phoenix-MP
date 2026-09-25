@@ -34,7 +34,7 @@ import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilityS
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 // Phoenix fire colors
 private val FireOrange = Color(0xFFFF6B35)
@@ -45,7 +45,7 @@ private val DarkSlate = Color(0xFF0F172A)
 private val DeepNavy = Color(0xFF1E293B)
 
 /**
- * Animated splash screen with the Vitruvian Phoenix logo.
+ * Animated splash screen with the Project Phoenix logo.
  * Features:
  * - Dramatic logo entrance with scale and bounce
  * - Animated fire glow behind the logo
@@ -217,7 +217,7 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
             ) {
                 // Phoenix logo with animations
                 Image(
-                    painter = painterResource(Res.drawable.vitphoe_logo),
+                    painter = painterResource(Res.drawable.phoenix_logo),
                     contentDescription = stringResource(Res.string.cd_phoenix_logo),
                     modifier = Modifier
                         .fillMaxWidth(0.55f)
@@ -356,41 +356,4 @@ private fun DrawScope.drawEmber(particle: EmberParticle, progress: Float, canvas
         radius = currentSize * 2.5f,
         center = Offset(x, y),
     )
-}
-
-/**
- * Simple splash screen variant without animations.
- * Useful for instant display before main content loads.
- */
-@Composable
-fun SimpleSplashScreen(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(DarkSlate),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Image(
-                painter = painterResource(Res.drawable.vitphoe_logo),
-                contentDescription = stringResource(Res.string.cd_phoenix_logo),
-                modifier = Modifier
-                    .fillMaxWidth(0.55f)
-                    .aspectRatio(1f),
-                contentScale = ContentScale.Fit,
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Text(
-                text = "PROJECT PHOENIX",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    letterSpacing = 6.sp,
-                    color = FireOrange,
-                ),
-            )
-        }
-    }
 }

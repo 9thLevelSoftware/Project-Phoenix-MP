@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
@@ -9,7 +8,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepo
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -26,10 +25,13 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -434,12 +436,14 @@ class StreamingImportRoundTripTest {
     }
 
     private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.VitruvianDatabase,
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
         val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
             database,
             profilePreferencesRepository,
         ),
+        // These round-trip tests exercise sample restore, so they opt in to raw telemetry.
+        override val includeRawTelemetryInBackups: Boolean = true,
     ) : BaseDataBackupManager(
         database,
         profilePreferencesRepository,
@@ -452,10 +456,6 @@ class StreamingImportRoundTripTest {
         }
 
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-
-        override suspend fun saveToFile(backup: BackupData): Result<String> {
-            error("Not needed for tests")
-        }
 
         override suspend fun importFromFile(filePath: String): Result<ImportResult> {
             error("Not needed for tests")
@@ -673,7 +673,7 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `streaming active flags never switch target and post-identity failure normalizes then reconciles`() = runTest {
+    fun `streaming active flags never switch target and full validation failure performs no identity work`() = runTest {
         listOf(
             listOf(false, false),
             listOf(false, true),
@@ -689,14 +689,14 @@ class StreamingImportRoundTripTest {
                 ),
             )
             assertTrue(fixture.manager.importFromStringStreaming(payload).isSuccess)
-            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            val profiles = fixture.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
             assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
             assertEquals(1, fixture.recordingUserProfiles.reconcileCalls)
         }
 
         val failed = preferenceFixture()
         seedProfiles(failed)
-        val malformedAfterIdentityCommit = """
+        val malformedAfterIdentitySection = """
             {
               "data": {
                 "userProfiles": [
@@ -710,12 +710,12 @@ class StreamingImportRoundTripTest {
             }
         """.trimIndent()
 
-        val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
+        val result = failed.manager.importFromStringStreaming(malformedAfterIdentitySection)
 
         assertTrue(result.isFailure)
-        val profiles = failed.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+        val profiles = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
         assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
-        assertEquals(1, failed.recordingUserProfiles.reconcileCalls)
+        assertEquals(0, failed.recordingUserProfiles.reconcileCalls)
     }
 
     @Test
@@ -753,12 +753,12 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(session.id)
                 .executeAsOne()
                 .profile_id,
         )
-        assertEquals(represented, fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(represented, fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
     }
 
     @Test
@@ -810,25 +810,25 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            fixture.database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(representedSession.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
     }
 
     @Test
     fun `streaming session import adopts explicit owner when its profile is absent`() = runTest {
         val fixture = preferenceFixture()
-        val activeProfileId = fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val activeProfileId = fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id
         val session = WorkoutSessionBackup(
             id = "stream-missing-profile-session",
             timestamp = 1L,
@@ -858,7 +858,7 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             activeProfileId,
-            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            fixture.database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 
@@ -977,9 +977,8 @@ class StreamingImportRoundTripTest {
         preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
         reconciliationFailure: Throwable? = null,
     ): PreferenceFixture {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val database = VitruvianDatabase(driver)
+        val driver = createTestDriver()
+        val database = PhoenixDatabase(driver)
         val preferences = preferenceDecorator(SqlDelightProfilePreferencesRepository(database))
         val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
         val realUserProfiles = SqlDelightUserProfileRepository(
@@ -988,7 +987,7 @@ class StreamingImportRoundTripTest {
             profileLocalSafetyStore = safetyStore,
             gamificationRepository = SqlDelightGamificationRepository(database),
         )
-        database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         val recording = RecordingUserProfileRepository(realUserProfiles, reconciliationFailure)
         return PreferenceFixture(
             driver = driver,
@@ -1003,7 +1002,7 @@ class StreamingImportRoundTripTest {
     private suspend fun seedProfiles(fixture: PreferenceFixture) {
         insertProfile(fixture.database, PROFILE_A, 100L)
         insertProfile(fixture.database, PROFILE_B, 200L)
-        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.database.phoenixDatabaseQueries.setActiveProfile(PROFILE_A)
         fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
         fixture.preferences.updateRack(
             PROFILE_A,
@@ -1039,11 +1038,11 @@ class StreamingImportRoundTripTest {
         fixture.preferences.updateVbt(PROFILE_B, VbtPreferences(enabled = true, velocityLossThresholdPercent = 40), 24L)
     }
 
-    private fun insertProfile(database: VitruvianDatabase, id: String, createdAt: Long) {
-        if (database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
-            database.vitruvianDatabaseQueries.insertProfile(id, id, 0L, createdAt, 0L)
+    private fun insertProfile(database: PhoenixDatabase, id: String, createdAt: Long) {
+        if (database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            database.phoenixDatabaseQueries.insertProfile(id, id, 0L, createdAt, 0L)
         }
-        database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+        database.phoenixDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
     }
 
     private inline fun <reified T> jsonElement(value: T): JsonElement = testJson.encodeToJsonElement(value)
@@ -1116,7 +1115,7 @@ class StreamingImportRoundTripTest {
 
     private data class PreferenceFixture(
         val driver: SqlDriver,
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val preferences: ProfilePreferencesRepository,
         val safetyStore: SettingsProfileLocalSafetyStore,
         val recordingUserProfiles: RecordingUserProfileRepository,
@@ -1151,7 +1150,7 @@ class StreamingImportRoundTripTest {
         const val PROFILE_B = "profile-b"
 
         fun createTestUserProfileRepository(
-            database: VitruvianDatabase,
+            database: PhoenixDatabase,
             preferences: ProfilePreferencesRepository,
         ): UserProfileRepository = SqlDelightUserProfileRepository(
             database = database,
@@ -1159,7 +1158,7 @@ class StreamingImportRoundTripTest {
             profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
             gamificationRepository = SqlDelightGamificationRepository(database),
         ).also {
-            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         }
     }
 
@@ -1203,7 +1202,7 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert metrics for first session
-        originalDb.vitruvianDatabaseQueries.insertMetric(
+        originalDb.phoenixDatabaseQueries.insertMetric(
             sessionId = "rt-session-1",
             timestamp = 1_700_000_000_100L,
             position = 0.5,
@@ -1215,7 +1214,7 @@ class StreamingImportRoundTripTest {
             power = 200.0,
             status = 0,
         )
-        originalDb.vitruvianDatabaseQueries.insertMetric(
+        originalDb.phoenixDatabaseQueries.insertMetric(
             sessionId = "rt-session-1",
             timestamp = 1_700_000_000_200L,
             position = 0.8,
@@ -1229,6 +1228,8 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert a routine with exercises
+        // A custom exercise: it only exists on the target if the backup carries it.
+        originalDb.seedExercise("rt-exercise-bench", "Bench Press", isCustom = true)
         val exercise = Exercise(
             id = "rt-exercise-bench",
             name = "Bench Press",
@@ -1249,7 +1250,7 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert a personal record
-        originalDb.vitruvianDatabaseQueries.insertRecord(
+        originalDb.phoenixDatabaseQueries.insertRecord(
             exerciseId = "rt-exercise-bench",
             exerciseName = "Bench Press",
             weight = 100.0,
@@ -1289,6 +1290,9 @@ class StreamingImportRoundTripTest {
         val freshFixture = preferenceFixture()
         val freshDb = freshFixture.database
         val freshManager = freshFixture.manager
+        // Fresh-device restore (F-017): no Exercise row is seeded on the target; the backup's
+        // customExercises section is restored before the routine exercises that reference it.
+        assertNull(freshDb.phoenixDatabaseQueries.selectExerciseById("rt-exercise-bench").executeAsOneOrNull())
 
         val source = StringBackupStreamSource(exportedJson)
         source.open()
@@ -1347,6 +1351,8 @@ class StreamingImportRoundTripTest {
         // 6. Verify import counts match
         assertEquals(2, result.sessionsImported, "Should import 2 sessions")
         assertEquals(2, result.metricsImported, "Should import 2 metrics")
+        assertEquals(1, result.routineExercisesImported, "The routine exercise on a custom exercise must survive a fresh-device restore")
+        assertTrue(freshDb.phoenixDatabaseQueries.selectExerciseById("rt-exercise-bench").executeAsOneOrNull()?.isCustom == 1L, "custom exercise restored")
         assertEquals(1, result.routinesImported, "Should import 1 routine")
         assertEquals(1, result.routineExercisesImported, "Should import 1 routine exercise")
         assertTrue(result.personalRecordsImported > 0, "Should import personal records")

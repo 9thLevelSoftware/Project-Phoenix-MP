@@ -42,6 +42,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -91,17 +97,18 @@ import com.devil.phoenixproject.presentation.components.ProfileAddDialog
 import com.devil.phoenixproject.presentation.components.ProfileRecoveryDialog
 import com.devil.phoenixproject.presentation.components.ProfileSwitcherSheet
 import com.devil.phoenixproject.presentation.navigation.BottomNavItem
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
-import com.devil.phoenixproject.presentation.util.ConnectionAccessibilityDescription
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.TestTags
+import com.devil.phoenixproject.presentation.util.ConnectionAccessibilityDescription
+import com.devil.phoenixproject.presentation.util.connectionSemanticStateFor
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
-import com.devil.phoenixproject.presentation.util.connectionSemanticStateFor
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -114,22 +121,26 @@ import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_connected
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_connecting
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_disconnected
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_error_action
-import vitruvianprojectphoenix.shared.generated.resources.cd_home
-import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
-import vitruvianprojectphoenix.shared.generated.resources.cd_profile
-import vitruvianprojectphoenix.shared.generated.resources.cd_settings
-import vitruvianprojectphoenix.shared.generated.resources.nav_insights
-import vitruvianprojectphoenix.shared.generated.resources.nav_profile
-import vitruvianprojectphoenix.shared.generated.resources.profile_create_failed
-import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_retry_failed
-import vitruvianprojectphoenix.shared.generated.resources.profile_switch_failed
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.workout_save_retry_failed
+import projectphoenix.shared.generated.resources.workout_save_failed
+import projectphoenix.shared.generated.resources.action_retry
+import projectphoenix.shared.generated.resources.cd_analytics
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.cd_connection_connected
+import projectphoenix.shared.generated.resources.cd_connection_connecting
+import projectphoenix.shared.generated.resources.cd_connection_disconnected
+import projectphoenix.shared.generated.resources.cd_connection_error_action
+import projectphoenix.shared.generated.resources.cd_home
+import projectphoenix.shared.generated.resources.cd_open_profile_switcher
+import projectphoenix.shared.generated.resources.cd_profile
+import projectphoenix.shared.generated.resources.cd_settings
+import projectphoenix.shared.generated.resources.nav_insights
+import projectphoenix.shared.generated.resources.nav_profile
+import projectphoenix.shared.generated.resources.profile_create_failed
+import projectphoenix.shared.generated.resources.profile_recovery_retry_failed
+import projectphoenix.shared.generated.resources.profile_switch_blocked_during_workout
+import projectphoenix.shared.generated.resources.profile_switch_failed
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -155,6 +166,7 @@ fun EnhancedMainScreen(
     val workoutState by viewModel.workoutState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
+    val machineSafetyUiState by viewModel.machineSafetyUiState.collectAsState()
     val topBarTitle by viewModel.topBarTitle.collectAsState()
     val topBarActions by viewModel.topBarActions.collectAsState()
     val topBarBackAction by viewModel.topBarBackAction.collectAsState()
@@ -200,6 +212,58 @@ fun EnhancedMainScreen(
     val syncState by syncManager.syncState.collectAsState()
     val isAuthenticated by syncManager.isAuthenticated.collectAsState()
     val lastSyncTime by syncManager.lastSyncTime.collectAsState()
+    val serverDeletionNotice by syncManager.serverDeletionNotice.collectAsState()
+    val serverDeletionNoticeSnackbarHostState = remember { SnackbarHostState() }
+
+    // Keep the notice pending until its snackbar has been displayed and dismissed. The
+    // acknowledgement is conditional, so a newer notice merged while this one is visible
+    // remains queued for the next snackbar.
+    LaunchedEffect(serverDeletionNotice) {
+        serverDeletionNotice?.let { notice ->
+            serverDeletionNoticeSnackbarHostState.showSnackbar(
+                message = notice.message,
+                duration = SnackbarDuration.Long,
+            )
+            syncManager.clearServerDeletionNotice(notice)
+        }
+    }
+
+    // F-040: a failed set commit offers Retry. Collected HERE, at the app-level
+    // scaffold, because both explicit exits save asynchronously after navigating
+    // away from ActiveWorkoutScreen — a collector there would be disposed before
+    // the failure is raised. This is the only collector, so the offer is shown once;
+    // retry/dismiss drain it with compareAndSet, leaving another session's offer intact.
+    // Keyed on the OFFER, not the id: a Retry that fails again re-offers the same id
+    // with a new attempt, and only a distinct value restarts the effect.
+    val saveFailureOffer by viewModel.workoutSaveFailureOffer.collectAsState()
+    val saveFailedMessage = stringResource(Res.string.workout_save_failed)
+    val saveRetryLabel = stringResource(Res.string.action_retry)
+    val saveRetryUnavailable = stringResource(Res.string.workout_save_retry_failed)
+    val saveFailureScope = rememberCoroutineScope()
+    LaunchedEffect(saveFailureOffer) {
+        val failedSessionId = saveFailureOffer?.sessionId ?: return@LaunchedEffect
+        // Indefinite: losing a set is not a message to miss.
+        val action = serverDeletionNoticeSnackbarHostState.showSnackbar(
+            message = saveFailedMessage,
+            actionLabel = saveRetryLabel,
+            withDismissAction = true,
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (action == SnackbarResult.ActionPerformed) {
+            // retryWorkoutSave drains the flow, which cancels this effect, so the
+            // follow-up message runs on a scope that outlives it.
+            if (!viewModel.retryWorkoutSave(failedSessionId)) {
+                saveFailureScope.launch {
+                    serverDeletionNoticeSnackbarHostState.showSnackbar(
+                        message = saveRetryUnavailable,
+                        duration = SnackbarDuration.Short,
+                    )
+                }
+            }
+        } else {
+            viewModel.dismissWorkoutSaveFailure(failedSessionId)
+        }
+    }
 
     var currentRoute by remember(navController) {
         mutableStateOf(navController.currentBackStackEntry?.destination?.route ?: NavigationRoutes.Home.route)
@@ -253,6 +317,7 @@ fun EnhancedMainScreen(
     val profileContentDescription = stringResource(Res.string.cd_profile)
     val openProfileSwitcherDescription = stringResource(Res.string.cd_open_profile_switcher)
     val switchFailedMessage = stringResource(Res.string.profile_switch_failed)
+    val switchBlockedDuringWorkoutMessage = stringResource(Res.string.profile_switch_blocked_during_workout)
     val createFailedMessage = stringResource(Res.string.profile_create_failed)
     val recoveryRetryFailedMessage = stringResource(Res.string.profile_recovery_retry_failed)
 
@@ -290,9 +355,7 @@ fun EnhancedMainScreen(
     }
 
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag(TestTags.APP_MAIN_SHELL),
+        modifier = Modifier.fillMaxSize().testTag(TestTags.APP_MAIN_SHELL),
     ) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
@@ -322,6 +385,9 @@ fun EnhancedMainScreen(
 
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                snackbarHost = {
+                    SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                },
                 topBar = {
                     if (shouldShowTopBar) {
                         TopAppBar(
@@ -521,13 +587,22 @@ fun EnhancedMainScreen(
             }
 
             // Show connection lost alert during workout (Issue #43)
-            if (connectionLostDuringWorkout) {
+            if (connectionLostDuringWorkout || machineSafetyUiState is MachineSafetyUiState.Visible) {
                 ConnectionLostDialog(
                     onReconnect = {
-                        viewModel.reconnectInterruptedWorkout()
+                        viewModel.requestMachineSafetyRecovery(
+                            (machineSafetyUiState as? MachineSafetyUiState.Visible)?.identity,
+                        )
                     },
                     onDismiss = {
+                        viewModel.dismissMachineSafetyWarning()
                         viewModel.dismissConnectionLostAlert()
+                    },
+                    onAcknowledgeUnloaded = (machineSafetyUiState as? MachineSafetyUiState.Visible)?.let { visible ->
+                        {
+                            viewModel.acknowledgeMachineSafetyUnloaded(visible.identity)
+                            viewModel.dismissConnectionLostAlert()
+                        }
                     },
                 )
             }
@@ -538,11 +613,13 @@ fun EnhancedMainScreen(
                     activeProfileId = readyProfileId,
                     switchingInFlight = switchingInFlight,
                     switchingTargetProfileId = switchingTargetProfileId,
-                    errorMessage = switchFailedMessage.takeIf {
-                        switcherState.error == ProfileOverlayError.SWITCH_FAILED
+                    errorMessage = when (switcherState.error) {
+                        ProfileOverlayError.SWITCH_FAILED -> switchFailedMessage
+                        ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT -> switchBlockedDuringWorkoutMessage
+                        else -> null
                     },
                     onSelectProfile = { profile ->
-                        profileSwitcherViewModel.switchProfile(profile.id)
+                        profileSwitcherViewModel.switchProfile(profile.id, viewModel::isInWorkoutSessionNow)
                     },
                     onAddProfile = profileSwitcherViewModel::openAddDialog,
                     onDismiss = profileSwitcherViewModel::dismissSwitcher,
@@ -553,10 +630,14 @@ fun EnhancedMainScreen(
                 ProfileAddDialog(
                     existingProfileCount = profiles.size,
                     isSubmitting = switchingInFlight,
-                    errorMessage = createFailedMessage.takeIf {
-                        switcherState.error == ProfileOverlayError.CREATE_FAILED
+                    errorMessage = when (switcherState.error) {
+                        ProfileOverlayError.CREATE_FAILED -> createFailedMessage
+                        ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT -> switchBlockedDuringWorkoutMessage
+                        else -> null
                     },
-                    onConfirm = profileSwitcherViewModel::createAndActivateProfile,
+                    onConfirm = { name, colorIndex ->
+                        profileSwitcherViewModel.createAndActivateProfile(name, colorIndex, viewModel::isInWorkoutSessionNow)
+                    },
                     onDismiss = profileSwitcherViewModel::dismissAddDialog,
                 )
             }
@@ -889,8 +970,6 @@ private fun ConnectionStatusIndicator(
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Scanning
     val isError = connectionState is ConnectionState.Error
-    val connectionSemanticState = connectionSemanticStateFor(connectionState)
-    val connectionStatusTag = connectionSemanticState.testTag
 
     // Animated gradient offset for connecting state
     val infiniteTransition = rememberInfiniteTransition(label = "connecting")
@@ -919,6 +998,9 @@ private fun ConnectionStatusIndicator(
             else -> "Click to Connect"
         }
     }
+
+    val connectionSemanticState = connectionSemanticStateFor(connectionState)
+    val connectionStatusTag = connectionSemanticState.testTag
 
     val contentDescription = when (connectionSemanticState.accessibilityDescription) {
         ConnectionAccessibilityDescription.CONNECTED ->

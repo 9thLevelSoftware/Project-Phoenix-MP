@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -49,7 +50,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
 
                 writer.appendLine(
-                    "${escapeCsv(exerciseName)},${pr.phase.name},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}",
+                    "${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(weight)},${pr.reps},${escapeCsv(date)},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)}",
                 )
             }
         }
@@ -81,7 +82,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     ?: exerciseNames[session.exerciseId]
                     ?: "Unknown"
                 val date = formatDate(session.timestamp)
-                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
                 val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
                 val effectiveWeight = if (isEchoMode) {
                     session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
@@ -98,9 +99,9 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 }
 
                 writer.appendLine(
-                    "$date,${escapeCsv(exerciseName)},${session.mode},${session.reps}," +
+                    "${escapeCsv(date)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${session.reps}," +
                         "${session.warmupReps},${session.workingReps},${session.totalReps}," +
-                        "$weight,$progression,${session.duration},$justLift,${session.eccentricLoad}",
+                        "${escapeCsv(weight)},${escapeCsv(progression)},${session.duration},${escapeCsv(justLift)},${session.eccentricLoad}",
                 )
             }
         }
@@ -144,7 +145,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     writer.appendLine(
                         "${escapeCsv(
                             exerciseName,
-                        )},${pr.phase.name},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress",
+                        )},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(weight)},${pr.reps},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)},${escapeCsv(progress)}",
                     )
 
                     previousWeight = pr.weightPerCableKg
@@ -174,7 +175,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Vitruvian Export: $fileName")
+                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Export: $fileName")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -195,11 +196,9 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
     }
 
-    private fun escapeCsv(value: String): String = if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-        "\"${value.replace("\"", "\"\"")}\""
-    } else {
-        value
-    }
+    // Textual cells (including caller-formatted weights/progress): RFC 4180 quoting plus
+    // the formula-injection guard. Raw numeric values remain unquoted.
+    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 
     private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 }

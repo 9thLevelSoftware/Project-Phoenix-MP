@@ -12,7 +12,7 @@ import com.devil.phoenixproject.domain.model.RpgProfile
  * Computes five attribute scores (0-100) from aggregate workout data and
  * classifies the user into a CharacterClass based on dominant attribute.
  *
- * Ceiling constants are tuned for the Vitruvian Trainer (max 220kg machine).
+ * Ceiling constants are tuned for the Phoenix Trainer (max 220kg machine).
  */
 object RpgAttributeEngine {
 
@@ -61,7 +61,7 @@ object RpgAttributeEngine {
 
     /**
      * Strength: 70% maxLiftScore + 30% avgWeightScore.
-     * Normalized against Vitruvian max (200kg) and typical working weight (120kg).
+     * Normalized against Phoenix max (200kg) and typical working weight (120kg).
      */
     internal fun computeStrength(input: RpgInput): Int {
         val maxLiftScore = normalize(input.maxWeightLiftedKg, MAX_WEIGHT_CEILING)
@@ -120,7 +120,7 @@ object RpgAttributeEngine {
      * Kotlin's `when` matches the first branch that equals `max`. The priority order is:
      *   POWERLIFTER (str) > ATHLETE (pow) > IRONMAN (sta) > MONK (con) > PHOENIX (mas)
      * This favors the strength archetype for ambiguous ties, which aligns with the
-     * Vitruvian Trainer's identity as a strength-focused machine. This is a deliberate
+     * Phoenix Trainer's identity as a strength-focused machine. This is a deliberate
      * design choice, not a bug.
      */
     internal fun classifyCharacter(str: Int, pow: Int, sta: Int, con: Int, mas: Int): CharacterClass {

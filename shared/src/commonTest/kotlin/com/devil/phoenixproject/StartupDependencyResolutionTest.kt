@@ -1,0 +1,290 @@
+package com.devil.phoenixproject
+
+import com.devil.phoenixproject.data.local.DatabaseDiagnosticReason
+import com.devil.phoenixproject.data.local.DatabaseFileMigrationException
+import com.devil.phoenixproject.data.local.DatabaseMigrationFailureCode
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
+import org.koin.dsl.koinApplication
+import org.koin.dsl.module
+
+class StartupDependencyResolutionTest {
+    @Test
+    fun requiredStartupCompletesBeforeFeatureDependenciesAreResolved() = runTest {
+        val events = mutableListOf<String>()
+
+        val result = prepareStartupDependencies(
+            resolveStartupOnly = {
+                events += "startup-only"
+                "database"
+            },
+            prepareRequired = { dependency ->
+                assertEquals("database", dependency)
+                events += "required"
+            },
+            resolveFeatures = { dependency ->
+                assertEquals("database", dependency)
+                events += "features"
+                "ready"
+            },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        assertEquals(listOf("startup-only", "required", "features"), events)
+        assertEquals("ready", assertIs<StartupDependencyResolution.Ready<String>>(result).dependencies)
+    }
+
+    @Test
+    fun requiredStartupFailureNeverConstructsFeatureDependenciesAndRemainsRetriable() = runTest {
+        var featureResolutions = 0
+
+        val result = prepareStartupDependencies(
+            resolveStartupOnly = { "database" },
+            prepareRequired = { throw RequiredStartupProbeFailure() },
+            resolveFeatures = {
+                featureResolutions++
+                "must-not-resolve"
+            },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val failure = assertIs<StartupDependencyResolution.Failed>(result)
+        assertEquals(0, featureResolutions)
+        assertEquals("REQUIRED_STARTUP_PROBE", failure.diagnosticCode)
+        assertTrue(failure.retryAllowed)
+    }
+
+    @Test
+    fun retryConstructsFeaturesExactlyOnceAfterRequiredStartupRecovers() = runTest {
+        var requiredAttempts = 0
+        var featureConstructions = 0
+        suspend fun attempt() = prepareAppHostDependencies(
+            resolveStartupOnly = { "startup" },
+            prepareRequired = {
+                requiredAttempts++
+                if (requiredAttempts == 1) throw RequiredStartupProbeFailure()
+            },
+            resolveFeatures = {
+                featureConstructions++
+                "features"
+            },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        assertIs<StartupDependencyResolution.Failed>(attempt())
+        assertEquals(0, featureConstructions)
+        assertIs<StartupDependencyResolution.Ready<String>>(attempt())
+        assertEquals(1, featureConstructions)
+    }
+
+    @Test
+    fun databaseOpenAndRequiredMigrationsRunOnTheBlockingDispatcherAndFeaturesOnTheCaller() = runTest {
+        val blocking = RecordingDispatcher(StandardTestDispatcher(testScheduler))
+        val observed = mutableMapOf<String, Boolean>()
+
+        val result = prepareAppHostDependencies(
+            resolveStartupOnly = {
+                observed["startup-only"] = blocking.running
+                "database"
+            },
+            prepareRequired = {
+                observed["required"] = blocking.running
+            },
+            resolveFeatures = {
+                observed["features"] = blocking.running
+                "ready"
+            },
+            blockingDispatcher = blocking,
+        )
+
+        assertIs<StartupDependencyResolution.Ready<String>>(result)
+        assertEquals(
+            mapOf(
+                "startup-only" to true,
+                "required" to true,
+                "features" to false,
+            ),
+            observed,
+        )
+    }
+
+    @Test
+    fun aFailedDatabaseOpenOnTheBlockingDispatcherStillSurfacesAsAFailedResolution() = runTest {
+        val blocking = RecordingDispatcher(StandardTestDispatcher(testScheduler))
+        var requiredRuns = 0
+
+        val result = prepareAppHostDependencies<String, String>(
+            resolveStartupOnly = { throw RequiredStartupProbeFailure() },
+            prepareRequired = { requiredRuns++ },
+            resolveFeatures = { "must-not-resolve" },
+            blockingDispatcher = blocking,
+        )
+
+        assertEquals("REQUIRED_STARTUP_PROBE", assertIs<StartupDependencyResolution.Failed>(result).diagnosticCode)
+        assertEquals(0, requiredRuns)
+    }
+
+    @Test
+    fun dualDatabaseFailureOffersExportSupportAndRetryButNoAutomaticRecovery() {
+        val result = resolveStartupDependencies {
+            throw IllegalStateException(
+                "Koin wrapper",
+                DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.DUAL_DATABASES,
+                    "sensitive internal detail",
+                    diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
+                ),
+            )
+        }
+
+        val failure = assertIs<StartupDependencyResolution.Failed>(result)
+        assertEquals("DB_DUAL_DATABASES", failure.diagnosticCode)
+        assertTrue(failure.retryAllowed)
+        assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET.name, failure.supportCode)
+        assertFalse(failure.diagnosticCode.contains("sensitive"))
+        assertEquals(
+            listOf(
+                StartupFailureAction.EXPORT_DATABASE_FILES,
+                StartupFailureAction.CONTACT_SUPPORT,
+                StartupFailureAction.RETRY,
+            ),
+            startupFailureActions(failure),
+        )
+    }
+
+    @Test
+    fun recoverableDatabaseFailureAllowsRetry() {
+        val result = resolveStartupDependencies {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.CHECKPOINT_FAILED,
+                "internal detail",
+            )
+        }
+
+        val failure = assertIs<StartupDependencyResolution.Failed>(result)
+        assertEquals("DB_CHECKPOINT_FAILED", failure.diagnosticCode)
+        assertTrue(failure.retryAllowed)
+        assertEquals(listOf(StartupFailureAction.RETRY), startupFailureActions(failure))
+    }
+
+    @Test
+    fun unknownFailureUsesNonSensitiveGenericCode() {
+        val result = resolveStartupDependencies {
+            error("token=must-not-leak")
+        }
+
+        val failure = assertIs<StartupDependencyResolution.Failed>(result)
+        assertEquals("STARTUP_INITIALIZATION_FAILED", failure.diagnosticCode)
+        assertTrue(failure.retryAllowed)
+        assertFalse(failure.diagnosticCode.contains("token"))
+        assertEquals(listOf(StartupFailureAction.RETRY), startupFailureActions(failure))
+    }
+
+    @Test
+    fun nonRetryableFailureOffersNoActions() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "PREFS_SOMETHING",
+            retryAllowed = false,
+            cause = IllegalStateException(),
+        )
+
+        assertEquals(emptyList(), startupFailureActions(failure))
+    }
+
+    @Test
+    fun nonRetryableDualDatabasesStillOffersExportAndSupport() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "DB_DUAL_DATABASES",
+            retryAllowed = false,
+            cause = IllegalStateException(),
+        )
+
+        assertEquals(
+            listOf(StartupFailureAction.EXPORT_DATABASE_FILES, StartupFailureAction.CONTACT_SUPPORT),
+            startupFailureActions(failure),
+        )
+    }
+
+    @Test
+    fun failedKoinSingletonIsRetriedAndNotCached() {
+        var attempts = 0
+        val application = koinApplication {
+            modules(
+                module {
+                    single<RetryProbe> {
+                        attempts++
+                        if (attempts == 1) error("first attempt fails")
+                        RetryProbe.Ready
+                    }
+                },
+            )
+        }
+
+        try {
+            assertIs<StartupDependencyResolution.Failed>(
+                resolveStartupDependencies { application.koin.get<RetryProbe>() },
+            )
+            assertIs<StartupDependencyResolution.Ready<RetryProbe>>(
+                resolveStartupDependencies { application.koin.get<RetryProbe>() },
+            )
+            assertEquals(2, attempts)
+        } finally {
+            application.close()
+        }
+    }
+
+    @Test
+    fun `issue 764 support action emails support with both codes instead of opening the public tracker`() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "DB_DUAL_DATABASES",
+            retryAllowed = true,
+            supportCode = "CANONICAL_LEGACY_TARGET",
+            cause = IllegalStateException("conflict"),
+        )
+
+        assertEquals(
+            "mailto:support@phoenix-portal.com?subject=Project%20Phoenix%20startup%3A%20DB_DUAL_DATABASES%20%2F%20CANONICAL_LEGACY_TARGET",
+            startupSupportMailtoUri(failure),
+        )
+    }
+
+    @Test
+    fun `mailto components percent-encode reserved and non-ascii characters`() {
+        assertEquals("a-b_c.d~e%20%26%3F%C3%A9", encodeMailtoComponent("a-b_c.d~e &?é"))
+    }
+
+    private sealed interface RetryProbe {
+        data object Ready : RetryProbe
+    }
+
+    private class RequiredStartupProbeFailure : IllegalStateException(), StartupDiagnosticFailure {
+        override val startupDiagnosticCode: String = "REQUIRED_STARTUP_PROBE"
+        override val startupRetryAllowed: Boolean = true
+    }
+}
+
+/** Delegates to [delegate] and reports whether a block dispatched through it is running right now. */
+private class RecordingDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+    var running: Boolean = false
+        private set
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        delegate.dispatch(context, Runnable {
+            val outer = running
+            running = true
+            try {
+                block.run()
+            } finally {
+                running = outer
+            }
+        })
+    }
+}

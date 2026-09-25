@@ -17,8 +17,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplates
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Bottom sheet for creating training cycles.

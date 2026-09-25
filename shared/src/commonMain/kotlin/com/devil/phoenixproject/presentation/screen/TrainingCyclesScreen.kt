@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,8 +46,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -63,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,50 +77,78 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.CycleConflictDraft
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineUpdate
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.CycleOneRepMaxNormalization
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.MissingFiveThreeOneTrainingMax
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.missingFiveThreeOneTrainingMaxes
+import com.devil.phoenixproject.domain.model.normalizeCycleOneRepMaxInputs
+import com.devil.phoenixproject.domain.model.oneRepMaxInputPrefillKg
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEditSheet
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
+import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
+import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeOperationGate
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeRetryAction
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
+import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
+import com.devil.phoenixproject.presentation.viewmodel.runFreshCycleUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.action_edit
-import vitruvianprojectphoenix.shared.generated.resources.action_ok
-import vitruvianprojectphoenix.shared.generated.resources.assign_routine
-import vitruvianprojectphoenix.shared.generated.resources.cd_create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.cd_expand
-import vitruvianprojectphoenix.shared.generated.resources.create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_title
-import vitruvianprojectphoenix.shared.generated.resources.edit_cycle
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_message
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_title
-import vitruvianprojectphoenix.shared.generated.resources.exercises_not_found
-import vitruvianprojectphoenix.shared.generated.resources.jump_to_day
-import vitruvianprojectphoenix.shared.generated.resources.label_error
-import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
-import vitruvianprojectphoenix.shared.generated.resources.start_workout
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_edit
+import projectphoenix.shared.generated.resources.action_ok
+import projectphoenix.shared.generated.resources.assign_routine
+import projectphoenix.shared.generated.resources.cd_create_cycle
+import projectphoenix.shared.generated.resources.cd_expand
+import projectphoenix.shared.generated.resources.create_cycle
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_action
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_body
+import projectphoenix.shared.generated.resources.cycle_training_max_missing_title
+import projectphoenix.shared.generated.resources.delete_cycle_message
+import projectphoenix.shared.generated.resources.delete_cycle_title
+import projectphoenix.shared.generated.resources.edit_cycle
+import projectphoenix.shared.generated.resources.empty_no_cycles_message
+import projectphoenix.shared.generated.resources.empty_no_cycles_title
+import projectphoenix.shared.generated.resources.exercises_not_found
+import projectphoenix.shared.generated.resources.jump_to_day
+import projectphoenix.shared.generated.resources.label_error
+import projectphoenix.shared.generated.resources.skip_rest_day
+import projectphoenix.shared.generated.resources.start_workout
 
 // Shared failure copy for the fresh-start and restart workout paths (issue #620:
 // failures must always be surfaced, never silent).
@@ -129,9 +157,8 @@ private const val WORKOUT_LOAD_FAILED_MESSAGE =
 private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
 
 /** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
-private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> =
-    days.flatMap { it.routine?.exercises ?: emptyList() }
-        .associate { it.exerciseName to it.exerciseId }
+private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatMap { it.routine?.exercises ?: emptyList() }
+    .associate { it.exerciseName to it.exerciseId }
 
 /**
  * State machine for cycle creation flow
@@ -151,6 +178,30 @@ sealed class CycleCreationState {
     data class Creating(val template: CycleTemplate) : CycleCreationState()
 }
 
+internal class CycleCreationSubmissionGate {
+    private var generation = 0L
+    private var activeSubmissionToken: Long? = null
+
+    fun begin(): Long? {
+        if (activeSubmissionToken != null) return null
+        generation += 1L
+        activeSubmissionToken = generation
+        return generation
+    }
+
+    fun finish(token: Long) {
+        if (activeSubmissionToken == token) {
+            activeSubmissionToken = null
+        }
+    }
+
+    fun cancel() {
+        generation += 1L
+    }
+
+    fun isCurrent(token: Long): Boolean = token == generation
+}
+
 /**
  * Training Cycles screen - view and manage rolling workout schedules.
  * Replaces the calendar-bound WeeklyPrograms with flexible Day 1, Day 2, etc.
@@ -163,10 +214,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val workoutRepository: WorkoutRepository = koinInject()
     val templateConverter: TemplateConverter = koinInject()
     val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
+    val baselineRepository: ProfileExerciseBaselineRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
+    val creationSubmissionGate = remember { CycleCreationSubmissionGate() }
+    DisposableEffect(Unit) {
+        onDispose { creationSubmissionGate.cancel() }
+    }
 
     // User preferences for weight unit and increment
     val weightUnit by viewModel.weightUnit.collectAsState()
@@ -196,6 +253,23 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     }
     val allRoutines = remember(routines, cycleRoutines) { routines + cycleRoutines.values }
 
+    // Carryover R-24: a 5/3/1 main lift with no baseline for the cycle's profile silently
+    // misses its weekly training-max bump. Surface it on the active cycle and let the user set
+    // it here, since a mid-cycle user never revisits the cycle-creation 1RM step.
+    var missingTrainingMaxes by remember { mutableStateOf<List<MissingFiveThreeOneTrainingMax>>(emptyList()) }
+    var trainingMaxRefresh by remember { mutableStateOf(0) }
+    var trainingMaxRepair by remember { mutableStateOf<TrainingMaxRepair?>(null) }
+    LaunchedEffect(activeCycle, allRoutines, trainingMaxRefresh) {
+        val cycle = activeCycle
+        missingTrainingMaxes = if (cycle == null) {
+            emptyList()
+        } else {
+            val baselines = baselineRepository.getAllForProfile(cycle.profileId)
+                .associate { it.exerciseId to it.oneRepMaxPerCableKg }
+            missingFiveThreeOneTrainingMaxes(cycle, allRoutines) { exerciseId -> baselines[exerciseId] }
+        }
+    }
+
     // State
     val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreationSheet by remember { mutableStateOf(false) }
@@ -204,6 +278,15 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
     var showWarningDialog by remember { mutableStateOf<List<String>?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
+    var conflictDrafts by remember { mutableStateOf<List<CycleConflictDraft>>(emptyList()) }
+
+    suspend fun refreshConflictDrafts() {
+        conflictDrafts = cycleRepository.getCycleConflictDrafts(profileId)
+    }
+
+    LaunchedEffect(profileId, cycles) {
+        refreshConflictDrafts()
+    }
 
     // Snackbar for feedback
     val snackbarHostState = remember { SnackbarHostState() }
@@ -231,10 +314,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
 
     // Resume/Restart dialog state (Issue #101)
-    var showResumeDialog by remember { mutableStateOf(false) }
-    var pendingRoutineId by remember { mutableStateOf<String?>(null) }
-    var pendingCycleId by remember { mutableStateOf<String?>(null) }
-    var pendingDayNumber by remember { mutableStateOf(0) }
+    var pendingResumeHandle by remember { mutableStateOf<RoutineResumeHandle?>(null) }
+    var resumeOperationInFlight by remember { mutableStateOf(false) }
+    var discardRetryPending by remember { mutableStateOf(false) }
+    var manualLoadRetry by remember { mutableStateOf<RoutineResumeUiOperation.RetryManualLoad?>(null) }
+    val resumeOperationGate = remember { RoutineResumeOperationGate() }
 
     suspend fun loadProgressMap(cycleList: List<TrainingCycle>, activeCycleId: String?): Map<String, CycleProgress> {
         val progressMap = mutableMapOf<String, CycleProgress>()
@@ -307,6 +391,90 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     Logger.d { "TrainingCyclesScreen: ${cycles.size} cycles loaded" }
 
+    fun clearResumeDialog() {
+        pendingResumeHandle = null
+        resumeOperationInFlight = false
+        discardRetryPending = false
+        manualLoadRetry = null
+    }
+
+    LaunchedEffect(activeProfileContext) {
+        val ready = activeProfileContext as? ActiveProfileContext.Ready ?: return@LaunchedEffect
+        val handle = pendingResumeHandle ?: return@LaunchedEffect
+        if (ready.profile.id != handle.selectedProfileId) {
+            resumeOperationGate.supersede()
+            clearResumeDialog()
+        }
+    }
+
+    suspend fun dispatchResumeOutcome(outcome: RoutineResumeUiOutcome) {
+        when (outcome) {
+            RoutineResumeUiOutcome.NavigateActiveWorkout -> {
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+            }
+
+            is RoutineResumeUiOutcome.EnterSetReady -> {
+                viewModel.enterSetReady(outcome.exerciseIndex, outcome.setIndex)
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.SetReady.route)
+            }
+
+            is RoutineResumeUiOutcome.RetainDialog -> {
+                resumeOperationInFlight = false
+                discardRetryPending = outcome.retryAction == RoutineResumeRetryAction.DISCARD
+            }
+
+            RoutineResumeUiOutcome.ConnectionFailed -> {
+                resumeOperationInFlight = false
+                snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
+            }
+
+            is RoutineResumeUiOutcome.LoadFailed -> {
+                manualLoadRetry = outcome.retryOperation
+                resumeOperationInFlight = false
+                snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
+            }
+
+            RoutineResumeUiOutcome.DismissDialog,
+            RoutineResumeUiOutcome.StartAndNavigateActiveWorkout,
+            is RoutineResumeUiOutcome.EnterDailyOverview,
+            -> clearResumeDialog()
+
+            RoutineResumeUiOutcome.StaleNoOp -> Unit
+        }
+    }
+
+    fun launchResumeOperation(operation: RoutineResumeUiOperation) {
+        resumeOperationInFlight = true
+        resumeOperationGate.launch(scope) { actionToken ->
+            val authority = RoutineResumeActionAuthority(
+                entryPoint = RoutineResumeEntryPoint.TRAINING_CYCLES,
+                actionToken = actionToken,
+                currentToken = { resumeOperationGate.currentToken },
+                contextIsCurrent = {
+                    viewModel.isRoutineResumeProfileCurrent(operation.handle.selectedProfileId)
+                },
+            )
+            val outcome = runRoutineResumeUiOperation(
+                operation = operation,
+                authority = authority,
+                port = viewModel.routineResumeUiPort(),
+            )
+            when (
+                val disposition = classifyRoutineResumeCompletion(
+                    tokenCurrent = authority.tokenIsCurrent(),
+                    contextCurrent = authority.contextIsCurrent(),
+                    outcome = outcome,
+                )
+            ) {
+                RoutineResumeCompletionDisposition.IgnoreStaleToken -> return@launch
+                RoutineResumeCompletionDisposition.UnlockRetainedDialog -> resumeOperationInFlight = false
+                is RoutineResumeCompletionDisposition.Apply -> dispatchResumeOutcome(disposition.outcome)
+            }
+        }
+    }
+
     val backgroundGradient = screenBackgroundBrush()
 
     Box(
@@ -341,46 +509,76 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             cycle = activeCycle!!,
                             progress = cycleProgress[activeCycle!!.id],
                             routines = allRoutines,
+                            missingTrainingMaxes = missingTrainingMaxes,
+                            onSetTrainingMaxes = {
+                                activeCycle?.let { cycle ->
+                                    val missing = missingTrainingMaxes
+                                    scope.launch {
+                                        trainingMaxRepair = TrainingMaxRepair(
+                                            profileId = cycle.profileId,
+                                            exerciseByName = missing.associate { lift ->
+                                                lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
+                                            },
+                                        )
+                                    }
+                                }
+                            },
                             selectedDayNumber = selectedDayNumber,
                             onDaySelected = { dayNumber ->
                                 selectedDayNumber = dayNumber
                             },
                             onStartWorkout = { routineId, cycleId, dayNumber ->
                                 routineId?.let { rid ->
-                                    // Issue #101: Check for resumable progress
-                                    if (viewModel.hasResumableProgress(rid)) {
-                                        // Show resume dialog
-                                        pendingRoutineId = rid
-                                        pendingCycleId = cycleId
-                                        pendingDayNumber = dayNumber
-                                        showResumeDialog = true
-                                    } else {
-                                        // No progress - start fresh
-                                        // Issue #541: Route cycles through SetReadyScreen for parity
-                                        // with the routines flow. loadRoutineFromCycle is async (it
-                                        // launches a coroutine to resolve PR% weights via
-                                        // RoutineFlowManager.loadRoutine → resolveRoutineWeights), so
-                                        // we must wait for the engine's loadedRoutine flow to surface
-                                        // the expected routine id before calling enterSetReady —
-                                        // otherwise enterSetReady returns early because _loadedRoutine
-                                        // is still null and SetReadyScreen would render blank.
-                                        viewModel.ensureConnection(
-                                            onConnected = {
-                                                scope.launch {
-                                                    if (viewModel.loadRoutineFromCycleAsync(rid, cycleId, dayNumber)) {
-                                                        viewModel.enterSetReady(0, 0)
-                                                        navController.navigate(NavigationRoutes.SetReady.route)
-                                                    } else {
-                                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
-                                                    }
-                                                }
-                                            },
-                                            onFailed = {
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
-                                                }
+                                    val routine = allRoutines.find { it.id == rid } ?: return@let
+                                    pendingResumeHandle = null
+                                    resumeOperationInFlight = true
+                                    discardRetryPending = false
+                                    manualLoadRetry = null
+                                    resumeOperationGate.launch(scope) { selectionToken ->
+                                        val authority = RoutineResumeActionAuthority(
+                                            entryPoint = RoutineResumeEntryPoint.TRAINING_CYCLES,
+                                            actionToken = selectionToken,
+                                            currentToken = { resumeOperationGate.currentToken },
+                                            contextIsCurrent = {
+                                                viewModel.isRoutineResumeProfileCurrent(routine.profileId)
                                             },
                                         )
+                                        when (
+                                            val discovery = viewModel.discoverRoutineResume(
+                                                routine = routine,
+                                                launchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES,
+                                                cycleId = cycleId,
+                                                cycleDayNumber = dayNumber,
+                                            )
+                                        ) {
+                                            is RoutineResumeDiscovery.Candidate ->
+                                                if (authority.isCurrent()) {
+                                                    pendingResumeHandle = discovery.handle
+                                                    resumeOperationInFlight = false
+                                                }
+
+                                            RoutineResumeDiscovery.Missing ->
+                                                if (authority.isCurrent()) {
+                                                    dispatchResumeOutcome(
+                                                        runFreshCycleUiOperation(
+                                                            routine = routine,
+                                                            cycleId = cycleId,
+                                                            dayNumber = dayNumber,
+                                                            authority = authority,
+                                                            port = viewModel.routineResumeUiPort(),
+                                                        ),
+                                                    )
+                                                }
+
+                                            RoutineResumeDiscovery.RetryableFailure ->
+                                                if (authority.isCurrent()) {
+                                                    resumeOperationInFlight = false
+                                                    snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
+                                                }
+
+                                            RoutineResumeDiscovery.Superseded ->
+                                                if (authority.isCurrent()) clearResumeDialog()
+                                        }
                                     }
                                 }
                             },
@@ -513,6 +711,55 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         )
     }
 
+    trainingMaxRepair?.let { repair ->
+        OneRepMaxInputScreen(
+            mainLiftNames = repair.exerciseByName.keys.toList(),
+            exerciseByName = repair.exerciseByName,
+            weightUnit = weightUnit,
+            kgToDisplay = viewModel::kgToDisplay,
+            displayToKg = viewModel::displayToKg,
+            onConfirm = { oneRepMaxValues ->
+                scope.launch {
+                    try {
+                        when (
+                            val normalization = normalizeCycleOneRepMaxInputs(
+                                inputValues = oneRepMaxValues,
+                                exercisesByName = repair.exerciseByName,
+                            )
+                        ) {
+                            is CycleOneRepMaxNormalization.Invalid -> {
+                                showErrorDialog =
+                                    "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                        "Exercise cable metadata is unavailable; review the value and try again."
+                            }
+
+                            is CycleOneRepMaxNormalization.Valid -> {
+                                // Persisted baselines are per-cable kg, scoped to the cycle's profile.
+                                baselineRepository.setBatch(
+                                    profileId = repair.profileId,
+                                    updates = normalization.values.values.map { normalizedValue ->
+                                        ProfileExerciseBaselineUpdate(
+                                            exerciseId = normalizedValue.exerciseId,
+                                            oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                        )
+                                    },
+                                    updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                )
+                                trainingMaxRepair = null
+                                trainingMaxRefresh++
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (failure: Exception) {
+                        showErrorDialog = "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                    }
+                }
+            },
+            onCancel = { trainingMaxRepair = null },
+        )
+    }
+
     // OneRepMaxInputScreen
     when (val state = creationState) {
         is CycleCreationState.Previewing -> {
@@ -523,6 +770,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
@@ -560,24 +808,34 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // on the map's identity; in-place mutation never re-seeds, leaving the prefill
             // blank and Continue disabled for returning users (#633 review, P2).
             var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
+            var existingExercisesByName by remember { mutableStateOf<Map<String, Exercise?>>(emptyMap()) }
             var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
-            LaunchedEffect(mainLiftNames) {
+            LaunchedEffect(mainLiftNames, profileId) {
                 val oneRepMaxValues = mutableMapOf<String, Float>()
+                val exercisesByName = mutableMapOf<String, Exercise?>()
                 val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
-                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                    val exercise = exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)
+                    exercisesByName[exerciseName] = exercise
+                    exercise?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
                         val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
                         val prOneRepMax = pr?.oneRepMax
 
-                        // Use PR's 1RM if available, else fall back to stored exercise 1RM
+                        // Preserve the cycle-input precedence within the active profile.
                         val valueToUse = prOneRepMax?.takeIf { it > 0f }
-                            ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
+                            ?: baselineRepository.get(profileId, exerciseId)
+                                ?.oneRepMaxPerCableKg
+                                ?.takeIf { it > 0f }
 
-                        valueToUse?.let { oneRepMax ->
-                            oneRepMaxValues[exerciseName] = oneRepMax
+                        valueToUse?.let { oneRepMaxPerCableKg ->
+                            // Persisted baselines are per-cable kg. The wizard's confirmed
+                            // unified fields accept total load; all other metadata stays unchanged.
+                            exercise.oneRepMaxInputPrefillKg(oneRepMaxPerCableKg)?.let { inputValue ->
+                                oneRepMaxValues[exerciseName] = inputValue
+                            }
                         }
 
                         // Store the actual PR weight for indicator display
@@ -586,11 +844,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         }
                     }
                 }
+                existingExercisesByName = exercisesByName.toMap()
                 existingPrWeightValues = prWeights.toMap()
                 existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
             val loadedOneRepMaxValues = existingOneRepMaxValues
+            val loadedExercisesByName = existingExercisesByName
             if (loadedOneRepMaxValues == null) {
                 // Local DB lookups — resolves within a frame or two. Gating avoids
                 // composing the form before the prefill snapshot exists.
@@ -605,28 +865,76 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             } else {
                 OneRepMaxInputScreen(
                     mainLiftNames = mainLiftNames,
+                    exerciseByName = loadedExercisesByName,
                     existingOneRepMaxValues = loadedOneRepMaxValues,
                     weightUnit = weightUnit,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
+                        val submissionToken = creationSubmissionGate.begin() ?: return@OneRepMaxInputScreen
                         scope.launch {
-                            oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                                if (oneRepMax > 0f) {
-                                    // ID-first lookup: template IDs are stable, names are not.
-                                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                            try {
+                                val exercisesByName = oneRepMaxValues
+                                    .filterValues { it > 0f }
+                                    .keys
+                                    .associateWith { exerciseName ->
+                                        exerciseRepository.findByIdOrName(
+                                            templateExerciseIds[exerciseName],
+                                            exerciseName,
+                                        )
+                                    }
+                                when (
+                                    val normalization = normalizeCycleOneRepMaxInputs(
+                                        inputValues = oneRepMaxValues,
+                                        exercisesByName = exercisesByName,
+                                    )
+                                ) {
+                                    is CycleOneRepMaxNormalization.Invalid -> {
+                                        // Keep the user on the input page and reject the entire
+                                        // submission rather than persisting a partial baseline map.
+                                        if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                            showErrorDialog =
+                                                "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                                    "Exercise cable metadata is unavailable; review the value and try again."
+                                        }
+                                    }
+
+                                    is CycleOneRepMaxNormalization.Valid -> {
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        baselineRepository.setBatch(
+                                            profileId = profileId,
+                                            updates = normalization.values.values.map { normalizedValue ->
+                                                ProfileExerciseBaselineUpdate(
+                                                    exerciseId = normalizedValue.exerciseId,
+                                                    oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                                )
+                                            },
+                                            updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                        )
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        creationState = CycleCreationState.ModeConfirmation(
+                                            template = state.template,
+                                            oneRepMaxValues = normalization.values.mapValues { it.value.perCableKg },
+                                            prWeightValues = existingPrWeightValues,
+                                        )
                                     }
                                 }
+                            } catch (_: CancellationException) {
+                                // Cancellation is a user action, not a creation failure.
+                                return@launch
+                            } catch (failure: Exception) {
+                                if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                    showErrorDialog =
+                                        "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                                }
+                            }
+                            finally {
+                                creationSubmissionGate.finish(submissionToken)
                             }
                         }
-                        creationState = CycleCreationState.ModeConfirmation(
-                            template = state.template,
-                            oneRepMaxValues = oneRepMaxValues,
-                            prWeightValues = existingPrWeightValues,
-                        )
                     },
                     onCancel = {
+                        creationSubmissionGate.cancel()
                         creationState = CycleCreationState.Idle
                     },
                 )
@@ -645,17 +953,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {
                         try {
-                            // 1. Update 1RM values in exercise repository if provided
-                            val modeTemplateExerciseIds = state.template.exerciseIdsByName()
-                            state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                                if (oneRepMax > 0f) {
-                                    exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
-                                    }
-                                }
-                            }
-
-                            // 2. Convert template using TemplateConverter (with user's exercise configs)
+                            // 1. Convert template using TemplateConverter (with user's exercise configs).
+                            // Baselines were persisted once when the 1RM input step was confirmed.
                             // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
                             val conversionResult = templateConverter.convert(
                                 template = state.template,
@@ -663,7 +962,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 profileId = profileId,
                             )
 
-                            // 3. Save routines FIRST (CycleDay has FK to Routine)
+                            // 2. Save routines FIRST (CycleDay has FK to Routine)
                             // CRITICAL: Must await each save - workoutRepository.saveRoutine is suspend
                             // Using viewModel.saveRoutine() was fire-and-forget (launched coroutine without await)
                             conversionResult.routines.forEach { routine ->
@@ -671,26 +970,29 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 workoutRepository.saveRoutine(routine.copy(profileId = profileId))
                             }
 
-                            // 4. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
+                            // 3. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
                             cycleRepository.saveCycle(conversionResult.cycle)
 
-                            // 5. Show warnings if any exercises weren't found
+                            // 4. Show warnings if any exercises weren't found
                             if (conversionResult.warnings.isNotEmpty()) {
                                 Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
                                 showWarningDialog = conversionResult.warnings
                             }
 
-                            // 6. Navigate back or reset state
+                            // 5. Navigate back or reset state
                             creationState = CycleCreationState.Idle
                             Logger.d { "Successfully created cycle: ${state.template.name}" }
+                        } catch (_: CancellationException) {
+                            return@launch
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
-                            showErrorDialog = e.message ?: "Failed to create training cycle"
+                            showErrorDialog = "Failed to create training cycle: ${e.message ?: "An unexpected error occurred."}"
                         }
                     }
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
@@ -714,6 +1016,50 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 }
             },
             onDismiss = { showDeleteConfirmDialog = null },
+        )
+    }
+
+    conflictDrafts.firstOrNull()?.let { draft ->
+        AlertDialog(
+            onDismissRequest = {},
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                )
+            },
+            title = { Text("Cycle changed on another device") },
+            text = {
+                Text(
+                    "The server version of “${draft.cycle.name}” was newer. " +
+                        "Your local version is preserved and can be saved as a separate inactive cycle.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            cycleRepository.saveCycleDraftAsCopy(draft.id)
+                            refreshConflictDrafts()
+                        }
+                    },
+                ) {
+                    Text("Save local copy")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            cycleRepository.keepServerCycle(draft.id)
+                            refreshConflictDrafts()
+                        }
+                    },
+                ) {
+                    Text("Keep server version")
+                }
+            },
         )
     }
 
@@ -759,7 +1105,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         )
     }
 
-    // Error Dialog - shows when cycle creation fails
+    // Error Dialog - shows validation and cycle-creation failures
     showErrorDialog?.let { errorMessage ->
         AlertDialog(
             onDismissRequest = { showErrorDialog = null },
@@ -773,7 +1119,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             title = { Text(stringResource(Res.string.label_error)) },
             text = {
                 Text(
-                    "Failed to create training cycle: $errorMessage",
+                    errorMessage,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -786,74 +1132,85 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     }
 
     // Resume/Restart Dialog (Issue #101)
-    if (showResumeDialog) {
-        viewModel.getResumableProgressInfo()?.let { info ->
-            ResumeRoutineDialog(
-                progressInfo = info,
-                onResume = {
-                    showResumeDialog = false
-                    // Issue #541: Resume a cycle workout via SetReadyScreen (parity with fresh start).
-                    // Do not call loadRoutineFromCycle (we want to keep existing progress). The engine's
-                    // currentExerciseIndex / currentSetIndex carry the in-progress position from the prior
-                    // workout session; we route to SetReady at that (ex, set) so the user lands back
-                    // where they left off, not at (0, 0). See also the parent task RCA's set-jump note:
-                    // engine layer already supports arbitrary (ex, set) entry.
-                    viewModel.ensureConnection(
-                        onConnected = {
-                            val exIdx = viewModel.currentExerciseIndex.value
-                            val setIdx = viewModel.currentSetIndex.value
-                            viewModel.enterSetReady(exIdx, setIdx)
-                            navController.navigate(NavigationRoutes.SetReady.route)
-                        },
-                        onFailed = { /* Error shown via StateFlow */ },
-                    )
-                },
-                onRestart = {
-                    showResumeDialog = false
-                    // Issue #541: Restart resets the cycle's routine indices, then routes through
-                    // SetReadyScreen so the user lands on the parity path with the set picker.
-                    // Same race-condition guard as the fresh-start flow: loadRoutineFromCycle is
-                    // async, so we wait for the engine's loadedRoutine flow to surface the expected
-                    // id before calling enterSetReady.
-                    pendingRoutineId?.let { rid ->
-                        viewModel.ensureConnection(
-                            onConnected = {
-                                scope.launch {
-                                    if (viewModel.loadRoutineFromCycleAsync(
-                                            rid,
-                                            pendingCycleId ?: "",
-                                            pendingDayNumber,
-                                        )
-                                    ) {
-                                        viewModel.enterSetReady(0, 0)
-                                        navController.navigate(NavigationRoutes.SetReady.route)
-                                    } else {
-                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
-                                    }
-                                }
-                            },
-                            onFailed = {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
-                                }
-                            },
-                        )
-                    }
-                },
-                onDismiss = { showResumeDialog = false },
-            )
-        }
+    pendingResumeHandle?.let { handle ->
+        ResumeRoutineDialog(
+            progressInfo = handle.progressInfo,
+            onResume = {
+                if (resumeOperationInFlight || discardRetryPending) return@ResumeRoutineDialog
+                launchResumeOperation(manualLoadRetry ?: RoutineResumeUiOperation.Resume(handle))
+            },
+            onRestart = {
+                if (resumeOperationInFlight) return@ResumeRoutineDialog
+                manualLoadRetry = null
+                launchResumeOperation(RoutineResumeUiOperation.Restart(handle))
+            },
+            onDismiss = {
+                if (!resumeOperationInFlight) {
+                    resumeOperationGate.supersede()
+                    clearResumeDialog()
+                }
+            },
+            confirmEnabled = !resumeOperationInFlight && !discardRetryPending,
+        )
     }
 }
 
 /**
  * Active cycle card with "Up Next" style display and DayStrip for browsing days.
  */
+/** Mid-cycle training-max input (carryover R-24): lifts with no baseline for [profileId]. */
+private data class TrainingMaxRepair(
+    val profileId: String,
+    val exerciseByName: Map<String, Exercise?>,
+)
+
+@Composable
+private fun MissingTrainingMaxNotice(
+    missing: List<MissingFiveThreeOneTrainingMax>,
+    onSetTrainingMaxes: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(Res.string.cycle_training_max_missing_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(
+                    Res.string.cycle_training_max_missing_body,
+                    missing.joinToString(", ") { it.exerciseName },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(onClick = onSetTrainingMaxes) {
+                Text(stringResource(Res.string.cycle_training_max_missing_action))
+            }
+        }
+    }
+}
+
 @Composable
 private fun ActiveCycleCard(
     cycle: TrainingCycle,
     progress: CycleProgress?,
     routines: List<Routine>,
+    missingTrainingMaxes: List<MissingFiveThreeOneTrainingMax>,
+    onSetTrainingMaxes: () -> Unit,
     selectedDayNumber: Int?,
     onDaySelected: (Int) -> Unit,
     onStartWorkout: (routineId: String?, cycleId: String, dayNumber: Int) -> Unit,
@@ -894,6 +1251,11 @@ private fun ActiveCycleCard(
                 .fillMaxWidth()
                 .padding(20.dp),
         ) {
+            if (missingTrainingMaxes.isNotEmpty()) {
+                MissingTrainingMaxNotice(missingTrainingMaxes, onSetTrainingMaxes)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),

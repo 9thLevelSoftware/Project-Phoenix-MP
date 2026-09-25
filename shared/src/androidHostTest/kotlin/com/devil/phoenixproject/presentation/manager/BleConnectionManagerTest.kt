@@ -96,7 +96,6 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertTrue(manager.connectionLostDuringWorkout.value)
-            assertEquals(1, workoutStateProvider.connectionLostCallbacks)
 
             manager.dismissConnectionLostAlert()
             assertFalse(manager.connectionLostDuringWorkout.value)
@@ -228,16 +227,42 @@ class BleConnectionManagerTest {
         }
     }
 
-    private class FakeWorkoutStateProvider(var active: Boolean, var midSet: Boolean = false) : WorkoutStateProvider {
-        var connectionLostCallbacks = 0
-
+    private class FakeWorkoutStateProvider(
+        var active: Boolean,
+        var midSet: Boolean = false,
+        var allBodyweight: Boolean = false, // Issue #693
+    ) : WorkoutStateProvider {
         override val isWorkoutActiveForConnectionAlert: Boolean
-            get() = active
+            get() = active && !allBodyweight
         override val isWorkoutMidSet: Boolean
             get() = midSet
+    }
 
-        override fun onWorkoutConnectionLost() {
-            connectionLostCallbacks++
+    @Test
+    fun `disconnect during bodyweight-only workout does not set connection lost alert`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val workoutStateProvider = FakeWorkoutStateProvider(active = true, allBodyweight = true)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
+            advanceUntilIdle()
+
+            fakeBleRepository.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            fakeBleRepository.simulateDisconnect()
+            advanceUntilIdle()
+
+            assertFalse(manager.connectionLostDuringWorkout.value)
+        } finally {
+            managerScope.cancel()
         }
     }
 }

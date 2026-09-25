@@ -8,16 +8,16 @@ import com.devil.phoenixproject.util.BackupDestination
 data class UserPreferences(
     val weightUnit: WeightUnit = WeightUnit.LB,
     // Issue #167: autoplayEnabled removed - now derived from summaryCountdownSeconds
-    // summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF, != 0 = autoplay ON
+    // summaryCountdownSeconds == 0 (Manual) = autoplay OFF, != 0 = autoplay ON
     val stopAtTop: Boolean = false, // false = stop at bottom (extended), true = stop at top (contracted)
-    val enableVideoPlayback: Boolean = true, // true = show videos, false = hide videos to avoid slow loading
+    val enableVideoPlayback: Boolean = true, // true = show exercise demo images, false = hide them to avoid slow loading
     val beepsEnabled: Boolean = true, // true = play audio cues during workouts, false = haptic only
     val colorScheme: Int = 0,
     val discoModeUnlocked: Boolean = false, // Easter egg - unlocked by tapping LED header 7 times
     val audioRepCountEnabled: Boolean = false, // Audio rep count announcements during workout
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric, BOTTOM=eccentric)
     // Countdown settings
-    val summaryCountdownSeconds: Int = 10, // -1 = Off (skip summary), 0 = Unlimited (no auto-advance), 5-30 = auto-advance
+    val summaryCountdownSeconds: Int = 10, // -1 = Automatic (skip summary), 0 = Manual (hold until the user continues), 5-30 = auto-advance
     val autoStartCountdownSeconds: Int = 5, // 2-10 in 1s intervals, default 5
     val gamificationEnabled: Boolean = true, // Show PR celebrations, award badges, play celebration sounds
     // Issue #266: Configurable weight increment (in user's selected unit)
@@ -33,6 +33,8 @@ data class UserPreferences(
     val motionStartEnabled: Boolean = false, // Start sets by holding cables instead of countdown
     // Issue #293: Per-session auto-backup to device filesystem
     val autoBackupEnabled: Boolean = false, // Automatically save each workout to a local backup file
+    // F-033: raw per-sample telemetry is excluded from full and auto backups unless opted in
+    val includeRawTelemetryInBackups: Boolean = false,
     // Issue #238: Language/locale preference for i18n
     val language: String = "en", // Language code: "en", "nl", "de", "es", "fr"
     // Issue #141: Voice-activated emergency stop
@@ -64,6 +66,10 @@ data class UserPreferences(
     val adultsOnlyPrompted: Boolean = false, // One-shot flag: true after the 18+ modal is shown (confirm or decline)
     // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
     val bleCompatibilityMode: BleCompatibilitySetting = BleCompatibilitySetting.AUTO,
+    // KD-9: last trainer model this install connected to. Planning/editor screens run
+    // offline, so they pick a per-cable ceiling from this instead of assuming the widest
+    // hardware. Commands never use it — they use the LIVE connected model.
+    val lastConnectedModel: PhoenixModel = PhoenixModel.Unknown,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

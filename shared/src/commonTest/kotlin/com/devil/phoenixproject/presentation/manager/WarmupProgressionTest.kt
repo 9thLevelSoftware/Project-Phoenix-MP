@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.util.BleConstants
@@ -99,6 +101,46 @@ class WarmupProgressionTest {
     }
 
     @Test
+    fun `manual stop during variable warmup persists the executed warmup command`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = warmupRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        listOf(
+            WorkoutMetric(timestamp = 100L, loadA = 20f, loadB = 20f, positionA = 100f, positionB = 100f),
+            WorkoutMetric(timestamp = 200L, loadA = 20f, loadB = 20f, positionA = 200f, positionB = 200f),
+            WorkoutMetric(timestamp = 300L, loadA = 20f, loadB = 20f, positionA = 100f, positionB = 100f),
+            WorkoutMetric(timestamp = 400L, loadA = 20f, loadB = 20f, positionA = 200f, positionB = 200f),
+        ).forEach { harness.fakeBleRepo.emitMetric(it) }
+        advanceUntilIdle()
+
+        harness.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 2,
+            totalReps = 2,
+            isWarmupComplete = true,
+        )
+        harness.dwsm.stopWorkout(exitingWorkout = false)
+        advanceUntilIdle()
+
+        val session = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+        assertEquals(20f, session.weightPerCableKg)
+        assertEquals(0f, session.progressionKg)
+        assertEquals(20f * (session.cableCount ?: 1) * 2, session.totalVolumeKg)
+        val completed = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
+        assertEquals(20f, completed.actualWeightKg)
+        assertEquals(2, completed.actualReps)
+
+        harness.cleanup()
+    }
+
+    @Test
     fun `working set after warm-up retains configured per-rep progression`() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = warmupRoutine()
@@ -118,7 +160,10 @@ class WarmupProgressionTest {
 
         // Complete the warm-up set -> transition to the working set.
         harness.fakeBleRepo.commandsReceived.clear()
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         // Warm-up phase should be over.
@@ -171,7 +216,10 @@ class WarmupProgressionTest {
         )
 
         harness.fakeBleRepo.commandsReceived.clear()
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         val workingPacket = harness.firstActivationPacket()

@@ -37,7 +37,9 @@ kotlin {
         withHostTest {}
     }
 
-    // iOS targets
+    // iOS: iosArm64 is the distribution XCFramework. iosSimulatorArm64 is
+    // test-only so DriverFactory runtime contracts can run on a Mac without
+    // changing the shipped device framework.
     val xcf = XCFramework()
     iosArm64 {
         binaries.framework {
@@ -165,11 +167,6 @@ kotlin {
                 // Ktor OkHttp engine for Android
                 implementation(libs.ktor.client.okhttp)
 
-                // Media3 ExoPlayer (for HLS video playback)
-                implementation(libs.media3.exoplayer)
-                implementation(libs.media3.exoplayer.hls)
-                implementation(libs.media3.ui)
-
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(libs.cmp.ui.tooling)
 
@@ -236,10 +233,12 @@ tasks.named("linkReleaseFrameworkIosSimulatorArm64") {
 
 sqldelight {
     databases {
-        create("VitruvianDatabase") {
+        create("PhoenixDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 43 = initial schema (1) + 42 migrations (1.sqm through 42.sqm).
-            version = 43
+            // Schema version is derived from migrations (highest N.sqm + 1); this value is
+            // not authoritative. Do not bump it when adding a migration (see CLAUDE.md).
+            // SchemaParityTest's EXPECTED_SCHEMA_VERSION is the value to keep in step.
+            version = 47
         }
     }
 }
@@ -247,7 +246,7 @@ sqldelight {
 // ============================================================
 // Schema Manifest Validator
 //
-// Fails the build if any column in VitruvianDatabase.sq lacks provenance
+// Fails the build if any column in PhoenixDatabase.sq lacks provenance
 // (i.e., is not covered by a migration ALTER TABLE, a migration CREATE TABLE,
 // a SchemaManifest SchemaHealOperation, a SchemaManifest SchemaTableOperation,
 // or grandfathered as a v1 original table).
@@ -255,9 +254,9 @@ sqldelight {
 
 tasks.register("validateSchemaManifest") {
     group = "verification"
-    description = "Fails build if any column in VitruvianDatabase.sq lacks provenance"
+    description = "Fails build if any column in PhoenixDatabase.sq lacks provenance"
 
-    val sqFile = file("src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq")
+    val sqFile = file("src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq")
     val manifestFile = file("src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt")
     val migrationsDir = file("src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations")
 
@@ -278,7 +277,7 @@ tasks.register("validateSchemaManifest") {
             "RoutineExercise",
         )
 
-        // ── 1. Parse CREATE TABLE blocks from VitruvianDatabase.sq ──────────
+        // ── 1. Parse CREATE TABLE blocks from PhoenixDatabase.sq ──────────
         val sqText = sqFile.readText()
         val createTableRegex = Regex(
             """CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\)""",
@@ -441,6 +440,6 @@ tasks.register("validateSchemaManifest") {
 // because SQLDelight registers its per-database tasks lazily.
 tasks.named("generateSqlDelightInterface") { dependsOn("validateSchemaManifest") }
 afterEvaluate {
-    tasks.findByName("generateCommonMainVitruvianDatabaseInterface")
+    tasks.findByName("generateCommonMainPhoenixDatabaseInterface")
         ?.dependsOn("validateSchemaManifest")
 }

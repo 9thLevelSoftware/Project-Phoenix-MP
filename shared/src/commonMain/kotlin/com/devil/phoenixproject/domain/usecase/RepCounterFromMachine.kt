@@ -7,9 +7,9 @@ import com.devil.phoenixproject.domain.model.RepPhase
 import com.devil.phoenixproject.domain.model.RepType
 
 /**
- * Handles rep counting based on notifications emitted by the Vitruvian machine.
+ * Handles rep counting based on notifications emitted by the Phoenix machine.
  *
- * REP COUNTING APPROACH (Matches Official App):
+ * REP COUNTING APPROACH (trust the machine counters):
  * - warmupReps = repsRomCount (directly from machine)
  * - workingReps = down - repsRomCount (down counter minus warmup count)
  *
@@ -163,6 +163,18 @@ class RepCounterFromMachine {
         lastCompleteCounter = 0
         // NOTE: Do NOT clear position tracking lists or min/max ranges!
         // This preserves hasMeaningfulRange() for auto-stop detection
+    }
+
+    /**
+     * Records carried legacy directional counters without producing a rep.
+     *
+     * The execution freshness gate calls this for the first post-cutover legacy packet. The next
+     * accepted packet is then interpreted as a delta from this execution's baseline instead of a
+     * delta from zero.
+     */
+    internal fun establishLegacyCounterBaseline(topCounter: Int, completeCounter: Int) {
+        lastTopCounter = topCounter
+        lastCompleteCounter = completeCounter
     }
 
     /**
@@ -374,7 +386,7 @@ class RepCounterFromMachine {
     }
 
     /**
-     * MODERN rep counting - MATCHES PARENT REPO (VitruvianRedux) EXACTLY.
+     * MODERN rep counting - MATCHES PARENT REPO (PhoenixRedux) EXACTLY.
      *
      * Issue #210 ROOT CAUSE FIX: Previous implementation used custom down counter
      * calculations with safety nets. The parent repo simply TRUSTS THE MACHINE:
@@ -592,7 +604,6 @@ class RepCounterFromMachine {
                 )
             }
         }
-
     }
 
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {

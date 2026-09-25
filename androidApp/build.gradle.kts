@@ -98,131 +98,6 @@ abstract class VerifyReleaseCueResourcesTask : DefaultTask() {
     }
 }
 
-abstract class VerifyQaReleaseBoundaryTask : DefaultTask() {
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val forbiddenMarkersFile: RegularFileProperty
-
-    @get:Internal
-    abstract val releaseApkDir: DirectoryProperty
-
-    @get:Internal
-    abstract val releaseIntermediatesDir: DirectoryProperty
-
-    @get:Internal
-    abstract val projectRootDir: DirectoryProperty
-
-    @TaskAction
-    fun verifyReleaseBoundary() {
-        fun ByteArray.containsSequence(sequence: ByteArray): Boolean {
-            if (sequence.isEmpty()) return true
-            if (sequence.size > size) return false
-
-            for (startIndex in 0..size - sequence.size) {
-                var matches = true
-                for (offset in sequence.indices) {
-                    if (this[startIndex + offset] != sequence[offset]) {
-                        matches = false
-                        break
-                    }
-                }
-                if (matches) return true
-            }
-            return false
-        }
-
-        val projectRoot = projectRootDir.get().asFile
-        val markerFile = forbiddenMarkersFile.get().asFile
-        val forbiddenMarkers = markerFile.readLines()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-
-        if (forbiddenMarkers.isEmpty()) {
-            throw GradleException("QA release marker inventory is empty: ${markerFile.relativeTo(projectRoot)}")
-        }
-        if (forbiddenMarkers.distinct().size != forbiddenMarkers.size) {
-            throw GradleException("QA release marker inventory contains duplicates: ${markerFile.relativeTo(projectRoot)}")
-        }
-
-        val markerBytes = forbiddenMarkers.associateWith { it.toByteArray(Charsets.UTF_8) }
-        val releaseArtifacts = releaseApkDir.get().asFile
-            .takeIf(File::isDirectory)
-            ?.walkTopDown()
-            ?.filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
-            ?.sortedBy { it.invariantSeparatorsPath }
-            ?.toList()
-            .orEmpty()
-
-        if (releaseArtifacts.isEmpty()) {
-            throw GradleException("No Android release APK artifacts found. Run :androidApp:assembleRelease first.")
-        }
-
-        val releaseIntermediates = releaseIntermediatesDir.get().asFile
-        val releaseManifests = listOf(
-            "merged_manifest",
-            "merged_manifests",
-            "packaged_manifests",
-        ).flatMap { relativeRoot ->
-            File(releaseIntermediates, relativeRoot)
-                .takeIf(File::isDirectory)
-                ?.walkTopDown()
-                ?.filter { file ->
-                    file.isFile &&
-                        file.name == "AndroidManifest.xml" &&
-                        file.relativeTo(releaseIntermediates).invariantSeparatorsPath
-                            .contains("/release/", ignoreCase = true)
-                }
-                ?.toList()
-                .orEmpty()
-        }.distinct().sortedBy { it.invariantSeparatorsPath }
-
-        if (releaseManifests.isEmpty()) {
-            throw GradleException(
-                "No merged or packaged Android release manifests found after :androidApp:assembleRelease.",
-            )
-        }
-
-        val leaks = mutableListOf<String>()
-        releaseManifests.forEach { manifest ->
-            val content = manifest.readBytes()
-            markerBytes.forEach { (marker, bytes) ->
-                if (content.containsSequence(bytes)) {
-                    leaks += "${manifest.relativeTo(projectRoot).invariantSeparatorsPath}: $marker"
-                }
-            }
-        }
-
-        var scannedEntries = 0
-        releaseArtifacts.forEach { artifact ->
-            ZipFile(artifact).use { zip ->
-                zip.entries().asSequence()
-                    .filterNot { it.isDirectory }
-                    .forEach { entry ->
-                        scannedEntries += 1
-                        val content = zip.getInputStream(entry).use { it.readBytes() }
-                        markerBytes.forEach { (marker, bytes) ->
-                            if (content.containsSequence(bytes)) {
-                                leaks +=
-                                    "${artifact.relativeTo(projectRoot).invariantSeparatorsPath}!/${entry.name}: $marker"
-                            }
-                        }
-                    }
-            }
-        }
-
-        if (leaks.isNotEmpty()) {
-            throw GradleException(
-                "Android release outputs contain debug-only QA markers:\n${leaks.joinToString("\n") { "  - $it" }}",
-            )
-        }
-
-        println(
-            "Verified ${forbiddenMarkers.size} QA markers absent from ${releaseManifests.size} release manifests " +
-                "and $scannedEntries entries across ${releaseArtifacts.size} release APK(s).",
-        )
-    }
-}
-
 abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
     @get:Input
     abstract val configuredSupabaseUrl: Property<String>
@@ -319,9 +194,10 @@ android {
         applicationId = "com.devil.phoenixproject"
         minSdk = 26
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
-        versionCode = injectedVersionCode ?: 5
-        versionName = "0.9.6"
+        versionCode = injectedVersionCode ?: 8
+        versionName = "1.0.3"
 
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -410,18 +286,6 @@ tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     projectRootDir.set(rootProject.layout.projectDirectory)
 }
 
-tasks.register<VerifyQaReleaseBoundaryTask>("verifyQaReleaseBoundary") {
-    group = "verification"
-    description = "Assembles and rejects Android release outputs containing debug-only Profile QA markers."
-
-    dependsOn("assembleRelease")
-
-    forbiddenMarkersFile.set(layout.projectDirectory.file("config/qa-release-forbidden-markers.txt"))
-    releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
-    releaseIntermediatesDir.set(layout.buildDirectory.dir("intermediates"))
-    projectRootDir.set(rootProject.layout.projectDirectory)
-}
-
 dependencies {
     // Shared module
     implementation(project(":shared"))
@@ -431,24 +295,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.splashscreen)
-
-    // Compose
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.extended)
-    implementation(libs.compose.navigation)
-
-    // Compose Tooling
-    debugImplementation(libs.compose.ui.tooling)
 
     // Koin DI
     implementation(libs.koin.android)
-    implementation(libs.koin.compose)
-    implementation(libs.koin.compose.viewmodel)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
@@ -465,11 +314,10 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
-    testImplementation(libs.truth)
-    testImplementation(libs.koin.test)
-    testImplementation(libs.koin.test.junit4)
     testImplementation(libs.ktor.client.mock)
     testImplementation(libs.multiplatform.settings)
     testImplementation(libs.multiplatform.settings.test)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.security.crypto)
+    androidTestImplementation(libs.multiplatform.settings)
 }

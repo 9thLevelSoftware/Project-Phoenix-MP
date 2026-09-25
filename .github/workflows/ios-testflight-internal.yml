@@ -12,24 +12,42 @@ concurrency:
 
 env:
   BUNDLE_ID: com.devil.phoenixproject.projectphoenix
-  SCHEME: VitruvianPhoenix
-  PROJECT_PATH: iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
+  SCHEME: PhoenixApp
+  PROJECT_PATH: iosApp/PhoenixApp/PhoenixApp.xcodeproj
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
 
 jobs:
-  build-and-upload:
-    runs-on: macos-26
+  tests:
+    uses: ./.github/workflows/release-tests.yml
+
+  build:
+    needs: tests
+    runs-on: macos-26-large
+    outputs:
+      build_number: ${{ steps.build_number.outputs.build_number }}
 
     steps:
+      - name: Verify iOS release runner capacity
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          memory_bytes="$(sysctl -n hw.memsize)"
+          echo "Runner architecture: $arch"
+          echo "Runner memory bytes: $memory_bytes"
+          if [[ "$arch" != "x86_64" || "$memory_bytes" -lt 12884901888 ]]; then
+            echo "::error::Kotlin/Native release linking requires an x64 runner with at least 12 GiB RAM."
+            exit 1
+          fi
+
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Write Supabase.xcconfig from secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          mkdir -p iosApp/VitruvianPhoenix/Config
+          mkdir -p iosApp/PhoenixApp/Config
           # xcconfig treats `//` as an inline comment, so URLs like `https://foo`
           # must be written as `https:/$()/foo` (empty xcconfig substitution) or
           # the value gets truncated to `https:` at parse time. Apply to both
@@ -39,24 +57,23 @@ jobs:
           {
             echo "SUPABASE_URL = $url_escaped"
             echo "SUPABASE_ANON_KEY = $key_escaped"
-          } > iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+          } > iosApp/PhoenixApp/Config/Supabase.xcconfig
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
       - name: Cache Kotlin/Native compiler
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.konan
-          key: ${{ runner.os }}-konan-2.3.0-iosArm64
+          key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
           restore-keys: |
-            ${{ runner.os }}-konan-2.3.0-
             ${{ runner.os }}-konan-
 
       - name: Auto-increment build number
@@ -69,10 +86,15 @@ jobs:
 
           # Update Xcode project with new build number
           sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
-            iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj
+            iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj
 
           # Show what was set
-          grep "CURRENT_PROJECT_VERSION" iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -2
+          grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
+
+      # Compose Multiplatform 1.11 links UIKit symbols from the iOS 26 SDK.
+      # Gradle/Kotlin Native and xcodebuild must use that same SDK.
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Build shared framework and resources
         run: |
@@ -95,12 +117,12 @@ jobs:
           # are lost during static linking. They must be in the app bundle root.
           #
           # Resources are placed OUTSIDE the Xcode fileSystemSynchronizedGroups
-          # directory (at iosApp/VitruvianPhoenix/compose-resources/, not inside
-          # VitruvianPhoenix/VitruvianPhoenix/) to prevent auto-inclusion that
+          # directory (at iosApp/PhoenixApp/compose-resources/, not inside
+          # PhoenixApp/PhoenixApp/) to prevent auto-inclusion that
           # flattens locale folders and causes .cvr filename collisions.
           # A Run Script Build Phase in the Xcode project copies them to the
           # bundle preserving directory structure.
-          RESOURCE_DST="iosApp/VitruvianPhoenix/compose-resources"
+          RESOURCE_DST="iosApp/PhoenixApp/compose-resources"
           rm -rf "$RESOURCE_DST"
           mkdir -p "$RESOURCE_DST"
 
@@ -153,9 +175,6 @@ jobs:
           mkdir -p shared/build/bin/iosArm64/debugFramework
           ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-
       - name: Install certificate and profile
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -187,7 +206,7 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
             DEVELOPMENT_TEAM="${{ secrets.TEAM_ID }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
@@ -196,9 +215,47 @@ jobs:
       - name: Export .ipa
         run: |
           xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
             -exportPath $RUNNER_TEMP/export \
             -exportOptionsPlist iosApp/ExportOptions.plist
+
+      - name: Upload IPA for TestFlight job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: testflight-ipa-${{ github.run_id }}
+          path: ${{ runner.temp }}/export/PhoenixApp.ipa
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+  upload:
+    needs: build
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download IPA from Xcode 26 build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: testflight-ipa-${{ github.run_id }}
+          path: ${{ runner.temp }}/export
+
+      - name: Select Xcode 16.4 upload tooling
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Set up Python (for upload verification)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python cryptography library
+        run: pip install cryptography
 
       - name: Upload to TestFlight
         env:
@@ -210,38 +267,92 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
 
-          IPA_PATH="$RUNNER_TEMP/export/VitruvianPhoenix.ipa"
-          BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
-          MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
+          IPA_PATH="$RUNNER_TEMP/export/PhoenixApp.ipa"
+          BUILD_VERSION="${{ needs.build.outputs.build_number }}"
+          MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
 
-          echo "=== Validating IPA before upload ==="
+          echo "=== IPA details ==="
           echo "IPA: $IPA_PATH ($(du -h "$IPA_PATH" | cut -f1))"
           echo "Bundle ID: $BUNDLE_ID"
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          xcrun altool --validate-app \
-            -f "$IPA_PATH" \
-            -t ios \
-            --apiKey "$APPSTORE_API_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID"
+          # --- Write JWT generation script (used here and in the next step) ---
+          cat > "$RUNNER_TEMP/generate_jwt.py" << 'PYEOF'
+          import base64, json, time, os
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric import ec
+          from cryptography.hazmat.primitives.serialization import load_pem_private_key
+          from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
+          def b64url(data):
+              if isinstance(data, str):
+                  data = data.encode()
+              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+          kid = os.environ['APPSTORE_API_KEY_ID']
+          iss = os.environ['APPSTORE_ISSUER_ID']
+          with open(os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{kid}.p8'), 'rb') as f:
+              key = load_pem_private_key(f.read(), password=None)
+          now = int(time.time())
+          hdr = b64url(json.dumps({"alg": "ES256", "kid": kid, "typ": "JWT"}, separators=(',', ':')))
+          pay = b64url(json.dumps({"iss": iss, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}, separators=(',', ':')))
+          msg = f"{hdr}.{pay}"
+          r, s = decode_dss_signature(key.sign(msg.encode(), ec.ECDSA(hashes.SHA256())))
+          print(f"{msg}.{b64url(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}")
+          PYEOF
+          sed -i '' 's/^          //' "$RUNNER_TEMP/generate_jwt.py"
+
+          generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
+
+          # --- Upload via xcrun altool ---
           echo "=== Uploading IPA to App Store Connect ==="
-          xcrun altool --upload-package "$IPA_PATH" \
+
+          set +e
+          ALTOOL_OUTPUT=$(xcrun altool --upload-package "$IPA_PATH" \
             --type ios \
             --bundle-id "$BUNDLE_ID" \
             --bundle-version "$BUILD_VERSION" \
             --bundle-short-version-string "$MARKETING_VERSION" \
             --apple-id "${{ secrets.APP_APPLE_ID }}" \
             --apiKey "$APPSTORE_API_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID"
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            2>&1)
+          ALTOOL_EXIT=$?
+          set -e
 
-          echo ""
-          echo "=== Build uploaded to TestFlight (internal only) ==="
-          echo "Build number: $BUILD_VERSION"
-          echo "The build will be available in TestFlight for internal testers after processing."
-          echo "No external test group was added - this build is for internal testing only."
+          echo "altool exit code: $ALTOOL_EXIT"
+          echo "altool output:"
+          echo "$ALTOOL_OUTPUT"
 
-      - name: Clean up keychain
-        if: always()
-        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+          if [ $ALTOOL_EXIT -ne 0 ]; then
+            echo "ERROR: altool upload failed with exit code $ALTOOL_EXIT"
+            exit 1
+          fi
+
+          # Check for error patterns, excluding "no errors" success messages
+          if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
+            echo "ERROR: altool reported errors despite exit code 0"
+            exit 1
+          fi
+
+          # Verify the upload actually reached Apple
+          echo "=== Verifying upload reached App Store Connect ==="
+          sleep 30
+          VERIFY_JWT=$(generate_jwt)
+          API_BASE="https://api.appstoreconnect.apple.com/v1"
+          VERIFY_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $VERIFY_JWT" \
+            "$API_BASE/builds?filter[version]=$BUILD_VERSION&limit=1")
+          VERIFY_STATUS=$(echo "$VERIFY_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['data'][0]['attributes'].get('processingState','UNKNOWN') if data.get('data') else 'NOT_FOUND')" 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Build status 30s after upload: $VERIFY_STATUS"
+          if [ "$VERIFY_STATUS" = "NOT_FOUND" ]; then
+            echo ""
+            echo "============================================"
+            echo "WARNING: Build not found in App Store Connect 30s after upload."
+            echo "Build may still be propagating. The distribution step will retry."
+            echo "============================================"
+            echo ""
+          fi
+
+          echo "=== Upload completed ==="

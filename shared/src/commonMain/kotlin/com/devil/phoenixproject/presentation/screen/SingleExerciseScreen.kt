@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -37,17 +35,27 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.CreateExerciseDialog
 import com.devil.phoenixproject.presentation.components.CustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
+import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
+import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseDeleteTarget
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.single_exercise_unavailable
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.single_exercise_unavailable
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Single Exercise screen - allows user to pick and configure a single exercise
@@ -66,10 +74,24 @@ fun SingleExerciseScreen(
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
+        completedExerciseIdsState.profileId == activeProfileId
+    } ?: emptySet()
 
     val connectionError by viewModel.connectionError.collectAsState()
 
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
+    val startGate = machineTeardownState.toStartGatePresentation(
+        requiresMachine = exerciseToConfig?.exercise?.isBodyweight != true,
+    )
+    val startButtonText = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+        stringResource(Res.string.workout_teardown_finishing)
+    } else {
+        "Start Workout"
+    }
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
     var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }
@@ -86,53 +108,50 @@ fun SingleExerciseScreen(
     var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showEssentialsOnly by remember { mutableStateOf(false) }
+    var showPreviouslyCompletedOnly by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
 
     // Get exercises from repository
-    val allExercises by remember(searchQuery, selectedMuscles, showFavoritesOnly, showCustomOnly) {
+    val candidateExercises by remember(searchQuery) {
         when {
-            showFavoritesOnly -> exerciseRepository.getFavorites()
-
-            showCustomOnly -> exerciseRepository.getCustomExercises()
-
             searchQuery.isNotBlank() -> exerciseRepository.searchExercises(searchQuery)
-
-            selectedMuscles.isNotEmpty() -> {
-                // Get exercises for all selected muscle groups and combine
-                val flows = selectedMuscles.map { muscle ->
-                    exerciseRepository.filterByMuscleGroup(muscle)
-                }
-                // For now, just use the first one - ideally we'd combine all flows
-                flows.firstOrNull() ?: exerciseRepository.getAllExercises()
-            }
-
             else -> exerciseRepository.getAllExercises()
         }
     }.collectAsState(initial = emptyList())
 
-    // Apply equipment filter
-    val exercises = remember(allExercises, selectedEquipment) {
-        if (selectedEquipment.isNotEmpty()) {
-            allExercises.filter { exercise ->
-                selectedEquipment.any { selectedEq ->
-                    val databaseValues = when (selectedEq) {
-                        "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
-                        "Short Bar" -> listOf("SHORT_BAR")
-                        "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
-                        "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
-                        "Bench" -> listOf("BENCH")
-                        "Rope" -> listOf("ROPE")
-                        "Belt" -> listOf("BELT")
-                        "Bodyweight" -> listOf("BODYWEIGHT")
-                        else -> emptyList()
-                    }
-                    val equipmentList = exercise.equipment.uppercase().split(",").map { it.trim() }
-                    databaseValues.any { dbValue -> equipmentList.contains(dbValue.uppercase()) }
-                }
-            }
+    val isCompletedFilterLoading =
+        showPreviouslyCompletedOnly && (
+            completedExerciseIdsState.isLoading ||
+                completedExerciseIdsState.profileId != activeProfileId
+            )
+    val exercises = remember(
+        candidateExercises,
+        showFavoritesOnly,
+        showCustomOnly,
+        showEssentialsOnly,
+        selectedMuscles,
+        selectedEquipment,
+        showPreviouslyCompletedOnly,
+        pickerCompletedExerciseIds,
+        isCompletedFilterLoading,
+    ) {
+        if (isCompletedFilterLoading) {
+            emptyList()
         } else {
-            allExercises
+            filterExercisePickerCandidates(
+                candidates = candidateExercises,
+                filters = ExercisePickerFilterState(
+                    showFavoritesOnly = showFavoritesOnly,
+                    showCustomOnly = showCustomOnly,
+                    selectedMuscles = selectedMuscles,
+                    selectedEquipment = selectedEquipment,
+                    showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                    showEssentialsOnly = showEssentialsOnly,
+                ),
+                completedExerciseIds = pickerCompletedExerciseIds,
+            )
         }
     }
 
@@ -262,24 +281,16 @@ fun SingleExerciseScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 showFavoritesOnly = showFavoritesOnly,
-                onToggleFavorites = {
-                    showFavoritesOnly = !showFavoritesOnly
-                    if (showFavoritesOnly) {
-                        searchQuery = ""
-                        selectedMuscles = emptySet()
-                        selectedEquipment = emptySet()
-                        showCustomOnly = false
-                    }
-                },
+                onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                 showCustomOnly = showCustomOnly,
-                onToggleCustom = {
-                    showCustomOnly = !showCustomOnly
-                    if (showCustomOnly) {
-                        searchQuery = ""
-                        selectedMuscles = emptySet()
-                        selectedEquipment = emptySet()
-                        showFavoritesOnly = false
-                    }
+                onToggleCustom = { showCustomOnly = !showCustomOnly },
+                enableEssentialsFilter = true,
+                showEssentialsOnly = showEssentialsOnly,
+                onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
+                enablePreviouslyCompletedFilter = true,
+                showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                onTogglePreviouslyCompleted = {
+                    showPreviouslyCompletedOnly = !showPreviouslyCompletedOnly
                 },
                 customExerciseCount = customCount,
                 selectedMuscles = selectedMuscles,
@@ -304,6 +315,8 @@ fun SingleExerciseScreen(
                     selectedEquipment = emptySet()
                     showFavoritesOnly = false
                     showCustomOnly = false
+                    showEssentialsOnly = false
+                    showPreviouslyCompletedOnly = false
                 },
                 onToggleFavorite = { exercise ->
                     exercise.id?.let { id ->
@@ -320,6 +333,7 @@ fun SingleExerciseScreen(
                 enableCustomExercises = true,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
+                isLoading = isCompletedFilterLoading,
                 onViewExerciseDetail = { exercise ->
                     exercise.id?.let { id ->
                         navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(id))
@@ -351,8 +365,19 @@ fun SingleExerciseScreen(
                         personalRecordRepository = viewModel.personalRecordRepository,
                         formatWeight = viewModel::formatWeight,
                         rackItems = rackItems,
-                        buttonText = "Start Workout",
+                        buttonText = startButtonText,
                         weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                        planningMaxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                            userPreferences.lastConnectedModel,
+                        ),
+                        primaryActionEnabled = startGate.startEnabled,
+                        primaryActionSupportingContent = {
+                            WorkoutStartGateNotice(
+                                state = machineTeardownState,
+                                onRetry = { viewModel.retryWorkoutTeardown() },
+                                onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                            )
+                        },
                         onSave = { configuredExercise ->
                             Logger.d { "SingleExercise: Start button clicked for ${configuredExercise.exercise.name}" }
                             val tempRoutine = Routine(
@@ -410,7 +435,7 @@ fun SingleExerciseScreen(
             }
         }
 
-        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        // Connection error dialog
         connectionError?.let { error ->
             ConnectionErrorDialog(
                 message = error,

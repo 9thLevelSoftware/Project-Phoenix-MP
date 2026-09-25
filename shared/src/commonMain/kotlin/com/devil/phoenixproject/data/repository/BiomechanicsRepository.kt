@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -23,36 +24,15 @@ interface BiomechanicsRepository {
  * Handles JSON serialization of FloatArray curve data to/from TEXT columns.
  * Reuses toJsonString()/toFloatArrayFromJson() from RepMetricRepository.
  */
-class SqlDelightBiomechanicsRepository(private val db: VitruvianDatabase) : BiomechanicsRepository {
+class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : BiomechanicsRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
         withContext(Dispatchers.IO) {
-            results.forEach { result ->
-                queries.insertRepBiomechanics(
-                    sessionId = sessionId,
-                    repNumber = result.repNumber.toLong(),
-                    // VBT metrics
-                    mcvMmS = result.velocity.meanConcentricVelocityMmS.toDouble(),
-                    peakVelocityMmS = result.velocity.peakVelocityMmS.toDouble(),
-                    velocityZone = result.velocity.zone.name,
-                    velocityLossPercent = result.velocity.velocityLossPercent?.toDouble(),
-                    estimatedRepsRemaining = result.velocity.estimatedRepsRemaining?.toLong(),
-                    shouldStopSet = if (result.velocity.shouldStopSet) 1L else 0L,
-                    // Force curve
-                    normalizedForceN = result.forceCurve.normalizedForceN.toJsonString(),
-                    normalizedPositionPct = result.forceCurve.normalizedPositionPct.toJsonString(),
-                    stickingPointPct = result.forceCurve.stickingPointPct?.toDouble(),
-                    strengthProfile = result.forceCurve.strengthProfile.name,
-                    // Asymmetry
-                    asymmetryPercent = result.asymmetry.asymmetryPercent.toDouble(),
-                    dominantSide = result.asymmetry.dominantSide,
-                    avgLoadA = result.asymmetry.avgLoadA.toDouble(),
-                    avgLoadB = result.asymmetry.avgLoadB.toDouble(),
-                    // Metadata
-                    timestamp = result.timestamp,
-                )
+            db.transaction {
+                results.forEach { result -> queries.insertRepBiomechanicsRow(sessionId, result) }
+                queries.markWorkoutComponentDirty(sessionId)
             }
         }
     }
@@ -103,7 +83,41 @@ class SqlDelightBiomechanicsRepository(private val db: VitruvianDatabase) : Biom
 
     override suspend fun deleteRepBiomechanics(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteRepBiomechanicsBySession(sessionId)
+            db.transaction {
+                queries.deleteRepBiomechanicsBySession(sessionId)
+                queries.markWorkoutComponentDirty(sessionId)
+            }
         }
     }
+}
+
+/**
+ * The single RepBiomechanics insert. Shared with
+ * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
+ * transaction writes exactly the rows this repository would have written.
+ */
+internal fun PhoenixDatabaseQueries.insertRepBiomechanicsRow(sessionId: String, result: BiomechanicsRepResult) {
+    insertRepBiomechanics(
+        sessionId = sessionId,
+        repNumber = result.repNumber.toLong(),
+        // VBT metrics
+        mcvMmS = result.velocity.meanConcentricVelocityMmS.toDouble(),
+        peakVelocityMmS = result.velocity.peakVelocityMmS.toDouble(),
+        velocityZone = result.velocity.zone.name,
+        velocityLossPercent = result.velocity.velocityLossPercent?.toDouble(),
+        estimatedRepsRemaining = result.velocity.estimatedRepsRemaining?.toLong(),
+        shouldStopSet = if (result.velocity.shouldStopSet) 1L else 0L,
+        // Force curve
+        normalizedForceN = result.forceCurve.normalizedForceN.toJsonString(),
+        normalizedPositionPct = result.forceCurve.normalizedPositionPct.toJsonString(),
+        stickingPointPct = result.forceCurve.stickingPointPct?.toDouble(),
+        strengthProfile = result.forceCurve.strengthProfile.name,
+        // Asymmetry
+        asymmetryPercent = result.asymmetry.asymmetryPercent.toDouble(),
+        dominantSide = result.asymmetry.dominantSide,
+        avgLoadA = result.asymmetry.avgLoadA.toDouble(),
+        avgLoadB = result.asymmetry.avgLoadB.toDouble(),
+        // Metadata
+        timestamp = result.timestamp,
+    )
 }

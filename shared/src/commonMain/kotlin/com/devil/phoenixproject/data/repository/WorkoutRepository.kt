@@ -1,6 +1,11 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
@@ -28,27 +33,62 @@ interface WorkoutRepository {
     // Workout sessions
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
+
+    /**
+     * Commit one completed set — the session row, its raw metric samples, its
+     * `CompletedSet`, its rep metrics and its rep biomechanics — in a SINGLE
+     * transaction.
+     *
+     * Before this existed the six writes were six transactions, so a process
+     * death or a concurrent portal push could see a session without its sets:
+     * the push stamps the session as synced and the set that lands afterwards
+     * is never re-pushed. Either the whole set is durable or none of it is.
+     *
+     * Idempotent, with the same guards the step-by-step save used: the session
+     * is inserted only when absent, the `CompletedSet` only when its id is
+     * absent, and the metric / rep-metric / rep-biomechanics rows are replaced
+     * wholesale. Re-committing the same snapshot after a later step failed
+     * therefore changes nothing — including an `is_pr` flag already set.
+     */
+    suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    )
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
+    /** User-facing deletion. Records a durable tombstone before hard-deleting local data. */
     suspend fun deleteSession(sessionId: String)
-    suspend fun deleteAllSessions()
+    suspend fun deleteAllSessions(profileId: String)
+
+    /** Internal rollback/compensation path. Never creates a user deletion tombstone. */
+    suspend fun discardSessionInternal(sessionId: String)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
-     * WorkoutSession row that belongs to the given routine session id.
+     * WorkoutSession row that belongs to the given profile and routine session id.
      * Used by the History "Delete All Sets" affordance so zero-rep /
      * ghost rows hidden by `getHistoryVisibleSessions` do not survive
-     * the user-level deletion. This mirrors `deleteSession`'s local
-     * hard-delete semantics; workout-session tombstone sync is not
-     * currently implemented.
+     * the user-level deletion. The repository records one durable workout
+     * tombstone before hard-deleting the complete group.
      */
-    suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
+    suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String)
 
     /**
-     * Get recent workout sessions
+     * Get the newest user-visible workout sessions (soft-deleted rows excluded, newest first),
+     * observed as a flow. Same rows and order as the head of [getAllSessions], without loading
+     * the rest of the history (F-034).
      * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return
      */
     fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
+
+    /**
+     * Per-cable weight of the newest user-visible session of [exerciseId] in [profileId],
+     * or null when the profile has never done it (F-034: one indexed row, not the history).
+     */
+    suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float?
 
     /**
      * Issue #591: Workout sessions that should appear in the Analytics /
@@ -97,13 +137,34 @@ interface WorkoutRepository {
     suspend fun getRoutineById(routineId: String): Routine?
 
     /**
+     * The profile's live routines without their exercises (#772). Unlike [getAllRoutines] and
+     * [getRoutineById], this never writes: it runs no exercise-id repair.
+     */
+    suspend fun getRoutineHeaders(profileId: String): List<Routine>
+
+    /** The profile's routine groups, read once (#772). */
+    suspend fun getRoutineGroupsSnapshot(profileId: String): List<RoutineGroup>
+
+    /**
+     * Stores a confirmed CSV import (#772) in one transaction: [newGroups], then every routine
+     * in [routines] with its supersets and exercises. Routines in [overwriteRoutineIds] are
+     * replaced in place and must still be live routines of [profileId]; otherwise nothing is
+     * written and [RoutineCsvImportConflictException] is thrown.
+     */
+    suspend fun commitRoutineCsvImport(
+        profileId: String,
+        newGroups: List<RoutineGroup>,
+        routines: List<Routine>,
+        overwriteRoutineIds: Set<String>,
+    )
+
+    /**
      * Mark routine as used (updates lastUsed and increments useCount)
      */
     suspend fun markRoutineUsed(routineId: String)
 
     // Personal records
     fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>>
-    suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String = "default")
 
     /**
      * Get average set duration in milliseconds for a specific exercise.
@@ -132,7 +193,8 @@ interface WorkoutRepository {
     suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric>
 
     /**
-     * Get recent workout sessions synchronously (for export)
+     * Get recent workout sessions synchronously (for export / import de-duplication).
+     * Unlike [getRecentSessions] this includes soft-deleted rows.
      */
     suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
 
@@ -189,3 +251,7 @@ data class PhaseStatisticsData(
     val eccentricWattMax: Float,
     val timestamp: Long,
 )
+
+/** A routine a CSV import was going to overwrite was deleted or moved to another profile (#772). */
+class RoutineCsvImportConflictException(routineId: String) :
+    IllegalStateException("Routine $routineId changed since the import was previewed")

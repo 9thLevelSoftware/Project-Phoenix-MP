@@ -195,7 +195,7 @@ class SyncManagerProfilePreferencesTest {
 
         assertEquals(2, harness.api.pushPayloads.size)
         assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
-        assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), harness.syncRepository.acknowledgedWorkoutParentIdCalls)
     }
 
     @Test
@@ -300,7 +300,7 @@ class SyncManagerProfilePreferencesTest {
         assertEquals(2, harness.api.pushPayloads.size)
         assertEquals(1, harness.api.pushPayloads.count { it.profilePreferenceSections != null })
         assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
-        assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), harness.syncRepository.acknowledgedWorkoutParentIdCalls)
     }
 
     @Test
@@ -326,7 +326,7 @@ class SyncManagerProfilePreferencesTest {
                 .flatten()
                 .map { it.key.section },
         )
-        assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), harness.syncRepository.acknowledgedWorkoutParentIdCalls)
     }
 
     @Test
@@ -371,7 +371,7 @@ class SyncManagerProfilePreferencesTest {
         harness.api.pushResultsQueue = mutableListOf(successResponse())
 
         assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
-        assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), harness.syncRepository.acknowledgedWorkoutParentIdCalls)
         assertEquals(1, harness.api.pushPayloads.size)
     }
 
@@ -393,7 +393,7 @@ class SyncManagerProfilePreferencesTest {
         )
 
         assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
-        assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), harness.syncRepository.acknowledgedWorkoutParentIdCalls)
         assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
     }
 
@@ -888,7 +888,7 @@ class SyncManagerProfilePreferencesTest {
     fun `ordinary merge failure keeps earlier preference commit and checkpoint for retry`() =
         runTest {
             val initialLastSync = 5_000L
-            harness.tokenStorage.setLastSyncTimestamp(initialLastSync)
+            harness.tokenStorage.setPullCursor("user", harness.activeProfileId, initialLastSync)
             harness.syncRepository.atomicMergeShouldFail = true
             harness.api.pullResult = Result.success(
                 PortalSyncPullResponse(
@@ -900,16 +900,18 @@ class SyncManagerProfilePreferencesTest {
             val manager = harness.manager(migrationReady = { true })
 
             assertTrue(manager.retryPull().isFailure)
-            assertIs<SyncState.PartialSuccess>(manager.syncState.value)
-            assertEquals(initialLastSync, harness.tokenStorage.getLastSyncTimestamp())
+            // A pull-only retry whose pull failed publishes an Error that agrees with the
+            // failed Result (PartialSuccess would claim a push that retryPull never made).
+            assertIs<SyncState.Error>(manager.syncState.value)
+            assertEquals(initialLastSync, harness.tokenStorage.getPullCursor("user", harness.activeProfileId))
             assertEquals(1, harness.preferenceSyncRepository.appliedPulledSections.size)
 
             harness.syncRepository.atomicMergeShouldFail = false
             assertTrue(manager.retryPull().isSuccess)
             assertEquals(2, harness.preferenceSyncRepository.pullApplyCallCount)
             assertEquals(
-                1_783_771_200_000L,
-                harness.tokenStorage.getLastSyncTimestamp(),
+                1_783_771_200_000L - SyncManager.PULL_CURSOR_OVERLAP_MS,
+                harness.tokenStorage.getPullCursor("user", harness.activeProfileId),
             )
             assertEquals(1, harness.syncRepository.atomicMergeCallCount)
         }
@@ -955,13 +957,17 @@ class SyncManagerProfilePreferencesTest {
         val preferenceSyncRepository = FakeProfilePreferenceSyncRepository()
         val externalActivityRepository = FakeExternalActivityRepository()
         val velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository()
+        val activeProfileId: String
+            get() = requireNotNull(profileRepository.activeProfile.value?.id)
 
         init {
             profileRepository.setActiveProfileForTest("profile-a")
-            tokenStorage.saveAuth(
-                PortalAuthResponse(
-                    token = "token",
-                    user = PortalUser("user", "u@example.com", null, false),
+            tokenStorage.saveGoTrueAuth(
+                GoTrueAuthResponse(
+                    accessToken = "token",
+                    expiresIn = 3600,
+                    refreshToken = "refresh",
+                    user = GoTrueUser(id = "user", email = "u@example.com"),
                 ),
             )
         }
@@ -1012,10 +1018,12 @@ class SyncManagerProfilePreferencesTest {
         suspend fun initialize() {
             profilePreferencesRepository.seedMissingProfiles()
             profileRepository.reconcileActiveProfileContext()
-            tokenStorage.saveAuth(
-                PortalAuthResponse(
-                    token = "token",
-                    user = PortalUser("user", "u@example.com", null, false),
+            tokenStorage.saveGoTrueAuth(
+                GoTrueAuthResponse(
+                    accessToken = "token",
+                    expiresIn = 3600,
+                    refreshToken = "refresh",
+                    user = GoTrueUser(id = "user", email = "u@example.com"),
                 ),
             )
         }
@@ -1126,6 +1134,7 @@ class SyncManagerProfilePreferencesTest {
             profilePreferenceRejections: List<ProfilePreferenceSectionRejectionDto> = emptyList(),
         ) = PortalSyncPushResponse(
             syncTime = "2026-07-11T12:00:00Z",
+            acknowledgedWorkoutSessionIds = listOf("ordinary-session"),
             profilePreferencesAccepted = profilePreferencesAccepted,
             canonicalProfilePreferenceSections = canonicalProfilePreferenceSections,
             profilePreferenceRejections = profilePreferenceRejections,

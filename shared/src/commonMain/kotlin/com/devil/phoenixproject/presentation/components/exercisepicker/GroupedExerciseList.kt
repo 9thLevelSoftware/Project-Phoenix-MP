@@ -29,13 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Grouped exercise list with sticky alphabetical headers and alphabet strip navigation.
@@ -46,12 +46,15 @@ fun GroupedExerciseList(
     exerciseRepository: ExerciseRepository,
     onExerciseSelected: (Exercise) -> Unit,
     onToggleFavorite: (Exercise) -> Unit,
-    onShowVideo: (Exercise, List<ExerciseVideoEntity>) -> Unit,
+    onShowVideo: (Exercise, List<ExerciseImageEntity>) -> Unit,
+    enableVideoPlayback: Boolean = true,
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     emptyContent: @Composable () -> Unit = {},
+    /** False lists [exercises] in their given order, with no letter headers or alphabet strip. */
+    grouped: Boolean = true,
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -64,11 +67,7 @@ fun GroupedExerciseList(
     }
 
     val groupedExercises: Map<Char, List<Exercise>> = remember(exercises) {
-        exercises
-            .groupBy { exercise: Exercise -> exercise.name.first().uppercaseChar() }
-            .toList()
-            .sortedBy { it.first }
-            .toMap()
+        groupExercisesByInitial(exercises)
     }
 
     val sectionIndices: Map<Char, Int> = remember(groupedExercises) {
@@ -86,114 +85,125 @@ fun GroupedExerciseList(
         null
     }
 
+    val exerciseRow: @Composable (Exercise) -> Unit = { exercise: Exercise ->
+        ExerciseItemWithImage(
+            exercise = exercise,
+            exerciseRepository = exerciseRepository,
+            enableVideoPlayback = enableVideoPlayback,
+            onSelect = { onExerciseSelected(exercise) },
+            onToggleFavorite = { onToggleFavorite(exercise) },
+            onShowVideo = { images -> onShowVideo(exercise, images) },
+            onLongPress = when {
+                exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
+                onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
+                else -> null
+            },
+            onLongPressLabel = when {
+                exercise.isCustom && onEditExercise != null -> null
+                else -> exerciseDetailLabel
+            },
+            isRevealed = exercise.id == revealedExerciseId,
+            onRevealChange = { revealed ->
+                revealedExerciseId = if (revealed) exercise.id else null
+            },
+        )
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
         ) {
-            groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->
-                stickyHeader(key = "header_$letter") {
-                    LetterHeader(letter = letter.toString())
-                }
+            if (grouped) {
+                groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->
+                    stickyHeader(key = "header_$letter") {
+                        LetterHeader(letter = letter.toString())
+                    }
 
-                items(
-                    items = exerciseList,
-                    key = { exercise: Exercise -> exercise.id ?: exercise.name },
-                ) { exercise: Exercise ->
-                    ExerciseItemWithVideo(
-                        exercise = exercise,
-                        exerciseRepository = exerciseRepository,
-                        onSelect = { onExerciseSelected(exercise) },
-                        onToggleFavorite = { onToggleFavorite(exercise) },
-                        onShowVideo = { videos -> onShowVideo(exercise, videos) },
-                        onLongPress = when {
-                            exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
-                            onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
-                            else -> null
-                        },
-                        onLongPressLabel = when {
-                            exercise.isCustom && onEditExercise != null -> null
-                            else -> exerciseDetailLabel
-                        },
-                        isRevealed = exercise.id == revealedExerciseId,
-                        onRevealChange = { revealed ->
-                            revealedExerciseId = if (revealed) exercise.id else null
-                        },
-                    )
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
+                    items(
+                        items = exerciseList,
+                        key = { exercise: Exercise -> exercise.id ?: exercise.name },
+                    ) { exercise: Exercise -> exerciseRow(exercise) }
                 }
+            } else {
+                items(
+                    items = exercises,
+                    key = { exercise: Exercise -> exercise.id ?: exercise.name },
+                ) { exercise: Exercise -> exerciseRow(exercise) }
             }
         }
 
         // Alphabet strip overlay
-        AlphabetStrip(
-            letters = groupedExercises.keys.toList(),
-            onLetterTap = { letter ->
-                revealedExerciseId = null // Close any revealed row when jumping
-                sectionIndices[letter]?.let { index ->
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(index)
+        if (grouped) {
+            AlphabetStrip(
+                letters = groupedExercises.keys.toList(),
+                onLetterTap = { letter ->
+                    revealedExerciseId = null // Close any revealed row when jumping
+                    sectionIndices[letter]?.let { index ->
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(index)
+                        }
                     }
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 4.dp),
-        )
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun ExerciseItemWithVideo(
+private fun ExerciseItemWithImage(
     exercise: Exercise,
     exerciseRepository: ExerciseRepository,
+    enableVideoPlayback: Boolean,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onShowVideo: (List<ExerciseVideoEntity>) -> Unit,
+    onShowVideo: (List<ExerciseImageEntity>) -> Unit,
     onLongPress: (() -> Unit)? = null,
     onLongPressLabel: String? = null,
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
 ) {
-    var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
-    var isLoadingVideo by remember { mutableStateOf(true) }
+    var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
+    var isLoadingImage by remember { mutableStateOf(enableVideoPlayback) }
 
-    LaunchedEffect(exercise.id) {
+    LaunchedEffect(exercise.id, enableVideoPlayback) {
+        if (!enableVideoPlayback) {
+            images = emptyList()
+            isLoadingImage = false
+            return@LaunchedEffect
+        }
+        isLoadingImage = true
         try {
             exercise.id?.let {
-                videos = exerciseRepository.getVideos(it)
+                images = exerciseRepository.getImages(it)
             }
-            isLoadingVideo = false
+            isLoadingImage = false
         } catch (_: Exception) {
-            isLoadingVideo = false
+            isLoadingImage = false
         }
     }
 
-    val thumbnailUrl = remember(videos) {
-        val baseThumbnailUrl = videos.firstOrNull { it.angle == "FRONT" }?.thumbnailUrl
-            ?: videos.firstOrNull()?.thumbnailUrl
-        baseThumbnailUrl?.let { url ->
-            if (url.contains("image.mux.com") && !url.contains("?")) {
-                "$url?width=300&height=300&fit_mode=crop&crop=center&time=2"
-            } else {
-                url
-            }
-        }
+    val thumbnailUrl = remember(images, enableVideoPlayback) {
+        if (enableVideoPlayback) images.firstOrNull()?.url else null
     }
 
     SwipeableExerciseRow(
         exercise = exercise,
         thumbnailUrl = thumbnailUrl,
-        isLoadingThumbnail = isLoadingVideo,
+        isLoadingThumbnail = isLoadingImage,
         onSelect = onSelect,
         onToggleFavorite = onToggleFavorite,
         onLongPress = onLongPress,
         onLongPressLabel = onLongPressLabel,
-        onThumbnailClick = if (videos.isNotEmpty()) {
-            { onShowVideo(videos) }
+        onThumbnailClick = if (enableVideoPlayback && images.isNotEmpty()) {
+            { onShowVideo(images) }
         } else {
             null
         },
@@ -286,3 +296,19 @@ fun ExerciseListEmptyState(
         }
     }
 }
+
+/** Section key for exercises whose name has no first character (#774). */
+internal const val UNNAMED_EXERCISE_SECTION = '#'
+
+/**
+ * Groups exercises under the upper-cased first character of their name, sections sorted.
+ *
+ * Issue #774: `name.first()` threw NoSuchElementException for an exercise with a blank name,
+ * which crashed the picker while composing, right after "Add Exercise". Blank names are
+ * reachable through stale routine rows and backup restores, so they get their own section.
+ */
+internal fun groupExercisesByInitial(exercises: List<Exercise>): Map<Char, List<Exercise>> = exercises
+    .groupBy { exercise -> exercise.name.trim().firstOrNull()?.uppercaseChar() ?: UNNAMED_EXERCISE_SECTION }
+    .toList()
+    .sortedBy { it.first }
+    .toMap()

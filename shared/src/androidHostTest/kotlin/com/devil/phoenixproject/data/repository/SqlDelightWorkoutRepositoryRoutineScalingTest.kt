@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlinx.coroutines.test.runTest
@@ -19,7 +20,7 @@ import org.junit.Test
  */
 class SqlDelightWorkoutRepositoryRoutineScalingTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var exerciseRepository: FakeExerciseRepository
     private lateinit var repository: SqlDelightWorkoutRepository
 
@@ -40,6 +41,7 @@ class SqlDelightWorkoutRepositoryRoutineScalingTest {
             equipment = "Cable",
         )
         exerciseRepository.addExercise(exercise)
+        database.seedExercise(id = exerciseId, name = exercise.name, equipment = exercise.equipment)
 
         val routineId = "routine-scaling-basis"
         val routineExercise = RoutineExercise(
@@ -77,6 +79,7 @@ class SqlDelightWorkoutRepositoryRoutineScalingTest {
             equipment = "Cable",
         )
         exerciseRepository.addExercise(exercise)
+        database.seedExercise(id = exerciseId, name = exercise.name, equipment = exercise.equipment)
 
         val routineId = "routine-scaling-null"
         val routineExercise = RoutineExercise(

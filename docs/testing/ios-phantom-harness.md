@@ -62,7 +62,7 @@ UDID or bundle.
 
 The runner records the build/test command results, creates a temporary local
 Supabase fixture config inside the checkout at
-`iosApp/VitruvianPhoenix/Config/Supabase.xcconfig` only when that ignored config
+`iosApp/PhoenixApp/Config/Supabase.xcconfig` only when that ignored config
 is absent, and removes that temporary file with its exit trap.  If a local
 config already exists, it is left untouched.  The temporary config contains
 only fixed non-secret placeholder values; it is not a way to supply a real
@@ -91,7 +91,7 @@ render-relevant app UI/resource prefixes:
 ```text
 shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/**
 shared/src/commonMain/composeResources/**
-iosApp/VitruvianPhoenix/VitruvianPhoenix/**
+iosApp/PhoenixApp/PhoenixApp/**
 ```
 
 Kotlin files and supported resources are compiled in the candidate worktree
@@ -170,7 +170,7 @@ python3 ./.github/scripts/phantom-harness-verify.py "$ARTIFACT_ROOT"
 
 The root must be empty before `case` starts.  It is created with mode `0700`;
 regular evidence files are mode `0600`.  If
-`iosApp/VitruvianPhoenix/Config/Supabase.xcconfig` is absent, the runner
+`iosApp/PhoenixApp/Config/Supabase.xcconfig` is absent, the runner
 creates a local ignored file temporarily with non-secret placeholder values
 and removes it when the command exits.  Do not replace those placeholders
 with a real value for this simulator-only run.
@@ -183,8 +183,8 @@ the app as part of the XCTest destination; there is no separate unrecorded
 `simctl install` step in the supported contract.
 
 ```bash
-xcodebuild -project iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj \
-  -scheme VitruvianPhoenix \
+xcodebuild -project iosApp/PhoenixApp/PhoenixApp.xcodeproj \
+  -scheme PhoenixApp \
   -configuration Debug \
   -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$PHOENIX_HARNESS_UDID" \
@@ -193,8 +193,8 @@ xcodebuild -project iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj \
   -hideShellScriptEnvironment build
 
 xcodebuild test \
-  -project iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj \
-  -scheme VitruvianPhoenix \
+  -project iosApp/PhoenixApp/PhoenixApp.xcodeproj \
+  -scheme PhoenixApp \
   -configuration Debug \
   -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$PHOENIX_HARNESS_UDID" \

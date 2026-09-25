@@ -1,0 +1,444 @@
+package com.devil.phoenixproject.data.local
+
+import com.devil.phoenixproject.StartupDiagnosticFailure
+
+internal object DatabaseFileNames {
+    const val LEGACY = "vitruvian.db"
+    const val TARGET = "phoenix.db"
+    const val STAGING = "phoenix.db.migrating"
+    const val RECOVERY = "phoenix-recovery.db"
+    const val LOCK = "phoenix-db-migration.lock"
+}
+
+internal enum class DatabaseArtifact {
+    LEGACY,
+    TARGET,
+    RECOVERY,
+    STAGING,
+}
+
+internal data class DatabaseFileLayout(
+    val legacyExists: Boolean,
+    val targetExists: Boolean,
+    val recoveryExists: Boolean,
+    val stagingExists: Boolean,
+    val legacySidecarsExist: Boolean,
+)
+
+internal data class DatabasePresence(
+    val main: Boolean,
+    val wal: Boolean,
+    val shm: Boolean,
+    val journal: Boolean,
+)
+
+internal data class DatabasePresenceSnapshot(
+    val schemaVersion: Int = 1,
+    val libraryLegacy: DatabasePresence,
+    val sqliterLegacy: DatabasePresence,
+    val target: DatabasePresence,
+    val recovery: DatabasePresence,
+    val staging: DatabasePresence,
+)
+
+internal enum class DatabaseDiagnosticReason {
+    CANONICAL_LEGACY_TARGET,
+    LIBRARY_SQLITER_LEGACY,
+    LIBRARY_MAIN_SQLITER_SIDECARS,
+}
+
+internal data class DatabaseFingerprint(
+    val fileSize: Long,
+    val userVersion: Long,
+    val pageCount: Long,
+    val freePageCount: Long,
+)
+
+internal enum class DatabaseMigrationFailureCode {
+    DUAL_DATABASES,
+    INTEGRITY_CHECK_FAILED,
+    CHECKPOINT_FAILED,
+    RECOVERY_COPY_FAILED,
+    ATOMIC_MOVE_FAILED,
+    LEGACY_CLEANUP_FAILED,
+    TARGET_VALIDATION_FAILED,
+}
+
+internal class DatabaseFileMigrationException(
+    val code: DatabaseMigrationFailureCode,
+    message: String,
+    cause: Throwable? = null,
+    val diagnosticReason: DatabaseDiagnosticReason? = null,
+    val presenceSnapshot: DatabasePresenceSnapshot? = null,
+) : IllegalStateException(message, cause),
+    StartupDiagnosticFailure {
+    override val startupDiagnosticCode: String = "DB_${code.name}"
+    // DUAL_DATABASES stays fail-closed unless exactly one candidate holds user data (#764), and
+    // nothing is ever deleted. A retry is harmless: it re-runs the same checks, and a candidate is
+    // only ever moved aside after it was proven empty.
+    override val startupRetryAllowed: Boolean = true
+    override val startupDiagnosticReason: String? = diagnosticReason?.name
+    override val startupPresenceSnapshot: DatabasePresenceSnapshot? = presenceSnapshot
+}
+
+internal data class DatabasePreparation(
+    val migratedThisLaunch: Boolean,
+    val recoveryCleanupDue: Boolean,
+)
+
+internal interface DatabaseFileOperations {
+    fun inspect(): DatabaseFileLayout
+
+    /** Best-effort metadata only; must not open SQLite or mutate files. */
+    fun capturePresenceSnapshot(): DatabasePresenceSnapshot? = null
+
+    fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint
+
+    fun validate(artifact: DatabaseArtifact): DatabaseFingerprint
+
+    fun copy(from: DatabaseArtifact, to: DatabaseArtifact)
+
+    fun sync(artifact: DatabaseArtifact)
+
+    fun atomicMove(from: DatabaseArtifact, to: DatabaseArtifact)
+
+    fun delete(artifact: DatabaseArtifact)
+
+    fun deleteLegacySidecars()
+
+    fun <T> withExclusiveMigrationLock(block: () -> T): T
+
+    /**
+     * Classifies [artifact] from a scratch copy of it and its sidecars (#764). Must never open or
+     * change the original, and never throw. The default keeps every conflict fail-closed.
+     */
+    fun probeUserData(artifact: DatabaseArtifact): CandidateContent = CandidateContent.UNINSPECTABLE
+
+    /**
+     * Moves [artifact] and its sidecars (sidecars first, main file last) into a new folder under
+     * [DATABASE_QUARANTINE_DIRECTORY]. Never overwrites or deletes anything.
+     */
+    fun quarantine(artifact: DatabaseArtifact, reason: DatabaseDiagnosticReason) {
+        throw UnsupportedOperationException("Setting a database candidate aside is not supported here")
+    }
+
+    /** Removes scratch copies a probe interrupted by process death left behind. Best effort. */
+    fun discardProbeScratch() = Unit
+}
+
+/**
+ * Moves the released database filename to its neutral Phoenix name without
+ * allowing SQLDelight to create or upgrade a database until a canonical file
+ * has been selected safely.
+ */
+internal class DatabaseFileMigrationCoordinator(
+    private val operations: DatabaseFileOperations,
+) {
+    private var recoveryCreatedThisProcess = false
+    private var targetValidationPending = false
+
+    fun prepareTarget(): DatabasePreparation = operations.withExclusiveMigrationLock {
+        runCatching { operations.discardProbeScratch() }
+        val presenceSnapshot = runCatching { operations.capturePresenceSnapshot() }.getOrNull()
+        var layout = operations.inspect()
+
+        if (layout.legacyExists && layout.targetExists) {
+            layout = resolveCanonicalConflict(layout, presenceSnapshot)
+        }
+
+        val preparation = when {
+            targetValidationPending && layout.targetExists && layout.recoveryExists -> {
+                // The previous open reached cutover but never completed post-open
+                // validation. Restore the known-good snapshot before retrying rather
+                // than reopening a target that may have a partially-healed schema.
+                reconstructFromRecovery(layout)
+            }
+
+            layout.targetExists -> prepareExistingTarget(layout)
+
+            layout.legacyExists -> migrateLegacy(layout)
+
+            layout.recoveryExists -> reconstructFromRecovery(layout)
+
+            layout.stagingExists -> throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "A migration staging file exists without a verified database source.",
+            )
+
+            else -> DatabasePreparation(
+                migratedThisLaunch = false,
+                recoveryCleanupDue = false,
+            )
+        }
+
+        targetValidationPending = preparation.migratedThisLaunch || preparation.recoveryCleanupDue
+        if (preparation.migratedThisLaunch) {
+            recoveryCreatedThisProcess = true
+        }
+
+        if (preparation.recoveryCleanupDue && recoveryCreatedThisProcess) {
+            preparation.copy(recoveryCleanupDue = false)
+        } else {
+            preparation
+        }
+    }
+
+    /**
+     * Issue #764: `vitruvian.db` and `phoenix.db` both exist (for example after an older build
+     * recreated the legacy file). Set one aside only when that is provably lossless: it holds no
+     * user data and the other one either does or holds none either. Probes run on scratch copies
+     * before anything moves; the loser is moved, never deleted. Every other case - both hold data,
+     * either cannot be inspected, or a recovery/staging file is part of the picture - throws the
+     * same fail-closed DUAL_DATABASES as before.
+     */
+    private fun resolveCanonicalConflict(
+        layout: DatabaseFileLayout,
+        presenceSnapshot: DatabasePresenceSnapshot?,
+    ): DatabaseFileLayout {
+        fun conflict(cause: Throwable? = null) = DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.DUAL_DATABASES,
+            "Both legacy and Phoenix database files exist; automatic recovery is disabled.",
+            cause,
+            diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
+            presenceSnapshot = presenceSnapshot,
+        )
+
+        // A recovery or staging file means a migration was mid-flight; its fingerprints tie it to
+        // one of the candidates, so neither may be moved.
+        if (layout.recoveryExists || layout.stagingExists) throw conflict()
+
+        val legacy = probe(DatabaseArtifact.LEGACY)
+        if (legacy == CandidateContent.UNINSPECTABLE) throw conflict()
+        val target = probe(DatabaseArtifact.TARGET)
+        val setAside = when {
+            legacy == CandidateContent.EMPTY && target != CandidateContent.UNINSPECTABLE -> DatabaseArtifact.LEGACY
+            legacy == CandidateContent.HAS_USER_DATA && target == CandidateContent.EMPTY -> DatabaseArtifact.TARGET
+            else -> throw conflict()
+        }
+
+        try {
+            operations.quarantine(setAside, DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET)
+        } catch (failure: Throwable) {
+            throw conflict(failure)
+        }
+
+        val resolved = operations.inspect()
+        if (resolved.legacyExists && resolved.targetExists) throw conflict()
+        return resolved
+    }
+
+    private fun probe(artifact: DatabaseArtifact): CandidateContent =
+        runCatching { operations.probeUserData(artifact) }.getOrDefault(CandidateContent.UNINSPECTABLE)
+
+    /**
+     * Called only after SQLDelight schema migration and reconciliation succeed.
+     * A previous-launch recovery is deleted after, never before, target
+     * validation.
+     */
+    fun targetValidated(preparation: DatabasePreparation) {
+        operations.withExclusiveMigrationLock {
+            try {
+                operations.validate(DatabaseArtifact.TARGET)
+            } catch (failure: Throwable) {
+                // Keep the recovery snapshot armed. A retry must restore it before
+                // reopening this target, even when the target is still quick_check-clean.
+                targetValidationPending = true
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "The Phoenix database failed post-migration validation.",
+                    failure,
+                )
+            }
+
+            if (preparation.recoveryCleanupDue) {
+                try {
+                    operations.delete(DatabaseArtifact.RECOVERY)
+                } catch (failure: Throwable) {
+                    // The target was already validated. Keep it authoritative and
+                    // retry only the recovery cleanup on the next launch; restoring
+                    // the older snapshot could discard data written since then.
+                    targetValidationPending = false
+                    throw DatabaseFileMigrationException(
+                        DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
+                        "The validated database opened, but its prior recovery file could not be removed.",
+                        failure,
+                    )
+                }
+            }
+            targetValidationPending = false
+        }
+    }
+
+    private fun prepareExistingTarget(layout: DatabaseFileLayout): DatabasePreparation {
+        if (layout.stagingExists) {
+            deleteIncompleteStaging()
+        }
+        if (!layout.recoveryExists) {
+            return DatabasePreparation(
+                migratedThisLaunch = false,
+                recoveryCleanupDue = false,
+            )
+        }
+
+        return try {
+            operations.validate(DatabaseArtifact.TARGET)
+            DatabasePreparation(
+                migratedThisLaunch = false,
+                recoveryCleanupDue = true,
+            )
+        } catch (_: Throwable) {
+            // A failed launch can leave a corrupt target next to its verified
+            // recovery copy. Validate the recovery first, then replace only the
+            // unusable target through the same staging/cutover path.
+            reconstructFromRecovery(layout)
+        }
+    }
+
+    private fun migrateLegacy(layout: DatabaseFileLayout): DatabasePreparation {
+        if (layout.stagingExists) {
+            deleteIncompleteStaging()
+        }
+
+        val sourceFingerprint = try {
+            operations.checkpointAndValidate(DatabaseArtifact.LEGACY)
+        } catch (failure: DatabaseFileMigrationException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.CHECKPOINT_FAILED,
+                "The legacy database could not be checkpointed safely.",
+                failure,
+            )
+        }
+
+        if (layout.recoveryExists) {
+            val recoveryFingerprint = validateSource(DatabaseArtifact.RECOVERY)
+            requireMatchingFingerprint(sourceFingerprint, recoveryFingerprint)
+        } else {
+            createVerifiedCopy(
+                source = DatabaseArtifact.LEGACY,
+                destination = DatabaseArtifact.RECOVERY,
+                sourceFingerprint = sourceFingerprint,
+            )
+        }
+
+        try {
+            operations.deleteLegacySidecars()
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
+                "Legacy database sidecars could not be removed before cutover.",
+                failure,
+            )
+        }
+
+        atomicMove(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET)
+        return DatabasePreparation(
+            migratedThisLaunch = true,
+            recoveryCleanupDue = false,
+        )
+    }
+
+    private fun reconstructFromRecovery(layout: DatabaseFileLayout): DatabasePreparation {
+        if (layout.stagingExists) {
+            deleteIncompleteStaging()
+        }
+
+        val recoveryFingerprint = validateSource(DatabaseArtifact.RECOVERY)
+        if (layout.targetExists) {
+            deleteTarget()
+        }
+        createVerifiedCopy(
+            source = DatabaseArtifact.RECOVERY,
+            destination = DatabaseArtifact.TARGET,
+            sourceFingerprint = recoveryFingerprint,
+        )
+        return DatabasePreparation(
+            migratedThisLaunch = true,
+            recoveryCleanupDue = false,
+        )
+    }
+
+    private fun deleteTarget() {
+        try {
+            operations.delete(DatabaseArtifact.TARGET)
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "The failed Phoenix database could not be replaced from recovery.",
+                failure,
+            )
+        }
+    }
+
+    private fun createVerifiedCopy(
+        source: DatabaseArtifact,
+        destination: DatabaseArtifact,
+        sourceFingerprint: DatabaseFingerprint,
+    ) {
+        try {
+            operations.copy(source, DatabaseArtifact.STAGING)
+            operations.sync(DatabaseArtifact.STAGING)
+            val stagingFingerprint = operations.validate(DatabaseArtifact.STAGING)
+            requireMatchingFingerprint(sourceFingerprint, stagingFingerprint)
+        } catch (failure: DatabaseFileMigrationException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "A verified database recovery copy could not be created.",
+                failure,
+            )
+        }
+
+        atomicMove(DatabaseArtifact.STAGING, destination)
+    }
+
+    private fun validateSource(artifact: DatabaseArtifact): DatabaseFingerprint = try {
+        operations.validate(artifact)
+    } catch (failure: DatabaseFileMigrationException) {
+        throw failure
+    } catch (failure: Throwable) {
+        throw DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.INTEGRITY_CHECK_FAILED,
+            "The ${artifact.name.lowercase()} database failed integrity validation.",
+            failure,
+        )
+    }
+
+    private fun requireMatchingFingerprint(
+        source: DatabaseFingerprint,
+        candidate: DatabaseFingerprint,
+    ) {
+        if (candidate != source) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "The recovery database fingerprint does not match its verified source.",
+            )
+        }
+    }
+
+    private fun deleteIncompleteStaging() {
+        try {
+            operations.delete(DatabaseArtifact.STAGING)
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "An incomplete migration staging file could not be removed.",
+                failure,
+            )
+        }
+    }
+
+    private fun atomicMove(from: DatabaseArtifact, to: DatabaseArtifact) {
+        try {
+            operations.atomicMove(from, to)
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.ATOMIC_MOVE_FAILED,
+                "The database file could not be atomically promoted from ${from.name.lowercase()} to ${to.name.lowercase()}.",
+                failure,
+            )
+        }
+    }
+}

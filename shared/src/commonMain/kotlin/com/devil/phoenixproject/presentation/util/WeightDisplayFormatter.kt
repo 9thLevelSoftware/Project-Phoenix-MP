@@ -8,7 +8,7 @@ import com.devil.phoenixproject.util.format
  * Centralized weight display formatter.
  *
  * Phoenix stores, syncs, recommends, and commands machine load as per-cable kg.
- * That matches the official app: cable count metadata must not change ordinary
+ * Cable count metadata must not change ordinary
  * selected-load display. Total two-cable text is available only through the
  * explicitly named total helper methods below.
  */

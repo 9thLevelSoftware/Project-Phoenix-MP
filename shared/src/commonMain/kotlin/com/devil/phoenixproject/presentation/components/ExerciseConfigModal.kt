@@ -26,13 +26,13 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_epic
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_hard
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_harder
-import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
+import projectphoenix.shared.generated.resources.echo_level_epic
+import projectphoenix.shared.generated.resources.echo_level_hard
+import projectphoenix.shared.generated.resources.echo_level_harder
+import projectphoenix.shared.generated.resources.echo_level_hardest
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Modal dialog for configuring a single exercise's mode and mode-specific settings.
@@ -194,7 +194,7 @@ fun ExerciseConfigModal(
 private fun ExerciseConfigHeader(exerciseName: String, templateSets: Int, templateReps: Int?, oneRepMaxKg: Float?) {
     // workout-setup-17: primaryContainer tint brings in brand colour and visually separates
     // the header from the surfaceContainer modal body. titleLarge aligns with other modal
-    // headers (WorkoutSetupDialog, CompletedCard).
+    // headers (CompletedCard).
     Column(
         modifier = Modifier
             .fillMaxWidth()

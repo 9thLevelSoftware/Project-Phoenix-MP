@@ -217,6 +217,25 @@ class WorkoutSessionTest {
     }
 
     @Test
+    fun `display heaviest load falls back from zero and invalid summary values`() {
+        val counterweightedSession = WorkoutSession(
+            weightPerCableKg = 30f,
+            heaviestLiftKg = 0f,
+            counterweightKg = 80f,
+        )
+        val nonFiniteMeasuredSession = WorkoutSession(
+            weightPerCableKg = 30f,
+            heaviestLiftKg = Float.POSITIVE_INFINITY,
+        )
+
+        // Counterweight alone cannot prove a bodyweight set, but a screen that has the
+        // canonical Exercise.isBodyweight classification can preserve a real zero.
+        assertEquals(30f, counterweightedSession.displayHeaviestKgPerCable(isBodyweight = false))
+        assertEquals(0f, counterweightedSession.displayHeaviestKgPerCable(isBodyweight = true))
+        assertEquals(30f, nonFiniteMeasuredSession.displayHeaviestKgPerCable())
+    }
+
+    @Test
     fun `effectiveTotalVolumeKg uses measured summary value when present`() {
         val session = WorkoutSession(
             weightPerCableKg = 40f,

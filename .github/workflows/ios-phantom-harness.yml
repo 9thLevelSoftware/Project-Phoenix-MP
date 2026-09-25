@@ -18,9 +18,9 @@ on:
       - 'gradlew'
       - '.gitignore'
       # The real app, Xcode project/scheme, and XCTest UI harness.
-      - 'iosApp/VitruvianPhoenix/**'
-      - 'iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/**'
-      - 'iosApp/VitruvianPhoenix/VitruvianPhoenixUITests/**'
+      - 'iosApp/PhoenixApp/**'
+      - 'iosApp/PhoenixApp/PhoenixApp.xcodeproj/**'
+      - 'iosApp/PhoenixApp/PhoenixAppUITests/**'
       # Runner, evidence verifier, image diff, and this workflow.
       - '.github/scripts/phantom-harness.sh'
       - '.github/scripts/phantom-harness-verify.py'

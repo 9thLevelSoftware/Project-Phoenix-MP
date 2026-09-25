@@ -10,6 +10,10 @@ import kotlinx.serialization.json.JsonElement
  */
 fun Int.sanitizeEccentricLoad(): Int = this.coerceIn(0, 150)
 
+/** Clamp an imported per-rep progression to the machine's command limit (defense in depth next to the command path). */
+fun Float.sanitizeProgressionKg(): Float =
+    if (isFinite()) coerceIn(-CommandLimits.MAX_PROGRESSION_KG, CommandLimits.MAX_PROGRESSION_KG) else 0f
+
 /**
  * Serializable backup data classes for export/import functionality.
  * These mirror the SQLDelight table structure but use kotlinx.serialization for JSON.
@@ -80,6 +84,16 @@ data class WorkoutSessionBackup(
     val formScore: Long? = null,
     // Profile separation (profile data separation plan)
     val profileId: String? = null, // null for backward compat with pre-profile backups
+    // Added v7: sync stamp and portal-origin marker. A pulled row restores as pulled so it is
+    // never re-pushed; a local row keeps its stamp so the portal's LWW sees its real age.
+    val updatedAt: Long? = null,
+    val portalOrigin: Boolean = false,
+    /**
+     * The exported row's current generation had been acknowledged by the portal (nothing
+     * pending). Only then does a restore mark it synced; [updatedAt] alone is not proof,
+     * because a post-sync edit keeps its stamp while the row is dirty.
+     */
+    val syncAcknowledged: Boolean = false,
 )
 
 /**
@@ -113,6 +127,7 @@ data class RoutineBackup(
     val useCount: Int = 0,
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val groupId: String? = null, // Routine group assignment (added v3)
+    val deletedAt: Long? = null, // Preserve routine tombstones for telemetry FK integrity
 )
 
 /**
@@ -178,6 +193,8 @@ data class RoutineExerciseBackup(
     // Explicit bodyweight classification (issue #635); null = derive from equipment.
     // Default null keeps pre-existing backup files loadable.
     val isBodyweight: Boolean? = null,
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 /**
@@ -227,6 +244,150 @@ data class TrainingCycleBackup(
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val templateId: String? = null,
     val weekNumber: Int = 1,
+    /** Portal cycle version (verbatim ISO) so a restored cycle keeps its sync base. Null in older backups. */
+    val serverUpdatedAt: String? = null,
+    val deletedAt: Long? = null,
+    // Durable sync clocks added in backup v6. Null keeps v1-v5 readable.
+    val updatedAt: Long? = null,
+)
+
+@Serializable
+data class CycleSyncStateBackup(
+    val cycleId: String,
+    val profileId: String,
+    val accountId: String? = null,
+    val dirtyGeneration: Long,
+    val acknowledgedGeneration: Long,
+    val pendingDeleteUpdatedAt: Long? = null,
+    val pendingDeleteGeneration: Long? = null,
+)
+
+/** Full user-created exercise row. Stock catalog rows remain supplied by the app. */
+@Serializable
+data class CustomExerciseBackup(
+    val id: String,
+    val name: String,
+    val displayName: String? = null,
+    val description: String? = null,
+    val created: Long = 0,
+    val muscleGroup: String,
+    val muscleGroups: String = muscleGroup,
+    val muscles: String? = null,
+    val equipment: String = "",
+    val movement: String? = null,
+    val sidedness: String? = null,
+    val grip: String? = null,
+    val gripWidth: String? = null,
+    val minRepRange: Float? = null,
+    val popularity: Float = 0f,
+    val archived: Boolean = false,
+    val isFavorite: Boolean = false,
+    val timesPerformed: Int = 0,
+    val lastPerformed: Long? = null,
+    val aliases: String? = null,
+    val defaultCableConfig: String = "DOUBLE",
+    /** Legacy recovery source only; profileExerciseBaselines is authoritative in v6. */
+    val legacyOneRepMaxKg: Float? = null,
+    val updatedAt: Long? = null,
+    val serverId: String? = null,
+    val deletedAt: Long? = null,
+    val mvtOverrideMs: Float? = null,
+    val isBodyweight: Boolean? = null,
+)
+
+/** Explicit profile-scoped 1RM state. A null value is a meaningful cleared baseline. */
+@Serializable
+data class ProfileExerciseBaselineBackup(
+    val profileId: String,
+    val exerciseId: String,
+    val oneRepMaxPerCableKg: Float? = null,
+    val updatedAt: Long,
+    val revision: Long,
+)
+
+/**
+ * User-owned fields on a stock catalogue exercise (added v7). The catalogue itself ships with
+ * the app; only favourites, the MVT override and the legacy 1RM input are user state.
+ */
+@Serializable
+data class StockExerciseUserFieldsBackup(
+    val exerciseId: String,
+    val isFavorite: Boolean = false,
+    val mvtOverrideMs: Float? = null,
+    /** Legacy recovery source only, like [CustomExerciseBackup.legacyOneRepMaxKg]. */
+    val legacyOneRepMaxKg: Float? = null,
+)
+
+@Serializable
+data class WorkoutDeletionBackup(
+    val mutationId: String,
+    val ownerUserId: String? = null,
+    val profileId: String,
+    val scope: String,
+    val portalSessionId: String,
+    val componentSessionId: String? = null,
+    val deletedAt: Long,
+    val acknowledgedAt: Long? = null,
+    val source: String,
+)
+
+@Serializable
+data class PendingProfileRecoveryBackup(
+    val recoveryId: String,
+    val kind: String,
+    val sourceKey: String,
+    val sourceProfileId: String? = null,
+    val sourceProfileName: String,
+    val ownerUserId: String? = null,
+    val countsJson: String,
+    val discoveredAt: Long,
+    val resolvedAt: Long? = null,
+)
+
+@Serializable
+data class OwnershipTransferBackup(
+    val mutationId: String,
+    val ownerUserId: String,
+    val sourceProfileId: String? = null,
+    val targetProfileId: String,
+    val workoutSessionIdsJson: String,
+    val routineIdsJson: String,
+    val cycleIdsJson: String,
+    val personalRecordIdsJson: String,
+    val createdAt: Long,
+    val acknowledgedAt: Long? = null,
+)
+
+@Serializable
+data class AppliedOwnershipEventBackup(
+    val ownerUserId: String,
+    val mutationId: String,
+    val canonicalBodyHash: String,
+    val appliedAt: Long,
+)
+
+/** Retained account ownership for an entity whose transfer may arrive before its live row. */
+@Serializable
+data class LocalOwnershipClaimBackup(
+    val ownerUserId: String,
+    val entityType: String,
+    val entityId: String,
+    val mutationId: String,
+    val sourceProfileId: String? = null,
+    val targetProfileId: String,
+    val transferredAt: Long,
+)
+
+/** Opaque cycle graph retained when a server rejection would otherwise overwrite local work. */
+@Serializable
+data class CycleConflictDraftBackup(
+    val id: String,
+    val cycleId: String,
+    val originalProfileId: String,
+    val rejectedUpdatedAt: Long,
+    val payloadJson: String,
+    val createdAt: Long,
+    val resolution: String? = null,
 )
 
 /**
@@ -255,7 +416,15 @@ data class CycleDayBackup(
  * Backup representation of UserProfile
  */
 @Serializable
-data class UserProfileBackup(val id: String, val name: String, val colorIndex: Int = 0, val createdAt: Long, val isActive: Boolean = false)
+data class UserProfileBackup(
+    val id: String,
+    val name: String,
+    val colorIndex: Int = 0,
+    val createdAt: Long,
+    val isActive: Boolean = false,
+    /** Stable cloud account identity only. Auth credentials and session state are never exported. */
+    val supabaseUserId: String? = null,
+)
 
 /**
  * Backup representation of CycleProgress (current position in training cycle)
@@ -315,6 +484,9 @@ data class CompletedSetBackup(
     val loggedRpe: Int? = null,
     val isPr: Boolean = false,
     val completedAt: Long,
+    val setEndReason: String = "UNKNOWN",
+    val routineExerciseId: String? = null,
+    val attemptNumber: Int = 1,
 )
 
 /**
@@ -446,6 +618,10 @@ enum class BackupPhase(val displayName: String) {
  * - v4: adds legacy global equipment rack definitions and per-routine-exercise rack defaults.
  * - v5: replaces the global rack payload with independently restorable profile training
  *       preference sections. Local safety/consent state and sync bookkeeping are excluded.
+ * - v6: adds optional custom exercises, profile baselines, cycle clocks/drafts, workout
+ *       deletion ledgers, and ownership/recovery operations.
+ * - v7: adds per-profile gamification stats, stock-exercise user fields, and the session
+ *       sync stamp + portal-origin marker. Raw telemetry (metricSamples) is opt-in.
  */
 @Serializable
 data class BackupData(
@@ -470,14 +646,29 @@ data class BackupPrivacyMetadata(
     val containsSessionNotes: Boolean = true,
     val containsAuthTokens: Boolean = false,
     val containsRuntimeSecrets: Boolean = false,
-    val userFacingSummary: String = "Full personal-data export: includes workout history, routines, profiles, profile training preferences, personal records, and notes. Does not include auth tokens, runtime secrets, preference sync bookkeeping, voice phrase or calibration, or adult consent and prompt state.",
+    val containsRawTelemetry: Boolean = false,
+    val userFacingSummary: String = backupPrivacySummary(containsRawTelemetry),
 )
+
+/** Lists what a full backup contains, so the privacy summary never over- or under-states it. */
+fun backupPrivacySummary(includesRawTelemetry: Boolean): String =
+    "Personal-data export: includes workout history, routines, custom exercises and exercise favourites, " +
+        "profiles, profile training preferences, training baselines, personal records, badges and stats, and notes. " +
+        (
+            if (includesRawTelemetry) {
+                "Includes raw per-sample force and position telemetry. "
+            } else {
+                "Does not include raw per-sample telemetry (turn on \"Include raw telemetry\" to add it). "
+            }
+            ) +
+        "Does not include auth tokens, runtime secrets, preference sync bookkeeping, voice phrase or calibration, " +
+        "or adult consent and prompt state."
 
 /**
  * Highest backup schema version this build can produce.
  * Bump whenever BackupContent gains/loses entities or a backup field type changes.
  */
-const val CURRENT_BACKUP_VERSION: Int = 5
+const val CURRENT_BACKUP_VERSION: Int = 7
 
 /**
  * Profile-scoped preference payload. Raw JSON sections intentionally isolate malformed or
@@ -499,6 +690,8 @@ data class ProfilePreferencesBackup(
  */
 @Serializable
 data class BackupContent(
+    // Added v6. Optional so v1-v5 imports continue to decode as an empty catalog delta.
+    val customExercises: List<CustomExerciseBackup> = emptyList(),
     val workoutSessions: List<WorkoutSessionBackup> = emptyList(),
     val metricSamples: List<MetricSampleBackup> = emptyList(),
     val routines: List<RoutineBackup> = emptyList(),
@@ -515,7 +708,10 @@ data class BackupContent(
     val progressionEvents: List<ProgressionEventBackup> = emptyList(),
     val earnedBadges: List<EarnedBadgeBackup> = emptyList(),
     val streakHistory: List<StreakHistoryBackup> = emptyList(),
+    // v1-v6 single object. v7 writes gamificationStatsByProfile instead; both still import.
     val gamificationStats: GamificationStatsBackup? = null,
+    val gamificationStatsByProfile: List<GamificationStatsBackup> = emptyList(),
+    val stockExerciseUserFields: List<StockExerciseUserFieldsBackup> = emptyList(),
     val userProfiles: List<UserProfileBackup> = emptyList(),
     // Added v5: profile-scoped training preferences; sections decode independently.
     val profilePreferences: List<ProfilePreferencesBackup> = emptyList(),
@@ -526,6 +722,15 @@ data class BackupContent(
     val sessionNotes: List<SessionNotesBackup> = emptyList(),
     // Added v3: routine groups (migration 27)
     val routineGroups: List<RoutineGroupBackup> = emptyList(),
+    // Added v6 durable/scoped state.
+    val profileExerciseBaselines: List<ProfileExerciseBaselineBackup> = emptyList(),
+    val workoutDeletions: List<WorkoutDeletionBackup> = emptyList(),
+    val pendingProfileRecoveries: List<PendingProfileRecoveryBackup> = emptyList(),
+    val ownershipTransfers: List<OwnershipTransferBackup> = emptyList(),
+    val appliedOwnershipEvents: List<AppliedOwnershipEventBackup> = emptyList(),
+    val localOwnershipClaims: List<LocalOwnershipClaimBackup> = emptyList(),
+    val cycleConflictDrafts: List<CycleConflictDraftBackup> = emptyList(),
+    val cycleSyncStates: List<CycleSyncStateBackup> = emptyList(),
 )
 
 /**
@@ -535,9 +740,11 @@ data class ImportResult(
     val sessionsImported: Int,
     val sessionsSkipped: Int,
     val metricsImported: Int,
+    val metricsSkipped: Int = 0,
     val routinesImported: Int,
     val routinesSkipped: Int,
     val routineExercisesImported: Int,
+    val routineExercisesSkipped: Int = 0,
     val supersetsImported: Int = 0,
     val supersetsSkipped: Int = 0,
     val personalRecordsImported: Int,
@@ -545,20 +752,53 @@ data class ImportResult(
     val trainingCyclesImported: Int = 0,
     val trainingCyclesSkipped: Int = 0,
     val cycleDaysImported: Int = 0,
+    val cycleDaysSkipped: Int = 0,
     val cycleProgressImported: Int = 0,
+    val cycleProgressSkipped: Int = 0,
     val cycleProgressionsImported: Int = 0,
+    val cycleProgressionsSkipped: Int = 0,
     val plannedSetsImported: Int = 0,
+    val plannedSetsSkipped: Int = 0,
     val completedSetsImported: Int = 0,
+    val completedSetsSkipped: Int = 0,
     val progressionEventsImported: Int = 0,
+    val progressionEventsSkipped: Int = 0,
     val earnedBadgesImported: Int = 0,
+    val earnedBadgesSkipped: Int = 0,
     val streakHistoryImported: Int = 0,
-    val gamificationStatsImported: Boolean = false,
+    val streakHistorySkipped: Int = 0,
+    /** One per profile: v7 backups carry a stats row per profile. */
+    val gamificationStatsImported: Int = 0,
+    val gamificationStatsSkipped: Int = 0,
     val userProfilesImported: Int = 0,
     val userProfilesSkipped: Int = 0,
     val sessionNotesImported: Int = 0,
     val sessionNotesSkipped: Int = 0,
     val routineGroupsImported: Int = 0,
     val routineGroupsSkipped: Int = 0,
+    val customExercisesImported: Int = 0,
+    val customExercisesSkipped: Int = 0,
+    val stockExerciseUserFieldsImported: Int = 0,
+    val stockExerciseUserFieldsSkipped: Int = 0,
+    val profileExerciseBaselinesImported: Int = 0,
+    val profileExerciseBaselinesSkipped: Int = 0,
+    val workoutDeletionsImported: Int = 0,
+    val workoutDeletionsSkipped: Int = 0,
+    val pendingProfileRecoveriesImported: Int = 0,
+    val pendingProfileRecoveriesSkipped: Int = 0,
+    val ownershipTransfersImported: Int = 0,
+    val ownershipTransfersSkipped: Int = 0,
+    val appliedOwnershipEventsImported: Int = 0,
+    val appliedOwnershipEventsSkipped: Int = 0,
+    val localOwnershipClaimsImported: Int = 0,
+    val localOwnershipClaimsSkipped: Int = 0,
+    val cycleConflictDraftsImported: Int = 0,
+    val cycleConflictDraftsSkipped: Int = 0,
+    val cycleSyncStatesImported: Int = 0,
+    val cycleSyncStatesSkipped: Int = 0,
+    val repairedReferences: Int = 0,
+    /** Rows of a profile the user permanently deleted (PR 20), left out on purpose. */
+    val deletedProfileRowsSkipped: Int = 0,
     /**
      * Count of individual entity rows that threw during import and were skipped.
      * Non-zero here means the backup contained malformed rows — the import still
@@ -567,17 +807,34 @@ data class ImportResult(
      */
     val entitiesWithErrors: Int = 0,
 ) {
+    /** Rows that could not be restored. Kept separate from idempotent duplicates. */
+    val entitiesFailed: Int get() = entitiesWithErrors
+
+    val hasPartialFailure: Boolean get() = entitiesFailed > 0
+
     val totalImported: Int
         get() = sessionsImported + metricsImported + routinesImported +
             routineExercisesImported + supersetsImported + personalRecordsImported +
             trainingCyclesImported + cycleDaysImported + cycleProgressImported +
             cycleProgressionsImported + plannedSetsImported + completedSetsImported +
             progressionEventsImported + earnedBadgesImported + streakHistoryImported +
-            (if (gamificationStatsImported) 1 else 0) + userProfilesImported +
-            sessionNotesImported + routineGroupsImported
+            gamificationStatsImported + userProfilesImported +
+            sessionNotesImported + routineGroupsImported + customExercisesImported +
+            stockExerciseUserFieldsImported +
+            profileExerciseBaselinesImported + workoutDeletionsImported +
+            pendingProfileRecoveriesImported + ownershipTransfersImported +
+            appliedOwnershipEventsImported + localOwnershipClaimsImported +
+            cycleConflictDraftsImported + cycleSyncStatesImported
 
     val totalSkipped: Int
-        get() = sessionsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
-            trainingCyclesSkipped + userProfilesSkipped + sessionNotesSkipped +
-            routineGroupsSkipped
+        get() = sessionsSkipped + metricsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
+            routineExercisesSkipped + trainingCyclesSkipped + cycleDaysSkipped + cycleProgressSkipped +
+            cycleProgressionsSkipped + plannedSetsSkipped + completedSetsSkipped + progressionEventsSkipped +
+            earnedBadgesSkipped + streakHistorySkipped + gamificationStatsSkipped +
+            userProfilesSkipped + sessionNotesSkipped +
+            routineGroupsSkipped + customExercisesSkipped + stockExerciseUserFieldsSkipped +
+            profileExerciseBaselinesSkipped +
+            workoutDeletionsSkipped + pendingProfileRecoveriesSkipped +
+            ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
+            localOwnershipClaimsSkipped + cycleSyncStatesSkipped + deletedProfileRowsSkipped
 }

@@ -1,36 +1,73 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 
 class SqlDelightWorkoutRepositoryTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
-    private lateinit var exerciseRepository: FakeExerciseRepository
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var repository: SqlDelightWorkoutRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
-        exerciseRepository = FakeExerciseRepository()
+        // Real exercise repository: the routine-exercise heal writes an exerciseId that
+        // must exist in the Exercise table (FK), which a fake catalog cannot provide.
+        val exerciseRepository = SqlDelightExerciseRepository(database, ExerciseImporter(database), FakePreferencesManager())
         repository = SqlDelightWorkoutRepository(database, exerciseRepository)
     }
 
     // ========== Session CRUD Tests ==========
+
+    @Test
+    fun `saving raw metrics again replaces rows for the stable session id`() = runTest {
+        val firstAttempt = listOf(
+            WorkoutMetric(
+                timestamp = 10L,
+                loadA = 20f,
+                loadB = 21f,
+                positionA = 100f,
+                positionB = 101f,
+                velocityA = 1.0,
+                velocityB = 1.1,
+            ),
+            WorkoutMetric(
+                timestamp = 20L,
+                loadA = 22f,
+                loadB = 23f,
+                positionA = 110f,
+                positionB = 111f,
+                velocityA = 1.2,
+                velocityB = 1.3,
+            ),
+        )
+        val retrySnapshot = listOf(firstAttempt.single { it.timestamp == 20L })
+
+        repository.saveSession(createTestSession(id = "stable-session"))
+        repository.saveMetrics("stable-session", firstAttempt)
+        repository.saveMetrics("stable-session", retrySnapshot)
+
+        assertEquals(retrySnapshot, repository.getMetricsForSessionSync("stable-session"))
+    }
 
     @Test
     fun `saveSession persists session to database`() = runTest {
@@ -59,6 +96,84 @@ class SqlDelightWorkoutRepositoryTest {
 
         val result = repository.getSession("to-delete")
         assertNull(result)
+    }
+
+    @Test
+    fun `deleting one grouped component records component tombstone and keeps sibling`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(
+            createTestSession("component-a").copy(routineSessionId = "portal-parent"),
+        )
+        repository.saveSession(
+            createTestSession("component-b").copy(routineSessionId = "portal-parent"),
+        )
+
+        repository.deleteSession("component-a")
+
+        assertNull(repository.getSession("component-a"))
+        assertNotNull(repository.getSession("component-b"))
+        val deletion = database.phoenixDatabaseQueries
+            .selectPendingWorkoutDeletions("owner-1", "default")
+            .executeAsOne()
+        assertEquals("COMPONENT", deletion.scope)
+        assertEquals("portal-parent", deletion.portal_session_id)
+        assertEquals("component-a", deletion.component_session_id)
+    }
+
+    @Test
+    fun `deleting final grouped component records workout tombstone`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(
+            createTestSession("component-only").copy(routineSessionId = "portal-parent"),
+        )
+
+        repository.deleteSession("component-only")
+
+        val deletion = database.phoenixDatabaseQueries
+            .selectPendingWorkoutDeletions("owner-1", "default")
+            .executeAsOne()
+        assertEquals("WORKOUT", deletion.scope)
+        assertEquals("portal-parent", deletion.portal_session_id)
+        assertNull(deletion.component_session_id)
+    }
+
+    @Test
+    fun `internal discard hard deletes without durable tombstone`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(createTestSession("assessment-temp"))
+
+        repository.discardSessionInternal("assessment-temp")
+
+        assertNull(repository.getSession("assessment-temp"))
+        assertTrue(
+            database.phoenixDatabaseQueries
+                .selectPendingWorkoutDeletions("owner-1", "default")
+                .executeAsList()
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun `workout deletion acknowledgement is exact owner and retains ledger row`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(createTestSession("delete-me"))
+        repository.deleteSession("delete-me")
+        val deletionRepository = SqlDelightWorkoutDeletionRepository(database)
+        val mutation = deletionRepository.pendingForOwner("owner-1").single()
+
+        deletionRepository.acknowledge("other-owner", setOf(mutation.mutationId), 10L)
+        assertEquals(1, deletionRepository.pendingForOwner("owner-1").size)
+
+        deletionRepository.acknowledge("owner-1", setOf(mutation.mutationId), 20L)
+        assertTrue(deletionRepository.pendingForOwner("owner-1").isEmpty())
+        val retained = database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId(mutation.mutationId)
+            .executeAsOne()
+        assertEquals(20L, retained.acknowledged_at)
     }
 
     @Test
@@ -103,7 +218,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(workoutSession("wrong-profile", "b", "bench", 60L, workingReps = 5))
         repository.saveSession(workoutSession("zero", "a", "bench", 70L, workingReps = 0, totalReps = 0))
         repository.saveSession(workoutSession("deleted", "a", "bench", 80L, workingReps = 5))
-        database.vitruvianDatabaseQueries.softDeleteSession(
+        database.phoenixDatabaseQueries.softDeleteSession(
             id = "deleted",
             deletedAt = 81L,
             updatedAt = 81L,
@@ -126,7 +241,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(workoutSession("blank-exercise", "a", " ", 55L, workingReps = 5))
         repository.saveSession(workoutSession("other-profile", "b", "row", 60L, workingReps = 5))
         repository.saveSession(workoutSession("deleted", "a", "press", 70L, workingReps = 5))
-        database.vitruvianDatabaseQueries.softDeleteSession(
+        database.phoenixDatabaseQueries.softDeleteSession(
             id = "deleted",
             deletedAt = 71L,
             updatedAt = 71L,
@@ -158,7 +273,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(createTestSession(id = "session-1"))
         repository.saveSession(createTestSession(id = "session-2"))
 
-        repository.deleteAllSessions()
+        repository.deleteAllSessions("default")
 
         repository.getAllSessions("default").test {
             val sessions = awaitItem()
@@ -170,7 +285,7 @@ class SqlDelightWorkoutRepositoryTest {
     @Test
     fun `getAllPersonalRecords preserves stable uuid`() = runTest {
         val stableUuid = "62345678-1234-4abc-8def-1234567890ab"
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -273,14 +388,7 @@ class SqlDelightWorkoutRepositoryTest {
 
     @Test
     fun `getRoutineById heals missing exerciseId by resolving exercise name`() = runTest {
-        val customExercise = Exercise(
-            id = "custom_bayesian_curl",
-            name = "Bayesian Cable Curl",
-            muscleGroup = "Biceps",
-            equipment = "Cable",
-            isCustom = true,
-        )
-        exerciseRepository.addExercise(customExercise)
+        database.seedExercise(id = "custom_bayesian_curl", name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable", isCustom = true)
 
         val legacyRoutine = Routine(
             id = "routine-legacy",
@@ -307,8 +415,39 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals("custom_bayesian_curl", loaded.exercises.first().exercise.id)
 
         // Verify DB self-heal so subsequent loads don't regress to null ID.
-        val healedRow = database.vitruvianDatabaseQueries.selectExercisesByRoutine("routine-legacy").executeAsOne()
+        val healedRow = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-legacy").executeAsOne()
         assertEquals("custom_bayesian_curl", healedRow.exerciseId)
+    }
+
+    @Test
+    fun `getRoutineById keeps the exercise when the exerciseId heal write fails`() = runTest {
+        // The catalog resolves the name to an id with no Exercise row, so the heal UPDATE
+        // violates the RoutineExercise -> Exercise foreign key (F-083).
+        val catalogWithoutRows = FakeExerciseRepository().apply {
+            addExercise(Exercise(id = "catalog-only", name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable"))
+        }
+        val healFailingRepository = SqlDelightWorkoutRepository(database, catalogWithoutRows)
+        healFailingRepository.saveRoutine(
+            Routine(
+                id = "routine-heal-fails",
+                name = "Heal Fails",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "re-heal",
+                        exercise = Exercise(id = null, name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable"),
+                        orderIndex = 0,
+                        setReps = listOf(10),
+                        weightPerCableKg = 12.5f,
+                    ),
+                ),
+            ),
+        )
+
+        val loaded = healFailingRepository.getRoutineById("routine-heal-fails")
+
+        assertNotNull(loaded)
+        assertEquals(listOf("Bayesian Cable Curl"), loaded.exercises.map { it.exercise.name })
+        assertNull(database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-heal-fails").executeAsOne().exerciseId)
     }
 
     @Test
@@ -349,6 +488,42 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
     }
 
+    @Test
+    fun `unrelated routine save preserves quarantined portal duration state`() = runTest {
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
+        val routine = Routine(
+            id = "routine-quarantined-duration",
+            name = "Quarantined duration",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-quarantined-duration",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                    duration = null,
+                ),
+            ),
+        )
+        repository.saveRoutine(routine)
+        database.phoenixDatabaseQueries.updateRoutineExerciseDurationSyncKnown(
+            durationSyncKnown = 2L,
+            id = "re-quarantined-duration",
+        )
+
+        repository.saveRoutine(routine.copy(name = "Renamed"))
+
+        val row = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-quarantined-duration")
+            .executeAsOne()
+        assertNull(row.duration)
+        assertEquals(2L, row.durationSyncKnown)
+    }
+
     // ========== Profile ID Preservation Tests ==========
 
     @Test
@@ -371,7 +546,7 @@ class SqlDelightWorkoutRepositoryTest {
             ),
             profileId = "profile-b",
         )
-        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
         repository.saveRoutine(routine)
 
         repository.getAllRoutines("profile-b").test {
@@ -380,6 +555,31 @@ class SqlDelightWorkoutRepositoryTest {
             assertEquals("profile-b", routines.first().profileId)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `saveRoutine on a routine used by a training cycle keeps the cycle day link`() = runTest {
+        val routine = Routine(id = "routine-in-cycle", name = "Cycle Routine", exercises = emptyList())
+        repository.saveRoutine(routine)
+        val queries = database.phoenixDatabaseQueries
+        queries.insertTrainingCycle("cycle-1", "Cycle", null, 1L, 1L, "default", null, 1L, 1L)
+        queries.insertCycleDay("cycle-day-1", "cycle-1", 1L, "Day 1", "routine-in-cycle", 0L, null, null, null, null, null)
+
+        repository.saveRoutine(routine.copy(name = "Cycle Routine Renamed"))
+
+        assertEquals("routine-in-cycle", queries.selectCycleDaysByCycle("cycle-1").executeAsOne().routine_id)
+        assertEquals("Cycle Routine Renamed", queries.selectRoutineById("routine-in-cycle").executeAsOne().name)
+    }
+
+    @Test
+    fun `saveRoutine on a soft-deleted routine id keeps it deleted`() = runTest {
+        val routine = Routine(id = "routine-tombstoned", name = "Tombstoned", exercises = emptyList())
+        repository.saveRoutine(routine)
+        database.phoenixDatabaseQueries.softDeleteRoutine(deletedAt = 5L, updatedAt = 5L, id = "routine-tombstoned")
+
+        repository.saveRoutine(routine.copy(name = "Saved Again"))
+
+        assertEquals(5L, database.phoenixDatabaseQueries.selectRoutineById("routine-tombstoned").executeAsOne().deletedAt)
     }
 
     @Test
@@ -402,7 +602,7 @@ class SqlDelightWorkoutRepositoryTest {
             ),
             profileId = "profile-c",
         )
-        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
         repository.saveRoutine(routine)
 
         val loaded = repository.getRoutineById("routine-profile-c")
@@ -423,16 +623,16 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveRoutine(routine)
 
         // Verify it's saved under profile-to-delete
-        val rawBefore = database.vitruvianDatabaseQueries
+        val rawBefore = database.phoenixDatabaseQueries
             .selectRoutineById("routine-orphan")
             .executeAsOneOrNull()
         assertEquals("profile-to-delete", rawBefore?.profile_id)
 
         // Simulate cascade reassignment (what deleteProfile does)
-        database.vitruvianDatabaseQueries.reassignRoutineProfile("default", "profile-to-delete")
+        database.phoenixDatabaseQueries.reassignRoutineProfile("default", "profile-to-delete")
 
         // Verify routine now belongs to default profile
-        val rawAfter = database.vitruvianDatabaseQueries
+        val rawAfter = database.phoenixDatabaseQueries
             .selectRoutineById("routine-orphan")
             .executeAsOneOrNull()
         assertEquals("default", rawAfter?.profile_id)
@@ -441,6 +641,50 @@ class SqlDelightWorkoutRepositoryTest {
         repository.getAllRoutines("default").test {
             val routines = awaitItem()
             assertTrue(routines.any { it.id == "routine-orphan" })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ========== F-034: targeted history queries ==========
+
+    @Test
+    fun `last weight for an exercise is the newest visible session of that exercise and profile`() = runTest {
+        repository.saveSession(workoutSession("a-old", "a", "bench", 10L, workingReps = 5).copy(weightPerCableKg = 30f))
+        repository.saveSession(workoutSession("a-new", "a", "bench", 30L, workingReps = 5).copy(weightPerCableKg = 42.5f))
+        // A sync tombstone: the row stays, soft-deleted (repository deletes are hard deletes).
+        repository.saveSession(
+            workoutSession("a-deleted", "a", "bench", 50L, workingReps = 5)
+                .copy(weightPerCableKg = 99f, routineSessionId = "deleted-run"),
+        )
+        database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(1L, 1L, "deleted-run")
+        assertNotNull(database.phoenixDatabaseQueries.selectSessionById("a-deleted").executeAsOneOrNull()?.deletedAt)
+        repository.saveSession(workoutSession("a-squat", "a", "squat", 60L, workingReps = 5).copy(weightPerCableKg = 77f))
+        repository.saveSession(workoutSession("b-bench", "b", "bench", 70L, workingReps = 5).copy(weightPerCableKg = 88f))
+
+        assertEquals(42.5f, repository.getLastWeightForExercise(profileId = "a", exerciseId = "bench"))
+        assertEquals(77f, repository.getLastWeightForExercise(profileId = "a", exerciseId = "squat"))
+        assertEquals(88f, repository.getLastWeightForExercise(profileId = "b", exerciseId = "bench"))
+        assertNull(repository.getLastWeightForExercise(profileId = "a", exerciseId = "deadlift"))
+        assertNull(repository.getLastWeightForExercise(profileId = "c", exerciseId = "bench"))
+    }
+
+    @Test
+    fun `recent sessions are the head of the visible history and update on insert`() = runTest {
+        repeat(25) { i -> repository.saveSession(workoutSession("s$i", "a", "bench", 1_000L + i, workingReps = 5)) }
+        repository.saveSession(workoutSession("deleted-newest", "a", "bench", 9_000L, workingReps = 5).copy(routineSessionId = "deleted-run"))
+        database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(1L, 1L, "deleted-run")
+        repository.saveSession(workoutSession("other-profile", "b", "bench", 9_500L, workingReps = 5))
+
+        repository.getRecentSessions("a", 20).test {
+            val first = awaitItem()
+            val fullHistory = repository.getAllSessions("a").first()
+            assertEquals(fullHistory.take(20).map { it.id }, first.map { it.id })
+            assertEquals("s24", first.first().id)
+
+            repository.saveSession(workoutSession("s-newest", "a", "bench", 10_000L, workingReps = 5))
+            val updated = awaitItem()
+            assertEquals(20, updated.size)
+            assertEquals("s-newest", updated.first().id)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -561,7 +805,7 @@ class SqlDelightWorkoutRepositoryTest {
                     profileId = profileId,
                 ),
         )
-        database.vitruvianDatabaseQueries.softDeleteSession(
+        database.phoenixDatabaseQueries.softDeleteSession(
             id = "586-deleted",
             deletedAt = 6500L,
             updatedAt = 6500L,

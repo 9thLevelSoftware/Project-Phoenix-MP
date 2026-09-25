@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.migration
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.StartupSurface
 import com.devil.phoenixproject.startupSurface
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
@@ -10,9 +9,11 @@ import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.test.runTest
@@ -25,7 +26,7 @@ import org.junit.Test
 
 class MigrationManagerTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var migrationManager: MigrationManager
 
     @Before
@@ -35,9 +36,10 @@ class MigrationManagerTest {
     }
 
     private fun createMigrationManager(
-        database: VitruvianDatabase,
+        database: PhoenixDatabase,
         driver: SqlDriver? = null,
         settings: MapSettings = MapSettings(),
+        personalRecordHistoryRepair: PersonalRecordHistoryRepair? = null,
     ): MigrationManager {
         val preferences = SqlDelightProfilePreferencesRepository(database)
         val safety = SettingsProfileLocalSafetyStore(settings)
@@ -60,6 +62,7 @@ class MigrationManagerTest {
                 settings,
             ),
             driver = driver,
+            personalRecordHistoryRepair = personalRecordHistoryRepair,
         )
     }
 
@@ -91,7 +94,7 @@ class MigrationManagerTest {
 
     @Test
     fun `cleanup strips exact-match fabricated legacy_session routineSessionId`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalSession(
             id = "session-1",
             routineSessionId = "legacy_session_session-1",
@@ -109,7 +112,7 @@ class MigrationManagerTest {
 
     @Test
     fun `cleanup preserves legitimate routineSessionId that is not fabricated`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalSession(
             id = "session-2",
             routineSessionId = "real-routine-session-uuid-123",
@@ -126,7 +129,7 @@ class MigrationManagerTest {
 
     @Test
     fun `cleanup does not strip legacy_session prefix that does not match session id`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // This has legacy_session_ prefix but the suffix doesn't match the session ID
         insertMinimalSession(
             id = "session-3",
@@ -155,7 +158,7 @@ class MigrationManagerTest {
 
     @Test
     fun `backfill clears garbage routine name when no inference possible`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // No routines defined — inference will fail
         insertMinimalSession(
             id = "session-garbage",
@@ -172,8 +175,99 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `epoch zero session repair rebuilds start and duration from the sessions own data`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        val epochDuration = 1_758_000_000_000L
+        // 1970 row with samples: start = first sample, duration = sample span.
+        insertMinimalSession(id = "bad-samples", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        queries.insertMetric("bad-samples", 1_757_999_000_000L, null, null, null, null, null, null, null, 0L)
+        queries.insertMetric("bad-samples", 1_757_999_090_000L, null, null, null, null, null, null, null, 0L)
+        // A stray pre-2015 sample must not become the start.
+        queries.insertMetric("bad-samples", 5_000L, null, null, null, null, null, null, null, 0L)
+        // 1970 row with only a completed set: start = completed_at, duration unknown (0).
+        insertMinimalSession(id = "bad-set", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        queries.insertCompletedSet(
+            "set-1", "bad-set", null, null, 0L, "STANDARD", 1L, 8L, 20.0, null, 0L, 1_757_998_000_000L, "UNKNOWN",
+        )
+        // 1970 row with nothing to rebuild from: the duration is still zeroed.
+        insertMinimalSession(id = "bad-empty", routineSessionId = null, routineName = null, timestamp = 0L, duration = epochDuration)
+        // A healthy row is untouched.
+        insertMinimalSession(id = "good", routineSessionId = null, routineName = null, timestamp = 1_700_000_000_000L, duration = 90_000L)
+        // Pre-2015 CSV-imported history is legitimate: start and duration are kept.
+        insertMinimalSession(id = "import-2012", routineSessionId = null, routineName = null, timestamp = 1_336_000_000_000L, duration = 3_600_000L)
+        // A zeroed start with a real duration keeps the duration; only the start is rebuilt.
+        insertMinimalSession(id = "bad-start-only", routineSessionId = null, routineName = null, timestamp = 0L, duration = 45_000L)
+        queries.insertMetric("bad-start-only", 1_757_997_000_000L, null, null, null, null, null, null, null, 0L)
+        // A valid start with an epoch-sized duration keeps the start; only the duration is reset.
+        insertMinimalSession(id = "bad-duration-only", routineSessionId = null, routineName = null, timestamp = 1_757_996_000_000L, duration = epochDuration)
+
+        migrationManager.runMigrationsNow()
+
+        val imported = queries.selectSessionById("import-2012").executeAsOne()
+        assertEquals(1_336_000_000_000L, imported.timestamp)
+        assertEquals(3_600_000L, imported.duration)
+        val startOnly = queries.selectSessionById("bad-start-only").executeAsOne()
+        assertEquals(1_757_997_000_000L, startOnly.timestamp)
+        assertEquals(45_000L, startOnly.duration)
+        val durationOnly = queries.selectSessionById("bad-duration-only").executeAsOne()
+        assertEquals(1_757_996_000_000L, durationOnly.timestamp)
+        assertEquals(0L, durationOnly.duration)
+
+        val samples = queries.selectSessionById("bad-samples").executeAsOne()
+        assertEquals(1_757_999_000_000L, samples.timestamp)
+        assertEquals(90_000L, samples.duration)
+        val set = queries.selectSessionById("bad-set").executeAsOne()
+        assertEquals(1_757_998_000_000L, set.timestamp)
+        assertEquals(0L, set.duration)
+        assertEquals(0L, queries.selectSessionById("bad-empty").executeAsOne().duration)
+        val good = queries.selectSessionById("good").executeAsOne()
+        assertEquals(1_700_000_000_000L, good.timestamp)
+        assertEquals(90_000L, good.duration)
+    }
+
+    @Test
+    fun `startup repairs re-point rows still naming an archived legacy catalogue id`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        queries.insertRoutine(
+            id = "routine-legacy",
+            name = "Push",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "default",
+            groupId = null,
+            deletedAt = null,
+        )
+        insertMinimalRoutineExercise(
+            id = "re-legacy-bench",
+            routineId = "routine-legacy",
+            exerciseName = "Bench Press",
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+        )
+
+        // A name-only mapping (not in the explicit id map): Rack Pull -> Rack Pulls.
+        database.seedExercise("legacy-rack-pull", name = "Rack Pull", archived = true)
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls")
+        insertMinimalRoutineExercise(
+            id = "re-legacy-rack-pull",
+            routineId = "routine-legacy",
+            exerciseName = "Rack Pull",
+            exerciseId = "legacy-rack-pull",
+        )
+
+        migrationManager.runMigrationsNow()
+
+        val routineExercise = queries.selectRoutineExerciseById("re-legacy-bench").executeAsOne()
+        assertEquals("Barbell_Bench_Press_-_Medium_Grip", routineExercise.exerciseId)
+        assertEquals("Rack_Pulls", queries.selectRoutineExerciseById("re-legacy-rack-pull").executeAsOne().exerciseId)
+    }
+
+    @Test
     fun `backfill replaces garbage routine name with inferred name when routine exists`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // Create a routine with exercise mapping
         queries.insertRoutine(
             id = "routine-upper",
@@ -184,6 +278,7 @@ class MigrationManagerTest {
             useCount = 0,
             profile_id = "default",
             groupId = null,
+            deletedAt = null,
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
@@ -209,7 +304,7 @@ class MigrationManagerTest {
 
     @Test
     fun `backfill replaces exercise-placeholder routine name with inferred name`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         queries.insertRoutine(
             id = "routine-upper",
             name = "Upper Day",
@@ -219,6 +314,7 @@ class MigrationManagerTest {
             useCount = 0,
             profile_id = "default",
             groupId = null,
+            deletedAt = null,
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
@@ -245,7 +341,7 @@ class MigrationManagerTest {
 
     @Test
     fun `backfill preserves legitimate routine name`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalSession(
             id = "session-legit",
             routineSessionId = null,
@@ -262,7 +358,7 @@ class MigrationManagerTest {
 
     @Test
     fun `normalize legacy workout session modes to canonical keys`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalSession(
             id = "session-mode",
             routineSessionId = null,
@@ -280,7 +376,7 @@ class MigrationManagerTest {
 
     @Test
     fun `normalize legacy personal record modes merges duplicates into canonical bucket`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -343,7 +439,7 @@ class MigrationManagerTest {
 
     @Test
     fun `normalize legacy personal record modes stays within each profile`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertProfile(id = "profile-b", name = "Profile B", isActive = false)
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
 
@@ -416,12 +512,51 @@ class MigrationManagerTest {
     }
 
     @Test
-    fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val localDatabase = VitruvianDatabase(driver)
+    fun `repairOrphanedPRRecords leaves a deleted profile's PR tombstones where they are`() = runTest {
+        val driver = createTestDriver()
+        val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
-        val queries = localDatabase.vitruvianDatabaseQueries
+        val queries = localDatabase.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "target-profile",
+            name = "Target Profile",
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        // PR 20: a permanently deleted profile keeps its PR tombstones under its own id.
+        queries.insertRecord(
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            weight = 80.0,
+            reps = 5L,
+            oneRepMax = 90.0,
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "deleted-profile",
+            cable_count = 2L,
+            uuid = "abcdefab-1234-4abc-8def-1234567890ab",
+        )
+        val tombstone = queries.selectAllRecords("deleted-profile").executeAsList().single()
+        queries.softDeletePRById(1_700_000_000_500, 1_700_000_000_500, tombstone.id, "deleted-profile")
+
+        assertEquals(emptyMap(), localMigrationManager.scanForOrphanedPRRecords())
+        assertEquals(0, localMigrationManager.repairOrphanedPRRecords("target-profile"))
+        assertEquals(
+            "deleted-profile",
+            queries.selectPRsModifiedSince(0L, "deleted-profile").executeAsList().single().profile_id,
+        )
+    }
+
+    @Test
+    fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
+        val driver = createTestDriver()
+        val localDatabase = PhoenixDatabase(driver)
+        val localMigrationManager = createMigrationManager(localDatabase, driver)
+        val queries = localDatabase.phoenixDatabaseQueries
         val stableUuid = "12345678-1234-4abc-8def-1234567890ab"
 
         queries.insertProfile(
@@ -522,7 +657,7 @@ class MigrationManagerTest {
             putInt("migration_repair_version", 1)
         }
         val localManager = createMigrationManager(database, settings = settings)
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -541,7 +676,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("default").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -560,7 +695,7 @@ class MigrationManagerTest {
         val sourceVolume = queries.selectAllRecords("default").executeAsList()
             .single { it.workoutMode == "OldSchool" }
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",
@@ -615,16 +750,18 @@ class MigrationManagerTest {
         assertEquals(70.0, bench.weight)
         assertEquals("Target Bench", bench.exerciseName)
         assertEquals("target-fallback-uuid", bench.uuid)
-        assertEquals(2, settings.getInt("migration_repair_version", 0))
+        assertNotNull(
+            queries.selectAppliedDataRepair("workout-mode-keys-v1").executeAsOneOrNull(),
+        )
+        assertEquals(1, settings.getInt("migration_repair_version", 0))
     }
 
     @Test
     fun `orphan repair preserves target ids and deterministic PR badge sync metadata`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val localDatabase = VitruvianDatabase(driver)
+        val driver = createTestDriver()
+        val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
-        val queries = localDatabase.vitruvianDatabaseQueries
+        val queries = localDatabase.phoenixDatabaseQueries
         queries.insertProfile("target-profile", "Target", 0, 1, 1)
 
         queries.insertRecord(
@@ -644,7 +781,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("target-profile").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -662,7 +799,7 @@ class MigrationManagerTest {
         )
         val sourceVolume = queries.selectAllRecords("orphan-profile").executeAsList().single()
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",
@@ -752,8 +889,54 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `failed personal record history repair stays unledgered and succeeds on retry`() = runTest {
+        insertMinimalSession(
+            id = "repair-session",
+            routineSessionId = null,
+            routineName = null,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            workingReps = 5,
+            heaviestLiftKg = 80.0,
+        )
+        var failRepair = true
+        var attempts = 0
+        val localManager = createMigrationManager(
+            database = database,
+            personalRecordHistoryRepair = PersonalRecordHistoryRepair { _, _ ->
+                attempts++
+                if (failRepair) error("injected PR repair failure")
+                1
+            },
+        )
+
+        localManager.runMigrationsNow()
+
+        assertEquals(
+            NonCriticalRepairState.Failed("PERSONAL_RECORD_HISTORY_REPAIR_FAILED"),
+            localManager.nonCriticalRepairState.value,
+        )
+        assertNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+
+        failRepair = false
+        localManager.runMigrationsNow()
+
+        assertEquals(NonCriticalRepairState.Ready, localManager.nonCriticalRepairState.value)
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+        assertEquals(2, attempts)
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
         insertMinimalSession(
             id = "session-pr-repair",
@@ -789,6 +972,8 @@ class MigrationManagerTest {
             profileId = "default",
         ).executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
+        val baseline = queries.selectProfileExerciseBaseline("default", "deadlift")
+            .executeAsOneOrNull()
         val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
 
@@ -800,15 +985,13 @@ class MigrationManagerTest {
         assertEquals(50.0, volumePr.weight)
         assertEquals(500.0, volumePr.volume)
         assertEquals(2, repairedRecords.size)
-        assertEquals(
-            OneRepMaxCalculator.estimate(60f, 10).toDouble(),
-            exercise?.one_rep_max_kg,
-        )
+        assertNull(baseline, "repairing PR history must not overwrite the explicit profile baseline")
+        assertNull(exercise?.one_rep_max_kg)
     }
 
     @Test
     fun `repair personal records from workout history respects session profile ids`() {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         insertProfile(id = "profile-b", name = "Profile B", isActive = false)
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
 
@@ -896,7 +1079,7 @@ class MigrationManagerTest {
     // -- Helper --
 
     private fun insertProfile(id: String, name: String, isActive: Boolean) {
-        database.vitruvianDatabaseQueries.insertProfile(
+        database.phoenixDatabaseQueries.insertProfile(
             id = id,
             name = name,
             colorIndex = 0L,
@@ -906,7 +1089,7 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalExercise(id: String, name: String, oneRepMaxKg: Double? = null) {
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -936,7 +1119,8 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalRoutineExercise(id: String, routineId: String, exerciseName: String, exerciseId: String) {
-        database.vitruvianDatabaseQueries.insertRoutineExerciseIgnore(
+        database.seedExercise(exerciseId, exerciseName)
+        database.phoenixDatabaseQueries.insertRoutineExerciseIgnore(
             id = id,
             routineId = routineId,
             exerciseName = exerciseName,
@@ -973,6 +1157,8 @@ class MigrationManagerTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
     }
 
@@ -989,15 +1175,16 @@ class MigrationManagerTest {
         heaviestLiftKg: Double? = null,
         timestamp: Long = 1_700_000_000_000,
         profileId: String = "default",
+        duration: Long = 0L,
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = timestamp,
             mode = mode,
             targetReps = 10,
             weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
-            duration = 0L,
+            duration = duration,
             totalReps = totalReps,
             warmupReps = 0,
             workingReps = workingReps,

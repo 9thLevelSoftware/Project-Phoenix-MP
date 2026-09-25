@@ -1,8 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -16,7 +19,8 @@ import kotlin.test.assertTrue
  *   PortalSetDto.weightKg = session.weightPerCableKg    (NO ×2, already per-cable)
  *
  * Push totalVolume aggregation (PortalSyncAdapter.buildPortalSession):
- *   - If session.totalVolumeKg != null (measured): divide by cableCount → per-cable.
+ *   - If session.totalVolumeKg != null (measured): divide by the valid 1/2
+ *     wire cableCount → per-cable; unknown counts fall back to one cable.
  *   - Else fallback: weightPerCableKg × totalReps (already per-cable).
  *
  * Pull path (PortalPullAdapter.toWorkoutSessions):
@@ -68,7 +72,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushSetWeightKgAtMaxRangeBoundaryIsPerCable() {
-        // 110 kg/cable = 220 kg total for a dual-cable Vitruvian Trainer+ max.
+        // 110 kg/cable = 220 kg total for a dual-cable Phoenix Trainer+ max.
         val swr = sessionWithReps(weightPerCableKg = 110f, totalReps = 5)
         val sessions = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
         assertEquals(110f, sessions[0].exercises[0].sets[0].weightKg)
@@ -112,7 +116,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushNullCableCountDefaultsToSingleCable() {
-        // cableCount=null → coerceAtLeast(1) = 1 cable → no division.
+        // cableCount=null is unknown, so the single-cable fallback avoids guessing.
         val swr = sessionWithReps(
             weightPerCableKg = 25f,
             totalReps = 10,
@@ -129,7 +133,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushZeroCableCountIsCoercedToOneAndDoesNotCrash() {
-        // Defensive: cableCount=0 must not cause a /0 crash — production code uses coerceAtLeast(1).
+        // Defensive: cableCount=0 is unknown and falls back to one cable.
         val swr = sessionWithReps(
             weightPerCableKg = 25f,
             totalReps = 10,
@@ -140,8 +144,46 @@ class PortalMappingsWeightTest {
         assertEquals(
             100f,
             sessions[0].totalVolume,
-            "cableCount=0 must NOT divide by zero; coerceAtLeast(1) treats it as single cable",
+            "cableCount=0 must not divide by zero; unknown counts use the single-cable fallback",
         )
+    }
+
+    @Test
+    fun pushMeasuredVolumeUsesTheSameSanitizedCableCountAsTheWireField() {
+        data class Case(
+            val rawCableCount: Int?,
+            val expectedWireCount: Int?,
+            val expectedPerCableVolume: Float,
+        )
+
+        val cases = listOf(
+            Case(rawCableCount = 1, expectedWireCount = 1, expectedPerCableVolume = 600f),
+            Case(rawCableCount = 2, expectedWireCount = 2, expectedPerCableVolume = 300f),
+            Case(rawCableCount = null, expectedWireCount = null, expectedPerCableVolume = 600f),
+            Case(rawCableCount = 3, expectedWireCount = null, expectedPerCableVolume = 600f),
+        )
+
+        cases.forEach { case ->
+            val pushed = PortalSyncAdapter.toPortalWorkoutSessions(
+                listOf(
+                    sessionWithReps(
+                        weightPerCableKg = 50f,
+                        totalReps = 12,
+                        totalVolumeKg = 600f,
+                        cableCount = case.rawCableCount,
+                    ),
+                ),
+                "user-1",
+            )[0]
+
+            assertEquals(case.expectedPerCableVolume, pushed.totalVolume, "cableCount=${case.rawCableCount}")
+            assertEquals(
+                case.expectedWireCount,
+                pushed.exercises[0].cableCount,
+                "cableCount=${case.rawCableCount}",
+            )
+            assertEquals(50f, pushed.exercises[0].sets[0].weightKg, "weight must remain per-cable")
+        }
     }
 
     // ==================== Push Side: totalVolume fallback (null totalVolumeKg) ====================
@@ -305,5 +347,142 @@ class PortalMappingsWeightTest {
             sent <= 110f,
             "Mobile must send per-cable kg; portal's ×2 would turn $sent into ${sent * 2} for display",
         )
+    }
+
+    // ==================== Per-exercise cableCount (portal PR 28 contract) ====================
+
+    private fun pushedCableCount(cableCount: Int?): Int? = PortalSyncAdapter.toPortalWorkoutSessions(
+        listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = cableCount)),
+        "user-1",
+    )[0].exercises[0].cableCount
+
+    private fun pullSessionWithCableCount(cableCount: Int?, weightKg: Float, reps: Int) = PullWorkoutSessionDto(
+        id = "cable-rt",
+        userId = "user-1",
+        startedAt = "2026-01-01T00:00:00Z",
+        exerciseCount = 1,
+        exercises = listOf(
+            PullExerciseDto(
+                id = "ex",
+                sessionId = "cable-rt",
+                name = "Row",
+                cableCount = cableCount,
+                sets = listOf(
+                    PullSetDto(id = "s", exerciseId = "ex", setNumber = 1, weightKg = weightKg, actualReps = reps),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun pushCarriesSingleAndDoubleCableCount() {
+        assertEquals(1, pushedCableCount(1))
+        assertEquals(2, pushedCableCount(2))
+        assertNull(pushedCableCount(null), "Unknown cable count must stay unknown, not default to 1 or 2")
+    }
+
+    @Test
+    fun pushNeverSendsOutOfRangeCableCount() {
+        // The portal rejects the WHOLE push batch with 400 for any cableCount other than 1, 2 or null.
+        for (bad in listOf(0, -1, 3, 4, Int.MAX_VALUE, Int.MIN_VALUE)) {
+            assertNull(pushedCableCount(bad), "cableCount=$bad must be sent as unknown (omitted), never as-is")
+        }
+        for (value in -5..10) {
+            val sent = PortalMappings.cableCountToWire(value)
+            assertTrue(sent == null || sent == 1 || sent == 2, "cableCountToWire($value) produced $sent")
+        }
+    }
+
+    @Test
+    fun pushSerializationIncludesCableCountOnlyWhenKnown() {
+        val two = PortalSyncAdapter.toPortalWorkoutSessions(
+            listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = 2)),
+            "user-1",
+        )[0].exercises[0]
+        val twoJson = PortalWireJson.encodeToString(PortalExerciseDto.serializer(), two)
+        assertTrue(twoJson.contains("\"cableCount\":2"), "Known cable count must be on the wire: $twoJson")
+
+        for (unknown in listOf(null, 0, 3)) {
+            val dto = PortalSyncAdapter.toPortalWorkoutSessions(
+                listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = unknown)),
+                "user-1",
+            )[0].exercises[0]
+            val json = PortalWireJson.encodeToString(PortalExerciseDto.serializer(), dto)
+            assertFalse(json.contains("cableCount"), "cableCount=$unknown must be omitted from the wire: $json")
+        }
+
+        // Full payload encoding path used by PortalApiClient.
+        val payload = PortalSyncPayload(
+            deviceId = "device-1",
+            platform = "android",
+            lastSync = 0L,
+            sessions = listOf(
+                PortalSyncAdapter.toPortalWorkoutSessions(
+                    listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = 1)),
+                    "user-1",
+                )[0],
+            ),
+        )
+        assertTrue(encodePortalSyncPayload(payload).raw.contains("\"cableCount\":1"))
+    }
+
+    @Test
+    fun pullDecodesCableCountFromAllPortalShapes() {
+        val base = """{"id":"ex","sessionId":"s","name":"Row","sets":[]"""
+        // New portal, known value.
+        assertEquals(2, PortalWireJson.decodeFromString(PullExerciseDto.serializer(), "$base,\"cableCount\":2}").cableCount)
+        assertEquals(1, PortalWireJson.decodeFromString(PullExerciseDto.serializer(), "$base,\"cableCount\":1}").cableCount)
+        // New portal, unknown (always-present key with explicit null).
+        assertNull(PortalWireJson.decodeFromString(PullExerciseDto.serializer(), "$base,\"cableCount\":null}").cableCount)
+        // Old portal: key absent.
+        assertNull(PortalWireJson.decodeFromString(PullExerciseDto.serializer(), "$base}").cableCount)
+    }
+
+    @Test
+    fun pulledDoubleCableCountYieldsFullTotalVolume() {
+        val local = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(2, 40f, 10), "default")
+        assertEquals(2, local[0].cableCount)
+        assertEquals(40f * 2 * 10, local[0].effectiveTotalVolumeKg(), "Double-cable volume must not be halved on a second device")
+    }
+
+    @Test
+    fun pulledSingleAndUnknownCableCountAreNeverDoubled() {
+        val single = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(1, 40f, 10), "default")[0]
+        assertEquals(1, single.cableCount)
+        assertEquals(400f, single.effectiveTotalVolumeKg())
+
+        val unknown = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(null, 40f, 10), "default")[0]
+        assertNull(unknown.cableCount, "Null means unknown; never treat it as 2")
+        assertEquals(400f, unknown.effectiveTotalVolumeKg(), "Unknown keeps the old single-cable default")
+
+        val bogus = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(3, 40f, 10), "default")[0]
+        assertNull(bogus.cableCount, "Out-of-range server value must not reach the local DB")
+    }
+
+    @Test
+    fun pullWithLookupAlsoConsumesCableCount() = kotlinx.coroutines.test.runTest {
+        val local = PortalPullAdapter.toWorkoutSessionsWithLookup(
+            pullSessionWithCableCount(2, 40f, 10),
+            "default",
+        ) { _, _, id -> id }
+        assertEquals(2, local[0].cableCount)
+        assertEquals(800f, local[0].effectiveTotalVolumeKg())
+    }
+
+    @Test
+    fun cableCountSurvivesPushAndPullRoundTrip() {
+        for (cables in listOf(1, 2)) {
+            val pushed = PortalSyncAdapter.toPortalWorkoutSessions(
+                listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = cables)),
+                "user-1",
+            )[0].exercises[0]
+            // Simulate the portal storing and echoing the wire value back.
+            val pulled = PortalPullAdapter.toWorkoutSessions(
+                pullSessionWithCableCount(pushed.cableCount, pushed.sets[0].weightKg, pushed.sets[0].actualReps),
+                "default",
+            )[0]
+            assertEquals(cables, pulled.cableCount)
+            assertEquals(40f * cables * 10, pulled.effectiveTotalVolumeKg())
+        }
     }
 }

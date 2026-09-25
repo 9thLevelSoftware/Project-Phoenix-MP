@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
-import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -14,11 +14,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
@@ -263,6 +266,45 @@ class SettingsManagerTest {
             assertTrue(workout.stopAtTop)
             assertFalse(workout.beepsEnabled)
         } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `profile targeted workout mutation shares the setter mutex`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val mutationEntered = CompletableDeferred<Unit>()
+        val releaseMutation = CompletableDeferred<Unit>()
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
+            var mutationCount = 0
+            fakeProfileRepository.beforeWorkoutMutation = {
+                mutationCount += 1
+                if (mutationCount == 1) {
+                    mutationEntered.complete(Unit)
+                    releaseMutation.await()
+                }
+            }
+
+            launch {
+                manager.mutateWorkout("default") { workout ->
+                    workout.copy(beepsEnabled = false)
+                }
+            }
+            mutationEntered.await()
+            manager.setStopAtTop(true)
+            runCurrent()
+
+            assertEquals(1, mutationCount)
+            releaseMutation.complete(Unit)
+            advanceUntilIdle()
+
+            val workout = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
+                .preferences.workout.value
+            assertTrue(workout.stopAtTop)
+            assertFalse(workout.beepsEnabled)
+        } finally {
+            releaseMutation.complete(Unit)
             managerScope.cancel()
         }
     }

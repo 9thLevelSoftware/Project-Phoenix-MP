@@ -31,8 +31,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,10 +48,10 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.UserProfile
-import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.AdultsOnlyConfirmDialog
 import com.devil.phoenixproject.presentation.components.DiscoModeUnlockDialog
 import com.devil.phoenixproject.presentation.components.DominatrixUnlockDialog
+import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.ProfileAvatar
@@ -70,7 +70,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 internal data class ProfileIdentityOverlayOwnership(
     val editTargetProfileId: String? = null,
@@ -139,13 +139,22 @@ fun ProfileScreen(
     onPlayDominatrixUnlockSound: () -> Unit,
     enableVideoPlayback: Boolean,
     themeMode: ThemeMode,
+    isInWorkoutSession: () -> Boolean,
     modifier: Modifier = Modifier,
     viewModel: ProfileViewModel = koinViewModel(),
     exerciseRepository: ExerciseRepository = koinInject(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val ready = state.context as? ActiveProfileContext.Ready
     val readyProfileId = ready?.profile?.id
+    val pickerCompletedExerciseIds = if (completedExerciseIdsState.profileId == readyProfileId) {
+        completedExerciseIdsState.ids
+    } else {
+        emptySet()
+    }
+    val pickerCompletedExerciseIdsLoading =
+        completedExerciseIdsState.isLoading || completedExerciseIdsState.profileId != readyProfileId
     var pickerProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var editTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -218,6 +227,7 @@ fun ProfileScreen(
                     if (editTargetProfileId == event.profileId) editTargetProfileId = null
                     if (pendingIdentityProfileId == event.profileId) pendingIdentityProfileId = null
                 }
+
                 is ProfileUiEvent.IdentityUpdateFailed -> {
                     val failure = applyProfileIdentityFailure(
                         ownership = ProfileIdentityOverlayOwnership(
@@ -233,10 +243,12 @@ fun ProfileScreen(
                     pendingIdentityProfileId = failure.ownership.pendingIdentityProfileId
                     if (failure.showError) snackbarHostState.showSnackbar(updateFailedMessage)
                 }
+
                 is ProfileUiEvent.ProfileDeleted -> {
                     if (deleteTargetProfileId == event.profileId) deleteTargetProfileId = null
                     if (pendingIdentityProfileId == event.profileId) pendingIdentityProfileId = null
                 }
+
                 is ProfileUiEvent.ProfileRecoveryRequired -> {
                     if (pendingIdentityProfileId == event.profileId) {
                         editTargetProfileId = null
@@ -245,6 +257,7 @@ fun ProfileScreen(
                         currentOnProfileRecoveryRequired(event.cause)
                     }
                 }
+
                 is ProfileUiEvent.PreferenceMutationSucceeded -> {
                     if (trackedPreferenceTokens.containsKey(event.token)) {
                         val ownedProfileId = trackedPreferenceTokens[event.token]
@@ -256,17 +269,20 @@ fun ProfileScreen(
                         ) {
                             when (event.kind) {
                                 ProfilePreferenceMutationKind.UPDATE -> Unit
+
                                 ProfilePreferenceMutationKind.ADULT_ENABLE,
-                                ProfilePreferenceMutationKind.ADULT_DECLINE
+                                ProfilePreferenceMutationKind.ADULT_DECLINE,
                                 -> {
                                     showAdultsOnlyDialog = false
                                     adultTargetProfileId = null
                                     adultPreferenceError = null
                                 }
+
                                 ProfilePreferenceMutationKind.DISCO_UNLOCK -> {
                                     onPlayDiscoUnlockSound()
                                     showDiscoUnlockDialog = true
                                 }
+
                                 ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK -> {
                                     onPlayDominatrixUnlockSound()
                                     showDominatrixUnlockDialog = true
@@ -275,6 +291,7 @@ fun ProfileScreen(
                         }
                     }
                 }
+
                 is ProfileUiEvent.PreferenceUpdateFailed -> {
                     if (trackedPreferenceTokens.containsKey(event.token)) {
                         val ownedProfileId = trackedPreferenceTokens[event.token]
@@ -286,7 +303,7 @@ fun ProfileScreen(
                         ) {
                             when (event.kind) {
                                 ProfilePreferenceMutationKind.ADULT_ENABLE,
-                                ProfilePreferenceMutationKind.ADULT_DECLINE
+                                ProfilePreferenceMutationKind.ADULT_DECLINE,
                                 -> {
                                     adultPreferenceError = if (
                                         ProfilePreferenceSection.LOCAL_SAFETY in event.committedSections
@@ -296,9 +313,10 @@ fun ProfileScreen(
                                         updateFailedMessage
                                     }
                                 }
+
                                 ProfilePreferenceMutationKind.UPDATE,
                                 ProfilePreferenceMutationKind.DISCO_UNLOCK,
-                                ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK
+                                ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK,
                                 -> snackbarHostState.showSnackbar(updateFailedMessage)
                             }
                         }
@@ -448,7 +466,11 @@ fun ProfileScreen(
             isSubmitting = state.identityMutationInFlight,
             onConfirm = {
                 pendingIdentityProfileId = deleteTarget.id
-                viewModel.deleteActiveProfile()
+                viewModel.deleteActiveProfile(isInWorkoutSession)
+            },
+            onDeletePermanently = {
+                pendingIdentityProfileId = deleteTarget.id
+                viewModel.deleteActiveProfilePermanently(isInWorkoutSession)
             },
             onDismiss = {
                 if (!state.identityMutationInFlight) deleteTargetProfileId = null
@@ -467,6 +489,9 @@ fun ProfileScreen(
         enableVideoPlayback = enableVideoPlayback,
         themeMode = themeMode,
         enableCustomExercises = false,
+        enablePreviouslyCompletedFilter = true,
+        completedExerciseIds = pickerCompletedExerciseIds,
+        completedExerciseIdsLoading = pickerCompletedExerciseIdsLoading,
     )
 
     if (showAdultsOnlyDialog && adultTargetProfileId == ready?.profile?.id) {

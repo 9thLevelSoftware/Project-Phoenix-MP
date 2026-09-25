@@ -3,6 +3,7 @@ package com.devil.phoenixproject.ui.sync
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.repository.AuthRepository
+import com.devil.phoenixproject.data.sync.AccountSwitchChoice
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
@@ -71,10 +72,6 @@ class LinkAccountViewModel(
 
     /** Auth events for UI notification (session expiry, refresh failure, logout). */
     val authEvents = syncManager.authEvents
-
-    /** Returns true if the ViewModel has been cleared and should not be used. */
-    val isCleared: Boolean
-        get() = !job.isActive
 
     fun login(email: String, password: String) {
         scope.launch {
@@ -255,6 +252,58 @@ class LinkAccountViewModel(
             } catch (e: Exception) {
                 // F055: surface unexpected resync failures instead of an unhandled throw.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: "Resync failed")
+            }
+        }
+    }
+
+    /**
+     * Applies the account-switch dialog choice (PR 11). Both options relink every
+     * profile to the new account and record which pre-switch rows must not be uploaded.
+     */
+    fun resolveAccountMismatch(choice: AccountSwitchChoice) {
+        scope.launch {
+            try {
+                _uiState.value = LinkAccountUiState.Loading(provider = null)
+                syncManager.resolveAccountMismatch(choice).fold(
+                    onSuccess = {
+                        val user = syncManager.currentUser.value
+                        _uiState.value = if (user != null) {
+                            LinkAccountUiState.Success(user)
+                        } else {
+                            LinkAccountUiState.Initial
+                        }
+                    },
+                    onFailure = { e ->
+                        _uiState.value = LinkAccountUiState.Error(
+                            e.message ?: "Could not apply the account switch choice",
+                        )
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = LinkAccountUiState.Error(
+                    e.message ?: "Could not apply the account switch choice",
+                )
+            }
+        }
+    }
+
+    /** Recovery action for an ownership refusal: stop uploading pre-switch data. */
+    fun stopUploadingPreSwitchData() {
+        scope.launch {
+            try {
+                syncManager.applyOwnershipConflictRecovery().exceptionOrNull()?.let { e ->
+                    _uiState.value = LinkAccountUiState.Error(
+                        e.message ?: "Could not stop uploading pre-switch data",
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = LinkAccountUiState.Error(
+                    e.message ?: "Could not stop uploading pre-switch data",
+                )
             }
         }
     }

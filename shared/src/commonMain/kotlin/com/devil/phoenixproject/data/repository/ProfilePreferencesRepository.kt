@@ -5,7 +5,7 @@ import app.cash.sqldelight.coroutines.mapToOne
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.database.UserProfilePreferences as ProfilePreferencesRow
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
@@ -41,9 +41,9 @@ interface ProfilePreferencesRepository {
 }
 
 class SqlDelightProfilePreferencesRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
 ) : ProfilePreferencesRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override fun observe(profileId: String): Flow<UserProfilePreferences> =
         queries.selectProfilePreferences(profileId)

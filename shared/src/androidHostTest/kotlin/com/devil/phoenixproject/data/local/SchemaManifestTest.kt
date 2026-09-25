@@ -3,12 +3,15 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.Test
 
+// Raw JdbcSqliteDriver with foreign keys OFF on purpose (unlike createTestDriver()): production
+// runs migrations/reconciliation before it turns FKs on (Android onUpgrade before onOpen, iOS
+// after reconcileFullSchema), so schema tests must model that FK-off window.
 class SchemaManifestTest {
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -115,6 +118,193 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `completed set heal supplies UNKNOWN default`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "set_end_reason" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-1', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        var persistedReason: String? = null
+        driver.executeQuery(
+            null,
+            "SELECT set_end_reason FROM CompletedSet WHERE id = 'set-1'",
+            { cursor ->
+                if (cursor.next().value) persistedReason = cursor.getString(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals("UNKNOWN", persistedReason)
+    }
+
+    @Test
+    fun `completed set identity heals are distinct and attempt defaults to one`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val occurrenceResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "routine_exercise_id" },
+        )
+        val attemptResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "attempt_number" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-identity', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, occurrenceResult.status)
+        assertEquals(ReconciliationStatus.CREATED, attemptResult.status)
+        assertEquals(listOf("id", "session_id", "routine_exercise_id", "attempt_number"), columnNames(driver, "CompletedSet"))
+        var attemptNumber: Long? = null
+        driver.executeQuery(
+            null,
+            "SELECT attempt_number FROM CompletedSet WHERE id = 'set-identity'",
+            { cursor ->
+                if (cursor.next().value) attemptNumber = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(1L, attemptNumber)
+    }
+
+    @Test
+    fun `session origin heal conservatively marks existing rows local`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('existing',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "WorkoutSession" && it.column == "portalOrigin" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        var origin: Long? = null
+        driver.executeQuery(
+            null,
+            "SELECT portalOrigin FROM WorkoutSession WHERE id = 'existing'",
+            { cursor ->
+                if (cursor.next().value) origin = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(0L, origin)
+    }
+
+    @Test
+    fun `baseline table and remap index reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "CREATE TABLE UserProfile(id TEXT PRIMARY KEY)", 0)
+        driver.execute(null, "CREATE TABLE Exercise(id TEXT PRIMARY KEY)", 0)
+        val tableOp = manifestTables.first { it.table == "ProfileExerciseBaseline" }
+        val indexOp = manifestIndexes.first { it.name == "idx_profile_exercise_baseline_exercise" }
+
+        assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, tableOp).status)
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, indexOp).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, tableOp).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, indexOp).status)
+        assertTrue(tableExists(driver, "ProfileExerciseBaseline"))
+        assertTrue(indexExists(driver, "idx_profile_exercise_baseline_exercise"))
+    }
+
+    @Test
+    fun `workout generation heals keep legacy rows dirty`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('legacy',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val local = manifestColumns.first { it.table == "WorkoutSession" && it.column == "local_sync_generation" }
+        val synced = manifestColumns.first { it.table == "WorkoutSession" && it.column == "synced_sync_generation" }
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, local).status)
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, synced).status)
+        assertEquals("1", queryScalar(driver, "SELECT CAST(local_sync_generation AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(synced_sync_generation AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+    }
+
+    @Test
+    fun `durable recovery and deletion structures reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        listOf(
+            "AppliedDataRepair",
+            "PendingProfileRecovery",
+            "OwnershipTransferOutbox",
+            "AppliedOwnershipEvent",
+            "WorkoutDeletion",
+        ).forEach { table ->
+            val operation = manifestTables.first { it.table == table }
+            assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, operation).status, table)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, operation).status, table)
+        }
+        listOf("idx_workout_deletion_pending", "idx_workout_deletion_target").forEach { index ->
+            val operation = manifestIndexes.first { it.name == index }
+            assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, operation).status, index)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, operation).status, index)
+        }
+    }
+
+    @Test
+    fun `cycle sync and conflict structures reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE TrainingCycle(id TEXT PRIMARY KEY NOT NULL, created_at INTEGER NOT NULL)",
+            0,
+        )
+        val updatedAt = manifestColumns.first { it.table == "TrainingCycle" && it.column == "updatedAt" }
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, updatedAt).status)
+        listOf("CycleSyncState", "CycleConflictDraft").forEach { table ->
+            val operation = manifestTables.first { it.table == table }
+            assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, operation).status, table)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, operation).status, table)
+        }
+        val index = manifestIndexes.first { it.name == "idx_cycle_conflict_draft_profile_cycle" }
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, index).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, index).status)
+    }
+
+    @Test
+    fun `retained ownership claims reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val table = manifestTables.first { it.table == "LocalOwnershipClaim" }
+        assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, table).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, table).status)
+        val index = manifestIndexes.first { it.name == "idx_local_ownership_claim_mutation" }
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, index).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, index).status)
+    }
+
+    @Test
     fun `applyColumnHeal returns TABLE_MISSING when table does not exist`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
 
@@ -163,9 +353,31 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `active runtime table reconciliation creates the missing table and is idempotent`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val operation = manifestTables.first { it.table == "ActiveWorkoutRuntime" }
+
+        val created = applyTableCreate(driver, operation)
+        val alreadyPresent = applyTableCreate(driver, operation)
+
+        assertEquals(ReconciliationStatus.CREATED, created.status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, alreadyPresent.status)
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            columnNames(driver, "ActiveWorkoutRuntime"),
+        )
+    }
+
+    @Test
     fun `reconcileFullSchema restores profile preference and cleanup tables with all columns`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
+        PhoenixDatabase.Schema.create(driver)
         driver.execute(null, "DROP TABLE IF EXISTS UserProfilePreferences", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileContextRecovery", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileLocalCleanup", 0)
@@ -297,6 +509,329 @@ class SchemaManifestTest {
         // Verify new shape includes col2
         val newSql = indexSql(driver, "idx_test_unique").orEmpty()
         assertTrue(newSql.contains("col2"))
+    }
+
+    @Test
+    fun `idx_pr_unique deduplicates records keeping the most recent before rebuild`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 200),
+                (3, 'squat', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 150)
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_pr_unique" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE exerciseId = 'bench'"))
+        assertTrue(indexExists(driver, "idx_pr_unique"))
+    }
+
+    @Test
+    fun `idx_gamification_stats_profile matches migration 25 keeper ordering`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE GamificationStats (
+                id INTEGER PRIMARY KEY,
+                lastUpdated INTEGER NOT NULL,
+                updatedAt INTEGER,
+                profile_id TEXT NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO GamificationStats(id, lastUpdated, updatedAt, profile_id)
+            VALUES
+                (1, 100, 1000, 'default'),
+                (2, 200, 10, 'default'),
+                (3, 200, 10, 'other')
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_gamification_stats_profile" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM GamificationStats"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM GamificationStats WHERE profile_id = 'default'"))
+        assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
+    }
+
+    @Test
+    fun `idx_external_activity_dedup keeps the most recently synced duplicate`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE ExternalActivity (
+                id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                externalId TEXT NOT NULL,
+                profileId TEXT NOT NULL,
+                startedAt INTEGER NOT NULL,
+                syncedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExternalActivity(id, provider, externalId, profileId, startedAt, syncedAt)
+            VALUES
+                ('old', 'provider', 'activity', 'default', 100, 200),
+                ('new', 'provider', 'activity', 'default', 100, 300),
+                ('other', 'provider', 'other-activity', 'default', 100, 250)
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_external_activity_dedup" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM ExternalActivity"))
+        assertEquals("new", queryScalar(driver, "SELECT id FROM ExternalActivity WHERE externalId = 'activity'"))
+        assertTrue(indexExists(driver, "idx_external_activity_dedup"))
+    }
+
+    private val replacedIndexNames = listOf(
+        "idx_pr_unique",
+        "idx_gamification_stats_profile",
+        "idx_external_activity_dedup",
+    )
+
+    @Test
+    fun `every preDropSql index declares a shape the canonical check can verify`() {
+        // If one of these stops parsing, the open-time skip silently degrades back to a
+        // rebuild on every open. Keep the create statements to plain column lists.
+        val replaced = manifestIndexes.filter { it.preDropSql != null }
+        assertEquals(replacedIndexNames.sorted(), replaced.map { it.name }.sorted())
+        replaced.forEach { op ->
+            assertTrue(parseIndexShape(op.createSql) != null, "${op.name} shape must be parseable")
+        }
+    }
+
+    @Test
+    fun `an up-to-date database does not drop or rebuild the replaceable unique indexes`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(driver)
+        reconcileFullSchema(driver)
+        val sqlBefore = replacedIndexNames.associateWith { indexSql(driver, it) }
+        val schemaVersionBefore = queryScalar(driver, "SELECT CAST(schema_version AS TEXT) FROM pragma_schema_version")
+
+        replacedIndexNames.forEach { name ->
+            val result = applyIndexCreate(driver, manifestIndexes.first { it.name == name })
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, result.status, "$name must not be rebuilt")
+        }
+        reconcileFullSchema(driver)
+
+        // Any DROP/CREATE INDEX bumps the schema cookie; an unchanged cookie proves no rebuild ran.
+        assertEquals(
+            schemaVersionBefore,
+            queryScalar(driver, "SELECT CAST(schema_version AS TEXT) FROM pragma_schema_version"),
+        )
+        assertEquals(sqlBefore, replacedIndexNames.associateWith { indexSql(driver, it) })
+    }
+
+    @Test
+    fun `a stale-shape idx_pr_unique is still deduped and rebuilt to the canonical shape`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Pre-profile shape (migration 19): unique without profile_id.
+        driver.execute(null, "CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'squat', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'other', 200)
+            """.trimIndent(),
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_pr_unique" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        val result = applyIndexCreate(driver, op)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertTrue(indexHasCanonicalShape(driver, op))
+        assertTrue(indexSql(driver, "idx_pr_unique").orEmpty().contains("profile_id"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+    }
+
+    @Test
+    fun `a non-unique index with the canonical columns is still rebuilt as unique and deduped`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE GamificationStats (id INTEGER PRIMARY KEY, lastUpdated INTEGER NOT NULL, updatedAt INTEGER, profile_id TEXT NOT NULL)",
+            0,
+        )
+        driver.execute(null, "CREATE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id)", 0)
+        driver.execute(
+            null,
+            "INSERT INTO GamificationStats(id, lastUpdated, updatedAt, profile_id) VALUES (1, 100, 1000, 'default'), (2, 200, 10, 'default')",
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_gamification_stats_profile" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        val result = applyIndexCreate(driver, op)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertTrue(indexHasCanonicalShape(driver, op))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM GamificationStats"))
+    }
+
+    @Test
+    fun `a same-named index with a NOCASE collation is not canonical and is rebuilt with binary semantics`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Same name, same columns, but a restored/hand-made NOCASE collation on exerciseId.
+        driver.execute(
+            null,
+            "CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId COLLATE NOCASE, workoutMode, prType, phase, profile_id)",
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_pr_unique" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, op).status)
+
+        assertTrue(indexHasCanonicalShape(driver, op))
+        // Binary semantics restored: case-distinct exercise ids may now coexist.
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'Bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 200)
+            """.trimIndent(),
+            0,
+        )
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+    }
+
+    @Test
+    fun `a same-named index with a DESC column is not canonical`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "CREATE TABLE GamificationStats (id INTEGER PRIMARY KEY, lastUpdated INTEGER NOT NULL, updatedAt INTEGER, profile_id TEXT NOT NULL)", 0)
+        driver.execute(null, "CREATE UNIQUE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id DESC)", 0)
+
+        assertFalse(indexHasCanonicalShape(driver, manifestIndexes.first { it.name == "idx_gamification_stats_profile" }))
+    }
+
+    @Test
+    fun `unexpected index_xinfo shapes are unverifiable rather than coerced`() {
+        fun key(seqno: Long?, name: String?, desc: Long? = 0L, coll: String? = "BINARY", key: Long? = 1L) =
+            IndexXinfoRow(seqno = seqno, name = name, desc = desc, collation = coll, key = key)
+        val rowid = IndexXinfoRow(seqno = 2L, name = null, desc = 0L, collation = "BINARY", key = 0L)
+
+        // Canonical: key columns in seqno order, auxiliary rowid row ignored.
+        assertEquals(listOf("a", "b"), canonicalKeyColumnNames(listOf(key(1L, "b"), key(0L, "a"), rowid)))
+        // A null seqno must not be coerced to 0 and sorted to the front (Kilo 4083025660).
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(null, "b"), key(1L, "a"))))
+        // Gaps / duplicates in seqno, null key/desc flags, and unknown key values are unverifiable.
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a"), key(2L, "b"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a"), key(0L, "b"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", key = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", desc = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", key = 2L))))
+        // Collation / sort order / expression columns (Codex 4082804910).
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", coll = "NOCASE"))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", coll = null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, "a", desc = 1L))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(key(0L, null))))
+        assertEquals(null, canonicalKeyColumnNames(listOf(rowid)))
+    }
+
+    @Test
+    fun `a replaceable index missing after an upgrade or restore is still created`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(driver)
+        driver.execute(null, "DROP INDEX idx_external_activity_dedup", 0)
+
+        reconcileFullSchema(driver)
+
+        assertTrue(indexExists(driver, "idx_external_activity_dedup"))
+        assertTrue(indexHasCanonicalShape(driver, manifestIndexes.first { it.name == "idx_external_activity_dedup" }))
+    }
+
+    @Test
+    fun `parseIndexShape refuses statements it cannot compare`() {
+        assertEquals(null, parseIndexShape("CREATE INDEX i ON T(a DESC)"))
+        assertEquals(null, parseIndexShape("CREATE INDEX i ON T(lower(a))"))
+        assertEquals(null, parseIndexShape("CREATE UNIQUE INDEX i ON T(a) WHERE a IS NOT NULL"))
+        assertEquals(
+            IndexShape(table = "T", unique = true, columns = listOf("a", "b")),
+            parseIndexShape("CREATE UNIQUE INDEX IF NOT EXISTS i ON T(a, b)"),
+        )
     }
 
     @Test
@@ -506,8 +1041,9 @@ class SchemaManifestTest {
 
         val report = reconcileFullSchema(driver)
 
-        // Verify the report has entries for all manifest items
-        val expectedTotal = manifestTables.size + manifestColumns.size + manifestIndexes.size
+        // Verify the report has entries for all manifest items, including dropped tables
+        val expectedTotal = manifestDroppedTables.size + manifestTables.size +
+            manifestColumns.size + manifestIndexes.size
         assertEquals(expectedTotal, report.total)
 
         // No failures should occur (all prerequisite tables exist)

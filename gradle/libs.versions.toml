@@ -13,8 +13,6 @@ kotlinx-serialization = "1.11.0"
 kotlinx-datetime = "0.8.0"
 
 # Compose
-compose-bom = "2026.05.01"
-compose-navigation = "2.9.8"
 activity-compose = "1.13.0"
 
 # Vendored Kable module deps (third_party/kable-core-android-patched, Phoenix #333)
@@ -25,10 +23,8 @@ androidx-startup = "1.2.0"
 
 # AndroidX
 junit-androidx = "1.3.0"
-espresso-androidx = "3.7.0"
 androidx-core = "1.19.0"
 androidx-lifecycle = "2.10.0"
-androidx-splashscreen = "1.2.0"
 androidx-lifecycle-viewmodel-compose = "2.10.0"
 androidx-navigation-compose = "2.9.2"
 androidx-savedstate = "1.4.0"
@@ -64,9 +60,6 @@ reorderable = "3.1.0"
 compottie = "2.2.2"
 
 # Testing
-# Media3 (ExoPlayer - for HLS video support)
-media3 = "1.10.1"
-
 junit = "4.13.2"
 mockk = "1.14.11"
 turbine = "1.2.1"
@@ -95,12 +88,8 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 
-# Compose BOM (Android)
-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
-
 # AndroidX
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "junit-androidx" }
-androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso-androidx" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "androidx-startup" }
 
@@ -115,7 +104,6 @@ androidx-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycl
 androidx-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "androidx-navigation-compose" }
 androidx-savedstate = { module = "org.jetbrains.androidx.savedstate:savedstate", version.ref = "androidx-savedstate" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
-androidx-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidx-splashscreen" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidx-security-crypto" }
 androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidx-documentfile" }
@@ -129,18 +117,6 @@ cmp-material-icons-extended = { module = "org.jetbrains.compose.material:materia
 cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
 cmp-ui-tooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "compose-multiplatform" }
 cmp-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
-
-# Compose (Android - via BOM)
-compose-ui = { module = "androidx.compose.ui:ui" }
-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
-compose-ui-test = { module = "androidx.compose.ui:ui-test" }
-compose-material3 = { module = "androidx.compose.material3:material3" }
-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
-compose-navigation = { module = "androidx.navigation:navigation-compose", version.ref = "compose-navigation" }
 
 # Koin (Multiplatform DI)
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
@@ -183,11 +159,6 @@ reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reo
 # Compottie (Multiplatform Lottie)
 compottie = { module = "io.github.alexzhirkevich:compottie", version.ref = "compottie" }
 compottie-resources = { module = "io.github.alexzhirkevich:compottie-resources", version.ref = "compottie" }
-
-# Media3 (ExoPlayer - Android video with HLS support)
-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 
 
 [plugins]

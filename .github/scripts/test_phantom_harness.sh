@@ -11,7 +11,7 @@ import tempfile
 print(tempfile.mkdtemp(prefix="phantom-harness-test-"))
 PY
 )"
-CONFIG="$SCRIPT_DIR/../../iosApp/VitruvianPhoenix/Config/Supabase.xcconfig"
+CONFIG="$SCRIPT_DIR/../../iosApp/PhoenixApp/Config/Supabase.xcconfig"
 CONFIG_BACKUP="$TMP_DIR/Supabase.xcconfig.saved"
 CONFIG_MOVED=0
 restore_config() {

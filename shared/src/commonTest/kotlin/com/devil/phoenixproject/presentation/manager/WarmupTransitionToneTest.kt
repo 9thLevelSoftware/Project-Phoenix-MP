@@ -29,6 +29,8 @@ class WarmupTransitionToneTest {
         }
 
         try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.startCableSet(targetReps = 10)
             // Drive the rep-event path exactly as RepCounterFromMachine does on warmup completion.
             harness.repCounter.onRepEvent?.invoke(
                 RepEvent(type = RepType.WARMUP_COMPLETE, warmupCount = 3, workingCount = 0),

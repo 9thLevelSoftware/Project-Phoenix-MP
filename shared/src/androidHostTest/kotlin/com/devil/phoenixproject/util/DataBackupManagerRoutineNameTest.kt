@@ -13,7 +13,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepo
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -32,15 +32,20 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestSchema
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -59,7 +64,7 @@ import org.junit.Test
 
 class DataBackupManagerRoutineNameTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var workoutRepository: SqlDelightWorkoutRepository
     private lateinit var backupManager: TestDataBackupManager
     private val testJson = Json { encodeDefaults = true }
@@ -69,6 +74,61 @@ class DataBackupManagerRoutineNameTest {
         database = createTestDatabase()
         workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         backupManager = TestDataBackupManager(database)
+    }
+
+    @Test
+    fun `full backup preserves deleted routines and their children in both exporters`() = runTest {
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-active", "Active", "exercise-active", "Bench Press"),
+        )
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-deleted", "Deleted", "exercise-deleted", "Row"),
+        )
+        database.phoenixDatabaseQueries.softDeleteRoutine(
+            deletedAt = 1_700_000_000_000L,
+            updatedAt = 1_700_000_000_001L,
+            id = "routine-deleted",
+        )
+
+        val legacy = backupManager.exportAllData()
+        assertEquals(listOf("routine-active", "routine-deleted"), legacy.data.routines.map { it.id })
+        assertEquals(1_700_000_000_000L, legacy.data.routines.first { it.id == "routine-deleted" }.deletedAt)
+        assertEquals(listOf("routine-active-exercise-active", "routine-deleted-exercise-deleted"), legacy.data.routineExercises.map { it.id })
+
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+        assertEquals(listOf("routine-active", "routine-deleted"), streaming.data.routines.map { it.id })
+        assertEquals(1_700_000_000_000L, streaming.data.routines.first { it.id == "routine-deleted" }.deletedAt)
+        assertEquals(listOf("routine-active-exercise-active", "routine-deleted-exercise-deleted"), streaming.data.routineExercises.map { it.id })
+        File(streamingPath).delete()
+    }
+
+    @Test
+    fun `normal backup excludes local active workout runtime recovery data`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "ordinary-exported-session",
+                routineSessionId = "ordinary-routine-session",
+                exerciseName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.phoenixDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = "runtime-only-profile-key-673",
+            routine_session_id = "runtime-only-session-key-673",
+            document_version = 1,
+            runtime_json = """{"version":1,"sourceStableSessionId":"runtime-secret-673"}""",
+            updated_at_epoch_ms = 1_700_000_000_000,
+        )
+
+        val exportedJson = backupManager.exportToJson()
+        val decoded = testJson.decodeFromString<BackupData>(exportedJson)
+
+        assertEquals(listOf("ordinary-exported-session"), decoded.data.workoutSessions.map { it.id })
+        assertFalse(exportedJson.contains("runtime-only-profile-key-673"))
+        assertFalse(exportedJson.contains("runtime-only-session-key-673"))
+        assertFalse(exportedJson.contains("runtime-secret-673"))
     }
 
     @Test
@@ -119,7 +179,7 @@ class DataBackupManagerRoutineNameTest {
                 workingReps = 0,
             ),
         )
-        database.vitruvianDatabaseQueries.softDeleteSessionsByRoutineSessionId(
+        database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(
             deletedAt = 1_700_000_123_000L,
             updatedAt = 1_700_000_123_000L,
             routineSessionId = "deleted-routine",
@@ -130,6 +190,45 @@ class DataBackupManagerRoutineNameTest {
 
         assertEquals(listOf("active-session"), legacyBackup.data.workoutSessions.map { it.id })
         assertEquals(listOf("active-session"), streamedBackup.data.workoutSessions.map { it.id })
+    }
+
+    @Test
+    fun `full backup excludes soft-deleted personal records`() = runTest {
+        fun insertPersonalRecord(exerciseId: String, uuid: String) {
+            database.phoenixDatabaseQueries.insertRecord(
+                exerciseId = exerciseId,
+                exerciseName = exerciseId,
+                weight = 80.0,
+                reps = 5L,
+                oneRepMax = 93.33,
+                achievedAt = 1_700_000_000_000L,
+                workoutMode = "Old School",
+                prType = "MAX_WEIGHT",
+                volume = 400.0,
+                phase = "COMBINED",
+                profile_id = "default",
+                cable_count = 2L,
+                uuid = uuid,
+            )
+        }
+
+        insertPersonalRecord("active-pr", "12345678-1234-4abc-8def-1234567890ab")
+        insertPersonalRecord("deleted-pr", "22345678-1234-4abc-8def-1234567890ab")
+        val deleted = database.phoenixDatabaseQueries
+            .selectRecordsByExercise("deleted-pr", profileId = "default")
+            .executeAsOne()
+        database.phoenixDatabaseQueries.softDeletePRById(
+            deletedAt = 1_700_000_123_000L,
+            updatedAt = 1_700_000_123_000L,
+            id = deleted.id,
+            profileId = "default",
+        )
+
+        val legacyBackup = backupManager.exportAllData()
+        val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
+
+        assertEquals(listOf("active-pr"), legacyBackup.data.personalRecords.map { it.exerciseId })
+        assertEquals(listOf("active-pr"), streamedBackup.data.personalRecords.map { it.exerciseId })
     }
 
     @Test
@@ -164,6 +263,187 @@ class DataBackupManagerRoutineNameTest {
         val backup = backupManager.exportAllData()
         val exportedSession = backup.data.workoutSessions.first { it.id == "session-legacy-2" }
         assertNull(exportedSession.routineName)
+    }
+
+    @Test
+    fun `restoring a pre-remap backup re-points legacy catalogue ids onto their replacements`() = runTest {
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-pre-remap",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 5,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 5,
+                        warmupReps = 0,
+                        workingReps = 5,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("session-pre-remap").executeAsOne().exerciseId,
+        )
+    }
+
+    @Test
+    fun `restoring a pre-remap backup onto a fresh install translates legacy catalogue ids`() = runTest {
+        // Fresh install: only the current catalogue, no archived legacy row to hang a remap on.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-fresh-install",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 5,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 5,
+                        warmupReps = 0,
+                        workingReps = 5,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                    ),
+                ),
+                personalRecords = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        weight = 80f,
+                        reps = 5,
+                        oneRepMax = 90f,
+                        achievedAt = 1_700_000_000_000,
+                        workoutMode = "OldSchool",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("session-fresh-install").executeAsOne().exerciseId,
+        )
+        val prs = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("Barbell_Bench_Press_-_Medium_Grip")
+            .executeAsList()
+        assertEquals(listOf(80.0), prs.map { it.weight })
+    }
+
+    @Test
+    fun `restoring onto a fresh install translates name-only legacy ids and never links custom ids by name`() = runTest {
+        // "legacy-rack-pull" is not in the explicit id map: only the reviewed name fallback
+        // (Rack Pull -> Rack Pulls) resolves it, exactly as the remapper would.
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        database.phoenixDatabaseQueries.insertProfile("baseline-owner", "Owner", 0, 1_700_000_000_000, 0)
+        fun session(id: String, exerciseId: String, exerciseName: String) = WorkoutSessionBackup(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 5,
+            weightPerCableKg = 80f,
+            progressionKg = 0f,
+            duration = 0L,
+            totalReps = 5,
+            warmupReps = 0,
+            workingReps = 5,
+            isJustLift = false,
+            stopAtTop = false,
+            exerciseId = exerciseId,
+            exerciseName = exerciseName,
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+        )
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    session("session-name-only", exerciseId = "legacy-rack-pull", exerciseName = "Rack Pull"),
+                    // A custom exercise whose row is missing must not be re-linked to stock by name.
+                    session("session-custom", exerciseId = "custom_1700000000000", exerciseName = "Rack Pulls"),
+                ),
+                personalRecords = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "legacy-rack-pull",
+                        exerciseName = "Rack Pull",
+                        weight = 180f,
+                        reps = 3,
+                        oneRepMax = 190f,
+                        achievedAt = 1_700_000_000_000,
+                        workoutMode = "OldSchool",
+                    ),
+                ),
+                profileExerciseBaselines = listOf(
+                    // No name on this row either, and no routine exercise names the id: only the
+                    // session and PR sections (which restore earlier) can teach it the name.
+                    ProfileExerciseBaselineBackup(
+                        profileId = "baseline-owner",
+                        exerciseId = "legacy-rack-pull",
+                        oneRepMaxPerCableKg = 95f,
+                        updatedAt = 1_700_000_000_000,
+                        revision = 1,
+                    ),
+                ),
+                progressionEvents = listOf(
+                    // No name on this row: it reuses the name the session section gave the id.
+                    ProgressionEventBackup(
+                        id = "event-name-only",
+                        exerciseId = "legacy-rack-pull",
+                        suggestedWeightKg = 82.5f,
+                        previousWeightKg = 80f,
+                        reason = "REPS_ACHIEVED",
+                        timestamp = 1_700_000_000_000,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        val queries = database.phoenixDatabaseQueries
+        assertEquals("Rack_Pulls", queries.selectSessionById("session-name-only").executeAsOne().exerciseId)
+        assertNull(queries.selectSessionById("session-custom").executeAsOne().exerciseId)
+        assertEquals(listOf(180.0), queries.selectPersonalRecordsByExerciseId("Rack_Pulls").executeAsList().map { it.weight })
+        assertEquals("Rack_Pulls", queries.selectProgressionEventById("event-name-only").executeAsOne().exercise_id)
+        assertEquals(
+            95.0,
+            queries.selectProfileExerciseBaseline("baseline-owner", "Rack_Pulls").executeAsOne().one_rep_max_per_cable_kg,
+        )
     }
 
     @Test
@@ -207,7 +487,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-1")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -270,7 +550,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-2")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -328,7 +608,7 @@ class DataBackupManagerRoutineNameTest {
     @Test
     fun `exportAllData strips fabricated legacy_session routineSessionId`() = runTest {
         // Simulate a session that was previously imported with a fabricated legacy_session_* ID
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = "session-fabricated-1",
             timestamp = 1_700_000_000_000,
             mode = "Old School",
@@ -422,7 +702,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-fabricated")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -464,7 +744,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-garbage")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -492,17 +772,20 @@ class DataBackupManagerRoutineNameTest {
         )
 
         // Insert a completed set for that session
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-1",
             session_id = "session-export-test",
             planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 3,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1700000060000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         // Export just this session
@@ -522,19 +805,264 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(1, backupData.data.completedSets.size, "Should include completedSets for the session")
         assertEquals("cs-1", backupData.data.completedSets[0].id)
         assertEquals("session-export-test", backupData.data.completedSets[0].sessionId)
+        assertEquals("routine-exercise-export", backupData.data.completedSets[0].routineExerciseId)
+        assertEquals(3, backupData.data.completedSets[0].attemptNumber)
 
         // Verify it can be re-imported (import compatibility)
         // First delete the session so import has room
-        database.vitruvianDatabaseQueries.deleteSession("session-export-test")
-        database.vitruvianDatabaseQueries.deleteCompletedSetsBySession("session-export-test")
+        database.phoenixDatabaseQueries.deleteSession("session-export-test")
+        database.phoenixDatabaseQueries.deleteCompletedSetsBySession("session-export-test")
 
         val importResult = backupManager.importFromJson(fileContent)
         assertTrue(importResult.isSuccess, "Should be importable")
         assertEquals(1, importResult.getOrThrow().sessionsImported)
         assertEquals(1, importResult.getOrThrow().completedSetsImported)
+        val reimported = database.phoenixDatabaseQueries.selectCompletedSetById("cs-1").executeAsOne()
+        assertEquals("routine-exercise-export", reimported.routine_exercise_id)
+        assertEquals(3L, reimported.attempt_number)
 
         // Clean up
         File(filePath).delete()
+    }
+
+    @Test
+    fun `exportSession packages referenced profile and custom exercise for fresh restore`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "user-alpha",
+            name = "Alpha",
+            colorIndex = 3L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        queries.insertDefaultProfilePreferences("user-alpha", 1L)
+        queries.setActiveProfile("user-alpha")
+        val custom = customExerciseBackup("custom-export-session")
+        insertCustomExercise(database, custom)
+
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-custom-profile",
+                exerciseId = custom.id,
+                exerciseName = custom.name,
+                timestamp = 1_700_000_000_000L,
+                mode = "OLD_SCHOOL",
+                reps = 8,
+                weightPerCableKg = 40f,
+                duration = 90_000L,
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "user-alpha",
+            ),
+        )
+
+        val result = backupManager.exportSession("session-custom-profile")
+        assertTrue(result.isSuccess, "exportSession should succeed: ${result.exceptionOrNull()?.message}")
+        val filePath = result.getOrThrow()
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        assertEquals(listOf("user-alpha"), backupData.data.userProfiles.map { it.id })
+        assertEquals("Alpha", backupData.data.userProfiles.single().name)
+        assertEquals(listOf(custom.id), backupData.data.customExercises.map { it.id })
+        assertEquals(custom.id, backupData.data.workoutSessions.single().exerciseId)
+        assertEquals("user-alpha", backupData.data.workoutSessions.single().profileId)
+
+        val targetDatabase = createTestDatabase()
+        val targetManager = TestDataBackupManager(targetDatabase)
+        val importResult = targetManager.importFromJson(fileContent).getOrThrow()
+        assertEquals(0, importResult.entitiesWithErrors)
+        assertEquals(1, importResult.sessionsImported)
+        assertEquals(1, importResult.customExercisesImported)
+        assertNotNull(targetDatabase.phoenixDatabaseQueries.getProfileById("user-alpha").executeAsOneOrNull())
+        val restoredSession = targetDatabase.phoenixDatabaseQueries.selectSessionById("session-custom-profile").executeAsOne()
+        assertEquals("user-alpha", restoredSession.profile_id)
+        assertEquals(custom.id, restoredSession.exerciseId)
+        assertEquals(
+            1L,
+            targetDatabase.phoenixDatabaseQueries.selectExerciseById(custom.id).executeAsOne().isCustom,
+        )
+
+        File(filePath).delete()
+    }
+
+    @Test
+    fun `buffered and streaming completed set imports canonicalize unknown end reasons`() = runTest {
+        val backup = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-08-14T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-future-reason",
+                        timestamp = 1L,
+                        mode = "OldSchool",
+                        targetReps = 8,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 8,
+                        warmupReps = 0,
+                        workingReps = 8,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    ),
+                ),
+                completedSets = listOf(
+                    CompletedSetBackup(
+                        id = "set-future-reason",
+                        sessionId = "session-future-reason",
+                        setNumber = 1,
+                        actualReps = 8,
+                        actualWeightKg = 40f,
+                        completedAt = 2L,
+                        setEndReason = "FUTURE_REASON",
+                        plannedSetId = "missing-planned-set",
+                        routineExerciseId = "routine-exercise-import",
+                        attemptNumber = 2,
+                    ),
+                ),
+            ),
+        )
+        val payload = testJson.encodeToString(backup)
+
+        val bufferedResult = backupManager.importFromJson(payload).getOrThrow()
+        assertEquals(1, bufferedResult.repairedReferences)
+        assertEquals(
+            "UNKNOWN",
+            database.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            database.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+        assertNull(database.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().planned_set_id)
+
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        val streamingResult = streamingManager.importFromStringStreaming(payload).getOrThrow()
+        assertEquals(1, streamingResult.repairedReferences)
+        assertEquals(
+            "UNKNOWN",
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+        assertNull(streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().planned_set_id)
+    }
+
+    @Test
+    fun `buffered completed set import canonicalizes negative attempt to one`() = runTest {
+        assertBufferedInvalidAttemptCanonicalized(-4)
+    }
+
+    @Test
+    fun `streaming completed set import canonicalizes zero attempt to one`() = runTest {
+        assertStreamingInvalidAttemptCanonicalized(0)
+    }
+
+    private fun invalidAttemptPayload(sessionId: String, setId: String, invalidAttempt: Int): String =
+        testJson.encodeToString(
+            BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = "2026-08-14T00:00:00Z",
+                appVersion = "test",
+                data = BackupContent(
+                    workoutSessions = listOf(
+                        WorkoutSessionBackup(
+                            id = sessionId,
+                            timestamp = 1L,
+                            mode = "OldSchool",
+                            targetReps = 8,
+                            weightPerCableKg = 40f,
+                            progressionKg = 0f,
+                            duration = 0L,
+                            totalReps = 8,
+                            warmupReps = 0,
+                            workingReps = 8,
+                            isJustLift = false,
+                            stopAtTop = false,
+                        ),
+                    ),
+                    completedSets = listOf(
+                        CompletedSetBackup(
+                            id = setId,
+                            sessionId = sessionId,
+                            setNumber = 0,
+                            actualReps = 8,
+                            actualWeightKg = 40f,
+                            completedAt = 2L,
+                            routineExerciseId = "invalid-import-occurrence",
+                            attemptNumber = invalidAttempt,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    private suspend fun assertBufferedInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        assertTrue(backupManager.importFromJson(invalidAttemptPayload("buffered-invalid-session", "buffered-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            database.phoenixDatabaseQueries.selectCompletedSetById("buffered-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    private suspend fun assertStreamingInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(invalidAttemptPayload("streaming-invalid-session", "streaming-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("streaming-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    @Test
+    fun `buffered and streaming completed set exports canonicalize unknown end reasons`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-export-future-reason",
+                timestamp = 1L,
+                mode = "OldSchool",
+                reps = 8,
+                weightPerCableKg = 40f,
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
+            id = "set-export-future-reason",
+            session_id = "session-export-future-reason",
+            planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 3L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 2L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        val buffered = backupManager.exportAllData()
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+
+        assertEquals("UNKNOWN", buffered.data.completedSets.single().setEndReason)
+        assertEquals("UNKNOWN", streaming.data.completedSets.single().setEndReason)
+        assertEquals("routine-exercise-export", buffered.data.completedSets.single().routineExerciseId)
+        assertEquals(3, buffered.data.completedSets.single().attemptNumber)
+        assertEquals("routine-exercise-export", streaming.data.completedSets.single().routineExerciseId)
+        assertEquals(3, streaming.data.completedSets.single().attemptNumber)
+        File(streamingPath).delete()
     }
 
     @Test
@@ -600,29 +1128,35 @@ class DataBackupManagerRoutineNameTest {
             ),
         )
         // One completed set per routine session
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-bench",
             session_id = "routine-bench",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_006_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-row",
             session_id = "routine-row",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 40.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_106_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         val result = backupManager.exportRoutine(sharedRoutineSessionId)
@@ -649,6 +1183,89 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `exportRoutine packages referenced profile and custom exercises for fresh restore`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "user-beta",
+            name = "Beta",
+            colorIndex = 4L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        queries.insertDefaultProfilePreferences("user-beta", 1L)
+        queries.setActiveProfile("user-beta")
+        val custom = customExerciseBackup("custom-export-routine")
+        insertCustomExercise(database, custom)
+        database.seedExercise("exercise-catalog-row", "Row", isCustom = false)
+        val sharedRoutineSessionId = "routine-session-custom-profile"
+
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-custom-bench",
+                exerciseId = custom.id,
+                exerciseName = custom.name,
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Custom Day",
+                timestamp = 1_700_000_000_000L,
+                mode = "OLD_SCHOOL",
+                reps = 8,
+                weightPerCableKg = 40f,
+                duration = 90_000L,
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "user-beta",
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-catalog-row",
+                exerciseId = "exercise-catalog-row",
+                exerciseName = "Row",
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Custom Day",
+                timestamp = 1_700_000_100_000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 30f,
+                duration = 80_000L,
+                totalReps = 10,
+                workingReps = 10,
+                profileId = "user-beta",
+            ),
+        )
+
+        val result = backupManager.exportRoutine(sharedRoutineSessionId)
+        assertTrue(result.isSuccess, "exportRoutine should succeed: ${result.exceptionOrNull()?.message}")
+        val filePath = result.getOrThrow()
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        assertEquals(listOf("user-beta"), backupData.data.userProfiles.map { it.id })
+        assertEquals(listOf(custom.id), backupData.data.customExercises.map { it.id })
+        assertEquals(
+            setOf("routine-custom-bench", "routine-catalog-row"),
+            backupData.data.workoutSessions.map { it.id }.toSet(),
+        )
+
+        val targetDatabase = createTestDatabase()
+        targetDatabase.seedExercise("exercise-catalog-row", "Row", isCustom = false)
+        val targetManager = TestDataBackupManager(targetDatabase)
+        val importResult = targetManager.importFromJson(fileContent).getOrThrow()
+        assertEquals(0, importResult.entitiesWithErrors)
+        assertEquals(2, importResult.sessionsImported)
+        assertEquals(1, importResult.customExercisesImported)
+        assertNotNull(targetDatabase.phoenixDatabaseQueries.getProfileById("user-beta").executeAsOneOrNull())
+        val restoredCustom = targetDatabase.phoenixDatabaseQueries.selectSessionById("routine-custom-bench").executeAsOne()
+        val restoredCatalog = targetDatabase.phoenixDatabaseQueries.selectSessionById("routine-catalog-row").executeAsOne()
+        assertEquals("user-beta", restoredCustom.profile_id)
+        assertEquals(custom.id, restoredCustom.exerciseId)
+        assertEquals("user-beta", restoredCatalog.profile_id)
+        assertEquals("exercise-catalog-row", restoredCatalog.exerciseId)
+
+        File(filePath).delete()
+    }
+
+    @Test
     fun `exportRoutine returns failure when no sessions share the routineSessionId`() = runTest {
         val result = backupManager.exportRoutine("non-existent-routine")
         assertTrue(result.isFailure, "Should fail for unknown routineSessionId")
@@ -665,7 +1282,7 @@ class DataBackupManagerRoutineNameTest {
      */
     @Test
     fun `restore legacy backup adopts skipped records into active profile not default`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         // 1. Create a non-default profile and make it active
         queries.insertProfile(
@@ -741,6 +1358,7 @@ class DataBackupManagerRoutineNameTest {
             useCount = 3,
             profile_id = "userA",
             groupId = null,
+            deletedAt = null,
         )
 
         // 3. Build a legacy backup with null profileId containing the same IDs
@@ -801,7 +1419,7 @@ class DataBackupManagerRoutineNameTest {
      */
     @Test
     fun `restore with explicit foreign profileId does not adopt into active profile`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         // 1. Create two profiles; make "userA" active
         queries.insertProfile(id = "userA", name = "User A", colorIndex = 1L, createdAt = 1_700_000_000_000, isActive = 1L)
@@ -843,6 +1461,7 @@ class DataBackupManagerRoutineNameTest {
             useCount = 1,
             profile_id = "userB",
             groupId = null,
+            deletedAt = null,
         )
 
         // 3. Restore a backup that explicitly says these rows belong to "userB"
@@ -885,7 +1504,660 @@ class DataBackupManagerRoutineNameTest {
         assertEquals("userB", routine.profile_id, "Routine with explicit foreign profileId must not be adopted")
     }
 
+    @Test
+    fun `staged restore validates complete source before writing any rows`() = runTest {
+        val payload = testJson.encodeToString(
+            BackupData(
+                exportedAt = "2026-09-20T00:00:00Z",
+                appVersion = "test",
+                data = BackupContent(
+                    workoutSessions = listOf(
+                        WorkoutSessionBackup(
+                            id = "must-not-land",
+                            timestamp = 1L,
+                            mode = "OldSchool",
+                            targetReps = 1,
+                            weightPerCableKg = 1f,
+                            progressionKg = 0f,
+                            duration = 1L,
+                            totalReps = 1,
+                            warmupReps = 0,
+                            workingReps = 1,
+                            isJustLift = false,
+                            stopAtTop = false,
+                        ),
+                    ),
+                ),
+            ),
+        ) + " trailing"
+
+        val result = backupManager.importFromStringStreaming(payload)
+
+        assertTrue(result.isFailure)
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("must-not-land").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `duplicate known section is rejected before database replay`() = runTest {
+        val payload = """{
+            "version":6,"exportedAt":"2026-09-20T00:00:00Z","appVersion":"test",
+            "data":{"routines":[],"routines":[]}
+        }""".trimIndent()
+
+        val result = backupManager.importFromStringStreaming(payload)
+
+        assertTrue(result.isFailure)
+        assertTrue(database.phoenixDatabaseQueries.selectAllRoutineIds().executeAsList().isEmpty())
+    }
+
+    @Test
+    fun `unknown length source above fifty mebibytes is consumed once and restores known section`() = runTest {
+        val padding = "x".repeat(64 * 1_024)
+        val source = RepeatedJsonTokenSource(
+            prefix = "{\"version\":6,\"exportedAt\":\"2026-09-20T00:00:00Z\",\"appVersion\":\"test\",\"data\":{\"futurePadding\":[",
+            repeatedToken = padding,
+            repetitions = 801,
+            suffix = "],\"routines\":[{\"id\":\"large-source-routine\",\"name\":\"Large\",\"createdAt\":1,\"profileId\":\"default\"}]}}",
+        )
+
+        val result = backupManager.importFromSourceStreaming(source).getOrThrow()
+
+        assertEquals(1, source.openCount)
+        assertTrue(source.charactersRead > 50L * 1_024L * 1_024L)
+        assertEquals(1, result.routinesImported)
+        assertNotNull(database.phoenixDatabaseQueries.selectRoutineById("large-source-routine").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `cancellation interrupts blocking staging reads and leaves database untouched`() = runTest {
+        lateinit var importJob: kotlinx.coroutines.Deferred<Result<ImportResult>>
+        val source = RepeatedJsonTokenSource(
+            prefix = "{\"version\":6,\"exportedAt\":\"2026-09-20T00:00:00Z\",\"appVersion\":\"test\",\"data\":{\"futurePadding\":[",
+            repeatedToken = "x".repeat(64 * 1_024),
+            repetitions = 2_000,
+            suffix = "],\"routines\":[{\"id\":\"cancelled-routine\",\"name\":\"Cancelled\",\"createdAt\":1,\"profileId\":\"default\"}]}}",
+            cancelAfterCharacters = 32_000L,
+            onCancelThreshold = { importJob.cancel() },
+        )
+        importJob = async { backupManager.importFromSourceStreaming(source) }
+
+        assertFailsWith<CancellationException> { importJob.await() }
+
+        assertNull(database.phoenixDatabaseQueries.selectRoutineById("cancelled-routine").executeAsOneOrNull())
+        assertTrue(source.closed)
+    }
+
+    @Test
+    fun `staging write failure cleans temporary state before any database replay`() = runTest {
+        val failingStaging = FailingBackupImportStagingArea("routines")
+        val manager = TestDataBackupManager(database, stagingAreaFactory = { failingStaging })
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                routines = listOf(RoutineBackup("stage-failure-routine", "Failure", createdAt = 1L, profileId = "default")),
+            ),
+        )
+
+        val result = manager.importFromJson(testJson.encodeToString(payload))
+
+        assertTrue(result.isFailure)
+        assertTrue(failingStaging.cleanedUp)
+        assertNull(database.phoenixDatabaseQueries.selectRoutineById("stage-failure-routine").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `staging cleanup preserves recent sibling and removes only stale prior import`() {
+        val parent = File(System.getProperty("java.io.tmpdir"), "phoenix-backup-import")
+        parent.mkdirs()
+        val marker = System.nanoTime()
+        val recent = File(parent, "stage-${System.currentTimeMillis()}-recent-$marker").apply { mkdirs() }
+        val stale = File(parent, "stage-${System.currentTimeMillis() - 2L * 24L * 60L * 60L * 1_000L}-stale-$marker")
+            .apply { mkdirs() }
+
+        val staging = createBackupImportStagingArea()
+        try {
+            assertTrue(recent.isDirectory, "active/recent sibling staging must not be deleted")
+            assertFalse(stale.exists(), "abandoned staging older than the retention window must be deleted")
+        } finally {
+            staging.cleanup()
+            recent.deleteRecursively()
+            stale.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `staged restore reorders parents and restores custom exercise routine graph`() = runTest {
+        val backup = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                customExercises = listOf(customExerciseBackup("custom-order")),
+                routines = listOf(RoutineBackup("routine-order", "Order", createdAt = 1L)),
+                supersets = listOf(SupersetBackup("superset-order", "routine-order", "Pair")),
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "routine-exercise-order",
+                        routineId = "routine-order",
+                        exerciseName = "Custom order",
+                        exerciseMuscleGroup = "Back",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        exerciseId = "custom-order",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "8",
+                        weightPerCableKg = 10f,
+                        supersetId = "superset-order",
+                    ),
+                ),
+            ),
+        )
+        val root = testJson.encodeToJsonElement(backup).jsonObject
+        val data = root.getValue("data").jsonObject
+        val permuted = buildJsonObject {
+            put("version", root.getValue("version"))
+            put("exportedAt", root.getValue("exportedAt"))
+            put("appVersion", root.getValue("appVersion"))
+            put("data", buildJsonObject {
+                put("routineExercises", data.getValue("routineExercises"))
+                put("supersets", data.getValue("supersets"))
+                put("routines", data.getValue("routines"))
+                put("customExercises", data.getValue("customExercises"))
+            })
+        }.toString()
+
+        val result = backupManager.importFromStringStreaming(permuted).getOrThrow()
+
+        assertEquals(1, result.customExercisesImported)
+        assertEquals(1, result.routinesImported)
+        assertEquals(1, result.supersetsImported)
+        assertEquals(1, result.routineExercisesImported)
+        val restored = database.phoenixDatabaseQueries.selectAllRoutineExercisesSync().executeAsList().single()
+        assertEquals("custom-order", restored.exerciseId)
+        assertEquals("superset-order", restored.supersetId)
+    }
+
+    @Test
+    fun `retry restores missing children below an existing matching parent`() = runTest {
+        val parent = RoutineBackup("retry-routine", "Retry", createdAt = 1L, profileId = "default")
+        backupManager.importFromJson(
+            testJson.encodeToString(
+                BackupData(exportedAt = "2026-09-20T00:00:00Z", appVersion = "test", data = BackupContent(routines = listOf(parent))),
+            ),
+        ).getOrThrow()
+
+        val retry = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                routines = listOf(parent),
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "retry-child",
+                        routineId = parent.id,
+                        exerciseName = "Copied fields survive",
+                        exerciseMuscleGroup = "Core",
+                        exerciseEquipment = "ROPE",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        exerciseId = "missing-optional-exercise",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "10",
+                        weightPerCableKg = 5f,
+                        supersetId = "missing-optional-superset",
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(retry)).getOrThrow()
+
+        assertEquals(1, result.routineExercisesImported)
+        assertEquals(2, result.repairedReferences)
+        val child = database.phoenixDatabaseQueries.selectAllRoutineExercisesSync().executeAsList().single()
+        assertNull(child.exerciseId)
+        assertNull(child.supersetId)
+        assertEquals("Copied fields survive", child.exerciseName)
+        assertEquals("ROPE", child.exerciseEquipment)
+    }
+
+    @Test
+    fun `retry restores stable metric below existing matching session without duplication`() = runTest {
+        val session = WorkoutSessionBackup(
+            id = "metric-retry-session",
+            timestamp = 1L,
+            mode = "OldSchool",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "default",
+        )
+        val first = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(workoutSessions = listOf(session)),
+        )
+        backupManager.importFromJson(testJson.encodeToString(first)).getOrThrow()
+        val retry = first.copy(
+            data = first.data.copy(
+                metricSamples = listOf(
+                    MetricSampleBackup(
+                        id = 99L,
+                        sessionId = session.id,
+                        timestamp = 2L,
+                        position = 1f,
+                        velocity = 2f,
+                        load = 3f,
+                        power = 4f,
+                    ),
+                ),
+            ),
+        )
+
+        val inserted = backupManager.importFromJson(testJson.encodeToString(retry)).getOrThrow()
+        val duplicate = backupManager.importFromJson(testJson.encodeToString(retry)).getOrThrow()
+
+        assertEquals(1, inserted.metricsImported)
+        assertEquals(1, duplicate.metricsSkipped)
+        assertEquals(1, database.phoenixDatabaseQueries.selectMetricsBySession(session.id).executeAsList().size)
+    }
+
+    @Test
+    fun `restoring missing workout children reopens an acknowledged parent exactly once`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        val session = WorkoutSessionBackup(
+            id = "restore-dirty-session",
+            timestamp = 1L,
+            mode = "OldSchool",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "default",
+        )
+        val parentOnly = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(workoutSessions = listOf(session)),
+        )
+        backupManager.importFromJson(testJson.encodeToString(parentOnly)).getOrThrow()
+        val initial = queries.selectSessionById(session.id).executeAsOne()
+        queries.ackWorkoutComponentSnapshot(initial.local_sync_generation, session.id)
+        assertTrue(queries.selectDirtyWorkoutPortalParentIds("default").executeAsList().isEmpty())
+
+        val withChildren = parentOnly.copy(
+            data = parentOnly.data.copy(
+                metricSamples = listOf(
+                    MetricSampleBackup(
+                        id = 701L,
+                        sessionId = session.id,
+                        timestamp = 2L,
+                        position = 1f,
+                        velocity = 2f,
+                        load = 3f,
+                        power = 4f,
+                    ),
+                ),
+                completedSets = listOf(
+                    CompletedSetBackup(
+                        id = "restore-dirty-set",
+                        sessionId = session.id,
+                        setNumber = 1,
+                        actualReps = 1,
+                        actualWeightKg = 1f,
+                        completedAt = 3L,
+                    ),
+                ),
+                sessionNotes = listOf(
+                    SessionNotesBackup(session.id, "restored note", 4L),
+                ),
+            ),
+        )
+
+        val inserted = backupManager.importFromJson(testJson.encodeToString(withChildren)).getOrThrow()
+        assertEquals(1, inserted.metricsImported)
+        assertEquals(1, inserted.completedSetsImported)
+        assertEquals(1, inserted.sessionNotesImported)
+        assertEquals(listOf(session.id), queries.selectDirtyWorkoutPortalParentIds("default").executeAsList())
+        assertEquals(session.id, queries.selectLiveWorkoutComponentsForPortalParents("default", listOf(session.id))
+            .executeAsOne().id)
+        assertEquals(701L, queries.selectMetricsBySession(session.id).executeAsOne().id)
+        assertEquals("restore-dirty-set", queries.selectCompletedSetsBySession(session.id).executeAsOne().id)
+        assertEquals("restored note", queries.getSessionNotes(session.id).executeAsOne().notes)
+        val dirtyGeneration = queries.selectSessionById(session.id).executeAsOne().local_sync_generation
+        queries.ackWorkoutComponentSnapshot(initial.local_sync_generation, session.id)
+        assertEquals(listOf(session.id), queries.selectDirtyWorkoutPortalParentIds("default").executeAsList())
+
+        val duplicate = backupManager.importFromJson(testJson.encodeToString(withChildren)).getOrThrow()
+        assertEquals(1, duplicate.metricsSkipped)
+        assertEquals(1, duplicate.completedSetsSkipped)
+        assertEquals(1, duplicate.sessionNotesSkipped)
+        assertEquals(dirtyGeneration, queries.selectSessionById(session.id).executeAsOne().local_sync_generation)
+    }
+
+    @Test
+    fun `conflicting parent does not poison an independent valid graph`() = runTest {
+        val localConflict = RoutineBackup("mixed-conflict", "Local", createdAt = 1L, profileId = "default")
+        backupManager.importFromJson(
+            testJson.encodeToString(
+                BackupData(
+                    exportedAt = "2026-09-20T00:00:00Z",
+                    appVersion = "test",
+                    data = BackupContent(routines = listOf(localConflict)),
+                ),
+            ),
+        ).getOrThrow()
+
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                routines = listOf(
+                    localConflict.copy(name = "Incoming conflict"),
+                    RoutineBackup("mixed-good", "Good", createdAt = 2L, profileId = "default"),
+                ),
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "mixed-bad-child",
+                        routineId = "mixed-conflict",
+                        exerciseName = "Bad child",
+                        exerciseMuscleGroup = "Core",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "5",
+                        weightPerCableKg = 5f,
+                    ),
+                    RoutineExerciseBackup(
+                        id = "mixed-good-child",
+                        routineId = "mixed-good",
+                        exerciseName = "Good child",
+                        exerciseMuscleGroup = "Core",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "5",
+                        weightPerCableKg = 5f,
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertTrue(result.hasPartialFailure)
+        assertEquals(1, result.routinesImported)
+        assertEquals(1, result.routineExercisesImported)
+        assertEquals(null, database.phoenixDatabaseQueries.selectRoutineExerciseById("mixed-bad-child").executeAsOneOrNull())
+        assertEquals("mixed-good", database.phoenixDatabaseQueries.selectRoutineExerciseById("mixed-good-child").executeAsOne().routineId)
+    }
+
+    @Test
+    fun `v6 round trip preserves custom exercise and nullable scoped baseline`() = runTest {
+        insertCustomExercise(database, customExerciseBackup("custom-baseline"))
+        database.phoenixDatabaseQueries.insertProfileExerciseBaselineIfAbsent(
+            profileId = "default",
+            exerciseId = "custom-baseline",
+            oneRepMaxPerCableKg = null,
+            updatedAt = 123L,
+            revision = 7L,
+        )
+        val payload = backupManager.exportToJson()
+        val target = createTestDatabase()
+        val result = TestDataBackupManager(target).importFromJson(payload).getOrThrow()
+
+        assertEquals(1, result.customExercisesImported)
+        assertEquals(1, result.profileExerciseBaselinesImported)
+        val baseline = target.phoenixDatabaseQueries
+            .selectProfileExerciseBaseline("default", "custom-baseline").executeAsOne()
+        assertNull(baseline.one_rep_max_per_cable_kg)
+        assertEquals(123L, baseline.updated_at)
+        assertEquals(7L, baseline.revision)
+    }
+
+    @Test
+    fun `immutable deletion owner conflict preserves local row and reports partial failure`() = runTest {
+        database.phoenixDatabaseQueries.insertWorkoutDeletionRestoreIfAbsent(
+            mutationId = "deletion-conflict",
+            ownerUserId = "owner-local",
+            profileId = "default",
+            scope = "WORKOUT",
+            portalSessionId = "portal-1",
+            componentSessionId = null,
+            deletedAt = 10L,
+            acknowledgedAt = null,
+            source = "LOCAL",
+        )
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutDeletions = listOf(
+                    WorkoutDeletionBackup(
+                        mutationId = "deletion-conflict",
+                        ownerUserId = "owner-backup",
+                        profileId = "default",
+                        scope = "WORKOUT",
+                        portalSessionId = "portal-1",
+                        deletedAt = 10L,
+                        source = "LOCAL",
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertTrue(result.hasPartialFailure)
+        assertEquals(1, result.entitiesFailed)
+        assertEquals("owner-local", database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId("deletion-conflict").executeAsOne().owner_user_id)
+    }
+
+    @Test
+    fun `duplicate entity in one section is imported once then classified already present`() = runTest {
+        val routine = RoutineBackup("duplicate-routine", "Duplicate", createdAt = 1L, profileId = "default")
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(routines = listOf(routine, routine)),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertEquals(1, result.routinesImported)
+        assertEquals(1, result.routinesSkipped)
+        assertEquals(0, result.entitiesFailed)
+        assertEquals(1, database.phoenixDatabaseQueries.selectAllRoutineIds().executeAsList().count { it == routine.id })
+    }
+
+    @Test
+    fun `streak retry preserves stable id after unrelated autoincrement row`() = runTest {
+        database.phoenixDatabaseQueries.insertStreakHistory(
+            startDate = 1L,
+            endDate = 2L,
+            length = 2L,
+            profileId = "default",
+        )
+        val streak = StreakHistoryBackup(
+            id = 41L,
+            startDate = 10L,
+            endDate = 20L,
+            length = 11,
+            profileId = "default",
+        )
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(streakHistory = listOf(streak)),
+        )
+
+        val first = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+        val retry = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertEquals(1, first.streakHistoryImported)
+        assertEquals(1, retry.streakHistorySkipped)
+        assertEquals(41L, database.phoenixDatabaseQueries.selectAllStreakHistory("default")
+            .executeAsList().single { it.startDate == 10L }.id)
+    }
+
+    @Test
+    fun `fresh owned profile deletion suppresses stale live workout without rebinding owner`() = runTest {
+        val profile = UserProfileBackup(
+            id = "owned-profile",
+            name = "Owned",
+            createdAt = 1L,
+            supabaseUserId = "account-owner",
+        )
+        val session = WorkoutSessionBackup(
+            id = "deleted-component",
+            timestamp = 2L,
+            mode = "OldSchool",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            routineSessionId = "deleted-parent",
+            profileId = profile.id,
+        )
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                userProfiles = listOf(profile),
+                workoutDeletions = listOf(
+                    WorkoutDeletionBackup(
+                        mutationId = "delete-owned",
+                        ownerUserId = "account-owner",
+                        profileId = profile.id,
+                        scope = "WORKOUT",
+                        portalSessionId = "deleted-parent",
+                        deletedAt = 3L,
+                        source = "REMOTE",
+                    ),
+                ),
+                workoutSessions = listOf(session),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertEquals(1, result.sessionsSkipped)
+        assertNull(database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOneOrNull())
+        assertEquals("account-owner", database.phoenixDatabaseQueries.getProfileById(profile.id)
+            .executeAsOne().supabase_user_id)
+        assertEquals("account-owner", database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId("delete-owned").executeAsOne().owner_user_id)
+    }
+
+    @Test
+    fun `retained ownership claim blocks restoring entity into a different target profile`() = runTest {
+        val claimed = UserProfileBackup("claim-target", "Target", createdAt = 1L, supabaseUserId = "owner-1")
+        val wrong = UserProfileBackup("wrong-target", "Wrong", createdAt = 2L, supabaseUserId = "owner-1")
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                userProfiles = listOf(claimed, wrong),
+                localOwnershipClaims = listOf(
+                    LocalOwnershipClaimBackup(
+                        ownerUserId = "owner-1",
+                        entityType = "ROUTINE",
+                        entityId = "claimed-routine",
+                        mutationId = "transfer-1",
+                        sourceProfileId = null,
+                        targetProfileId = claimed.id,
+                        transferredAt = 5L,
+                    ),
+                ),
+                routines = listOf(
+                    RoutineBackup("claimed-routine", "Claimed", createdAt = 3L, profileId = wrong.id),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertEquals(1, result.localOwnershipClaimsImported)
+        assertEquals(1, result.entitiesFailed)
+        assertNull(database.phoenixDatabaseQueries.selectRoutineById("claimed-routine").executeAsOneOrNull())
+        assertEquals(claimed.id, database.phoenixDatabaseQueries
+            .selectLocalOwnershipClaim("owner-1", "ROUTINE", "claimed-routine")
+            .executeAsOne().target_profile_id)
+    }
+
+    private fun customExerciseBackup(id: String) = CustomExerciseBackup(
+        id = id,
+        name = "Custom $id",
+        muscleGroup = "Back",
+        muscleGroups = "Back",
+        equipment = "ROPE",
+        created = 1L,
+        updatedAt = 2L,
+    )
+
+    private fun insertCustomExercise(database: PhoenixDatabase, exercise: CustomExerciseBackup) {
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
+            id = exercise.id,
+            name = exercise.name,
+            displayName = exercise.displayName,
+            description = exercise.description,
+            created = exercise.created,
+            muscleGroup = exercise.muscleGroup,
+            muscleGroups = exercise.muscleGroups,
+            muscles = exercise.muscles,
+            equipment = exercise.equipment,
+            movement = exercise.movement,
+            sidedness = exercise.sidedness,
+            grip = exercise.grip,
+            gripWidth = exercise.gripWidth,
+            minRepRange = exercise.minRepRange?.toDouble(),
+            popularity = exercise.popularity.toDouble(),
+            archived = if (exercise.archived) 1L else 0L,
+            isFavorite = if (exercise.isFavorite) 1L else 0L,
+            isCustom = 1L,
+            timesPerformed = exercise.timesPerformed.toLong(),
+            lastPerformed = exercise.lastPerformed,
+            aliases = exercise.aliases,
+            defaultCableConfig = exercise.defaultCableConfig,
+            one_rep_max_kg = exercise.legacyOneRepMaxKg?.toDouble(),
+            mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
+            isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L },
+        )
+        exercise.updatedAt?.let {
+            database.phoenixDatabaseQueries.updateCustomExerciseFromSync(
+                name = exercise.name,
+                displayName = exercise.displayName,
+                muscleGroup = exercise.muscleGroup,
+                muscleGroups = exercise.muscleGroups,
+                equipment = exercise.equipment,
+                defaultCableConfig = exercise.defaultCableConfig,
+                updatedAt = it,
+                serverId = exercise.serverId,
+                deletedAt = exercise.deletedAt,
+                id = exercise.id,
+            )
+        }
+    }
+
     private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
+        database.seedExercise(exerciseId, exerciseName)
         val exercise = Exercise(
             id = exerciseId,
             name = exerciseName,
@@ -919,7 +2191,7 @@ class DataBackupManagerRoutineNameTest {
 
     @Test
     fun `v2 round-trip preserves SessionNotes data`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         queries.upsertSessionNotes(
             routineSessionId = "rs-notes-1",
             notes = "felt strong today; DOMS in triceps",
@@ -939,8 +2211,33 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `restore preserves newer session notes and timestamped clears`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.upsertSessionNotes("newer-note", "local edit", 20L)
+        queries.upsertSessionNotes("intentional-clear", null, 30L)
+        val payload = BackupData(
+            exportedAt = "2026-09-20T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                sessionNotes = listOf(
+                    SessionNotesBackup("newer-note", "older backup", 10L),
+                    SessionNotesBackup("intentional-clear", "resurrected text", 10L),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+
+        assertEquals(2, result.entitiesFailed)
+        assertEquals("local edit", queries.getSessionNotes("newer-note").executeAsOne().notes)
+        val clear = queries.getSessionNotes("intentional-clear").executeAsOne()
+        assertNull(clear.notes)
+        assertEquals(30L, clear.updatedAt)
+    }
+
+    @Test
     fun `v2 export preserves EarnedBadge sync fields so restore does not re-push`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // Insert a badge that has already been pushed to the portal (serverId set,
         // updatedAt set). The backup must preserve these so a restore does not
         // produce a phantom duplicate on the server.
@@ -963,7 +2260,7 @@ class DataBackupManagerRoutineNameTest {
 
     @Test
     fun `v2 export preserves CycleDay per-day progression overrides`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // Build a cycle with a day that has all new per-day override fields populated.
         queries.insertTrainingCycle(
             id = "cycle-drift",
@@ -974,6 +2271,7 @@ class DataBackupManagerRoutineNameTest {
             profile_id = "default",
             template_id = null,
             week_number = 1L,
+            updatedAt = 1_700_000_000_000L,
         )
         queries.insertCycleDay(
             id = "day-drift",
@@ -1065,7 +2363,7 @@ class DataBackupManagerRoutineNameTest {
         listOf(buffered, streaming).forEach { output ->
             val root = testJson.parseToJsonElement(output).jsonObject
             val data = root.getValue("data").jsonObject
-            assertEquals(5, root.getValue("version").jsonPrimitive.content.toInt())
+            assertEquals(CURRENT_BACKUP_VERSION, root.getValue("version").jsonPrimitive.content.toInt())
             assertEquals(setOf(PROFILE_A, PROFILE_B, "default"), data.getValue("userProfiles").jsonArray
                 .map { it.jsonObject.getValue("id").jsonPrimitive.content }
                 .toSet())
@@ -1304,7 +2602,7 @@ class DataBackupManagerRoutineNameTest {
                 ),
             )
             assertTrue(fixture.manager.importFromJson(payload).isSuccess)
-            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            val profiles = fixture.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
             assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
         }
 
@@ -1424,34 +2722,78 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById("legacy-fallback-session")
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(explicitDefault.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(explicitRepresented.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
     }
 
     @Test
+    fun `legacy fallback never adopts rows away from an existing real profile`() = runTest {
+        val realOwner = UserProfileBackup("real-owner", "Real owner", createdAt = 1L)
+        val routine = RoutineBackup("owned-routine", "Owned", createdAt = 2L, profileId = realOwner.id)
+        val session = WorkoutSessionBackup(
+            id = "owned-session",
+            timestamp = 3L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = realOwner.id,
+        )
+        val seed = BackupData(
+            version = 5,
+            exportedAt = "seed",
+            appVersion = "test",
+            data = BackupContent(
+                userProfiles = listOf(realOwner),
+                routines = listOf(routine),
+                workoutSessions = listOf(session),
+            ),
+        )
+        backupManager.importFromJson(testJson.encodeToString(seed)).getOrThrow()
+
+        val conflicting = seed.copy(
+            data = BackupContent(
+                routines = listOf(routine.copy(profileId = "missing-owner")),
+                workoutSessions = listOf(session.copy(profileId = "missing-owner")),
+            ),
+        )
+        val result = backupManager.importFromJson(testJson.encodeToString(conflicting)).getOrThrow()
+
+        assertEquals(2, result.entitiesFailed)
+        assertEquals(realOwner.id, database.phoenixDatabaseQueries.selectRoutineById(routine.id).executeAsOne().profile_id)
+        assertEquals(realOwner.id, database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id)
+    }
+
+    @Test
     fun `buffered session import adopts explicit owner when its profile is absent`() = runTest {
-        val activeProfileId = database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val activeProfileId = database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id
         val session = WorkoutSessionBackup(
             id = "buffered-missing-profile-session",
             timestamp = 1L,
@@ -1479,7 +2821,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             activeProfileId,
-            database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 
@@ -1501,6 +2843,8 @@ class DataBackupManagerRoutineNameTest {
             30L,
         )
         val sourceWorkoutRepository = SqlDelightWorkoutRepository(source.database, FakeExerciseRepository())
+        // Same catalog exercise on both devices (routine exercises reference it by FK).
+        source.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
         sourceWorkoutRepository.saveRoutine(
             buildRoutine(
                 routineId = "routine-rack-backup",
@@ -1518,12 +2862,14 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = source.manager.exportToJson()
         val target = profileFixture()
+        // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        target.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
 
         val importResult = target.manager.importFromJson(backupJson)
 
         assertTrue(importResult.isSuccess, "v5 backup import must succeed: ${importResult.exceptionOrNull()?.message}")
         assertEquals("vest", target.preferences.get(PROFILE_A).rack.value.items.single().id)
-        val importedExercise = target.database.vitruvianDatabaseQueries
+        val importedExercise = target.database.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1551,7 +2897,7 @@ class DataBackupManagerRoutineNameTest {
         )
 
         // Confirm it was persisted on the source DB before export.
-        val sourceExercise = database.vitruvianDatabaseQueries
+        val sourceExercise = database.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1559,12 +2905,14 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = sourceManager.exportToJson()
         val targetDatabase = createTestDatabase()
+        // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        targetDatabase.seedExercise("exercise-scaling-backup", "Bench Press")
         val targetManager = TestDataBackupManager(targetDatabase)
 
         val importResult = targetManager.importFromJson(backupJson)
         assertTrue(importResult.isSuccess, "Backup import must succeed: ${importResult.exceptionOrNull()?.message}")
 
-        val importedExercise = targetDatabase.vitruvianDatabaseQueries
+        val importedExercise = targetDatabase.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1599,8 +2947,8 @@ class DataBackupManagerRoutineNameTest {
         preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
         reconcileFailure: Throwable? = null,
     ): PreferenceFixture {
-        VitruvianDatabase.Schema.create(driver)
-        val fixtureDatabase = VitruvianDatabase(driver)
+        createTestSchema(driver)
+        val fixtureDatabase = PhoenixDatabase(driver)
         val realPreferences = SqlDelightProfilePreferencesRepository(fixtureDatabase)
         val effectivePreferences = preferenceDecorator(realPreferences)
         val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
@@ -1610,7 +2958,7 @@ class DataBackupManagerRoutineNameTest {
             profileLocalSafetyStore = safetyStore,
             gamificationRepository = SqlDelightGamificationRepository(fixtureDatabase),
         )
-        fixtureDatabase.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        fixtureDatabase.phoenixDatabaseQueries.seedMissingProfilePreferences()
         val recordingUserProfiles = RecordingUserProfileRepository(
             delegate = realUserProfiles,
             preferences = effectivePreferences,
@@ -1633,7 +2981,7 @@ class DataBackupManagerRoutineNameTest {
     private suspend fun seedDistinctProfilePreferences(fixture: PreferenceFixture) {
         insertProfile(fixture, PROFILE_A, active = false)
         insertProfile(fixture, PROFILE_B, active = false)
-        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.database.phoenixDatabaseQueries.setActiveProfile(PROFILE_A)
         fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
         fixture.preferences.updateRack(
             PROFILE_A,
@@ -1678,8 +3026,8 @@ class DataBackupManagerRoutineNameTest {
     }
 
     private fun insertProfile(fixture: PreferenceFixture, id: String, active: Boolean) {
-        if (fixture.database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
-            fixture.database.vitruvianDatabaseQueries.insertProfile(
+        if (fixture.database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            fixture.database.phoenixDatabaseQueries.insertProfile(
                 id = id,
                 name = id,
                 colorIndex = 0L,
@@ -1691,8 +3039,8 @@ class DataBackupManagerRoutineNameTest {
                 isActive = if (active) 1L else 0L,
             )
         }
-        fixture.database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
-        if (active) fixture.database.vitruvianDatabaseQueries.setActiveProfile(id)
+        fixture.database.phoenixDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+        if (active) fixture.database.phoenixDatabaseQueries.setActiveProfile(id)
     }
 
     private inline fun <reified T> jsonElement(value: T): JsonElement =
@@ -1774,7 +3122,7 @@ class DataBackupManagerRoutineNameTest {
 
     private data class PreferenceFixture(
         val driver: SqlDriver,
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val preferences: ProfilePreferencesRepository,
         val safetyStore: ProfileLocalSafetyStore,
         val userProfiles: RecordingUserProfileRepository,
@@ -1841,7 +3189,7 @@ class DataBackupManagerRoutineNameTest {
         const val PROFILE_C = "profile-c"
 
         fun createTestUserProfileRepository(
-            database: VitruvianDatabase,
+            database: PhoenixDatabase,
             preferences: ProfilePreferencesRepository,
         ): UserProfileRepository = SqlDelightUserProfileRepository(
             database = database,
@@ -1849,17 +3197,142 @@ class DataBackupManagerRoutineNameTest {
             profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
             gamificationRepository = SqlDelightGamificationRepository(database),
         ).also {
-            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         }
     }
 
+    @Test
+    fun `backup round trip keeps each cycle's portal sync base and drops malformed ones`() = runTest {
+        val version = "2026-09-19T10:11:12.123456+00:00"
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-synced", "Synced", null, 1L, 0L, "default", null, 1L, 1L)
+        q.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = "cycle-synced")
+        q.insertTrainingCycle("cycle-local", "Local", null, 1L, 0L, "default", null, 1L, 1L)
+
+        val legacy = backupManager.exportAllData()
+        assertEquals(version, legacy.data.trainingCycles.first { it.id == "cycle-synced" }.serverUpdatedAt)
+        assertNull(legacy.data.trainingCycles.first { it.id == "cycle-local" }.serverUpdatedAt)
+        val streamingPath = backupManager.exportToCachePublic()
+        val streamingJson = File(streamingPath).readText()
+        File(streamingPath).delete()
+        assertEquals(
+            version,
+            testJson.decodeFromString<BackupData>(streamingJson).data.trainingCycles.first { it.id == "cycle-synced" }.serverUpdatedAt,
+        )
+
+        val withMalformed = legacy.copy(
+            data = legacy.data.copy(
+                trainingCycles = legacy.data.trainingCycles.map {
+                    if (it.id == "cycle-local") it.copy(serverUpdatedAt = "not-a-timestamp") else it
+                },
+            ),
+        )
+        fun storedBase(db: PhoenixDatabase, id: String) =
+            db.phoenixDatabaseQueries.selectTrainingCycleById(id).executeAsOne().server_updated_at
+
+        val legacyTarget = createTestDatabase()
+        assertTrue(TestDataBackupManager(legacyTarget).importFromJson(testJson.encodeToString(withMalformed)).isSuccess)
+        assertEquals(version, storedBase(legacyTarget, "cycle-synced"))
+        assertNull(storedBase(legacyTarget, "cycle-local"))
+
+        val streamingTarget = createTestDatabase()
+        assertTrue(TestDataBackupManager(streamingTarget).importFromStringStreaming(streamingJson).isSuccess)
+        assertEquals(version, storedBase(streamingTarget, "cycle-synced"))
+        assertNull(storedBase(streamingTarget, "cycle-local"))
+    }
+
+    @Test
+    fun `legacy cycle without server version matches existing cycle and restores dependent graph`() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-existing", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        q.updateTrainingCycleServerUpdatedAt(
+            server_updated_at = "2026-09-19T10:11:12.123456+00:00",
+            id = "cycle-existing",
+        )
+        q.insertCycleDay(
+            id = "day-dependent",
+            cycle_id = "cycle-existing",
+            day_number = 1L,
+            name = "Day 1",
+            routine_id = null,
+            is_rest_day = 0L,
+            echo_level = null,
+            eccentric_load_percent = null,
+            weight_progression_percent = null,
+            rep_modifier = null,
+            rest_time_override_seconds = null,
+        )
+        val legacyCompatible = backupManager.exportAllData().let { backup ->
+            backup.copy(
+                data = backup.data.copy(
+                    trainingCycles = backup.data.trainingCycles.map { it.copy(serverUpdatedAt = null) },
+                ),
+            )
+        }
+
+        val target = createTestDatabase()
+        val targetQueries = target.phoenixDatabaseQueries
+        targetQueries.insertTrainingCycle("cycle-existing", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        targetQueries.updateTrainingCycleServerUpdatedAt(
+            server_updated_at = "2026-09-19T10:11:12.123456+00:00",
+            id = "cycle-existing",
+        )
+
+        val result = TestDataBackupManager(target).importFromJson(testJson.encodeToString(legacyCompatible))
+
+        assertTrue(result.isSuccess)
+        assertNotNull(targetQueries.selectCycleDayById("day-dependent").executeAsOneOrNull())
+        assertEquals(
+            "2026-09-19T10:11:12.123456+00:00",
+            targetQueries.selectTrainingCycleById("cycle-existing").executeAsOne().server_updated_at,
+        )
+    }
+
+    @Test
+    fun `explicit cycle server version mismatch still blocks dependent graph restore`() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-mismatch", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        q.updateTrainingCycleServerUpdatedAt(server_updated_at = "2026-09-19T10:00:00Z", id = "cycle-mismatch")
+        q.insertCycleDay(
+            id = "day-blocked",
+            cycle_id = "cycle-mismatch",
+            day_number = 1L,
+            name = "Day 1",
+            routine_id = null,
+            is_rest_day = 0L,
+            echo_level = null,
+            eccentric_load_percent = null,
+            weight_progression_percent = null,
+            rep_modifier = null,
+            rest_time_override_seconds = null,
+        )
+        val backup = backupManager.exportAllData()
+
+        val target = createTestDatabase()
+        val targetQueries = target.phoenixDatabaseQueries
+        targetQueries.insertTrainingCycle("cycle-mismatch", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        targetQueries.updateTrainingCycleServerUpdatedAt(server_updated_at = "2026-09-19T11:00:00Z", id = "cycle-mismatch")
+
+        val result = TestDataBackupManager(target).importFromJson(testJson.encodeToString(backup))
+
+        assertTrue(result.isSuccess)
+        assertNull(targetQueries.selectCycleDayById("day-blocked").executeAsOneOrNull())
+        assertEquals(
+            "2026-09-19T11:00:00Z",
+            targetQueries.selectTrainingCycleById("cycle-mismatch").executeAsOne().server_updated_at,
+        )
+    }
+
     private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.VitruvianDatabase,
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
         val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
             database,
             profilePreferencesRepository,
         ),
+        private val stagingAreaFactory: (() -> BackupImportStagingArea)? = null,
+        // These tests exercise sample export/restore, so they opt in to raw telemetry.
+        override val includeRawTelemetryInBackups: Boolean = true,
     ) : BaseDataBackupManager(
         database,
         profilePreferencesRepository,
@@ -1877,11 +3350,29 @@ class DataBackupManagerRoutineNameTest {
 
         suspend fun exportToCachePublic(): String = exportToCache()
 
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-
-        override suspend fun saveToFile(backup: BackupData): Result<String> {
-            error("Not needed for tests")
+        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
+            val source = StringBackupStreamSource(value)
+            source.open()
+            return try {
+                importFromStream(source)
+            } finally {
+                source.close()
+            }
         }
+
+        suspend fun importFromSourceStreaming(source: BackupStreamSource): Result<ImportResult> {
+            source.open()
+            return try {
+                importFromStream(source)
+            } finally {
+                source.close()
+            }
+        }
+
+        override fun createImportStagingArea(): BackupImportStagingArea =
+            stagingAreaFactory?.invoke() ?: super.createImportStagingArea()
+
+        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun importFromFile(filePath: String): Result<ImportResult> {
             error("Not needed for tests")
@@ -1905,5 +3396,120 @@ class DataBackupManagerRoutineNameTest {
 
         override fun openBackupFolder() = Unit
         override fun pruneOldBackups(keepCount: Int) = Unit
+    }
+
+    private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
+        private var index = 0
+
+        override fun open() {
+            index = 0
+        }
+        override fun close() = Unit
+        override fun read(): Int = if (index < value.length) value[index++].code else -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+            if (index >= value.length) return -1
+            val count = minOf(length, value.length - index)
+            value.toCharArray(index, index + count).copyInto(buffer, offset)
+            index += count
+            return count
+        }
+    }
+
+    private class RepeatedJsonTokenSource(
+        private val prefix: String,
+        private val repeatedToken: String,
+        private val repetitions: Int,
+        private val suffix: String,
+        private val cancelAfterCharacters: Long? = null,
+        private val onCancelThreshold: () -> Unit = {},
+    ) : BackupStreamSource {
+        var openCount = 0
+            private set
+        var charactersRead = 0L
+            private set
+        var closed = false
+            private set
+
+        private var current = ""
+        private var currentIndex = 0
+        private var repetitionsEmitted = 0
+        private var phase = 0
+        private var cancellationSignalled = false
+
+        override fun open() {
+            openCount++
+            closed = false
+            current = prefix
+            currentIndex = 0
+            repetitionsEmitted = 0
+            phase = 0
+            cancellationSignalled = false
+        }
+
+        override fun close() {
+            closed = true
+        }
+
+        override fun read(): Int {
+            while (currentIndex >= current.length) {
+                current = when {
+                    phase == 0 && repetitionsEmitted < repetitions -> {
+                        phase = 1
+                        val separator = if (repetitionsEmitted == 0) "" else ","
+                        repetitionsEmitted++
+                        "$separator\"$repeatedToken\""
+                    }
+                    repetitionsEmitted < repetitions -> {
+                        val separator = if (repetitionsEmitted == 0) "" else ","
+                        repetitionsEmitted++
+                        "$separator\"$repeatedToken\""
+                    }
+                    phase < 2 -> {
+                        phase = 2
+                        suffix
+                    }
+                    else -> return -1
+                }
+                currentIndex = 0
+            }
+            val value = current[currentIndex++].code
+            charactersRead++
+            if (!cancellationSignalled && cancelAfterCharacters != null && charactersRead >= cancelAfterCharacters) {
+                cancellationSignalled = true
+                onCancelThreshold()
+            }
+            return value
+        }
+
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+            var count = 0
+            while (count < length) {
+                val value = read()
+                if (value < 0) break
+                buffer[offset + count] = value.toChar()
+                count++
+            }
+            return if (count == 0) -1 else count
+        }
+    }
+
+    private class FailingBackupImportStagingArea(
+        private val failingSection: String,
+    ) : BackupImportStagingArea {
+        var cleanedUp = false
+            private set
+
+        override fun beginArray(section: String) = Unit
+
+        override fun appendArrayValue(section: String, rawJson: String) {
+            if (section == failingSection) throw IllegalStateException("Injected staging write failure")
+        }
+
+        override fun endArray(section: String) = Unit
+        override fun writeValue(section: String, rawJson: String) = Unit
+        override fun openSection(section: String): BackupStreamSource? = null
+        override fun cleanup() {
+            cleanedUp = true
+        }
     }
 }

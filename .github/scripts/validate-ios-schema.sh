@@ -2,11 +2,11 @@
 #
 # Schema Manifest Validator
 # =========================
-# Validates that SchemaManifest.kt table definitions match VitruvianDatabase.sq
+# Validates that SchemaManifest.kt table definitions match PhoenixDatabase.sq
 #
 # Background: SchemaManifest.kt provides cross-platform schema reconciliation
 # (Layer 4 defense against migration gaps). The table schemas in SchemaManifest.kt
-# MUST exactly match VitruvianDatabase.sq, otherwise fresh installs will crash with
+# MUST exactly match PhoenixDatabase.sq, otherwise fresh installs will crash with
 # SQLiteException when SQLDelight queries try to access columns that don't exist.
 #
 # This script validates:
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Go up two levels from .github/scripts to project root
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-SQ_FILE="$PROJECT_ROOT/shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq"
+SQ_FILE="$PROJECT_ROOT/shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq"
 MANIFEST_FILE="$PROJECT_ROOT/shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt"
 
 echo "Schema Manifest Validator"
@@ -205,7 +205,7 @@ if errors:
         print(f"  ERROR: {error}")
     print("")
     print("To fix: Update shared/src/commonMain/kotlin/.../SchemaManifest.kt")
-    print("        to match shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq")
+    print("        to match shared/src/commonMain/sqldelight/.../PhoenixDatabase.sq")
     print("")
     print("See archived planning notes for issue-223 iOS fresh-install SQLite crash if needed")
     sys.exit(1)

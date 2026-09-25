@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
@@ -8,9 +9,19 @@ import kotlin.test.assertTrue
 
 class WorkoutCommandValidatorTest {
 
+    /**
+     * The validator takes the CONNECTED model's per-cable ceiling (KD-9). Cases that are
+     * not about the ceiling use the absolute hardware maximum, which is what a builder
+     * that cannot know the model passes.
+     */
+    private fun validateProgram(
+        params: WorkoutParameters,
+        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    ) = WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg)
+
     @Test
     fun `program params accept normal finite bounded command`() {
-        val result = WorkoutCommandValidator.validateProgramParams(
+        val result = validateProgram(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 reps = 8,
@@ -25,7 +36,7 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `normal workout commands allow fractional positive weight`() {
         assertTrue(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
                     reps = 8,
@@ -38,6 +49,7 @@ class WorkoutCommandValidatorTest {
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 0.5f,
                 targetReps = 8,
+                maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
             ).isSuccess,
         )
     }
@@ -45,19 +57,19 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `program params reject non-finite and out-of-range weights`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = Float.NaN),
             ),
             "finite",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 111f),
             ),
             "weightPerCableKg",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 0f),
             ),
             "greater than",
@@ -67,7 +79,7 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `just lift requires minimum nonzero weight`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
                     reps = 1,
@@ -81,7 +93,7 @@ class WorkoutCommandValidatorTest {
 
     @Test
     fun `amrap allows zero target reps but finite bounded weight still applies`() {
-        val result = WorkoutCommandValidator.validateProgramParams(
+        val result = validateProgram(
             WorkoutParameters(
                 programMode = ProgramMode.Pump,
                 reps = 0,
@@ -96,7 +108,7 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `rep and warmup bytes must fit one byte`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 253,
@@ -124,7 +136,7 @@ class WorkoutCommandValidatorTest {
         // 0xFF (255) is the unlimited/Just Lift/AMRAP sentinel; a finite total of
         // 255 must be rejected so it cannot serialize to an unlimited workout.
         assertTrue(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 251,
@@ -135,7 +147,7 @@ class WorkoutCommandValidatorTest {
             "reps+warmup == 254 should be accepted",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateProgram(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 252,
@@ -204,6 +216,63 @@ class WorkoutCommandValidatorTest {
             ),
             "0.0..1.0",
         )
+    }
+
+    // ===== KD-9 backstop: per-model ceiling and per-rep progression =====
+
+    @Test
+    fun `program params reject a weight above the connected model ceiling`() {
+        // F-009: the same 105kg/cable command is legal on a Trainer+ and illegal on a V-Form.
+        val params = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 105f)
+        assertFailureContains(
+            validateProgram(params, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "weightPerCableKg",
+        )
+        assertTrue(validateProgram(params, CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+
+        // Unknown fails closed to the lowest known ceiling.
+        assertFailureContains(
+            validateProgram(params, CommandLimits.maxWeightPerCableKg(PhoenixModel.Unknown)),
+            "weightPerCableKg",
+        )
+    }
+
+    @Test
+    fun `program params tolerate float and lb rounding at the ceiling but not real overshoot`() {
+        fun atWeight(kg: Float) = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = kg)
+
+        // Within the 0.05kg tolerance (220.5 lb is 100.017 kg on a 100kg cable).
+        assertTrue(validateProgram(atWeight(100.04f), CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+        assertFailureContains(
+            validateProgram(atWeight(100.1f), CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "weightPerCableKg",
+        )
+        assertTrue(validateProgram(atWeight(110.04f), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+        assertFailureContains(
+            validateProgram(atWeight(110.1f), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG),
+            "weightPerCableKg",
+        )
+    }
+
+    @Test
+    fun `program params bound per-rep progression`() {
+        // F-020/F-044: previously only checked for finiteness, so a crafted backup or a
+        // CSV import could command +50kg per rep.
+        fun atProgression(kg: Float) = WorkoutParameters(
+            ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 40f,
+            progressionRegressionKg = kg,
+        )
+
+        for (bounded in listOf(0f, 3f, -3f, 1.5f)) {
+            assertTrue(validateProgram(atProgression(bounded)).isSuccess, "progression $bounded")
+        }
+        for (rejected in listOf(3.1f, -3.1f, 50f, -50f)) {
+            assertFailureContains(validateProgram(atProgression(rejected)), "progressionRegressionKg")
+        }
+        assertFailureContains(validateProgram(atProgression(Float.NaN)), "finite")
+        assertFailureContains(validateProgram(atProgression(Float.POSITIVE_INFINITY)), "finite")
     }
 
     private fun validColors(): List<RGBColor> = listOf(

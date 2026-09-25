@@ -1,0 +1,64 @@
+name: Release Tests
+
+# Unit-test gate that every release/store workflow runs before building or uploading.
+# release-all*.yml run it once up front and pass skip: true to the platform workflows they call.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Ref to test (defaults to the triggering commit)'
+        required: false
+        type: string
+        default: ''
+      skip:
+        description: 'Tests already ran in the calling release workflow'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      sha:
+        description: 'Commit that was tested (empty when skipped)'
+        value: ${{ jobs.unit-tests.outputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.tested.outputs.sha }}
+
+    steps:
+      - name: Tests already gated by the calling release workflow
+        if: ${{ inputs.skip }}
+        run: echo "Unit tests ran in the calling release workflow; skipping."
+
+      - name: Checkout repository
+        if: ${{ !inputs.skip }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Record tested commit
+        id: tested
+        if: ${{ !inputs.skip }}
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 17
+        if: ${{ !inputs.skip }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        if: ${{ !inputs.skip }}
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Run unit tests
+        if: ${{ !inputs.skip }}
+        run: ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue

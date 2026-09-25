@@ -68,8 +68,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -84,7 +84,7 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
-import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -96,19 +96,20 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.action_stop
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
-import vitruvianprojectphoenix.shared.generated.resources.cd_completed
-import vitruvianprojectphoenix.shared.generated.resources.pager_page_of
-import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.start_exercise
-import vitruvianprojectphoenix.shared.generated.resources.target_reps
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.action_stop
+import projectphoenix.shared.generated.resources.exit_routine_message
+import projectphoenix.shared.generated.resources.exit_routine_title
+import projectphoenix.shared.generated.resources.cd_completed
+import projectphoenix.shared.generated.resources.pager_page_of
+import projectphoenix.shared.generated.resources.rest_eccentric_load
+import projectphoenix.shared.generated.resources.start_exercise
+import projectphoenix.shared.generated.resources.target_reps
 
 /**
  * Routine Overview Screen - Entry point when starting a routine.
@@ -309,15 +310,15 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                 val adjustmentState = adjustmentStates.getValue(exercise.id)
                 val adjustments by adjustmentState
 
-                // Load video for this exercise
-                var videoEntity by remember { mutableStateOf<ExerciseVideoEntity?>(null) }
+                var images by remember(exercise.exercise.id) {
+                    mutableStateOf<List<ExerciseImageEntity>>(emptyList())
+                }
                 LaunchedEffect(exercise.exercise.id) {
                     exercise.exercise.id?.let { exerciseId ->
                         try {
-                            val videos = exerciseRepository.getVideos(exerciseId)
-                            videoEntity = videos.firstOrNull()
+                            images = exerciseRepository.getImages(exerciseId)
                         } catch (_: Exception) {
-                            // Video loading failed - will show placeholder
+                            // Image loading failed - will show placeholder
                         }
                     }
                 }
@@ -328,7 +329,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     isCompleted = isCompleted,
                     weightUnit = weightUnit,
                     formatWeight = viewModel::formatWeight,
-                    videoUrl = if (enableVideoPlayback) videoEntity?.videoUrl else null,
+                    imageUrls = if (enableVideoPlayback) images.map { it.url } else emptyList(),
                     adjustedWeight = adjustments.weight,
                     adjustedReps = adjustments.reps,
                     isAMRAP = exercise.isAMRAP,
@@ -337,6 +338,9 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     eccentricLoadPercent = adjustments.eccentricLoadPercent,
                     sizing = overviewSizing,
                     weightStepKg = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                    maxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                        userPreferences.lastConnectedModel,
+                    ),
                     onWeightChange = { newWeight ->
                         if (newWeight >= 0f) {
                             adjustmentState.value = adjustmentState.value.copy(weight = newWeight)
@@ -547,7 +551,7 @@ private fun ExerciseOverviewCard(
     isCompleted: Boolean,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    videoUrl: String?,
+    imageUrls: List<String>,
     adjustedWeight: Float,
     adjustedReps: Int,
     isAMRAP: Boolean,
@@ -556,12 +560,15 @@ private fun ExerciseOverviewCard(
     eccentricLoadPercent: Int,
     sizing: RoutineOverviewSizing,
     weightStepKg: Float = 0.25f, // Issue #266/#410: Configurable weight step
+    // KD-9: planning ceiling. Unknown opens up to the widest hardware so a Trainer+ owner
+    // can plan before ever connecting; a known V-Form is held to its own ceiling.
+    maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     onWeightChange: (Float) -> Unit,
     onRepsChange: (Int) -> Unit,
     onEchoLevelChange: (EchoLevel) -> Unit,
     onEccentricLoadChange: (Int) -> Unit,
 ) {
-    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    val maxWeightKg = maxWeightPerCableKg
 
     // #635: explicit stored flag with equipment-derivation fallback
     val isBodyweight = exercise.exercise.isBodyweight
@@ -610,13 +617,13 @@ private fun ExerciseOverviewCard(
                     )
                 }
 
-                // Video thumbnail
-                VideoPlayer(
-                    videoUrl = videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = imageUrls,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(sizing.videoHeight)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = exercise.exercise.displayName,
                 )
 
                 // Mode indicator (read-only) - Issue #222: Hide for bodyweight exercises
@@ -706,8 +713,9 @@ private fun ExerciseOverviewCard(
                                     }
                                 }
                             } else {
-                                // Standard modes: Weight + Reps
-                                // Delta from routine baseline
+                                // Standard modes: Reps first, then Weight (Issue #767).
+                                // Matches RestTimerCard NEXT SET CONFIGURATION so users
+                                // don't swap reps/weight when hopping between screens.
                                 val baselineWeightKg = exercise.setWeightsPerCableKg.firstOrNull()
                                     ?: exercise.weightPerCableKg
                                 val deltaKg = adjustedWeight - baselineWeightKg
@@ -719,20 +727,6 @@ private fun ExerciseOverviewCard(
                                     null
                                 }
 
-                                SliderWithButtons(
-                                    value = adjustedWeight,
-                                    onValueChange = { newWeight ->
-                                        onWeightChange(newWeight.coerceIn(0f, maxWeightKg))
-                                    },
-                                    valueRange = 0f..maxWeightKg,
-                                    step = weightStepKg,
-                                    label = "Weight per cable",
-                                    formatValue = { formatWeight(it, weightUnit) },
-                                    deltaText = deltaText,
-                                    isDeltaPositive = deltaKg >= 0f,
-                                )
-
-                                // Reps adjuster (or AMRAP indicator)
                                 if (isAMRAP) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -759,6 +753,19 @@ private fun ExerciseOverviewCard(
                                         formatValue = { it.toInt().toString() },
                                     )
                                 }
+
+                                SliderWithButtons(
+                                    value = adjustedWeight,
+                                    onValueChange = { newWeight ->
+                                        onWeightChange(newWeight.coerceIn(0f, maxWeightKg))
+                                    },
+                                    valueRange = 0f..maxWeightKg,
+                                    step = weightStepKg,
+                                    label = "Weight per cable",
+                                    formatValue = { formatWeight(it, weightUnit) },
+                                    deltaText = deltaText,
+                                    isDeltaPositive = deltaKg >= 0f,
+                                )
                             }
                         }
                     }

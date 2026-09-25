@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -32,7 +33,7 @@ class ExerciseDetailOneRepMaxLoadTest {
             loadExerciseDetailOneRepMax(
                 request = requestA,
                 gate = gate,
-                resolve = { _, _ ->
+                resolve = { _, _, _ ->
                     aStarted.complete(Unit)
                     releaseA.await()
                     resultA
@@ -46,7 +47,7 @@ class ExerciseDetailOneRepMaxLoadTest {
         loadExerciseDetailOneRepMax(
             request = requestB,
             gate = gate,
-            resolve = { _, _ -> resultB },
+            resolve = { _, _, _ -> resultB },
             publish = states::add,
         )
         releaseA.complete(Unit)
@@ -72,7 +73,7 @@ class ExerciseDetailOneRepMaxLoadTest {
             loadExerciseDetailOneRepMax(
                 request = requestA,
                 gate = gate,
-                resolve = { _, _ ->
+                resolve = { _, _, _ ->
                     aStarted.complete(Unit)
                     releaseA.await()
                     error("late A failure")
@@ -85,7 +86,7 @@ class ExerciseDetailOneRepMaxLoadTest {
         loadExerciseDetailOneRepMax(
             request = requestB,
             gate = gate,
-            resolve = { _, _ -> resultB },
+            resolve = { _, _, _ -> resultB },
             publish = states::add,
         )
         releaseA.complete(Unit)
@@ -103,7 +104,7 @@ class ExerciseDetailOneRepMaxLoadTest {
             loadExerciseDetailOneRepMax(
                 request = requestA,
                 gate = ExerciseDetailOneRepMaxLoadGate(),
-                resolve = { _, _ ->
+                resolve = { _, _, _ ->
                     started.complete(Unit)
                     awaitCancellation()
                 },
@@ -131,7 +132,7 @@ class ExerciseDetailOneRepMaxLoadTest {
         loadExerciseDetailOneRepMax(
             request = requestA,
             gate = ExerciseDetailOneRepMaxLoadGate(),
-            resolve = { _, _ -> error("resolver unavailable") },
+            resolve = { _, _, _ -> error("resolver unavailable") },
             publish = states::add,
         )
 
@@ -145,6 +146,23 @@ class ExerciseDetailOneRepMaxLoadTest {
     }
 
     @Test
+    fun `bodyweight context is forwarded to the resolver`() = runTest {
+        var receivedBodyweight = false
+
+        loadExerciseDetailOneRepMax(
+            request = requestA.copy(isBodyweight = true),
+            gate = ExerciseDetailOneRepMaxLoadGate(),
+            resolve = { _, _, isBodyweight ->
+                receivedBodyweight = isBodyweight
+                resultA
+            },
+            publish = {},
+        )
+
+        assertTrue(receivedBodyweight)
+    }
+
+    @Test
     fun `screen has one resolver path and no legacy profile or velocity read`() {
         val source = readProjectFile(
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt",
@@ -152,7 +170,7 @@ class ExerciseDetailOneRepMaxLoadTest {
         assertNotNull(source)
         assertContains(source, "assessmentProfileId")
         assertContains(source, "loadExerciseDetailOneRepMax(")
-        assertContains(source, "estimatedOneRepMaxPerCableOrNull()")
+        assertContains(source, "estimatedOneRepMaxPerCableOrNull(exerciseIsBodyweight)")
         assertContains(source, "catch (cancellation: CancellationException)")
         assertContains(source, "catch (_: Exception)")
         assertFalse(source.contains("catch (_: Throwable)"))

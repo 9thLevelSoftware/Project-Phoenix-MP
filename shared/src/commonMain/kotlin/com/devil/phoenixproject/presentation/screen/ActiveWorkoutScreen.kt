@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
@@ -38,6 +42,8 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.voice.SafeWordState
+import com.devil.phoenixproject.domain.voice.SafeWordUnavailableReason
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
@@ -49,19 +55,30 @@ import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_continue_set
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.end_workout
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_title
-import vitruvianprojectphoenix.shared.generated.resources.skip_exercise
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_message
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_title
-import vitruvianprojectphoenix.shared.generated.resources.stop_set
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_continue_set
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.end_workout
+import projectphoenix.shared.generated.resources.exit_workout_message
+import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.skip_exercise
+import projectphoenix.shared.generated.resources.stop_current_set_message
+import projectphoenix.shared.generated.resources.stop_current_set_title
+import projectphoenix.shared.generated.resources.stop_set
+import projectphoenix.shared.generated.resources.voice_stop_reason_audio_focus_lost
+import projectphoenix.shared.generated.resources.voice_stop_reason_not_calibrated
+import projectphoenix.shared.generated.resources.voice_stop_reason_not_configured
+import projectphoenix.shared.generated.resources.voice_stop_reason_permission
+import projectphoenix.shared.generated.resources.voice_stop_reason_profile_switching
+import projectphoenix.shared.generated.resources.voice_stop_reason_recognizer_unavailable
+import projectphoenix.shared.generated.resources.voice_stop_reason_start_failed
+import projectphoenix.shared.generated.resources.voice_stop_unavailable_chip
+import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -74,6 +91,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
     val workoutParameters by viewModel.workoutParameters.collectAsState()
+    val rackItems by viewModel.rackItems.collectAsState()
+    val activeRackItemIds by viewModel.activeRackItemIds.collectAsState()
+    val activeRackBehaviorOverrides by viewModel.activeRackBehaviorOverrides.collectAsState()
     val repCount by viewModel.repCount.collectAsState()
     val repRanges by viewModel.repRanges.collectAsState()
     val autoStopState by viewModel.autoStopState.collectAsState()
@@ -104,9 +124,12 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
     // Issue #113: Just Lift visual rest countdown
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+    val recentJustLiftExerciseIds by viewModel.recentJustLiftExerciseIds.collectAsState()
     // Issue #190: Exercise timer pause state
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val restTransitionPlan by viewModel.restTransitionPlan.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -134,9 +157,24 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
+    // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
+
     // Issue #141: Voice-activated emergency stop via safe word detection
     val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager =
         koinInject()
+    val safeWordState by safeWordManager.state.collectAsState()
+    // F-039: warn once at the start of the set when the safe word cannot stop the
+    // machine. Subscribed before startForWorkout() below so the emission is seen.
+    LaunchedEffect(Unit) {
+        safeWordManager.unavailableAtStart.collect { reason ->
+            val message = getString(Res.string.voice_stop_unavailable_snackbar, getString(reason.messageRes()))
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Long)
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         safeWordManager.startForWorkout()
         safeWordManager.detectedWord.collect {
@@ -150,9 +188,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
-    val snackbarHostState = remember { SnackbarHostState() }
-    val snackbarScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
             snackbarScope.launch {
@@ -163,6 +198,24 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             }
         }
     }
+
+    // KD-9: the capped-command notice is state, not an event, because Just Lift sends the
+    // command before this screen is composed. Drain it on arrival so it is shown exactly once.
+    val commandLimitNotice by viewModel.commandLimitNotice.collectAsState()
+    LaunchedEffect(commandLimitNotice) {
+        val notice = commandLimitNotice ?: return@LaunchedEffect
+        viewModel.consumeCommandLimitNotice()
+        // Show it on snackbarScope, not in this effect: consuming the notice flips the state
+        // back to null, which changes this LaunchedEffect's key and cancels its coroutine —
+        // and showSnackbar dismisses the snackbar when cancelled. The snackbar has to outlive
+        // the effect that triggered it, exactly like the feedback collector above.
+        snackbarScope.launch {
+            snackbarHostState.showSnackbar(message = notice, duration = SnackbarDuration.Long)
+        }
+    }
+
+    // F-040: the save-failure Retry offer is collected by EnhancedMainScreen, the
+    // app-level scaffold, because the save runs after this route has navigated away.
 
     // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it
     // stays active across SetReady ↔ ActiveWorkout navigation during routines.
@@ -262,9 +315,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                             loadedRoutine?.id?.startsWith(
                                 DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
                             ) ==
-                            true &&
+                                true &&
                                 !viewModel.isStoppingWorkout()
-                        )
+                            )
                     ) -> {
                 // Issue #660: a direct timed Stop Set returns a temp routine to SetReady.
                 // Let the routine-flow observer navigate there rather than tearing down to Home.
@@ -367,6 +420,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         userPreferences.velocityLossThresholdPercent,
         userPreferences.effectiveWeightIncrementKg,
         currentRackLoadAdjustment,
+        rackItems, activeRackItemIds, activeRackBehaviorOverrides,
+        machineTeardownState,
+        restTransitionPlan,
+        recentJustLiftExerciseIds,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -386,9 +443,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             completedExercises = completedExercises,
             autoplayEnabled = autoplayEnabled,
             summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
-            isWorkoutSetupDialogVisible = false,
-            showConnectionCard = false,
-            showWorkoutSetupCard = false,
             loadBaselineA = loadBaselineA,
             loadBaselineB = loadBaselineB,
             canGoBack = canGoBack,
@@ -407,6 +461,12 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
             rackLoadAdjustment = currentRackLoadAdjustment,
+            rackItems = rackItems,
+            activeRackItemIds = activeRackItemIds,
+            activeRackBehaviorOverrides = activeRackBehaviorOverrides,
+            machineTeardownState = machineTeardownState,
+            restTransitionPlan = restTransitionPlan,
+            recentJustLiftExerciseIds = recentJustLiftExerciseIds,
         )
     }
 
@@ -421,8 +481,13 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                     onFailed = { /* Error shown via StateFlow */ },
                 )
             },
+            onRetryWorkoutTeardown = { viewModel.retryWorkoutTeardown() },
+            onReconnectWorkoutTeardown = { viewModel.reconnectWorkoutTeardown() },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onSkipRestWithIdentity = { identity -> viewModel.skipRest(identity) },
+            onAcceptDropSetAction = { identity, percentage -> viewModel.acceptDropSet(identity, percentage) },
+            onDeclineDropSetAction = { identity -> viewModel.declineDropSet(identity) },
             onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
             onToggleRestPause = { viewModel.toggleRestPause() },
             onResetRest = { viewModel.resetRestTimer() },
@@ -433,8 +498,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onStartNextExercise = { viewModel.advanceToNextExercise() },
             onJumpToExercise = { viewModel.jumpToExercise(it) },
             onUpdateParameters = { viewModel.updateWorkoutParameters(it) },
-            onShowWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
-            onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
+            onUpdateRackSelection = { viewModel.updateActiveRackSelection(it) },
+            onUpdateRackBehaviorOverrides = { viewModel.updateActiveRackBehaviorOverrides(it) },
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
             formatWeight = viewModel::formatWeight,
@@ -455,12 +520,21 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
+            // F-039: the safe word is a safety affordance — say so when it is not armed.
+            (safeWordState as? SafeWordState.Unavailable)?.let { unavailable ->
+                VoiceStopUnavailableChip(
+                    reason = unavailable.reason,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             WorkoutTab(
                 state = workoutUiState,
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
                 hapticEvents = hapticEvents,
-                modifier = Modifier,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -575,7 +649,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+    // Connection error dialog
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,
@@ -616,4 +690,38 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )
     }
+}
+
+/**
+ * F-039: persistent HUD chip telling the user the voice safe-word emergency
+ * stop is not armed, so they fall back to the on-screen Stop button.
+ */
+@Composable
+private fun VoiceStopUnavailableChip(reason: SafeWordUnavailableReason, modifier: Modifier = Modifier) {
+    Surface(
+        // The chip can appear mid-set (permission revoked, microphone taken), when
+        // the user's eyes are on the machine — announce it instead of waiting for
+        // focus to land on it.
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+    ) {
+        Text(
+            text = stringResource(Res.string.voice_stop_unavailable_chip, stringResource(reason.messageRes())),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+/** Human-readable explanation for each way voice stop can be unavailable. */
+private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this) {
+    SafeWordUnavailableReason.PROFILE_SWITCHING -> Res.string.voice_stop_reason_profile_switching
+    SafeWordUnavailableReason.NOT_CONFIGURED -> Res.string.voice_stop_reason_not_configured
+    SafeWordUnavailableReason.NOT_CALIBRATED -> Res.string.voice_stop_reason_not_calibrated
+    SafeWordUnavailableReason.RECOGNIZER_UNAVAILABLE -> Res.string.voice_stop_reason_recognizer_unavailable
+    SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
+    SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
+    SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
 }

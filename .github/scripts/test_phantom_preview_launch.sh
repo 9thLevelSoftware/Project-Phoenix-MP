@@ -26,8 +26,8 @@ if not launcher.is_file():
 
 SOURCE_ROOT = script_dir.parent.parent
 FIXTURE_REL = Path("shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt")
-PROJECT_REL = Path("iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj")
-CONFIG_REL = Path("iosApp/VitruvianPhoenix/Config/Supabase.xcconfig")
+PROJECT_REL = Path("iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj")
+CONFIG_REL = Path("iosApp/PhoenixApp/Config/Supabase.xcconfig")
 EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
 EXPECTED_UDID = "678A4E3B-6A1F-469C-8068-9A2608A85783"
 EXPECTED_SIMULATOR_NAME = "Phantom Harness iPhone 17 Pro"
@@ -191,7 +191,7 @@ subprocess.run(
     check=True,
 )
 derived = Path(args[args.index("-derivedDataPath") + 1])
-app = derived / "Build" / "Products" / "Debug-iphonesimulator" / "VitruvianPhoenix.app"
+app = derived / "Build" / "Products" / "Debug-iphonesimulator" / "PhoenixApp.app"
 app.mkdir(mode=0o700, parents=True)
 (app / "placeholder").write_text("real app placeholder\\n", encoding="utf-8")
 print("Build Succeeded")
@@ -235,7 +235,7 @@ def make_repo(root, state):
     shutil.copy2(SOURCE_ROOT / PROJECT_REL, host / PROJECT_REL)
     (host / CONFIG_REL.parent / "SupabaseBase.xcconfig").write_text("// tracked config directory marker\\n", encoding="utf-8")
     (host / ".gitignore").write_text(
-        "iosApp/VitruvianPhoenix/Config/Supabase.xcconfig\n"
+        "iosApp/PhoenixApp/Config/Supabase.xcconfig\n"
         ".gradle/\nshared/build/\nbuild/\n",
         encoding="utf-8",
     )

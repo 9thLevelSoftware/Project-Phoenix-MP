@@ -34,9 +34,13 @@ class FakeGamificationRepository : GamificationRepository {
 
     var updateStatsCallCount = 0
     var checkAndAwardBadgesCallCount = 0
+    val badgeLookupProfileIds = mutableListOf<String>()
+    val updateStatsProfileIds = mutableListOf<String>()
 
     // Captured RPG profile from saveRpgProfile calls
     var savedRpgProfile: RpgProfile? = null
+    var saveRpgProfileCallCount = 0
+    var saveRpgProfileFailure: Throwable? = null
 
     // Test control methods
     fun setStreakInfo(info: StreakInfo) {
@@ -66,7 +70,11 @@ class FakeGamificationRepository : GamificationRepository {
         pendingBadges.clear()
         updateStatsCallCount = 0
         checkAndAwardBadgesCallCount = 0
+        badgeLookupProfileIds.clear()
+        updateStatsProfileIds.clear()
         savedRpgProfile = null
+        saveRpgProfileCallCount = 0
+        saveRpgProfileFailure = null
         _earnedBadgesFlow.value = emptyList()
         _streakInfoFlow.value = StreakInfo.EMPTY
         _gamificationStatsFlow.value = GamificationStats()
@@ -89,7 +97,10 @@ class FakeGamificationRepository : GamificationRepository {
 
     override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = _uncelebratedBadgesFlow
 
-    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean = earnedBadges.containsKey(badgeId)
+    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean {
+        badgeLookupProfileIds += profileId
+        return earnedBadges.containsKey(badgeId)
+    }
 
     override suspend fun awardBadge(badgeId: String, profileId: String): Boolean {
         if (earnedBadges.containsKey(badgeId)) {
@@ -133,11 +144,14 @@ class FakeGamificationRepository : GamificationRepository {
     )
 
     override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
+        saveRpgProfileCallCount++
+        saveRpgProfileFailure?.let { throw it }
         savedRpgProfile = profile
     }
 
     override suspend fun updateStats(profileId: String) {
         updateStatsCallCount++
+        updateStatsProfileIds += profileId
         // No-op in fake - stats are set directly via setGamificationStats
     }
 

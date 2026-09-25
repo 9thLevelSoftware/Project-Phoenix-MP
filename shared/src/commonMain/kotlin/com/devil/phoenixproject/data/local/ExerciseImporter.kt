@@ -1,77 +1,92 @@
 package com.devil.phoenixproject.data.local
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
-import io.ktor.client.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.serialization.kotlinx.json.*
+import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.Exercise
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.ExperimentalResourceApi
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.Res
 
-/**
- * JSON data classes for exercise_dump.json parsing
- */
 @Serializable
-data class ExerciseJson(
+data class FreeExerciseJson(
     val id: String,
     val name: String,
-    val description: String? = null,
-    val created: String? = null,
-    val videos: List<VideoJson>? = null,
-    val equipment: List<String>? = null,
-    val muscleGroups: List<String>? = null,
-    val muscles: List<String>? = null,
-    val movement: String? = null,
-    val tutorial: TutorialJson? = null,
-    val aliases: List<String>? = null,
-    val grip: String? = null,
-    val gripWidth: String? = null,
-    val sidedness: String? = null,
-    val archived: String? = null, // Date string when archived, null if active
-    val range: RangeJson? = null,
-    val popularity: Double? = null,
-    val isBodyweight: Boolean? = null, // Explicit classification (#635); null = derive from equipment
+    val force: String? = null,
+    val level: String? = null,
+    val mechanic: String? = null,
+    val equipment: String? = null,
+    val primaryMuscles: List<String> = emptyList(),
+    val secondaryMuscles: List<String> = emptyList(),
+    val instructions: List<String> = emptyList(),
+    val category: String? = null,
+    val images: List<String> = emptyList(),
 )
 
 @Serializable
-data class VideoJson(val id: String? = null, val video: String, val thumbnail: String, val angle: String? = null, val name: String? = null)
+private data class WgerPage(
+    val next: String? = null,
+    val results: List<WgerExerciseInfo> = emptyList(),
+)
 
 @Serializable
-data class TutorialJson(val video: String, val thumbnail: String)
+private data class WgerExerciseInfo(
+    val id: Int,
+    val translations: List<WgerTranslation> = emptyList(),
+    val muscles: List<WgerMuscle> = emptyList(),
+    @SerialName("muscles_secondary") val musclesSecondary: List<WgerMuscle> = emptyList(),
+    val equipment: List<WgerNamed> = emptyList(),
+    val images: List<WgerImage> = emptyList(),
+    val category: WgerNamed? = null,
+    val license: WgerLicense? = null,
+    @SerialName("license_author") val licenseAuthor: String? = null,
+)
 
 @Serializable
-data class RangeJson(val minimum: Double? = null)
+private data class WgerTranslation(
+    val language: Int? = null,
+    val name: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
+private data class WgerMuscle(
+    val name: String? = null,
+    @SerialName("name_en") val nameEn: String? = null,
+)
+
+@Serializable
+private data class WgerNamed(
+    val name: String? = null,
+)
+
+@Serializable
+private data class WgerImage(
+    val image: String? = null,
+    @SerialName("is_main") val isMain: Boolean = false,
+)
+
+@Serializable
+private data class WgerLicense(
+    @SerialName("full_name") val fullName: String? = null,
+    @SerialName("short_name") val shortName: String? = null,
+)
 
 /**
- * Maps equipment codes from exercise_dump.json to human-readable labels.
- * Matches the portal's equipmentDisplayMap in transforms.ts.
+ * Imports the bundled free-exercise-db catalogue and optionally merges wger rows.
  */
-private fun String.toEquipmentDisplayLabel(): String = when (this.uppercase()) {
-    "HANDLES" -> "Handles"
-    "BAR" -> "Bar"
-    "LONG_BAR" -> "Long Bar"
-    "SHORT_BAR" -> "Short Bar"
-    "ROPE" -> "Rope"
-    "BELT" -> "Belt"
-    "BENCH" -> "Bench"
-    "STRAPS" -> "Straps"
-    "GREY_CABLES" -> "Cables"
-    else -> this.lowercase().replaceFirstChar { it.uppercase() }
-}
-
-/**
- * Imports exercises from JSON file into the SQLDelight database.
- * KMP-compatible implementation using Compose Resources.
- */
-class ExerciseImporter(private val database: VitruvianDatabase) {
-    private val queries = database.vitruvianDatabaseQueries
+class ExerciseImporter(private val database: PhoenixDatabase) {
+    private val queries = database.phoenixDatabaseQueries
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -80,23 +95,281 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
     }
 
     /**
-     * Generate disambiguated display names for exercises.
-     * If only one exercise has a given base name -> displayName = trimmed name.
-     * If multiple share the base name -> displayName = "Name (Primary Equipment)".
-     * Primary equipment = first item in the equipment list from exercise_dump.json.
+     * Imports the bundled free-exercise-db catalogue plus the issue #883 supplemental seed
+     * rows (see [SupplementalCatalogSeed]), which the upstream asset cannot express.
      */
-    private fun generateDisplayNames(exercises: List<ExerciseJson>): Map<String, String> {
-        val grouped = exercises
-            .filter { it.archived == null }
-            .groupBy { it.name.lowercase().trim() }
+    @OptIn(ExperimentalResourceApi::class)
+    suspend fun importExercises(): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            Logger.d { "Starting exercise import from bundled free-exercise-db JSON..." }
+            val jsonBytes = Res.readBytes("files/exercises.json")
+            val bundled = json.decodeFromString<List<FreeExerciseJson>>(jsonBytes.decodeToString())
+            importRows(mergedCatalogueRows(bundled))
+        } catch (e: Exception) {
+            Logger.e(e) { "Failed to import exercises from bundled JSON" }
+            Result.failure(e)
+        }
+    }
 
+    suspend fun importFromFreeExerciseJson(jsonString: String): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            importRows(json.decodeFromString(jsonString))
+        } catch (e: Exception) {
+            Logger.e(e) { "Failed to parse free-exercise-db JSON" }
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * The bundled free-exercise-db rows followed by [SupplementalCatalogSeed] (#883). Kept as
+     * a seam so tests can pin that the shipped import path carries the supplemental rows.
+     */
+    internal fun mergedCatalogueRows(bundled: List<FreeExerciseJson>): List<FreeExerciseJson> =
+        bundled + SupplementalCatalogSeed.rows
+
+    private suspend fun importRows(exercises: List<FreeExerciseJson>): Result<Int> {
+        val displayNames = generateDisplayNames(exercises)
+        Logger.d { "Parsed ${exercises.size} exercises from free-exercise-db" }
+
+        var importedCount = 0
+        var imageCount = 0
+
+        queries.transaction {
+            for (exercise in exercises) {
+                try {
+                    if (queries.selectExerciseById(exercise.id).executeAsOneOrNull()?.isCustom == 1L) {
+                        continue
+                    }
+                    val muscleNames = (exercise.primaryMuscles + exercise.secondaryMuscles)
+                        .map { mapMuscleGroup(it) }
+                        .distinct()
+                    val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
+                    val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
+                    val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
+                    val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
+                    // #857: apply the id-keyed naming overlay once so the insert and update
+                    // paths below share one source for name, displayName, and aliases.
+                    val overlay = CATALOG_OVERLAY[exercise.id]
+                    val name = overlay?.name ?: exercise.name.trim()
+                    val displayName = overlay?.displayName ?: displayNames[exercise.id]
+                    val aliases = overlay?.aliases
+                    val description = exercise.instructions.joinToString("\n").ifBlank { null }
+                    val muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
+                        .joinToString(",")
+                        .ifBlank { null }
+                    val muscleGroups = muscleNames.joinToString(",")
+
+                    queries.insertExerciseIfAbsent(
+                        id = exercise.id,
+                        name = name,
+                        displayName = displayName,
+                        description = description,
+                        created = 0L,
+                        muscleGroup = primaryMuscle,
+                        muscleGroups = muscleGroups,
+                        muscles = muscles,
+                        equipment = equipmentLabel,
+                        movement = exercise.category,
+                        sidedness = sidedness,
+                        grip = null,
+                        gripWidth = null,
+                        minRepRange = null,
+                        popularity = 0.0,
+                        archived = 0L,
+                        isFavorite = 0L,
+                        isCustom = 0L,
+                        timesPerformed = 0L,
+                        lastPerformed = null,
+                        aliases = aliases,
+                        defaultCableConfig = cableConfig,
+                        one_rep_max_kg = null,
+                        mvtOverrideMs = null,
+                        isBodyweight = isBodyweight,
+                    )
+                    queries.updateCatalogExercise(
+                        name = name,
+                        displayName = displayName,
+                        description = description,
+                        muscleGroup = primaryMuscle,
+                        muscleGroups = muscleGroups,
+                        muscles = muscles,
+                        equipment = equipmentLabel,
+                        movement = exercise.category,
+                        sidedness = sidedness,
+                        grip = null,
+                        gripWidth = null,
+                        minRepRange = null,
+                        aliases = aliases,
+                        defaultCableConfig = cableConfig,
+                        isBodyweight = isBodyweight,
+                        id = exercise.id,
+                    )
+                    importedCount++
+
+                    queries.deleteImagesForExercise(exercise.id)
+                    exercise.images.forEachIndexed { index, path ->
+                        val url = if (path.startsWith("http://") || path.startsWith("https://")) {
+                            path
+                        } else {
+                            "$FREE_EXERCISE_IMAGE_BASE$path"
+                        }
+                        queries.insertImage(
+                            exerciseId = exercise.id,
+                            url = url,
+                            sortOrder = index.toLong(),
+                        )
+                        imageCount++
+                    }
+                } catch (e: Exception) {
+                    Logger.w { "Failed to import exercise ${exercise.name}: ${e.message}" }
+                }
+            }
+        }
+
+        if (exercises.isNotEmpty() && importedCount == 0) {
+            Logger.e { "Imported 0 of ${exercises.size} free-exercise-db rows" }
+            return Result.failure(
+                Exception("Imported 0 of ${exercises.size} exercises"),
+            )
+        }
+
+        Logger.d { "Successfully imported $importedCount exercises with $imageCount images" }
+        return Result.success(importedCount)
+    }
+
+    /**
+     * Optional refresh from wger. Inserts only `wger_<id>` rows; never overwrites
+     * bundled free-exercise-db catalogue entries.
+     */
+    suspend fun updateFromWger(): Result<Int> = withContext(Dispatchers.IO) {
+        val client = HttpClient {
+            install(ContentNegotiation) {
+                json(json)
+            }
+        }
+
+        try {
+            Logger.d { "Fetching exercise catalogue from wger..." }
+            var nextUrl: String? = WGER_EXERCISE_INFO_URL
+            var inserted = 0
+
+            while (nextUrl != null) {
+                val response: HttpResponse = client.get(nextUrl)
+                if (response.status.value !in 200..299) {
+                    return@withContext Result.failure(
+                        Exception("Failed to fetch wger exercises: HTTP ${response.status.value}"),
+                    )
+                }
+                val page = json.decodeFromString<WgerPage>(response.bodyAsText())
+                queries.transaction {
+                    for (info in page.results) {
+                        val translation = info.translations.firstOrNull { it.language == WGER_ENGLISH_LANGUAGE }
+                            ?: info.translations.firstOrNull()
+                        val name = translation?.name?.trim().orEmpty()
+                        if (name.isEmpty()) continue
+
+                        val id = "wger_${info.id}"
+                        if (queries.selectExerciseById(id).executeAsOneOrNull() != null) {
+                            continue
+                        }
+
+                        val muscleNames = (info.muscles + info.musclesSecondary)
+                            .mapNotNull { it.nameEn ?: it.name }
+                            .map { mapMuscleGroup(it) }
+                            .distinct()
+                        val equipmentLabel = canonicalEquipmentLabel(
+                            info.equipment.mapNotNull { it.name }.joinToString(",") { it.lowercase() },
+                        )
+                        val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
+                        val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
+                        val licenseName = info.license?.shortName ?: info.license?.fullName ?: "CC-BY-SA 4.0"
+                        val author = info.licenseAuthor?.takeIf { it.isNotBlank() }
+                        val attribution = buildString {
+                            append("Source: wger — ")
+                            append(licenseName)
+                            if (author != null) {
+                                append(" (")
+                                append(author)
+                                append(")")
+                            }
+                        }
+                        val description = listOfNotNull(
+                            translation?.description?.trim()?.ifBlank { null },
+                            attribution,
+                        ).joinToString("\n\n")
+
+                        queries.insertExercise(
+                            id = id,
+                            name = name,
+                            displayName = name,
+                            description = description,
+                            created = 0L,
+                            muscleGroup = muscleNames.firstOrNull() ?: "Other",
+                            muscleGroups = muscleNames.joinToString(","),
+                            muscles = (info.muscles + info.musclesSecondary)
+                                .mapNotNull { it.nameEn ?: it.name }
+                                .joinToString(",")
+                                .ifBlank { null },
+                            equipment = equipmentLabel,
+                            movement = info.category?.name,
+                            sidedness = sidedness,
+                            grip = null,
+                            gripWidth = null,
+                            minRepRange = null,
+                            popularity = 0.0,
+                            archived = 0L,
+                            isFavorite = 0L,
+                            isCustom = 0L,
+                            timesPerformed = 0L,
+                            lastPerformed = null,
+                            aliases = null,
+                            defaultCableConfig = cableConfig,
+                            one_rep_max_kg = null,
+                            mvtOverrideMs = null,
+                            isBodyweight = isBodyweight,
+                        )
+                        info.images
+                            .sortedByDescending { it.isMain }
+                            .mapNotNull { it.image }
+                            .forEachIndexed { index, url ->
+                                queries.insertImage(
+                                    exerciseId = id,
+                                    url = url,
+                                    sortOrder = index.toLong(),
+                                )
+                            }
+                        inserted++
+                    }
+                }
+                nextUrl = page.next
+            }
+
+            Logger.d { "Inserted $inserted wger exercises" }
+            Result.success(inserted)
+        } catch (e: Exception) {
+            Logger.e(e) { "Failed to update from wger: ${e.message}" }
+            Result.failure(e)
+        } finally {
+            client.close()
+        }
+    }
+
+    /**
+     * Points history, PRs, routines, and other per-exercise rows at replacement catalogue
+     * IDs so the active picker entries keep prior work. Data-gated: a no-op (one indexed
+     * existence check) when no row still references an archived catalogue id.
+     */
+    fun remapLegacyCatalogueIds(): Int = LegacyCatalogueRemapper(database).remapIfNeeded()
+
+    private fun generateDisplayNames(exercises: List<FreeExerciseJson>): Map<String, String> {
+        val grouped = exercises.groupBy { it.name.lowercase().trim() }
         return exercises.associate { exercise ->
             val siblings = grouped[exercise.name.lowercase().trim()] ?: listOf(exercise)
             val displayName = if (siblings.size > 1) {
-                val primaryEquipment = exercise.equipment?.firstOrNull()
-                    ?.toEquipmentDisplayLabel() ?: ""
-                if (primaryEquipment.isNotEmpty()) {
-                    "${exercise.name.trim()} ($primaryEquipment)"
+                val equipment = exercise.equipment?.trim().orEmpty()
+                    .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                if (equipment.isNotEmpty()) {
+                    "${exercise.name.trim()} ($equipment)"
                 } else {
                     exercise.name.trim()
                 }
@@ -107,320 +380,89 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         }
     }
 
-    /**
-     * Import exercises from the bundled exercise_dump.json file
-     * @return Result with count of exercises imported, or error
-     */
-    @OptIn(ExperimentalResourceApi::class)
-    suspend fun importExercises(): Result<Int> = withContext(Dispatchers.IO) {
-        try {
-            Logger.d { "Starting exercise import from bundled JSON..." }
-
-            // Read JSON from compose resources
-            val jsonBytes = Res.readBytes("files/exercise_dump.json")
-            val jsonString = jsonBytes.decodeToString()
-
-            return@withContext importFromJsonString(jsonString, clearExisting = false)
-        } catch (e: Exception) {
-            Logger.e(e) { "Failed to import exercises from bundled JSON" }
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Import exercises from a JSON string
-     * @param jsonString JSON array string containing exercise data
-     * @param clearExisting If true, clears existing exercises before importing
-     * @return Result with count of exercises imported, or error
-     */
-    suspend fun importFromJsonString(jsonString: String, clearExisting: Boolean = false): Result<Int> = withContext(Dispatchers.IO) {
-        try {
-            val exercises = json.decodeFromString<List<ExerciseJson>>(jsonString)
-
-            // Generate display names for disambiguation (issue #404)
-            val displayNames = generateDisplayNames(exercises)
-
-            Logger.d { "Parsed ${exercises.size} exercises from JSON" }
-
-            // Clear existing data if requested
-            if (clearExisting) {
-                // Note: Videos will be cascaded due to foreign key
-                queries.transaction {
-                    // Delete all videos first (manual since we don't have a deleteAllVideos query)
-                    // Then delete all exercises
-                }
-            }
-
-            var importedCount = 0
-            var videoCount = 0
-
-            // Insert exercises and videos
-            queries.transaction {
-                for (rawExerciseJson in exercises) {
-                    try {
-                        val exerciseJson = normalizeCableMetadata(rawExerciseJson)
-
-                        // Map sidedness to cable config
-                        val cableConfig = mapSidednessToCableConfig(exerciseJson.sidedness)
-
-                        // Get primary muscle group
-                        val primaryMuscle = exerciseJson.muscleGroups?.firstOrNull() ?: "OTHER"
-
-                        // Join muscle groups and equipment
-                        val muscleGroupsStr = exerciseJson.muscleGroups?.joinToString(",") ?: ""
-                        val equipmentStr = exerciseJson.equipment?.joinToString(",") ?: ""
-
-                        // Parse archived status (date string → boolean)
-                        val isArchived = exerciseJson.archived != null
-
-                        // Parse min rep range from JSON range object
-                        val minRepRange = exerciseJson.range?.minimum
-
-                        // Join muscles and aliases
-                        val musclesStr = exerciseJson.muscles?.joinToString(",")
-                        val aliasesStr = exerciseJson.aliases?.joinToString(",")
-
-                        // Insert exercise with all columns
-                        queries.insertExercise(
-                            id = exerciseJson.id,
-                            name = exerciseJson.name.trim(),
-                            displayName = displayNames[exerciseJson.id],
-                            description = exerciseJson.description,
-                            created = 0L, // Will be set from JSON created field if needed
-                            muscleGroup = primaryMuscle,
-                            muscleGroups = muscleGroupsStr,
-                            muscles = musclesStr,
-                            equipment = equipmentStr,
-                            movement = exerciseJson.movement,
-                            sidedness = exerciseJson.sidedness,
-                            grip = exerciseJson.grip,
-                            gripWidth = exerciseJson.gripWidth,
-                            minRepRange = minRepRange,
-                            popularity = exerciseJson.popularity ?: 0.0,
-                            archived = if (isArchived) 1L else 0L,
-                            isFavorite = 0L,
-                            isCustom = 0L,
-                            timesPerformed = 0L,
-                            lastPerformed = null,
-                            aliases = aliasesStr,
-                            defaultCableConfig = cableConfig,
-                            one_rep_max_kg = null,
-                            mvtOverrideMs = null,
-                            isBodyweight = resolveIsBodyweightFlag(exerciseJson),
-                        )
-                        importedCount++
-
-                        // Insert videos
-                        exerciseJson.videos?.forEach { videoJson ->
-                            val angle = videoJson.angle ?: videoJson.name ?: "FRONT"
-                            queries.insertVideo(
-                                exerciseId = exerciseJson.id,
-                                angle = angle,
-                                videoUrl = videoJson.video,
-                                thumbnailUrl = videoJson.thumbnail,
-                                isTutorial = 0L,
-                            )
-                            videoCount++
-                        }
-
-                        // Tutorial videos are intentionally not imported; only short looping demos are retained.
-                    } catch (e: Exception) {
-                        Logger.w { "Failed to import exercise ${rawExerciseJson.name}: ${e.message}" }
-                        // Continue with other exercises
-                    }
-                }
-            }
-
-            Logger.d { "Successfully imported $importedCount exercises with $videoCount videos" }
-            Result.success(importedCount)
-        } catch (e: Exception) {
-            Logger.e(e) { "Failed to parse exercise JSON" }
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Map JSON sidedness field to Vitruvian cable configuration
-     * - bilateral (both arms/legs) → DOUBLE (both cables)
-     * - unilateral (one arm/leg) → SINGLE (one cable)
-     * - alternating (one at a time) → EITHER (user choice)
-     */
-    private fun normalizeCableMetadata(exercise: ExerciseJson): ExerciseJson {
-        val normalizedSidedness = when (exercise.name.trim()) {
-            in FORCED_SINGLE_CABLE_EXERCISE_NAMES -> "unilateral"
-            else -> exercise.sidedness
-        }
-
-        return if (normalizedSidedness == exercise.sidedness) {
-            exercise
-        } else {
-            exercise.copy(sidedness = normalizedSidedness)
-        }
-    }
-
-    /**
-     * Resolve the explicit isBodyweight flag for an imported exercise (#635).
-     * Priority: explicit JSON field > known-cable override set > null (derive from equipment).
-     * The override set exists because the GitHub refresh source is the upstream Vitruvian
-     * repo, which does not carry the isBodyweight field — without it, a manual library
-     * refresh would revert the 6 known empty-equipment cable lifts to derived (wrong)
-     * classification.
-     */
-    private fun resolveIsBodyweightFlag(exercise: ExerciseJson): Long? = when {
-        exercise.isBodyweight != null -> if (exercise.isBodyweight) 1L else 0L
-        exercise.id in KNOWN_NON_BODYWEIGHT_IDS -> 0L
-        else -> null
-    }
-
     companion object {
-        // GitHub raw content URL for exercise data
-        // Update this to point to your actual exercise data repository
-        private const val GITHUB_EXERCISES_URL =
-            "https://raw.githubusercontent.com/VitruvianFitness/exercise-library/main/exercise_dump.json"
+        // #883: the second token bump makes upgraded installs run the importer once more so
+        // SupplementalCatalogSeed's belt rows land in existing libraries. The literal token
+        // is pinned by `bundled catalog source token is bumped for #883`.
+        const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1+issue-857+issue-883"
 
         /**
-         * Catalog entries that ship with equipment=[] but are cable lifts (#635).
-         * Must stay in sync with the UPDATE statements in migration 39.sqm and the
-         * "isBodyweight": false tags in the bundled exercise_dump.json.
+         * Per-id catalogue naming overlay applied at import so a renamed stock row keeps one
+         * user-facing label across browse, search, and templates. Keyed strictly by catalogue id
+         * (#857) and applied once to both the insert and update paths so they cannot drift.
+         * Deliberately not generalized into a nameAliases-driven rename table (that would rename
+         * dozens of rows, far outside this fix).
          */
-        private val KNOWN_NON_BODYWEIGHT_IDS = setOf(
-            "UjIGHxCav-lS9B2I", // Squat
-            "enuJ_FgAzXDLAweK", // Good Morning
-            "KoL_gx00nuf2wncV", // Medial Delt Twist
-            "kSLyRg4bjLuzTeIM", // Medial Delt Twist (duplicate catalog entry)
-            "2nTn2QR6MyezFYmK", // Kneeling 45 Degree Kickback
-            "fAglxv8VMaisUTyo", // Just Lift exercise
+        internal data class CatalogNameOverlay(
+            val name: String,
+            val displayName: String,
+            val aliases: String,
         )
 
-        private val FORCED_SINGLE_CABLE_EXERCISE_NAMES = setOf(
-            // Explicit single-cable variants (SC/SA suffix)
-            "Bent Over Row - Reverse Grip (SC)",
-            "Bent Over Row (SC)",
-            "Bent Over Row SA",
-            "Bicep Curl (SC)",
-            "Calf Raise (SC)",
-            "Front Raise (SC)",
-            "Hammer Curl (SC)",
-            "Hip Thrust (SC)",
-            "Upright Row (SC)",
-            // Base exercises that are inherently single-cable on Vitruvian
-            // but have null sidedness in some exercise_dump.json entries
-            "Reverse Lunge",
-            "Bulgarian Split Squat",
+        /**
+         * Id-keyed naming overrides applied to the bundled catalogue at import. The single entry
+         * renames `One_Leg_Barbell_Squat` to its common name so it is findable as "Bulgarian Split
+         * Squat", while keeping the raw JSON name "One Leg Barbell Squat" as an alias for search and
+         * routine self-heal (#857).
+         */
+        internal val CATALOG_OVERLAY: Map<String, CatalogNameOverlay> = mapOf(
+            "One_Leg_Barbell_Squat" to CatalogNameOverlay(
+                name = "Bulgarian Split Squat",
+                displayName = "Bulgarian Split Squat",
+                aliases = "One Leg Barbell Squat",
+            ),
         )
-    }
 
-    /**
-     * Update exercise library from GitHub
-     * Fetches the latest exercise data and updates the local database
-     * @return Result with count of exercises updated, or error
-     */
-    suspend fun updateFromGitHub(): Result<Int> = withContext(Dispatchers.IO) {
-        val client = HttpClient {
-            install(ContentNegotiation) {
-                json(json)
+        const val FREE_EXERCISE_IMAGE_BASE =
+            "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+        const val BODYWEIGHT_EQUIPMENT = "BODYWEIGHT"
+        private const val WGER_EXERCISE_INFO_URL =
+            "https://wger.de/api/v2/exerciseinfo/?language=2&limit=100"
+        private const val WGER_ENGLISH_LANGUAGE = 2
+
+        /**
+         * Unified bar/belt attachments use both cables as one load. Everything else
+         * stays EITHER so runtime heuristics decide.
+         */
+        internal fun cableMetadataForEquipment(equipment: String): Pair<String?, String> {
+            val unified = equipment.split(",").map { it.trim().uppercase() }.any {
+                it == "BARBELL" || it == "E-Z CURL BAR" || it == "BAR" || it == "BELT"
+            }
+            return if (unified) "bilateral" to "DOUBLE" else null to "EITHER"
+        }
+
+        internal fun storedIsBodyweightFlag(equipmentLabel: String): Long? {
+            if (equipmentLabel.equals(BODYWEIGHT_EQUIPMENT, ignoreCase = true)) {
+                return 1L
+            }
+            val hasCableAccessory = equipmentLabel.split(",").any { token ->
+                token.trim().uppercase() in Exercise.CABLE_ACCESSORIES
+            }
+            return if (hasCableAccessory) 0L else null
+        }
+
+        internal fun canonicalEquipmentLabel(raw: String?): String {
+            val trimmed = raw.orEmpty().trim()
+            return if (
+                trimmed.isEmpty() ||
+                trimmed.equals("body only", ignoreCase = true) ||
+                trimmed.equals("bodyweight", ignoreCase = true)
+            ) {
+                BODYWEIGHT_EQUIPMENT
+            } else {
+                trimmed
             }
         }
 
-        try {
-            Logger.d { "Fetching exercise library from GitHub..." }
-
-            val response: HttpResponse = client.get(GITHUB_EXERCISES_URL)
-
-            if (response.status.value !in 200..299) {
-                Logger.e { "GitHub returned status ${response.status}" }
-                return@withContext Result.failure(
-                    Exception("Failed to fetch exercises: HTTP ${response.status.value}"),
-                )
-            }
-
-            val jsonContent = response.bodyAsText()
-            Logger.d { "Received ${jsonContent.length} bytes from GitHub" }
-
-            val exercises: List<ExerciseJson> = json.decodeFromString(jsonContent)
-            val displayNames = generateDisplayNames(exercises)
-            Logger.d { "Parsed ${exercises.size} exercises from GitHub" }
-
-            var updatedCount = 0
-
-            exercises.forEach { rawExercise ->
-                val exercise = normalizeCableMetadata(rawExercise)
-
-                // Skip archived exercises
-                if (exercise.archived != null) {
-                    return@forEach
-                }
-
-                try {
-                    // Use the full insertExercise query with all parameters
-                    queries.insertExercise(
-                        id = exercise.id,
-                        name = exercise.name.trim(),
-                        displayName = displayNames[exercise.id],
-                        description = exercise.description,
-                        created = 0L, // Default to 0, as date parsing is complex
-                        muscleGroup = exercise.muscleGroups?.firstOrNull() ?: "Other",
-                        muscleGroups = exercise.muscleGroups?.joinToString(",") ?: "",
-                        muscles = exercise.muscles?.joinToString(","),
-                        equipment = exercise.equipment?.joinToString(",") ?: "",
-                        movement = exercise.movement,
-                        sidedness = exercise.sidedness,
-                        grip = exercise.grip,
-                        gripWidth = exercise.gripWidth,
-                        minRepRange = exercise.range?.minimum,
-                        popularity = exercise.popularity ?: 0.0,
-                        archived = 0L, // Always 0 here since archived exercises are skipped above
-                        isFavorite = 0L,
-                        isCustom = 0L,
-                        timesPerformed = 0L,
-                        lastPerformed = null,
-                        aliases = exercise.aliases?.joinToString(","),
-                        defaultCableConfig = mapSidednessToCableConfig(exercise.sidedness),
-                        one_rep_max_kg = null,
-                        mvtOverrideMs = null,
-                        isBodyweight = resolveIsBodyweightFlag(exercise),
-                    )
-
-                    // Insert videos
-                    exercise.videos?.forEach { video ->
-                        try {
-                            queries.insertVideo(
-                                exerciseId = exercise.id,
-                                angle = video.angle ?: "front",
-                                videoUrl = video.video,
-                                thumbnailUrl = video.thumbnail,
-                                isTutorial = 0L,
-                            )
-                        } catch (e: Exception) {
-                            Logger.w(e) { "Failed to insert video: ${e.message}" }
-                        }
-                    }
-
-                    // Tutorial videos are intentionally not imported; only short looping demos are retained.
-
-                    updatedCount++
-                } catch (e: Exception) {
-                    Logger.w(e) { "Failed to update exercise ${exercise.name}: ${e.message}" }
-                }
-            }
-
-            Logger.d { "Successfully updated $updatedCount exercises from GitHub" }
-            Result.success(updatedCount)
-        } catch (e: Exception) {
-            Logger.e(e) { "Failed to update from GitHub: ${e.message}" }
-            Result.failure(e)
-        } finally {
-            client.close()
+        internal fun mapMuscleGroup(raw: String): String = when (raw.trim().lowercase()) {
+            "abdominals", "abs", "core" -> "Core"
+            "chest" -> "Chest"
+            "lats", "middle back", "lower back", "traps", "back" -> "Back"
+            "shoulders", "neck", "deltoids" -> "Shoulders"
+            "biceps", "triceps", "forearms", "arms" -> "Arms"
+            "quadriceps", "hamstrings", "calves", "adductors", "abductors", "legs" -> "Legs"
+            "glutes", "gluteus" -> "Legs"
+            else -> raw.trim().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         }
-    }
-
-    /**
-     * Map sidedness field to cable configuration
-     */
-    private fun mapSidednessToCableConfig(sidedness: String?): String = when (sidedness?.lowercase()) {
-        "single", "unilateral" -> "SINGLE"
-        "double", "bilateral" -> "DOUBLE"
-        "alternating" -> "EITHER"
-        else -> "EITHER" // Unknown sidedness — let heuristic decide at runtime
     }
 }

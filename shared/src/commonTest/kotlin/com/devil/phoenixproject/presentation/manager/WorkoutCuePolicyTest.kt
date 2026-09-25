@@ -72,7 +72,8 @@ class WorkoutCuePolicyTest {
         }
 
         try {
-            advanceUntilIdle()
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.startCableSet(targetReps = 8)
             val paths = listOf(
                 Triple(
                     RepCountTiming.TOP,

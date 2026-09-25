@@ -262,7 +262,7 @@ private fun BlePermissionRequestScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Project Phoenix needs Bluetooth permission to scan for and connect to your Vitruvian Trainer machine. When you tap Continue, iOS will ask for permission.",
+                text = "Project Phoenix needs Bluetooth permission to scan for and connect to your smart fitness machine. When you tap Continue, iOS will ask for permission.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -365,7 +365,7 @@ private fun BlePermissionDeniedScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Bluetooth permission is required to connect to your Vitruvian Trainer. Please enable Bluetooth permission in Settings > Project Phoenix > Bluetooth, then return to the app.",
+                text = "Bluetooth permission is required to connect to your Phoenix Trainer. Please enable Bluetooth permission in Settings > Project Phoenix > Bluetooth, then return to the app.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

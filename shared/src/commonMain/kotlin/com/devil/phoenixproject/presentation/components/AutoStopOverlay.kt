@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PlayArrow
@@ -20,8 +19,8 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Pop-over overlay that appears when auto-stop is active (handles are down).
@@ -123,58 +122,6 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                     textAlign = TextAlign.Center,
                 )
-            }
-        }
-    }
-}
-
-/**
- * Compact inline auto-stop indicator for use within cards/dashboards.
- * Shows a subtle warning bar that doesn't obscure the main content.
- */
-@Composable
-fun AutoStopIndicatorBar(autoStopState: AutoStopUiState, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = autoStopState.isActive,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut(),
-        modifier = modifier,
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    Icons.Default.PanTool,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Stopping in ${autoStopState.secondsRemaining}s",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                    LinearProgressIndicator(
-                        progress = { autoStopState.progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
-                        color = MaterialTheme.colorScheme.error,
-                        trackColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                    )
-                }
             }
         }
     }

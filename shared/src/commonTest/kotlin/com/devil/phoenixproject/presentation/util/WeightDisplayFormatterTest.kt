@@ -21,7 +21,7 @@ class WeightDisplayFormatterTest {
             unit = WeightUnit.KG,
         )
 
-        assertEquals(50f, result, "Official app displays selected load as per-cable weight")
+        assertEquals(50f, result, "Selected load is displayed as per-cable weight")
     }
 
     @Test

@@ -6,37 +6,24 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
-import com.devil.phoenixproject.database.VitruvianDatabase
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
-import platform.Foundation.NSError
+import co.touchlab.sqliter.DatabaseFileContext
+import com.devil.phoenixproject.database.PhoenixDatabase
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSLibraryDirectory
 import platform.Foundation.NSLog
-import platform.Foundation.NSNumber
-import platform.Foundation.NSURL
-import platform.Foundation.NSURLIsExcludedFromBackupKey
-import platform.Foundation.NSUserDomainMask
 
 actual class DriverFactory {
-
-    companion object {
-        private const val DATABASE_NAME = "vitruvian.db"
-    }
+    private val coordinator = DatabaseFileMigrationCoordinator(IosDatabaseFileOperations())
 
     actual fun createDriver(): SqlDriver {
-        val targetVersion = VitruvianDatabase.Schema.version
+        val targetVersion = PhoenixDatabase.Schema.version
         NSLog("iOS DB: Initializing database (schema version $targetVersion)")
 
-        val resilientSchema = ResilientMigratingSchema(VitruvianDatabase.Schema)
+        val preparation = coordinator.prepareTarget()
+        val resilientSchema = ResilientMigratingSchema(PhoenixDatabase.Schema)
 
         val driver = NativeSqliteDriver(
             schema = resilientSchema,
-            name = DATABASE_NAME,
+            name = DatabaseFileNames.TARGET,
             onConfiguration = { config ->
                 config.copy(
                     extendedConfig = DatabaseConfiguration.Extended(
@@ -46,62 +33,107 @@ actual class DriverFactory {
             },
         )
 
-        // Authoritative reconciliation -- ensures ALL tables, columns, indexes exist
-        val report = reconcileFullSchema(driver)
-        val summary = report.logSummary()
-        NSLog("iOS DB: $summary")
-        if (report.hasFailures) {
-            for (failure in report.failures) {
-                NSLog("iOS DB: RECONCILIATION FAILURE: ${failure.target} -- ${failure.detail?.take(120)}")
+        val validatedDriver = try {
+            // Authoritative reconciliation -- ensures ALL tables, columns, indexes exist
+            val report = reconcileFullSchema(driver)
+            val summary = report.logSummary()
+            NSLog("iOS DB: $summary")
+            if (report.hasFailures) {
+                for (failure in report.failures) {
+                    NSLog("iOS DB: RECONCILIATION FAILURE: ${failure.target} -- ${failure.detail?.take(120)}")
+                }
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "The Phoenix database schema could not be reconciled.",
+                )
             }
-        }
 
-        // Post-creation pragmas
-        try {
-            driver.execute(null, "PRAGMA journal_mode = WAL", 0)
+            val journalMode = driver.queryText("PRAGMA journal_mode = WAL")
+            if (!journalMode.equals("wal", ignoreCase = true)) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "The Phoenix database journal mode is invalid.",
+                )
+            }
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)
-        } catch (e: Exception) {
-            NSLog("iOS DB: Warning -- pragma setup failed: ${e.message}")
+
+            val schemaVersion = driver.queryLong("PRAGMA user_version")
+            if (schemaVersion != targetVersion) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "The Phoenix database schema version is invalid.",
+                )
+            }
+
+            coordinator.targetValidated(preparation)
+            driver
+        } catch (failure: Throwable) {
+            runCatching { driver.close() }
+            if (failure is DatabaseFileMigrationException) throw failure
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                "The Phoenix database could not be validated after migration.",
+                failure,
+            )
         }
 
-        // Exclude database files from iCloud backup
-        excludeDatabaseFromBackup()
+        // Backup exclusion is advisory. A Foundation/iCloud attribute failure
+        // must not turn an otherwise validated database into a launch failure.
+        excludeDatabaseArtifactsFromBackup()
 
         NSLog("iOS DB: Initialization complete")
-        return driver
+        return validatedDriver
     }
 
-    @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
-    private fun excludeDatabaseFromBackup() {
-        val dbPath = getDatabasePath()
-        val filesToExclude = listOf(dbPath, "$dbPath-wal", "$dbPath-shm")
+    private fun excludeDatabaseArtifactsFromBackup() {
+        val filesToExclude = listOf(
+            DatabaseFileNames.TARGET,
+            DatabaseFileNames.STAGING,
+            DatabaseFileNames.RECOVERY,
+        ).flatMap { name ->
+            val path = DatabaseFileContext.databasePath(name, null)
+            listOf(path, "$path-wal", "$path-shm")
+        }
         val fileManager = NSFileManager.defaultManager
 
         for (path in filesToExclude) {
             if (!fileManager.fileExistsAtPath(path)) continue
-            try {
-                val url = NSURL.fileURLWithPath(path)
-                memScoped {
-                    val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                    url.setResourceValue(
-                        NSNumber(bool = true),
-                        forKey = NSURLIsExcludedFromBackupKey,
-                        error = errorPtr.ptr,
-                    )
-                }
-            } catch (e: Exception) {
-                NSLog("iOS DB: Warning -- could not exclude $path from backup: ${e.message}")
-            }
+            runBestEffortBackupExclusion(path)
         }
     }
 
-    private fun getDatabasePath(): String {
-        val fileManager = NSFileManager.defaultManager
-        val urls = fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask)
+    private fun SqlDriver.queryLong(sql: String): Long {
+        var value: Long? = null
+        executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) value = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value ?: throw DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+            "The Phoenix database schema version could not be read.",
+        )
+    }
 
-        @Suppress("UNCHECKED_CAST")
-        val libraryUrl = (urls as List<NSURL>).firstOrNull()
-        return "${libraryUrl?.path ?: ""}/$DATABASE_NAME"
+    private fun SqlDriver.queryText(sql: String): String {
+        var value: String? = null
+        executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) value = cursor.getString(0)
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value ?: throw DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+            "The Phoenix database journal mode could not be read.",
+        )
     }
 }
 
@@ -114,7 +146,7 @@ actual class DriverFactory {
  * time (skipping duplicates), and continues to the next step. The post-migration
  * reconcileFullSchema() catches any remaining gaps.
  */
-private class ResilientMigratingSchema(
+internal class ResilientMigratingSchema(
     private val delegate: SqlSchema<QueryResult.Value<Unit>>,
 ) : SqlSchema<QueryResult.Value<Unit>> {
 
@@ -148,6 +180,11 @@ private class ResilientMigratingSchema(
                 val failures = results.count { !it.success && !it.recoverable }
                 if (failures > 0) {
                     NSLog("iOS DB: Migration $stepTo had $failures non-recoverable failures")
+                    throw DatabaseFileMigrationException(
+                        DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                        "The Phoenix database migration to version $stepTo could not be completed safely.",
+                        e,
+                    )
                 }
                 driver.execute(null, "PRAGMA user_version = $stepTo", 0)
                 NSLog("iOS DB: Migration $stepTo completed via resilient fallback")

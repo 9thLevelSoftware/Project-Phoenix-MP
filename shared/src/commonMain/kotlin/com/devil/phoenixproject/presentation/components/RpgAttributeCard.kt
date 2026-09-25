@@ -22,8 +22,8 @@ import com.devil.phoenixproject.domain.model.RpgAttribute
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.rpg_no_data_yet
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.rpg_no_data_yet
 
 /**
  * RPG Attribute Card -- shows character class header, five attribute bars (0-100),

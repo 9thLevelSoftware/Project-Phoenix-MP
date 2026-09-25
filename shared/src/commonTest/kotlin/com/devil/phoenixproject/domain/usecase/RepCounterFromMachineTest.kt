@@ -716,7 +716,7 @@ class RepCounterFromMachineTest {
 
     @Test
     fun `issue 553 echo mode warmup advances from up counter when firmware drops reps`() {
-        // Issue #553: When the Vitruvian V-Form firmware's heuristic pipeline
+        // Issue #553: When the Phoenix V-Form firmware's heuristic pipeline
         // drops a rep event because the user's stroke falls outside the strict
         // Echo concentric timing window, repsRomCount and repsSetCount both stay
         // at 0 even though the user has completed real reps (visible as up

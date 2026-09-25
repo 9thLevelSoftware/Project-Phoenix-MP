@@ -43,6 +43,10 @@ object LogEventType {
     const val HEARTBEAT = "HEARTBEAT"
     const val REP_RECEIVED = "REP_RECEIVED"
     const val DIAGNOSTIC = "DIAGNOSTIC"
+    const val WORKOUT_EXECUTION = "WORKOUT_EXECUTION"
+    const val WORKOUT_TEARDOWN = "WORKOUT_TEARDOWN"
+    const val WORKOUT_REP_REJECTED = "WORKOUT_REP_REJECTED"
+    const val WORKOUT_PERSISTENCE = "WORKOUT_PERSISTENCE"
 }
 
 /**
@@ -133,15 +137,6 @@ class ConnectionLogRepository {
     }
 
     /**
-     * Clear logs older than the specified timestamp.
-     */
-    fun clearOlderThan(timestamp: Long) {
-        _logs.update { currentLogs ->
-            currentLogs.filter { it.timestamp >= timestamp }
-        }
-    }
-
-    /**
      * Enable or disable logging.
      */
     fun setEnabled(enabled: Boolean) {
@@ -153,7 +148,7 @@ class ConnectionLogRepository {
      */
     fun exportAsText(): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Vitruvian Connection Logs ===")
+        sb.appendLine("=== Connection Logs ===")
         sb.appendLine("Exported: ${formatTimestamp(currentTimeMillis())}")
         sb.appendLine("Total entries: ${_logs.value.size}")
         sb.appendLine()
@@ -170,25 +165,6 @@ class ConnectionLogRepository {
                 sb.appendLine("  Details: ${log.details}")
             }
             sb.appendLine()
-        }
-
-        return sb.toString()
-    }
-
-    /**
-     * Export logs as CSV format.
-     */
-    fun exportAsCsv(): String {
-        val sb = StringBuilder()
-        sb.appendLine("timestamp,level,event_type,message,device_name,device_address,details")
-
-        _logs.value.forEach { log ->
-            sb.appendLine(
-                "${log.timestamp},${log.level},${log.eventType}," +
-                    "\"${log.message.replace("\"", "\"\"")}\"," +
-                    "${log.deviceName ?: ""},${log.deviceAddress ?: ""}," +
-                    "\"${log.details?.replace("\"", "\"\"") ?: ""}\"",
-            )
         }
 
         return sb.toString()

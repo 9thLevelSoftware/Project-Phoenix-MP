@@ -13,7 +13,7 @@ import app.cash.sqldelight.db.SqlDriver
 // Every table that needs guaranteed existence (both bootstrap tables and
 // migration-created tables vulnerable to branch-merge gaps), every column
 // added after its table's initial CREATE, and every index from
-// VitruvianDatabase.sq is declared here with provenance comments tracing
+// PhoenixDatabase.sq is declared here with provenance comments tracing
 // back to migration numbers.
 // ============================================================
 
@@ -139,9 +139,162 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
     }
 }
 
+/** Table, uniqueness and ordered plain-column list of an index. */
+internal data class IndexShape(val table: String, val unique: Boolean, val columns: List<String>)
+
+private val CREATE_INDEX_SHAPE = Regex(
+    """^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?\w+"?\s+ON\s+"?(\w+)"?\s*\(([^()]*)\)\s*;?\s*$""",
+    RegexOption.IGNORE_CASE,
+)
+private val PLAIN_INDEX_COLUMN = Regex("""^"?(\w+)"?$""")
+
+/**
+ * Shape declared by a `CREATE [UNIQUE] INDEX ... ON Table(col, ...)` statement, or null when
+ * the statement uses anything this check cannot compare (expressions, collations, sort order,
+ * a WHERE clause). A null shape means "unverifiable", and callers must treat that as a mismatch.
+ */
+internal fun parseIndexShape(createSql: String): IndexShape? {
+    val match = CREATE_INDEX_SHAPE.matchEntire(createSql.trim()) ?: return null
+    val columns = match.groupValues[3].split(',').map { part ->
+        PLAIN_INDEX_COLUMN.matchEntire(part.trim())?.groupValues?.get(1) ?: return null
+    }
+    if (columns.isEmpty()) return null
+    return IndexShape(
+        table = match.groupValues[2],
+        unique = match.groupValues[1].isNotBlank(),
+        columns = columns,
+    )
+}
+
+/**
+ * Shape of the index as it exists in the database, or null if it is absent, partial, or has an
+ * expression column, a non-BINARY collation or a DESC column (none of which the canonical shape uses).
+ */
+internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
+    var table: String? = null
+    driver.executeQuery(
+        identifier = null,
+        sql = "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+        mapper = { cursor ->
+            if (cursor.next().value) table = cursor.getString(0)
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val tableName = table ?: return null
+    // Any NULL where SQLite documents a value (or a missing row) means the PRAGMA output is not
+    // what this check understands. That is "unverifiable", never a coerced default, so the caller
+    // rebuilds instead of trusting it.
+    var listRowFound = false
+    var unique: Long? = null
+    var partial: Long? = null
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_list(\"$tableName\")",
+        mapper = { cursor ->
+            // index_list columns: seq, name, unique, origin, partial
+            while (cursor.next().value) {
+                if (cursor.getString(1) == indexName) {
+                    listRowFound = true
+                    unique = cursor.getLong(2)
+                    partial = cursor.getLong(4)
+                }
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    if (!listRowFound) return null
+    val isUnique = when (unique) {
+        1L -> true
+        0L -> false
+        else -> return null
+    }
+    if (partial != 0L) return null
+    val rows = mutableListOf<IndexXinfoRow>()
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_xinfo(\"$indexName\")",
+        mapper = { cursor ->
+            // index_xinfo columns: seqno, cid, name (null for an expression column), desc, coll, key
+            while (cursor.next().value) {
+                rows += IndexXinfoRow(
+                    seqno = cursor.getLong(0),
+                    name = cursor.getString(2),
+                    desc = cursor.getLong(3),
+                    collation = cursor.getString(4),
+                    key = cursor.getLong(5),
+                )
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val names = canonicalKeyColumnNames(rows) ?: return null
+    return IndexShape(table = tableName, unique = isUnique, columns = names)
+}
+
+/** One raw `PRAGMA index_xinfo` row, with every value nullable exactly as the driver returns it. */
+internal data class IndexXinfoRow(
+    val seqno: Long?,
+    val name: String?,
+    val desc: Long?,
+    val collation: String?,
+    val key: Long?,
+)
+
+/**
+ * Ordered key-column names when every key column is a plain, ascending, BINARY-collated
+ * column; otherwise null ("not verifiably canonical, rebuild").
+ *
+ * Rows with key = 0 are the rowid/auxiliary columns SQLite appends and are ignored. Any NULL
+ * where SQLite documents a value, an unexpected key flag, or a seqno sequence that is not
+ * exactly 0..n-1 is treated as unverifiable, never coerced to a default that could sort or
+ * compare as a false match. A non-BINARY collation (e.g. NOCASE) or DESC column changes
+ * uniqueness or lookup semantics under the same column name, so it is not canonical either.
+ */
+internal fun canonicalKeyColumnNames(rows: List<IndexXinfoRow>): List<String>? {
+    val keyRows = mutableListOf<IndexXinfoRow>()
+    for (row in rows) {
+        when (row.key) {
+            1L -> keyRows += row
+            0L -> Unit
+            else -> return null
+        }
+    }
+    if (keyRows.isEmpty()) return null
+    val seqnos = keyRows.map { it.seqno ?: return null }
+    if (seqnos.sorted() != keyRows.indices.map { it.toLong() }) return null
+    return keyRows.sortedBy { it.seqno }.map { row ->
+        if (row.desc != 0L || !row.collation.equals("BINARY", ignoreCase = true)) return null
+        row.name ?: return null
+    }
+}
+
+/**
+ * True only when the live index provably has the canonical shape of [op]: same table, same
+ * uniqueness, same columns in the same order, BINARY collation and ascending order, and not partial. Anything unverifiable is false,
+ * so the caller falls back to the old drop-and-rebuild.
+ */
+internal fun indexHasCanonicalShape(driver: SqlDriver, op: SchemaIndexOperation): Boolean {
+    val expected = parseIndexShape(op.createSql) ?: return false
+    val live = liveIndexShape(driver, op.name) ?: return false
+    return live.table.equals(expected.table, ignoreCase = true) &&
+        live.unique == expected.unique &&
+        live.columns.map { it.lowercase() } == expected.columns.map { it.lowercase() }
+}
+
 internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
     val alreadyExists = indexExists(driver, op.name)
     if (alreadyExists && op.preDropSql == null) {
+        return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+    }
+    // A preDropSql op replaces a stale shape. When the index already has the canonical
+    // shape there is nothing to replace: skip the dedupe + drop + rebuild that would
+    // otherwise run on every database open. The check reads the live index structure
+    // (not a "done once" flag), so a stale or hand-made index is still rebuilt, and a
+    // missing one (upgrade, restore) is still created below.
+    if (alreadyExists && indexHasCanonicalShape(driver, op)) {
         return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
     }
 
@@ -175,8 +328,25 @@ internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): Reco
 
 // ==================== ENTRY POINT ====================
 
+internal fun applyTableDrop(driver: SqlDriver, table: String): ReconciliationResult {
+    val existed = tableExists(driver, table)
+    return try {
+        driver.execute(identifier = null, sql = "DROP TABLE IF EXISTS $table", parameters = 0)
+        if (existed) {
+            ReconciliationResult("drop", table, ReconciliationStatus.CREATED, "dropped")
+        } else {
+            ReconciliationResult("drop", table, ReconciliationStatus.ALREADY_PRESENT)
+        }
+    } catch (e: Exception) {
+        ReconciliationResult("drop", table, ReconciliationStatus.FAILED, e.message)
+    }
+}
+
 internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport {
     val report = SchemaReconciliationReport()
+    for (table in manifestDroppedTables) {
+        report.add(applyTableDrop(driver, table))
+    }
     for (op in manifestTables) {
         report.add(applyTableCreate(driver, op))
     }
@@ -203,12 +373,17 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 //    applied" on a device that never actually ran the SQL, leaving the table missing.
 //    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
 //
-// C) Initial-schema tables (16): Tables defined in VitruvianDatabase.sq from the
+// C) Initial-schema tables (16): Tables defined in PhoenixDatabase.sq from the
 //    initial schema. Included with their FULL current shape (all columns including
 //    those added by later migrations). applyColumnHeal in manifestColumns handles
 //    "duplicate column" errors gracefully, so having ALL columns is safe and ensures
 //    fresh installs get the complete schema immediately.
 // ============================================================
+
+internal val manifestDroppedTables: List<String> = listOf(
+    // Migration 43: streamed demo URLs must not be re-created by schema heal.
+    "ExerciseVideo",
+)
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
     // UserProfile -- initial schema, full current shape
@@ -294,6 +469,35 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             CREATE TABLE IF NOT EXISTS PendingProfileLocalCleanup (
                 profile_id TEXT PRIMARY KEY NOT NULL,
                 enqueued_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // ActiveWorkoutRuntime -- migration 45, device-local retry recovery state.
+    SchemaTableOperation(
+        table = "ActiveWorkoutRuntime",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ActiveWorkoutRuntime (
+                profile_id TEXT NOT NULL,
+                routine_session_id TEXT NOT NULL,
+                document_version INTEGER NOT NULL,
+                runtime_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, routine_session_id)
+            )
+        """.trimIndent(),
+    ),
+
+    // MachineSafetyHazard -- migration 47, trainer-keyed load uncertainty.
+    SchemaTableOperation(
+        table = "MachineSafetyHazard",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS MachineSafetyHazard (
+                trainer_address TEXT NOT NULL PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                document_version INTEGER NOT NULL,
+                hazard_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL
             )
         """.trimIndent(),
     ),
@@ -787,7 +991,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // ── Initial-schema tables ──────────────────────────────────────────
-    // Tables below are defined in VitruvianDatabase.sq from the initial schema.
+    // Tables below are defined in PhoenixDatabase.sq from the initial schema.
     // They use the FULL current shape (all columns including migration-added ones)
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
@@ -829,17 +1033,15 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // ExerciseVideo -- initial schema, full shape (no later migrations add columns)
+    // ExerciseImage -- migration 43, still images for the replacement catalogue
     SchemaTableOperation(
-        table = "ExerciseVideo",
+        table = "ExerciseImage",
         createSql = """
-            CREATE TABLE IF NOT EXISTS ExerciseVideo (
+            CREATE TABLE IF NOT EXISTS ExerciseImage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 exerciseId TEXT NOT NULL,
-                angle TEXT NOT NULL,
-                videoUrl TEXT NOT NULL,
-                thumbnailUrl TEXT NOT NULL,
-                isTutorial INTEGER NOT NULL DEFAULT 0,
+                url TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -848,7 +1050,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // WorkoutSession -- initial schema, full current shape
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
-    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33)
+    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33),
+    // portalOrigin (m48), local/synced_sync_generation (m49)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -906,7 +1109,11 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 display_multiplier INTEGER,
                 externalAddedLoadKg REAL NOT NULL DEFAULT 0,
                 counterweightKg REAL NOT NULL DEFAULT 0,
-                rackItemsJson TEXT NOT NULL DEFAULT '[]'
+                rackItemsJson TEXT NOT NULL DEFAULT '[]',
+                portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1)),
+                local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
+                synced_sync_generation INTEGER NOT NULL DEFAULT 0
+                    CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
             )
         """.trimIndent(),
     ),
@@ -983,7 +1190,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // RoutineExercise -- initial schema, full current shape
     // Columns added by later migrations: superset fields (m4), PR scaling (m7),
-    // routine programming (m18), behavior overrides (m20), scalingBasis (m38), isBodyweight (m39)
+    // routine programming (m18), behavior overrides (m20), scalingBasis (m38), isBodyweight (m39),
+    // drop-set offer (m46)
     SchemaTableOperation(
         table = "RoutineExercise",
         createSql = """
@@ -1024,6 +1232,9 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
                 isBodyweight INTEGER,
+                dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+                dropSetMinWeightKg REAL,
+                durationSyncKnown INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1049,7 +1260,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // TrainingCycle -- migration 10, full current shape
     // Columns added by later migrations: profile_id (m21), deletedAt (m27),
-    // template_id/week_number (m41)
+    // template_id/week_number (m41), updatedAt (m50), server_updated_at (m52)
     SchemaTableOperation(
         table = "TrainingCycle",
         createSql = """
@@ -1062,7 +1273,39 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 profile_id TEXT NOT NULL DEFAULT 'default',
                 deletedAt INTEGER,
                 template_id TEXT,
-                week_number INTEGER NOT NULL DEFAULT 1
+                week_number INTEGER NOT NULL DEFAULT 1,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                server_updated_at TEXT
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "CycleSyncState",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleSyncState (
+                cycle_id TEXT PRIMARY KEY NOT NULL,
+                profile_id TEXT NOT NULL,
+                account_id TEXT,
+                dirty_generation INTEGER NOT NULL DEFAULT 1,
+                acknowledged_generation INTEGER NOT NULL DEFAULT 0,
+                pending_delete_updated_at INTEGER,
+                pending_delete_generation INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "CycleConflictDraft",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleConflictDraft (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL,
+                original_profile_id TEXT NOT NULL,
+                rejected_updated_at INTEGER NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                resolution TEXT
             )
         """.trimIndent(),
     ),
@@ -1141,7 +1384,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // CompletedSet -- migration 10, full shape (no later migrations add columns)
+    // CompletedSet -- migration 10, columns added later: set_end_reason (m44), attempt identity (m45)
     SchemaTableOperation(
         table = "CompletedSet",
         createSql = """
@@ -1149,13 +1392,16 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 id TEXT PRIMARY KEY NOT NULL,
                 session_id TEXT NOT NULL,
                 planned_set_id TEXT,
+                routine_exercise_id TEXT,
                 set_number INTEGER NOT NULL,
                 set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                attempt_number INTEGER NOT NULL DEFAULT 1,
                 actual_reps INTEGER NOT NULL,
                 actual_weight_kg REAL NOT NULL,
                 logged_rpe INTEGER,
                 is_pr INTEGER NOT NULL DEFAULT 0,
                 completed_at INTEGER NOT NULL,
+                set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN',
                 FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
                 FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
             )
@@ -1213,7 +1459,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // VelocityOneRepMaxEstimate -- introduced by migration 36.sqm (issue #517).
     // Auto-computed velocity 1RM time-series. Separate from AssessmentResult (wizard)
-    // and from Exercise.oneRepMaxKg (authoritative true 1RM).
+    // and the legacy-recovery-only Exercise.one_rep_max_kg.
     SchemaTableOperation(
         table = "VelocityOneRepMaxEstimate",
         createSql = """
@@ -1248,6 +1494,134 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER NOT NULL,
                 PRIMARY KEY (exerciseId, profile_id),
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // ProfileExerciseBaseline -- migration 48, local profile-scoped training baseline.
+    SchemaTableOperation(
+        table = "ProfileExerciseBaseline",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ProfileExerciseBaseline (
+                profile_id TEXT NOT NULL,
+                exercise_id TEXT NOT NULL,
+                one_rep_max_per_cable_kg REAL,
+                updated_at INTEGER NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+                PRIMARY KEY (profile_id, exercise_id),
+                FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+                FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // Durable startup recovery and account ownership operations -- migration 49.
+    SchemaTableOperation(
+        table = "AppliedDataRepair",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS AppliedDataRepair (
+                repair_key TEXT PRIMARY KEY NOT NULL,
+                applied_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "PendingProfileRecovery",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PendingProfileRecovery (
+                recovery_id TEXT PRIMARY KEY NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
+                source_key TEXT NOT NULL UNIQUE,
+                source_profile_id TEXT,
+                source_profile_name TEXT NOT NULL,
+                owner_user_id TEXT,
+                counts_json TEXT NOT NULL,
+                discovered_at INTEGER NOT NULL,
+                resolved_at INTEGER
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "OwnershipTransferOutbox",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS OwnershipTransferOutbox (
+                mutation_id TEXT PRIMARY KEY NOT NULL,
+                owner_user_id TEXT NOT NULL,
+                source_profile_id TEXT,
+                target_profile_id TEXT NOT NULL,
+                workout_session_ids_json TEXT NOT NULL,
+                routine_ids_json TEXT NOT NULL,
+                cycle_ids_json TEXT NOT NULL,
+                personal_record_ids_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                acknowledged_at INTEGER,
+                CHECK(
+                    workout_session_ids_json <> '[]' OR
+                    routine_ids_json <> '[]' OR
+                    cycle_ids_json <> '[]' OR
+                    personal_record_ids_json <> '[]'
+                )
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "AppliedOwnershipEvent",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS AppliedOwnershipEvent (
+                owner_user_id TEXT NOT NULL,
+                mutation_id TEXT NOT NULL,
+                canonical_body_hash TEXT NOT NULL,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (owner_user_id, mutation_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "LocalOwnershipClaim",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS LocalOwnershipClaim (
+                owner_user_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('WORKOUT', 'ROUTINE', 'CYCLE', 'PERSONAL_RECORD')),
+                entity_id TEXT NOT NULL,
+                mutation_id TEXT NOT NULL,
+                source_profile_id TEXT,
+                target_profile_id TEXT NOT NULL,
+                transferred_at INTEGER NOT NULL,
+                PRIMARY KEY (owner_user_id, entity_type, entity_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "WorkoutDeletion",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutDeletion (
+                mutation_id TEXT NOT NULL PRIMARY KEY,
+                owner_user_id TEXT,
+                profile_id TEXT NOT NULL,
+                scope TEXT NOT NULL CHECK(scope IN ('COMPONENT', 'WORKOUT')),
+                portal_session_id TEXT NOT NULL,
+                component_session_id TEXT,
+                deleted_at INTEGER NOT NULL,
+                acknowledged_at INTEGER,
+                source TEXT NOT NULL CHECK(source IN ('LOCAL', 'REMOTE')),
+                CHECK(
+                    (scope = 'COMPONENT' AND component_session_id IS NOT NULL) OR
+                    (scope = 'WORKOUT' AND component_session_id IS NULL)
+                )
+            )
+        """.trimIndent(),
+    ),
+
+    // SyncExcludedEntity -- migration 54, account-switch upload exclusions.
+    // Full shape: all columns present from creation (no later migrations add columns).
+    SchemaTableOperation(
+        table = "SyncExcludedEntity",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS SyncExcludedEntity (
+                portal_user_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                PRIMARY KEY (portal_user_id, entity_type, entity_id)
             )
         """.trimIndent(),
     ),
@@ -1324,6 +1698,23 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "externalAddedLoadKg", "ALTER TABLE WorkoutSession ADD COLUMN externalAddedLoadKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "counterweightKg", "ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "rackItemsJson", "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'"),
+    // Migration 48: conservative sync provenance; all preexisting rows are local-origin.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "portalOrigin",
+        "ALTER TABLE WorkoutSession ADD COLUMN portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1))",
+    ),
+    // Migration 49: local snapshot/ack generations. Legacy rows intentionally start dirty.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "local_sync_generation",
+        "ALTER TABLE WorkoutSession ADD COLUMN local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0)",
+    ),
+    SchemaHealOperation(
+        "WorkoutSession",
+        "synced_sync_generation",
+        "ALTER TABLE WorkoutSession ADD COLUMN synced_sync_generation INTEGER NOT NULL DEFAULT 0 CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)",
+    ),
 
     // ── PersonalRecord (7 columns) ──────────────────────────────────────
 
@@ -1374,6 +1765,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
+    SchemaHealOperation("RoutineExercise", "dropSetEnabled", "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0"),
+    SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL"),
+    // Migration 53: tri-state duration sync upgrade marker.
+    SchemaHealOperation("RoutineExercise", "durationSyncKnown", "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0"),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 
@@ -1383,7 +1778,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("UserProfile", "subscription_expires_at", "ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER"),
     SchemaHealOperation("UserProfile", "last_auth_at", "ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER"),
 
-    // ── TrainingCycle (4 columns) ────────────────────────────────────────
+    // ── TrainingCycle (5 columns) ────────────────────────────────────────
 
     // Migration 21: multi-profile support
     SchemaHealOperation("TrainingCycle", "profile_id", "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
@@ -1392,6 +1787,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 41: generated cycle template identity + persisted 5/3/1 week
     SchemaHealOperation("TrainingCycle", "template_id", "ALTER TABLE TrainingCycle ADD COLUMN template_id TEXT"),
     SchemaHealOperation("TrainingCycle", "week_number", "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1"),
+    // Migration 50: complete-cycle LWW clock. Migration backfills created_at.
+    SchemaHealOperation("TrainingCycle", "updatedAt", "ALTER TABLE TrainingCycle ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0"),
+    // Migration 52: portal version of the cycle, sent back as baseUpdatedAt on push.
+    SchemaHealOperation("TrainingCycle", "server_updated_at", "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT"),
 
     // ── AssessmentResult (1 column) ─────────────────────────────────────
 
@@ -1437,12 +1836,19 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // ── ExternalActivity (1 column, migration 31) ──────────────────────
     // Migration 31: provider tombstone handling
     SchemaHealOperation("ExternalActivity", "deletedAt", "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER"),
+
+    // ── CompletedSet (3 columns, migrations 43-44) ─────────────────────
+    // Migration 43: set-end reason for workout history analytics (Issue #673 PR 1)
+    SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'"),
+    // Migration 44: stable logical-set attempt identity (Issue #673 PR 2)
+    SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
+    SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
 )
 
 // ============================================================
 // TASK 5: manifestIndexes -- 36 index operations
 //
-// Every CREATE INDEX and CREATE UNIQUE INDEX from VitruvianDatabase.sq.
+// Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
 // shape changed across migrations 19 and 21.
 // ============================================================
@@ -1451,10 +1857,46 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── Exercise ─────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_exercise_popularity", "CREATE INDEX IF NOT EXISTS idx_exercise_popularity ON Exercise(popularity DESC, name ASC)"),
     SchemaIndexOperation("idx_exercise_last_performed", "CREATE INDEX IF NOT EXISTS idx_exercise_last_performed ON Exercise(lastPerformed DESC)"),
+    SchemaIndexOperation("idx_exercise_image_exercise", "CREATE INDEX IF NOT EXISTS idx_exercise_image_exercise ON ExerciseImage(exerciseId)"),
+    SchemaIndexOperation(
+        "idx_profile_exercise_baseline_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_profile_exercise_baseline_exercise ON ProfileExerciseBaseline(exercise_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_workout_deletion_pending",
+        "CREATE INDEX IF NOT EXISTS idx_workout_deletion_pending ON WorkoutDeletion(owner_user_id, profile_id, source, acknowledged_at, deleted_at, mutation_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_workout_deletion_target",
+        "CREATE INDEX IF NOT EXISTS idx_workout_deletion_target ON WorkoutDeletion(owner_user_id, portal_session_id, component_session_id, scope)",
+    ),
+    SchemaIndexOperation(
+        "idx_local_ownership_claim_mutation",
+        "CREATE INDEX IF NOT EXISTS idx_local_ownership_claim_mutation ON LocalOwnershipClaim(owner_user_id, mutation_id)",
+    ),
 
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),
     SchemaIndexOperation("idx_session_profile", "CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id)"),
+    // Heal-only (no numbered migration): profile_id is itself a heal column, so these run
+    // after manifestColumns has added it.
+    SchemaIndexOperation(
+        "idx_session_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC)",
+    ),
+    SchemaIndexOperation(
+        "idx_session_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise ON WorkoutSession(exerciseId, profile_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_session_exercise_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC)",
+    ),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_session_routine_session",
+        "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
+    ),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
@@ -1466,6 +1908,28 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         name = "idx_pr_unique",
         createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id)",
         preDropSql = "DROP INDEX IF EXISTS idx_pr_unique",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM PersonalRecord
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM PersonalRecord AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM PersonalRecord AS keeper
+                    WHERE keeper.exerciseId = duplicate.exerciseId
+                      AND keeper.workoutMode = duplicate.workoutMode
+                      AND keeper.prType = duplicate.prType
+                      AND keeper.phase = duplicate.phase
+                      AND keeper.profile_id = duplicate.profile_id
+                      AND (
+                          keeper.achievedAt > duplicate.achievedAt
+                          OR (keeper.achievedAt = duplicate.achievedAt AND keeper.id > duplicate.id)
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
     SchemaIndexOperation("idx_pr_profile", "CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id)"),
     SchemaIndexOperation(
@@ -1495,6 +1959,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── RoutineExercise ─────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_exercise_routine", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)"),
     SchemaIndexOperation("idx_routine_exercise_superset", "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)"),
+    // Migration 55.
+    SchemaIndexOperation(
+        "idx_routine_exercise_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
+    ),
 
     // ── ConnectionLog ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_connection_log_timestamp", "CREATE INDEX IF NOT EXISTS idx_connection_log_timestamp ON ConnectionLog(timestamp)"),
@@ -1532,6 +2001,32 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         "idx_gamification_stats_profile",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
         preDropSql = "DROP INDEX IF EXISTS idx_gamification_stats_profile",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM GamificationStats
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM GamificationStats AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM GamificationStats AS keeper
+                    WHERE keeper.profile_id = duplicate.profile_id
+                      AND (
+                          COALESCE(keeper.lastUpdated, 0) > COALESCE(duplicate.lastUpdated, 0)
+                          OR (
+                              COALESCE(keeper.lastUpdated, 0) = COALESCE(duplicate.lastUpdated, 0)
+                              AND COALESCE(keeper.updatedAt, 0) > COALESCE(duplicate.updatedAt, 0)
+                          )
+                          OR (
+                              COALESCE(keeper.lastUpdated, 0) = COALESCE(duplicate.lastUpdated, 0)
+                              AND COALESCE(keeper.updatedAt, 0) = COALESCE(duplicate.updatedAt, 0)
+                              AND keeper.id > duplicate.id
+                          )
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
 
     // ── RpgAttributes ───────────────────────────────────────────────────
@@ -1539,6 +2034,10 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── TrainingCycle ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_profile", "CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id)"),
+    SchemaIndexOperation(
+        "idx_cycle_conflict_draft_profile_cycle",
+        "CREATE INDEX IF NOT EXISTS idx_cycle_conflict_draft_profile_cycle ON CycleConflictDraft(original_profile_id, cycle_id)",
+    ),
 
     // ── CycleDay ────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_day_cycle", "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)"),
@@ -1561,6 +2060,34 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         name = "idx_external_activity_dedup",
         createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
         preDropSql = "DROP INDEX IF EXISTS idx_external_activity_dedup",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM ExternalActivity
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM ExternalActivity AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM ExternalActivity AS keeper
+                    WHERE keeper.provider = duplicate.provider
+                      AND keeper.externalId = duplicate.externalId
+                      AND keeper.profileId = duplicate.profileId
+                      AND (
+                          keeper.syncedAt > duplicate.syncedAt
+                          OR (
+                              keeper.syncedAt = duplicate.syncedAt
+                              AND keeper.startedAt > duplicate.startedAt
+                          )
+                          OR (
+                              keeper.syncedAt = duplicate.syncedAt
+                              AND keeper.startedAt = duplicate.startedAt
+                              AND keeper.id > duplicate.id
+                          )
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
     SchemaIndexOperation("idx_external_activity_profile", "CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId)"),
     SchemaIndexOperation("idx_external_activity_provider", "CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider)"),

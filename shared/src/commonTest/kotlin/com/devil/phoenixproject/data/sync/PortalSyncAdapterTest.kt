@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -12,13 +15,21 @@ import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 class PortalSyncAdapterTest {
 
@@ -74,6 +85,7 @@ class PortalSyncAdapterTest {
         assertEquals("routine-run-1", result[0].id)
         assertEquals("routine-run-1", result[0].routineSessionId)
         assertEquals(3, result[0].exercises.size)
+        assertEquals(setOf("s1", "s2", "s3"), result[0].exercises.map { it.id }.toSet())
     }
 
     @Test
@@ -473,6 +485,71 @@ class PortalSyncAdapterTest {
         assertEquals("OLD_SCHOOL", ex.mode)
     }
 
+    // ========== durationSeconds (PR 13) ==========
+
+    private fun encodedExercise(exercise: RoutineExercise): JsonObject {
+        val dto = PortalSyncAdapter.toPortalRoutine(makeRoutine(exercises = listOf(exercise)), "user-1")
+        val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+        return PortalWireJson.parseToJsonElement(raw).jsonObject
+            .getValue("exercises").jsonArray.single().jsonObject
+    }
+
+    @Test
+    fun `toPortalRoutine sends durationSeconds for a timed exercise on the wire`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = 45))
+
+        assertEquals(JsonPrimitive(45), wire["durationSeconds"])
+    }
+
+    @Test
+    fun `toPortalRoutine sends explicit null durationSeconds when a null duration is known`() {
+        // PortalWireJson has explicitNulls = false; the key must still be sent.
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = true))
+
+        assertTrue(wire.containsKey("durationSeconds"))
+        assertEquals(JsonNull, wire["durationSeconds"])
+    }
+
+    @Test
+    fun `toPortalRoutine omits durationSeconds when a null duration is not known`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = false))
+
+        assertFalse(wire.containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `toPortalRoutine clears known durations outside the supported range`() {
+        val negative = encodedExercise(makeRoutineExercise().copy(duration = -5, durationSyncKnown = true))
+        val zero = encodedExercise(makeRoutineExercise().copy(duration = 0, durationSyncKnown = true))
+        val tooShort = encodedExercise(makeRoutineExercise().copy(duration = 9, durationSyncKnown = true))
+        val tooLong = encodedExercise(makeRoutineExercise().copy(duration = 301, durationSyncKnown = true))
+
+        assertEquals(JsonNull, negative["durationSeconds"])
+        assertEquals(JsonNull, zero["durationSeconds"])
+        assertEquals(JsonNull, tooShort["durationSeconds"])
+        assertEquals(JsonNull, tooLong["durationSeconds"])
+    }
+
+    @Test
+    fun `durationSecondsWire only sends durations supported by the app`() {
+        val inputs = listOf(null, Int.MIN_VALUE, -1, 0, 9, 10, 45, 300, 301, Int.MAX_VALUE)
+        for (seconds in inputs) {
+            for (known in listOf(true, false)) {
+                val wire = PortalSyncAdapter.durationSecondsWire(seconds, known)
+                val supported = seconds?.takeIf { it in 10..300 }
+                when {
+                    supported != null -> {
+                        assertNotNull(wire)
+                        assertFalse(wire.isString, "seconds=$seconds known=$known")
+                        assertEquals(supported, wire.intOrNull)
+                    }
+                    known -> assertEquals(JsonNull, wire, "seconds=$seconds known=$known")
+                    else -> assertNull(wire, "seconds=$seconds known=$known")
+                }
+            }
+        }
+    }
+
     @Test
     fun `toPortalRoutine maps superset colors`() {
         val superset = Superset(
@@ -730,6 +807,71 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine maps drop set configuration`() {
+        val enabled = makeRoutineExercise().copy(dropSetEnabled = true, dropSetMinWeightKg = 12.5f)
+        val disabled = makeRoutineExercise().copy(dropSetEnabled = false, dropSetMinWeightKg = null)
+        val result = PortalSyncAdapter.toPortalRoutine(
+            makeRoutine(exercises = listOf(enabled, disabled)),
+            "user-1",
+        )
+
+        assertEquals(true, result.exercises[0].dropSetEnabled)
+        assertEquals(12.5f, result.exercises[0].dropSetMinWeightKg)
+        assertEquals(false, result.exercises[1].dropSetEnabled)
+        assertNull(result.exercises[1].dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `older pull payload omitting drop set fields decodes to null`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-legacy","routineId":"routine-1","name":"Bench Press"}""",
+        )
+        assertNull(dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `pull payload with explicit disabled drop set decodes to false`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-off","routineId":"routine-1","dropSetEnabled":false,"dropSetMinWeightKg":null}""",
+        )
+        assertEquals(false, dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `programmed set count collapses retry attempts that share logical identity`() {
+        val identity = PortalSyncAdapter.LogicalSetSyncIdentity("run-1", "rex-1", 1)
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "attempt-1", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "attempt-2", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "legacy", routineSessionId = "run-1"),
+        )
+
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+        val grouped = sessions.map {
+            it.copy(session = it.session.copy(routineSessionId = "run-1"))
+        }
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
+        assertEquals(1, result.size)
+        assertEquals(2, result[0].setCount)
+        assertEquals(3, result[0].exerciseCount)
+    }
+
+    @Test
+    fun `programmed set count keeps legacy one session one set without identity`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "run-1"),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "run-1"),
+        )
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+    }
+
+    @Test
     fun `toPortalRoutine maps PR percentage when enabled`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -779,6 +921,52 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `portal session updatedAt uses domain last-edit not encode wall clock`() {
+        val domainUpdatedAt = 1_700_000_000_000L
+        val swr = makeSessionWithReps(
+            timestamp = 1_600_000_000_000L,
+            updatedAt = domainUpdatedAt,
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
+    fun `portal session updatedAt falls back to timestamp when domain updatedAt is null`() {
+        val startedAt = 1_700_000_000_000L
+        val swr = makeSessionWithReps(timestamp = startedAt, updatedAt = null)
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
+    fun `grouped portal session updatedAt uses latest domain last-edit`() {
+        val grouped = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = "g1",
+                timestamp = 1_600_000_000_000L,
+                updatedAt = 1_650_000_000_000L,
+            ),
+            makeSessionWithReps(
+                sessionId = "s2",
+                routineSessionId = "g1",
+                timestamp = 1_610_000_000_000L,
+                updatedAt = 1_700_000_000_000L,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
+
+        assertEquals(1, result.size)
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
     fun `toPortalRoutine estimates duration based on sets and rest`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -792,6 +980,42 @@ class PortalSyncAdapterTest {
 
         // estimateRoutineDuration: sets(3) * 120 + sum(60+60+60)=180 = 540
         assertEquals(540, result.estimatedDuration)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle sends the stored server version verbatim as baseUpdatedAt`() {
+        val serverVersion = "2026-09-19T10:11:12.123456+00:00"
+        val cycle = TrainingCycle.create(id = "cycle-base", name = "Base Cycle")
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle, serverUpdatedAt = serverVersion),
+            userId = "user-1",
+        )
+
+        assertEquals(serverVersion, result.baseUpdatedAt)
+        val wire = PortalWireJson.encodeToString(
+            PortalSyncPayload.serializer(),
+            PortalSyncPayload(deviceId = "d", lastSync = 0, cycles = listOf(result)),
+        )
+        assertTrue(wire.contains("\"baseUpdatedAt\":\"$serverVersion\""), wire)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle omits baseUpdatedAt for a local-only cycle`() {
+        val cycle = TrainingCycle.create(id = "cycle-local", name = "Local Cycle")
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertNull(result.baseUpdatedAt)
+        // explicitNulls = false: a null base is omitted, which the portal treats as the legacy path.
+        val wire = PortalWireJson.encodeToString(
+            PortalSyncPayload.serializer(),
+            PortalSyncPayload(deviceId = "d", lastSync = 0, cycles = listOf(result)),
+        )
+        assertTrue(!wire.contains("baseUpdatedAt"), wire)
     }
 
     @Test
@@ -810,6 +1034,148 @@ class PortalSyncAdapterTest {
 
         assertEquals("template_531", result.templateId)
         assertEquals(3, result.currentWeek)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle updatedAt uses domain last-edit not encode wall clock`() {
+        val domainUpdatedAt = 1_700_000_000_000L
+        val cycle = TrainingCycle.create(
+            id = "cycle-lww",
+            name = "LWW Cycle",
+        ).copy(
+            createdAt = 1_600_000_000_000L,
+            updatedAt = domainUpdatedAt,
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle updatedAt falls back to createdAt when domain updatedAt is null`() {
+        val createdAt = 1_700_000_000_000L
+        val cycle = TrainingCycle.create(
+            id = "cycle-created",
+            name = "Created Cycle",
+        ).copy(createdAt = createdAt, updatedAt = null)
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle maps complete progress and day state`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-complete",
+            name = "Complete Cycle",
+            days = listOf(
+                CycleDay(
+                    id = "day-1",
+                    cycleId = "cycle-complete",
+                    dayNumber = 1,
+                    name = "Heavy day",
+                    routineId = "routine-1",
+                    isRestDay = false,
+                    echoLevel = EchoLevel.HARDEST,
+                    eccentricLoadPercent = 130,
+                    weightProgressionPercent = 2.5f,
+                    repModifier = -1,
+                    restTimeOverrideSeconds = 150,
+                ),
+            ),
+        )
+        val progress = CycleProgress(
+            id = "progress-1",
+            cycleId = cycle.id,
+            currentDayNumber = 3,
+            lastCompletedDate = 1_700_000_000_000L,
+            cycleStartDate = 1_600_000_000_000L,
+            lastAdvancedAt = 1_650_000_000_000L,
+            completedDays = setOf(3, 1),
+            missedDays = setOf(4, 2),
+            rotationCount = 5,
+        )
+        val progression = CycleProgression(
+            cycleId = cycle.id,
+            frequencyCycles = 3,
+            weightIncreasePercent = 2.5f,
+            echoLevelIncrease = true,
+            eccentricLoadIncreasePercent = 10,
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = cycle,
+                progress = progress,
+                progression = progression,
+            ),
+            userId = "user-1",
+        )
+
+        assertEquals(true, result.progressionSettingsPresent)
+        assertNotNull(result.progressionSettings)
+        assertTrue(result.progressionSettings!!.contains("\"frequencyCycles\":\"3\""))
+        assertTrue(result.progressionSettings!!.contains("\"weightIncreasePercent\":\"2.5\""))
+        assertTrue(result.progressionSettings!!.contains("\"echoLevelIncrease\":\"true\""))
+        assertTrue(result.progressionSettings!!.contains("\"eccentricLoadIncreasePercent\":\"10\""))
+        assertEquals(true, result.progressStatePresent)
+        assertEquals(
+            PortalCycleProgressStateSyncDto(
+                currentDayNumber = 3,
+                lastCompletedDate = 1_700_000_000_000L,
+                cycleStartDate = 1_600_000_000_000L,
+                lastAdvancedAt = 1_650_000_000_000L,
+                completedDays = listOf(1, 3),
+                missedDays = listOf(2, 4),
+                rotationCount = 5,
+            ),
+            result.progressState,
+        )
+        with(result.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertEquals(EchoLevel.HARDEST.name, echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertEquals(130, eccentricLoadPercent)
+        }
+    }
+
+    @Test
+    fun `toPortalTrainingCycle emits explicit clears for absent progress and day modifiers`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-clear",
+            name = "Clear Cycle",
+            days = listOf(
+                CycleDay.restDay(
+                    id = "day-clear",
+                    cycleId = "cycle-clear",
+                    dayNumber = 1,
+                ),
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle, progress = null),
+            userId = "user-1",
+        )
+
+        assertEquals(true, result.progressionSettingsPresent)
+        assertNull(result.progressionSettings)
+        assertEquals(true, result.progressStatePresent)
+        assertNull(result.progressState)
+        with(result.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertNull(echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
     }
 
     // ========== userId passthrough ==========
@@ -1015,23 +1381,95 @@ class PortalSyncAdapterTest {
     // ========== Estimated 1RM in sync payload (Task 4) ==========
 
     @Test
-    fun `exercise dto carries hybrid estimated 1RM per cable`() {
-        // 60 kg per cable x 5 reps -> Brzycki: 60 * 36 / 32 = 67.5
+    fun `exercise dto carries hybrid estimated 1RM from workingReps not warmup`() {
+        // 60 kg × 5 working + 3 warmup (totalReps=8). Must use working=5 → 67.5,
+        // not the 8-rep estimate. A totalReps=5 / workingReps=0 fixture would
+        // still pass via fallback and would not prove working-over-warmup.
         val sessions = listOf(
             makeSessionWithReps(
                 sessionId = "s1",
                 routineSessionId = null,
                 exerciseName = "Bench Press",
                 weightPerCableKg = 60f,
-                totalReps = 5,
+                warmupReps = 3,
+                workingReps = 5,
+                totalReps = 8,
             ),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
 
         val estimate = result[0].exercises[0].estimatedOneRepMaxKg
+        val fromWorking = OneRepMaxCalculator.estimate(60f, 5)
+        val fromTotal = OneRepMaxCalculator.estimate(60f, 8)
         assertNotNull(estimate)
-        assertTrue(abs(estimate - 67.5f) < 0.01f, "expected 67.5, got $estimate")
+        assertFloatEquals(fromWorking, estimate)
+        assertFloatEquals(67.5f, estimate)
+        assertTrue(
+            abs(estimate - fromTotal) > 1f,
+            "warmup+working golden must not equal the 8-rep estimate ($fromTotal)",
+        )
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM falls back to totalReps when workingReps is 0`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 5,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertFloatEquals(
+            OneRepMaxCalculator.estimate(60f, 5),
+            result[0].exercises[0].estimatedOneRepMaxKg!!,
+        )
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM is null when working and total reps are 0`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 0,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertNull(result[0].exercises[0].estimatedOneRepMaxKg)
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM null does not drop a present velocity estimate`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                exerciseId = "ex1",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 0,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            sessions,
+            "user-1",
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
+        )
+
+        val exercise = result[0].exercises[0]
+        assertNull(exercise.estimatedOneRepMaxKg)
+        assertFloatEquals(92f, exercise.velocityEstimatedOneRepMaxKg!!)
     }
 
     // ========== Velocity-estimated 1RM in sync payload (Phase 6) ==========
@@ -1045,21 +1483,28 @@ class PortalSyncAdapterTest {
                 exerciseName = "Bench Press",
                 exerciseId = "ex1",
                 weightPerCableKg = 60f,
-                totalReps = 5,
+                warmupReps = 3,
+                workingReps = 5,
+                totalReps = 8,
             ),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
         )
 
         val exercise = result[0].exercises[0]
+        val hybrid = exercise.estimatedOneRepMaxKg
         assertFloatEquals(92f, exercise.velocityEstimatedOneRepMaxKg!!)
-        // Rep-based estimate is still computed independently: 60 * 36 / 32 = 67.5
-        assertNotNull(exercise.estimatedOneRepMaxKg)
-        assertFloatEquals(67.5f, exercise.estimatedOneRepMaxKg!!)
+        // Hybrid stays independent and warmup-excluded: 60 × 5 working → 67.5
+        assertNotNull(hybrid)
+        assertFloatEquals(67.5f, hybrid)
+        assertTrue(
+            abs(hybrid - OneRepMaxCalculator.estimate(60f, 8)) > 1f,
+            "velocity fixture hybrid must not use the 8-rep (warmup-inclusive) estimate",
+        )
     }
 
     @Test
@@ -1076,7 +1521,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("other-ex" to 80f),
+            velocityEstimatesByExerciseId = velocityPoints("other-ex", 80f),
         )
 
         val exercise = result[0].exercises[0]
@@ -1093,7 +1538,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
         )
 
         assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
@@ -1110,7 +1555,135 @@ class PortalSyncAdapterTest {
         assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
     }
 
+    // ========== Group push floor (AF-3 / R-2) ==========
+
+    @Test
+    fun `a routine group with an unsent row is stamped at the push floor`() {
+        val group = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1", timestamp = 1_000L, updatedAt = 2_000L),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "rs-1", timestamp = 3_000L)
+                .copy(isPendingUpload = true),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(group, "user-1", groupPushFloorEpochMs = 9_000L)
+
+        // Without the floor this would be 3_000 — older than the server time the
+        // portal's trigger stamped on the previous set's push, so the LWW gate would
+        // turn the whole group away and the workout's later sets would never land.
+        assertEquals(epochIso(9_000L), result.single().updatedAt)
+    }
+
+    @Test
+    fun `a routine group with nothing new keeps its domain last-edit`() {
+        val group = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1", timestamp = 1_000L, updatedAt = 2_000L),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "rs-1", timestamp = 3_000L, updatedAt = 4_000L),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(group, "user-1", groupPushFloorEpochMs = 9_000L)
+
+        assertEquals(epochIso(4_000L), result.single().updatedAt)
+    }
+
+    @Test
+    fun `a standalone session never takes the push floor`() {
+        // Its portal workout is its own, so the portal never deletes a sibling's sets
+        // for it — and the strict LWW gate is what protects a later web edit.
+        val session = makeSessionWithReps(sessionId = "s1", routineSessionId = null, timestamp = 1_000L)
+            .copy(isPendingUpload = true)
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", groupPushFloorEpochMs = 9_000L)
+
+        assertEquals(epochIso(1_000L), result.single().updatedAt)
+    }
+
+    // ========== Notes round-trip (AF-4) ==========
+
+    @Test
+    fun `the session dto carries the locally known portal note`() {
+        val group = listOf(makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1"))
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            group,
+            "user-1",
+            notesByPortalSessionId = mapOf("rs-1" to "left shoulder twinge"),
+        )
+
+        assertEquals("left shoulder twinge", result.single().notes)
+    }
+
+    @Test
+    fun `the session dto sends a null note when the phone knows none`() {
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            listOf(makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1")),
+            "user-1",
+        )
+
+        assertNull(result.single().notes)
+    }
+
+    // ========== Telemetry gating ==========
+
+    @Test
+    fun `telemetry is not built at all when the tier cannot send it`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", repMetrics = listOf(makeRepMetricData(repNumber = 1))),
+        )
+
+        val gated = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessions, "user-1", includeTelemetry = false)
+        val allowed = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessions, "user-1")
+
+        assertTrue(gated.telemetry.isEmpty(), "force curves must never be constructed below the Inferno tier")
+        assertTrue(allowed.telemetry.isNotEmpty())
+        // Rep summaries ship on every tier, so the gate must not touch them.
+        assertEquals(
+            allowed.sessions.single().exercises.single().sets.single().repSummaries.size,
+            gated.sessions.single().exercises.single().sets.single().repSummaries.size,
+        )
+    }
+
+    // ========== Velocity 1RM as of the session (F-056) ==========
+
+    @Test
+    fun `a session gets the velocity estimate that existed when it was recorded`() {
+        val session = makeSessionWithReps(sessionId = "s1", exerciseId = "ex1", timestamp = 5_000L)
+        val estimates = mapOf(
+            "ex1" to listOf(
+                PortalSyncAdapter.VelocityOneRepMaxPoint(1_000L, 80f),
+                PortalSyncAdapter.VelocityOneRepMaxPoint(4_000L, 95f),
+                PortalSyncAdapter.VelocityOneRepMaxPoint(9_000L, 130f),
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", estimates)
+
+        assertFloatEquals(95f, result.single().exercises.single().velocityEstimatedOneRepMaxKg!!)
+    }
+
+    @Test
+    fun `a session older than every velocity estimate gets none`() {
+        val session = makeSessionWithReps(sessionId = "s1", exerciseId = "ex1", timestamp = 500L)
+        val estimates = mapOf("ex1" to listOf(PortalSyncAdapter.VelocityOneRepMaxPoint(1_000L, 80f)))
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", estimates)
+
+        assertNull(result.single().exercises.single().velocityEstimatedOneRepMaxKg)
+    }
+
     // ========== Factory Helpers ==========
+
+    private fun epochIso(epochMs: Long): String = kotlin.time.Instant.fromEpochMilliseconds(epochMs).toString()
+
+    /**
+     * One passing VBT estimate, computed before any fixture session (fixture
+     * timestamps start at 1700000000000L), so the as-of-session lookup finds it.
+     */
+    private fun velocityPoints(
+        exerciseId: String,
+        estimatePerCableKg: Float,
+        computedAt: Long = 1_600_000_000_000L,
+    ): Map<String, List<PortalSyncAdapter.VelocityOneRepMaxPoint>> =
+        mapOf(exerciseId to listOf(PortalSyncAdapter.VelocityOneRepMaxPoint(computedAt, estimatePerCableKg)))
 
     private fun makeSessionWithReps(
         sessionId: String = "session-${idCounter++}",
@@ -1123,6 +1696,8 @@ class PortalSyncAdapterTest {
         durationMs: Long = 60000,
         weightPerCableKg: Float = 20f,
         reps: Int = 10,
+        warmupReps: Int = 0,
+        workingReps: Int? = null,
         totalReps: Int = 10,
         totalVolumeKg: Float? = null,
         rpe: Int? = null,
@@ -1130,6 +1705,7 @@ class PortalSyncAdapterTest {
         isPr: Boolean = false,
         repMetrics: List<RepMetricData> = emptyList(),
         repBiomechanics: List<PortalSyncAdapter.RepBiomechanicsData> = emptyList(),
+        updatedAt: Long? = null,
     ): PortalSyncAdapter.SessionWithReps {
         val session = WorkoutSession(
             id = sessionId,
@@ -1139,12 +1715,15 @@ class PortalSyncAdapterTest {
             weightPerCableKg = weightPerCableKg,
             duration = durationMs,
             totalReps = totalReps,
+            warmupReps = warmupReps,
+            workingReps = workingReps ?: totalReps,
             exerciseName = exerciseName,
             exerciseId = exerciseId,
             routineSessionId = routineSessionId,
             routineName = routineName,
             totalVolumeKg = totalVolumeKg,
             rpe = rpe,
+            updatedAt = updatedAt,
         )
         return PortalSyncAdapter.SessionWithReps(
             session = session,

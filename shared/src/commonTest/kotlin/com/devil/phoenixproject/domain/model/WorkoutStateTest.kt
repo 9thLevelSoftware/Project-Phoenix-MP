@@ -29,13 +29,13 @@ class WorkoutStateTest {
         val state = ConnectionState.Connected(
             deviceName = "Vee_Test123",
             deviceAddress = "AA:BB:CC:DD:EE:FF",
-            hardwareModel = VitruvianModel.VFormTrainer,
+            hardwareModel = PhoenixModel.VFormTrainer,
         )
 
         assertIs<ConnectionState.Connected>(state)
         assertEquals("Vee_Test123", state.deviceName)
         assertEquals("AA:BB:CC:DD:EE:FF", state.deviceAddress)
-        assertEquals(VitruvianModel.VFormTrainer, state.hardwareModel)
+        assertEquals(PhoenixModel.VFormTrainer, state.hardwareModel)
     }
 
     @Test
@@ -45,7 +45,7 @@ class WorkoutStateTest {
             deviceAddress = "AA:BB:CC:DD:EE:FF",
         )
 
-        assertEquals(VitruvianModel.Unknown, state.hardwareModel)
+        assertEquals(PhoenixModel.Unknown, state.hardwareModel)
     }
 
     @Test
@@ -194,12 +194,12 @@ class WorkoutStateTest {
         assertEquals(150, EccentricLoad.LOAD_150.percentage)
     }
 
-    // ========== VitruvianModel Tests ==========
+    // ========== PhoenixModel Tests ==========
 
     @Test
-    fun `VitruvianModel has correct display names`() {
-        assertEquals("V-Form Trainer", VitruvianModel.VFormTrainer.displayName)
-        assertEquals("Trainer+", VitruvianModel.TrainerPlus.displayName)
-        assertEquals("Unknown Vitruvian Device", VitruvianModel.Unknown.displayName)
+    fun `PhoenixModel has correct display names`() {
+        assertEquals("V-Form Trainer", PhoenixModel.VFormTrainer.displayName)
+        assertEquals("Trainer+", PhoenixModel.TrainerPlus.displayName)
+        assertEquals("Unknown Phoenix Device", PhoenixModel.Unknown.displayName)
     }
 }

@@ -145,11 +145,5 @@ class HapticFeedbackAudioRoutingGuardTest {
 
         // Event mapping for dominatrix unlock SFX
         assertTrue(source.contains("HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock"))
-
-        // All-cues union must include the new pools
-        assertTrue(source.contains("encouragementNeutralCues +") || source.contains("encouragementCues +"))
-        assertTrue(source.contains("vulgarMildCues +"))
-        assertTrue(source.contains("vulgarStrongCues +"))
-        assertTrue(source.contains("dominatrixCues +"))
     }
 }

@@ -51,6 +51,18 @@ sealed class AuthEvent {
  */
 class PortalTokenStorage(private val settings: Settings) {
 
+    internal data class AuthStateSnapshot(
+        val generation: Long,
+        val accessToken: String?,
+        val refreshToken: String?,
+        val expiresAt: Long,
+        val userId: String?,
+        val userEmail: String?,
+        val userName: String?,
+        val isPremium: Boolean,
+        val subscriptionTier: String?,
+    )
+
     companion object {
         private const val KEY_TOKEN = "portal_auth_token"
         private const val KEY_USER_ID = "portal_user_id"
@@ -60,10 +72,94 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_SUBSCRIPTION_TIER = "portal_user_subscription_tier"
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
-        private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
+
+        /**
+         * Legacy global cursor written by builds before PR 10. Read once by
+         * [migrateLegacyCursors] to seed the per-profile cursors, then removed.
+         */
+        private const val KEY_LEGACY_LAST_SYNC = "portal_last_sync_timestamp"
+
+        /**
+         * Legacy "userId:profileId" marker of the completed pull that produced
+         * [KEY_LEGACY_LAST_SYNC]. Absent meant the next pull had to be a full pull.
+         * Read once by [migrateLegacyCursors], then removed.
+         */
+        private const val KEY_LEGACY_DELTA_PULL_KEY = "portal_delta_pull_key"
+
+        /**
+         * Device-clock watermark of the last completed push for one (portal userId, profileId).
+         * Post-push stamps use it; push gather selects `updatedAt > pushWatermark`.
+         */
+        private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
+        private const val KEY_PULL_MERGE_WATERMARK_PREFIX = "portal_pull_merge_watermark_"
+        private const val KEY_ACCOUNT_FIRST_SEEN_PREFIX = "portal_account_first_seen_"
+        private const val KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX = "portal_legacy_account_boundary_"
+        private const val KEY_OWNERSHIP_CONFLICT_PREFIX = "portal_ownership_conflict_"
+        private const val LEGACY_BOUNDARY_ALL_PROFILES = "*"
+
+        /**
+         * Server-clock cursor of the last completed pull for one (portal userId, profileId).
+         * Sent as `PortalSyncPullRequest.lastSync`. 0 / absent means "full pull".
+         */
+        private const val KEY_PULL_CURSOR_PREFIX = "portal_pull_cursor_"
+
+        /**
+         * One-time upgrade repair: routines, cycles and PRs for every profile re-push from 0.
+         * Absent = still owed; present = done.
+         */
+        private const val KEY_ROUTINE_CYCLE_PR_REPAIR_DONE_PREFIX = "portal_rcp_repair_done_"
+
+        /**
+         * Content fingerprint of the session DTO last sent to the portal, keyed by portal
+         * session id. Lets an LWW-rejected row with unchanged content be stamped instead
+         * of re-pushed forever (PR 10 step 11).
+         */
+        private const val KEY_SESSION_SENT_HASH_PREFIX = "portal_session_sent_hash_"
+
+        /**
+         * Routine ids the portal LWW-rejected on push, per (userId, profileId): the next
+         * completed pull must take the server copy for these. Persisted because the push
+         * watermark has already moved past them — losing the marker on a restart before
+         * that pull would leave the routine neither re-pushed nor converged.
+         */
+        private const val KEY_SERVER_WINS_ROUTINES_PREFIX = "portal_server_wins_routines_"
+
+        /**
+         * Per-(userId, profileId) index of the portal session ids that currently hold a
+         * sent hash, oldest first. Bounds the store (see [MAX_SESSION_SENT_HASHES]) and lets
+         * garbage collection find entries without enumerating every settings key.
+         */
+        private const val KEY_SESSION_SENT_HASH_INDEX_PREFIX = "portal_session_sent_hash_index_"
+
+        /**
+         * Most sent hashes kept per (userId, profileId). Dropping an old one is always
+         * safe: the LWW gate stamps only on `sentHash == currentHash`, so a missing hash
+         * sends the row down the re-push/pending path, never to a wrong "synced" stamp.
+         */
+        internal const val MAX_SESSION_SENT_HASHES = 500
+
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
+        private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
+        private const val KEY_ROUTINE_GROUP_REPAIR_HOLDS_PREFIX = "portal_routine_group_repair_holds_"
+
+        /**
+         * Most restored routine groups held out of the repair per profile. Past this the
+         * restore marks the repair done instead: losing the repair of this device's own
+         * truncated groups is recoverable, wiping restored groups' portal rep data is not.
+         */
+        const val MAX_ROUTINE_GROUP_REPAIR_HOLDS = 5_000
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
+
+        /**
+         * Portal user id of the account the last successful push landed in (PR 11).
+         * Deliberately NOT cleared by [clearAuth]: sign-out must not forget which
+         * account the local rows already live in, or the next sign-in cannot tell
+         * "same account" from "different account" and would re-upload rows the new
+         * account does not own.
+         */
+        private const val KEY_LAST_SYNCED_PORTAL_USER_ID = "portal_last_synced_user_id"
+    private const val KEY_LAST_SYNCED_PORTAL_USER_LABEL = "portal_last_synced_user_label"
     }
 
     init {
@@ -116,6 +212,13 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _currentUser = MutableStateFlow(loadUser())
     val currentUser: StateFlow<PortalUser?> = _currentUser.asStateFlow()
 
+    // Seeded from the stored per-profile cursors so a process restart does not report
+    // "never synced" (or re-arm the first-sync trigger) until the next sync publishes.
+    private val _lastSyncTimestamp = MutableStateFlow(
+        settings.getStringOrNull(KEY_USER_ID)?.let { pullCursorFloor(it) } ?: 0L,
+    )
+    val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
+
     /**
      * Flow of authentication events for UI notification.
      * Collectors will receive events when session expires, refresh fails, or user logs out.
@@ -124,18 +227,72 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _authEvents = MutableSharedFlow<AuthEvent>(replay = 0, extraBufferCapacity = 1)
     val authEvents: SharedFlow<AuthEvent> = _authEvents.asSharedFlow()
 
-    fun saveAuth(response: PortalAuthResponse) = withPlatformLock(authLock) {
-        settings[KEY_TOKEN] = response.token
-        settings[KEY_USER_ID] = response.user.id
-        settings[KEY_USER_EMAIL] = response.user.email
-        settings[KEY_USER_NAME] = response.user.displayName
-        settings[KEY_IS_PREMIUM] = response.user.isPremium
+    // Bumped (under authLock) by every clearAuth and every non-refresh save
+    // (sign-in/sign-up). A refresh captures it before its network call and passes
+    // it back to saveGoTrueAuth, so a refresh that was in flight across a sign-out
+    // or account switch drops its write instead of resurrecting the old session.
+    private var authGeneration = 0L
 
-        _isAuthenticated.value = true
-        _currentUser.value = response.user
+    /** Current auth generation; capture before a token refresh network call. */
+    fun authGeneration(): Long = withPlatformLock(authLock) { authGeneration }
+
+    /** Captures account-scoped state so a multi-store identity commit can roll back exactly. */
+    internal fun snapshotAuthState(): AuthStateSnapshot = withPlatformLock(authLock) {
+        AuthStateSnapshot(
+            generation = authGeneration,
+            accessToken = settings.getStringOrNull(KEY_TOKEN),
+            refreshToken = settings.getStringOrNull(KEY_REFRESH_TOKEN),
+            expiresAt = settings.getLong(KEY_EXPIRES_AT, 0L),
+            userId = settings.getStringOrNull(KEY_USER_ID),
+            userEmail = settings.getStringOrNull(KEY_USER_EMAIL),
+            userName = settings.getStringOrNull(KEY_USER_NAME),
+            isPremium = settings[KEY_IS_PREMIUM, false],
+            subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
+        )
     }
 
-    fun saveGoTrueAuth(response: GoTrueAuthResponse) = withPlatformLock(authLock) {
+    /** Restores a snapshot after a failed profile/token identity commit. */
+    internal fun restoreAuthState(snapshot: AuthStateSnapshot) = withPlatformLock(authLock) {
+        // Never move the fence backwards: refreshes captured before the failed
+        // transition must not become valid again when the prior account is restored.
+        authGeneration = maxOf(authGeneration, snapshot.generation) + 1L
+        restoreString(KEY_TOKEN, snapshot.accessToken)
+        restoreString(KEY_REFRESH_TOKEN, snapshot.refreshToken)
+        settings.putLong(KEY_EXPIRES_AT, snapshot.expiresAt)
+        restoreString(KEY_USER_ID, snapshot.userId)
+        restoreString(KEY_USER_EMAIL, snapshot.userEmail)
+        restoreString(KEY_USER_NAME, snapshot.userName)
+        settings[KEY_IS_PREMIUM] = snapshot.isPremium
+        restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
+        // Per-(userId, profileId) cursors are not part of the identity snapshot: they are
+        // written during sync, not during an identity commit, and are namespaced by user id
+        // so a rolled-back account switch cannot corrupt them.
+        _isAuthenticated.value = snapshot.accessToken != null
+        _currentUser.value = loadUser()
+    }
+
+    /**
+     * The stored refresh token and the generation it belongs to, read under one
+     * lock so a sign-out/sign-in can't land between the two reads.
+     */
+    fun refreshTokenWithGeneration(): Pair<String?, Long> = withPlatformLock(authLock) {
+        getRefreshToken() to authGeneration
+    }
+
+    /**
+     * Persists a GoTrue session.
+     *
+     * @param expectedGeneration pass the [authGeneration] captured before a refresh
+     *   request. If auth was cleared or replaced since, the write is dropped.
+     *   Null (sign-in/sign-up) always writes and starts a new generation.
+     * @return false if the write was dropped as stale.
+     */
+    fun saveGoTrueAuth(response: GoTrueAuthResponse, expectedGeneration: Long? = null): Boolean = withPlatformLock(authLock) {
+        if (expectedGeneration == null) {
+            authGeneration++
+        } else if (expectedGeneration != authGeneration) {
+            return@withPlatformLock false
+        }
         // Preserve existing premium status — GoTrue auth response does not include it,
         // and overwriting would reset paid users to non-premium on every sign-in.
         //
@@ -160,11 +317,101 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
+        // PR 11: when this account first appeared on the device (kept across sign-outs).
+        // Ownership-conflict recovery excludes only rows that predate it.
+        if (settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id) == null) {
+            settings.putLong(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id, currentTimeMillis())
+        }
+        if (!sameUser) {
+            // Account-scoped entitlement state must never cross an identity switch.
+            // Sync cursors are namespaced by (userId, profileId) and survive the switch
+            // so returning to the previous account resumes where it left off.
+            settings.remove(KEY_SUBSCRIPTION_TIER)
+            // The un-namespaced legacy cursor belongs to the previous account (the old
+            // build zeroed it on every switch). It must never seed this account's cursors,
+            // but it is PR 11's only evidence that the old client synced into that account,
+            // so keep that fact before dropping the key.
+            preserveLegacySyncOwnerLocked(fallbackOwner = previousUserId)
+            settings.remove(KEY_LEGACY_LAST_SYNC)
+            settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
+            // The UI's lastSyncTime is a cache of this user's min pull cursor; it must
+            // never keep showing the previous account's "last successful pull".
+            publishPullCursorFloor(response.user.id)
+        }
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
+        true
     }
 
     fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
+
+    /**
+     * Portal user id of the account the last successful push landed in (PR 11).
+     * Survives [clearAuth] so a later sign-in can detect a different account.
+     */
+    fun getLastSyncedPortalUserId(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID)
+
+    /**
+     * Display label (email or id) for [getLastSyncedPortalUserId], so the account-switch
+     * dialog can name both accounts. Never logged (F-076).
+     */
+    fun getLastSyncedPortalUserLabel(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_LABEL)
+
+    /**
+     * Device time at which [userId] first signed in on this device, or null for an account
+     * that was already signed in before this build (PR 11 ownership-conflict recovery).
+     * Not cleared by [clearAuth].
+     */
+    fun getAccountFirstSeenAt(userId: String): Long? =
+        settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + userId)
+
+    /** Records which portal user the last successful push landed in. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserId(userId: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = userId
+    }
+
+    /**
+     * PR 11 upgrade path: a device last synced by a pre-PR-11 build has no
+     * [getLastSyncedPortalUserId], but a positive legacy cursor proves the old client synced
+     * into one account: the one its delta-pull marker names, or else [currentUserId] (the
+     * old build zeroed the cursor on every account switch). Records that account as the
+     * last-synced one when nothing newer is recorded, so account-switch detection sees it.
+     * Does not consume the legacy key.
+     */
+    fun adoptLegacySyncOwner(currentUserId: String?) {
+        withPlatformLock(authLock) { preserveLegacySyncOwnerLocked(fallbackOwner = currentUserId) }
+    }
+
+    private fun preserveLegacySyncOwnerLocked(fallbackOwner: String?) {
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        if (legacy <= 0L) return
+        val markerOwner = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.substringBefore(':', missingDelimiterValue = "")
+            ?.takeIf { it.isNotBlank() }
+        val owner = markerOwner ?: fallbackOwner?.takeIf { it.isNotBlank() } ?: return
+        // The legacy value is also the old account's "already synced" boundary (the old
+        // client stamped only rows it pushed or pulled). Keep it for that account, so an
+        // account switch that drops the key still classifies those rows as synced (codex
+        // #859). Scoped like PR 10's seeding: to the profile the marker names. Without a
+        // marker it covers every profile of that account: for an account switch the safe
+        // error is treating a row as synced (it stays out of the NEW account and remains
+        // where it already is), the opposite of the same-account re-push case. Never lowered.
+        val markerProfile = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.takeIf { markerOwner != null }
+            ?.substringAfter(':', missingDelimiterValue = "")
+            ?.trim()
+            ?.ifBlank { "default" }
+        val boundaryKey = legacyBoundaryKey(owner, markerProfile ?: LEGACY_BOUNDARY_ALL_PROFILES)
+        if (legacy > settings[boundaryKey, 0L]) settings[boundaryKey] = legacy
+        if (settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID) == null) {
+            settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = owner
+        }
+    }
+
+    /** Records the display label for [setLastSyncedPortalUserId]. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserLabel(label: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_LABEL] = label
+    }
 
     fun getExpiresAt(): Long = settings.getLong(KEY_EXPIRES_AT, 0L)
 
@@ -187,16 +434,363 @@ class PortalTokenStorage(private val settings: Settings) {
         newId
     }
 
-    fun getLastSyncTimestamp(): Long = settings[KEY_LAST_SYNC, 0L]
+    // === Per-profile sync cursors (PR 10) ===
+    //
+    // Two cursors per (portal userId, profileId):
+    //   pushWatermark — device clock, captured before gather; post-push stamps use it.
+    //   pullCursor    — server clock, sent as PortalSyncPullRequest.lastSync.
+    // Both are namespaced by user id so a sign-out / account switch cannot corrupt them,
+    // and clearAuth deliberately leaves them in place.
 
-    fun setLastSyncTimestamp(timestamp: Long) {
-        settings[KEY_LAST_SYNC] = timestamp
+    /** Device-clock watermark of the last completed push for this profile. 0 = never pushed. */
+    fun getPushWatermark(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId), 0L]
+
+    fun setPushWatermark(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * Device-clock time at which a pull that followed a successful push last merged rows
+     * into this profile. A pulled routine, cycle or custom exercise gets its local
+     * `createdAt` at merge time, so this, together with [getPushWatermark], bounds
+     * which rows reached this portal account (PR 11 account-switch classification).
+     * Namespaced like the cursors and kept by [clearAuth]. 0 = no such pull yet.
+     */
+    fun getPullMergeWatermark(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId), 0L]
+
+    fun setPullMergeWatermark(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * The PR 11 "already reached this account" boundary for one profile: the later of the
+     * last acknowledged push gather and the last post-push pull merge.
+     */
+    fun getAccountSyncBoundary(userId: String, profileId: String): Long =
+        maxOf(
+            getPushWatermark(userId, profileId),
+            getPullMergeWatermark(userId, profileId),
+            maxOf(
+                settings[legacyBoundaryKey(userId, profileId.trim().ifBlank { "default" }), 0L],
+                settings[legacyBoundaryKey(userId, LEGACY_BOUNDARY_ALL_PROFILES), 0L],
+            ),
+        )
+
+    private fun legacyBoundaryKey(userId: String, profileScope: String): String =
+        "$KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX$userId:$profileScope"
+
+    /**
+     * PR 11: the portal's ownership refusal for [userId], kept until the user applies the
+     * recovery or signs out, so a restart cannot resume pushing the refused payload.
+     */
+    fun getOwnershipConflict(userId: String): String? =
+        settings.getStringOrNull(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+
+    fun setOwnershipConflict(userId: String, message: String?) {
+        withPlatformLock(authLock) {
+            if (message == null) settings.remove(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+            else settings[KEY_OWNERSHIP_CONFLICT_PREFIX + userId] = message
+        }
+    }
+
+    /** Server-clock cursor of the last completed pull. 0 / absent = next pull is a full pull. */
+    fun getPullCursor(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, profileId), 0L]
+
+    fun setPullCursor(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * Records a completed pull for one profile. The caller passes the first page's
+     * `syncTime` minus the overlap (see SyncManager); this only persists it.
+     */
+    fun recordCompletedPull(userId: String, profileId: String, syncTime: Long) {
+        setPullCursor(userId, profileId, syncTime)
+    }
+
+    /**
+     * Resets one profile's pull cursor to 0 so its next pull is a full pull. Used by any
+     * bulk removal of that profile's local rows (Delete All, backup restore, account-switch
+     * choices) — otherwise the cursor would skip the rows the bulk removal just cleared.
+     */
+    fun resetPullCursor(userId: String, profileId: String) {
+        setPullCursor(userId, profileId, 0L)
+    }
+
+    /**
+     * A backup restore bulk-replaces the restored profiles' local rows. For each of them every
+     * stored pull cursor restarts at 0, whichever portal user it belongs to and whether or not
+     * anyone is signed in: cursors survive sign-out (they are user-namespaced), so a restore
+     * done while signed out must not leave the next sign-in resuming a delta pull that skips
+     * everything older than the old cursor. The one-time routine-group repair keeps its progress for this device's own
+     * workouts, but every restored routine group is held out of it: restored rows carry no
+     * rep summaries, so a repair re-push would make the portal's replace_session_children
+     * delete the rep data it holds for them. All of this lives in settings, which a backup
+     * cannot carry.
+     */
+    fun resetAfterBackupRestore(
+        profileIds: Collection<String>,
+        restoredRoutineGroupIds: Map<String, Set<String>> = emptyMap(),
+    ) {
+        withPlatformLock(authLock) {
+            val suffixes = profileIds.map { ":" + (it.trim().ifBlank { "default" }) }
+            settings.keys
+                .filter { key -> key.startsWith(KEY_PULL_CURSOR_PREFIX) && suffixes.any(key::endsWith) }
+                .forEach { settings.remove(it) }
+        }
+        currentUser.value?.id?.let { userId -> profileIds.forEach { resetPullCursor(userId, it) } }
+        restoredRoutineGroupIds.forEach { (profileId, groupIds) ->
+            holdRoutineGroupsFromRepair(profileId, groupIds)
+        }
+    }
+
+    /** Restored routine groups the one-time repair must never re-push (see [resetAfterBackupRestore]). */
+    fun getRoutineGroupRepairHolds(profileId: String): Set<String> =
+        settings.getStringOrNull(routineGroupRepairHoldsKey(profileId))
+            ?.split('\n')
+            ?.filterTo(linkedSetOf()) { it.isNotEmpty() }
+            .orEmpty()
+
+    private fun holdRoutineGroupsFromRepair(profileId: String, groupIds: Set<String>) {
+        if (groupIds.isEmpty() || getRoutineGroupRepairCursor(profileId) <= 0L) return
+        val holds = getRoutineGroupRepairHolds(profileId) + groupIds
+        if (holds.size > MAX_ROUTINE_GROUP_REPAIR_HOLDS) {
+            setRoutineGroupRepairCursor(profileId, 0L)
+            return
+        }
+        settings[routineGroupRepairHoldsKey(profileId)] = holds.joinToString("\n")
+    }
+
+    /** Resets every profile's pull cursor for [userId] (force-full-resync). */
+    fun resetAllPullCursors(userId: String) {
+        withPlatformLock(authLock) {
+            val prefix = "$KEY_PULL_CURSOR_PREFIX$userId:"
+            settings.keys
+                .filter { it.startsWith(prefix) }
+                .forEach { settings.remove(it) }
+            _lastSyncTimestamp.value = 0L
+        }
+    }
+
+    /**
+     * Publishes the UI-facing "last successful pull" value (minimum across profiles).
+     * Called by SyncManager after each profile loop.
+     */
+    fun publishMinPullCursor(minAcrossProfiles: Long) {
+        _lastSyncTimestamp.value = minAcrossProfiles
+    }
+
+    /** Recomputes and publishes the UI cursor floor from this user's stored pull cursors. */
+    private fun publishPullCursorFloor(userId: String) {
+        _lastSyncTimestamp.value = pullCursorFloor(userId)
+    }
+
+    /**
+     * Minimum non-zero stored pull cursor for [userId] (G-4: never-pulled profiles must not
+     * report "never synced"). Before the one-time migration has run, the legacy global
+     * value stands in, so an upgraded install does not flash "never synced" either.
+     */
+    private fun pullCursorFloor(userId: String): Long {
+        val prefix = "$KEY_PULL_CURSOR_PREFIX$userId:"
+        val floor = settings.keys
+            .filter { it.startsWith(prefix) }
+            .map { settings[it, 0L] }
+            .filter { it > 0L }
+            .minOrNull()
+        return floor ?: settings[KEY_LEGACY_LAST_SYNC, 0L]
+    }
+
+    /**
+     * One-time upgrade seeding (PR 10 step 8). Reads the legacy global cursor and writes:
+     *  - every profile's `pushWatermark` = the legacy value (same sessions boundary as
+     *    today, so pulled sessions are not re-selected);
+     *  - `pullCursor` = the legacy value ONLY for the profile named by the legacy
+     *    "userId:profileId" delta-pull marker, 0 for every other profile. The old build
+     *    sent a full pull whenever that marker was absent or named another user/profile,
+     *    so seeding any other profile with the value would skip server rows it never
+     *    received (codex #856 P1).
+     *
+     * The legacy value belongs to [userId]: the old build zeroed it on every account
+     * switch, and [saveGoTrueAuth]/[clearAuth] drop it on a switch or sign-out. A marker
+     * that names a different user is the one remaining way to tell, so it also blocks
+     * the push-watermark seed (a watermark inherited from another account would hide
+     * this account's never-pushed routines/PRs).
+     *
+     * A legacy value of 0 seeds nothing (a restore must never zero cursors already
+     * seeded). Both legacy keys are then removed. Returns true when seeding ran.
+     */
+    fun migrateLegacyCursors(
+        userId: String,
+        allProfileIds: List<String>,
+    ): Boolean = withPlatformLock(authLock) {
+        if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock false
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        val marker: String? = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+        settings.remove(KEY_LEGACY_LAST_SYNC)
+        settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
+        if (legacy <= 0L) return@withPlatformLock false
+        val markerUserId = marker?.substringBefore(':', missingDelimiterValue = "")
+        if (markerUserId != null && markerUserId != userId) return@withPlatformLock false
+        val markerProfileId = marker
+            ?.substringAfter(':', missingDelimiterValue = "")
+            ?.trim()
+            ?.ifBlank { "default" }
+
+        for (profileId in allProfileIds) {
+            val normalized = profileId.trim().ifBlank { "default" }
+            settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, normalized)] = legacy
+            settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, normalized)] =
+                if (normalized == markerProfileId) legacy else 0L
+        }
+        true
+    }
+
+    /**
+     * The legacy global cursor as evidence for [userId], without consuming it: the value
+     * when it is present and not attributed (by the legacy delta-pull marker) to another
+     * user, else 0. Used by the one-shot generation seeding that must run before
+     * [migrateLegacyCursors] removes the key.
+     */
+    fun legacyLastSyncFor(userId: String): Long = withPlatformLock(authLock) {
+        if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock 0L
+        val markerUserId = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.substringBefore(':', missingDelimiterValue = "")
+        if (markerUserId != null && markerUserId != userId) 0L else settings[KEY_LEGACY_LAST_SYNC, 0L]
+    }
+
+    /**
+     * The profile the legacy global cursor belongs to, for [userId]: the profile named by
+     * the legacy "userId:profileId" delta-pull marker when that marker names [userId], else
+     * null. The old client synced only its active profile against that cursor, so the
+     * cursor is evidence for this profile alone.
+     */
+    fun legacyCursorProfileFor(userId: String): String? = withPlatformLock(authLock) {
+        if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock null
+        val marker = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY) ?: return@withPlatformLock null
+        if (marker.substringBefore(':', missingDelimiterValue = "") != userId) return@withPlatformLock null
+        marker.substringAfter(':', missingDelimiterValue = "").trim().ifBlank { "default" }
+    }
+
+    /**
+     * True while the one-time routines/cycles/PRs repair push is still owed for this user.
+     * That push re-sends routines, cycles, PRs and their tombstones for every profile from
+     * timestamp 0, which is non-destructive under portal LWW and holds no session children.
+     */
+    fun needsRoutineCyclePrRepairPush(userId: String): Boolean =
+        settings.getStringOrNull(routineCyclePrRepairKey(userId)) == null
+
+    fun markRoutineCyclePrRepairPushDone(userId: String) {
+        withPlatformLock(authLock) {
+            settings[routineCyclePrRepairKey(userId)] = "1"
+        }
+    }
+
+    /**
+     * Content fingerprint of the session DTO this account last got accepted under
+     * [portalSessionId]. Namespaced by `(userId, profileId)` exactly like the cursors
+     * (S-1): account A's accept must never let account B's never-accepted row be
+     * stamped as synced.
+     */
+    fun getSessionSentHash(userId: String, profileId: String, portalSessionId: String): String? =
+        settings[sessionSentHashKey(userId, profileId, portalSessionId)]
+
+    fun setSessionSentHash(userId: String, profileId: String, portalSessionId: String, hash: String?) {
+        withPlatformLock(authLock) {
+            val index = readSentHashIndex(userId, profileId)
+            index.remove(portalSessionId)
+            if (hash == null) {
+                settings.remove(sessionSentHashKey(userId, profileId, portalSessionId))
+            } else {
+                settings[sessionSentHashKey(userId, profileId, portalSessionId)] = hash
+                index.addLast(portalSessionId)
+                while (index.size > MAX_SESSION_SENT_HASHES) {
+                    settings.remove(sessionSentHashKey(userId, profileId, index.removeFirst()))
+                }
+            }
+            writeSentHashIndex(userId, profileId, index)
+        }
+    }
+
+    /** Routine ids awaiting server-wins convergence for (userId, profileId). */
+    fun pendingServerWinsRoutineIds(userId: String, profileId: String): Set<String> =
+        settings.getStringOrNull(cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId))
+            ?.split(',')
+            ?.filterTo(linkedSetOf()) { it.isNotEmpty() }
+            .orEmpty()
+
+    fun addPendingServerWinsRoutineIds(userId: String, profileId: String, routineIds: Collection<String>) {
+        if (routineIds.isEmpty()) return
+        withPlatformLock(authLock) {
+            val merged = pendingServerWinsRoutineIds(userId, profileId) + routineIds
+            settings[cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId)] = merged.joinToString(",")
+        }
+    }
+
+    /** Cleared only after a completed pull has applied the server copies. */
+    fun clearPendingServerWinsRoutineIds(userId: String, profileId: String) {
+        withPlatformLock(authLock) {
+            settings.remove(cursorKey(KEY_SERVER_WINS_ROUTINES_PREFIX, userId, profileId))
+        }
+    }
+
+    /** Portal session ids that currently hold a sent hash for (userId, profileId), oldest first. */
+    fun sessionSentHashIds(userId: String, profileId: String): List<String> =
+        withPlatformLock(authLock) { readSentHashIndex(userId, profileId).toList() }
+
+    /**
+     * Drops the sent hash of every indexed session not in [livePortalSessionIds] (deleted
+     * locally or tombstoned by a pull). Returns how many were removed.
+     */
+    fun retainSessionSentHashes(userId: String, profileId: String, livePortalSessionIds: Set<String>): Int =
+        withPlatformLock(authLock) {
+            val index = readSentHashIndex(userId, profileId)
+            val stale = index.filter { it !in livePortalSessionIds }
+            if (stale.isEmpty()) return@withPlatformLock 0
+            stale.forEach { settings.remove(sessionSentHashKey(userId, profileId, it)) }
+            index.removeAll(stale.toSet())
+            writeSentHashIndex(userId, profileId, index)
+            stale.size
+        }
+
+    private fun readSentHashIndex(userId: String, profileId: String): ArrayDeque<String> {
+        val raw = settings.getStringOrNull(cursorKey(KEY_SESSION_SENT_HASH_INDEX_PREFIX, userId, profileId))
+        return ArrayDeque(raw?.split(',')?.filter { it.isNotEmpty() }.orEmpty())
+    }
+
+    private fun writeSentHashIndex(userId: String, profileId: String, index: Collection<String>) {
+        val key = cursorKey(KEY_SESSION_SENT_HASH_INDEX_PREFIX, userId, profileId)
+        if (index.isEmpty()) settings.remove(key) else settings[key] = index.joinToString(",")
     }
 
     fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
 
     fun setPhasePRBackfillCheckpoint(profileId: String, timestamp: Long) {
         settings[phasePRBackfillCheckpointKey(profileId)] = timestamp
+    }
+
+    /**
+     * Cursor for the one-time routine-group repair push: each sync re-sends a capped
+     * batch of complete routine workouts older than this timestamp, so the portal
+     * history the pre-fix per-set push truncated is rebuilt a batch at a time.
+     *
+     * `Long.MAX_VALUE` (the default) means "start at the newest workout"; `0` means the
+     * repair has walked the whole history and is done.
+     */
+    fun getRoutineGroupRepairCursor(profileId: String): Long = settings[routineGroupRepairCursorKey(profileId), Long.MAX_VALUE]
+
+    fun setRoutineGroupRepairCursor(profileId: String, cursor: Long) {
+        settings[routineGroupRepairCursorKey(profileId)] = cursor
+        // A finished repair needs no holds; this bounds how long they are kept.
+        if (cursor <= 0L) settings.remove(routineGroupRepairHoldsKey(profileId))
     }
 
     fun updatePremiumStatus(isPremium: Boolean) {
@@ -231,10 +825,23 @@ class PortalTokenStorage(private val settings: Settings) {
      * to allow the UI to show appropriate messaging to the user.
      *
      * @param event The authentication event describing why auth was cleared
+     * @param expectedGeneration when set (refresh failures), clear and emit only if
+     *   auth hasn't been cleared or replaced since that [authGeneration] was
+     *   captured, so a stale failure can't wipe a newer session or report
+     *   "session expired" after a deliberate sign-out.
+     * @return false if skipped because the generation moved.
      */
-    fun clearAuthWithEvent(event: AuthEvent) {
-        clearAuthInternal()
-        _authEvents.tryEmit(event)
+    fun clearAuthWithEvent(event: AuthEvent, expectedGeneration: Long? = null): Boolean {
+        val cleared = withPlatformLock(authLock) {
+            if (expectedGeneration != null && expectedGeneration != authGeneration) {
+                false
+            } else {
+                clearAuthInternal()
+                true
+            }
+        }
+        if (cleared) _authEvents.tryEmit(event)
+        return cleared
     }
 
     /**
@@ -255,6 +862,8 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun clearAuthInternal() = withPlatformLock(authLock) {
+        val signedOutUserId: String? = settings.getStringOrNull(KEY_USER_ID)
+        authGeneration++
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
         settings.remove(KEY_EXPIRES_AT)
@@ -263,7 +872,15 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_USER_NAME)
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
-        settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
+        // Per-(userId, profileId) sync cursors are deliberately KEPT: they are namespaced
+        // by user id, so re-linking the same account resumes where it left off and a
+        // different account's cursors cannot be read through this one's keys.
+        // The un-namespaced legacy cursor is NOT: its owner is unknown once the user id
+        // is gone (the old build removed it on sign-out too). Its owner is kept first as
+        // PR 11 account-switch evidence (read before KEY_USER_ID was removed above).
+        preserveLegacySyncOwnerLocked(fallbackOwner = signedOutUserId)
+        settings.remove(KEY_LEGACY_LAST_SYNC)
+        settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false
@@ -279,6 +896,10 @@ class PortalTokenStorage(private val settings: Settings) {
         return PortalUser(id, email, displayName, isPremium)
     }
 
+    private fun restoreString(key: String, value: String?) {
+        if (value == null) settings.remove(key) else settings[key] = value
+    }
+
     private fun generateDeviceId(): String {
         // Generate a stable device identifier using multiplatform UUID
         return generateUUID()
@@ -288,4 +909,50 @@ class PortalTokenStorage(private val settings: Settings) {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
     }
+
+    private fun routineGroupRepairHoldsKey(profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$KEY_ROUTINE_GROUP_REPAIR_HOLDS_PREFIX$normalizedProfileId"
+    }
+
+    private fun routineGroupRepairCursorKey(profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX$normalizedProfileId"
+    }
+
+    private fun cursorKey(prefix: String, userId: String, profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$prefix$userId:$normalizedProfileId"
+    }
+
+    private fun routineCyclePrRepairKey(userId: String): String =
+        "$KEY_ROUTINE_CYCLE_PR_REPAIR_DONE_PREFIX$userId"
+
+    private fun sessionSentHashKey(userId: String, profileId: String, portalSessionId: String): String =
+        cursorKey("$KEY_SESSION_SENT_HASH_PREFIX", userId, profileId) + ":$portalSessionId"
+}
+
+/**
+ * Wipes secure auth storage on a fresh install whose secure store outlives the
+ * app (the iOS Keychain survives uninstall; app preferences and the database
+ * don't). Without this, a reinstall on a handed-down device is still signed in
+ * as the previous owner.
+ *
+ * No install marker and no local database means a fresh install: clear. No
+ * marker but a database present is an upgrade from a build that predates the
+ * marker: keep the session. The marker is set in both cases.
+ *
+ * @return true if secure storage was cleared.
+ */
+internal fun resetSecureStorageOnFreshInstall(
+    hasInstallMarker: () -> Boolean,
+    localDatabaseExists: () -> Boolean,
+    clearSecureStorage: () -> Unit,
+    setInstallMarker: () -> Unit,
+): Boolean {
+    if (hasInstallMarker()) return false
+    val freshInstall = !localDatabaseExists()
+    if (freshInstall) clearSecureStorage()
+    setInstallMarker()
+    return freshInstall
 }

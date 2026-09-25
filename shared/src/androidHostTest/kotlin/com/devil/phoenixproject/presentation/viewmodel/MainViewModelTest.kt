@@ -2,13 +2,19 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
-import com.devil.phoenixproject.data.repository.RepNotification
-import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.data.preferences.InMemoryRecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
+import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.ReconnectionRequest
+import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -16,13 +22,25 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.data.repository.MachineSafetyPhase
+import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
+import com.devil.phoenixproject.data.repository.MachineSafetyPhysicalRelease
+import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
+import com.devil.phoenixproject.testutil.FakeActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
@@ -31,11 +49,12 @@ import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
-import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -45,6 +64,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -64,6 +85,7 @@ class MainViewModelTest {
     private lateinit var fakeWorkoutRepository: FakeWorkoutRepository
     private lateinit var fakeExerciseRepository: FakeExerciseRepository
     private lateinit var fakePersonalRecordRepository: FakePersonalRecordRepository
+    private lateinit var fakeBaselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var fakePreferencesManager: FakePreferencesManager
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
@@ -73,6 +95,8 @@ class MainViewModelTest {
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
     private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
+    private lateinit var safetyStore: com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
+    private lateinit var recentStore: InMemoryRecentJustLiftExerciseStore
 
     @Before
     fun setup() {
@@ -80,29 +104,35 @@ class MainViewModelTest {
         fakeWorkoutRepository = FakeWorkoutRepository()
         fakeExerciseRepository = FakeExerciseRepository()
         fakePersonalRecordRepository = FakePersonalRecordRepository()
+        fakeBaselineRepository = FakeProfileExerciseBaselineRepository()
         fakePreferencesManager = FakePreferencesManager()
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeBaselineRepository, FakeVelocityOneRepMaxRepository())
         fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
         profileEquipmentRackRepository = ProfileEquipmentRackRepository(
             fakeUserProfileRepository,
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
         )
+        safetyStore = com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository()
+        recentStore = InMemoryRecentJustLiftExerciseStore()
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
             workoutRepository = fakeWorkoutRepository,
             exerciseRepository = fakeExerciseRepository,
             personalRecordRepository = fakePersonalRecordRepository,
+            profileExerciseBaselineRepository = fakeBaselineRepository,
             repCounter = repCounter,
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
+            activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
@@ -141,7 +171,23 @@ class MainViewModelTest {
                 hasEstimates = { _, _ -> false },
                 computeAllTime = { _, _, _ -> null },
             ),
+            machineSafetyCoordinator = MachineSafetyCoordinator(
+                repository = safetyStore,
+                transport = FakeBleMachineSafetyTransport(fakeBleRepository),
+                scope = kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher),
+                nowEpochMs = { testCoroutineRule.dispatcher.scheduler.currentTime },
+            ),
+            recentJustLiftExerciseStore = recentStore,
         )
+        val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("elapsedRealtimeProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("wallClockMillisProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
     }
 
     @After
@@ -173,6 +219,289 @@ class MainViewModelTest {
         assertEquals(10f, params.weightPerCableKg)
         assertFalse(params.isJustLift)
         assertEquals(3, params.warmupReps)
+    }
+
+    @Test
+    fun `connecting remembers the trainer model for the offline planning sliders`() = runTest(testCoroutineRule.dispatcher) {
+        // KD-9: planning/editor screens run offline, so they need the LAST connected model.
+        assertEquals(PhoenixModel.Unknown, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF", PhoenixModel.VFormTrainer)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.VFormTrainer, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        // An unidentifiable device must never narrow a known owner's planning range.
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.simulateConnect("Mystery", "AA:BB:CC:DD:EE:F0", PhoenixModel.Unknown)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.VFormTrainer, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.simulateConnect("VIT_Test", "AA:BB:CC:DD:EE:F1", PhoenixModel.TrainerPlus)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.TrainerPlus, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+    }
+
+    @Test
+    fun `unexpected idle disconnect does not create a machine safety hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Idle", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Idle", "AA:BB:CC:DD:EE:FF", "idle loss", 1L),
+        )
+        advanceUntilIdle()
+
+        assertIs<MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+        assertTrue(safetyStore.loadAll().isEmpty())
+    }
+
+    @Test
+    fun `production workout graph preserves durable safety barrier after dismissal`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+
+        // Lose the link while this execution is still armed. A successful terminal
+        // RESET would resolve the exact arm and make a later idle disconnect harmless.
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "test loss", 1L),
+        )
+        advanceUntilIdle()
+        assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.stopWorkout(exitingWorkout = true)
+        advanceUntilIdle()
+        viewModel.dismissMachineSafetyWarning()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        assertIs<MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+    }
+
+    @Test
+    fun `fresh production graph restores loss barrier and does not resume routine`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "unexpected disconnect", 1L),
+        )
+        advanceUntilIdle()
+        val firstState = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.viewModelScope.cancel()
+
+        val secondBle = FakeBleRepository()
+        val second = newSafetyGraph(secondBle)
+        advanceUntilIdle()
+        assertIs<MachineSafetyUiState.Visible>(second.machineSafetyUiState.value)
+        second.dismissMachineSafetyWarning()
+        advanceUntilIdle()
+        second.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertTrue(secondBle.commandsReceived.isEmpty())
+        assertIs<MachineSafetyUiState.Hidden>(second.machineSafetyUiState.value)
+        assertEquals(
+            firstState.document.generation,
+            safetyStore.loadAll().filterIsInstance<com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded>()
+                .maxBy { it.document.generation }.document.generation,
+        )
+        second.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `production graph recovery rejects wrong trainer and failed reset without clearing durable hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Wrong", "11:22:33:44:55:66")
+        advanceUntilIdle()
+        assertTrue(
+            recordTestConnectionLost(
+                viewModel.machineSafetyCoordinator,
+                trainerAddress = "AA:BB:CC:DD:EE:FF",
+                trainerName = "Vee_Target",
+            ),
+        )
+
+        val visible = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_FAILED, (viewModel.machineSafetyUiState.value as MachineSafetyUiState.Visible).document.phase)
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(visible.document.generation, (safetyStore.loadAll().first() as com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded).document.generation)
+
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        fakeBleRepository.stopWorkoutBlock = { Result.failure(IllegalStateException("write failed")) }
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        advanceUntilIdle()
+        val failedWrite = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_FAILED, failedWrite.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(safetyStore.loadAll().isNotEmpty())
+    }
+
+    @Test
+    fun `production graph duplicate recovery request and cancellation never authorize a new machine start`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertTrue(
+            recordTestConnectionLost(
+                viewModel.machineSafetyCoordinator,
+                trainerAddress = "AA:BB:CC:DD:EE:FF",
+                trainerName = "Vee_Target",
+            ),
+        )
+        val pending = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        fakeBleRepository.stopWorkoutBlock = { pending.await() }
+
+        val visible = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        runCurrent()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        viewModel.dismissMachineSafetyWarning()
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        pending.cancel()
+        advanceUntilIdle()
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph matching trainer reset records transport ack but keeps durable hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertTrue(
+            recordTestConnectionLost(
+                viewModel.machineSafetyCoordinator,
+                trainerAddress = "AA:BB:CC:DD:EE:FF",
+                trainerName = "Vee_Target",
+            ),
+        )
+
+        val visible = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        advanceUntilIdle()
+
+        val recovered = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_SENT, recovered.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(safetyStore.loadAll().isNotEmpty(), "transport ACK is not physical acknowledgement")
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `hidden safety recovery button resurfaces the durable hazard and sends reset`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertTrue(
+            recordTestConnectionLost(
+                viewModel.machineSafetyCoordinator,
+                trainerAddress = "AA:BB:CC:DD:EE:FF",
+                trainerName = "Vee_Target",
+            ),
+        )
+        viewModel.dismissMachineSafetyWarning()
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, viewModel.machineSafetyUiState.value)
+
+        viewModel.requestMachineSafetyRecovery(identity = null)
+        advanceUntilIdle()
+
+        val recovered = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_SENT, recovered.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `recovery button explains when no durable safety recovery exists`() = runTest(testCoroutineRule.dispatcher) {
+        viewModel.userFeedbackEvents.test {
+            viewModel.requestMachineSafetyRecovery(identity = null)
+            advanceUntilIdle()
+
+            assertTrue(awaitItem().contains("No stored machine recovery"))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `production graph disconnect during reset write leaves hazard and ignores stale completion`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertTrue(
+            recordTestConnectionLost(
+                viewModel.machineSafetyCoordinator,
+                trainerAddress = "AA:BB:CC:DD:EE:FF",
+                trainerName = "Vee_Target",
+            ),
+        )
+
+        val write = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        fakeBleRepository.stopWorkoutBlock = {
+            fakeBleRepository.simulateDisconnect()
+            write.await()
+        }
+        val visible = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.requestMachineSafetyRecovery(visible.identity)
+        runCurrent()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+
+        write.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        val state = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertTrue(state.document.phase != MachineSafetyPhase.RELEASE_REQUEST_SENT)
+        assertTrue(safetyStore.loadAll().isNotEmpty())
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph preserves bodyweight control without safety arm or absent link write`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Bodyweight", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        viewModel.loadRoutine(
+            Routine(
+                id = "routine-production-bodyweight",
+                name = "Production Bodyweight",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "routine-production-bodyweight-exercise",
+                        exercise = Exercise(
+                            id = "production-pullup",
+                            name = "Pull-Up",
+                            muscleGroup = "Back",
+                            equipment = "",
+                            isBodyweightOverride = true,
+                        ),
+                        orderIndex = 0,
+                        setReps = listOf(5),
+                        weightPerCableKg = 0f,
+                        warmupSets = emptyList(),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 0f, loadB = 0f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.BodyweightRepEntry>(viewModel.workoutState.value)
+        assertTrue(fakeBleRepository.commandsReceived.none { it.isEmpty() })
+        assertTrue(safetyStore.loadAll().isEmpty(), "bodyweight control must not persist a machine safety obligation: ${safetyStore.loadAll()}")
     }
 
     // ========== Connection State Tests ==========
@@ -317,6 +646,106 @@ class MainViewModelTest {
         assertEquals(ConnectionState.Disconnected, viewModel.connectionState.value)
     }
 
+    // ========== Issue #850: Recent Just Lift exercises ==========
+
+    private fun justLiftSession(id: String, timestamp: Long, exerciseId: String?, profileId: String, isJustLift: Boolean = true) =
+        WorkoutSession(
+            id = id,
+            timestamp = timestamp,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = isJustLift,
+            exerciseId = exerciseId,
+            profileId = profileId,
+        )
+
+    @Test
+    fun `issue 850 recent Just Lift exercises are seeded from history newest first then follow the store`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            fakeWorkoutRepository.addSession(justLiftSession("older", 100L, "bench", profileId))
+            fakeWorkoutRepository.addSession(justLiftSession("newer", 200L, "squat", profileId))
+            fakeWorkoutRepository.addSession(justLiftSession("routine", 300L, "row", profileId, isJustLift = false))
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+
+            assertEquals(listOf("squat", "bench"), viewModel.recentJustLiftExerciseIds.value)
+
+            recentStore.record(profileId, "curl")
+            advanceUntilIdle()
+            assertEquals(listOf("curl", "squat", "bench"), viewModel.recentJustLiftExerciseIds.value)
+        }
+
+    @Test
+    fun `issue 850 an empty history is not stored so sessions synced later still seed the list`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+            assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+            assertFalse(recentStore.hasEntry(profileId), "an empty history must not be stored as the list")
+
+            // The first portal pull brings in tagged Just Lift sessions after the screen opened.
+            fakeWorkoutRepository.addSession(justLiftSession("synced", 100L, "bench", profileId))
+            advanceUntilIdle()
+
+            assertEquals(listOf("bench"), viewModel.recentJustLiftExerciseIds.value)
+        }
+
+    @Test
+    fun `issue 850 a tag recorded before any history ends the wait for a seed`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+
+        recentStore.record(profileId, "curl")
+        advanceUntilIdle()
+
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 a stored recent list is never replaced by the history seed`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        recentStore.record(profileId, "curl")
+        fakeWorkoutRepository.addSession(justLiftSession("tagged", 100L, "bench", profileId))
+        backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 the recent list is not replayed once collection has stopped`() = runTest(testCoroutineRule.dispatcher) {
+        val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+        recentStore.record(profileId, "curl")
+        val collector = backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+
+        collector.cancel()
+        advanceTimeBy(5_001)
+
+        // A profile switch can happen while no screen collects; a returning screen must not
+        // briefly see the previous profile's list.
+        assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+    }
+
+    @Test
+    fun `issue 850 recent Just Lift exercises are empty while the profile is switching`() =
+        runTest(testCoroutineRule.dispatcher) {
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            recentStore.record(profileId, "curl")
+            backgroundScope.launch { viewModel.recentJustLiftExerciseIds.collect {} }
+            advanceUntilIdle()
+            assertEquals(listOf("curl"), viewModel.recentJustLiftExerciseIds.value)
+
+            fakeUserProfileRepository.emitSwitchingForTest("other-profile")
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), viewModel.recentJustLiftExerciseIds.value)
+        }
+
     // ========== User Preferences Tests ==========
 
     @Test
@@ -353,35 +782,34 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `globalSettings ignores profile updates and emits global updates`() =
-        runTest(testCoroutineRule.dispatcher) {
-            viewModel.globalSettings.test {
-                val initial = awaitItem()
-                assertEquals(initial, viewModel.globalSettings.value)
+    fun `globalSettings ignores profile updates and emits global updates`() = runTest(testCoroutineRule.dispatcher) {
+        viewModel.globalSettings.test {
+            val initial = awaitItem()
+            assertEquals(initial, viewModel.globalSettings.value)
 
-                val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
-                fakeUserProfileRepository.updateWorkout(
-                    profileId,
-                    WorkoutPreferences(stopAtTop = true),
-                )
-                advanceUntilIdle()
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            fakeUserProfileRepository.updateWorkout(
+                profileId,
+                WorkoutPreferences(stopAtTop = true),
+            )
+            advanceUntilIdle()
 
-                expectNoEvents()
-                assertEquals(initial, viewModel.globalSettings.value)
+            expectNoEvents()
+            assertEquals(initial, viewModel.globalSettings.value)
 
-                val updatedVideoPlayback = !initial.enableVideoPlayback
-                viewModel.setEnableVideoPlayback(updatedVideoPlayback)
+            val updatedVideoPlayback = !initial.enableVideoPlayback
+            viewModel.setEnableVideoPlayback(updatedVideoPlayback)
 
-                val updated = awaitItem()
-                assertEquals(
-                    initial.copy(enableVideoPlayback = updatedVideoPlayback),
-                    updated,
-                )
-                assertEquals(updated, viewModel.globalSettings.value)
-                expectNoEvents()
-                cancelAndIgnoreRemainingEvents()
-            }
+            val updated = awaitItem()
+            assertEquals(
+                initial.copy(enableVideoPlayback = updatedVideoPlayback),
+                updated,
+            )
+            assertEquals(updated, viewModel.globalSettings.value)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
         }
+    }
 
     // ========== Top Bar State Tests ==========
 
@@ -504,6 +932,41 @@ class MainViewModelTest {
         assertEquals(overrides, activeRoutine.exercises.single().rackBehaviorOverrides)
     }
 
+    @Test
+    fun `rack catalog save intent prevents a stale ordinary config command`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test")
+        viewModel.updateWorkoutParameters(
+            viewModel.workoutParameters.value.copy(weightPerCableKg = 25f),
+        )
+        var saveAtClaim = true
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = {
+            if (saveAtClaim) {
+                saveAtClaim = false
+                viewModel.saveRackItem(
+                    RackItem(
+                        id = "claim-boundary-rack-item",
+                        name = "Claim boundary rack item",
+                        category = RackItemCategory.OTHER,
+                        weightKg = 5f,
+                    ),
+                )
+            }
+        }
+
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertFalse(saveAtClaim)
+        assertEquals(0, fakeBleRepository.commandsReceived.size)
+        assertEquals(null, viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull())
+
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = null
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertIs<WorkoutState.Active>(viewModel.workoutState.value)
+    }
+
     // ========== Workout History Tests ==========
 
     @Test
@@ -548,6 +1011,8 @@ class MainViewModelTest {
 
     @Test
     fun `startWorkout sends commands and moves to active`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
@@ -570,7 +1035,7 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        // Activation sends CONFIG (0x04) only; the legacy START (0x03) command is not sent.
         assertEquals(1, fakeBleRepository.commandsReceived.size)
         assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
         assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
@@ -578,6 +1043,8 @@ class MainViewModelTest {
 
     @Test
     fun `rep events update counts and stop workout at target`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
@@ -599,6 +1066,44 @@ class MainViewModelTest {
         assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
         assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
         assertEquals(2, viewModel.repCount.value.workingReps)
+    }
+
+    @Test
+    fun `disconnect during bodyweight-only workout does not show connection lost alert`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+
+        val bodyweightRoutine = Routine(
+            id = "routine-bodyweight-test",
+            name = "Bodyweight Test",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "routine-ex-bw-1",
+                    exercise = Exercise(
+                        id = "pullup",
+                        name = "Pull-Up",
+                        muscleGroup = "Back",
+                        equipment = "",
+                        isBodyweightOverride = true,
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                    warmupSets = emptyList(),
+                ),
+            ),
+        )
+        viewModel.loadRoutine(bodyweightRoutine)
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.connectionLostDuringWorkout.value)
     }
 
     @Test
@@ -624,94 +1129,9 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `reconnect interrupted workout resumes same routine set with remaining reps`() = runTest(testCoroutineRule.dispatcher) {
+    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
-
-        val routine = Routine(
-            id = "routine-recovery-1",
-            name = "Recovery Routine",
-            exercises = listOf(
-                RoutineExercise(
-                    id = "routine-ex-1",
-                    exercise = Exercise(
-                        id = "bench",
-                        name = "Bench Press",
-                        muscleGroup = "Chest",
-                        equipment = "HANDLES",
-                    ),
-                    orderIndex = 0,
-                    setReps = listOf(5),
-                    weightPerCableKg = 20f,
-                    warmupSets = emptyList(),
-                ),
-            ),
-        )
-        viewModel.loadRoutine(routine)
-        advanceUntilIdle()
-        viewModel.enterSetReady(0, 0)
-        advanceUntilIdle()
-
-        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
-        fakeBleRepository.emitMetric(metric)
-        viewModel.startWorkout(skipCountdown = true)
-        advanceUntilIdle()
-
-        assertEquals(1, fakeBleRepository.commandsReceived.size)
-        assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
-        assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
-
-        emitRepNotification(
-            repIndex = 2,
-            metric = metric,
-            warmupCount = 3,
-            warmupTarget = 3,
-            workingTarget = 5,
-        )
-        advanceUntilIdle()
-        assertEquals(2, viewModel.repCount.value.workingReps)
-
-        fakeBleRepository.simulateDisconnect()
-        advanceUntilIdle()
-        assertTrue(viewModel.connectionLostDuringWorkout.value)
-
-        viewModel.reconnectInterruptedWorkout()
-        advanceUntilIdle()
-
-        assertFalse(viewModel.connectionLostDuringWorkout.value)
-        assertEquals(2, fakeBleRepository.commandsReceived.size)
-        assertEquals(
-            listOf(0x04.toByte(), 0x04.toByte()),
-            fakeBleRepository.commandsReceived.map { it[0] },
-        )
-        assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
-        assertEquals(0, viewModel.repCount.value.workingReps)
-        assertEquals(3, viewModel.workoutParameters.value.reps)
-        assertEquals(0, viewModel.workoutParameters.value.warmupReps)
-        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-
-        for (repIndex in 1..3) {
-            emitRepNotification(
-                repIndex = repIndex,
-                metric = metric,
-                warmupCount = 0,
-                warmupTarget = 0,
-                workingTarget = 3,
-            )
-        }
-        advanceUntilIdle()
-
-        // Issue #355 (d62d5c5): the routine contains a single set, so once the final
-        // rep lands, SetSummary auto-advances via proceedFromSummary(), which invokes
-        // showRoutineComplete() and resets workoutState to Idle to break the
-        // EnhancedMainScreen navigation ping-pong. advanceUntilIdle() runs past the
-        // 10s summary countdown, so the visible end state is Idle, not SetSummary.
-        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
-    }
-
-    @Test
-    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest(testCoroutineRule.dispatcher) {
         val timedCableExercise = RoutineExercise(
             id = "timed-cable-1",
             exercise = Exercise(
@@ -775,11 +1195,11 @@ class MainViewModelTest {
                     repsRomCount = warmupRep,
                     repsRomTotal = 3,
                     repsSetCount = 0,
-                    repsSetTotal = 10,
+                    repsSetTotal = activeWorkingRepTarget(),
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong(),
+                    timestamp = activeCutoverTimestamp() + warmupRep,
                 ),
             )
             runCurrent()
@@ -802,153 +1222,305 @@ class MainViewModelTest {
     // ========== Issue #627: isStoppingWorkout flag lifecycle ==========
 
     @Test
-    fun `isStoppingWorkout is false before stop, true immediately on stopWorkout, persists after teardown, resets on next startWorkout`() =
-        runTest(testCoroutineRule.dispatcher) {
-            // Precondition: flag starts false
-            assertFalse(viewModel.isStoppingWorkout(), "Flag must be false before any workout begins")
+    fun `isStoppingWorkout is false before stop, true immediately on stopWorkout, persists after teardown, resets on next startWorkout`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        // Precondition: flag starts false
+        assertFalse(viewModel.isStoppingWorkout(), "Flag must be false before any workout begins")
 
-            // Start a workout and reach Active state
-            val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
-            viewModel.updateWorkoutParameters(
-                WorkoutParameters(
-                    programMode = ProgramMode.OldSchool,
-                    reps = 10,
-                    warmupReps = 0,
-                    weightPerCableKg = 20f,
-                ),
-            )
-            fakeBleRepository.emitMetric(metric)
-            viewModel.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-            assertFalse(viewModel.isStoppingWorkout(), "Flag must be false while workout is active")
+        // Start a workout and reach Active state
+        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+        viewModel.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+            ),
+        )
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        assertFalse(viewModel.isStoppingWorkout(), "Flag must be false while workout is active")
 
-            // stopWorkout(exitingWorkout=true) sets the flag synchronously (compareAndSet before
-            // scope.launch — ActiveSessionEngine:2908), before the async teardown coroutine starts.
-            viewModel.stopWorkout(exitingWorkout = true)
-            assertTrue(
-                viewModel.isStoppingWorkout(),
-                "Flag must be true immediately after stopWorkout() — before teardown coroutine runs",
-            )
+        // stopWorkout(exitingWorkout=true) sets the flag synchronously (compareAndSet before
+        // scope.launch — ActiveSessionEngine:2908), before the async teardown coroutine starts.
+        viewModel.stopWorkout(exitingWorkout = true)
+        assertTrue(
+            viewModel.isStoppingWorkout(),
+            "Flag must be true immediately after stopWorkout() — before teardown coroutine runs",
+        )
+        // Let the teardown coroutine complete; workoutState becomes Idle.
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must run exactly once")
+        assertEquals(MachineTeardownState.Ready, viewModel.machineTeardownState.value)
+        assertIs<ConnectionState.Connected>(viewModel.connectionState.value)
+        // The flag is NOT reset inside stopWorkout(). It persists until the next
+        // startWorkout() call resets it (ActiveSessionEngine:2352). The navigation guard in
+        // EnhancedMainScreen is fine with this: once workoutState is Idle,
+        // shouldResumeActiveWorkout() returns false, so the observer condition is false
+        // regardless of the flag.
+        assertTrue(
+            viewModel.isStoppingWorkout(),
+            "Flag must still be true after teardown coroutine completes — reset only on next startWorkout",
+        )
 
-            // Let the teardown coroutine complete; workoutState becomes Idle.
-            advanceUntilIdle()
-            assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
-            // The flag is NOT reset inside stopWorkout(). It persists until the next
-            // startWorkout() call resets it (ActiveSessionEngine:2352). The navigation guard in
-            // EnhancedMainScreen is fine with this: once workoutState is Idle,
-            // shouldResumeActiveWorkout() returns false, so the observer condition is false
-            // regardless of the flag.
-            assertTrue(
-                viewModel.isStoppingWorkout(),
-                "Flag must still be true after teardown coroutine completes — reset only on next startWorkout",
-            )
-
-            // The next startWorkout() synchronously resets the flag (line 2352) before launching
-            // its own coroutine. This matches the legitimate-resume path: a fresh set start always
-            // clears the guard so normal navigation can proceed.
-            fakeBleRepository.emitMetric(metric)
-            viewModel.startWorkout(skipCountdown = true)
-            assertFalse(
-                viewModel.isStoppingWorkout(),
-                "Flag must be false immediately after startWorkout() resets it",
-            )
-        }
-
-    @Test
-    fun `isStoppingWorkout exitingWorkout=false — flag held and workoutState is SetSummary after teardown`() =
-        runTest(testCoroutineRule.dispatcher) {
-            // exitingWorkout=false is the Just Lift path: stopWorkout lands on SetSummary
-            // (resumable), not Idle. The guard must stay load-bearing for the full window
-            // between the pop and the next startWorkout() reset.
-            val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
-            viewModel.updateWorkoutParameters(
-                WorkoutParameters(
-                    programMode = ProgramMode.OldSchool,
-                    reps = 10,
-                    warmupReps = 0,
-                    weightPerCableKg = 20f,
-                ),
-            )
-            fakeBleRepository.emitMetric(metric)
-            viewModel.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-
-            viewModel.stopWorkout(exitingWorkout = false)
-            assertTrue(viewModel.isStoppingWorkout(), "Flag must be true immediately after stopWorkout(exitingWorkout=false)")
-
-            // Let teardown coroutine complete: state lands on SetSummary, not Idle.
-            advanceUntilIdle()
-            assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
-            // Flag is still true — SetSummary is resumable so shouldResumeActiveWorkout()
-            // returns true, and the guard remains the only bounce suppressor in this window.
-            assertTrue(
-                viewModel.isStoppingWorkout(),
-                "Flag must persist after teardown when workoutState is SetSummary (resumable) — guard stays load-bearing",
-            )
-        }
+        // The next startWorkout() synchronously resets the flag (line 2352) before launching
+        // its own coroutine. This matches the legitimate-resume path: a fresh set start always
+        // clears the guard so normal navigation can proceed.
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        assertFalse(
+            viewModel.isStoppingWorkout(),
+            "Flag must be false immediately after startWorkout() resets it",
+        )
+    }
 
     @Test
-    fun `resumeWorkout is refused while stop teardown in flight — refuse-guard contract`() =
-        runTest(testCoroutineRule.dispatcher) {
-            // Part (a): resume during an in-flight stop teardown is a NO-OP.
-            // State stays Paused and the CAS guard (stopWorkoutInProgress) stays true,
-            // preventing a concurrent duplicate teardown (#627 PR-review).
-            val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
-            viewModel.updateWorkoutParameters(
-                WorkoutParameters(
-                    programMode = ProgramMode.OldSchool,
-                    reps = 10,
-                    warmupReps = 0,
-                    weightPerCableKg = 20f,
-                ),
-            )
-            fakeBleRepository.emitMetric(metric)
-            viewModel.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+    fun `isStoppingWorkout exitingWorkout=false — flag held and workoutState is SetSummary after teardown`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        // exitingWorkout=false is the Just Lift path: stopWorkout lands on SetSummary
+        // (resumable), not Idle. The guard must stay load-bearing for the full window
+        // between the pop and the next startWorkout() reset.
+        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+        viewModel.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+            ),
+        )
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
 
-            // pauseWorkout() sets workoutState = Paused synchronously (BLE stop is async).
-            viewModel.pauseWorkout()
-            assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
+        viewModel.stopWorkout(exitingWorkout = false)
+        assertTrue(viewModel.isStoppingWorkout(), "Flag must be true immediately after stopWorkout(exitingWorkout=false)")
 
-            // stopWorkout() arms the CAS guard synchronously; teardown coroutine is queued but not yet run.
-            viewModel.stopWorkout(exitingWorkout = true)
-            assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
+        // Let teardown coroutine complete: state lands on SetSummary, not Idle.
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must run exactly once")
+        assertEquals(MachineTeardownState.Ready, viewModel.machineTeardownState.value)
+        assertIs<ConnectionState.Connected>(viewModel.connectionState.value)
+        assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+        // Flag is still true — SetSummary is resumable so shouldResumeActiveWorkout()
+        // returns true, and the guard remains the only bounce suppressor in this window.
+        assertTrue(
+            viewModel.isStoppingWorkout(),
+            "Flag must persist after teardown when workoutState is SetSummary (resumable) — guard stays load-bearing",
+        )
+    }
 
-            // resumeWorkout() must be refused — NO-OP: state stays Paused, flag stays true.
-            viewModel.resumeWorkout()
-            assertIs<WorkoutState.Paused>(
-                viewModel.workoutState.value,
-                "State must stay Paused — resume refused while stop teardown is in flight",
-            )
-            assertTrue(
-                viewModel.isStoppingWorkout(),
-                "CAS guard must stay true — resumeWorkout() must not clear it while teardown is in flight (#627)",
-            )
+    @Test
+    fun `resumeWorkout is refused while stop teardown in flight — refuse-guard contract`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        // Part (a): resume during an in-flight stop teardown is a NO-OP. Issue #687
+        // synchronously publishes Idle at the End boundary while the CAS guard
+        // (stopWorkoutInProgress) prevents a concurrent duplicate teardown.
+        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+        viewModel.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+            ),
+        )
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
 
-            // Part (b): after teardown completes, startWorkout() resets the guard and resume behaves normally.
-            // exitingWorkout=true → state transitions to Idle; flag stays true until startWorkout() resets it.
-            advanceUntilIdle()
-            assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        // pauseWorkout() sets workoutState = Paused synchronously (BLE stop is async).
+        viewModel.pauseWorkout()
+        assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
 
-            // startWorkout() unconditionally resets stopWorkoutInProgress (line 2352).
-            fakeBleRepository.emitMetric(metric)
-            viewModel.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-            assertFalse(
-                viewModel.isStoppingWorkout(),
-                "startWorkout() must reset the stop guard — gate reopens for next session (#627)",
-            )
-            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        // stopWorkout() arms the CAS guard synchronously; teardown coroutine is queued but not yet run.
+        viewModel.stopWorkout(exitingWorkout = true)
+        assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
+        assertIs<WorkoutState.Idle>(viewModel.workoutState.value)
 
-            // pause then resume must now succeed normally.
-            viewModel.pauseWorkout()
-            assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
-            viewModel.resumeWorkout()
-            assertEquals(WorkoutState.Active, viewModel.workoutState.value, "Resume must succeed after guard is reset by startWorkout()")
+        // resumeWorkout() must be refused: state, guard, and command counts stay unchanged.
+        val workoutCommandCount = fakeBleRepository.commandsReceived.size
+        val resetCommandCount = fakeBleRepository.stopWorkoutCallCount
+        viewModel.resumeWorkout()
+        assertIs<WorkoutState.Idle>(
+            viewModel.workoutState.value,
+            "State must stay Idle — resume refused while End teardown is in flight",
+        )
+        assertEquals(workoutCommandCount, fakeBleRepository.commandsReceived.size)
+        assertEquals(resetCommandCount, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(
+            viewModel.isStoppingWorkout(),
+            "CAS guard must stay true — resumeWorkout() must not clear it while teardown is in flight (#627)",
+        )
+
+        // Part (b): after teardown completes, startWorkout() resets the guard and resume behaves normally.
+        // exitingWorkout=true → state transitions to Idle; flag stays true until startWorkout() resets it.
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+
+        // startWorkout() unconditionally resets stopWorkoutInProgress (line 2352).
+        // The successful teardown RESET resolves this process's exact hidden arm, so
+        // the next connected start can reopen the guard without an acknowledgement.
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertFalse(
+            viewModel.isStoppingWorkout(),
+            "startWorkout() must reset the stop guard — gate reopens for next session (#627)",
+        )
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+        // pause then resume must now succeed normally.
+        viewModel.pauseWorkout()
+        assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
+        viewModel.resumeWorkout()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value, "Resume must succeed after guard is reset by startWorkout()")
+    }
+
+    // ========== ViewModel teardown mid-set (F-013, A-002) ==========
+
+    @Test
+    fun `clearing the ViewModel mid Just Lift set sends RESET before disconnect and keeps the arm row`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = true)
+        // R-14: pin where cleanup() runs — after the RESET, so the workout foreground
+        // service is still keeping the process alive while the write lands.
+        var eventsAtCleanup = -1
+        viewModel.workoutSessionManager.activeSessionEngine.beforeCleanupGuardCloseForTest = {
+            eventsAtCleanup = fakeBleRepository.events.size
         }
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        val stopEntered = fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutEntered)
+        val stopCompleted = fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutCompleted)
+        val disconnected = fakeBleRepository.events.indexOf(FakeBleRepository.Event.Disconnected)
+        assertTrue(stopEntered >= 0, "RESET must be attempted when the Activity scope dies mid-set")
+        assertTrue(stopEntered < stopCompleted && stopCompleted < disconnected, "RESET must finish before disconnect: ${fakeBleRepository.events}")
+        assertTrue(
+            stopCompleted < eventsAtCleanup && eventsAtCleanup <= disconnected,
+            "cleanup() must run between the RESET and the disconnect, not before the RESET (marker=$eventsAtCleanup)",
+        )
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(1, fakeBleRepository.disconnectCallCount)
+        assertEquals(listOf(armRow), loadedSafetyRows(), "An unconfirmed teardown must keep the #782 arm row for the relaunch warning")
+    }
+
+    @Test
+    fun `clearing the ViewModel mid manual set still disconnects when RESET times out`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.stopWorkoutBlock = { kotlinx.coroutines.awaitCancellation() }
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        runCurrent()
+
+        // R-12: disconnect must wait for the RESET attempt, not race it.
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must be attempted before disconnect")
+        assertEquals(0, fakeBleRepository.disconnectCallCount, "Disconnect must not run while the RESET attempt is still in flight")
+
+        advanceUntilIdle()
+
+        assertFalse(FakeBleRepository.Event.StopWorkoutCompleted in fakeBleRepository.events)
+        assertEquals(1, fakeBleRepository.disconnectCallCount, "A hung RESET must not block disconnect")
+        assertTrue(
+            fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutEntered) <
+                fakeBleRepository.events.indexOf(FakeBleRepository.Event.Disconnected),
+            "Recorded order must be RESET attempt then disconnect: ${fakeBleRepository.events}",
+        )
+        assertTrue(
+            testCoroutineRule.dispatcher.scheduler.currentTime - clearedAt >= com.devil.phoenixproject.util.BleConstants.GATT_OPERATION_TIMEOUT_MS,
+            "Disconnect waits for the whole bounded RESET attempt",
+        )
+        assertEquals(listOf(armRow), loadedSafetyRows())
+    }
+
+    @Test
+    fun `clearing the ViewModel mid set disconnects and keeps the arm row when RESET throws`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.stopWorkoutBlock = { throw IllegalStateException("gatt gone") }
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(1, fakeBleRepository.disconnectCallCount, "A throwing RESET must not leak the BLE link")
+        assertEquals(listOf(armRow), loadedSafetyRows())
+    }
+
+    @Test
+    fun `clearing the ViewModel after the link dropped mid set skips the RESET`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+        val stopsBeforeClear = fakeBleRepository.stopWorkoutCallCount
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        // Off-link a RESET can only fail, and waiting for it would delay cleanup by the GATT timeout.
+        assertEquals(stopsBeforeClear, fakeBleRepository.stopWorkoutCallCount, "No RESET is written once the link is gone")
+        assertEquals(clearedAt, testCoroutineRule.dispatcher.scheduler.currentTime, "The off-link path must not wait for a RESET timeout")
+        assertEquals(listOf(armRow), loadedSafetyRows(), "The #782 arm row still warns on the next launch")
+    }
+
+    @Test
+    fun `clearing an idle ViewModel sends no RESET and disconnects immediately`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        assertEquals(MachineTeardownState.Ready, viewModel.machineTeardownState.value)
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        runCurrent()
+
+        // No lease: nothing suspends before disconnect, so it is done without advancing time.
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount, "An idle, torn-down engine must not write RESET")
+        assertEquals(1, fakeBleRepository.disconnectCallCount)
+        assertEquals(clearedAt, testCoroutineRule.dispatcher.scheduler.currentTime, "The idle path must not wait for a RESET timeout")
+        advanceUntilIdle()
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
+    }
+
+    /** Starts one armed machine set and returns its single #782 arm row. */
+    private suspend fun kotlinx.coroutines.test.TestScope.startArmedSet(isJustLift: Boolean): com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        viewModel.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+                isJustLift = isJustLift,
+            ),
+        )
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true, isJustLiftMode = isJustLift)
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
+        assertIs<MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+        return loadedSafetyRows().single()
+    }
+
+    private suspend fun loadedSafetyRows() = safetyStore.loadAll()
+        .filterIsInstance<com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded>()
+        .map { it.document }
+
+    /** Production order: ViewModelStore.clear() cancels viewModelScope, then calls onCleared(). */
+    private fun clearViewModelLikeTheActivity() {
+        androidx.lifecycle.ViewModelStore().apply { put("main", viewModel) }.clear()
+    }
 
     private fun forceAutoStopTimerElapsed() {
         val coordinator = viewModel.workoutSessionManager.coordinator
@@ -962,7 +1534,7 @@ class MainViewModelTest {
         metric: WorkoutMetric,
         warmupCount: Int = 0,
         warmupTarget: Int = 3,
-        workingTarget: Int = 10,
+        workingTarget: Int? = null,
     ) {
         // Issue #210: Include machine's warmup/working targets for sync verification
         // For working reps: repsRomCount stays at warmupCount, completeCounter (down) increments
@@ -974,13 +1546,108 @@ class MainViewModelTest {
                 repsRomCount = warmupCount, // warmup count from machine
                 repsRomTotal = warmupTarget, // Issue #210: Machine's warmup target
                 repsSetCount = repIndex, // working reps from machine
-                repsSetTotal = workingTarget, // Issue #210: Machine's working target
+                repsSetTotal = workingTarget ?: activeWorkingRepTarget(), // Issue #210: Machine's working target
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = repIndex.toLong(),
+                timestamp = activeCutoverTimestamp() + repIndex,
             ),
         )
         fakeBleRepository.emitMetric(metric)
     }
+
+    private suspend fun recordTestConnectionLost(
+        coordinator: MachineSafetyCoordinator,
+        trainerAddress: String,
+        trainerName: String? = null,
+    ): Boolean {
+        val now = testCoroutineRule.dispatcher.scheduler.currentTime
+        return coordinator.recordMachineSessionArmed(
+            MachineSafetyHazardDocument(
+                generation = 1L,
+                trainerAddress = trainerAddress,
+                trainerName = trainerName,
+                sessionId = "test-loss-$trainerAddress",
+                workoutKind = MachineSafetyWorkoutKind.UNKNOWN,
+                createdAtEpochMs = now,
+                updatedAtEpochMs = now,
+                phase = MachineSafetyPhase.UNRESOLVED,
+                physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+            ),
+            showRecoveryUi = true,
+        )
+    }
+
+    private fun newSafetyGraph(ble: FakeBleRepository): MainViewModel = MainViewModel(
+        bleRepository = ble,
+        workoutRepository = fakeWorkoutRepository,
+        exerciseRepository = fakeExerciseRepository,
+        personalRecordRepository = fakePersonalRecordRepository,
+        profileExerciseBaselineRepository = fakeBaselineRepository,
+        repCounter = RepCounterFromMachine(),
+        preferencesManager = fakePreferencesManager,
+        gamificationRepository = fakeGamificationRepository,
+        trainingCycleRepository = fakeTrainingCycleRepository,
+        completedSetRepository = fakeCompletedSetRepository,
+        activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
+        dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
+        repMetricRepository = fakeRepMetricRepository,
+        biomechanicsRepository = FakeBiomechanicsRepository(),
+        resolveWeightsUseCase = resolveWeightsUseCase,
+        recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
+        equipmentRackRepository = profileEquipmentRackRepository,
+        applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
+        dataBackupManager = FakeDataBackupManager(),
+        userProfileRepository = fakeUserProfileRepository,
+        workoutServiceController = NoOpWorkoutServiceController,
+        computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
+            workoutPoints = { _, _, _ -> emptyList() }, exerciseLookup = { null }, personalMvtLookup = { _, _ -> null },
+            mvtProvider = com.devil.phoenixproject.domain.onerepmax.MvtProvider(),
+            estimator = com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator(com.devil.phoenixproject.domain.assessment.AssessmentEngine()),
+            persist = { _, _, _, _ -> },
+        ),
+        recordPersonalMvtSampleUseCase = com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase(
+            object : com.devil.phoenixproject.data.repository.PersonalMvtRepository {
+                override suspend fun get(exerciseId: String, profileId: String) = null
+                override suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) {}
+            },
+        ),
+        velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+        countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
+        backfillVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase(
+            exerciseIds = { emptyList() }, hasEstimates = { _, _ -> false }, computeAllTime = { _, _, _ -> null },
+        ),
+        machineSafetyCoordinator = MachineSafetyCoordinator(
+            repository = safetyStore,
+            transport = FakeBleMachineSafetyTransport(ble),
+            scope = kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher),
+            nowEpochMs = { testCoroutineRule.dispatcher.scheduler.currentTime },
+        ),
+    )
+
+    private fun activeCutoverTimestamp(): Long = requireNotNull(
+        viewModel.workoutSessionManager.activeSessionEngine
+            .currentExecutionLeaseOrNull()
+            ?.activationCutoverTimestampMs,
+    ) { "MainViewModel rep fixture requires an active execution cutover" }
+
+    private fun activeWorkingRepTarget(): Int = requireNotNull(viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull()) {
+        "MainViewModel rep fixture requires a current execution lease"
+    }.workingRepTarget
+}
+
+private class FakeBleMachineSafetyTransport(
+    private val bleRepository: FakeBleRepository,
+) : MachineSafetyTransport {
+    override val connectedTrainerAddress: String?
+        get() = (bleRepository.connectionState.value as? ConnectionState.Connected)?.deviceAddress
+
+    override suspend fun connectMatchingTrainer(trainerAddress: String): Result<Unit> =
+        if (connectedTrainerAddress == trainerAddress) {
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalStateException("matching trainer unavailable"))
+        }
+
+    override suspend fun stopWorkout(): Result<Unit> = bleRepository.stopWorkout()
 }

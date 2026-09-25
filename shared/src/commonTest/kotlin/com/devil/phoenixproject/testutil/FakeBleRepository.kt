@@ -9,20 +9,58 @@ import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WorkoutMetric
-import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.CommandLimits
+import com.devil.phoenixproject.util.HardwareDetection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
 
 /**
  * Fake BLE repository for testing.
  * Provides controllable state and response simulation without real hardware.
+ *
+ * KD-9 / F-050: every frame handed to [sendWorkoutCommand] is decoded and checked against
+ * [CommandLimits] for [model]. A command above this trainer's per-cable ceiling, or with a
+ * per-rep progression beyond the bound, fails the test that produced it. That turns every
+ * engine test into a machine-safety invariant check, so a start path that bypasses the
+ * command-resolution clamp cannot pass the suite.
  */
 class FakeBleRepository : BleRepository {
+
+    private companion object {
+        const val MAX_ECHO_ECCENTRIC_PERCENT = 150
+    }
+
+    /**
+     * Trainer this fake pretends to be, and the ceiling every decoded frame is checked
+     * against. [simulateConnect] resolves it from the device name exactly as production does
+     * (`Vee_*` is a 100 kg/cable V-Form), so a test that connects gets the ceiling the real
+     * app would apply; pass `hardwareModel` explicitly to override.
+     *
+     * The default matters only while NOT connected. Note that the engine reads its ceiling
+     * from `connectionState`, so a test that never connects runs the engine at the
+     * fail-closed 100 kg ceiling while this field still says Trainer+ — the fake is then the
+     * looser of the two and is not the binding constraint.
+     */
+    var model: PhoenixModel = PhoenixModel.TrainerPlus
+
+    sealed interface Event {
+        data object StopWorkoutEntered : Event
+        data object StopWorkoutCompleted : Event
+        data object Disconnected : Event
+        data class WorkoutCommand(val bytes: ByteArray) : Event {
+            override fun equals(other: Any?): Boolean = other is WorkoutCommand && bytes.contentEquals(other.bytes)
+
+            override fun hashCode(): Int = bytes.contentHashCode()
+        }
+    }
 
     // Controllable state flows
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -58,17 +96,47 @@ class FakeBleRepository : BleRepository {
     private val _discoModeActive = MutableStateFlow(false)
     override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
 
+    /** A decoded 96-byte activation/program frame. */
+    data class ProgramCommand(
+        val weightPerCableKg: Float,
+        val progressionKg: Float,
+        val forceMaxKg: Float,
+        val repsByte: Int,
+    )
+
+    /** A decoded 32-byte Echo control frame. Carries no weight and no progression. */
+    data class EchoCommand(val warmupRepsByte: Int, val targetRepsByte: Int, val eccentricOverload: Int)
+
     // Track commands received for verification in tests
     val commandsReceived = mutableListOf<ByteArray>()
-    val workoutParameters = mutableListOf<WorkoutParameters>()
+    val programCommands = mutableListOf<ProgramCommand>()
+    val echoCommands = mutableListOf<EchoCommand>()
     val colorSchemeCommands = mutableListOf<Int>()
+    val events = mutableListOf<Event>()
 
     // Configurable behavior
     var scanResult: Result<Unit> = Result.success(Unit)
     var connectResult: Result<Unit> = Result.success(Unit)
     var workoutCommandResult: Result<Unit> = Result.success(Unit)
+    var afterWorkoutCommand: suspend (ByteArray) -> Unit = {}
     var shouldFailConnect = false
     var connectDelay: Long = 0L
+    var stopWorkoutBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
+    var stopWorkoutCallCount = 0
+    var stopPacketCallCount = 0
+    var stopPollingCallCount = 0
+    var restartPollingCallCount = 0
+    var monitorPollingActive = false
+        private set
+
+    // Opt-in peripheral stimulus: unlike setHandleState, cannot deliver without polling.
+    fun emitPolledHandleState(state: HandleState): Boolean {
+        if (!monitorPollingActive) return false
+        setHandleState(state)
+        return true
+    }
+    var disconnectCallCount = 0
+    var reconnectCallCount = 0
 
     // ========== Test control methods ==========
 
@@ -79,11 +147,18 @@ class FakeBleRepository : BleRepository {
         _connectionState.value = state
     }
 
-    fun simulateConnect(deviceName: String, deviceAddress: String = "AA:BB:CC:DD:EE:FF") {
+    fun simulateConnect(
+        deviceName: String,
+        deviceAddress: String = "AA:BB:CC:DD:EE:FF",
+        hardwareModel: PhoenixModel = HardwareDetection.detectModel(deviceName),
+    ) {
+        model = hardwareModel
+        monitorPollingActive = true
         setConnectionState(
             ConnectionState.Connected(
                 deviceName = deviceName,
                 deviceAddress = deviceAddress,
+                hardwareModel = hardwareModel,
             ),
         )
     }
@@ -153,13 +228,25 @@ class FakeBleRepository : BleRepository {
         _diagnostics.value = null
         _discoModeActive.value = false
         commandsReceived.clear()
-        workoutParameters.clear()
+        programCommands.clear()
+        echoCommands.clear()
+        model = PhoenixModel.TrainerPlus
         colorSchemeCommands.clear()
+        events.clear()
         scanResult = Result.success(Unit)
         connectResult = Result.success(Unit)
         workoutCommandResult = Result.success(Unit)
+        afterWorkoutCommand = {}
         shouldFailConnect = false
         connectDelay = 0L
+        stopWorkoutBlock = { Result.success(Unit) }
+        stopWorkoutCallCount = 0
+        stopPacketCallCount = 0
+        stopPollingCallCount = 0
+        restartPollingCallCount = 0
+        monitorPollingActive = false
+        disconnectCallCount = 0
+        reconnectCallCount = 0
     }
 
     // ========== BleRepository interface implementation ==========
@@ -208,6 +295,8 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun disconnect() {
+        disconnectCallCount++
+        events += Event.Disconnected
         setConnectionState(ConnectionState.Disconnected)
     }
 
@@ -216,6 +305,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
+        reconnectCallCount++
         setConnectionState(ConnectionState.Scanning)
 
         val devices = _scannedDevices.value
@@ -237,20 +327,120 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-        commandsReceived.add(command)
+        val copy = command.copyOf()
+        decodeAndAssertWithinLimits(copy)
+        commandsReceived.add(copy)
+        events += Event.WorkoutCommand(copy)
+        afterWorkoutCommand(copy)
         return workoutCommandResult
     }
 
-    override suspend fun sendInitSequence(): Result<Unit> = Result.success(Unit)
+    /**
+     * Decode the frames that carry load, and fail the calling test if the trainer would be
+     * commanded outside [CommandLimits] for [model]. Control frames (init/start/stop/reset,
+     * color scheme) carry no load and are recorded without a check.
+     */
+    private fun decodeAndAssertWithinLimits(command: ByteArray) {
+        when {
+            command.size == BleConstants.ActivationPacket.SIZE && command[0] == 0x04.toByte() -> {
+                val decoded = ProgramCommand(
+                    weightPerCableKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
+                    progressionKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+                    forceMaxKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MAX),
+                    repsByte = command[0x04].toInt() and 0xFF,
+                )
+                val ceiling = CommandLimits.maxWeightPerCableKg(model)
+                if (!decoded.weightPerCableKg.isFinite() ||
+                    decoded.weightPerCableKg < 0f ||
+                    decoded.weightPerCableKg > ceiling + CommandLimits.WEIGHT_TOLERANCE_KG
+                ) {
+                    throw AssertionError(
+                        "Program frame commands ${decoded.weightPerCableKg}kg/cable, outside " +
+                            "0..${ceiling}kg for ${model.displayName}",
+                    )
+                }
+                if (!decoded.progressionKg.isFinite() ||
+                    abs(decoded.progressionKg) > CommandLimits.MAX_PROGRESSION_KG
+                ) {
+                    throw AssertionError(
+                        "Program frame commands ${decoded.progressionKg}kg/rep progression, " +
+                            "outside ±${CommandLimits.MAX_PROGRESSION_KG}kg",
+                    )
+                }
+                programCommands.add(decoded)
+            }
 
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
-        workoutParameters.add(params)
-        return Result.success(Unit)
+            command.size == 32 && readIntLE(command, 0) == 0x4E -> {
+                val decoded = EchoCommand(
+                    warmupRepsByte = command[0x04].toInt() and 0xFF,
+                    targetRepsByte = command[0x05].toInt() and 0xFF,
+                    eccentricOverload = readShortLE(command, 0x08),
+                )
+                // F-010: the eccentric overload is the Echo frame's load field. 150% is the
+                // machine limit; above it the firmware faults.
+                if (decoded.eccentricOverload !in 0..MAX_ECHO_ECCENTRIC_PERCENT) {
+                    throw AssertionError(
+                        "Echo frame commands ${decoded.eccentricOverload}% eccentric overload, " +
+                            "outside 0..$MAX_ECHO_ECCENTRIC_PERCENT",
+                    )
+                }
+                echoCommands.add(decoded)
+            }
+
+            // R-23: deny by default. A load-carrying frame shape has to be taught to this
+            // decoder before the suite will accept it, so a new or revived builder cannot
+            // slip past the bound by simply not being recognised.
+            isKnownZeroLoadControlFrame(command) -> Unit
+
+            else -> throw AssertionError(
+                "Unrecognised ${command.size}-byte frame (opcode 0x${
+                    command.firstOrNull()?.toUByte()?.toString(16)?.uppercase() ?: "??"
+                }). FakeBleRepository must be taught to decode and bound it before it is sent.",
+            )
+        }
     }
 
-    override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
+    /**
+     * Frames that encode no load: init/reset (0x0A), legacy start (0x03), stop (0x05),
+     * soft-stop (0x50 0x00), the INIT preset coefficient table and the colour-scheme frame.
+     */
+    private fun isKnownZeroLoadControlFrame(command: ByteArray): Boolean {
+        val opcode = command.firstOrNull() ?: return false
+        return when (command.size) {
+            // Soft stop (0x50 0x00).
+            2 -> opcode == BleConstants.Commands.STOP_COMMAND && command[1] == 0x00.toByte()
+            // Reset/init (0x0A), legacy start (0x03) and stop (0x05).
+            4 -> opcode == BleConstants.Commands.RESET_COMMAND ||
+                opcode == 0x03.toByte() ||
+                opcode == 0x05.toByte()
+            // INIT preset coefficient table and the colour-scheme/disco frame (0x11).
+            34 -> opcode == 0x11.toByte()
+            else -> false
+        }
+    }
 
-    override suspend fun sendStopCommand(): Result<Unit> = Result.success(Unit)
+    private fun readShortLE(buffer: ByteArray, offset: Int): Int =
+        (buffer[offset].toInt() and 0xFF) or ((buffer[offset + 1].toInt() and 0xFF) shl 8)
+
+    private fun readIntLE(buffer: ByteArray, offset: Int): Int = (buffer[offset].toInt() and 0xFF) or
+        ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+        ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+        ((buffer[offset + 3].toInt() and 0xFF) shl 24)
+
+    private fun readFloatLE(buffer: ByteArray, offset: Int): Float = Float.fromBits(readIntLE(buffer, offset))
+
+    override suspend fun stopWorkout(): Result<Unit> {
+        stopWorkoutCallCount++
+        events += Event.StopWorkoutEntered
+        return stopWorkoutBlock().also {
+            events += Event.StopWorkoutCompleted
+        }
+    }
+
+    override suspend fun sendStopCommand(): Result<Unit> {
+        stopPacketCallCount++
+        return Result.success(Unit)
+    }
 
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {
@@ -267,19 +457,22 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun restartMonitorPolling() {
-        // No-op in fake
+        restartPollingCallCount++
+        monitorPollingActive = true
     }
 
     override fun startActiveWorkoutPolling() {
+        monitorPollingActive = true
         _handleState.value = HandleState.Grabbed
     }
 
     override fun stopPolling() {
-        // No-op in fake
+        stopPollingCallCount++
+        monitorPollingActive = false
     }
 
     override fun stopMonitorPollingOnly() {
-        // No-op in fake
+        monitorPollingActive = false
     }
 
     override fun restartDiagnosticPolling() {

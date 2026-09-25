@@ -29,6 +29,8 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     // `getCycleProgress`). Public read-only List, mutated only inside the fake's overrides.
     private val _callLog = mutableListOf<String>()
     val callLog: List<String> get() = _callLog.toList()
+    val updateCycleProgressAttempts = mutableListOf<CycleProgress>()
+    var beforeUpdateCycleProgress: suspend (CycleProgress) -> Unit = {}
 
     fun resetCallLog() { _callLog.clear() }
 
@@ -48,6 +50,8 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         cycleProgress.clear()
         cycleProgressions.clear()
         activeCycleId = null
+        updateCycleProgressAttempts.clear()
+        beforeUpdateCycleProgress = {}
         updateFlows()
     }
 
@@ -202,6 +206,8 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun updateCycleProgress(progress: CycleProgress) {
+        updateCycleProgressAttempts += progress
+        beforeUpdateCycleProgress(progress)
         cycleProgress[progress.cycleId] = progress
     }
 

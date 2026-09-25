@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.9.6"
+    const val APP_VERSION = "1.0.3"
 
     // EULA version - increment when EULA text changes materially
     // Users must re-accept when this version increases
@@ -101,7 +101,7 @@ object UnitConverter {
  *
  * PARITY-CRITICAL: `estimate()` is the canonical cross-stack 1RM formula.
  * Mobile computes it and ships it to the portal (per-cable kg). The portal
- * MUST NOT use a different formula — see the monorepo parity doctrine.
+ * MUST NOT use a different formula — see "1RM Estimate Parity" in CLAUDE.md.
  */
 object OneRepMaxCalculator {
     /** Epley: weight * (1 + reps/30). Linear estimate; tends to overestimate at very high rep counts (>20). */
@@ -128,28 +128,4 @@ object OneRepMaxCalculator {
         if (reps == 1) return weight
         return if (reps <= 10) brzycki(weight, reps) else epley(weight, reps)
     }
-}
-
-/**
- * Protocol constants - aligned with Phoenix Backend (official app)
- * NOTE: Legacy web app used different sizes and commands
- */
-@Suppress("unused") // Protocol reference constants
-object ProtocolConstants {
-    // Command types are in BleConstants.Commands
-
-    // Frame sizes (Phoenix Backend aligned)
-    const val STOP_PACKET_SIZE = 2
-    const val REGULAR_PACKET_SIZE = 25 // Was 96 in web app
-    const val ECHO_PACKET_SIZE = 32 // F308: matches BlePacketFactory.createEchoControl()
-    const val ACTIVATION_PACKET_SIZE = 96 // F308: matches BlePacketFactory.createProgramParams()/ActivationPacket.SIZE
-    const val COLOR_SCHEME_SIZE = 34
-
-    // Mode values (used in ActivationPacket)
-    const val MODE_OLD_SCHOOL = 0
-    const val MODE_PUMP = 2
-    const val MODE_TUT = 3
-    const val MODE_TUT_BEAST = 4
-    const val MODE_ECCENTRIC_ONLY = 6
-    const val MODE_ECHO = 10
 }

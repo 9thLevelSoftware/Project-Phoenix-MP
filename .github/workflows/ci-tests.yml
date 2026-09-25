@@ -30,10 +30,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Verify no secret-bearing local files are tracked
         run: bash .github/scripts/forbid-tracked-secrets.sh
+
+      - name: Validate release workflow contracts
+        run: python3 .github/scripts/test_release_workflows.py
+
+      - name: Validate release-asset replacement helper
+        run: python3 .github/scripts/test_replace_release_asset.py
 
   unit-tests:
     name: Unit Tests
@@ -43,29 +49,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6.0.1
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Verify SQLDelight migrations
-        run: ./gradlew :shared:verifyCommonMainVitruvianDatabaseMigration --continue -Pskip.supabase.check=true
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Run shared module unit tests
         run: ./gradlew :shared:testAndroidHostTest --continue -Pskip.supabase.check=true
@@ -75,7 +68,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: |
@@ -85,7 +78,7 @@ jobs:
             androidApp/build/test-results/
 
       - name: Publish Shared Module Test Report
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@v6
         if: always()
         with:
           report_paths: 'shared/build/test-results/testAndroidHostTest/TEST-*.xml'
@@ -93,7 +86,7 @@ jobs:
           fail_on_failure: true
 
       - name: Publish Android App Test Report
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@v6
         if: always()
         with:
           report_paths: 'androidApp/build/test-results/testDebugUnitTest/TEST-*.xml'
@@ -108,32 +101,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6.0.1
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build debug APK
         run: ./gradlew :androidApp:assembleDebug -Pskip.supabase.check=true
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: debug-apk
           path: androidApp/build/outputs/apk/debug/*.apk
@@ -148,30 +131,84 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6.0.1
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.konan
-          key: ${{ runner.os }}-gradle-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-konan-
+            ${{ runner.os }}-konan-
 
       - name: Compile iOS main and test targets
         run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 -Pskip.supabase.check=true
+
+  # Non-blocking until green: first CI run of iosSimulatorArm64Test (incl. iOS commonTest).
+  # Runs on pushes to main and manual dispatch only, never on pull requests.
+  ios-simulator-tests:
+    name: iOS Simulator Tests (non-blocking)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    needs: unit-tests
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    continue-on-error: true
+    permissions:
+      contents: read
+      checks: write
+    env:
+      # macos-latest runners have 7 GB RAM; keep the Gradle heap well under it.
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-konan-
+
+      - name: Run iOS simulator tests
+        run: ./gradlew :shared:iosSimulatorArm64Test --continue -Pskip.supabase.check=true
+
+      - name: Upload iOS test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-test-results
+          path: |
+            shared/build/reports/tests/iosSimulatorArm64Test/
+            shared/build/test-results/iosSimulatorArm64Test/
+
+      - name: Publish iOS Simulator Test Report
+        uses: mikepenz/action-junit-report@v6
+        if: always()
+        with:
+          report_paths: 'shared/build/test-results/iosSimulatorArm64Test/TEST-*.xml'
+          check_name: 'iOS Simulator Test Results (non-blocking)'
+          fail_on_failure: false
 
   ios-schema-check:
     name: iOS Schema Sync Check
@@ -180,7 +217,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Validate iOS schema matches SQLDelight
         run: |
@@ -194,34 +231,23 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6.0.1
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Run Android lint
         run: ./gradlew :androidApp:lintDebug -Pskip.supabase.check=true
 
       - name: Upload lint results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-results
           path: androidApp/build/reports/lint-results-*.html
-

@@ -13,7 +13,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ANDROID_RAW="$PROJECT_ROOT/shared/src/androidMain/res/raw"
-IOS_SOUNDS="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix/Sounds"
+IOS_SOUNDS="$SCRIPT_DIR/PhoenixApp/PhoenixApp/Sounds"
 
 # Create output directory
 mkdir -p "$IOS_SOUNDS"
@@ -84,7 +84,7 @@ echo ""
 echo "Done! Sound files are ready in: $IOS_SOUNDS"
 echo ""
 echo "Next steps:"
-echo "1. Open VitruvianPhoenix.xcodeproj in Xcode"
+echo "1. Open PhoenixApp.xcodeproj in Xcode"
 echo "2. Drag the Sounds folder into your project"
 echo "3. Ensure 'Copy items if needed' is checked"
-echo "4. Verify target membership is set for VitruvianPhoenix"
+echo "4. Verify target membership is set for PhoenixApp"

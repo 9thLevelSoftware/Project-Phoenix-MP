@@ -1,25 +1,28 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
+import com.devil.phoenixproject.data.ble.MonitorDataProcessor
+import com.devil.phoenixproject.data.ble.parseDiagnosticPacket
+import com.devil.phoenixproject.data.ble.parseHeuristicPacket
+import com.devil.phoenixproject.data.ble.parseMonitorPacket
+import com.devil.phoenixproject.data.ble.parseRepPacket
+import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.HardwareDetection
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.time.Clock
-import kotlinx.atomicfu.locks.reentrantLock
-import kotlinx.atomicfu.locks.withLock
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,10 +31,24 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 
-/** Configuration for deterministic simulator telemetry. */
+enum class PhantomRawPacketKind {
+    MONITOR,
+    REP,
+    DIAGNOSTIC,
+    HEURISTIC,
+}
+
+internal data class PhantomWorkoutProgram(
+    val warmupReps: Int,
+    val workingReps: Int?,
+    val weightPerCableKg: Float,
+)
+
 data class PhantomBleConfig(
     val loadScale: Float = 1f,
     val velocityScale: Double = 1.0,
@@ -53,599 +70,267 @@ data class PhantomBleConfig(
     }
 }
 
-internal data class PhantomWorkoutProgram(
-    val warmupReps: Int,
-    val workingReps: Int?,
-    val weightPerCableKg: Float,
-)
-
 /**
- * Simulator-only BLE implementation. It intentionally contains no Kable or CoreBluetooth
- * references: the iOS simulator binding can exercise the real app repository contract without
- * requesting hardware permissions or touching a persisted BLE session.
+ * Emulator-safe phantom Vitruvian machine.
  *
- * Lifecycle ownership is deliberately token based. A token is never reused: an operation, normal
- * cleanup, and terminal cleanup can therefore invalidate one another without predicting or
- * comparing generation values across public calls.
+ * This implementation exercises the same app-level [BleRepository] surface as the real
+ * Kable-backed machine without touching Bluetooth hardware. It is intended for debug
+ * sandboxes, emulator bug reproduction, UI flow testing, and connection-log capture.
  */
 class PhantomBleRepository(
     private val logRepo: ConnectionLogRepository = ConnectionLogRepository.instance,
-    initialConfig: PhantomBleConfig = PhantomBleConfig(),
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    initialConfig: PhantomBleConfig = PhantomBleConfig.Default,
 ) : BleRepository {
-    private enum class LifecyclePhase {
-        ACTIVE,
-        CLEANING,
-        TERMINAL,
-    }
-
-    /** Identity-only token. Equality must remain reference equality. */
-    private class LifecycleToken
-
-    private val lifecycleLock = reentrantLock()
     private val repositoryJob = SupervisorJob()
-    private val scope = CoroutineScope(repositoryJob + dispatcher)
+    private val scope = CoroutineScope(repositoryJob + Dispatchers.Default)
+
     private val device = ScannedDevice(PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, -42)
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
     private val _metricsFlow = MutableSharedFlow<WorkoutMetric>(extraBufferCapacity = 64)
     override val metricsFlow: Flow<WorkoutMetric> = _metricsFlow.asSharedFlow()
+
     private val _scannedDevices = MutableStateFlow<List<ScannedDevice>>(emptyList())
     override val scannedDevices: StateFlow<List<ScannedDevice>> = _scannedDevices.asStateFlow()
+
     private val _handleDetection = MutableStateFlow(HandleDetection())
     override val handleDetection: StateFlow<HandleDetection> = _handleDetection.asStateFlow()
-    private val _repEvents = MutableSharedFlow<RepNotification>(extraBufferCapacity = 64)
+
+    private val _repEvents = MutableSharedFlow<RepNotification>(extraBufferCapacity = 16)
     override val repEvents: Flow<RepNotification> = _repEvents.asSharedFlow()
+
     private val _handleState = MutableStateFlow(HandleState.WaitingForRest)
     override val handleState: StateFlow<HandleState> = _handleState.asStateFlow()
+
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
+
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(extraBufferCapacity = 4)
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
+
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
     override val heuristicData: StateFlow<HeuristicStatistics?> = _heuristicData.asStateFlow()
+
     private val _diagnostics = MutableStateFlow<DiagnosticPacket?>(null)
     override val diagnostics: StateFlow<DiagnosticPacket?> = _diagnostics.asStateFlow()
+
     private val _discoModeActive = MutableStateFlow(false)
     override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
 
-    /* All fields below are read and written while lifecycleLock is held. */
-    private var config = initialConfig
-    private var lifecyclePhase = LifecyclePhase.ACTIVE
-    private var lifecycleOwner: LifecycleToken? = null
-    private var metricGeneration = 0L
+    private var monitorProcessor: MonitorDataProcessor? = null
+    private var monitorProcessorConnectionGeneration: Long? = null
+    private var metricsJob: Job? = null
+    private var heuristicJob: Job? = null
+    private var repJob: Job? = null
+    private var repSimulationCompleted = false
+    private var diagnosticJob: Job? = null
+    private var heartbeatJob: Job? = null
+    private var workoutParams: WorkoutParameters? = null
+    private var workoutConnectionGeneration: Long? = null
+    private var currentWorkoutProgram: PhantomWorkoutProgram? = null
+    internal val currentProgram: PhantomWorkoutProgram?
+        get() = currentWorkoutProgram
+    private val _config = MutableStateFlow(initialConfig)
+    val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
+    private var ticks = 0L
+    private var lastColorSchemeIndex = 0
+    private val lifecycleLock = reentrantLock()
+    private val terminal = atomic(false)
+    private val connectionAttemptGeneration = atomic(0L)
+    private var lifecycleCleanupInProgress = false
+    private var connectionAttemptReservationActive = false
+    private var activePollingConnectionGeneration: Long? = null
+    private var handleStateControlGeneration = 0L
+    private var handleDetectionControlGeneration = 0L
+    private var discoControlGeneration = 0L
+    private var metricsGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
     private var diagnosticGeneration = 0L
     private var heartbeatGeneration = 0L
-    private var metricsJob: Job? = null
-    private var heuristicJob: Job? = null
-    private var repJob: Job? = null
-    private var diagnosticJob: Job? = null
-    private var heartbeatJob: Job? = null
-    private var workoutParams: WorkoutParameters? = null
-    private var currentProgram: PhantomWorkoutProgram? = null
-    private var repCount = 0
-    private var topCounter = 0
-    private var completeCounter = 0
-    private var fixedSetCompleted = false
-    private var ticks = 0L
-    private var lastColorSchemeIndex = 0
-    private var repDeliveryLosses = 0L
-    private var repNoSubscriberLosses = 0L
-    private var repOverflowLosses = 0L
 
     override suspend fun startScanning(): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        val owner = lifecycleLock.withLock { reserveOperationLocked() }
-            ?: return lifecycleFailure()
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Scanning)
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         return try {
-            scanPhase(owner, callerJob)
-        } catch (cancellation: CancellationException) {
-            cleanupOperationIfOwner(owner, reason = "scan_cancelled")
-            throw cancellation
+            startScanning(attemptGeneration)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Scanning)
+            throw error
         }
     }
 
+    private suspend fun startScanning(attemptGeneration: Long): Result<Unit> {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
+                if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                    false
+                } else {
+                    logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
+                    true
+                }
+            }) {
+            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
+        }
+        delay(150)
+        if (!publishScannedDevices(attemptGeneration, listOf(device))) {
+            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
+        }
+        yield()
+        return Result.success(Unit)
+    }
+
     override suspend fun stopScanning() {
-        val cleanup = lifecycleLock.withLock {
-            if (!isOperationOwnerLocked() ||
-                (_connectionState.value != ConnectionState.Scanning &&
-                    _connectionState.value != ConnectionState.Connecting)
-            ) {
-                null
-            } else {
-                claimNormalCleanupLocked()
-            }
-        } ?: return
         lifecycleLock.withLock {
-            finishCleanupLocked(cleanup, reason = "scan_stopped")
+            if (terminal.value || lifecycleCleanupInProgress) {
+                return@withLock
+            }
+            if (_connectionState.value != ConnectionState.Scanning &&
+                _connectionState.value != ConnectionState.Connecting
+            ) {
+                return@withLock
+            }
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+            _connectionState.value = ConnectionState.Disconnected
+            if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
+            if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                return@withLock
+            }
         }
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        val owner = lifecycleLock.withLock { reserveOperationLocked() }
-            ?: return lifecycleFailure()
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Connecting)
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         return try {
-            connectPhase(owner, device, callerJob)
-        } catch (cancellation: CancellationException) {
-            cleanupOperationIfOwner(owner, reason = "connect_cancelled")
-            throw cancellation
+            connect(device, attemptGeneration)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Connecting)
+            throw error
         }
     }
 
+    private suspend fun connect(device: ScannedDevice, attemptGeneration: Long): Result<Unit> {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Connecting) {
+                logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
+                true
+            }) {
+            return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
+        }
+        delay(250)
+        if (!completeConnection(attemptGeneration, device)) {
+            return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
+        }
+        yield()
+        return Result.success(Unit)
+    }
+
     override suspend fun cancelConnection() {
-        val cleanup = lifecycleLock.withLock {
-            if (!isOperationOwnerLocked() || _connectionState.value != ConnectionState.Connecting) {
-                null
-            } else {
-                claimNormalCleanupLocked()
-            }
-        } ?: return
         lifecycleLock.withLock {
-            finishCleanupLocked(cleanup, reason = "connection_cancelled")
+            if (terminal.value || lifecycleCleanupInProgress) {
+                return@withLock
+            }
+            if (_connectionState.value == ConnectionState.Connecting) {
+                val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+                _connectionState.value = ConnectionState.Disconnected
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+                logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+            }
         }
     }
 
     override suspend fun disconnect() {
-        val cleanup = lifecycleLock.withLock { claimNormalCleanupLocked() } ?: return
         lifecycleLock.withLock {
-            finishCleanupLocked(cleanup, reason = "disconnect")
+            if (terminal.value || lifecycleCleanupInProgress) {
+                return@withLock
+            }
+            lifecycleCleanupInProgress = true
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+            try {
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+                logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+                teardownConnection()
+            } finally {
+                lifecycleCleanupInProgress = false
+            }
         }
     }
 
     override suspend fun shutdown() {
-        val terminalOwner = lifecycleLock.withLock { claimTerminalCleanupLocked() } ?: return
         lifecycleLock.withLock {
-            finishCleanupLocked(terminalOwner, reason = "shutdown", terminal = true)
+            if (terminal.value) {
+                return@withLock
+            }
+            if (lifecycleCleanupInProgress) {
+                terminal.value = true
+                teardownConnection(markTerminal = true)
+                return@withLock
+            }
+            terminal.value = true
+            lifecycleCleanupInProgress = true
+            connectionAttemptGeneration.incrementAndGet()
+            try {
+                logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                teardownConnection(markTerminal = true)
+            } finally {
+                lifecycleCleanupInProgress = false
+            }
         }
         repositoryJob.cancel()
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
-        if (timeoutMs <= 0L) return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
-        val callerJob = currentCoroutineContext()[Job]
-        val owner = lifecycleLock.withLock { reserveOperationLocked() }
-            ?: return lifecycleFailure()
-        return try {
-            val result = withTimeoutOrNull(timeoutMs) {
-                val scanResult = scanPhase(owner, callerJob)
+        if (timeoutMs <= 0L) {
+            return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
+        }
+
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Scanning)
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
+
+        val completed = try {
+            withTimeoutOrNull(timeoutMs) {
+                val scanResult = startScanning(attemptGeneration)
                 if (scanResult.isFailure) {
-                    scanResult
+                    return@withTimeoutOrNull scanResult
+                }
+                connect(device, attemptGeneration)
+            }
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration)
+            throw error
+        }
+        if (completed != null) {
+            return completed
+        }
+
+        return lifecycleLock.withLock {
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
+            } else {
+                val expectedPostTeardownGeneration = attemptGeneration + 1L
+                lifecycleCleanupInProgress = true
+                try {
+                    teardownConnection()
+                } finally {
+                    lifecycleCleanupInProgress = false
+                }
+                if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
+                    Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
                 } else {
-                    val scannedDevice = lifecycleLock.withLock {
-                        if (ownsOperationLocked(owner) && _connectionState.value == ConnectionState.Scanning) {
-                            _scannedDevices.value.firstOrNull()
-                        } else {
-                            null
-                        }
-                    }
-                    if (scannedDevice == null) {
-                        lifecycleFailure()
-                    } else {
-                        connectPhase(owner, scannedDevice, callerJob)
-                    }
-                }
-            }
-            if (result != null) return result
-
-            lifecycleLock.withLock {
-                ensureCallerActiveLocked(owner, callerJob)
-                if (!ownsOperationLocked(owner)) {
-                    lifecycleFailureLocked()
-                } else {
-                    val cleanup = claimNormalCleanupLocked()
-                    if (cleanup == null) {
-                        lifecycleFailureLocked()
-                    } else {
-                        val cleanupResult = finishCleanupLocked(
-                            cleanup,
-                            reason = "connection_timeout",
-                            reconnectionReason = "connection_timeout",
-                            timeoutMs = timeoutMs,
-                            callerJob = callerJob,
-                        )
-                        if (cleanupResult.isFailure) {
-                            cleanupResult
-                        } else {
-                            throwIfCallerCancelled(callerJob)
-                            Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
-                        }
-                    }
-                }
-            }
-        } catch (cancellation: CancellationException) {
-            cleanupOperationIfOwner(owner, reason = "scan_connect_cancelled")
-            throw cancellation
-        }
-    }
-
-    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            lastColorSchemeIndex = schemeIndex
-            acceptCommandLocked(owner, "Phantom color scheme set", "scheme=$schemeIndex", callerJob)
-        }
-    }
-
-    override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            if (_connectionState.value !is ConnectionState.Connected) {
-                return@withLock Result.failure(IllegalStateException("Phantom workout command requires an active connection"))
-            }
-            decodeProgram(command)?.let { currentProgram = it }
-            acceptCommandLocked(
-                owner,
-                "Phantom received raw workout command",
-                command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
-                callerJob,
-            )
-        }
-    }
-
-    override suspend fun sendInitSequence(): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            acceptCommandLocked(owner, "Phantom init sequence accepted", callerJob = callerJob)
-        }
-    }
-
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _discoModeActive.value = false }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            workoutParams = params
-            currentProgram = currentProgram ?: PhantomWorkoutProgram(
-                warmupReps = params.warmupReps,
-                workingReps = params.reps.takeUnless { params.isAMRAP },
-                weightPerCableKg = params.weightPerCableKg,
-            )
-            repCount = 0
-            topCounter = 0
-            completeCounter = 0
-            fixedSetCompleted = false
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Grabbed }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!startHeuristicLocked(activeWorkout = true, owner, callerJob)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!startRepSimulationLocked(owner)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                    logRepo.info(
-                        LogEventType.COMMAND_SENT,
-                        "Phantom workout started",
-                        PHANTOM_DEVICE_NAME,
-                        PHANTOM_DEVICE_ADDRESS,
-                        "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}",
-                    )
-                }
-            ) return@withLock lifecycleFailureLocked()
-            Result.success(Unit)
-        }
-    }
-
-    override suspend fun stopWorkout(): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            cancelPollingLocked()
-            workoutParams = null
-            currentProgram = null
-            fixedSetCompleted = false
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Released }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                    logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                }
-            ) return@withLock lifecycleFailureLocked()
-            Result.success(Unit)
-        }
-    }
-
-    override suspend fun sendStopCommand(): Result<Unit> {
-        val callerJob = currentCoroutineContext()[Job]
-        return lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-            acceptCommandLocked(owner, "Phantom stop command accepted", callerJob = callerJob)
-        }
-    }
-
-    override fun enableHandleDetection(enabled: Boolean) {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            if (!publishIfOwnedLocked(owner) { _handleDetection.value = HandleDetection(enabled, enabled) }) return@withLock
-            publishIfOwnedLocked(owner) {
-                _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
-            }
-        }
-    }
-
-    override fun resetHandleState() {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            publishIfOwnedLocked(owner) { _handleState.value = HandleState.WaitingForRest }
-        }
-    }
-
-    override fun enableJustLiftWaitingMode() {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            publishIfOwnedLocked(owner) { _handleState.value = HandleState.WaitingForRest }
-        }
-    }
-
-    override fun restartMonitorPolling() {
-        lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock
-            startMetricsLocked(workoutParams != null, owner)
-        }
-    }
-
-    override fun startActiveWorkoutPolling() {
-        lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock
-            if (fixedSetCompleted) return@withLock
-            if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Grabbed }) return@withLock
-            if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock
-            if (!startHeuristicLocked(activeWorkout = true, owner)) return@withLock
-            if (workoutParams != null) startRepSimulationLocked(owner)
-        }
-    }
-
-    override fun stopPolling() {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            cancelPollingLocked()
-            logIfOwnedLocked(owner) {
-                logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
-            }
-        }
-    }
-
-    override fun stopMonitorPollingOnly() {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            metricGeneration += 1
-            metricsJob?.cancel()
-            metricsJob = null
-            logIfOwnedLocked(owner) {
-                logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
-            }
-        }
-    }
-
-    override fun restartDiagnosticPolling() {
-        lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock
-            if (!startDiagnosticsLocked(owner)) return@withLock
-            startHeartbeatLocked(owner)
-        }
-    }
-
-    override fun startDiscoMode() {
-        lifecycleLock.withLock {
-            val owner = connectedOwnerLocked() ?: return@withLock
-            if (workoutParams != null) return@withLock
-            if (!publishIfOwnedLocked(owner) { _discoModeActive.value = true }) return@withLock
-            logIfOwnedLocked(owner) {
-                logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            }
-        }
-    }
-
-    override fun stopDiscoMode() {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            if (!_discoModeActive.value) return@withLock
-            if (!publishIfOwnedLocked(owner) { _discoModeActive.value = false }) return@withLock
-            logIfOwnedLocked(owner) {
-                logRepo.info(
-                    LogEventType.COMMAND_SENT,
-                    "Phantom disco mode stopped",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                    "restoredScheme=$lastColorSchemeIndex",
-                )
-            }
-        }
-    }
-
-    override fun setLastColorSchemeIndex(index: Int) {
-        lifecycleLock.withLock {
-            val owner = activeOwnerLocked() ?: return@withLock
-            if (ownsOperationLocked(owner)) lastColorSchemeIndex = index
-        }
-    }
-
-    private suspend fun scanPhase(owner: LifecycleToken, callerJob: Job?): Result<Unit> {
-        val prepared = lifecycleLock.withLock {
-            if (!ownsOperationLocked(owner)) return@withLock false
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Scanning }) return@withLock false
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _scannedDevices.value = emptyList() }) return@withLock false
-            logIfOwnedLocked(owner, callerJob = callerJob) {
-                logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
-            }
-        }
-        if (!prepared) return lifecycleFailure()
-
-        delay(SCAN_DELAY_MS)
-        return lifecycleLock.withLock {
-            if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Scanning) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _scannedDevices.value = listOf(device) }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                    logRepo.info(
-                        LogEventType.DEVICE_FOUND,
-                        "Found phantom Vitruvian device",
-                        device.name,
-                        device.address,
-                        "RSSI ${device.rssi}; no Bluetooth hardware used",
-                    )
-                }
-            ) return@withLock lifecycleFailureLocked()
-            Result.success(Unit)
-        }
-    }
-
-    private suspend fun connectPhase(owner: LifecycleToken, device: ScannedDevice, callerJob: Job?): Result<Unit> {
-        val prepared = lifecycleLock.withLock {
-            if (!ownsOperationLocked(owner)) return@withLock false
-            cancelPollingLocked()
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Connecting }) return@withLock false
-            logIfOwnedLocked(owner, callerJob = callerJob) {
-                logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
-            }
-        }
-        if (!prepared) return lifecycleFailure()
-
-        delay(CONNECT_DELAY_MS)
-        return lifecycleLock.withLock {
-            if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Connecting) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Connected(device.name, device.address) }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true) }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Released }) {
-                return@withLock lifecycleFailureLocked()
-            }
-            if (!publishDiagnosticsLocked(owner, callerJob)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!startMetricsLocked(activeWorkout = false, owner)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!startHeuristicLocked(activeWorkout = false, owner, callerJob)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!startHeartbeatLocked(owner)) return@withLock lifecycleFailureLocked()
-            ensureCallerActiveLocked(owner, callerJob)
-            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                    logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
-                }
-            ) return@withLock lifecycleFailureLocked()
-            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                    logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
-                }
-            ) return@withLock lifecycleFailureLocked()
-            Result.success(Unit)
-        }
-    }
-
-    private fun reserveOperationLocked(): LifecycleToken? {
-        if (lifecyclePhase != LifecyclePhase.ACTIVE) return null
-        val owner = LifecycleToken()
-        lifecycleOwner = owner
-        cancelPollingLocked()
-        return owner
-    }
-
-    private fun activeOwnerLocked(): LifecycleToken? = lifecycleOwner?.takeIf { ownsOperationLocked(it) }
-
-    private fun connectedOwnerLocked(): LifecycleToken? = activeOwnerLocked()?.takeIf {
-        _connectionState.value is ConnectionState.Connected
-    }
-
-    private fun ownsOperationLocked(owner: LifecycleToken): Boolean =
-        lifecyclePhase == LifecyclePhase.ACTIVE && lifecycleOwner === owner
-
-    private fun isOperationOwnerLocked(): Boolean =
-        lifecyclePhase == LifecyclePhase.ACTIVE && lifecycleOwner != null
-
-    private fun ownsCleanupLocked(owner: LifecycleToken): Boolean =
-        lifecyclePhase == LifecyclePhase.CLEANING && lifecycleOwner === owner
-
-    private fun ownsTerminalLocked(owner: LifecycleToken): Boolean =
-        lifecyclePhase == LifecyclePhase.TERMINAL && lifecycleOwner === owner
-
-    private fun claimNormalCleanupLocked(): LifecycleToken? {
-        if (lifecyclePhase == LifecyclePhase.TERMINAL || lifecyclePhase == LifecyclePhase.CLEANING) return null
-        val cleanup = LifecycleToken()
-        lifecyclePhase = LifecyclePhase.CLEANING
-        lifecycleOwner = cleanup
-        cancelPollingLocked()
-        workoutParams = null
-        currentProgram = null
-        repCount = 0
-        topCounter = 0
-        completeCounter = 0
-        fixedSetCompleted = false
-        return cleanup
-    }
-
-    private fun claimTerminalCleanupLocked(): LifecycleToken? {
-        if (lifecyclePhase == LifecyclePhase.TERMINAL) return null
-        val terminalOwner = LifecycleToken()
-        lifecyclePhase = LifecyclePhase.TERMINAL
-        lifecycleOwner = terminalOwner
-        cancelPollingLocked()
-        workoutParams = null
-        currentProgram = null
-        repCount = 0
-        topCounter = 0
-        completeCounter = 0
-        fixedSetCompleted = false
-        return terminalOwner
-    }
-
-    private fun finishCleanupLocked(
-        owner: LifecycleToken,
-        reason: String,
-        terminal: Boolean = false,
-        reconnectionReason: String? = null,
-        timeoutMs: Long? = null,
-        callerJob: Job? = null,
-    ): Result<Unit> {
-        val phase = if (terminal) LifecyclePhase.TERMINAL else LifecyclePhase.CLEANING
-        if (!ownsLocked(owner, phase)) return lifecycleFailureLocked()
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _handleDetection.value = HandleDetection() }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _handleState.value = HandleState.WaitingForRest }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _heuristicData.value = null }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _diagnostics.value = null }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _scannedDevices.value = emptyList() }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _discoModeActive.value = false }) {
-            return lifecycleFailureLocked()
-        }
-        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _connectionState.value = ConnectionState.Disconnected }) {
-            return lifecycleFailureLocked()
-        }
-        if (reconnectionReason != null) {
-            val request = ReconnectionRequest(
-                deviceName = PHANTOM_DEVICE_NAME,
-                deviceAddress = PHANTOM_DEVICE_ADDRESS,
-                reason = reconnectionReason,
-                timestamp = Clock.System.now().toEpochMilliseconds(),
-            )
-            if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _reconnectionRequested.tryEmit(request) }) {
-                return lifecycleFailureLocked()
-            }
-            if (!logIfOwnedLocked(owner, phase, callerJob = callerJob) {
                     logRepo.error(
                         LogEventType.ERROR,
                         "Phantom scan and connect timed out",
@@ -653,341 +338,1472 @@ class PhantomBleRepository(
                         PHANTOM_DEVICE_ADDRESS,
                         "timeoutMs=$timeoutMs",
                     )
+                    if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
+                        Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
+                    } else {
+                        _reconnectionRequested.tryEmit(
+                            ReconnectionRequest(
+                                deviceName = PHANTOM_DEVICE_NAME,
+                                deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                                reason = "connection_timeout",
+                                timestamp = Clock.System.now().toEpochMilliseconds(),
+                            ),
+                        )
+                        if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
+                            Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
+                        } else {
+                            Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+                        }
+                    }
                 }
-            ) return lifecycleFailureLocked()
+            }
         }
-        if (!logIfOwnedLocked(owner, phase, callerJob = callerJob) {
+    }
+
+    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            lastColorSchemeIndex = schemeIndex
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom color scheme set", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, "scheme=$schemeIndex")
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            Result.success(Unit)
+        }
+    }
+
+    override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom received raw workout command",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
+            )
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            decodeWorkoutProgram(command)?.let { program ->
+                currentWorkoutProgram = program
                 logRepo.info(
-                    LogEventType.DISCONNECT,
-                    if (terminal) "Shutting down phantom Vitruvian" else "Disconnected phantom Vitruvian",
+                    LogEventType.COMMAND_SENT,
+                    "Phantom parsed workout command",
                     PHANTOM_DEVICE_NAME,
                     PHANTOM_DEVICE_ADDRESS,
-                    reason,
+                    "warmupReps=${program.warmupReps}; workingReps=${program.workingReps}; weightPerCableKg=${program.weightPerCableKg}",
                 )
             }
-        ) return lifecycleFailureLocked()
-
-        if (terminal) {
-            if (!ownsTerminalLocked(owner)) return lifecycleFailureLocked()
-        } else {
-            if (!ownsCleanupLocked(owner)) return lifecycleFailureLocked()
-            lifecyclePhase = LifecyclePhase.ACTIVE
-            lifecycleOwner = null
-        }
-        return Result.success(Unit)
-    }
-
-    private fun cleanupOperationIfOwner(owner: LifecycleToken, reason: String): Boolean = lifecycleLock.withLock {
-        if (!ownsOperationLocked(owner)) return@withLock false
-        val cleanup = claimNormalCleanupLocked() ?: return@withLock false
-        finishCleanupLocked(cleanup, reason)
-        true
-    }
-
-    private fun acceptCommandLocked(
-        owner: LifecycleToken,
-        message: String,
-        details: String? = null,
-        callerJob: Job? = null,
-    ): Result<Unit> {
-        if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                logRepo.info(LogEventType.COMMAND_SENT, message, PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, details)
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-        ) return lifecycleFailureLocked()
-        return Result.success(Unit)
+            Result.success(Unit)
+        }
     }
 
-    private fun decodeProgram(command: ByteArray): PhantomWorkoutProgram? {
-        if (command.size >= REGULAR_PACKET_SIZE && readUInt32(command, 0) == REGULAR_OPCODE) {
-            val totalReps = command[4].toInt() and 0xFF
-            val warmupReps = command[5].toInt() and 0xFF
+    private fun decodeWorkoutProgram(command: ByteArray): PhantomWorkoutProgram? {
+        if (command.size >= REGULAR_PROGRAM_PACKET_SIZE && readUInt32LittleEndian(command, 0) == REGULAR_PROGRAM_OPCODE) {
+            val totalReps = command[0x04].toInt() and 0xFF
+            val warmupReps = command[0x05].toInt() and 0xFF
             return PhantomWorkoutProgram(
                 warmupReps = warmupReps,
-                workingReps = totalReps
-                    .takeUnless { it == UNLIMITED_REPS }
-                    ?.let { (it - warmupReps).coerceAtLeast(0) },
-                weightPerCableKg = readFloat(command, REGULAR_WEIGHT_OFFSET),
+                workingReps = totalReps.takeUnless { it == UNLIMITED_REPS }?.minus(warmupReps),
+                weightPerCableKg = readFloat32LittleEndian(command, 0x58),
             )
         }
-        if (command.size >= ECHO_PACKET_SIZE && readUInt32(command, 0) == ECHO_OPCODE) {
-            val warmupReps = command[4].toInt() and 0xFF
-            val targetReps = command[5].toInt() and 0xFF
+
+        if (command.size >= ECHO_PROGRAM_PACKET_SIZE && readUInt32LittleEndian(command, 0) == ECHO_PROGRAM_OPCODE) {
+            val warmupReps = command[0x04].toInt() and 0xFF
+            val targetReps = command[0x05].toInt() and 0xFF
             return PhantomWorkoutProgram(
                 warmupReps = warmupReps,
                 workingReps = targetReps.takeUnless { it == UNLIMITED_REPS },
-                weightPerCableKg = config.defaultEchoLoadKg,
+                weightPerCableKg = _config.value.defaultEchoLoadKg,
             )
         }
+
         return null
     }
 
-    private fun startMetricsLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
-        if (!isConnectedLocked(owner)) return false
-        metricGeneration += 1
-        val expectedGeneration = metricGeneration
-        metricsJob?.cancel()
-        val configuredLoad = workoutParams?.weightPerCableKg ?: currentProgram?.weightPerCableKg ?: 7.5f
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            var sample = 0
-            while (isActive) {
-                val phase = (sample % 40) / 40.0
-                val wave = sin(phase * 2.0 * PI).toFloat()
-                val metric = WorkoutMetric(
-                    timestamp = Clock.System.now().toEpochMilliseconds(),
-                    loadA = ((if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) + wave.coerceAtLeast(0f)) * config.loadScale,
-                    loadB = ((if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) + (-wave).coerceAtLeast(0f)) * config.loadScale,
-                    positionA = wave * 650f * config.positionScale,
-                    positionB = wave * 640f * config.positionScale,
-                    ticks = ticks++,
-                    velocityA = wave * 250.0 * config.velocityScale,
-                    velocityB = wave * 245.0 * config.velocityScale,
+    private fun readUInt32LittleEndian(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+
+    private fun readFloat32LittleEndian(bytes: ByteArray, offset: Int): Float =
+        Float.fromBits(readUInt32LittleEndian(bytes, offset))
+
+    // F-010: no longer BleRepository members. The unvalidated builders were deleted from
+    // the interface; these stay as simulator-local entry points used by the phantom's own
+    // tests, so nothing can reach them through BleRepository and bypass the validator.
+    suspend fun sendInitSequence(): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom init sequence accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            Result.success(Unit)
+        }
+    }
+
+    suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(
+                    IllegalStateException(
+                        if (connectionAttemptReservationActive) {
+                            "Phantom connection attempt is being reserved"
+                        } else {
+                            "Phantom repository is shut down"
+                        },
+                    ),
                 )
-                val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(owner) || metricGeneration != expectedGeneration) {
-                        false
-                    } else {
-                        var emitted = false
-                        if (!publishIfOwnedLocked(owner) { emitted = _metricsFlow.tryEmit(metric) }) false
-                        else emitted && isConnectedLocked(owner) && metricGeneration == expectedGeneration
-                    }
-                }
-                if (!published) break
-                sample += 1
-                delay(if (activeWorkout) ACTIVE_METRIC_DELAY_MS else IDLE_METRIC_DELAY_MS)
             }
+            if (_connectionState.value !is ConnectionState.Connected) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            if (_discoModeActive.value) {
+                stopDiscoMode()
+                if (terminal.value ||
+                    lifecycleCleanupInProgress ||
+                    connectionAttemptReservationActive ||
+                    connectionAttemptGeneration.value != expectedConnectionGeneration ||
+                    _discoModeActive.value
+                ) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+            }
+            workoutParams = params
+            workoutConnectionGeneration = expectedConnectionGeneration
+            _handleState.value = HandleState.Grabbed
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom workout started",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
+            )
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            startMetrics(
+                activeWorkout = true,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            if (!startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                ) &&
+                !currentConnectedProducerOwnsConnection(expectedConnectionGeneration, heuristicJob)
+            ) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            startRepSimulation(
+                params = params,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
+            }
+            Result.success(Unit)
         }
-        if (!isConnectedLocked(owner) || metricGeneration != expectedGeneration) {
-            job.cancel()
-            return false
-        }
-        metricsJob = job
-        return true
     }
 
-    private fun startHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken, callerJob: Job? = null): Boolean {
-        if (!isConnectedLocked(owner)) return false
-        heuristicGeneration += 1
-        val expectedGeneration = heuristicGeneration
-        heuristicJob?.cancel()
-        if (!publishHeuristicLocked(activeWorkout, owner, callerJob)) return false
-        ensureCallerActiveLocked(owner, callerJob)
-        if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) return false
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            while (isActive) {
-                delay(if (activeWorkout) ACTIVE_HEURISTIC_DELAY_MS else IDLE_HEURISTIC_DELAY_MS)
-                val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) {
-                        false
-                    } else {
-                        publishHeuristicLocked(activeWorkout, owner) &&
-                            isConnectedLocked(owner) && heuristicGeneration == expectedGeneration
-                    }
+    override suspend fun stopWorkout(): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            if (_connectionState.value !is ConnectionState.Connected) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
+            }
+            lifecycleCleanupInProgress = true
+            try {
+                val expectedConnectionGeneration = connectionAttemptGeneration.incrementAndGet()
+                logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
                 }
-                if (!published) break
+                stopJobs()
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+                activePollingConnectionGeneration = null
+                workoutParams = null
+                workoutConnectionGeneration = null
+                _handleState.value = HandleState.Released
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+                Result.success(Unit)
+            } finally {
+                lifecycleCleanupInProgress = false
             }
         }
-        if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) {
-            job.cancel()
-            return false
-        }
-        heuristicJob = job
-        return true
     }
 
-    private fun publishHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken, callerJob: Job? = null): Boolean {
-        val load = (if (activeWorkout) {
-            (workoutParams?.weightPerCableKg ?: currentProgram?.weightPerCableKg ?: 7.5f).coerceAtLeast(2f)
-        } else 1.5f) * config.loadScale
-        return publishIfOwnedLocked(owner, callerJob = callerJob) {
-            _heuristicData.value = HeuristicStatistics(
-                concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
-                timestamp = Clock.System.now().toEpochMilliseconds(),
+    override suspend fun sendStopCommand(): Result<Unit> {
+        return lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                Result.failure(IllegalStateException("Phantom repository is shut down"))
+            } else {
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
+                logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    Result.failure(IllegalStateException("Phantom repository is shut down"))
+                } else {
+                    Result.success(Unit)
+                }
+            }
+        }
+    }
+
+    override fun enableHandleDetection(enabled: Boolean) {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            handleStateControlGeneration += 1
+            handleDetectionControlGeneration += 1
+            val expectedHandleStateControlGeneration = handleStateControlGeneration
+            val expectedHandleDetectionControlGeneration = handleDetectionControlGeneration
+            _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration ||
+                handleStateControlGeneration != expectedHandleStateControlGeneration ||
+                handleDetectionControlGeneration != expectedHandleDetectionControlGeneration ||
+                _handleDetection.value.leftDetected != enabled ||
+                _handleDetection.value.rightDetected != enabled
+            ) {
+                return@withLock
+            }
+            if (
+                workoutConnectionGeneration == expectedConnectionGeneration &&
+                (_handleState.value == HandleState.Grabbed || workoutParams != null)
+            ) {
+                return@withLock
+            }
+            _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration ||
+                handleStateControlGeneration != expectedHandleStateControlGeneration ||
+                handleDetectionControlGeneration != expectedHandleDetectionControlGeneration ||
+                _handleDetection.value.leftDetected != enabled ||
+                _handleDetection.value.rightDetected != enabled
+            ) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.NOTIFICATION, "Phantom handle detection ${if (enabled) "enabled" else "disabled"}")
+        }
+    }
+
+    override fun resetHandleState() {
+        lifecycleLock.withLock {
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            if (
+                terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            handleStateControlGeneration += 1
+            _handleState.value = HandleState.WaitingForRest
+            if (
+                terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+        }
+    }
+
+    override fun enableJustLiftWaitingMode() {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            handleStateControlGeneration += 1
+            _handleState.value = HandleState.WaitingForRest
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.NOTIFICATION, "Phantom Just Lift waiting mode armed")
+        }
+    }
+
+    override fun restartMonitorPolling() {
+        lifecycleLock.withLock {
+            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
+                val activeWorkout = workoutParams != null ||
+                    activePollingConnectionGeneration == expectedConnectionGeneration
+                startMetrics(
+                    activeWorkout = activeWorkout,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
+            }
+        }
+    }
+
+    override fun startActiveWorkoutPolling() {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                _connectionState.value !is ConnectionState.Connected
+            ) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            activePollingConnectionGeneration = expectedConnectionGeneration
+            workoutConnectionGeneration = expectedConnectionGeneration
+            _handleState.value = HandleState.Grabbed
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            startMetrics(
+                activeWorkout = true,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            if (!startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
+            ) {
+                return@withLock
+            }
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+        }
+    }
+
+    override fun stopPolling() {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            metricsGeneration += 1
+            heuristicGeneration += 1
+            repGeneration += 1
+            diagnosticGeneration += 1
+            heartbeatGeneration += 1
+            metricsJob?.cancel()
+            heuristicJob?.cancel()
+            repJob?.cancel()
+            diagnosticJob?.cancel()
+            heartbeatJob?.cancel()
+            logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
+        }
+    }
+
+    override fun stopMonitorPollingOnly() {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            metricsGeneration += 1
+            metricsJob?.cancel()
+            logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
+        }
+    }
+
+    override fun restartDiagnosticPolling() {
+        lifecycleLock.withLock {
+            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
+                if (!startDiagnostics(expectedConnectionGeneration) ||
+                    terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
+                ) {
+                    return@withLock
+                }
+                startHeartbeat(expectedConnectionGeneration)
+            }
+        }
+    }
+
+    override fun startDiscoMode() {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                _connectionState.value !is ConnectionState.Connected ||
+                workoutParams != null
+            ) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            val expectedDiscoControlGeneration = ++discoControlGeneration
+            _discoModeActive.value = true
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration ||
+                discoControlGeneration != expectedDiscoControlGeneration ||
+                !_discoModeActive.value
+            ) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+        }
+    }
+
+    override fun stopDiscoMode() {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            val expectedDiscoControlGeneration = ++discoControlGeneration
+            _discoModeActive.value = false
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration ||
+                discoControlGeneration != expectedDiscoControlGeneration ||
+                _discoModeActive.value
+            ) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom disco mode stopped",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "restoredScheme=$lastColorSchemeIndex",
             )
         }
     }
 
-    private fun startRepSimulationLocked(owner: LifecycleToken): Boolean {
-        val program = currentProgram ?: return false
-        if (!isConnectedLocked(owner) || fixedSetCompleted) return false
+    override fun setLastColorSchemeIndex(index: Int) {
+        lifecycleLock.withLock {
+            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
+                lastColorSchemeIndex = index
+            }
+        }
+    }
+
+    /**
+     * Inject raw Vitruvian characteristic bytes into the same protocol parsers used by real BLE.
+     * This lets emulator-driven RCA reproduce packet-parser bugs without physical hardware.
+     */
+    suspend fun injectRawPacket(
+        kind: PhantomRawPacketKind,
+        data: ByteArray,
+        hasOpcodePrefix: Boolean = false,
+    ): Result<Unit> {
+        val expectedConnectionGeneration = lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                null
+            } else {
+                connectionAttemptGeneration.value
+            }
+        } ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
+
+        return try {
+            when (kind) {
+                PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data, expectedConnectionGeneration)
+                PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix, expectedConnectionGeneration)
+                PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data, expectedConnectionGeneration)
+                PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data, expectedConnectionGeneration)
+            }
+            if (lifecycleLock.withLock {
+                    terminal.value ||
+                        lifecycleCleanupInProgress ||
+                        connectionAttemptReservationActive ||
+                        connectionAttemptGeneration.value != expectedConnectionGeneration
+                }
+            ) {
+                Result.failure(IllegalStateException("Phantom raw packet injection invalidated"))
+            } else {
+                Result.success(Unit)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            lifecycleLock.withLock {
+                if (!terminal.value &&
+                    !lifecycleCleanupInProgress &&
+                    !connectionAttemptReservationActive &&
+                    connectionAttemptGeneration.value == expectedConnectionGeneration
+                ) {
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "Phantom raw ${kind.name.lowercase()} packet rejected",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                        "${error.message}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                    )
+                }
+            }
+            Result.failure(error)
+        }
+    }
+    private suspend fun injectMonitorPacket(data: ByteArray, expectedConnectionGeneration: Long) {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            val packet = parseMonitorPacket(data)
+                ?: error("monitor packet too short: ${data.size} bytes")
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            val metric = monitorProcessorFor(expectedConnectionGeneration).process(packet)
+                ?: error("monitor packet parsed but was rejected by validation")
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            _metricsFlow.tryEmit(metric)
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom injected raw monitor packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+            )
+        }
+    }
+
+    private suspend fun injectRepPacket(
+        data: ByteArray,
+        hasOpcodePrefix: Boolean,
+        expectedConnectionGeneration: Long,
+    ) {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
+                ?: error("rep packet too short: ${data.size} bytes")
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            _repEvents.tryEmit(rep)
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.REP_RECEIVED,
+                "Phantom injected raw rep packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+            )
+        }
+    }
+
+    private fun injectDiagnosticPacket(data: ByteArray, expectedConnectionGeneration: Long) {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val diagnostic = parseDiagnosticPacket(data)
+                ?: error("diagnostic packet too short: ${data.size} bytes")
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.DIAGNOSTIC,
+                "Phantom injected raw diagnostic packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+            )
+        }
+    }
+
+    private fun injectHeuristicPacket(data: ByteArray, expectedConnectionGeneration: Long) {
+        lifecycleLock.withLock {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val heuristic = parseHeuristicPacket(data, timestamp)
+                ?: error("heuristic packet too short: ${data.size} bytes")
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            _heuristicData.value = heuristic
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom injected raw heuristic packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+            )
+        }
+    }
+
+    fun replaceConfig(config: PhantomBleConfig) {
+        lifecycleLock.withLock {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock
+            }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            _config.value = config
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom config updated",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "loadScale=${config.loadScale}; velocityScale=${config.velocityScale}; positionScale=${config.positionScale}; repDelayMs=${config.repDelayMs}; autoCompleteFixedRepSets=${config.autoCompleteFixedRepSets}",
+            )
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
+            if (_connectionState.value is ConnectionState.Connected) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock
+                }
+                val activeWorkout = workoutParams != null ||
+                    activePollingConnectionGeneration == expectedConnectionGeneration
+                startMetrics(
+                    activeWorkout = activeWorkout,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock
+                }
+                if (!startHeuristicGeneration(
+                        activeWorkout = activeWorkout,
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                    )
+                ) {
+                    return@withLock
+                }
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock
+                }
+                workoutParams
+                    ?.takeIf { repJob?.isActive == true && !repSimulationCompleted }
+                    ?.let {
+                        startRepSimulation(
+                            params = it,
+                            expectedConnectionGeneration = expectedConnectionGeneration,
+                        )
+                    }
+            }
+        }
+    }
+
+    private fun beginConnectionAttempt(reservedState: ConnectionState): Long? = lifecycleLock.withLock {
+        if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+            null
+        } else {
+            connectionAttemptReservationActive = true
+            try {
+                val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
+                activePollingConnectionGeneration = null
+                discoControlGeneration += 1
+                _discoModeActive.value = false
+                if (reservedState == ConnectionState.Scanning) {
+                    _diagnostics.value = null
+                    _heuristicData.value = null
+                    _scannedDevices.value = emptyList()
+                }
+                if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                    null
+                } else {
+                    _connectionState.value = reservedState
+                    if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                        null
+                    } else {
+                        attemptGeneration
+                    }
+                }
+            } finally {
+                connectionAttemptReservationActive = false
+            }
+        }
+    }
+
+    private fun invalidateCancelledConnectionAttempt(
+        attemptGeneration: Long,
+        expectedState: ConnectionState? = null,
+    ) {
+        lifecycleLock.withLock {
+            val currentState = _connectionState.value
+            val matchesAttempt =
+                !terminal.value &&
+                !lifecycleCleanupInProgress &&
+                connectionAttemptGeneration.value == attemptGeneration &&
+                (
+                    (expectedState == null &&
+                        (currentState == ConnectionState.Scanning ||
+                            currentState == ConnectionState.Connecting ||
+                            currentState is ConnectionState.Connected)) ||
+                        (expectedState != null &&
+                            (currentState == expectedState ||
+                                (expectedState == ConnectionState.Connecting && currentState is ConnectionState.Connected)))
+                )
+            if (matchesAttempt) {
+                lifecycleCleanupInProgress = true
+                try {
+                    teardownConnection()
+                } finally {
+                    lifecycleCleanupInProgress = false
+                }
+            }
+        }
+    }
+
+    private inline fun publishConnectionState(
+        attemptGeneration: Long,
+        state: ConnectionState,
+        onPublished: () -> Boolean,
+    ): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            false
+        } else {
+            _connectionState.value = state
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                false
+            } else if (!onPublished()) {
+                false
+            } else {
+                !terminal.value && connectionAttemptGeneration.value == attemptGeneration
+            }
+        }
+    }
+
+    private fun publishScannedDevices(attemptGeneration: Long, devices: List<ScannedDevice>): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            false
+        } else {
+            _scannedDevices.value = devices
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            logRepo.info(
+                LogEventType.DEVICE_FOUND,
+                "Found phantom Vitruvian device",
+                deviceName = device.name,
+                deviceAddress = device.address,
+                details = "RSSI ${device.rssi}; no Bluetooth hardware used",
+            )
+            !terminal.value && connectionAttemptGeneration.value == attemptGeneration
+        }
+    }
+
+    private fun completeConnection(attemptGeneration: Long, device: ScannedDevice): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        val handleStateControlGenerationBeforePublication = handleStateControlGeneration
+        val handleDetectionControlGenerationBeforePublication = handleDetectionControlGeneration
+        // KD-9: publish the model like the real transport does (KableBleConnectionManager:676),
+        // otherwise the simulator reports Unknown and every phantom session is fail-closed to
+        // 100 kg/cable with a capped notice, so it stops reproducing Trainer+ behaviour.
+        _connectionState.value = ConnectionState.Connected(
+            deviceName = device.name,
+            deviceAddress = device.address,
+            hardwareModel = HardwareDetection.detectModel(device.name),
+        )
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        if (handleDetectionControlGeneration == handleDetectionControlGenerationBeforePublication) {
+            _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
+        }
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        val workoutOwnsConnection =
+            activePollingOwnsConnection(attemptGeneration) ||
+                (workoutConnectionGeneration == attemptGeneration &&
+                    (_handleState.value == HandleState.Grabbed || workoutParams != null))
+        if (!workoutOwnsConnection && handleStateControlGeneration == handleStateControlGenerationBeforePublication) {
+            _handleState.value = HandleState.Released
+        }
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration) &&
+            !currentConnectedProducerOwnsConnection(attemptGeneration, diagnosticJob)
+        ) {
+            return@withLock false
+        }
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        val activeWorkoutParams = workoutParams
+        val completionOwnsWorkout =
+            activePollingOwnsConnection(attemptGeneration) ||
+                (workoutConnectionGeneration == attemptGeneration &&
+                    (_handleState.value == HandleState.Grabbed || activeWorkoutParams != null))
+        if (!completionOwnsWorkout) {
+            if (activeWorkoutParams != null) {
+                workoutParams = null
+                workoutConnectionGeneration = null
+            }
+            startMetrics(
+                activeWorkout = false,
+                expectedConnectionGeneration = attemptGeneration,
+            )
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (workoutParams == null &&
+                !startHeuristicGeneration(
+                    activeWorkout = false,
+                    expectedConnectionGeneration = attemptGeneration,
+                ) &&
+                !currentConnectedProducerOwnsConnection(attemptGeneration, heuristicJob) &&
+                !activePollingOwnsConnection(attemptGeneration)
+            ) {
+                if (terminal.value || connectionAttemptGeneration.value != attemptGeneration || workoutParams == null) {
+                    return@withLock false
+                }
+            }
+        } else if (activeWorkoutParams != null) {
+            if (metricsJob?.isActive != true) {
+                startMetrics(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
+            }
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (heuristicJob?.isActive != true &&
+                !startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = attemptGeneration,
+                ) &&
+                !currentConnectedProducerOwnsConnection(attemptGeneration, heuristicJob) &&
+                !activePollingOwnsConnection(attemptGeneration)
+            ) {
+                return@withLock false
+            }
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (!repSimulationCompleted && repJob?.isActive != true) {
+                startRepSimulation(
+                    params = activeWorkoutParams,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
+            }
+        }
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        startHeartbeat(attemptGeneration)
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        true
+    }
+
+    private fun workoutHandoffIsCurrent(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            !connectionAttemptReservationActive &&
+            _connectionState.value is ConnectionState.Connected &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            workoutConnectionGeneration == expectedConnectionGeneration &&
+            workoutParams === params &&
+            _handleState.value == HandleState.Grabbed
+
+    private fun rollbackWorkoutHandoff(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ) {
+        if (workoutParams !== params || workoutConnectionGeneration != expectedConnectionGeneration) {
+            return
+        }
+        metricsGeneration += 1
+        heuristicGeneration += 1
+        repGeneration += 1
+        metricsJob?.cancel()
+        heuristicJob?.cancel()
+        repJob?.cancel()
+        metricsJob = null
+        heuristicJob = null
+        repJob = null
+        workoutParams = null
+        workoutConnectionGeneration = null
+        if (_handleState.value == HandleState.Grabbed) {
+            _handleState.value = HandleState.Released
+        }
+    }
+
+    private fun currentConnectedProducerOwnsConnection(
+        expectedConnectionGeneration: Long,
+        producerJob: Job?,
+    ): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            !connectionAttemptReservationActive &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            _connectionState.value is ConnectionState.Connected &&
+            producerJob?.isActive == true
+
+    private fun activePollingOwnsConnection(expectedConnectionGeneration: Long): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            !connectionAttemptReservationActive &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            _connectionState.value is ConnectionState.Connected &&
+            activePollingConnectionGeneration == expectedConnectionGeneration
+
+    private fun teardownConnection(markTerminal: Boolean = false) {
+        lifecycleLock.withLock {
+            if (markTerminal) {
+                terminal.value = true
+            }
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+            stopJobs()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            activePollingConnectionGeneration = null
+            workoutParams = null
+            workoutConnectionGeneration = null
+            currentWorkoutProgram = null
+            _handleDetection.value = HandleDetection()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _handleState.value = HandleState.WaitingForRest
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _diagnostics.value = null
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _heuristicData.value = null
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _scannedDevices.value = emptyList()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _discoModeActive.value = false
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
+            _connectionState.value = ConnectionState.Disconnected
+        }
+    }
+
+    private inline fun publishIfConnected(
+        expectedConnectionGeneration: Long? = null,
+        expectedMetricsGeneration: Long? = null,
+        expectedHeuristicGeneration: Long? = null,
+        expectedRepGeneration: Long? = null,
+        expectedDiagnosticGeneration: Long? = null,
+        expectedHeartbeatGeneration: Long? = null,
+        publish: () -> Unit,
+    ): Boolean = lifecycleLock.withLock {
+        if (
+            terminal.value ||
+            lifecycleCleanupInProgress ||
+            connectionAttemptReservationActive ||
+            _connectionState.value !is ConnectionState.Connected ||
+            (expectedConnectionGeneration != null && connectionAttemptGeneration.value != expectedConnectionGeneration) ||
+            (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration) ||
+            (expectedHeuristicGeneration != null && heuristicGeneration != expectedHeuristicGeneration) ||
+            (expectedRepGeneration != null && repGeneration != expectedRepGeneration) ||
+            (expectedDiagnosticGeneration != null && diagnosticGeneration != expectedDiagnosticGeneration) ||
+            (expectedHeartbeatGeneration != null && heartbeatGeneration != expectedHeartbeatGeneration)
+        ) {
+            false
+        } else {
+            publish()
+            !terminal.value &&
+                !lifecycleCleanupInProgress &&
+                !connectionAttemptReservationActive &&
+                _connectionState.value is ConnectionState.Connected &&
+                (expectedConnectionGeneration == null || connectionAttemptGeneration.value == expectedConnectionGeneration) &&
+                (expectedMetricsGeneration == null || metricsGeneration == expectedMetricsGeneration) &&
+                (expectedHeuristicGeneration == null || heuristicGeneration == expectedHeuristicGeneration) &&
+                (expectedRepGeneration == null || repGeneration == expectedRepGeneration) &&
+                (expectedDiagnosticGeneration == null || diagnosticGeneration == expectedDiagnosticGeneration) &&
+                (expectedHeartbeatGeneration == null || heartbeatGeneration == expectedHeartbeatGeneration)
+        }
+    }
+
+    private fun startMetrics(
+        activeWorkout: Boolean,
+        expectedConnectionGeneration: Long? = null,
+    ) {
+        lifecycleLock.withLock {
+            val lifecycleGeneration = expectedConnectionGeneration ?: connectionAttemptGeneration.value
+            if (terminal.value ||
+                connectionAttemptReservationActive ||
+                connectionAttemptGeneration.value != lifecycleGeneration
+            ) {
+                return@withLock
+            }
+            val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
+            metricsGeneration += 1
+            val expectedGeneration = metricsGeneration
+            metricsJob?.cancel()
+            metricsJob = scope.launch {
+                var sample = 0
+                while (isActive && connectionState.value is ConnectionState.Connected) {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    val phase = (sample % 40) / 40.0
+                    val wave = sin(phase * 2.0 * PI).toFloat()
+                    val config = _config.value
+                    val configuredLoad = workoutWeightPerCableKg ?: 7.5f
+                    val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                    if (!publishIfConnected(
+                            expectedConnectionGeneration = lifecycleGeneration,
+                            expectedMetricsGeneration = expectedGeneration,
+                        ) {
+                            val metric = WorkoutMetric(
+                                timestamp = now,
+                                loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
+                                loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
+                                positionA = wave * 650f * config.positionScale,
+                                positionB = wave * 640f * config.positionScale,
+                                ticks = ticks++,
+                                velocityA = wave * 250.0 * config.velocityScale,
+                                velocityB = wave * 245.0 * config.velocityScale,
+                                status = 0,
+                            )
+                            _metricsFlow.tryEmit(metric)
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == lifecycleGeneration &&
+                                metricsGeneration == expectedGeneration
+                            ) {
+                                logRepo.debug(
+                                    LogEventType.NOTIFICATION,
+                                    "Phantom monitor metric",
+                                    PHANTOM_DEVICE_NAME,
+                                    PHANTOM_DEVICE_ADDRESS,
+                                    "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}",
+                                )
+                            }
+                        }) {
+                        break
+                    }
+                    sample++
+                    delay(if (activeWorkout) 250 else 750)
+                }
+            }
+        }
+    }
+
+    private fun startHeuristicGeneration(
+        activeWorkout: Boolean,
+        expectedConnectionGeneration: Long? = null,
+    ): Boolean = lifecycleLock.withLock {
+            if (expectedConnectionGeneration != null &&
+                (terminal.value ||
+                    connectionAttemptReservationActive ||
+                    connectionAttemptGeneration.value != expectedConnectionGeneration)
+            ) {
+                return@withLock false
+            }
+            val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
+            heuristicGeneration += 1
+            val expectedGeneration = heuristicGeneration
+            heuristicJob?.cancel()
+            if (!publishIfConnected(
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                    expectedHeuristicGeneration = expectedGeneration,
+                ) {
+                val config = _config.value
+                val configuredLoad = workoutWeightPerCableKg ?: 7.5f
+                val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                _heuristicData.value = HeuristicStatistics(
+                    concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                    eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                    timestamp = Clock.System.now().toEpochMilliseconds(),
+                )
+                if (!terminal.value &&
+                    connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                    heuristicGeneration == expectedGeneration
+                ) {
+                    logRepo.debug(
+                        LogEventType.NOTIFICATION,
+                        "Phantom heuristic update",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                    )
+                }
+            }) {
+                return@withLock false
+            }
+            if (expectedConnectionGeneration != null &&
+                (terminal.value ||
+                    connectionAttemptReservationActive ||
+                    connectionAttemptGeneration.value != expectedConnectionGeneration)
+            ) {
+                return@withLock false
+            }
+            heuristicJob = scope.launch {
+                while (isActive && connectionState.value is ConnectionState.Connected) {
+                    delay(if (activeWorkout) 250 else 750)
+                    val config = _config.value
+                    val configuredLoad = workoutWeightPerCableKg ?: 7.5f
+                    val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                    if (!publishIfConnected(
+                            expectedConnectionGeneration = expectedConnectionGeneration,
+                            expectedHeuristicGeneration = expectedGeneration,
+                        ) {
+                            _heuristicData.value = HeuristicStatistics(
+                                concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                                eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                                timestamp = Clock.System.now().toEpochMilliseconds(),
+                            )
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                                heuristicGeneration == expectedGeneration
+                            ) {
+                                logRepo.debug(
+                                    LogEventType.NOTIFICATION,
+                                    "Phantom heuristic update",
+                                    PHANTOM_DEVICE_NAME,
+                                    PHANTOM_DEVICE_ADDRESS,
+                                )
+                            }
+                        }) {
+                        break
+                    }
+                }
+            }
+            true
+        }
+
+    private fun monitorProcessorFor(expectedConnectionGeneration: Long): MonitorDataProcessor {
+        if (monitorProcessorConnectionGeneration != expectedConnectionGeneration) {
+            monitorProcessorConnectionGeneration = expectedConnectionGeneration
+            monitorProcessor = MonitorDataProcessor(
+                onDeloadOccurred = {
+                    lifecycleLock.withLock {
+                        if (!terminal.value &&
+                            !lifecycleCleanupInProgress &&
+                            !connectionAttemptReservationActive &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration
+                        ) {
+                            _deloadOccurredEvents.tryEmit(Unit)
+                        }
+                    }
+                },
+                onRomViolation = { violation ->
+                    lifecycleLock.withLock {
+                        if (!terminal.value &&
+                            !lifecycleCleanupInProgress &&
+                            !connectionAttemptReservationActive &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration
+                        ) {
+                            logRepo.warning(
+                                LogEventType.NOTIFICATION,
+                                "Phantom raw monitor packet reported ROM violation",
+                                PHANTOM_DEVICE_NAME,
+                                PHANTOM_DEVICE_ADDRESS,
+                                violation.name,
+                            )
+                        }
+                    }
+                },
+            )
+        }
+        return requireNotNull(monitorProcessor)
+    }
+
+    private fun startRepSimulation(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ) {
+        repSimulationCompleted = false
         repGeneration += 1
         val expectedGeneration = repGeneration
         repJob?.cancel()
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            while (isActive) {
+        repJob = scope.launch {
+            var rep = 0
+            val target = params.reps.coerceAtLeast(1)
+            while (isActive && connectionState.value is ConnectionState.Connected) {
+                val config = _config.value
                 delay(config.repDelayMs)
-                val shouldContinue = lifecycleLock.withLock {
-                    if (!isConnectedLocked(owner) || repGeneration != expectedGeneration || workoutParams == null) {
-                        false
-                    } else {
-                        repCount += 1
-                        topCounter += 1
-                        completeCounter += 1
-                        val warmupDone = minOf(repCount, program.warmupReps)
-                        val workingDone = (repCount - program.warmupReps).coerceAtLeast(0)
-                        val boundedWorking = program.workingReps?.let(workingDone::coerceAtMost) ?: workingDone
-                        val reached = config.autoCompleteFixedRepSets &&
-                            program.workingReps != null && boundedWorking >= program.workingReps
-                        if (reached) fixedSetCompleted = true
-                        val rawData = ByteArray(24).also { bytes ->
-                            writeUInt32(bytes, 0, topCounter)
-                            writeUInt32(bytes, 4, completeCounter)
-                            writeFloat(bytes, 8, RANGE_TOP)
-                            writeFloat(bytes, 12, RANGE_BOTTOM)
-                            writeUInt16(bytes, 16, warmupDone)
-                            writeUInt16(bytes, 18, program.warmupReps)
-                            writeUInt16(bytes, 20, boundedWorking)
-                            writeUInt16(bytes, 22, program.workingReps ?: 0)
-                        }
-                        val notification = RepNotification(
-                            topCounter = topCounter,
-                            completeCounter = completeCounter,
-                            repsRomCount = warmupDone,
-                            repsRomTotal = program.warmupReps,
-                            repsSetCount = boundedWorking,
-                            repsSetTotal = program.workingReps ?: 0,
-                            rangeTop = RANGE_TOP,
-                            rangeBottom = RANGE_BOTTOM,
-                            rawData = rawData,
-                            timestamp = Clock.System.now().toEpochMilliseconds(),
-                        )
-                        if (!emitRepAndLogLocked(owner, notification, repCount, warmupDone, boundedWorking)) {
-                            false
-                        } else {
-                            !reached
-                        }
-                    }
+                rep += 1
+                val timestamp = Clock.System.now().toEpochMilliseconds()
+                val rawData = ByteArray(24).also { bytes ->
+                    bytes[0] = rep.toByte()
+                    bytes[4] = rep.toByte()
+                    bytes[18] = params.warmupReps.toByte()
+                    bytes[22] = target.toByte()
                 }
-                if (!shouldContinue) break
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedRepGeneration = expectedGeneration,
+                    ) {
+                        if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
+                            repSimulationCompleted = true
+                        }
+                        _repEvents.tryEmit(
+                            RepNotification(
+                                topCounter = rep,
+                                completeCounter = rep,
+                                repsRomCount = params.warmupReps.coerceAtMost(rep),
+                                repsRomTotal = params.warmupReps,
+                                repsSetCount = rep.coerceAtMost(target),
+                                repsSetTotal = target,
+                                rangeTop = 650f,
+                                rangeBottom = -650f,
+                                rawData = rawData,
+                                timestamp = timestamp,
+                            ),
+                        )
+                        if (!terminal.value &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                            repGeneration == expectedGeneration
+                        ) {
+                            logRepo.info(
+                                LogEventType.REP_RECEIVED,
+                                "Phantom rep notification",
+                                PHANTOM_DEVICE_NAME,
+                                PHANTOM_DEVICE_ADDRESS,
+                                "rep=$rep/$target; timestamp=$timestamp",
+                            )
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                                repGeneration == expectedGeneration &&
+                                rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets
+                            ) {
+                                logRepo.info(LogEventType.COMMAND_RESPONSE, "Phantom target reps reached", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                            }
+                        }
+                    }) {
+                    break
+                }
+                if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
+                    break
+                }
             }
         }
-        if (!isConnectedLocked(owner) || repGeneration != expectedGeneration) {
-            job.cancel()
+    }
+
+    private fun startDiagnostics(expectedConnectionGeneration: Long): Boolean {
+        if (terminal.value ||
+            connectionAttemptReservationActive ||
+            connectionAttemptGeneration.value != expectedConnectionGeneration
+        ) {
             return false
         }
-        repJob = job
-        return true
-    }
-
-    private fun emitRepAndLogLocked(
-        owner: LifecycleToken,
-        notification: RepNotification,
-        repNumber: Int,
-        warmupDone: Int,
-        workingDone: Int,
-    ): Boolean {
-        if (!isConnectedLocked(owner)) return false
-        val hadSubscriber = _repEvents.subscriptionCount.value > 0
-        var delivered = false
-        if (!publishIfOwnedLocked(owner) { delivered = _repEvents.tryEmit(notification) }) return false
-        if (!hadSubscriber || !delivered) {
-            repDeliveryLosses += 1
-            if (!hadSubscriber) repNoSubscriberLosses += 1 else repOverflowLosses += 1
-            return logIfOwnedLocked(owner) {
-                logRepo.warning(
-                    LogEventType.REP_RECEIVED,
-                    "Phantom rep delivery lost",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                    "reason=${if (hadSubscriber) "overflow" else "no_subscriber"}; " +
-                        "losses=$repDeliveryLosses; rep=$repNumber; warmup=$warmupDone; working=$workingDone",
-                )
-            }
-        }
-        return logIfOwnedLocked(owner) {
-            logRepo.info(
-                LogEventType.REP_RECEIVED,
-                PHANTOM_REP,
-                PHANTOM_DEVICE_NAME,
-                PHANTOM_DEVICE_ADDRESS,
-                "rep=$repNumber; warmup=$warmupDone/${currentProgram?.warmupReps ?: 0}; working=$workingDone/${currentProgram?.workingReps ?: 0}",
-            )
-        }
-    }
-
-    private fun publishDiagnosticsLocked(owner: LifecycleToken, callerJob: Job? = null): Boolean {
-        if (!isConnectedLocked(owner)) return false
-        if (!publishIfOwnedLocked(owner, callerJob = callerJob) {
-                _diagnostics.value = DiagnosticPacket(
-                    runtimeSeconds = 0,
-                    faultWords = listOf(0, 0, 0, 0),
-                    temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
-                    hasFaults = false,
-                    receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
-                )
-            }
-        ) return false
-        ensureCallerActiveLocked(owner, callerJob)
-        return startDiagnosticsLocked(owner)
-    }
-
-    private fun startDiagnosticsLocked(owner: LifecycleToken): Boolean {
-        if (!isConnectedLocked(owner)) return false
         diagnosticGeneration += 1
         val expectedGeneration = diagnosticGeneration
         diagnosticJob?.cancel()
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            var runtimeSeconds = 0L
-            while (isActive) {
-                delay(DIAGNOSTIC_DELAY_MS)
-                val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(owner) || diagnosticGeneration != expectedGeneration) {
-                        false
-                    } else {
-                        runtimeSeconds += DIAGNOSTIC_DELAY_MS / 1000L
-                        if (!publishIfOwnedLocked(owner) {
-                                _diagnostics.value = DiagnosticPacket(
-                                    runtimeSeconds = runtimeSeconds,
-                                    faultWords = listOf(0, 0, 0, 0),
-                                    temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
-                                    hasFaults = false,
-                                    receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
-                                )
-                            }
-                        ) false else isConnectedLocked(owner) && diagnosticGeneration == expectedGeneration
-                    }
-                }
-                if (!published) break
+        val connectedAt = Clock.System.now().toEpochMilliseconds()
+        if (!publishIfConnected(
+                expectedConnectionGeneration = expectedConnectionGeneration,
+                expectedDiagnosticGeneration = expectedGeneration,
+            ) {
+            val now = Clock.System.now().toEpochMilliseconds()
+            _diagnostics.value = DiagnosticPacket(
+                runtimeSeconds = (now - connectedAt) / 1000,
+                faultWords = listOf(0, 0, 0, 0),
+                temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                hasFaults = false,
+                receivedAtMillis = now,
+            )
+            if (!terminal.value &&
+                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                diagnosticGeneration == expectedGeneration
+            ) {
+                logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
             }
-        }
-        if (!isConnectedLocked(owner) || diagnosticGeneration != expectedGeneration) {
-            job.cancel()
+        }) {
             return false
         }
-        diagnosticJob = job
+        diagnosticJob = scope.launch {
+            while (isActive && connectionState.value is ConnectionState.Connected) {
+                delay(2_000)
+                val now = Clock.System.now().toEpochMilliseconds()
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedDiagnosticGeneration = expectedGeneration,
+                    ) {
+                        _diagnostics.value = DiagnosticPacket(
+                            runtimeSeconds = (now - connectedAt) / 1000,
+                            faultWords = listOf(0, 0, 0, 0),
+                            temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                            hasFaults = false,
+                            receivedAtMillis = now,
+                        )
+                        if (!terminal.value &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                            diagnosticGeneration == expectedGeneration
+                        ) {
+                            logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                        }
+                    }) {
+                    break
+                }
+            }
+        }
         return true
     }
 
-    private fun startHeartbeatLocked(owner: LifecycleToken): Boolean {
-        if (!isConnectedLocked(owner)) return false
+    private fun startHeartbeat(expectedConnectionGeneration: Long) {
+        if (terminal.value ||
+            connectionAttemptReservationActive ||
+            connectionAttemptGeneration.value != expectedConnectionGeneration
+        ) {
+            return
+        }
         heartbeatGeneration += 1
         val expectedGeneration = heartbeatGeneration
         heartbeatJob?.cancel()
-        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            while (isActive) {
-                val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(owner) || heartbeatGeneration != expectedGeneration) {
-                        false
-                    } else {
-                        logIfOwnedLocked(owner) {
-                            logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                        } && isConnectedLocked(owner) && heartbeatGeneration == expectedGeneration
-                    }
+        heartbeatJob = scope.launch {
+            while (isActive && connectionState.value is ConnectionState.Connected) {
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedHeartbeatGeneration = expectedGeneration,
+                    ) {
+                        logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                    }) {
+                    break
                 }
-                if (!published) break
-                delay(HEARTBEAT_DELAY_MS)
+                delay(2_000)
             }
         }
-        if (!isConnectedLocked(owner) || heartbeatGeneration != expectedGeneration) {
-            job.cancel()
-            return false
-        }
-        heartbeatJob = job
-        return true
     }
 
-    private fun cancelPollingLocked() {
-        metricGeneration += 1
+    private fun stopJobs() {
+        metricsGeneration += 1
         heuristicGeneration += 1
         repGeneration += 1
         diagnosticGeneration += 1
@@ -1004,134 +1820,13 @@ class PhantomBleRepository(
         heartbeatJob = null
     }
 
-    private inline fun ownsLocked(owner: LifecycleToken, phase: LifecyclePhase): Boolean =
-        lifecyclePhase == phase && lifecycleOwner === owner
-
-    /** Every StateFlow/SharedFlow publication calls this pre/post ownership gate. */
-    private inline fun publishIfOwnedLocked(
-        owner: LifecycleToken,
-        phase: LifecyclePhase = LifecyclePhase.ACTIVE,
-        callerJob: Job? = null,
-        callback: () -> Unit,
-    ): Boolean {
-        if (!ownsLocked(owner, phase)) return false
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
-        callback()
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
-        return ownsLocked(owner, phase)
-    }
-
-    private inline fun logIfOwnedLocked(
-        owner: LifecycleToken,
-        phase: LifecyclePhase = LifecyclePhase.ACTIVE,
-        callerJob: Job? = null,
-        log: () -> Unit,
-    ): Boolean = publishIfOwnedLocked(owner, phase, callerJob, log)
-
-    private fun ensureCallerActiveLocked(owner: LifecycleToken, callerJob: Job?) {
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
-    }
-
-    private fun throwIfCallerCancelled(callerJob: Job?) {
-        if (callerJob?.isActive == false) throw callerCancellationException(callerJob)
-    }
-
-    /**
-     * A synchronous collector can cancel the suspend caller from inside a publication callback.
-     * The callback has already run, so clean up only while this exact active owner still owns the
-     * repository, then propagate cancellation instead of returning a successful Result.
-     */
-    private fun abortCallerCancellationLocked(owner: LifecycleToken, callerJob: Job?): Nothing {
-        when {
-            ownsOperationLocked(owner) -> {
-                val cleanup = claimNormalCleanupLocked()
-                if (cleanup != null) forceCleanupAfterCallerCancellationLocked(cleanup)
-            }
-            ownsCleanupLocked(owner) -> forceCleanupAfterCallerCancellationLocked(owner)
-        }
-        throw callerCancellationException(callerJob)
-    }
-
-    /** Restore the disconnected invariant without publishing timeout/reconnection events. */
-    private fun forceCleanupAfterCallerCancellationLocked(owner: LifecycleToken) {
-        if (!ownsCleanupLocked(owner)) return
-        cancelPollingLocked()
-        workoutParams = null
-        currentProgram = null
-        repCount = 0
-        topCounter = 0
-        completeCounter = 0
-        fixedSetCompleted = false
-        _handleDetection.value = HandleDetection()
-        _handleState.value = HandleState.WaitingForRest
-        _heuristicData.value = null
-        _diagnostics.value = null
-        _scannedDevices.value = emptyList()
-        _discoModeActive.value = false
-        _connectionState.value = ConnectionState.Disconnected
-        if (ownsCleanupLocked(owner)) {
-            lifecyclePhase = LifecyclePhase.ACTIVE
-            lifecycleOwner = null
-        }
-    }
-
-    @OptIn(InternalCoroutinesApi::class)
-    private fun callerCancellationException(callerJob: Job?): CancellationException =
-        callerJob?.getCancellationException()
-            ?: CancellationException("Phantom caller operation cancelled")
-
-    private fun isConnectedLocked(owner: LifecycleToken): Boolean =
-        ownsOperationLocked(owner) && _connectionState.value is ConnectionState.Connected
-
-    private fun lifecycleFailure(): Result<Unit> = lifecycleLock.withLock { lifecycleFailureLocked() }
-
-    private fun lifecycleFailureLocked(): Result<Unit> =
-        Result.failure(if (lifecyclePhase == LifecyclePhase.TERMINAL) shutdownError() else invalidatedError())
-
-    private fun shutdownError() = IllegalStateException("Phantom repository is shut down")
-    private fun invalidatedError() = IllegalStateException("Phantom lifecycle attempt invalidated")
-
-    private fun readUInt32(bytes: ByteArray, offset: Int): Int =
-        (bytes[offset].toInt() and 0xFF) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
-
-    private fun readFloat(bytes: ByteArray, offset: Int): Float = Float.fromBits(readUInt32(bytes, offset))
-
-    private fun writeUInt16(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
-    }
-
-    private fun writeUInt32(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value and 0xFF).toByte()
-        bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
-        bytes[offset + 2] = ((value ushr 16) and 0xFF).toByte()
-        bytes[offset + 3] = ((value ushr 24) and 0xFF).toByte()
-    }
-
-    private fun writeFloat(bytes: ByteArray, offset: Int, value: Float) = writeUInt32(bytes, offset, value.toBits())
-
     companion object {
+        private const val REGULAR_PROGRAM_OPCODE = 0x04
+        private const val ECHO_PROGRAM_OPCODE = 0x4E
+        private const val REGULAR_PROGRAM_PACKET_SIZE = 96
+        private const val ECHO_PROGRAM_PACKET_SIZE = 32
+        private const val UNLIMITED_REPS = 0xFF
         const val PHANTOM_DEVICE_NAME = "Vee_PhantomSimulator"
         const val PHANTOM_DEVICE_ADDRESS = "PH:AN:TO:MS:BX:01"
-        const val PHANTOM_REP = "PHANTOM_REP"
-        private const val REGULAR_OPCODE = 0x00000004
-        private const val ECHO_OPCODE = 0x0000004E
-        private const val REGULAR_PACKET_SIZE = 96
-        private const val ECHO_PACKET_SIZE = 32
-        private const val REGULAR_WEIGHT_OFFSET = 0x58
-        private const val UNLIMITED_REPS = 0xFF
-        private const val RANGE_TOP = 650f
-        private const val RANGE_BOTTOM = 0f
-        private const val SCAN_DELAY_MS = 150L
-        private const val CONNECT_DELAY_MS = 250L
-        private const val ACTIVE_METRIC_DELAY_MS = 250L
-        private const val IDLE_METRIC_DELAY_MS = 750L
-        private const val ACTIVE_HEURISTIC_DELAY_MS = 250L
-        private const val IDLE_HEURISTIC_DELAY_MS = 750L
-        private const val DIAGNOSTIC_DELAY_MS = 2_000L
-        private const val HEARTBEAT_DELAY_MS = 2_000L
     }
 }

@@ -3,12 +3,12 @@ package com.devil.phoenixproject.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * Vitruvian Hardware Model
+ * Phoenix Hardware Model
  */
-enum class VitruvianModel(val displayName: String) {
+enum class PhoenixModel(val displayName: String) {
     VFormTrainer("V-Form Trainer"),
     TrainerPlus("Trainer+"),
-    Unknown("Unknown Vitruvian Device"),
+    Unknown("Unknown Phoenix Device"),
 }
 
 /**
@@ -32,7 +32,7 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * [weightPerCableKg] is the official-app display contract for PR load. [cableCount]
+ * [weightPerCableKg] is the per-cable display contract for PR load. [cableCount]
  * is retained for legacy metadata and analytics context; ordinary PR display must
  * not multiply by it.
  */
@@ -51,6 +51,8 @@ data class PersonalRecord(
     val profileId: String = "default",
     val cableCount: Int? = null,
     val uuid: String? = null,
+    val updatedAt: Long? = null,
+    val deletedAt: Long? = null,
 )
 
 /**
@@ -63,7 +65,7 @@ sealed class ConnectionState {
     data class Connected(
         val deviceName: String,
         val deviceAddress: String,
-        val hardwareModel: VitruvianModel = VitruvianModel.Unknown,
+        val hardwareModel: PhoenixModel = PhoenixModel.Unknown,
     ) : ConnectionState()
     data class Error(val message: String, val throwable: Throwable? = null) : ConnectionState()
 }
@@ -356,7 +358,10 @@ data class WorkoutParameters(
     val selectedExerciseId: String? = null,
     val isAMRAP: Boolean = false, // AMRAP (As Many Reps As Possible) - disables auto-stop
     val lastUsedWeightKg: Float? = null, // Last used weight for this exercise (for quick preset)
-    val prWeightKg: Float? = null, // Personal record weight for this exercise (for quick preset)
+    // F-059: nothing reads this any more. The field stays because the active-workout
+    // runtime snapshot serialises it with ignoreUnknownKeys = false, so removing it
+    // would make every runtime document written by an older build undecodable.
+    val prWeightKg: Float? = null,
     val stallDetectionEnabled: Boolean = true, // Enable 5s stall/de-load auto-stop during active sets
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
@@ -370,6 +375,18 @@ data class WorkoutParameters(
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
+
+    /**
+     * Issue #712 / F-070: the single answer to "does this set run without a rep target?".
+     *
+     * The PROGRAM packet writes the firmware's 0xFF unlimited sentinel into its reps field
+     * for exactly these sets ([com.devil.phoenixproject.util.BlePacketFactory.createProgramParams]),
+     * the execution lease marks them so the rep-notification freshness gate accepts the
+     * machine's unlimited totals, and the engine's warm-up auto-end fallback applies only to
+     * them. Those were separate expressions of one rule that could drift apart; all three
+     * now read this one.
+     */
+    val usesUnlimitedRepTarget: Boolean get() = isJustLift || isAMRAP
 }
 
 /**
@@ -385,7 +402,7 @@ data class WorkoutMetric(
     val positionA: Float, // Position in mm (changed from Int in Issue #197)
     val positionB: Float, // Position in mm (changed from Int in Issue #197)
     val ticks: Long = 0L,
-    val velocityA: Double = 0.0, // Velocity for handle detection (official app protocol)
+    val velocityA: Double = 0.0, // Firmware-provided velocity used for handle detection
     val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
     val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
 ) {
@@ -588,6 +605,8 @@ data class WorkoutSession(
     val formScore: Int? = null,
     // Profile scoping
     val profileId: String = "default",
+    /** Domain last-edit epoch millis used as the portal LWW wire timestamp. */
+    val updatedAt: Long? = null,
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean
@@ -607,9 +626,35 @@ data class WorkoutSession(
 fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
+ * Resolves the safe per-cable load for history, progression, and 1RM display.
+ *
+ * A finite positive recorded summary value is authoritative. Zero, negative, and non-finite
+ * summary values fall back to the finite positive configured value. A deliberate zero is
+ * preserved only when the caller supplies the canonical bodyweight classification and the
+ * persisted rack context contains a positive counterweight. A WorkoutSession alone does not
+ * persist that classification, so counterweight must never be treated as proof. Legacy sessions
+ * have no summary value and therefore use their configured weight unchanged.
+ */
+fun WorkoutSession.displayHeaviestKgPerCable(isBodyweight: Boolean = false): Float {
+    val measured = heaviestLiftKg
+    if (measured != null && measured.isFinite()) {
+        if (measured > 0f) return measured
+        if (
+            measured == 0f &&
+            isBodyweight &&
+            counterweightKg.isFinite() &&
+            counterweightKg > 0f
+        ) {
+            return 0f
+        }
+    }
+    return weightPerCableKg.takeIf { it.isFinite() && it > 0f } ?: 0f
+}
+
+/**
  * Legacy multiplier metadata for explicit total/compatibility paths.
  *
- * Ordinary saved-session load display matches the official app and stays per-cable.
+ * Ordinary saved-session load display stays per-cable.
  * Do not use this helper to format primary selected/heaviest load values.
  */
 fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1
@@ -667,34 +712,6 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
 }
 
 expect fun generateUUID(): String
-
-/**
- * Chart data point for visualization
- * Position values are in millimeters (mm), range -1000.0 to +1000.0 (Issue #197)
- */
-@Suppress("unused")
-data class ChartDataPoint(
-    val timestamp: Long,
-    val totalLoad: Float,
-    val loadA: Float,
-    val loadB: Float,
-    val positionA: Float, // Position in mm (changed from Int in Issue #197)
-    val positionB: Float, // Position in mm (changed from Int in Issue #197)
-)
-
-/**
- * Chart event markers
- */
-sealed class ChartEvent(val timestamp: Long, val label: String) {
-    @Suppress("unused")
-    class RepStart(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber")
-
-    @Suppress("unused")
-    class RepComplete(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber Complete")
-
-    @Suppress("unused")
-    class WarmupComplete(timestamp: Long) : ChartEvent(timestamp, "Warmup Complete")
-}
 
 /**
  * PR Celebration Event - Triggered when user achieves a new Personal Record

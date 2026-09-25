@@ -3,23 +3,24 @@ package com.devil.phoenixproject.data.migration
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.local.ReconciliationStatus
-import com.devil.phoenixproject.data.local.SchemaIndexOperation
-import com.devil.phoenixproject.data.local.applyIndexCreate
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.LegacyBaselineRepair
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
+import com.devil.phoenixproject.data.repository.ProfileRecoveryDiscovery
 import com.devil.phoenixproject.data.repository.ProfileScopedDataMerger
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
-import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
+import com.devil.phoenixproject.domain.model.SessionTiming
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
@@ -44,13 +45,24 @@ sealed interface RequiredMigrationState {
     data class Failed(val message: String) : RequiredMigrationState
 }
 
+sealed interface NonCriticalRepairState {
+    data object NotStarted : NonCriticalRepairState
+    data object Applying : NonCriticalRepairState
+    data object Ready : NonCriticalRepairState
+    data class Failed(val diagnosticCode: String) : NonCriticalRepairState
+}
+
+fun interface PersonalRecordHistoryRepair {
+    suspend fun repair(session: WorkoutSession, profileId: String): Int
+}
+
 /**
  * Manages data migrations on app startup.
  * Call [checkAndRunMigrations] after Koin is initialized.
  * Call [close] when done to prevent memory leaks.
  */
 class MigrationManager(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val userProfileRepository: UserProfileRepository,
     private val gamificationRepository: GamificationRepository,
     private val settings: Settings,
@@ -59,24 +71,20 @@ class MigrationManager(
     private val legacyProfilePreferencesReader: LegacyProfilePreferencesReader,
     private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val driver: SqlDriver? = null,
+    private val legacyBaselineRepair: LegacyBaselineRepair? = null,
+    private val profileRecoveryDiscovery: ProfileRecoveryDiscovery? = null,
+    private val profileMutationBarrier: ProfileMutationBarrier? = null,
+    private val personalRecordHistoryRepair: PersonalRecordHistoryRepair? = null,
 ) : RequiredMigrationGate {
     private val log = Logger.withTag("MigrationManager")
 
     companion object {
-        /**
-         * Bump this constant to force all one-time data-repair passes to re-run on every
-         * device that installs the new build. The stored value is compared on startup; if
-         * the stored value is less than [CURRENT_REPAIR_VERSION] the repairs execute and
-         * the new version is persisted afterwards.
-         */
-        private const val CURRENT_REPAIR_VERSION = 2
-        private const val KEY_REPAIR_VERSION = "migration_repair_version"
         private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
             "profile_preferences_legacy_migration_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val queries get() = database.vitruvianDatabaseQueries
+    private val queries get() = database.phoenixDatabaseQueries
     private val migrationMutex = Mutex()
     private val requiredMigrationMutex = Mutex()
 
@@ -85,54 +93,17 @@ class MigrationManager(
     )
     override val requiredMigrationState: StateFlow<RequiredMigrationState> =
         _requiredMigrationState.asStateFlow()
-
-    private val _profileScopeRepairState = MutableStateFlow<ProfileScopeRepairState>(ProfileScopeRepairState.Idle)
-    val profileScopeRepairState: StateFlow<ProfileScopeRepairState> = _profileScopeRepairState.asStateFlow()
-
-    private var pendingProfileScopeRepair: PendingProfileScopeRepair? = null
-
-    // Issue #319: Track orphaned data repair state for PRs with deleted profile IDs
-    private val _orphanedDataRepairState = MutableStateFlow<OrphanedDataRepairState>(OrphanedDataRepairState.Idle)
-    val orphanedDataRepairState: StateFlow<OrphanedDataRepairState> = _orphanedDataRepairState.asStateFlow()
+    private val _nonCriticalRepairState = MutableStateFlow<NonCriticalRepairState>(
+        NonCriticalRepairState.NotStarted,
+    )
+    val nonCriticalRepairState: StateFlow<NonCriticalRepairState> =
+        _nonCriticalRepairState.asStateFlow()
 
     private data class RoutineNameResolutionContext(
         val routineNameById: Map<String, String>,
         val routineIdByExerciseId: Map<String, String>,
         val uniqueRoutineNameByExerciseId: Map<String, String>,
         val uniqueRoutineNameByExerciseName: Map<String, String>,
-    )
-
-    private data class ProfileScopedCounts(
-        val sessions: Long,
-        val personalRecords: Long,
-        val routines: Long,
-        val cycles: Long,
-        val assessments: Long,
-        val progressions: Long,
-        val badges: Long,
-        val streaks: Long,
-        val gamificationStats: Long,
-        val rpgProfiles: Long,
-    ) {
-        val totalRows: Long = sessions +
-            personalRecords +
-            routines +
-            cycles +
-            assessments +
-            progressions +
-            badges +
-            streaks +
-            gamificationStats +
-            rpgProfiles
-        val hasAnyData: Boolean get() = totalRows > 0
-    }
-
-    private data class PendingProfileScopeRepair(
-        val fromProfileId: String,
-        val toProfileId: String,
-        val toProfileName: String,
-        val fromCounts: ProfileScopedCounts,
-        val toCounts: ProfileScopedCounts,
     )
 
     /**
@@ -142,25 +113,25 @@ class MigrationManager(
     fun checkAndRunMigrations() {
         scope.launch {
             runRequiredMigrations()
-            if (requiredMigrationState.value == RequiredMigrationState.Ready) {
-                runNonCriticalRepairsNow()
-            }
         }
     }
 
     suspend fun runMigrationsNow() {
-        runRequiredMigrations()
+        runRequiredMigrations(scheduleNonCriticalRepairs = false)
         if (requiredMigrationState.value == RequiredMigrationState.Ready) {
             runNonCriticalRepairsNow()
         }
     }
 
-    suspend fun runRequiredMigrations() = requiredMigrationMutex.withLock {
+    suspend fun runRequiredMigrations() = runRequiredMigrations(scheduleNonCriticalRepairs = true)
+
+    private suspend fun runRequiredMigrations(scheduleNonCriticalRepairs: Boolean) = requiredMigrationMutex.withLock {
         if (_requiredMigrationState.value == RequiredMigrationState.Ready) return@withLock
         _requiredMigrationState.value = RequiredMigrationState.Applying
         try {
             migrateProfilePreferences()
             _requiredMigrationState.value = RequiredMigrationState.Ready
+            if (scheduleNonCriticalRepairs) scope.launch { runNonCriticalRepairsNow() }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -173,9 +144,6 @@ class MigrationManager(
 
     suspend fun retryRequiredMigrations() {
         runRequiredMigrations()
-        if (requiredMigrationState.value == RequiredMigrationState.Ready) {
-            runNonCriticalRepairsNow()
-        }
     }
 
     override suspend fun awaitRequiredMigrations() {
@@ -216,188 +184,86 @@ class MigrationManager(
             profileLocalSafetyStore.copyLegacyToProfiles(existingProfiles.map { it.id }, snapshot.localSafety)
             settings.putBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, true)
         }
+        val baselineRepair = legacyBaselineRepair?.reconcileAfterProfileBootstrap(existingProfiles)
+        runRequiredDataRepairs()
+        profileRecoveryDiscovery?.apply {
+            discoverProfileData(existingProfiles)
+            discoverLegacyBaselines(baselineRepair?.ambiguous?.size ?: 0)
+        }
         userProfileRepository.retryPendingLocalCleanup()
         userProfileRepository.reconcileActiveProfileContext()
     }
 
     private suspend fun runNonCriticalRepairsNow() {
-        migrationMutex.withLock {
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying("Running startup data repair")
-            pendingProfileScopeRepair = null
+        val run = suspend {
+            migrationMutex.withLock {
+                applyNonCriticalRepairs()
+            }
+        }
+        profileMutationBarrier?.withExclusive { run() } ?: run()
+    }
+
+    private suspend fun applyNonCriticalRepairs() {
             try {
+                _nonCriticalRepairState.value = NonCriticalRepairState.Applying
                 runMigrations()
-                if (_profileScopeRepairState.value !is ProfileScopeRepairState.NeedsChoice) {
-                    _profileScopeRepairState.value = ProfileScopeRepairState.Completed("Startup data repair complete")
-                }
-            } catch (e: Exception) {
+                _nonCriticalRepairState.value = NonCriticalRepairState.Ready
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
                 log.e(e) { "Migration failed" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Startup data repair failed",
+                _nonCriticalRepairState.value = NonCriticalRepairState.Failed(
+                    diagnosticCode = "PERSONAL_RECORD_HISTORY_REPAIR_FAILED",
                 )
             }
-        }
-    }
-
-    suspend fun moveDefaultDataToActiveProfile() {
-        migrationMutex.withLock {
-            val context = pendingProfileScopeRepair
-                ?: return@withLock
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                "Moving legacy data into ${context.toProfileName}",
-            )
-            try {
-                applyProfileScopeMove(context)
-                pendingProfileScopeRepair = null
-                _profileScopeRepairState.value = ProfileScopeRepairState.Completed(
-                    "Moved legacy data into ${context.toProfileName}",
-                )
-            } catch (e: Exception) {
-                log.e(e) { "Profile-scope repair failed during manual move" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Profile-scope repair failed",
-                )
-            }
-        }
-    }
-
-    suspend fun switchToDefaultProfileWithoutMovingData() {
-        migrationMutex.withLock {
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                "Switching back to Default profile",
-            )
-            try {
-                setActiveProfileInternal("default")
-                pendingProfileScopeRepair = null
-                _profileScopeRepairState.value = ProfileScopeRepairState.Completed(
-                    "Using Default profile without moving data",
-                )
-            } catch (e: Exception) {
-                log.e(e) { "Profile-scope repair failed while switching to default profile" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Failed to switch to Default profile",
-                )
-            }
-        }
     }
 
     private suspend fun runMigrations() {
         refreshProfilesIfAvailable()
-        runOneTimeRepairs()
-        auditAndRepairProfileScopedData()
-        // Issue #319: Check for orphaned PR records after all other migrations
-        checkAndRepairOrphanedData()
+        runNonCriticalPersonalRecordRepair()
+        // Data-gated, so a no-op in the steady state; catches legacy catalogue ids that
+        // arrived while the app was last running (pull, restore) before any UI entry point.
+        LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "startup")
+    }
+
+    private fun runRequiredDataRepairs() {
+        runAtomicDataRepair("fabricated-routine-session-ids-v1", ::cleanupFabricatedRoutineSessionIds)
+        runAtomicDataRepair("workout-mode-keys-v1", ::normalizeLegacyWorkoutModes)
+        runAtomicDataRepair("legacy-workout-routine-names-v1", ::backfillLegacyWorkoutRoutineNames)
+        runAtomicDataRepair("epoch-zero-session-starts-v1", ::repairEpochZeroSessionStarts)
     }
 
     /**
-     * Run the suite of full-table-scan data-repair passes exactly once per
-     * [CURRENT_REPAIR_VERSION]. When [settings] is available the completed version is
-     * persisted so subsequent startups skip the work entirely. When [settings] is null
-     * (e.g. test environments) the repairs always run — matching the previous behaviour.
+     * Sessions saved by the "1970" bug (a save read a zeroed workoutStartTime) have
+     * timestamp 0 and a duration equal to the save time in epoch ms. Only that signature is
+     * touched (old imported history is legitimate). Rebuild the start from
+     * the session's own samples/sets and replace an epoch-sized duration with the sample span (or 0).
+     * Local only: sync generations are not bumped, and the portal repairs these on push.
      */
-    private suspend fun runOneTimeRepairs() {
-        val storedVersion = settings.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
-        if (storedVersion >= CURRENT_REPAIR_VERSION) {
-            log.d { "Skipping one-time data repairs — already at repair version $storedVersion" }
-            return
-        }
-
-        log.i { "Running one-time data repairs (stored=$storedVersion, current=$CURRENT_REPAIR_VERSION)" }
-        cleanupFabricatedRoutineSessionIds()
-        normalizeLegacyWorkoutModes()
-        backfillLegacyWorkoutRoutineNames()
-        repairPersonalRecordsFromWorkoutHistory()
-
-        // Persist the completed version so this suite does not re-run next startup.
-        runCatching {
-            settings.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
-        }.onFailure { e ->
-            log.w(e) { "Failed to persist repair version; repairs will re-run on next startup" }
-        }
-        log.i { "One-time data repairs complete — persisted repair version $CURRENT_REPAIR_VERSION" }
+    private fun repairEpochZeroSessionStarts() {
+        queries.repairEpochZeroSessionStarts(
+            minEpochSizedDurationMs = SessionTiming.MIN_EPOCH_SIZED_DURATION_MS,
+            minValidStartMs = SessionTiming.MIN_VALID_START_MS,
+        )
     }
 
-    private suspend fun auditAndRepairProfileScopedData() {
-        val activeProfile = resolveActiveProfile() ?: run {
-            log.w { "Profile-scope audit skipped: no active profile found" }
-            return
-        }
-
-        if (activeProfile.id == "default") {
-            log.d { "Profile-scope audit: active profile is default, no repair needed" }
-            return
-        }
-
-        val auditDriver = driver ?: run {
-            log.w { "Profile-scope audit skipped for non-default active profile because SqlDriver was not provided" }
-            return
-        }
-
-        val defaultCounts = loadProfileScopedCounts(auditDriver, "default")
-        val activeCounts = loadProfileScopedCounts(auditDriver, activeProfile.id)
-
-        log.i {
-            "Profile-scope audit: active=${activeProfile.id} defaultRows=${defaultCounts.totalRows} activeRows=${activeCounts.totalRows}"
-        }
-
-        when {
-            !defaultCounts.hasAnyData -> {
-                log.d { "Profile-scope audit: no legacy default-scoped data found" }
-            }
-
-            !activeCounts.hasAnyData -> {
-                val context = PendingProfileScopeRepair(
-                    fromProfileId = "default",
-                    toProfileId = activeProfile.id,
-                    toProfileName = activeProfile.name,
-                    fromCounts = defaultCounts,
-                    toCounts = activeCounts,
-                )
-                _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                    "Moving legacy data into ${activeProfile.name}",
-                )
-                applyProfileScopeMove(context)
-            }
-
-            else -> {
-                pendingProfileScopeRepair = PendingProfileScopeRepair(
-                    fromProfileId = "default",
-                    toProfileId = activeProfile.id,
-                    toProfileName = activeProfile.name,
-                    fromCounts = defaultCounts,
-                    toCounts = activeCounts,
-                )
-                _profileScopeRepairState.value = ProfileScopeRepairState.NeedsChoice(
-                    activeProfileId = activeProfile.id,
-                    activeProfileName = activeProfile.name,
-                    defaultRowCount = defaultCounts.totalRows,
-                    activeRowCount = activeCounts.totalRows,
-                )
-            }
-        }
-    }
-
-    private suspend fun applyProfileScopeMove(context: PendingProfileScopeRepair) {
-        val moveDriver = driver
-            ?: error("Profile-scope repair requires a SqlDriver")
-
+    private fun runAtomicDataRepair(repairKey: String, repair: () -> Unit) {
+        if (queries.selectAppliedDataRepair(repairKey).executeAsOneOrNull() != null) return
         database.transaction {
-            profileScopedDataMerger.mergePersonalRecords(context.fromProfileId, context.toProfileId)
-            profileScopedDataMerger.mergeEarnedBadges(context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "WorkoutSession", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "Routine", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "TrainingCycle", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "AssessmentResult", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "ProgressionEvent", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "StreakHistory", context.fromProfileId, context.toProfileId)
-            deleteProfileScopedRows(moveDriver, "GamificationStats", context.fromProfileId)
-            deleteProfileScopedRows(moveDriver, "GamificationStats", context.toProfileId)
-            deleteProfileScopedRows(moveDriver, "RpgAttributes", context.fromProfileId)
-            deleteProfileScopedRows(moveDriver, "RpgAttributes", context.toProfileId)
+            repair()
+            check(queries.insertAppliedDataRepair(repairKey, currentTimeMillis()).value == 1L) {
+                "Required repair ledger write failed for $repairKey"
+            }
         }
+    }
 
-        validateAndRepairPrUniqueIndex(moveDriver)
-        recomputeDerivedGamification(context.toProfileId)
-        refreshProfilesIfAvailable()
+    private suspend fun runNonCriticalPersonalRecordRepair() {
+        val repairKey = "personal-record-history-v1"
+        if (queries.selectAppliedDataRepair(repairKey).executeAsOneOrNull() != null) return
+        repairPersonalRecordsFromWorkoutHistory()
+        check(queries.insertAppliedDataRepair(repairKey, currentTimeMillis()).value == 1L) {
+            "Non-critical repair ledger write failed for $repairKey"
+        }
     }
 
     private suspend fun recomputeDerivedGamification(profileId: String) {
@@ -410,131 +276,13 @@ class MigrationManager(
         userProfileRepository.refreshProfiles()
     }
 
-    private suspend fun setActiveProfileInternal(profileId: String) {
-        userProfileRepository.setActiveProfile(profileId)
-        userProfileRepository.refreshProfiles()
-    }
-
-    private suspend fun resolveActiveProfile(): UserProfile? {
-        userProfileRepository.refreshProfiles()
-        userProfileRepository.activeProfile.value?.let { return it }
-
-        val active = queries.getActiveProfile().executeAsOneOrNull() ?: return null
-        return UserProfile(
-            id = active.id,
-            name = active.name,
-            colorIndex = active.colorIndex.toInt(),
-            createdAt = active.createdAt,
-            isActive = active.isActive == 1L,
-            supabaseUserId = active.supabase_user_id,
-            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.fromString(
-                active.subscription_status,
-            ),
-            subscriptionExpiresAt = active.subscription_expires_at,
-            lastAuthAt = active.last_auth_at,
-        )
-    }
-
-    private fun loadProfileScopedCounts(auditDriver: SqlDriver, profileId: String): ProfileScopedCounts = ProfileScopedCounts(
-        sessions = countProfileScopedRows(auditDriver, "WorkoutSession", profileId),
-        personalRecords = countProfileScopedRows(auditDriver, "PersonalRecord", profileId),
-        routines = countProfileScopedRows(auditDriver, "Routine", profileId),
-        cycles = countProfileScopedRows(auditDriver, "TrainingCycle", profileId),
-        assessments = countProfileScopedRows(auditDriver, "AssessmentResult", profileId),
-        progressions = countProfileScopedRows(auditDriver, "ProgressionEvent", profileId),
-        badges = countProfileScopedRows(auditDriver, "EarnedBadge", profileId),
-        streaks = countProfileScopedRows(auditDriver, "StreakHistory", profileId),
-        gamificationStats = countProfileScopedRows(auditDriver, "GamificationStats", profileId),
-        rpgProfiles = countProfileScopedRows(auditDriver, "RpgAttributes", profileId),
-    )
-
-    private fun countProfileScopedRows(auditDriver: SqlDriver, tableName: String, profileId: String): Long {
-        var count = 0L
-        auditDriver.executeQuery(
-            identifier = null,
-            sql = "SELECT COUNT(*) FROM $tableName WHERE profile_id = ?",
-            mapper = { cursor ->
-                if (cursor.next().value) {
-                    count = cursor.getLong(0) ?: 0L
-                }
-                QueryResult.Value(Unit)
-            },
-            parameters = 1,
-        ) {
-            bindString(0, profileId)
-        }
-        return count
-    }
-
-    private fun moveProfileScopedRows(auditDriver: SqlDriver, tableName: String, fromProfileId: String, toProfileId: String) {
-        auditDriver.execute(
-            identifier = null,
-            sql = "UPDATE $tableName SET profile_id = ? WHERE profile_id = ?",
-            parameters = 2,
-        ) {
-            bindString(0, toProfileId)
-            bindString(1, fromProfileId)
-        }
-    }
-
-    private fun deleteProfileScopedRows(auditDriver: SqlDriver, tableName: String, profileId: String) {
-        auditDriver.execute(
-            identifier = null,
-            sql = "DELETE FROM $tableName WHERE profile_id = ?",
-            parameters = 1,
-        ) {
-            bindString(0, profileId)
-        }
-    }
-
-    private fun validateAndRepairPrUniqueIndex(auditDriver: SqlDriver) {
-        val duplicateKeys = mutableListOf<String>()
-        auditDriver.executeQuery(
-            identifier = null,
-            sql = """
-                SELECT exerciseId || '|' || workoutMode || '|' || prType || '|' || phase || '|' || profile_id
-                FROM PersonalRecord
-                GROUP BY exerciseId, workoutMode, prType, phase, profile_id
-                HAVING COUNT(*) > 1
-            """.trimIndent(),
-            mapper = { cursor ->
-                while (cursor.next().value) {
-                    duplicateKeys += cursor.getString(0).orEmpty()
-                }
-                QueryResult.Value(Unit)
-            },
-            parameters = 0,
-        )
-
-        check(duplicateKeys.isEmpty()) {
-            "PersonalRecord still has duplicate composite keys after repair: ${duplicateKeys.take(5)}"
-        }
-
-        val createResult = applyIndexCreate(
-            auditDriver,
-            SchemaIndexOperation(
-                name = "idx_pr_unique",
-                createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id)",
-                preDropSql = "DROP INDEX IF EXISTS idx_pr_unique",
-            ),
-        )
-
-        check(createResult.status != ReconciliationStatus.FAILED) {
-            "Failed to recreate idx_pr_unique: ${createResult.detail ?: "unknown error"}"
-        }
-    }
-
     /**
      * Remove fabricated `legacy_session_*` routineSessionIds that were incorrectly
      * generated by an earlier version of the export/import code. These synthetic IDs
      * break history grouping by making every session appear as a separate routine execution.
      */
     private fun cleanupFabricatedRoutineSessionIds() {
-        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load workout sessions for routineSessionId cleanup" }
-                return
-            }
+        val sessions = queries.selectAllSessionsSync().executeAsList()
 
         var cleaned = 0
         database.transaction {
@@ -557,23 +305,11 @@ class MigrationManager(
     }
 
     private fun backfillLegacyWorkoutRoutineNames() {
-        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load workout sessions for legacy routine-name backfill" }
-                return
-            }
+        val sessions = queries.selectAllSessionsSync().executeAsList()
         if (sessions.isEmpty()) return
 
-        val routines = runCatching { queries.selectAllRoutinesSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load routines for legacy routine-name backfill" }
-                emptyList()
-            }
-        val routineExercises = runCatching { queries.selectAllRoutineExercisesSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load routine exercises for legacy routine-name backfill" }
-                emptyList()
-            }
+        val routines = queries.selectAllRoutinesSync().executeAsList()
+        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         val resolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
 
         var updatedNameRows = 0
@@ -616,11 +352,7 @@ class MigrationManager(
     }
 
     private fun normalizeLegacySessionModes() {
-        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load workout sessions for mode normalization" }
-                return
-            }
+        val sessions = queries.selectAllSessionsSync().executeAsList()
 
         var updated = 0
         database.transaction {
@@ -663,12 +395,12 @@ class MigrationManager(
     }
 
     private suspend fun repairPersonalRecordsFromWorkoutHistory() {
-        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load workout sessions for PR repair" }
-                return
-            }
-            .sortedBy { it.timestamp }
+        val sessions = try {
+            queries.selectAllSessionsSync().executeAsList().sortedBy { it.timestamp }
+        } catch (error: Throwable) {
+            log.e(error) { "Failed to load workout sessions for PR repair" }
+            throw error
+        }
 
         if (sessions.isEmpty()) return
 
@@ -696,8 +428,9 @@ class MigrationManager(
                     val configuredWeightKg = session.weightPerCableKg.toFloat()
                     if (achievedWeightKg <= 0f || configuredWeightKg <= 0f) return@forEach
 
-                    val brokenPRs = runCatching {
-                        personalRecordRepository.updatePRsIfBetter(
+                    val repairedCount = try {
+                        personalRecordHistoryRepair?.repair(session, profileId)
+                            ?: personalRecordRepository.updatePRsIfBetter(
                             exerciseId = exerciseId,
                             weightPRWeightPerCableKg = achievedWeightKg,
                             volumePRWeightPerCableKg = configuredWeightKg,
@@ -705,17 +438,17 @@ class MigrationManager(
                             workoutMode = normalizedMode,
                             timestamp = session.timestamp,
                             profileId = profileId,
-                        ).getOrThrow()
-                    }.getOrElse { error ->
+                        ).getOrThrow().size
+                    } catch (error: Throwable) {
                         log.e(error) { "Failed to repair PRs for session ${session.id} (profile=$profileId)" }
-                        return@forEach
+                        throw error
                     }
 
-                    if (brokenPRs.isNotEmpty()) {
+                    if (repairedCount > 0) {
                         repairedSessions++
-                        repairedRecords += brokenPRs.size
+                        repairedRecords += repairedCount
                         profileRepairedSessions++
-                        profileRepairedRecords += brokenPRs.size
+                        profileRepairedRecords += repairedCount
                     }
                 }
 
@@ -754,7 +487,9 @@ class MigrationManager(
         val allRecordProfileIds = mutableSetOf<String>()
         driver?.executeQuery(
             identifier = null,
-            sql = "SELECT DISTINCT profile_id FROM PersonalRecord",
+            // Live rows only: a permanently deleted profile (PR 20) keeps its PR tombstones
+            // under its own id; moving them would hand them to another profile.
+            sql = "SELECT DISTINCT profile_id FROM PersonalRecord WHERE deletedAt IS NULL",
             mapper = { cursor ->
                 while (cursor.next().value) {
                     cursor.getString(0)?.let { allRecordProfileIds.add(it) }
@@ -771,7 +506,7 @@ class MigrationManager(
             var count = 0
             driver?.executeQuery(
                 identifier = null,
-                sql = "SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = ?",
+                sql = "SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = ? AND deletedAt IS NULL",
                 mapper = { cursor ->
                     if (cursor.next().value) {
                         count = cursor.getLong(0)?.toInt() ?: 0
@@ -796,19 +531,16 @@ class MigrationManager(
      * @return Number of records repaired
      */
     suspend fun repairOrphanedPRRecords(targetProfileId: String): Int = migrationMutex.withLock {
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Repairing("Migrating orphaned PR records to $targetProfileId")
-
         val orphanedCounts = scanForOrphanedPRRecords()
         repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
     }
 
     /**
      * Issue #319: Internal implementation that does the actual repair.
-     * Called from both repairOrphanedPRRecords (with mutex) and checkAndRepairOrphanedData (already inside mutex).
+     * Called from [repairOrphanedPRRecords] while its migration mutex is held.
      */
     private suspend fun repairOrphanedPRRecordsInternal(targetProfileId: String, orphanedCounts: Map<String, Int>): Int {
         if (orphanedCounts.isEmpty()) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Completed("No orphaned records found", 0)
             return 0
         }
 
@@ -824,8 +556,6 @@ class MigrationManager(
         val moveDriver = driver
         if (moveDriver == null) {
             log.w { "Orphaned PR repair skipped: no SqlDriver available for a safe dedup-merge" }
-            _orphanedDataRepairState.value =
-                OrphanedDataRepairState.Completed("Repair skipped: no SqlDriver available", 0)
             return 0
         }
         var totalRepaired = 0
@@ -863,55 +593,8 @@ class MigrationManager(
         // Recompute gamification after repair
         recomputeDerivedGamification(targetProfileId)
 
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Completed(
-            "Migrated $totalRepaired records to $targetProfileId",
-            totalRepaired,
-        )
-
         log.i { "Issue #319: Successfully repaired $totalRepaired orphaned PR records" }
         return totalRepaired
-    }
-
-    /**
-     * Issue #319: Full check for orphaned data that can be called on startup
-     * after the regular profile scope repair completes.
-     * NOTE: This should only be called from within migrationMutex.withLock
-     */
-    suspend fun checkAndRepairOrphanedData() {
-        // Skip if no driver available (test environments)
-        if (driver == null) {
-            log.d { "Issue #319: Skipping orphaned data check — no SqlDriver available" }
-            return
-        }
-
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Scanning("Checking for orphaned PR records")
-
-        val orphanedCounts = scanForOrphanedPRRecords()
-        val activeProfile = resolveActiveProfile()
-        val targetProfileId = activeProfile?.id ?: "default"
-
-        if (orphanedCounts.isEmpty()) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Idle
-            return
-        }
-
-        log.w { "Issue #319: Found orphaned PR records: $orphanedCounts. Target profile for repair: $targetProfileId" }
-
-        // Auto-repair if there's an active profile
-        if (activeProfile != null) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.NeedsRepair(
-                orphanedProfileIds = orphanedCounts.keys.toList(),
-                orphanedRecordCounts = orphanedCounts,
-                targetProfileId = targetProfileId,
-            )
-
-            // Auto-repair (without acquiring mutex again - already inside runMigrations)
-            repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
-        } else {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Failed(
-                "Found orphaned records but no active profile to migrate to: $orphanedCounts",
-            )
-        }
     }
 
     private fun resolveRoutineNameForSession(
@@ -1067,7 +750,7 @@ class MigrationManager(
     }
 
     /**
-     * Generic placeholder routine names set by external imports (e.g. Vitruvian cloud).
+     * Generic placeholder routine names set by external imports (e.g. legacy cloud exports).
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(

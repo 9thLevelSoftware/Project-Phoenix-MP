@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,7 +47,7 @@ enum class HandleState {
 }
 
 /**
- * Rep notification from the Vitruvian machine.
+ * Rep notification from the Phoenix machine.
  *
  * Supports TWO packet formats for backwards compatibility (Issue #187):
  *
@@ -57,7 +58,7 @@ enum class HandleState {
  * - isLegacyFormat = true
  * - Uses topCounter increments for rep counting (Beta 4 method)
  *
- * OFFICIAL APP FORMAT (24 bytes):
+ * MODERN FIRMWARE FORMAT (24 bytes):
  * - topCounter (u32): Concentric/up phase completions
  * - completeCounter (u32): Eccentric/down phase completions
  * - rangeTop (float): Maximum ROM boundary
@@ -125,7 +126,7 @@ data class RepNotification(
 data class ReconnectionRequest(val deviceName: String?, val deviceAddress: String, val reason: String, val timestamp: Long)
 
 /**
- * BLE Repository interface for Vitruvian machine communication.
+ * BLE Repository interface for Phoenix machine communication.
  *
  * Implementation: KableBleRepository (commonMain) - Kable-based implementation for Android/iOS
  */
@@ -148,7 +149,7 @@ interface BleRepository {
     // Heuristic/phase statistics from machine (for Echo mode force feedback)
     val heuristicData: StateFlow<com.devil.phoenixproject.domain.model.HeuristicStatistics?>
 
-    // Machine diagnostics from the official diagnostic characteristic.
+    // Machine diagnostics from the diagnostic characteristic.
     val diagnostics: StateFlow<DiagnosticPacket?>
 
     suspend fun startScanning(): Result<Unit>
@@ -166,7 +167,7 @@ interface BleRepository {
     }
 
     /**
-     * Scan for first Vitruvian device and connect to it immediately.
+     * Scan for first Phoenix device and connect to it immediately.
      * Matches parent repo behavior - no manual device selection needed.
      * @param timeoutMs Maximum time to scan before giving up (default 30 seconds)
      * @return Result.success if connected, Result.failure if timeout or error
@@ -175,9 +176,17 @@ interface BleRepository {
     suspend fun setColorScheme(schemeIndex: Int): Result<Unit>
     suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit>
 
+    /**
+     * Model of the currently connected trainer, or null when not connected.
+     *
+     * Per-cable ceilings differ per model, so this is what bounds every machine command
+     * (see [com.devil.phoenixproject.util.CommandLimits]). Detected at connect time from
+     * the advertised device name.
+     */
+    val connectedModel: PhoenixModel?
+        get() = (connectionState.value as? ConnectionState.Connected)?.hardwareModel
+
     // High-level workout control (parity with parent repo)
-    suspend fun sendInitSequence(): Result<Unit>
-    suspend fun startWorkout(params: com.devil.phoenixproject.domain.model.WorkoutParameters): Result<Unit>
     suspend fun stopWorkout(): Result<Unit>
 
     /**

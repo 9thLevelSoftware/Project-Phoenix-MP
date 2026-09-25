@@ -51,9 +51,9 @@ ALLOWED_GENERATED_ROOTS=(
     "build"
     "shared/build"
     "androidApp/build"
-    "iosApp/VitruvianPhoenix/build"
-    "iosApp/VitruvianPhoenix/DerivedData"
-    "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.xcworkspace"
+    "iosApp/PhoenixApp/build"
+    "iosApp/PhoenixApp/DerivedData"
+    "iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.xcworkspace"
 )
 CHILD_TIMEOUT_SECONDS=1800
 VERIFY_TIMEOUT_SECONDS=300
@@ -482,7 +482,7 @@ if re.search(rb"(?i)<\s*!?doctype\s+html|<\s*html\b|XCUIApplication|simctl\s+|pu
 allowed_prefixes = (
     "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/",
     "shared/src/commonMain/composeResources/",
-    "iosApp/VitruvianPhoenix/VitruvianPhoenix/",
+    "iosApp/PhoenixApp/PhoenixApp/",
 )
 resource_extensions = {
     ".json", ".jpg", ".jpeg", ".gif", ".mp3", ".m4a", ".otf", ".properties", ".png",

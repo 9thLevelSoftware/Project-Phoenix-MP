@@ -84,14 +84,16 @@ class PortalTokenStorageTest {
     // ===== clearAuth Tests =====
 
     @Test
-    fun clearAuthPreservesDeviceIdAndResetsLastSync() {
+    fun clearAuthPreservesDeviceIdAndCursors() {
         val storage = createStorage()
 
-        // Setup: save auth and set device ID / lastSync
+        // Setup: save auth and set device ID / cursors
         val nowSec = currentTimeMillis() / 1000
         saveAuthWithExpiry(storage, nowSec + 3600)
         val deviceId = storage.getDeviceId() // Triggers generation
-        storage.setLastSyncTimestamp(1234567890L)
+        val userId = requireNotNull(storage.currentUser.value).id
+        storage.setPushWatermark(userId, "default", 1234567890L)
+        storage.setPullCursor(userId, "default", 9876543210L)
 
         // Verify auth is present before clearing
         assertTrue(storage.hasToken(), "Should have token before clearAuth")
@@ -112,11 +114,17 @@ class PortalTokenStorageTest {
             storage.getDeviceId(),
             "DeviceId should be preserved after clearAuth",
         )
-        // lastSync should be reset so a re-link triggers a full pull
+        // PR 10 step 8: cursors are namespaced by user id, so a re-link resumes
+        // instead of re-pulling everything.
         assertEquals(
-            0L,
-            storage.getLastSyncTimestamp(),
-            "lastSyncTimestamp should be reset after clearAuth",
+            1234567890L,
+            storage.getPushWatermark(userId, "default"),
+            "push watermark must survive clearAuth so a re-link resumes",
+        )
+        assertEquals(
+            9876543210L,
+            storage.getPullCursor(userId, "default"),
+            "pull cursor must survive clearAuth so a re-link resumes",
         )
     }
 
@@ -344,5 +352,272 @@ class PortalTokenStorageTest {
             storage.getSubscriptionTier(),
             "updatePremiumStatus should not affect the stored tier",
         )
+    }
+
+    @Test
+    fun recordCompletedPullStoresPerProfileCursor() {
+        val storage = PortalTokenStorage(MapSettings())
+        storage.recordCompletedPull("u1", "default", 1234L)
+        assertEquals(1234L, storage.getPullCursor("u1", "default"))
+
+        storage.recordCompletedPull("u1", "other", 5678L)
+        assertEquals(5678L, storage.getPullCursor("u1", "other"))
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "profiles are independent")
+    }
+
+    @Test
+    fun cursorsAreNamespacedByUserId() {
+        val storage = PortalTokenStorage(MapSettings())
+        fun auth(userId: String) = storage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "tok",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                refreshToken = "rtok",
+                user = GoTrueUser(id = userId, email = "$userId@e.com"),
+            ),
+        )
+        auth("u1")
+        storage.recordCompletedPull("u1", "default", 1234L)
+
+        auth("u1")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "token refresh for the same user keeps its cursors")
+
+        auth("u2")
+        assertEquals(0L, storage.getPullCursor("u2", "default"), "a different user starts with no cursor")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "the other user's cursor is untouched")
+
+        storage.recordCompletedPull("u2", "default", 2000L)
+        storage.clearAuth()
+        assertEquals(2000L, storage.getPullCursor("u2", "default"), "clearAuth keeps cursors")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "clearAuth keeps cursors")
+    }
+
+    // ===== Auth generation (stale refresh writes) =====
+
+    @Test
+    fun refreshSaveWithStaleGenerationIsDroppedAfterClearAuth() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+        val generation = storage.authGeneration()
+
+        storage.clearAuth()
+        val written = storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = generation)
+
+        assertFalse(written, "refresh started before clearAuth must be dropped")
+        assertNull(storage.getToken())
+        assertFalse(storage.isAuthenticated.value)
+    }
+
+    @Test
+    fun refreshSaveWithCurrentGenerationIsWritten() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+
+        val written = storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = storage.authGeneration())
+
+        assertTrue(written)
+        assertEquals("refreshed-access", storage.getToken())
+    }
+
+    @Test
+    fun signInDuringInFlightRefreshIsNotOverwrittenByTheRefresh() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+        val generation = storage.authGeneration()
+
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 7200) // new sign-in
+
+        assertFalse(storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = generation))
+        assertEquals("test-access-token", storage.getToken())
+    }
+
+    private fun refreshedResponse() = GoTrueAuthResponse(
+        accessToken = "refreshed-access",
+        tokenType = "bearer",
+        expiresIn = 3600,
+        refreshToken = "refreshed-refresh",
+        user = GoTrueUser(id = "user-123", email = "test@example.com"),
+    )
+
+    // ===== Fresh-install secure storage reset (iOS Keychain outlives uninstall) =====
+
+    private class InstallState(var marker: Boolean, val databaseExists: Boolean) {
+        var cleared = false
+
+        fun run() = resetSecureStorageOnFreshInstall(
+            hasInstallMarker = { marker },
+            localDatabaseExists = { databaseExists },
+            clearSecureStorage = { cleared = true },
+            setInstallMarker = { marker = true },
+        )
+    }
+
+    @Test
+    fun freshInstallClearsSecureStorageAndSetsMarker() {
+        val state = InstallState(marker = false, databaseExists = false)
+
+        assertTrue(state.run())
+        assertTrue(state.cleared, "no marker + no database = reinstall: wipe leftover tokens")
+        assertTrue(state.marker)
+    }
+
+    @Test
+    fun upgradeWithoutMarkerKeepsSessionAndSetsMarker() {
+        val state = InstallState(marker = false, databaseExists = true)
+
+        assertFalse(state.run())
+        assertFalse(state.cleared, "existing database = upgrade from a pre-marker build: stay signed in")
+        assertTrue(state.marker)
+    }
+
+    @Test
+    fun markerPresentNeverClears() {
+        val state = InstallState(marker = true, databaseExists = false)
+
+        assertFalse(state.run())
+        assertFalse(state.cleared)
+    }
+
+
+    // ===== GitHub review round (#856): legacy cursor migration + restart floor =====
+
+    private fun signIn(storage: PortalTokenStorage, userId: String) {
+        storage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "token-$userId",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = currentTimeMillis() / 1000 + 3600,
+                refreshToken = "refresh-$userId",
+                user = GoTrueUser(id = userId, email = "$userId@example.com"),
+            ),
+        )
+    }
+
+    @Test
+    fun legacyPullCursorSeedsOnlyTheProfileNamedByTheLegacyDeltaMarker() {
+        // codex #856 P1: the old build sent a full pull whenever its delta marker named a
+        // different profile. Seeding any other profile with the value would skip server
+        // rows that profile never received.
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+        settings.putString("portal_delta_pull_key", "user-1:profile-b")
+
+        assertTrue(storage.migrateLegacyCursors("user-1", listOf("profile-a", "profile-b")))
+
+        assertEquals(0L, storage.getPullCursor("user-1", "profile-a"))
+        assertEquals(5_000L, storage.getPullCursor("user-1", "profile-b"))
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "profile-a"))
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "profile-b"))
+        assertFalse("portal_delta_pull_key" in settings.keys)
+    }
+
+    @Test
+    fun legacyCursorWithoutADeltaMarkerSeedsNoPullCursor() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+
+        assertTrue(storage.migrateLegacyCursors("user-1", listOf("default")))
+
+        assertEquals(0L, storage.getPullCursor("user-1", "default"), "no marker meant a full pull")
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "default"))
+    }
+
+    @Test
+    fun legacyCursorOwnedByAnotherUserSeedsNothing() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-2")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+        settings.putString("portal_delta_pull_key", "user-1:default")
+
+        assertFalse(storage.migrateLegacyCursors("user-2", listOf("default")))
+
+        assertEquals(0L, storage.getPullCursor("user-2", "default"))
+        assertEquals(0L, storage.getPushWatermark("user-2", "default"))
+        assertFalse("portal_last_sync_timestamp" in settings.keys)
+    }
+
+    @Test
+    fun aZeroLegacyCursorNeverZeroesAlreadySeededCursors() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        storage.setPullCursor("user-1", "default", 9_000L)
+        storage.setPushWatermark("user-1", "default", 9_000L)
+        settings.putLong("portal_last_sync_timestamp", 0L)
+        settings.putString("portal_delta_pull_key", "user-1:default")
+
+        assertFalse(storage.migrateLegacyCursors("user-1", listOf("default")))
+
+        assertEquals(9_000L, storage.getPullCursor("user-1", "default"))
+        assertEquals(9_000L, storage.getPushWatermark("user-1", "default"))
+    }
+
+    @Test
+    fun signingInAsADifferentAccountDropsTheUnnamespacedLegacyCursor() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+
+        signIn(storage, "user-2")
+
+        assertFalse(storage.migrateLegacyCursors("user-2", listOf("default")))
+        assertEquals(0L, storage.getPushWatermark("user-2", "default"))
+    }
+
+    @Test
+    fun aRestartRestoresTheLastSyncFloorFromTheStoredPullCursors() {
+        // codex #856 P2: after a process restart the UI must not report "never synced"
+        // (and the first-sync trigger must not re-arm) until the next sync publishes.
+        val settings = MapSettings()
+        val first = PortalTokenStorage(settings)
+        signIn(first, "user-1")
+        first.setPullCursor("user-1", "profile-a", 7_000L)
+        first.setPullCursor("user-1", "profile-b", 4_000L)
+        first.setPullCursor("user-1", "never-pulled", 0L)
+
+        val restarted = PortalTokenStorage(settings)
+
+        assertEquals(4_000L, restarted.lastSyncTimestamp.value)
+    }
+
+    @Test
+    fun theSessionSentHashStoreIsBoundedAndDropsTheOldestFirst() {
+        // codex #856 P2: the store must not grow without bound. Dropping the oldest is safe:
+        // a missing hash can only send a row down the re-push path, never stamp it.
+        val storage = PortalTokenStorage(MapSettings())
+        val cap = PortalTokenStorage.MAX_SESSION_SENT_HASHES
+        repeat(cap + 25) { i -> storage.setSessionSentHash("user-1", "p", "s-$i", "h-$i") }
+
+        val ids = storage.sessionSentHashIds("user-1", "p")
+        assertEquals(cap, ids.size)
+        assertNull(storage.getSessionSentHash("user-1", "p", "s-0"), "the oldest hash is evicted")
+        assertNull(storage.getSessionSentHash("user-1", "p", "s-24"))
+        assertEquals("h-25", storage.getSessionSentHash("user-1", "p", "s-25"))
+        assertEquals("h-${cap + 24}", storage.getSessionSentHash("user-1", "p", "s-${cap + 24}"))
+        // Another (user, profile) namespace is untouched by this one's bound.
+        storage.setSessionSentHash("user-2", "p", "s-0", "other")
+        assertEquals("other", storage.getSessionSentHash("user-2", "p", "s-0"))
+        assertEquals(cap, storage.sessionSentHashIds("user-1", "p").size)
+    }
+
+    @Test
+    fun retainingLiveSessionsRemovesEveryOtherSentHash() {
+        val storage = PortalTokenStorage(MapSettings())
+        storage.setSessionSentHash("user-1", "p", "live", "h1")
+        storage.setSessionSentHash("user-1", "p", "gone", "h2")
+
+        assertEquals(1, storage.retainSessionSentHashes("user-1", "p", setOf("live")))
+
+        assertEquals("h1", storage.getSessionSentHash("user-1", "p", "live"))
+        assertNull(storage.getSessionSentHash("user-1", "p", "gone"))
+        assertEquals(listOf("live"), storage.sessionSentHashIds("user-1", "p"))
     }
 }

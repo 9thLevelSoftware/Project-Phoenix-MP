@@ -47,10 +47,10 @@ class DiagnosticsViewModelTest {
             val state = awaitItemAfterUpdates { it.packet != null }
             assertTrue(state.isConnected)
             assertEquals(42L, state.packet?.runtimeSeconds)
-            assertEquals("TI restarted", state.faults[0].label)
-            assertEquals("Over voltage", state.faults[2].label)
-            assertTrue(state.exportText.contains("Vee: TI restarted (0x0004 / 4)"))
-            assertTrue(state.exportText.contains("Motor A: Over voltage (0x0004 / 4)"))
+            assertEquals("Controller restarted", state.faults[0].label)
+            assertEquals("Overvoltage", state.faults[2].label)
+            assertTrue(state.exportText.contains("Controller: Controller restarted (0x0004 / 4)"))
+            assertTrue(state.exportText.contains("Motor A: Overvoltage (0x0004 / 4)"))
 
             cancelAndIgnoreRemainingEvents()
         }

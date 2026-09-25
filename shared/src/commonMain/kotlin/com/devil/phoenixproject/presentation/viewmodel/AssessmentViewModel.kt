@@ -4,8 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AssessmentRepository
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.assessment.AssessmentResult
 import com.devil.phoenixproject.domain.assessment.AssessmentSetResult
@@ -34,7 +35,7 @@ import kotlinx.serialization.json.Json
 sealed class AssessmentStep {
     data class ExerciseSelection(val exercises: List<Exercise> = emptyList(), val searchQuery: String = "") : AssessmentStep()
 
-    data class Instruction(val exercise: Exercise, val videos: List<ExerciseVideoEntity> = emptyList()) : AssessmentStep()
+    data class Instruction(val exercise: Exercise, val images: List<ExerciseImageEntity> = emptyList()) : AssessmentStep()
 
     data class ProgressiveLoading(
         val currentSetNumber: Int = 1,
@@ -70,7 +71,7 @@ sealed interface AssessmentUiEvent {
  * Manages wizard state transitions: ExerciseSelection -> Instruction ->
  * ProgressiveLoading -> Results -> Saving -> Complete.
  *
- * The user physically performs sets on the Vitruvian machine and logs
+ * The user physically performs sets on the Phoenix machine and logs
  * weight + velocity after each set. The engine estimates 1RM from
  * the load-velocity profile.
  */
@@ -78,6 +79,7 @@ class AssessmentViewModel(
     private val exerciseRepository: ExerciseRepository,
     private val assessmentRepository: AssessmentRepository,
     private val assessmentEngine: AssessmentEngine,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
 ) : ViewModel() {
 
     private val _currentStep = MutableStateFlow<AssessmentStep>(AssessmentStep.ExerciseSelection())
@@ -124,32 +126,31 @@ class AssessmentViewModel(
 
     /**
      * Select an exercise and transition to the Instruction step.
-     * Loads exercise demo videos; if none found, skips to ProgressiveLoading.
+     * Loads exercise demo images; if none found, skips to ProgressiveLoading.
      */
     fun selectExercise(exercise: Exercise) {
+        if (profileRecoveryActivityTracker?.setAssessmentActive(true) == false) return
         selectedExercise = exercise
         viewModelScope.launch {
             val exerciseId = exercise.id
-            val videos = if (exerciseId != null) {
+            val images = if (exerciseId != null) {
                 try {
-                    exerciseRepository.getVideos(exerciseId)
+                    exerciseRepository.getImages(exerciseId)
                 } catch (e: Exception) {
-                    Logger.w("Failed to load videos for ${exercise.name}: ${e.message}")
+                    Logger.w("Failed to load images for ${exercise.name}: ${e.message}")
                     emptyList()
                 }
             } else {
                 emptyList()
             }
 
-            val demoVideos = videos.filterNot { it.isTutorial }
-
-            if (demoVideos.isEmpty()) {
-                // No videos, skip instruction and go straight to loading
+            if (images.isEmpty()) {
+                // No images, skip instruction and go straight to loading
                 startAssessmentInternal()
             } else {
                 _currentStep.value = AssessmentStep.Instruction(
                     exercise = exercise,
-                    videos = demoVideos,
+                    images = images,
                 )
             }
         }
@@ -320,6 +321,7 @@ class AssessmentViewModel(
                     finalOneRepMaxKg = finalOneRm,
                     exerciseName = exercise.displayName,
                 )
+                profileRecoveryActivityTracker?.setAssessmentActive(false)
 
                 Logger.i("Assessment saved: ${exercise.displayName} -> $finalOneRm kg 1RM")
             } catch (e: CancellationException) {
@@ -426,5 +428,11 @@ class AssessmentViewModel(
         _currentStep.value = AssessmentStep.ExerciseSelection(
             exercises = _exercises.value,
         )
+        profileRecoveryActivityTracker?.setAssessmentActive(false)
+    }
+
+    override fun onCleared() {
+        profileRecoveryActivityTracker?.setAssessmentActive(false)
+        super.onCleared()
     }
 }

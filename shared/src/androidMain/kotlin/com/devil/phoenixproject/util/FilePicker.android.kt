@@ -41,9 +41,19 @@ actual class FilePicker {
 
     @Composable
     actual fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
+        LaunchDocumentSaver("application/json", fileName, content, onSaved)
+    }
+
+    @Composable
+    actual fun LaunchCsvFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
+        LaunchDocumentSaver("text/csv", fileName, content, onSaved)
+    }
+
+    @Composable
+    private fun LaunchDocumentSaver(mimeType: String, fileName: String, content: String, onSaved: (String?) -> Unit) {
         val context = LocalContext.current
         val launcher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json"),
+            contract = ActivityResultContracts.CreateDocument(mimeType),
         ) { uri: Uri? ->
             if (uri != null) {
                 try {

@@ -48,7 +48,6 @@ class ExerciseTest {
         assertEquals(false, exercise.isFavorite)
         assertEquals(false, exercise.isCustom)
         assertEquals(0, exercise.timesPerformed)
-        assertEquals(null, exercise.oneRepMaxKg)
     }
 
     @Test
@@ -175,5 +174,202 @@ class ExerciseTest {
         assertEquals(1, alternatingBar.liveUnifiedAccessoryDisplayMultiplier())
         assertEquals(1, unknownBar.liveUnifiedAccessoryDisplayMultiplier())
         assertEquals(1, nullExercise.liveUnifiedAccessoryDisplayMultiplier())
+    }
+
+    @Test
+    fun `cycle one rep max conversion splits unified total and round trips`() {
+        val squat = Exercise(
+            name = "Barbell Squat",
+            muscleGroup = "Legs",
+            equipment = "BARBELL",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+
+        assertEquals(50f, squat.oneRepMaxInputToPerCableKg(100f)!!, 0.0001f)
+        assertEquals(100f, squat.perCableKgToOneRepMaxInput(50f)!!, 0.0001f)
+    }
+
+    @Test
+    fun `cycle one rep max input rejects unresolved positive values before persistence`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val unknownIntent = Exercise(
+            name = "Unknown Lift",
+            muscleGroup = "Back",
+            id = "unknown-lift",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+
+        val result = normalizeCycleOneRepMaxInputs(
+            inputValues = mapOf(
+                "Known Lift" to 80f,
+                "Unknown Lift" to 100f,
+                "Skipped Lift" to 0f,
+            ),
+            exercisesByName = mapOf(
+                "Known Lift" to known,
+                "Unknown Lift" to unknownIntent,
+            ),
+        )
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Unknown Lift"),
+            result,
+        )
+        assertEquals(false, result is CycleOneRepMaxNormalization.Valid)
+    }
+
+    @Test
+    fun `cycle one rep max input rejects signed negative zero`() {
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Zero Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf("Negative Zero Lift" to -0.0f),
+                exercisesByName = emptyMap(),
+            ),
+        )
+    }
+
+    @Test
+    fun `cycle one rep max input normalizes positive values and omits zero`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+
+        val result = normalizeCycleOneRepMaxInputs(
+            inputValues = mapOf(
+                "Known Lift" to 80f,
+                "Skipped Lift" to 0f,
+            ),
+            exercisesByName = mapOf("Known Lift" to known),
+        )
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Valid(
+                mapOf(
+                    "Known Lift" to NormalizedCycleOneRepMaxValue(
+                        exerciseId = "known-lift",
+                        perCableKg = 80f,
+                    ),
+                ),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `cycle one rep max input rejects negative and non-finite values`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val exercisesByName = mapOf("Known Lift" to known)
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Infinity Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf(
+                    "Negative Infinity Lift" to Float.NEGATIVE_INFINITY,
+                    "Skipped Lift" to 0f,
+                ),
+                exercisesByName = exercisesByName,
+            ),
+        )
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf(
+                    "Negative Lift" to -1f,
+                    "Skipped Lift" to 0f,
+                ),
+                exercisesByName = exercisesByName,
+            ),
+        )
+    }
+
+    @Test
+    fun `one rep max input label identifies confirmed unified total load only`() {
+        val unifiedBar = Exercise(
+            name = "Barbell Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val dualHandles = Exercise(
+            name = "Dumbbell Curl",
+            muscleGroup = "Biceps",
+            equipment = "HANDLES",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val singleBar = Exercise(
+            name = "Single Cable Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val unresolvedIntent = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+        val unresolvedExercise: Exercise? = null
+
+        assertEquals("Total load (kg)", unifiedBar.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("Total load (lbs)", unifiedBar.oneRepMaxInputUnitLabel("lbs"))
+        assertEquals("kg", dualHandles.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", singleBar.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", unresolvedIntent.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", unresolvedExercise.oneRepMaxInputUnitLabel("kg"))
+    }
+
+    @Test
+    fun `one rep max prefill converts canonical per cable only for confirmed unified total load`() {
+        val unifiedBar = Exercise(
+            name = "Barbell Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val dualHandles = Exercise(
+            name = "Dumbbell Curl",
+            muscleGroup = "Biceps",
+            equipment = "HANDLES",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val unresolvedIntent = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+        val unresolvedExercise: Exercise? = null
+
+        assertEquals(100f, unifiedBar.oneRepMaxInputPrefillKg(50f)!!, 0.0001f)
+        assertEquals(50f, dualHandles.oneRepMaxInputPrefillKg(50f)!!, 0.0001f)
+        assertEquals<Float?>(null, unresolvedIntent.oneRepMaxInputPrefillKg(50f))
+        assertEquals<Float?>(null, unresolvedExercise.oneRepMaxInputPrefillKg(50f))
+    }
+
+    @Test
+    fun `cycle one rep max conversion fails closed for unknown cable intent`() {
+        val unknown = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+
+        assertEquals(null, unknown.oneRepMaxInputToPerCableKg(100f))
+        assertEquals(null, unknown.perCableKgToOneRepMaxInput(50f))
     }
 }

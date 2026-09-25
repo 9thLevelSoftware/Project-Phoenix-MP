@@ -29,7 +29,6 @@
     <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Notification permission for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -40,21 +39,10 @@
     <!-- Microphone permission for safe word voice detection -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Camera permission for Form Check feature -->
-    <uses-permission android:name="android.permission.CAMERA" />
-
     <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
     <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
     <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_WEIGHT" />
-
-    <!-- Camera feature (not required - app works without camera) -->
-    <uses-feature
-        android:name="android.hardware.camera"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.camera.front"
-        android:required="false" />
 
     <!-- Bluetooth LE feature -->
     <uses-feature
@@ -83,23 +71,21 @@
     </queries>
 
     <application
-        android:name=".VitruvianApp"
+        android:name=".PhoenixApp"
         android:allowBackup="false"
-        android:fullBackupContent="@xml/backup_rules"
-        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VitruvianProjectPhoenix"
+        android:theme="@style/Theme.PhoenixProject"
         tools:targetApi="36">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode"
-            android:theme="@style/Theme.VitruvianProjectPhoenix">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
+            android:theme="@style/Theme.PhoenixProject">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

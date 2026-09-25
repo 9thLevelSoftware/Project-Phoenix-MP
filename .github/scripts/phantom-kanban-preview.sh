@@ -100,7 +100,7 @@ INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch", ".phantom-prop
 PATCH_ALLOWED_PREFIXES = (
     "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/",
     "shared/src/commonMain/composeResources/",
-    "iosApp/VitruvianPhoenix/VitruvianPhoenix/",
+    "iosApp/PhoenixApp/PhoenixApp/",
 )
 PATCH_RESOURCE_EXTENSIONS = {
     ".json", ".jpg", ".jpeg", ".gif", ".mp3", ".m4a", ".otf", ".properties", ".png",

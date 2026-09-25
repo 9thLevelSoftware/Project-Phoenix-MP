@@ -28,10 +28,14 @@ interface PersonalRecordRepository {
     fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>>
 
     /**
-     * Get the best PR for an exercise across all modes
-     * Returns the record with the highest weight * reps (volume)
+     * Get the best max-weight PR for an exercise across all modes.
+     *
+     * FP-5: only `MAX_WEIGHT` records in the `COMBINED` phase count — a
+     * CONCENTRIC/ECCENTRIC peak-force row is a different metric and routinely
+     * exceeds the commanded load.
+     *
      * @param exerciseId Exercise ID
-     * @return PersonalRecord or null if no PR exists
+     * @return PersonalRecord or null if no max-weight PR exists
      */
     suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord?
 
@@ -42,11 +46,18 @@ interface PersonalRecordRepository {
     fun getAllPRs(profileId: String): Flow<List<PersonalRecord>>
 
     /**
-     * Get all personal records grouped by exercise (for analytics)
-     * Returns one record per exercise (the best one)
+     * Get max-weight personal records grouped by exercise (for analytics).
+     *
+     * Returns one record per exercise: the heaviest `MAX_WEIGHT`/`COMBINED`
+     * record. Exercises with no such record are absent (FP-5 — a phase
+     * peak-force row is not a max-weight PR).
+     *
      * @return Flow emitting list of personal records
      */
     fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>>
+
+    /** Soft-delete one active-profile PR snapshot by its local row ID. */
+    suspend fun deletePR(prId: Long, profileId: String)
 
     /**
      * Update PR if the new performance is better

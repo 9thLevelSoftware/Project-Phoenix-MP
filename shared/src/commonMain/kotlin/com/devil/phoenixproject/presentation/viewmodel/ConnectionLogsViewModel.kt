@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.LogLevel
-import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -121,33 +120,7 @@ class ConnectionLogsViewModel : ViewModel() {
     }
 
     /**
-     * Clear logs older than specified hours.
-     */
-    fun clearOldLogs(hoursOld: Int = 24) {
-        val cutoffTime = Clock.System.now().toEpochMilliseconds() - (hoursOld.coerceAtLeast(0).toLong() * 60L * 60L * 1000L)
-        repository.clearOlderThan(cutoffTime)
-    }
-
-    /**
      * Export logs as plain text.
      */
     fun exportLogsAsText(): String = repository.exportAsText()
-
-    /**
-     * Export logs as CSV.
-     */
-    fun exportLogsAsCsv(): String = repository.exportAsCsv()
-
-    /**
-     * Get count of logs by level.
-     */
-    fun getLogCounts(): Map<LogLevel, Int> {
-        val allLogs = repository.logs.value
-        return mapOf(
-            LogLevel.DEBUG to allLogs.count { it.level == LogLevel.DEBUG.name },
-            LogLevel.INFO to allLogs.count { it.level == LogLevel.INFO.name },
-            LogLevel.WARNING to allLogs.count { it.level == LogLevel.WARNING.name },
-            LogLevel.ERROR to allLogs.count { it.level == LogLevel.ERROR.name },
-        )
-    }
 }

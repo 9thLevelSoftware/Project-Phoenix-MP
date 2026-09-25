@@ -25,7 +25,7 @@ import kotlinx.coroutines.test.runTest
  */
 class ConflictResolutionTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var repository: SqlDelightSyncRepository
 
@@ -54,7 +54,7 @@ class ConflictResolutionTest {
         insertLocalSession(localSession)
 
         // Verify local session exists
-        val beforeMerge = database.vitruvianDatabaseQueries
+        val beforeMerge = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(beforeMerge, "Local session should exist before merge")
@@ -70,7 +70,7 @@ class ConflictResolutionTest {
         repository.mergePortalSessions(listOf(portalSession))
 
         // THEN: Local session should be preserved (INSERT OR IGNORE)
-        val afterMerge = database.vitruvianDatabaseQueries
+        val afterMerge = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(afterMerge, "Session should still exist after merge")
@@ -92,7 +92,7 @@ class ConflictResolutionTest {
         repository.mergePortalSessions(listOf(portalSession))
 
         // THEN: Session should be inserted
-        val inserted = database.vitruvianDatabaseQueries
+        val inserted = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(inserted, "New session should be inserted")
@@ -111,7 +111,7 @@ class ConflictResolutionTest {
         val localUpdatedAt = now - 5_000 // 5 seconds ago (after lastSync)
 
         // Insert routine with a specific updatedAt using raw SQL
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = routineId,
             name = "Local Push Day",
             description = "Local description",
@@ -120,6 +120,7 @@ class ConflictResolutionTest {
             useCount = 5L,
             profile_id = testProfileId,
             groupId = null,
+            deletedAt = null,
         )
         // Set updatedAt by re-inserting with full upsert that preserves the timestamp
         // For this test, we simulate the scenario by inserting a routine where
@@ -127,7 +128,7 @@ class ConflictResolutionTest {
         // The actual updatedAt is set via trigger or explicit update in production
 
         // Verify local routine exists
-        val beforeMerge = database.vitruvianDatabaseQueries
+        val beforeMerge = database.phoenixDatabaseQueries
             .selectRoutineById(routineId)
             .executeAsOneOrNull()
         assertNotNull(beforeMerge, "Local routine should exist before merge")
@@ -152,14 +153,14 @@ class ConflictResolutionTest {
 
         // THEN: When local updatedAt is NULL, portal wins (NULL < any timestamp is false, so portal proceeds)
         // This test validates the current implementation behavior
-        val afterMerge = database.vitruvianDatabaseQueries
+        val afterMerge = database.phoenixDatabaseQueries
             .selectRoutineById(routineId)
             .executeAsOneOrNull()
         assertNotNull(afterMerge, "Routine should exist after merge")
         // Note: With NULL updatedAt and lastSync=0, the comparison "NULL > 0" is false,
         // so portal version is applied
         assertEquals("Portal Push Day", afterMerge.name, "Portal name should be applied when local has no updatedAt")
-        // UseCount is preserved because upsertRoutine preserves it from existing record
+        // UseCount is preserved because the pull updates the routine row in place
         assertEquals(5L, afterMerge.useCount, "Local useCount should be preserved")
     }
 
@@ -179,7 +180,7 @@ class ConflictResolutionTest {
         repository.mergePortalRoutines(listOf(portalRoutine), now, testProfileId)
 
         // THEN: Routine should be inserted
-        val inserted = database.vitruvianDatabaseQueries
+        val inserted = database.phoenixDatabaseQueries
             .selectRoutineById(routineId)
             .executeAsOneOrNull()
         assertNotNull(inserted, "New routine should be inserted")
@@ -191,7 +192,7 @@ class ConflictResolutionTest {
         // GIVEN: A routine exists locally with exercises
         val routineId = "routine-preserve-exercises-test"
 
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = routineId,
             name = "Local Routine",
             description = "Has local exercises",
@@ -200,9 +201,10 @@ class ConflictResolutionTest {
             useCount = 0L,
             profile_id = testProfileId,
             groupId = null,
+            deletedAt = null,
         )
         // Add a local exercise
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "local-exercise-1",
             routineId = routineId,
             exerciseName = "Local Bench Press",
@@ -239,10 +241,12 @@ class ConflictResolutionTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         // Verify exercise exists
-        val exercisesBefore = database.vitruvianDatabaseQueries
+        val exercisesBefore = database.phoenixDatabaseQueries
             .selectExercisesByRoutine(routineId)
             .executeAsList()
         assertEquals(1, exercisesBefore.size, "Should have 1 local exercise")
@@ -258,7 +262,7 @@ class ConflictResolutionTest {
         repository.mergePortalRoutines(listOf(portalRoutine), 0L, testProfileId)
 
         // THEN: Local exercises should be preserved (safety guard)
-        val exercisesAfter = database.vitruvianDatabaseQueries
+        val exercisesAfter = database.phoenixDatabaseQueries
             .selectExercisesByRoutine(routineId)
             .executeAsList()
         assertEquals(1, exercisesAfter.size, "Local exercises should be preserved when portal sends empty list")
@@ -289,6 +293,8 @@ class ConflictResolutionTest {
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = listOf(portalRoutine),
             cycles = emptyList(),
@@ -297,14 +303,54 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
-        val exercise = database.vitruvianDatabaseQueries
+        val exercise = database.phoenixDatabaseQueries
             .selectExercisesByRoutine(routineId)
             .executeAsOne()
 
         assertEquals("AMRAP,AMRAP,AMRAP", exercise.setReps)
         assertEquals(1L, exercise.isAMRAP)
+    }
+
+    @Test
+    fun `mergeAllPullData - LWW-rejected routine takes the server version even if edited after lastSync`() = runTest {
+        val lastSync = now
+        fun localRoutine(id: String) = database.phoenixDatabaseQueries.insertRoutineIgnore(
+            id = id,
+            name = "Local edit",
+            description = "",
+            createdAt = now - 10_000L,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = lastSync + 1_000L, // edited after lastSync
+            profile_id = testProfileId,
+            groupId = null,
+        )
+        localRoutine("rejected-routine")
+        localRoutine("other-routine")
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(id = "rejected-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+                PullRoutineDto(id = "other-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+            ),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = lastSync,
+            profileId = testProfileId,
+            serverWinsRoutineIds = setOf("rejected-routine"),
+        )
+
+        val rejected = database.phoenixDatabaseQueries.selectRoutineById("rejected-routine").executeAsOne()
+        assertEquals("Portal edit", rejected.name, "server version wins for a routine whose push was LWW-rejected")
+        assertEquals(lastSync + 2_000L, rejected.updatedAt)
+        val other = database.phoenixDatabaseQueries.selectRoutineById("other-routine").executeAsOne()
+        assertEquals("Local edit", other.name, "other locally edited routines still win")
     }
 
     // ─── Training Cycle Merge Tests (SINGLE-ACTIVE ENFORCEMENT) ─────────────────
@@ -326,7 +372,7 @@ class ConflictResolutionTest {
         val localActiveId = "local-active-cycle"
         val localInactiveId = "local-inactive-cycle"
 
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = localActiveId,
             name = "Local Active Cycle",
             description = null,
@@ -335,8 +381,9 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 100_000,
         )
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = localInactiveId,
             name = "Local Inactive Cycle",
             description = null,
@@ -345,6 +392,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 50_000,
         )
 
         // WHEN: Portal sends cycles with a different active cycle
@@ -366,7 +414,7 @@ class ConflictResolutionTest {
         repository.mergePortalCycles(portalCycles, testProfileId)
 
         // THEN: Only one cycle should be active
-        val allCycles = database.vitruvianDatabaseQueries
+        val allCycles = database.phoenixDatabaseQueries
             .selectTrainingCyclesByProfile(testProfileId)
             .executeAsList()
 
@@ -375,7 +423,7 @@ class ConflictResolutionTest {
         assertEquals(portalActiveId, activeCycles.first().id, "Portal's active cycle should be active")
 
         // Previous local active cycle should now be inactive
-        val previousActive = database.vitruvianDatabaseQueries
+        val previousActive = database.phoenixDatabaseQueries
             .selectTrainingCycleById(localActiveId)
             .executeAsOneOrNull()
         assertNotNull(previousActive)
@@ -386,7 +434,7 @@ class ConflictResolutionTest {
     fun `mergePortalCycles - preserves local active when portal has no active`() = runTest {
         // GIVEN: A local active cycle exists
         val localActiveId = "local-active-preserved"
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = localActiveId,
             name = "Local Active Cycle",
             description = null,
@@ -395,6 +443,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends cycles but none are active
@@ -409,7 +458,7 @@ class ConflictResolutionTest {
         repository.mergePortalCycles(portalCycles, testProfileId)
 
         // THEN: Local active cycle should remain active
-        val localCycle = database.vitruvianDatabaseQueries
+        val localCycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(localActiveId)
             .executeAsOneOrNull()
         assertNotNull(localCycle)
@@ -420,7 +469,7 @@ class ConflictResolutionTest {
     fun `mergePortalCycles - existing active cycle is not silently deactivated when same ID arrives as non-active`() = runTest {
         // GIVEN: A local cycle exists and is active
         val cycleId = "active-cycle-same-id"
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = cycleId,
             name = "Local Active Cycle",
             description = null,
@@ -429,6 +478,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends the SAME cycle ID with status != "active"
@@ -438,13 +488,14 @@ class ConflictResolutionTest {
                 id = cycleId,
                 name = "Updated Name From Portal",
                 status = "draft", // Not active — only single-active enforcement should change is_active
+                updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                 days = emptyList(),
             ),
         )
         repository.mergePortalCycles(portalCycles, testProfileId)
 
         // THEN: The cycle's is_active must still be 1 — the update must not have zeroed it out
-        val cycle = database.vitruvianDatabaseQueries
+        val cycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(cycleId)
             .executeAsOneOrNull()
         assertNotNull(cycle)
@@ -471,7 +522,7 @@ class ConflictResolutionTest {
             testProfileId,
         )
 
-        val cycle = database.vitruvianDatabaseQueries
+        val cycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(cycleId)
             .executeAsOne()
 
@@ -482,7 +533,7 @@ class ConflictResolutionTest {
     @Test
     fun `mergePortalCycles active toggle preserves merged week metadata`() = runTest {
         val activeCycleId = "portal-active-week-preserved"
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = activeCycleId,
             name = "Local Active Cycle",
             description = null,
@@ -491,6 +542,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 3L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -501,13 +553,14 @@ class ConflictResolutionTest {
                     templateId = "template_531",
                     currentWeek = 1,
                     status = "active",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                     days = emptyList(),
                 ),
             ),
             testProfileId,
         )
 
-        val cycle = database.vitruvianDatabaseQueries
+        val cycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(activeCycleId)
             .executeAsOne()
 
@@ -519,7 +572,7 @@ class ConflictResolutionTest {
     @Test
     fun `mergePortalCycles preserves existing templateId and currentWeek when portal omits them`() = runTest {
         val cycleId = "local-531-template-preserved"
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = cycleId,
             name = "Local 5 3 1",
             description = null,
@@ -528,6 +581,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -542,7 +596,7 @@ class ConflictResolutionTest {
             testProfileId,
         )
 
-        val cycle = database.vitruvianDatabaseQueries
+        val cycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(cycleId)
             .executeAsOne()
 
@@ -553,7 +607,7 @@ class ConflictResolutionTest {
     @Test
     fun `mergeAllPullData preserves existing templateId and currentWeek when portal omits them`() = runTest {
         val cycleId = "atomic-local-531-template-preserved"
-        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+        database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = cycleId,
             name = "Local 5 3 1",
             description = null,
@@ -562,9 +616,12 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = emptyList(),
             cycles = listOf(
@@ -580,9 +637,10 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
-        val cycle = database.vitruvianDatabaseQueries
+        val cycle = database.phoenixDatabaseQueries
             .selectTrainingCycleById(cycleId)
             .executeAsOne()
 
@@ -595,18 +653,18 @@ class ConflictResolutionTest {
     @Test
     fun `mergeBadges - union merge preserves both local and remote badges`() = runTest {
         // GIVEN: Local badges exist
-        database.vitruvianDatabaseQueries.insertEarnedBadge(
+        database.phoenixDatabaseQueries.insertEarnedBadge(
             badgeId = "LOCAL_BADGE_1",
             earnedAt = now - 100_000,
             profileId = testProfileId,
         )
-        database.vitruvianDatabaseQueries.insertEarnedBadge(
+        database.phoenixDatabaseQueries.insertEarnedBadge(
             badgeId = "SHARED_BADGE",
             earnedAt = now - 50_000,
             profileId = testProfileId,
         )
 
-        val badgesBefore = database.vitruvianDatabaseQueries
+        val badgesBefore = database.phoenixDatabaseQueries
             .selectBadgesModifiedSince(0L, testProfileId)
             .executeAsList()
         assertEquals(2, badgesBefore.size, "Should have 2 local badges")
@@ -641,7 +699,7 @@ class ConflictResolutionTest {
         repository.mergeBadges(portalBadges, testProfileId)
 
         // THEN: All unique badges should exist (union)
-        val badgesAfter = database.vitruvianDatabaseQueries
+        val badgesAfter = database.phoenixDatabaseQueries
             .selectBadgesModifiedSince(0L, testProfileId)
             .executeAsList()
 
@@ -658,7 +716,7 @@ class ConflictResolutionTest {
     @Test
     fun `mergePersonalRecords - local PR wins on compound key conflict`() = runTest {
         // GIVEN: A PR exists locally
-        database.vitruvianDatabaseQueries.insertPRIgnore(
+        database.phoenixDatabaseQueries.insertPRIgnore(
             exerciseId = "bench-press",
             exerciseName = "Bench Press",
             weight = 100.0,
@@ -674,7 +732,7 @@ class ConflictResolutionTest {
             uuid = null,
         )
 
-        val prBefore = database.vitruvianDatabaseQueries.selectPR(
+        val prBefore = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bench-press",
             workoutMode = "OLD_SCHOOL",
             prType = "MAX_WEIGHT",
@@ -706,7 +764,7 @@ class ConflictResolutionTest {
         repository.mergePersonalRecords(portalPRs, testProfileId)
 
         // THEN: Local PR should be preserved (INSERT OR IGNORE)
-        val prAfter = database.vitruvianDatabaseQueries.selectPR(
+        val prAfter = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bench-press",
             workoutMode = "OLD_SCHOOL",
             prType = "MAX_WEIGHT",
@@ -743,7 +801,7 @@ class ConflictResolutionTest {
         repository.mergePersonalRecords(portalPRs, testProfileId)
 
         // THEN: New PR should be inserted
-        val inserted = database.vitruvianDatabaseQueries.selectPR(
+        val inserted = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "deadlift",
             workoutMode = "OLD_SCHOOL",
             prType = "MAX_WEIGHT",
@@ -752,6 +810,111 @@ class ConflictResolutionTest {
         ).executeAsOneOrNull()
         assertNotNull(inserted, "New PR should be inserted")
         assertEquals(150.0, inserted.weight, "PR should have portal weight")
+    }
+
+    @Test
+    fun `server deletions allow only the authenticated owner or exact unbound sync profile`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("profile-owner-a", "Owner A", 0L, now, 0L)
+        queries.insertProfile("profile-owner-b", "Owner B", 1L, now, 0L)
+        queries.insertProfile("profile-unbound-active", "New active", 2L, now, 0L)
+        queries.insertProfile("profile-unbound-other", "Other unbound", 3L, now, 0L)
+        queries.linkProfileToSupabase("owner-a", now, "profile-owner-a")
+        queries.linkProfileToSupabase("owner-b", now, "profile-owner-b")
+
+        fun insertRoutine(id: String, profileId: String) {
+            queries.insertRoutine(
+                id = id,
+                name = id,
+                description = "",
+                createdAt = now,
+                lastUsed = null,
+                useCount = 0L,
+                profile_id = profileId,
+                groupId = null,
+                deletedAt = null,
+            )
+        }
+        fun insertCycle(id: String, profileId: String, accountId: String?) {
+            queries.insertTrainingCycle(
+                id = id,
+                name = id,
+                description = null,
+                created_at = now,
+                is_active = 0L,
+                profile_id = profileId,
+                template_id = null,
+                week_number = 1L,
+                updatedAt = now,
+            )
+            queries.insertCycleSyncState(
+                cycleId = id,
+                profileId = profileId,
+                accountId = accountId,
+                dirtyGeneration = 1L,
+                acknowledgedGeneration = 0L,
+                pendingDeleteUpdatedAt = null,
+                pendingDeleteGeneration = null,
+            )
+        }
+        insertRoutine("routine-owner-a", "profile-owner-a")
+        insertRoutine("routine-owner-b", "profile-owner-b")
+        insertRoutine("routine-unbound-active", "profile-unbound-active")
+        insertRoutine("routine-unbound-other", "profile-unbound-other")
+        insertCycle("cycle-owner-a", "profile-owner-a", "owner-a")
+        insertCycle("cycle-owner-b", "profile-owner-b", "owner-b")
+        insertCycle("cycle-unbound-active", "profile-unbound-active", null)
+        insertCycle("cycle-unbound-other", "profile-unbound-other", null)
+
+        val boundResult = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-owner-a", "routine-owner-b"),
+            cycleIds = listOf("cycle-owner-a", "cycle-owner-b"),
+            lastSync = now - 1,
+            // Even the captured sync profile is protected when another account owns it.
+            syncProfileId = "profile-owner-b",
+        )
+
+        assertEquals(listOf("routine-owner-a"), boundResult.deletedRoutineIds)
+        assertEquals(listOf("cycle-owner-a"), boundResult.deletedCycleIds)
+        assertEquals(null, queries.selectRoutineById("routine-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectTrainingCycleById("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectCycleSyncState("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleSyncState("cycle-owner-b").executeAsOneOrNull())
+
+        val noActiveProfileResult = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-unbound-active", "routine-unbound-other"),
+            cycleIds = listOf("cycle-unbound-active", "cycle-unbound-other"),
+            lastSync = now - 1,
+            syncProfileId = null,
+        )
+
+        assertTrue(noActiveProfileResult.deletedRoutineIds.isEmpty())
+        assertTrue(noActiveProfileResult.deletedCycleIds.isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-unbound-other").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-other").executeAsOneOrNull())
+
+        val unboundResult = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-unbound-active", "routine-unbound-other"),
+            cycleIds = listOf("cycle-unbound-active", "cycle-unbound-other"),
+            lastSync = now - 1,
+            syncProfileId = "profile-unbound-active",
+        )
+
+        assertEquals(listOf("routine-unbound-active"), unboundResult.deletedRoutineIds)
+        assertEquals(listOf("cycle-unbound-active"), unboundResult.deletedCycleIds)
+        assertEquals(null, queries.selectRoutineById("routine-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-unbound-other").executeAsOneOrNull())
+        assertEquals(null, queries.selectTrainingCycleById("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-other").executeAsOneOrNull())
+        assertEquals(null, queries.selectCycleSyncState("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleSyncState("cycle-unbound-other").executeAsOneOrNull())
     }
 
     // ─── Helper Functions ─────────────────────────────────────────────
@@ -788,7 +951,7 @@ class ConflictResolutionTest {
     )
 
     private fun insertLocalSession(session: WorkoutSession) {
-        database.vitruvianDatabaseQueries.insertSessionIgnore(
+        database.phoenixDatabaseQueries.insertSessionIgnore(
             id = session.id,
             timestamp = session.timestamp,
             mode = session.mode,

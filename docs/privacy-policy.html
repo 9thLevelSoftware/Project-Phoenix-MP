@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - Project Phoenix</title>
-    <link rel="icon" type="image/png" href="vitphoe_logo.png">
+    <link rel="icon" type="image/png" href="phoenix_logo.png">
     <style>
         :root {
             --bg-color: #0b0e14;
@@ -58,18 +58,18 @@
         <a class="back" href="index.html">← Back to Project Phoenix</a>
         <h1>Privacy Policy</h1>
         <p class="app-name">Project Phoenix - Bluetooth Training Companion App</p>
-        <p class="effective-date"><strong>Effective Date:</strong> December 21, 2025 &nbsp;·&nbsp; <strong>Last Updated:</strong> June 5, 2026</p>
+        <p class="effective-date"><strong>Effective Date:</strong> December 21, 2025 &nbsp;·&nbsp; <strong>Last Updated:</strong> September 19, 2026</p>
 
         <div class="highlight">
-            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Everything works on your device with no account required. <strong>Cloud sync and online sign-in are optional</strong> — if you choose to enable them, only the workout data you decide to sync is sent to your own private account. We never sell your data, and we don't use ads, analytics, or tracking SDKs. The optional voice "Safe Word" stop uses your microphone on-device only when you turn it on — it never records or uploads audio.</p>
+            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Everything works on your device with no account required. <strong>Cloud sync and online sign-in are optional</strong> — if you choose to enable them, your training data and profile settings are sent to your own private account (Section 5 lists what is sent). We never sell your data, and we don't use ads, analytics, or tracking SDKs. The optional voice "Safe Word" stop uses your microphone on-device only when you turn it on — it never records or uploads audio.</p>
         </div>
 
         <h2>1. Introduction</h2>
         <p>Project Phoenix ("we," "our," or "the App") is a community-developed companion application for Bluetooth resistance training equipment. We are committed to protecting your privacy and being transparent about our data practices.</p>
-        <p>This Privacy Policy explains what information the App accesses, how it is used, and your rights regarding your data. It covers both the mobile apps (Android and iOS) and the optional Phoenix Portal web companion.</p>
+        <p>This Privacy Policy explains what information the App accesses, how it is used, and your rights regarding your data. It covers the Project Phoenix mobile apps (Android and iOS), including the data they send to the Phoenix backend when you use Cloud Sync. The optional Phoenix Portal website has its own features (such as leaderboards and community features, subscription billing, website error monitoring, and Strava, Fitbit, and Garmin connections) that are described in the <a href="https://phoenix-portal.com/privacy" target="_blank" rel="noopener">Phoenix Portal Privacy Policy</a>.</p>
 
         <h2>2. Information We Collect</h2>
-        <p><strong>By default, the App stores all data locally on your device.</strong> The App does not require an account and does not transmit your data anywhere unless you explicitly enable optional features such as Cloud Sync or third-party integrations (see Sections 5 and 6).</p>
+        <p><strong>By default, the App stores all data locally on your device.</strong> The App does not require an account and does not transmit your data anywhere unless you explicitly enable optional features such as Cloud Sync or third-party integrations (see Sections 5 and 6). The App does download exercise images and, if you ask it to, exercise catalog updates from public websites; these requests contain no personal data (see Section 6).</p>
         <p>The App stores the following data, primarily on your device:</p>
         <ul>
             <li><strong>Workout Data:</strong> Exercise sessions, sets, reps, weights, and timestamps</li>
@@ -77,6 +77,8 @@
             <li><strong>Personal Records:</strong> Your best lifts and calculated one-rep max estimates</li>
             <li><strong>Custom Routines &amp; Cycles:</strong> Workout routines and training programs you create</li>
             <li><strong>App Preferences:</strong> Settings such as weight unit (kg/lb), language, theme, and display options</li>
+            <li><strong>Profiles:</strong> The name you give each lifter profile on the device, plus per-profile settings such as body weight</li>
+            <li><strong>Body Weight from Your Health Platform (optional):</strong> If you grant permission, the App reads your most recent body weight from Health Connect (Android) or Apple Health (iOS) and uses it as your profile's body weight</li>
             <li><strong>Gamification Data:</strong> Badges earned, streaks, and achievement progress</li>
             <li><strong>Account Information (only if you sign in):</strong> If you enable Cloud Sync, an account is created using your email or a Google/Apple sign-in. We store the minimum needed to authenticate you and associate your synced data with your account.</li>
         </ul>
@@ -88,7 +90,7 @@
             <li>Sending workout commands (weight, mode settings)</li>
             <li>Receiving real-time workout metrics from the machine</li>
         </ul>
-        <p>Bluetooth data is processed in real-time and relevant metrics are stored on your device. Bluetooth data is never transmitted to any external party.</p>
+        <p>Bluetooth data is processed in real-time and relevant metrics are stored on your device. It is not shared with any third party. If you turn on Cloud Sync, the workout results derived from it (sets, reps, loads, velocities, and per-rep summaries) are uploaded to your account as described in Section 5. On the Inferno subscription tier, the raw per-rep machine telemetry (force, velocity, and position samples recorded many times per second during each rep) is uploaded too.</p>
 
         <h2>4. Microphone &amp; Voice Recognition (Safe Word Feature)</h2>
         <p>Project Phoenix includes an optional <strong>"Safe Word"</strong> feature — a hands-free, voice-activated emergency stop for your workouts. It is <strong>off by default</strong>, and the App requests microphone and speech-recognition permission only if you choose to enable it. When enabled:</p>
@@ -104,19 +106,26 @@
         <p>Cloud Sync and the Phoenix Portal web companion (an optional <strong>premium</strong> service at <a href="https://phoenix-portal.com" target="_blank" rel="noopener">phoenix-portal.com</a>) are <strong>opt-in</strong>. The App is fully functional without them. If you choose to enable Cloud Sync:</p>
         <ul>
             <li><strong>Account required for sync only:</strong> You create an account (email/password) or sign in with Google or Apple. You can use the entire app without ever creating one.</li>
-            <li><strong>What is synced:</strong> Your workout sessions, routines, personal records, and related training data are uploaded so they can be accessed across your devices and in the Phoenix Portal web companion.</li>
-            <li><strong>Where it is stored:</strong> Synced data is stored in our backend infrastructure (Supabase) under your account, protected by per-user access controls so only you can read your data.</li>
+            <li><strong>What is synced:</strong> Your workout sessions, sets, per-rep summaries, routines, training cycles, personal records, badges and progress data, custom exercises, assessment results, rep-phase statistics, and per-exercise movement signatures are uploaded so they can be accessed across your devices and in the Phoenix Portal web companion.</li>
+            <li><strong>Profile settings, including body weight:</strong> Your profile settings are synced, including a profile's stored body weight (whether you typed it in or it was read from your health platform). Your Safe Word and a few device-only flags are never synced.</li>
+            <li><strong>Profiles on this device:</strong> Every lifter profile on the device belongs to the signed-in account. Synced data is tagged with its profile, and the profile names are uploaded so the Portal can show whose data is whose. If other people use profiles on your device, their profile names and training data are uploaded to your account.</li>
+            <li><strong>Device ID:</strong> A random identifier created by the App (not a hardware or advertising identifier) is sent with each sync so your devices can be told apart.</li>
+            <li><strong>Raw rep telemetry (Inferno tier only):</strong> On the Inferno subscription tier, the raw per-rep machine telemetry is also uploaded so the Portal can show force curves. On other tiers it stays on your device.</li>
+            <li><strong>Connected-service activities:</strong> With a Cloud Sync subscription, activities imported from Hevy or Liftosaur (Section 6) are synced to your account.</li>
+            <li><strong>Where it is stored:</strong> Synced data is stored in our backend infrastructure (Supabase) under your account, protected by per-user access controls. Other users can't read it, except for what you choose to share through Phoenix Portal features such as leaderboards and community features (see the <a href="https://phoenix-portal.com/privacy" target="_blank" rel="noopener">Phoenix Portal Privacy Policy</a> for what is shown and how to turn it off).</li>
             <li><strong>Secure tokens:</strong> Authentication tokens are stored securely on your device (Android Keystore-backed storage / iOS Keychain).</li>
             <li><strong>You stay in control:</strong> You can use the app entirely offline, and you can request deletion of your synced data at any time (see Section 8).</li>
         </ul>
 
         <h2>6. Third-Party Services</h2>
-        <p>The App does <strong>not</strong> use advertising networks, analytics SDKs, crash-reporting services, or social-media tracking SDKs. The only external services involved are ones that directly deliver features you choose to use:</p>
+        <p>The mobile App does <strong>not</strong> use advertising networks, analytics SDKs, crash-reporting services, or social-media tracking SDKs. (The Phoenix Portal website's own services, such as billing and error monitoring, are covered by the <a href="https://phoenix-portal.com/privacy" target="_blank" rel="noopener">Phoenix Portal Privacy Policy</a>.) The external services the App contacts are:</p>
         <ul>
             <li><strong>Supabase</strong> — backend for optional Cloud Sync, accounts, and the Phoenix Portal. Only used if you enable Cloud Sync.</li>
             <li><strong>Google / Apple Sign-In</strong> — optional authentication providers, used only if you choose them to sign in.</li>
-            <li><strong>Apple Health / Health Connect</strong> — optional. If you enable it, completed workouts can be written to your device's health platform under permissions you grant.</li>
-            <li><strong>CSV Import/Export (Strong, Hevy formats)</strong> — file-based and fully under your control; no automatic transmission to those companies.</li>
+            <li><strong>Apple Health / Health Connect</strong> — optional. If you enable it, completed workouts can be written to your device's health platform, and your most recent body weight can be read from it, under permissions you grant. The body weight becomes your profile's body weight and is synced with your profile settings if Cloud Sync is on (Section 5). You can revoke these permissions at any time in Health Connect or the iOS Health app.</li>
+            <li><strong>Hevy and Liftosaur</strong> — optional, and requires a Phoenix account with a paid subscription. If you connect one of these services on the Integrations screen, the API key you enter is sent once to the Phoenix backend, which stores it encrypted and uses it to fetch your activities, routines, programs, and body measurements from that service. The App does not keep the key on your device. When you tap Disconnect on the Integrations screen, the App asks the Phoenix backend to delete the stored key and removes the imported data from your device. If you are offline when you disconnect, that request may not reach the backend, so to be certain, also revoke the key in that service's own settings. Activities already imported into your Phoenix account stay there until you delete them or delete your account (Section 8).</li>
+            <li><strong>Exercise images and catalog (GitHub, wger)</strong> — exercise demonstration images are downloaded from GitHub (the public free-exercise-db project) when you browse exercises, and the optional "Refresh extra exercises from wger" setting downloads exercise data from wger.de. These requests contain no personal data beyond what any web request carries, such as your IP address.</li>
+            <li><strong>CSV Import/Export (Strong, Hevy formats)</strong> — file-based and fully under your control; nothing is sent to those companies.</li>
         </ul>
 
         <h2>7. Data Sharing</h2>
@@ -127,7 +136,7 @@
         <ul>
             <li><strong>Access:</strong> All your data is visible within the App's history and analytics screens</li>
             <li><strong>Deletion (local):</strong> Delete individual workouts and routines in-app, or clear all App data through your device settings</li>
-            <li><strong>Deletion (synced):</strong> If you use Cloud Sync, you can request deletion of your account and synced data via the contact methods in Section 12</li>
+            <li><strong>Deletion (synced):</strong> If you use Cloud Sync, you can delete your account and synced data yourself: sign in at <a href="https://phoenix-portal.com/profile" target="_blank" rel="noopener">phoenix-portal.com</a> and use the account deletion option on your Profile page (deletion is scheduled with a 30-day grace period during which you can cancel). You can also request deletion via the contact methods in Section 12</li>
             <li><strong>Portability:</strong> Export your workout data to CSV at any time, and back up locally using your device's standard backup mechanisms</li>
         </ul>
 

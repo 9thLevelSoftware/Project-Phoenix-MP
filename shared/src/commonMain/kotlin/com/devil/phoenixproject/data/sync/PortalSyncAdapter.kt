@@ -6,7 +6,10 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.SessionTiming
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -19,6 +22,8 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Transforms mobile data structures into portal-compatible DTOs.
@@ -57,15 +62,48 @@ object PortalSyncAdapter {
     /**
      * Represent the data for a single mobile WorkoutSession plus its associated rep data.
      */
+    data class LogicalSetSyncIdentity(
+        val routineSessionId: String,
+        val routineExerciseId: String,
+        val setNumber: Int,
+    )
+
     data class SessionWithReps(
         val session: WorkoutSession,
+        /** Full per-rep rows including 50 Hz curves. Only filled when telemetry ships. */
         val repMetrics: List<RepMetricData> = emptyList(),
+        /**
+         * Scalar summaries for `buildRepSummaries`. Always populated by the push so a
+         * non-Inferno sync never has to deserialize the curve arrays on [repMetrics].
+         * When empty (older call sites / tests that only fill [repMetrics]), the
+         * adapter falls back to projecting [RepMetricData.toSummary].
+         */
+        val repSummaries: List<RepMetricSummary> = emptyList(),
         val repBiomechanics: List<RepBiomechanicsData> = emptyList(),
         val muscleGroup: String = "General",
         val isPr: Boolean = false,
         val prRecords: List<PersonalRecord> = emptyList(),
         val prRecord: PersonalRecord? = null, // Carries PR metadata (type, phase, volume)
+        val logicalSetIdentity: LogicalSetSyncIdentity? = null,
+        /**
+         * True when this row was in the push delta, i.e. it was never sent or has been
+         * edited since the last push. Drives the grouped-session `updatedAt` floor (see
+         * [toPortalWorkoutSessionsWithTelemetry]); siblings only re-gathered to keep a
+         * routine group complete are false.
+         */
+        val isPendingUpload: Boolean = false,
     )
+
+    /**
+     * One passing velocity-based (VBT) 1RM estimate, with the time it was computed.
+     * A session gets the newest estimate that already existed when it was recorded, so
+     * a historical workout is never annotated with a number derived from later lifts.
+     *
+     * Each exercise's list must be ordered OLDEST FIRST — by `computedAt`, then row id
+     * as the tie-break, matching VelocityOneRepMaxRepository.getLatestPassing's
+     * ordering — because the adapter takes the last entry that predates the session.
+     */
+    data class VelocityOneRepMaxPoint(val computedAt: Long, val estimatedPerCableKg: Float)
 
     /**
      * Bundle returned by buildPortalExercise, pairing the exercise DTO
@@ -93,25 +131,76 @@ object PortalSyncAdapter {
      */
     data class PortalSessionBuildResult(val sessions: List<PortalWorkoutSessionDto>, val telemetry: List<PortalRepTelemetryDto>)
 
+    /**
+     * Programmed-set count for portal analytics. Repeated retry attempts that share a
+     * stable logical-set identity collapse to one set; sessions without that identity
+     * keep the legacy one-session-one-set behavior.
+     */
+    internal fun programmedSetCount(sessions: List<SessionWithReps>): Int {
+        if (sessions.none { it.logicalSetIdentity != null }) return sessions.size
+        val grouped = linkedSetOf<String>()
+        var ungrouped = 0
+        sessions.forEach { session ->
+            val identity = session.logicalSetIdentity
+            if (identity == null) {
+                ungrouped += 1
+            } else {
+                grouped += "${identity.routineSessionId}\u0000${identity.routineExerciseId}\u0000${identity.setNumber}"
+            }
+        }
+        return grouped.size + ungrouped
+    }
+
     fun toPortalWorkoutSessions(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
-        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
-    ): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId, velocityEstimatesByExerciseId).sessions
+        velocityEstimatesByExerciseId: Map<String, List<VelocityOneRepMaxPoint>> = emptyMap(),
+        notesByPortalSessionId: Map<String, String?> = emptyMap(),
+        groupPushFloorEpochMs: Long? = null,
+    ): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(
+        sessionsWithReps,
+        userId,
+        velocityEstimatesByExerciseId,
+        notesByPortalSessionId = notesByPortalSessionId,
+        groupPushFloorEpochMs = groupPushFloorEpochMs,
+    ).sessions
 
     /**
      * Build portal workout sessions AND correctly-keyed telemetry in one pass.
      * Telemetry setIds are guaranteed to match the generated set IDs in the exercises.
      *
-     * [velocityEstimatesByExerciseId] maps catalog exerciseId → latest passing
-     * velocity-based 1RM (per-cable kg). The caller (SyncManager) precomputes it
-     * from VelocityOneRepMaxRepository in a suspend context; the adapter stays
-     * pure. Exercises not present in the map get a null velocity estimate.
+     * [velocityEstimatesByExerciseId] maps catalog exerciseId → its passing
+     * velocity-based 1RM estimates (per-cable kg). The caller (SyncManager) precomputes
+     * it from VelocityOneRepMaxRepository in a suspend context; the adapter stays pure
+     * and picks the newest estimate that predates each session. Exercises not present
+     * in the map get a null velocity estimate.
+     *
+     * [notesByPortalSessionId] carries the note the portal already holds for a workout
+     * (keyed on `routineSessionId ?: id`, the portal session id), read back from the
+     * local SessionNotes side-table. The portal writes `notes = EXCLUDED.notes` on
+     * every accepted session upsert, so sending null would delete a note written on the
+     * website (AF-4).
+     *
+     * [groupPushFloorEpochMs], when set, is the device time captured just before the
+     * push gathered its payload. A grouped (routine) portal session that contains at
+     * least one never-sent or locally edited row is sent with
+     * `max(domainLastEdit, floor)`, because the portal's `sessions_updated_at` trigger
+     * stamps `now()` on every accepted update and its LWW gate then rejects anything
+     * older. Set N of a routine starts before that server time whenever rests are short
+     * or the device clock lags, so the plain domain timestamp would be rejected forever.
+     * Standalone sessions and untouched groups keep the domain last-edit, so a portal
+     * edit of a workout this device is not currently changing still wins.
+     *
+     * [includeTelemetry] is false below the Inferno tier: the per-sample force curves
+     * would be discarded by the caller anyway, so they are never built.
      */
     fun toPortalWorkoutSessionsWithTelemetry(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
-        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+        velocityEstimatesByExerciseId: Map<String, List<VelocityOneRepMaxPoint>> = emptyMap(),
+        notesByPortalSessionId: Map<String, String?> = emptyMap(),
+        groupPushFloorEpochMs: Long? = null,
+        includeTelemetry: Boolean = true,
     ): PortalSessionBuildResult {
         // Group: null routineSessionId = standalone, non-null = routine group
         val standalone = sessionsWithReps.filter { it.session.routineSessionId == null }
@@ -124,14 +213,33 @@ object PortalSyncAdapter {
 
         // Standalone sessions: each becomes its own portal workout
         for (swr in standalone) {
-            val (session, telemetry) = buildPortalSession(listOf(swr), userId, routineSessionId = null, velocityEstimatesByExerciseId)
+            val (session, telemetry) = buildPortalSession(
+                listOf(swr),
+                userId,
+                routineSessionId = null,
+                velocityEstimatesByExerciseId = velocityEstimatesByExerciseId,
+                notesByPortalSessionId = notesByPortalSessionId,
+                // A standalone workout is its own portal session: the portal replaces
+                // only its own children, so it never needs the push floor and keeps the
+                // strict LWW gate against a later web edit.
+                groupPushFloorEpochMs = null,
+                includeTelemetry = includeTelemetry,
+            )
             resultSessions.add(session)
             resultTelemetry.addAll(telemetry)
         }
 
         // Routine groups: each group becomes one portal workout
         for ((routineSessionId, group) in routineGroups) {
-            val (session, telemetry) = buildPortalSession(group, userId, routineSessionId, velocityEstimatesByExerciseId)
+            val (session, telemetry) = buildPortalSession(
+                group,
+                userId,
+                routineSessionId,
+                velocityEstimatesByExerciseId = velocityEstimatesByExerciseId,
+                notesByPortalSessionId = notesByPortalSessionId,
+                groupPushFloorEpochMs = groupPushFloorEpochMs?.takeIf { group.any { row -> row.isPendingUpload } },
+                includeTelemetry = includeTelemetry,
+            )
             resultSessions.add(session)
             resultTelemetry.addAll(telemetry)
         }
@@ -139,34 +247,85 @@ object PortalSyncAdapter {
         return PortalSessionBuildResult(resultSessions, resultTelemetry)
     }
 
+    /** Start and duration of one portal workout, as sent on the wire. */
+    data class WireSessionTiming(val startedAtMs: Long, val durationSeconds: Int)
+
+    /**
+     * Start and duration of a portal workout built from [sessions] (one row, or every row of
+     * a routine group), bounded so a corrupt row can never be sent as-is.
+     *
+     * - `startedAt` is the earliest valid row start ([SessionTiming.isValidStartMs]: not the
+     *   zeroed-start signature and not in the future). If no row has one (every row from the
+     *   1970 bug), it falls back to the earliest valid `updatedAt`, then to [nowMs]. Never 1970.
+     *   Old imported history (e.g. 2012) is a valid start and is sent unchanged.
+     * - Each row's duration counts only if its own start passes the same check, and a negative
+     *   or epoch-sized duration ([SessionTiming.sanitizeDurationMs]) counts as 0 (unknown).
+     * - The total is capped at `now - startedAt`, so it can never exceed the elapsed time.
+     *
+     * Pure and total: it never throws, so a bad row cannot wedge the push.
+     */
+    fun wireSessionTiming(sessions: List<WorkoutSession>, nowMs: Long = currentTimeMillis()): WireSessionTiming {
+        val startedAtMs = sessions.map { it.timestamp }
+            .filter { SessionTiming.isValidStartMs(it, nowMs) }
+            .minOrNull()
+            ?: sessions.mapNotNull { it.updatedAt }
+                .filter { SessionTiming.isValidStartMs(it, nowMs) }
+                .minOrNull()
+            ?: nowMs
+        val totalDurationMs = sessions.sumOf { session ->
+            if (SessionTiming.isValidStartMs(session.timestamp, nowMs)) {
+                SessionTiming.sanitizeDurationMs(session.duration)
+            } else {
+                0L
+            }
+        }.coerceAtMost((nowMs - startedAtMs).coerceAtLeast(0L))
+        return WireSessionTiming(
+            startedAtMs = startedAtMs,
+            durationSeconds = (totalDurationMs / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        )
+    }
+
     private fun buildPortalSession(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
         routineSessionId: String?,
-        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+        velocityEstimatesByExerciseId: Map<String, List<VelocityOneRepMaxPoint>> = emptyMap(),
+        notesByPortalSessionId: Map<String, String?> = emptyMap(),
+        groupPushFloorEpochMs: Long? = null,
+        includeTelemetry: Boolean = true,
     ): Pair<PortalWorkoutSessionDto, List<PortalRepTelemetryDto>> {
         val sorted = sessionsWithReps.sortedBy { it.session.timestamp }
         val first = sorted.first().session
         val portalSessionId = routineSessionId ?: first.id
 
-        // Aggregate metrics across all exercises in this workout
-        val totalDuration = sorted.sumOf { (it.session.duration / 1000).toInt() } // ms → s
-        // Portal expects per-cable volume and applies ×2 transform for display.
-        // - Measured totalVolumeKg is TOTAL (both cables) → divide by cableCount
+        // Aggregate metrics across all exercises in this workout. Rows already on disk from
+        // the 1970 bug carry timestamp 0 and an epoch-sized duration; never send them as-is.
+        val wireTiming = wireSessionTiming(sorted.map { it.session })
+        val totalDuration = wireTiming.durationSeconds
+        // Portal stores per-cable volume (KD-8); it does NOT double it. Display shows
+        // per-cable first, with the total (× cable_count) only when the cable count is known.
+        // - Measured totalVolumeKg is TOTAL (both cables) → divide by the same
+        //   valid 1/2 cable count sent on the wire; unknown counts fall back to 1
         // - Fallback weightPerCableKg × totalReps is already per-cable
         val totalVolume = sorted.sumOf { swr ->
             val session = swr.session
-            val cables = (session.cableCount ?: 1).coerceAtLeast(1)
+            val cables = PortalMappings.cableCountToWire(session.cableCount) ?: 1
             val perCableVolume = session.totalVolumeKg?.let { it / cables }
                 ?: (session.weightPerCableKg * session.totalReps)
             perCableVolume.toDouble()
         }.toFloat()
-        val totalSets = sorted.size // Each mobile session = one set in portal terms
+        val totalSets = programmedSetCount(sorted)
         val totalPrs = sorted.count { it.isPr }
 
         // Build exercise entries with telemetry (setIds are generated inside)
         val exerciseBundles = sorted.mapIndexed { index, swr ->
-            buildPortalExerciseWithTelemetry(swr, portalSessionId, index, velocityEstimatesByExerciseId)
+            buildPortalExerciseWithTelemetry(
+                swr,
+                portalSessionId,
+                index,
+                velocityEstimatesByExerciseId,
+                includeTelemetry,
+            )
         }
         val exercises = exerciseBundles.map { it.exercise }
         val telemetry = exerciseBundles.flatMap { it.telemetry }
@@ -230,13 +389,22 @@ object PortalSyncAdapter {
             name = first.routineName
                 ?: first.exerciseName
                 ?: "Just Lift".takeIf { first.isJustLift },
-            startedAt = epochToIso8601(first.timestamp),
-            // LWW gate (Phase 3.2): epoch-ms push time as ISO 8601. When mobile
-            // domain starts tracking per-row updated_at end-to-end, replace
-            // with the domain value. Until then, push time is monotonic and
-            // consistent with the server-wins semantics we are preserving in
-            // Phase 3.2 (server falls back to NOW() for missing values).
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            startedAt = epochToIso8601(wireTiming.startedAtMs),
+            // LWW gate: wire the domain last-edit, never encode-time wall clock.
+            // Stamping NOW() at push time made every mobile sync win against a
+            // later portal edit of the same session id. The one exception is a
+            // routine group with unsent local rows, which must beat the server
+            // clock the portal stamped on the previous set's push — see
+            // groupPushFloorEpochMs on toPortalWorkoutSessionsWithTelemetry.
+            updatedAt = epochToIso8601(
+                maxOf(
+                    domainLastEditEpochMs(sorted.map { it.session }),
+                    groupPushFloorEpochMs ?: Long.MIN_VALUE,
+                ),
+            ),
+            // Send back the note the portal already holds; the portal's session
+            // upsert writes notes = EXCLUDED.notes unconditionally (AF-4).
+            notes = notesByPortalSessionId[portalSessionId],
             durationSeconds = totalDuration,
             totalVolume = totalVolume,
             setCount = totalSets,
@@ -276,7 +444,8 @@ object PortalSyncAdapter {
         swr: SessionWithReps,
         portalSessionId: String,
         orderIndex: Int,
-        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+        velocityEstimatesByExerciseId: Map<String, List<VelocityOneRepMaxPoint>> = emptyMap(),
+        includeTelemetry: Boolean = true,
     ): ExerciseWithTelemetry {
         val session = swr.session
         // Use stable mobile session ID as exercise ID so repeated syncs
@@ -287,11 +456,15 @@ object PortalSyncAdapter {
         // Build rep summaries from RepMetricData + RepBiomechanics
         val repSummaries = buildRepSummaries(swr, setId)
 
-        // Build telemetry using the SAME setId
+        // Build telemetry using the SAME setId. Below the Inferno tier the caller drops
+        // telemetry before it reaches the wire, so don't build the points at all: a
+        // 50 Hz force curve is by far the largest thing in a push payload.
         val telemetry = mutableListOf<PortalRepTelemetryDto>()
-        for (rep in swr.repMetrics) {
-            if (rep.concentricTimestamps.isNotEmpty() || rep.eccentricTimestamps.isNotEmpty()) {
-                telemetry.addAll(toRepTelemetry(rep, setId))
+        if (includeTelemetry) {
+            for (rep in swr.repMetrics) {
+                if (rep.concentricTimestamps.isNotEmpty() || rep.eccentricTimestamps.isNotEmpty()) {
+                    telemetry.addAll(toRepTelemetry(rep, setId))
+                }
             }
         }
 
@@ -320,18 +493,24 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
-            // Per-cable estimate from this exercise's single set; matches the
-            // set's weightKg (per-cable). Portal applies its x2 display transform.
-            // null when there is no meaningful estimate (0-rep/0-weight) so the
-            // portal treats the field as absent and falls back, per the DTO doc.
+            // Working reps exclude warmup; fall back to totalReps when working
+            // is 0 so legacy rows still get an estimate.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
-                session.totalReps,
+                session.workingReps.takeIf { it > 0 } ?: session.totalReps,
             ).takeIf { it > 0f },
             // Velocity-based (VBT) estimate, looked up by catalog exerciseId from
             // the precomputed map. Distinct from the rep-based estimate above; null
             // when this exercise has no exerciseId or no passing velocity estimate.
-            velocityEstimatedOneRepMaxKg = session.exerciseId?.let { velocityEstimatesByExerciseId[it] },
+            // As-of the session, not "latest": a workout from last year must not be
+            // annotated with an estimate computed from lifts done after it.
+            velocityEstimatedOneRepMaxKg = session.exerciseId
+                ?.let { velocityEstimatesByExerciseId[it] }
+                ?.lastOrNull { it.computedAt <= session.timestamp }
+                ?.estimatedPerCableKg,
+            // Same cable count that drives the totalVolume normalisation above;
+            // only 1 or 2 go on the wire, anything else is sent as unknown (omitted).
+            cableCount = PortalMappings.cableCountToWire(session.cableCount),
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
@@ -360,7 +539,8 @@ object PortalSyncAdapter {
             workoutPhase = record.phase.name,
             sessionId = sessionId,
             achievedAt = epochToIso8601(record.timestamp),
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            updatedAt = epochToIso8601(record.updatedAt ?: currentTimeMillis()),
+            deletedAt = record.deletedAt?.let(::epochToIso8601),
             localProfileId = record.profileId,
             workoutMode = PortalMappings.workoutModeToSync(record.workoutMode),
         )
@@ -375,8 +555,12 @@ object PortalSyncAdapter {
 
     private fun buildRepSummaries(swr: SessionWithReps, setId: String): List<PortalRepSummaryDto> {
         val biomechanicsMap = swr.repBiomechanics.associateBy { it.repNumber }
+        val summaries = swr.repSummaries.ifEmpty {
+            // Call sites that only filled full RepMetricData (tests, older callers).
+            swr.repMetrics.map { it.toSummary() }
+        }
 
-        return swr.repMetrics.map { rep ->
+        return summaries.map { rep ->
             val bio = biomechanicsMap[rep.repNumber]
 
             PortalRepSummaryDto(
@@ -530,6 +714,20 @@ object PortalSyncAdapter {
 
     // ─── Routine Mapping ────────────────────────────────────────────
 
+    /** A timed duration accepted by the app's editor and workout runtime. */
+    fun sanitizeDurationSeconds(seconds: Int?): Int? =
+        RoutineExercise.supportedTimedDurationSeconds(seconds)
+
+    /**
+     * The only producer of [PortalRoutineExerciseSyncDto.durationSeconds].
+     *  - supported duration -> seconds;
+     *  - no duration and [known] -> explicit JSON null, which clears the server value;
+     *  - no duration and not [known] -> null, so the key is omitted and the server keeps
+     *    its stored duration (a pre-upgrade row may hold a stale NULL).
+     */
+    fun durationSecondsWire(seconds: Int?, known: Boolean): JsonPrimitive? =
+        sanitizeDurationSeconds(seconds)?.let { JsonPrimitive(it) } ?: if (known) JsonNull else null
+
     /**
      * Convert a mobile Routine to portal-format DTO.
      */
@@ -605,6 +803,9 @@ object PortalSyncAdapter {
                             overrides.mapValues { (_, v) -> v.name },
                         )
                     },
+                dropSetEnabled = ex.dropSetEnabled,
+                dropSetMinWeightKg = ex.dropSetMinWeightKg,
+                durationSeconds = durationSecondsWire(ex.duration, ex.durationSyncKnown),
             )
         }
 
@@ -640,7 +841,27 @@ object PortalSyncAdapter {
      * Data bundle for a cycle with its optional progress + progression.
      * SyncRepository gathers these for push.
      */
-    data class CycleWithContext(val cycle: TrainingCycle, val progress: CycleProgress? = null, val progression: CycleProgression? = null)
+    /** Longest server version string accepted (a timestamptz ISO string is ~32 chars). */
+    private const val MAX_CYCLE_SERVER_VERSION_LENGTH = 64
+
+    /**
+     * Returns [raw] unchanged when it is a usable portal cycle version (non-blank,
+     * at most 64 chars, parseable as an ISO-8601 instant), else null. The value is
+     * echoed back as baseUpdatedAt, and the portal rejects the whole push (400) for an
+     * unparseable one, so a malformed value must never be stored.
+     */
+    fun validCycleServerVersion(raw: String?): String? {
+        if (raw.isNullOrBlank() || raw.length > MAX_CYCLE_SERVER_VERSION_LENGTH) return null
+        return raw.takeIf { runCatching { kotlin.time.Instant.parse(it) }.isSuccess }
+    }
+
+    data class CycleWithContext(
+        val cycle: TrainingCycle,
+        val progress: CycleProgress? = null,
+        val progression: CycleProgression? = null,
+        /** Portal `updated_at` (verbatim ISO) last pulled or acknowledged; sent as baseUpdatedAt. */
+        val serverUpdatedAt: String? = null,
+    )
 
     /**
      * Convert a mobile TrainingCycle (with context) to portal-format DTO.
@@ -691,6 +912,10 @@ object PortalSyncAdapter {
                 restOverride = day.restTimeOverrideSeconds,
                 restType = null,
                 notes = day.name,
+                echoLevelPresent = true,
+                echoLevel = day.echoLevel?.name,
+                eccentricLoadPercentPresent = true,
+                eccentricLoadPercent = day.eccentricLoadPercent,
             )
         }
 
@@ -707,11 +932,26 @@ object PortalSyncAdapter {
             status = if (cycle.isActive) "active" else "draft",
             startedAt = progress?.cycleStartDate?.let { epochToIso8601(it) },
             lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
-            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            // LWW gate: persist the domain last-edit. Cycles are pushed on every
+            // sync, so encode-time NOW() would blindly overwrite portal edits.
+            updatedAt = epochToIso8601(cycle.updatedAt ?: cycle.createdAt),
+            progressionSettingsPresent = true,
             progressionSettings = progressionJson,
             deloadSettings = null,
+            progressStatePresent = true,
+            progressState = progress?.let {
+                PortalCycleProgressStateSyncDto(
+                    currentDayNumber = it.currentDayNumber,
+                    lastCompletedDate = it.lastCompletedDate,
+                    cycleStartDate = it.cycleStartDate,
+                    lastAdvancedAt = it.lastAdvancedAt,
+                    completedDays = it.completedDays.sorted(),
+                    missedDays = it.missedDays.sorted(),
+                    rotationCount = it.rotationCount,
+                )
+            },
             days = days,
+            baseUpdatedAt = ctx.serverUpdatedAt,
         )
     }
 
@@ -782,4 +1022,12 @@ object PortalSyncAdapter {
         val instant = kotlin.time.Instant.fromEpochMilliseconds(epochMs)
         return instant.toString() // ISO 8601 format
     }
+
+    /**
+     * Latest domain last-edit among the mobile rows that collapse into one
+     * portal workout. Falls back to [WorkoutSession.timestamp] (startedAt)
+     * when a row has not yet stored updatedAt.
+     */
+    internal fun domainLastEditEpochMs(sessions: List<WorkoutSession>): Long =
+        sessions.maxOf { it.updatedAt ?: it.timestamp }
 }

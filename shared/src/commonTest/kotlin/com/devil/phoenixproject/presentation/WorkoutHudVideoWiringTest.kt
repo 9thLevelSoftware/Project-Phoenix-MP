@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** Source-level guard for issue #643: active-workout HUD keeps its video page. */
+/** Source-level guard for issue #643: active-workout HUD keeps its demo page. */
 class WorkoutHudVideoWiringTest {
 
     @Test
@@ -15,28 +15,29 @@ class WorkoutHudVideoWiringTest {
         assertTrue(
             src.contains("exerciseRepository: ExerciseRepository") &&
                 src.contains("enableVideoPlayback: Boolean"),
-            "WorkoutHud must accept video dependencies instead of dropping the preference/repository.",
+            "WorkoutHud must accept demo dependencies instead of dropping the preference/repository.",
         )
         assertTrue(
             src.contains("rememberPagerState(pageCount = { 3 })"),
-            "WorkoutHud must expose Metrics, Video, and Stats pages.",
+            "WorkoutHud must expose Metrics, Demo, and Stats pages.",
         )
         assertTrue(
             src.contains("1 -> InstructionPage(") && src.contains("2 -> StatsPage("),
-            "WorkoutHud must keep the video page between metrics and stats.",
+            "WorkoutHud must keep the demo page between metrics and stats.",
         )
         assertTrue(
-            src.contains("Video Playback Disabled") && src.contains("VideoPlayer("),
-            "InstructionPage must render the disabled state and exercise video player.",
+            src.contains("if (!enableVideoPlayback)") &&
+                src.contains("settings_exercise_demos_disabled") &&
+                src.contains("ExerciseDemoImage("),
+            "InstructionPage must honor enableVideoPlayback and render ExerciseDemoImage when demos are on.",
         )
         assertTrue(
             src.contains("selectedExerciseId = workoutParameters.selectedExerciseId") &&
                 src.contains("currentExercise?.exercise?.id ?: selectedExerciseId"),
-            "InstructionPage must load a selected exercise video when an active workout has no routine.",
+            "InstructionPage must load a selected exercise image when an active workout has no routine.",
         )
         assertTrue(
-            src.contains("var videoEntity by remember(currentExerciseIndex, exerciseId)") &&
-                src.contains("var isLoading by remember(currentExerciseIndex, exerciseId)"),
+            src.contains("var images by remember(currentExerciseIndex, exerciseId)"),
             "InstructionPage state must reset when either the routine position or exercise changes.",
         )
     }

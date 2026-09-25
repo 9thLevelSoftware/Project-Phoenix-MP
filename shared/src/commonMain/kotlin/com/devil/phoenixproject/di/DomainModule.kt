@@ -7,10 +7,13 @@ import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalMvtRepository
+import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
+import com.devil.phoenixproject.domain.model.EnabledDropSetFeatureGate
 import com.devil.phoenixproject.domain.onerepmax.MvtProvider
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
@@ -18,8 +21,9 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.MvtExerciseView
-import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -39,14 +43,16 @@ val domainModule = module {
 
     // Use Cases
     single { RepCounterFromMachine() }
-    single { ProgressionUseCase(get(), get()) }
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
+    single<DropSetFeatureGate> { EnabledDropSetFeatureGate }
+    single { DropSetCandidateResolver() }
+    single { DropSetEligibilityPolicy(get(), get()) }
     factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get()) }
     factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get()) }
-    factory { ApplyRoutineModifierUseCase(get(), get()) }
+    factory { ApplyRoutineModifierUseCase(get(), get(), get(), get()) }
     factory { RoutineTimeEstimator(get()) }
-    single { TemplateConverter(get()) }
+    single { TemplateConverter(get(), get()) }
 
     // Assessment
     single { AssessmentEngine() }
@@ -101,6 +107,10 @@ val domainModule = module {
             profileLocalSafetyStore = get(),
             legacyProfilePreferencesReader = get(),
             profileScopedDataMerger = get(),
+            driver = get(),
+            legacyBaselineRepair = get(),
+            profileRecoveryDiscovery = get(),
+            profileMutationBarrier = get<ProfileMutationBarrier>(),
         )
     }
     single<RequiredMigrationGate> { get<MigrationManager>() }

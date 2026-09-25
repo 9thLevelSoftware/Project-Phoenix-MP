@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.local
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 
 class DatabaseFactory(private val driverFactory: DriverFactory) {
-    fun createDatabase(): VitruvianDatabase = VitruvianDatabase(driverFactory.createDriver())
+    fun createDatabase(): PhoenixDatabase = PhoenixDatabase(driverFactory.createDriver())
 }

@@ -28,8 +28,8 @@ import kotlin.math.atan2
 import kotlin.math.min
 import kotlin.math.sqrt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Circle Chart (Donut Chart)

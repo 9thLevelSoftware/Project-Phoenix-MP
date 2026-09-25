@@ -9,8 +9,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -45,6 +48,29 @@ class SafeWordDetectionManager(
      */
     val detectedWord: SharedFlow<String> = _detectedWord.asSharedFlow()
 
+    /**
+     * Whether the voice emergency stop is actually armed (F-039).
+     *
+     * Every early return and listener failure lands here, so the workout HUD can
+     * tell the user the safe word will not stop the machine instead of the
+     * feature failing silently.
+     */
+    private val _state = MutableStateFlow<SafeWordState>(SafeWordState.Disabled)
+    val state: StateFlow<SafeWordState> = _state.asStateFlow()
+
+    private val _unavailableAtStart = MutableSharedFlow<SafeWordUnavailableReason>(extraBufferCapacity = 1)
+
+    /**
+     * Emits at most once per [startForWorkout] call when voice stop is on but not
+     * armed: synchronously for a precondition failure, otherwise when the listener
+     * first reports [SafeWordState.Unavailable]. That can be mid-set — microphone
+     * permission revoked, another app taking audio focus, the recognizer never
+     * getting the microphone — which is deliberate: it is the only way a failure
+     * after the set has started raises a warning at all. The screen shows it once
+     * rather than repeatedly; the chip driven by [state] is the durable signal.
+     */
+    val unavailableAtStart: SharedFlow<SafeWordUnavailableReason> = _unavailableAtStart.asSharedFlow()
+
     /** Coroutine bridging the current listener's detectedWord to the stable flow. */
     private var bridgeJob: Job? = null
 
@@ -59,19 +85,23 @@ class SafeWordDetectionManager(
         val context = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
         if (context == null) {
             Logger.w(TAG) { "Profile context is switching, skipping voice stop" }
+            reportUnavailable(SafeWordUnavailableReason.PROFILE_SWITCHING)
             return
         }
         if (!context.preferences.workout.value.voiceStopEnabled) {
             Logger.d(TAG) { "Voice stop not enabled, skipping" }
+            _state.value = SafeWordState.Disabled
             return
         }
         val safeWord = context.localSafety.safeWord
         if (safeWord.isNullOrBlank()) {
             Logger.w(TAG) { "Voice stop enabled but no safe word configured, skipping" }
+            reportUnavailable(SafeWordUnavailableReason.NOT_CONFIGURED)
             return
         }
         if (!context.localSafety.safeWordCalibrated) {
             Logger.w(TAG) { "Voice stop enabled but safe word not calibrated, skipping" }
+            reportUnavailable(SafeWordUnavailableReason.NOT_CALIBRATED)
             return
         }
 
@@ -85,15 +115,33 @@ class SafeWordDetectionManager(
         val newListener = listenerFactory.create(safeWord)
         listener = newListener
 
-        // Bridge the listener's flow to our stable flow with a tracked supervisor
+        // Bridge the listener's flows to our stable flows with a tracked supervisor
         bridgeSupervisor = SupervisorJob()
-        bridgeJob = CoroutineScope(Dispatchers.Main + bridgeSupervisor).launch {
+        val bridgeScope = CoroutineScope(Dispatchers.Main + bridgeSupervisor)
+        bridgeJob = bridgeScope.launch {
             newListener.detectedWord.collect { word ->
                 _detectedWord.tryEmit(word)
             }
         }
+        _state.value = SafeWordState.Arming
+        bridgeScope.launch {
+            var reportedForThisStart = false
+            newListener.state.collect { listenerState ->
+                _state.value = listenerState
+                if (!reportedForThisStart && listenerState is SafeWordState.Unavailable) {
+                    reportedForThisStart = true
+                    _unavailableAtStart.tryEmit(listenerState.reason)
+                }
+            }
+        }
 
         newListener.startListening()
+    }
+
+    /** Records why voice stop cannot work and announces it once for this set. */
+    private fun reportUnavailable(reason: SafeWordUnavailableReason) {
+        _state.value = SafeWordState.Unavailable(reason)
+        _unavailableAtStart.tryEmit(reason)
     }
 
     /**
@@ -109,5 +157,6 @@ class SafeWordDetectionManager(
             it.stopListening()
         }
         listener = null
+        _state.value = SafeWordState.Disabled
     }
 }

@@ -83,9 +83,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
@@ -93,74 +97,83 @@ import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.util.autoBackupLocationNote
+import com.devil.phoenixproject.util.canOpenBackupFolder
+import com.devil.phoenixproject.util.defaultBackupLocationLabel
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_ok
-import vitruvianprojectphoenix.shared.generated.resources.delete_all
-import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_title
-import vitruvianprojectphoenix.shared.generated.resources.action_save
-import vitruvianprojectphoenix.shared.generated.resources.action_share
-import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
-import vitruvianprojectphoenix.shared.generated.resources.backup_description
-import vitruvianprojectphoenix.shared.generated.resources.backup_success
-import vitruvianprojectphoenix.shared.generated.resources.cd_app_info
-import vitruvianprojectphoenix.shared.generated.resources.cd_appearance
-import vitruvianprojectphoenix.shared.generated.resources.cd_backup_data
-import vitruvianprojectphoenix.shared.generated.resources.cd_cloud_sync
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_logs
-import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workouts
-import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
-import vitruvianprojectphoenix.shared.generated.resources.cd_dynamic_color
-import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
-import vitruvianprojectphoenix.shared.generated.resources.cd_open_backup_folder
-import vitruvianprojectphoenix.shared.generated.resources.cd_restore_data
-import vitruvianprojectphoenix.shared.generated.resources.cd_support_developer
-import vitruvianprojectphoenix.shared.generated.resources.cd_sync_error
-import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
-import vitruvianprojectphoenix.shared.generated.resources.diagnostics_title
-import vitruvianprojectphoenix.shared.generated.resources.import_completed
-import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
-import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
-import vitruvianprojectphoenix.shared.generated.resources.label_please_wait
-import vitruvianprojectphoenix.shared.generated.resources.language_dutch
-import vitruvianprojectphoenix.shared.generated.resources.language_english
-import vitruvianprojectphoenix.shared.generated.resources.language_french
-import vitruvianprojectphoenix.shared.generated.resources.language_german
-import vitruvianprojectphoenix.shared.generated.resources.language_spanish
-import vitruvianprojectphoenix.shared.generated.resources.restore_description
-import vitruvianprojectphoenix.shared.generated.resources.restore_from_backup
-import vitruvianprojectphoenix.shared.generated.resources.select_file
-import vitruvianprojectphoenix.shared.generated.resources.settings_appearance
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_auto
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description_affected
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_off
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_on
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_reconnect_hint
-import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_title
-import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
-import vitruvianprojectphoenix.shared.generated.resources.settings_sync_error_tap_to_dismiss
-import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
-import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color_description
-import vitruvianprojectphoenix.shared.generated.resources.settings_language
-import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
-import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
-import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos
-import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos_description
-import vitruvianprojectphoenix.shared.generated.resources.settings_theme_dark
-import vitruvianprojectphoenix.shared.generated.resources.settings_theme_light
-import vitruvianprojectphoenix.shared.generated.resources.settings_theme_mode
-import vitruvianprojectphoenix.shared.generated.resources.settings_theme_mode_description
-import vitruvianprojectphoenix.shared.generated.resources.settings_theme_system
-import vitruvianprojectphoenix.shared.generated.resources.settings_title
-import vitruvianprojectphoenix.shared.generated.resources.settings_video_behavior
-import vitruvianprojectphoenix.shared.generated.resources.settings_version
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_ok
+import projectphoenix.shared.generated.resources.delete_all
+import projectphoenix.shared.generated.resources.delete_all_workouts_message
+import projectphoenix.shared.generated.resources.delete_all_workouts_title
+import projectphoenix.shared.generated.resources.action_save
+import projectphoenix.shared.generated.resources.action_share
+import projectphoenix.shared.generated.resources.backup_all_data
+import projectphoenix.shared.generated.resources.backup_description
+import projectphoenix.shared.generated.resources.backup_success
+import projectphoenix.shared.generated.resources.cd_app_info
+import projectphoenix.shared.generated.resources.cd_appearance
+import projectphoenix.shared.generated.resources.cd_backup_data
+import projectphoenix.shared.generated.resources.cd_cloud_sync
+import projectphoenix.shared.generated.resources.cd_connection_logs
+import projectphoenix.shared.generated.resources.cd_delete_workouts
+import projectphoenix.shared.generated.resources.cd_developer_tools
+import projectphoenix.shared.generated.resources.cd_dynamic_color
+import projectphoenix.shared.generated.resources.cd_link_portal
+import projectphoenix.shared.generated.resources.cd_open_backup_folder
+import projectphoenix.shared.generated.resources.cd_restore_data
+import projectphoenix.shared.generated.resources.cd_support_developer
+import projectphoenix.shared.generated.resources.cd_sync_error
+import projectphoenix.shared.generated.resources.cd_test_sounds
+import projectphoenix.shared.generated.resources.diagnostics_title
+import projectphoenix.shared.generated.resources.import_completed
+import projectphoenix.shared.generated.resources.import_records_imported
+import projectphoenix.shared.generated.resources.import_records_skipped
+import projectphoenix.shared.generated.resources.label_please_wait
+import projectphoenix.shared.generated.resources.language_dutch
+import projectphoenix.shared.generated.resources.language_english
+import projectphoenix.shared.generated.resources.language_french
+import projectphoenix.shared.generated.resources.language_german
+import projectphoenix.shared.generated.resources.language_spanish
+import projectphoenix.shared.generated.resources.restore_description
+import projectphoenix.shared.generated.resources.restore_from_backup
+import projectphoenix.shared.generated.resources.select_file
+import projectphoenix.shared.generated.resources.settings_appearance
+import projectphoenix.shared.generated.resources.settings_ble_compat_auto
+import projectphoenix.shared.generated.resources.settings_ble_compat_description
+import projectphoenix.shared.generated.resources.settings_ble_compat_description_affected
+import projectphoenix.shared.generated.resources.settings_ble_compat_off
+import projectphoenix.shared.generated.resources.settings_ble_compat_on
+import projectphoenix.shared.generated.resources.settings_ble_compat_reconnect_hint
+import projectphoenix.shared.generated.resources.settings_ble_compat_title
+import projectphoenix.shared.generated.resources.settings_cloud_sync
+import projectphoenix.shared.generated.resources.settings_sync_error_tap_to_dismiss
+import projectphoenix.shared.generated.resources.settings_dynamic_color
+import projectphoenix.shared.generated.resources.settings_dynamic_color_description
+import projectphoenix.shared.generated.resources.settings_language
+import projectphoenix.shared.generated.resources.settings_language_help
+import projectphoenix.shared.generated.resources.settings_machine_diagnostics_description
+import projectphoenix.shared.generated.resources.settings_refresh_wger_catalog
+import projectphoenix.shared.generated.resources.settings_refresh_wger_catalog_description
+import projectphoenix.shared.generated.resources.settings_refresh_wger_catalog_error
+import projectphoenix.shared.generated.resources.settings_refresh_wger_catalog_in_progress
+import projectphoenix.shared.generated.resources.settings_refresh_wger_catalog_success
+import projectphoenix.shared.generated.resources.settings_show_exercise_videos
+import projectphoenix.shared.generated.resources.settings_show_exercise_videos_description
+import projectphoenix.shared.generated.resources.settings_theme_dark
+import projectphoenix.shared.generated.resources.settings_theme_light
+import projectphoenix.shared.generated.resources.settings_theme_mode
+import projectphoenix.shared.generated.resources.settings_theme_mode_description
+import projectphoenix.shared.generated.resources.settings_theme_system
+import projectphoenix.shared.generated.resources.settings_title
+import projectphoenix.shared.generated.resources.settings_video_behavior
+import projectphoenix.shared.generated.resources.settings_version
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -272,7 +285,7 @@ fun SettingsTab(
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
-    onDeleteAllWorkouts: () -> Unit,
+    onDeleteAllWorkouts: (String) -> Unit,
     onNavigateToConnectionLogs: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToLinkAccount: () -> Unit,
@@ -285,6 +298,8 @@ fun SettingsTab(
     onBleCompatibilityModeChange: (BleCompatibilitySetting) -> Unit,
     autoBackupEnabled: Boolean,
     onAutoBackupEnabledChange: (Boolean) -> Unit,
+    includeRawTelemetryInBackups: Boolean,
+    onIncludeRawTelemetryInBackupsChange: (Boolean) -> Unit,
     backupStats: BackupStats?,
     onOpenBackupFolder: () -> Unit,
     backupDestination: BackupDestination,
@@ -293,7 +308,7 @@ fun SettingsTab(
     onLanguageChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showDeleteAllDialog by remember { mutableStateOf(false) }
+    var deleteAllTarget by remember { mutableStateOf<UserProfile?>(null) }
     // Backup/Restore state
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
@@ -308,6 +323,11 @@ fun SettingsTab(
     val scope = rememberCoroutineScope()
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
+    val exerciseRepository: ExerciseRepository = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    var wgerRefreshInProgress by remember { mutableStateOf(false) }
+    var wgerRefreshMessage by remember { mutableStateOf<String?>(null) }
     // Inject SyncTriggerManager for sync error indicator
     val syncTriggerManager: SyncTriggerManager = koinInject()
     val hasSyncError by syncTriggerManager.hasPersistentError.collectAsState()
@@ -326,6 +346,8 @@ fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         // Header removed for global scaffold integration
+
+        ProfileRecoverySettingsSection()
 
         // Donation Card - Material 3 Expressive (top of settings for visibility)
         val uriHandler = LocalUriHandler.current
@@ -379,12 +401,12 @@ fun SettingsTab(
                 )
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
-                    "ko-fi.com/vitruvianredux",
+                    "ko-fi.com/phoenixredux",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable {
-                        uriHandler.openUri("https://ko-fi.com/vitruvianredux")
+                        uriHandler.openUri("https://ko-fi.com/phoenixredux")
                     },
                 )
             }
@@ -741,6 +763,46 @@ fun SettingsTab(
                 checked = enableVideoPlayback,
                 onCheckedChange = onEnableVideoPlaybackChange,
             )
+            Spacer(modifier = Modifier.height(Spacing.small))
+            OutlinedButton(
+                onClick = {
+                    if (wgerRefreshInProgress) return@OutlinedButton
+                    scope.launch {
+                        wgerRefreshInProgress = true
+                        wgerRefreshMessage = null
+                        val result = exerciseRepository.updateFromWger()
+                        wgerRefreshInProgress = false
+                        wgerRefreshMessage = result.fold(
+                            onSuccess = { count ->
+                                getString(Res.string.settings_refresh_wger_catalog_success, count)
+                            },
+                            onFailure = { getString(Res.string.settings_refresh_wger_catalog_error) },
+                        )
+                    }
+                },
+                enabled = !wgerRefreshInProgress,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (wgerRefreshInProgress) {
+                        stringResource(Res.string.settings_refresh_wger_catalog_in_progress)
+                    } else {
+                        stringResource(Res.string.settings_refresh_wger_catalog)
+                    },
+                )
+            }
+            Text(
+                stringResource(Res.string.settings_refresh_wger_catalog_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            wgerRefreshMessage?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
         // Data Management Section - Material 3 Expressive
@@ -802,7 +864,8 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Automatically save single workouts and completed routines to local backup files",
+                            "Automatically save single workouts and completed routines to local backup files" +
+                                (autoBackupLocationNote?.let { ". $it" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -810,6 +873,33 @@ fun SettingsTab(
                     Switch(
                         checked = autoBackupEnabled,
                         onCheckedChange = onAutoBackupEnabledChange,
+                    )
+                }
+
+                // Raw telemetry is out of backups unless opted in (F-033)
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Include raw telemetry",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Add every raw force and position sample to backups. Makes backups much larger; " +
+                                "workouts, reps and records are always included",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = includeRawTelemetryInBackups,
+                        onCheckedChange = onIncludeRawTelemetryInBackupsChange,
                     )
                 }
 
@@ -842,7 +932,7 @@ fun SettingsTab(
                         )
                         Text(
                             when (backupDestination) {
-                                is BackupDestination.Default -> "Default (Downloads/PhoenixBackups)"
+                                is BackupDestination.Default -> "Default ($defaultBackupLocationLabel)"
                                 is BackupDestination.Custom -> backupDestination.displayName
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -936,28 +1026,30 @@ fun SettingsTab(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(Spacing.small))
+                        if (canOpenBackupFolder) {
+                            Spacer(modifier = Modifier.height(Spacing.small))
 
-                        // Open backup folder shortcut
-                        OutlinedButton(
-                            onClick = onOpenBackupFolder,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.small,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = stringResource(Res.string.cd_open_backup_folder),
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(
-                                "Open Backup Folder",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                            // Open backup folder shortcut
+                            OutlinedButton(
+                                onClick = onOpenBackupFolder,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = stringResource(Res.string.cd_open_backup_folder),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.small))
+                                Text(
+                                    "Open Backup Folder",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                         }
                     }
                 }
@@ -1019,7 +1111,8 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 Button(
-                    onClick = { showDeleteAllDialog = true },
+                    onClick = { deleteAllTarget = activeProfile },
+                    enabled = activeProfile != null,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp), // Material 3 Expressive: Taller button
@@ -1046,16 +1139,16 @@ fun SettingsTab(
         }
 
         // Material 3 Expressive: Delete All dialog
-        if (showDeleteAllDialog) {
+        deleteAllTarget?.let { targetProfile ->
             DestructiveConfirmDialog(
                 title = stringResource(Res.string.delete_all_workouts_title),
-                message = stringResource(Res.string.delete_all_workouts_message),
+                message = stringResource(Res.string.delete_all_workouts_message, targetProfile.name),
                 confirmText = stringResource(Res.string.delete_all),
                 onConfirm = {
-                    onDeleteAllWorkouts()
-                    showDeleteAllDialog = false
+                    onDeleteAllWorkouts(targetProfile.id)
+                    deleteAllTarget = null
                 },
-                onDismiss = { showDeleteAllDialog = false },
+                onDismiss = { deleteAllTarget = null },
             )
         }
 
@@ -1298,7 +1391,7 @@ fun SettingsTab(
                 Text(stringResource(Res.string.settings_version, DeviceInfo.appVersionName), color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
-                    "Open source community project to control Vitruvian Trainer machines locally.",
+                    "Open source community project to control Phoenix Trainer machines locally.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1306,7 +1399,7 @@ fun SettingsTab(
         }
     }
 
-    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+    // Connection error dialog
     connectionError?.let { error ->
         com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
             message = error,
@@ -1428,6 +1521,7 @@ fun SettingsTab(
                     when {
                         isError -> "Error"
                         backupResult != null -> "Backup Complete"
+                        restoreResult?.hasPartialFailure == true -> "Restore Incomplete"
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
@@ -1448,8 +1542,19 @@ fun SettingsTab(
                             Column {
                                 Text(stringResource(Res.string.import_completed))
                                 Spacer(modifier = Modifier.height(Spacing.small))
-                                Text(stringResource(Res.string.import_records_imported, result.totalImported))
-                                Text(stringResource(Res.string.import_records_skipped, result.totalSkipped))
+                                Text("Imported: ${result.totalImported}")
+                                Text("Already present: ${result.totalSkipped}")
+                                Text("Failed: ${result.entitiesFailed}")
+                                Text("Repaired references: ${result.repairedReferences}")
+                                if (result.hasPartialFailure) {
+                                    Spacer(modifier = Modifier.height(Spacing.small))
+                                    Text(
+                                        "Restore incomplete: ${result.entitiesFailed} " +
+                                            (if (result.entitiesFailed == 1) "item" else "items") +
+                                            " could not be restored. The counts above reflect the partial result.",
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }

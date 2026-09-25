@@ -6,7 +6,9 @@ import com.devil.phoenixproject.data.integration.HealthIntegrationBodyWeightRead
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.data.sync.PendingAccountMismatch
 import com.devil.phoenixproject.data.sync.PortalApiClient
+import com.devil.phoenixproject.data.sync.PortalProfileRecoverySourceVerifier
 import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncCodec
 import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncRepository
 import com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepository
@@ -14,6 +16,9 @@ import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.data.sync.SyncTriggerTarget
+import com.devil.phoenixproject.util.ConnectivityChecker
+import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val syncModule = module {
@@ -25,7 +30,10 @@ val syncModule = module {
             tokenStorage = get<PortalTokenStorage>(),
         )
     }
-    single<SyncRepository> { SqlDelightSyncRepository(get(), get()) }
+    // One hand-off slot shared by PortalAuthRepository (publishes) and SyncManager (adopts).
+    single { PendingAccountMismatch() }
+    single<ProfileRecoverySourceVerifier> { PortalProfileRecoverySourceVerifier(get()) }
+    single<SyncRepository> { SqlDelightSyncRepository(get(), get(), get()) }
     single { ProfilePreferenceSyncCodec() }
     single<ProfilePreferenceSyncRepository> {
         SqlDelightProfilePreferenceSyncRepository(database = get(), codec = get())
@@ -46,8 +54,15 @@ val syncModule = module {
                 migrationManager.requiredMigrationState.value is
                     com.devil.phoenixproject.data.migration.RequiredMigrationState.Ready
             },
+            completedSetRepository = get<CompletedSetRepository>(),
+            workoutDeletionRepository = get<WorkoutDeletionRepository>(),
+            ownershipTransferRepository = get<OwnershipTransferRepository>(),
+            ownershipEventApplier = get<OwnershipEventApplier>(),
+            profileMutationBarrier = get<ProfileMutationBarrier>(),
+            trainingCycleRepository = get<TrainingCycleRepository>(),
+            pendingAccountMismatch = get<PendingAccountMismatch>(),
         )
-    }
+    } bind SyncTriggerTarget::class
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
     single {
         HealthBodyWeightSyncManager(
@@ -58,9 +73,19 @@ val syncModule = module {
             userProfileRepository = get(),
         )
     }
-    single { SyncTriggerManager(get(), get(), get()) }
+    single { SyncTriggerManager(get<SyncManager>(), get<ConnectivityChecker>(), get()) }
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)
-    single<AuthRepository> { PortalAuthRepository(get(), get(), get(), get(), get()) }
+    single<AuthRepository> {
+        PortalAuthRepository(
+            apiClient = get(),
+            tokenStorage = get(),
+            userProfileRepository = get(),
+            supabaseConfig = get(),
+            oauthLauncher = get(),
+            profileMutationBarrier = get(),
+            pendingAccountMismatch = get<PendingAccountMismatch>(),
+        )
+    }
 }

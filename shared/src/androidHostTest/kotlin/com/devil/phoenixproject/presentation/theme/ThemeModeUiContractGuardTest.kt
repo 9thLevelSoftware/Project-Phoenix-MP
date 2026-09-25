@@ -62,12 +62,39 @@ class ThemeModeUiContractGuardTest {
     }
 
     @Test
-    fun commonTheme_mapsSystemToSystemDarkTheme() {
+    fun commonTheme_mapsSystemThroughResolver() {
         val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
-
         assertTrue(
-            source.contains("ThemeMode.SYSTEM -> isSystemInDarkTheme()"),
-            "System theme mode must continue to follow the platform system dark-theme signal.",
+            source.contains("resolveUseDarkColors(") &&
+                source.contains("rememberPlatformSystemDark()"),
+            "SYSTEM must go through resolveUseDarkColors + rememberPlatformSystemDark, not a raw isSystemInDarkTheme() call.",
+        )
+        assertFalse(
+            source.contains("isSystemInDarkTheme()"),
+            "Theme.kt must not call isSystemInDarkTheme() directly.",
+        )
+    }
+
+    @Test
+    fun androidSystemDark_usesResolverAndApplicationConfiguration() {
+        val source = read(
+            "shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt",
+        )
+        assertTrue(
+            source.contains("resolveSystemDark("),
+            "Android SYSTEM appearance must call resolveSystemDark so UNDEFINED cannot latch light.",
+        )
+        assertTrue(
+            source.contains("applicationContext.resources.configuration"),
+            "Android SYSTEM appearance must read application configuration, not only Activity resources.",
+        )
+        assertTrue(
+            source.contains("Lifecycle.Event.ON_RESUME"),
+            "Resume must still re-sample, but through the resolver.",
+        )
+        assertFalse(
+            Regex("""isDark\s*=\s*refreshed""").containsMatchIn(source),
+            "Do not assign a raw Activity uiMode boolean on resume. That is the #691 latch.",
         )
     }
 

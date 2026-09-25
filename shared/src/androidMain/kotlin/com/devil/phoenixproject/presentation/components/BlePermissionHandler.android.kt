@@ -29,6 +29,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.devil.phoenixproject.ui.theme.ApplyStatusBarAppearance
 
 /**
  * BLE and notification permissions required for the app.
@@ -184,6 +185,7 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
 @Composable
 private fun PermissionScreenTheme(content: @Composable () -> Unit) {
     val isDark = isSystemInDarkTheme()
+    ApplyStatusBarAppearance(isDark = isDark)
     val colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
     MaterialTheme(colorScheme = colorScheme, content = content)
 }
@@ -223,7 +225,7 @@ private fun BlePermissionRequestScreen(onRequestPermission: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Project Phoenix needs Bluetooth permission to scan for and connect to your Vitruvian Trainer machine.",
+                text = "Project Phoenix needs Bluetooth permission to scan for and connect to your smart fitness machine.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -289,7 +291,7 @@ private fun BlePermissionDeniedScreen(canRetry: Boolean, onRetry: () -> Unit, on
 
             Text(
                 text = if (canRetry) {
-                    "Bluetooth permission is required to connect to your Vitruvian Trainer. Please grant the permission to continue."
+                    "Bluetooth permission is required to connect to your Phoenix Trainer. Please grant the permission to continue."
                 } else {
                     "Bluetooth permission has been permanently denied. Please enable it in your device's Settings to use Project Phoenix."
                 },

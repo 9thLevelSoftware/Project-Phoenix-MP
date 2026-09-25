@@ -10,7 +10,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -60,12 +60,13 @@ class ProfileQaSeederTest {
     }
 
     @Test
-    fun `fixture PR writes restore the preexisting catalog one rep max`() = runTest {
+    fun `fixture PR writes seed independent profile baselines`() = runTest {
         val fixture = SeederFixture()
 
-        fixture.seeder().seed()
+        val result = fixture.seeder().seed()
 
-        assertEquals(42f, fixture.catalogOneRepMaxKg)
+        assertTrue(fixture.scopedBaselines.getValue(result.profileAId to "bench-press") > 0f)
+        assertTrue(fixture.scopedBaselines.getValue(result.profileBId to "bench-press") > 0f)
     }
 
     @Test
@@ -241,7 +242,7 @@ class ProfileQaSeederTest {
         val personalRecordRepository = mockk<PersonalRecordRepository>(relaxed = true)
         val assessmentRepository = mockk<AssessmentRepository>(relaxed = true)
         val velocityRepository = mockk<VelocityOneRepMaxRepository>(relaxed = true)
-        val database = mockk<VitruvianDatabase>(relaxed = true)
+        val database = mockk<PhoenixDatabase>(relaxed = true)
 
         val allProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
         val deletedProfiles = mutableListOf<String>()
@@ -257,7 +258,7 @@ class ProfileQaSeederTest {
         val personalRecords = mutableListOf<PersonalRecord>()
         val assessments = mutableListOf<AssessmentResultEntity>()
         val velocity = mutableListOf<VelocityOneRepMaxEntity>()
-        var catalogOneRepMaxKg: Float? = 42f
+        val scopedBaselines = mutableMapOf<Pair<String, String>, Float>()
 
         private var nextProfile = 1
         private var nextPr = 1L
@@ -282,7 +283,11 @@ class ProfileQaSeederTest {
                     if (it.id == id) it.copy(name = secondArg(), colorIndex = thirdArg()) else it
                 }
             }
-            coEvery { profiles.deleteProfile(any()) } coAnswers {
+            coEvery { profiles.deleteProfile(any(), any()) } coAnswers {
+                deletedProfiles += firstArg<String>()
+                true
+            }
+            coEvery { profiles.deleteActiveProfilePermanently(any(), any()) } coAnswers {
                 deletedProfiles += firstArg<String>()
                 true
             }
@@ -305,14 +310,11 @@ class ProfileQaSeederTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = catalogOneRepMaxKg,
                 )
             }
-            coEvery { exercises.updateOneRepMax("bench-press", any()) } coAnswers {
-                catalogOneRepMaxKg = secondArg()
-            }
-
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
+            // Fixture cleanup discards rows instead of tombstoning them.
+            coEvery { workouts.discardSessionInternal(any()) } coAnswers { sessions.remove(firstArg()) }
             coEvery { workouts.saveSession(any()) } coAnswers {
                 val session = firstArg<WorkoutSession>()
                 sessions[session.id] = session
@@ -370,8 +372,9 @@ class ProfileQaSeederTest {
                 replace(PRType.MAX_WEIGHT, weightForWeightPr, weightForWeightPr * reps)
                 replace(PRType.MAX_VOLUME, weightForVolumePr, weightForVolumePr * reps)
                 if (broken.isNotEmpty()) {
-                    catalogOneRepMaxKg = maxOf(
-                        catalogOneRepMaxKg ?: 0f,
+                    val key = profileId to exerciseId
+                    scopedBaselines[key] = maxOf(
+                        scopedBaselines[key] ?: 0f,
                         OneRepMaxCalculator.estimate(weightForWeightPr, reps),
                     )
                 }
