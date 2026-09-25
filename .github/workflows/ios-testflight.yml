@@ -43,7 +43,8 @@ jobs:
 
   build:
     needs: tests
-    runs-on: macos-26
+    # Kotlin/Native's iOS release link needs 12 GiB; use the 14 GiB Intel image.
+    runs-on: macos-26-intel
     outputs:
       build_number: ${{ steps.build_number.outputs.build_number }}
 
