@@ -1,9 +1,17 @@
 package com.devil.phoenixproject.domain.csv
 
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.WarmupSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -210,5 +218,83 @@ class RoutineCsvImportPlannerTest {
             routines = listOf(existingPush, existingPush.copy(id = "copy-id", name = "Push (Copy)")),
         )
         assertEquals(listOf("Push (Copy 2)", "Push (Copy 3)"), plan.writes.map { it.name })
+    }
+
+    @Test
+    fun version2RoundTripRestoresEveryAdvancedField() {
+        // Issue #896: the planner writes every field the file carried through the insert, so a
+        // routine with advanced settings survives export and import unchanged.
+        val source = Routine(
+            id = "r-896",
+            name = "Friday Lower (Old School)",
+            profileId = "p1",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "e1",
+                    exercise = bench,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8, 6),
+                    weightPerCableKg = 40f,
+                    setWeightsPerCableKg = listOf(40f, 40f, 42.5f),
+                    programMode = ProgramMode.Echo,
+                    eccentricLoad = EccentricLoad.LOAD_120,
+                    echoLevel = EchoLevel.EPIC,
+                    progressionKg = -1.25f,
+                    setRestSeconds = listOf(60, 90, 120),
+                    setEchoLevels = listOf(EchoLevel.HARD, null, EchoLevel.HARDEST),
+                    duration = 45,
+                    isAMRAP = true,
+                    perSetRestTime = true,
+                    stallDetectionEnabled = false,
+                    dropSetEnabled = true,
+                    dropSetMinWeightKg = 20f,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                    stopAtTop = true,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    prTypeForScaling = PRType.MAX_VOLUME,
+                    setWeightsPercentOfPR = listOf(75, 80, 85),
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                    warmupSets = listOf(WarmupSet(5, 50), WarmupSet(3, 70)),
+                    defaultRackItemIds = listOf("rack-a", "rack-b"),
+                    rackBehaviorOverrides = mapOf("rack-a" to RackItemBehavior.COUNTERWEIGHT),
+                ),
+            ),
+        )
+
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(source, null, null))
+        val drafts = assertIs<RoutineCsvParseResult.Parsed>(RoutineCsvCodec.parse(exported.content)).routines
+        val plan = plan(drafts)
+        assertTrue(plan.canCommit, plan.issues.toString())
+
+        val original = source.exercises.single()
+        val stored = plan.writes.single().exercises.single()
+        assertEquals(original.setReps, stored.setReps)
+        assertEquals(original.setWeightsPerCableKg, stored.setWeightsPerCableKg)
+        assertEquals(original.weightPerCableKg, stored.weightPerCableKg)
+        assertEquals(original.programMode, stored.programMode)
+        assertEquals(original.eccentricLoad, stored.eccentricLoad)
+        assertEquals(original.echoLevel, stored.echoLevel)
+        assertEquals(original.progressionKg, stored.progressionKg)
+        assertEquals(original.setRestSeconds, stored.setRestSeconds)
+        assertEquals(original.setEchoLevels, stored.setEchoLevels)
+        assertEquals(original.duration, stored.duration)
+        assertEquals(original.isAMRAP, stored.isAMRAP)
+        assertEquals(original.perSetRestTime, stored.perSetRestTime)
+        assertEquals(original.stallDetectionEnabled, stored.stallDetectionEnabled)
+        assertEquals(original.dropSetEnabled, stored.dropSetEnabled)
+        assertEquals(original.dropSetMinWeightKg, stored.dropSetMinWeightKg)
+        assertEquals(original.repCountTiming, stored.repCountTiming)
+        assertEquals(original.stopAtTop, stored.stopAtTop)
+        assertEquals(original.usePercentOfPR, stored.usePercentOfPR)
+        assertEquals(original.weightPercentOfPR, stored.weightPercentOfPR)
+        assertEquals(original.prTypeForScaling, stored.prTypeForScaling)
+        assertEquals(original.setWeightsPercentOfPR, stored.setWeightsPercentOfPR)
+        assertEquals(original.scalingBasis, stored.scalingBasis)
+        assertEquals(original.warmupSets, stored.warmupSets)
+        assertEquals(original.defaultRackItemIds, stored.defaultRackItemIds)
+        assertEquals(original.rackBehaviorOverrides, stored.rackBehaviorOverrides)
+        assertEquals(false, stored.durationSyncKnown, "sync state is never in the file")
+        assertEquals(false, stored.isLaunchAdjustedDuration, "launch state is never in the file")
     }
 }

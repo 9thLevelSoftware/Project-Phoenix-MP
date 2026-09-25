@@ -1,9 +1,17 @@
 package com.devil.phoenixproject.domain.csv
 
 import com.devil.phoenixproject.data.integration.CsvExporter
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.CsvParser
 
 /** One problem in an import file; [line] is 1-based, null for the whole file. */
@@ -11,7 +19,11 @@ data class RoutineCsvIssue(val line: Int?, val message: String) {
     override fun toString(): String = if (line != null) "Line $line: $message" else message
 }
 
-/** A parsed, self-consistent exercise row. Nothing here is matched against the database yet. */
+/**
+ * A parsed, self-consistent exercise row. Nothing here is matched against the database yet.
+ * The advanced fields below are version 2 columns; a version 1 row leaves them at their
+ * defaults, because a version 1 file cannot carry them.
+ */
 data class RoutineCsvExerciseDraft(
     val line: Int,
     val exerciseId: String?,
@@ -28,6 +40,30 @@ data class RoutineCsvExerciseDraft(
     val setWeightsKg: List<Float>,
     val restSeconds: Int,
     val mode: ProgramMode,
+    val usePercentOfPR: Boolean = false,
+    val weightPercentOfPR: Int = 80,
+    val prTypeForScaling: PRType = PRType.MAX_WEIGHT,
+    val setWeightsPercentOfPR: List<Int> = emptyList(),
+    val scalingBasis: ScalingBasis? = null,
+    val warmupSets: List<WarmupSet> = emptyList(),
+    val defaultRackItemIds: List<String> = emptyList(),
+    val rackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float? = null,
+    val durationSeconds: Int? = null,
+    val progressionKg: Float = 0f,
+    val stallDetectionEnabled: Boolean = true,
+    val stopAtTop: Boolean = false,
+    val repCountTiming: RepCountTiming = RepCountTiming.TOP,
+    val perSetRestTime: Boolean = false,
+    /** As stored, one entry per rest time; empty falls back to [restSeconds] for every set. */
+    val restSecondsPerSet: List<Int> = emptyList(),
+    val echoLevel: EchoLevel = EchoLevel.HARDER,
+    val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
+    /** Per-set Echo level overrides; null entries fall back to [echoLevel]. */
+    val setEchoLevels: List<EchoLevel?> = emptyList(),
+    /** The stored legacy AMRAP flag; null means the version 1 rule (every set is AMRAP). */
+    val isAmrapFlag: Boolean? = null,
 )
 
 /** One routine from the file, rows sorted by [RoutineCsvExerciseDraft.order]. */
@@ -54,15 +90,48 @@ sealed interface RoutineCsvExportResult {
     data class Blocked(val reasons: List<String>) : RoutineCsvExportResult
 }
 
-/** Reads and writes [RoutineCsvFormat] v1. Pure: no repository access. */
+/**
+ * Reads [RoutineCsvFormat] v1 and v2 and writes v2 (#896). Every advanced setting a routine
+ * uses round-trips through v2, so export only refuses what no CSV row can hold at all. Pure:
+ * no repository access.
+ */
 object RoutineCsvCodec {
-    private val COLUMN_COUNT = RoutineCsvFormat.COLUMNS.size
+    // Version 2 column positions (the v1 columns keep their fixed positions 0-17).
+    private val COL_USE_PERCENT_OF_PR = RoutineCsvFormat.COLUMNS_V2.indexOf("use_percent_of_pr")
+    private val COL_WEIGHT_PERCENT_OF_PR = RoutineCsvFormat.COLUMNS_V2.indexOf("weight_percent_of_pr")
+    private val COL_PR_TYPE_FOR_SCALING = RoutineCsvFormat.COLUMNS_V2.indexOf("pr_type_for_scaling")
+    private val COL_SET_WEIGHTS_PERCENT_OF_PR = RoutineCsvFormat.COLUMNS_V2.indexOf("set_weights_percent_of_pr")
+    private val COL_SCALING_BASIS = RoutineCsvFormat.COLUMNS_V2.indexOf("scaling_basis")
+    private val COL_WARMUP_SETS = RoutineCsvFormat.COLUMNS_V2.indexOf("warmup_sets")
+    private val COL_DEFAULT_RACK_ITEM_IDS = RoutineCsvFormat.COLUMNS_V2.indexOf("default_rack_item_ids")
+    private val COL_RACK_BEHAVIOR_OVERRIDES = RoutineCsvFormat.COLUMNS_V2.indexOf("rack_behavior_overrides")
+    private val COL_DROP_SET_ENABLED = RoutineCsvFormat.COLUMNS_V2.indexOf("drop_set_enabled")
+    private val COL_DROP_SET_MIN_WEIGHT_KG = RoutineCsvFormat.COLUMNS_V2.indexOf("drop_set_min_weight_kg")
+    private val COL_DURATION_SECONDS = RoutineCsvFormat.COLUMNS_V2.indexOf("duration_seconds")
+    private val COL_PROGRESSION_KG = RoutineCsvFormat.COLUMNS_V2.indexOf("progression_kg")
+    private val COL_STALL_DETECTION_ENABLED = RoutineCsvFormat.COLUMNS_V2.indexOf("stall_detection_enabled")
+    private val COL_STOP_AT_TOP = RoutineCsvFormat.COLUMNS_V2.indexOf("stop_at_top")
+    private val COL_REP_COUNT_TIMING = RoutineCsvFormat.COLUMNS_V2.indexOf("rep_count_timing")
+    private val COL_PER_SET_REST_TIME = RoutineCsvFormat.COLUMNS_V2.indexOf("per_set_rest_time")
+    private val COL_REST_SECONDS_PER_SET = RoutineCsvFormat.COLUMNS_V2.indexOf("rest_seconds_per_set")
+    private val COL_ECHO_LEVEL = RoutineCsvFormat.COLUMNS_V2.indexOf("echo_level")
+    private val COL_ECCENTRIC_LOAD = RoutineCsvFormat.COLUMNS_V2.indexOf("eccentric_load")
+    private val COL_SET_ECHO_LEVELS = RoutineCsvFormat.COLUMNS_V2.indexOf("set_echo_levels")
+    private val COL_IS_AMRAP_FLAG = RoutineCsvFormat.COLUMNS_V2.indexOf("is_amrap_flag")
+
+    /** Which header a file's rows must line up with. */
+    private class Layout(val version: Int) {
+        val columns: List<String> =
+            if (version == RoutineCsvFormat.VERSION_V2) RoutineCsvFormat.COLUMNS_V2 else RoutineCsvFormat.COLUMNS
+        val columnCount: Int = columns.size
+    }
 
     // ── Export ──────────────────────────────────────────────────────────────
 
     /**
-     * One routine as a v1 file. [groupName] and [groupOrder] describe the routine's group, if
-     * any. Blocked when the routine uses a setting v1 cannot carry.
+     * One routine as a v2 file. [groupName] and [groupOrder] describe the routine's group, if
+     * any. Blocked only when a row cannot hold the routine at all (no exercises, an exercise
+     * with no sets); every advanced setting is carried by v2.
      */
     fun encode(routine: Routine, groupName: String?, groupOrder: Int?): RoutineCsvExportResult {
         val reasons = exportBlockers(routine)
@@ -74,8 +143,8 @@ object RoutineCsvCodec {
         val supersetsById = routine.supersets.associateBy { it.id }
 
         val text = buildString {
-            append(RoutineCsvFormat.VERSION_LINE).append("\r\n")
-            append(RoutineCsvFormat.COLUMNS.joinToString(",")).append("\r\n")
+            append(RoutineCsvFormat.VERSION_V2_LINE).append("\r\n")
+            append(RoutineCsvFormat.COLUMNS_V2.joinToString(",")).append("\r\n")
             routine.exercises.forEachIndexed { index, exercise ->
                 val superset = exercise.supersetId?.let(supersetsById::get)
                 val cells = listOf(
@@ -98,42 +167,47 @@ object RoutineCsvCodec {
                     RoutineCsvFormat.modeName(exercise.programMode),
                     exercise.setReps.all { it == null }.toString(),
                     superset?.colorIndex?.toString().orEmpty(),
-                )
+                ) + v2Cells(exercise)
                 append(cells.joinToString(",")).append("\r\n")
             }
         }
         return RoutineCsvExportResult.Exported(fileName = fileName(routine.name), content = text)
     }
 
-    /** Settings [routine] uses that v1 cannot carry, one readable line each. Empty when exportable. */
+    /** The version 2 cells for [exercise]; numeric cells stay numbers, structured text cells are guarded. */
+    private fun v2Cells(exercise: RoutineExercise): List<String> = listOf(
+        exercise.usePercentOfPR.toString(),
+        exercise.weightPercentOfPR.toString(),
+        exercise.prTypeForScaling.name,
+        exercise.setWeightsPercentOfPR.joinToString("|"),
+        exercise.scalingBasis?.name.orEmpty(),
+        text(exercise.warmupSets.joinToString("|") { "${it.reps}:${it.percentOfWorking}" }),
+        text(exercise.defaultRackItemIds.joinToString("|")),
+        text(exercise.rackBehaviorOverrides.entries.joinToString("|") { "${it.key}=${it.value.name}" }),
+        exercise.dropSetEnabled.toString(),
+        exercise.dropSetMinWeightKg?.let(RoutineCsvFormat::formatNumber).orEmpty(),
+        exercise.duration?.toString().orEmpty(),
+        RoutineCsvFormat.formatNumber(exercise.progressionKg),
+        exercise.stallDetectionEnabled.toString(),
+        exercise.stopAtTop.toString(),
+        exercise.repCountTiming.name,
+        exercise.perSetRestTime.toString(),
+        exercise.setRestSeconds.joinToString("|"),
+        exercise.echoLevel.name,
+        exercise.eccentricLoad.name,
+        text(exercise.setEchoLevels.joinToString("|") { it?.name ?: "" }),
+        exercise.isAMRAP.toString(),
+    )
+
+    /**
+     * Settings [routine] uses that a CSV row cannot hold at all, one readable line each. Empty
+     * when exportable: every other setting the routine uses round-trips through v2 (#896).
+     */
     fun exportBlockers(routine: Routine): List<String> {
         if (routine.exercises.isEmpty()) return listOf("The routine has no exercises.")
         val reasons = linkedSetOf<String>()
         for (exercise in routine.exercises) {
-            val name = exercise.exercise.name
-            if (exercise.programMode !in RoutineCsvFormat.SUPPORTED_MODES) {
-                reasons += "$name uses ${exercise.programMode.displayName} mode."
-            }
-            if (exercise.usePercentOfPR) reasons += "$name uses % of PR weights."
-            if (exercise.warmupSets.isNotEmpty()) reasons += "$name has warm-up sets."
-            if (exercise.defaultRackItemIds.isNotEmpty() || exercise.rackBehaviorOverrides.isNotEmpty()) {
-                reasons += "$name has equipment rack defaults."
-            }
-            if (exercise.dropSetEnabled) reasons += "$name offers drop sets."
-            if (exercise.duration != null) reasons += "$name uses timed sets."
-            if (exercise.progressionKg != 0f) reasons += "$name has weight progression."
-            if (!exercise.stallDetectionEnabled) reasons += "$name has stall detection turned off."
-            if (exercise.stopAtTop) reasons += "$name stops at the top."
-            if (exercise.repCountTiming != RepCountTiming.TOP) reasons += "$name counts reps at the bottom."
-            // The rest each set actually gets, missing entries included (getRestForSet's fallback).
-            val effectiveRests = exercise.setReps.indices.map(exercise::getRestForSet)
-            if (effectiveRests.distinct().size > 1) reasons += "$name has different rest times per set."
-            if (exercise.setReps.isEmpty()) reasons += "$name has no sets."
-            // Older routines mark only the last set AMRAP with numeric reps; the runtime reads that
-            // flag in several places, so it has no exact form in the file.
-            if (exercise.isAMRAP && exercise.setReps.any { it != null }) {
-                reasons += "$name marks its last set AMRAP in the older format."
-            }
+            if (exercise.setReps.isEmpty()) reasons += "${exercise.exercise.name} has no sets."
         }
         return reasons.toList()
     }
@@ -157,7 +231,8 @@ object RoutineCsvCodec {
 
     /**
      * Parses and checks [content] as a whole. Any problem makes the result [Invalid] with every
-     * issue found, so the user can fix the file in one pass; there is no partial result.
+     * issue found, so the user can fix the file in one pass; there is no partial result. Version
+     * 1 files (including the pre-`superset_color` header) and version 2 files are both read.
      */
     fun parse(content: String): RoutineCsvParseResult {
         if (content.encodeToByteArray().size > RoutineCsvFormat.MAX_BYTES) {
@@ -181,9 +256,13 @@ object RoutineCsvCodec {
             return invalid(lines.number, "The first line must be ${RoutineCsvFormat.VERSION_LINE}.")
         }
         val version = versionLine.removePrefix(RoutineCsvFormat.VERSION_PREFIX).trim().toIntOrNull()
-        if (version != RoutineCsvFormat.VERSION) {
-            return invalid(lines.number, "Unsupported file version; this app reads version ${RoutineCsvFormat.VERSION}.")
+        if (version != RoutineCsvFormat.VERSION && version != RoutineCsvFormat.VERSION_V2) {
+            return invalid(
+                lines.number,
+                "Unsupported file version; this app reads versions ${RoutineCsvFormat.VERSION} and ${RoutineCsvFormat.VERSION_V2}.",
+            )
         }
+        val layout = Layout(version)
 
         var headerLine: String
         do {
@@ -194,9 +273,10 @@ object RoutineCsvCodec {
         if (header.size == 1 && header[0].contains(';')) {
             return invalid(lines.number, "The file uses semicolons. Save it as comma-separated CSV.")
         }
-        // Files written before superset_color existed have the same columns without it.
-        if (header != RoutineCsvFormat.COLUMNS && header != RoutineCsvFormat.COLUMNS_WITHOUT_SUPERSET_COLOR) {
-            return invalid(lines.number, "The header must be exactly: ${RoutineCsvFormat.COLUMNS.joinToString(",")}")
+        // Version 1 files written before superset_color existed have the same columns without it.
+        val legacyV1Header = version == RoutineCsvFormat.VERSION && header == RoutineCsvFormat.COLUMNS_WITHOUT_SUPERSET_COLOR
+        if (header != layout.columns && !legacyV1Header) {
+            return invalid(lines.number, "The header must be exactly: ${layout.columns.joinToString(",")}")
         }
 
         val rows = mutableListOf<RawRow>()
@@ -228,15 +308,15 @@ object RoutineCsvCodec {
                 continue
             }
             val cells = trimTrailingEmpty(CsvParser.parseCsvRow(record.toString()))
-            if (cells.size > COLUMN_COUNT) {
-                issues += RoutineCsvIssue(lineNumber, "The row has more than $COLUMN_COUNT columns.")
+            if (cells.size > layout.columnCount) {
+                issues += RoutineCsvIssue(lineNumber, "The row has more than ${layout.columnCount} columns.")
                 continue
             }
-            rows += RawRow(lineNumber, cells + List(COLUMN_COUNT - cells.size) { "" })
+            rows += RawRow(lineNumber, cells + List(layout.columnCount - cells.size) { "" })
         }
         if (rows.isEmpty() && issues.isEmpty()) return invalid(null, "The file has no routine rows.")
 
-        val routines = groupRoutines(rows, issues)
+        val routines = groupRoutines(rows, issues, layout)
         if (routines.size > RoutineCsvFormat.MAX_ROUTINES) {
             issues += RoutineCsvIssue(null, "The file has more than ${RoutineCsvFormat.MAX_ROUTINES} routines.")
         }
@@ -253,7 +333,11 @@ object RoutineCsvCodec {
         fun text(column: Int): String = CsvExporter.unescapeFormulaGuard(cells[column])
     }
 
-    private fun groupRoutines(rows: List<RawRow>, issues: MutableList<RoutineCsvIssue>): List<RoutineCsvRoutineDraft> {
+    private fun groupRoutines(
+        rows: List<RawRow>,
+        issues: MutableList<RoutineCsvIssue>,
+        layout: Layout,
+    ): List<RoutineCsvRoutineDraft> {
         // Rows belong to one routine by id when given, otherwise by name.
         val byRoutine = linkedMapOf<String, MutableList<RawRow>>()
         for (row in rows) {
@@ -266,10 +350,14 @@ object RoutineCsvCodec {
             val key = if (id.isNotEmpty()) "id:$id" else "name:${name.trim().lowercase()}"
             byRoutine.getOrPut(key) { mutableListOf() } += row
         }
-        return byRoutine.values.mapNotNull { routineRows -> routineDraft(routineRows, issues) }
+        return byRoutine.values.mapNotNull { routineRows -> routineDraft(routineRows, issues, layout) }
     }
 
-    private fun routineDraft(rows: List<RawRow>, issues: MutableList<RoutineCsvIssue>): RoutineCsvRoutineDraft? {
+    private fun routineDraft(
+        rows: List<RawRow>,
+        issues: MutableList<RoutineCsvIssue>,
+        layout: Layout,
+    ): RoutineCsvRoutineDraft? {
         val first = rows.first()
         val issueCount = issues.size
         for (row in rows.drop(1)) {
@@ -285,7 +373,7 @@ object RoutineCsvCodec {
         val groupName = first.text(3).takeIf { it.isNotBlank() }
         val groupOrder = optionalInt(first, 4, "group_order", 0, Int.MAX_VALUE, issues)
 
-        val exercises = rows.mapNotNull { exerciseDraft(it, issues) }
+        val exercises = rows.mapNotNull { exerciseDraft(it, issues, layout) }
         exercises.groupBy { it.order }.filterValues { it.size > 1 }.forEach { (order, duplicates) ->
             issues += RoutineCsvIssue(duplicates[1].line, "exercise_order $order is used twice in this routine.")
         }
@@ -303,7 +391,7 @@ object RoutineCsvCodec {
         )
     }
 
-    private fun exerciseDraft(row: RawRow, issues: MutableList<RoutineCsvIssue>): RoutineCsvExerciseDraft? {
+    private fun exerciseDraft(row: RawRow, issues: MutableList<RoutineCsvIssue>, layout: Layout): RoutineCsvExerciseDraft? {
         val issueCount = issues.size
         val exerciseName = row.text(6)
         if (exerciseName.isBlank()) issues += RoutineCsvIssue(row.line, "exercise_name is required.")
@@ -330,12 +418,15 @@ object RoutineCsvCodec {
 
         val modeCell = row.raw(15)
         val mode = if (modeCell.isEmpty()) ProgramMode.OldSchool else RoutineCsvFormat.parseMode(modeCell)
+        // A v2 file carries every mode; v1 keeps the released rule (Echo and Eccentric Only refused).
+        val supportedModes =
+            if (layout.version == RoutineCsvFormat.VERSION_V2) RoutineCsvFormat.ALL_MODES else RoutineCsvFormat.SUPPORTED_MODES
         when {
             mode == null -> issues += RoutineCsvIssue(
                 row.line,
-                "Unknown mode '$modeCell'. Use ${RoutineCsvFormat.SUPPORTED_MODES.joinToString { RoutineCsvFormat.modeName(it) }}.",
+                "Unknown mode '$modeCell'. Use ${supportedModes.joinToString { RoutineCsvFormat.modeName(it) }}.",
             )
-            mode !in RoutineCsvFormat.SUPPORTED_MODES -> issues += RoutineCsvIssue(
+            mode !in supportedModes -> issues += RoutineCsvIssue(
                 row.line,
                 "${mode.displayName} mode is not supported in CSV files yet.",
             )
@@ -354,6 +445,7 @@ object RoutineCsvCodec {
             }
         }
 
+        val v2 = parseV2Settings(row, issues, layout)
         if (issues.size != issueCount || order == null || reps == null || weights == null || mode == null) return null
         return RoutineCsvExerciseDraft(
             line = row.line,
@@ -369,8 +461,277 @@ object RoutineCsvCodec {
             setWeightsKg = weights,
             restSeconds = rest,
             mode = mode,
+            usePercentOfPR = v2.usePercentOfPR,
+            weightPercentOfPR = v2.weightPercentOfPR,
+            prTypeForScaling = v2.prTypeForScaling,
+            setWeightsPercentOfPR = v2.setWeightsPercentOfPR,
+            scalingBasis = v2.scalingBasis,
+            warmupSets = v2.warmupSets,
+            defaultRackItemIds = v2.defaultRackItemIds,
+            rackBehaviorOverrides = v2.rackBehaviorOverrides,
+            dropSetEnabled = v2.dropSetEnabled,
+            dropSetMinWeightKg = v2.dropSetMinWeightKg,
+            durationSeconds = v2.durationSeconds,
+            progressionKg = v2.progressionKg,
+            stallDetectionEnabled = v2.stallDetectionEnabled,
+            stopAtTop = v2.stopAtTop,
+            repCountTiming = v2.repCountTiming,
+            perSetRestTime = v2.perSetRestTime,
+            restSecondsPerSet = v2.restSecondsPerSet,
+            echoLevel = v2.echoLevel,
+            eccentricLoad = v2.eccentricLoad,
+            setEchoLevels = v2.setEchoLevels,
+            isAmrapFlag = v2.isAmrapFlag,
         )
     }
+
+    /** The version 2 cells of one row. A version 1 row has none, so every field keeps its default. */
+    private data class V2Settings(
+        val usePercentOfPR: Boolean = false,
+        val weightPercentOfPR: Int = 80,
+        val prTypeForScaling: PRType = PRType.MAX_WEIGHT,
+        val setWeightsPercentOfPR: List<Int> = emptyList(),
+        val scalingBasis: ScalingBasis? = null,
+        val warmupSets: List<WarmupSet> = emptyList(),
+        val defaultRackItemIds: List<String> = emptyList(),
+        val rackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+        val dropSetEnabled: Boolean = false,
+        val dropSetMinWeightKg: Float? = null,
+        val durationSeconds: Int? = null,
+        val progressionKg: Float = 0f,
+        val stallDetectionEnabled: Boolean = true,
+        val stopAtTop: Boolean = false,
+        val repCountTiming: RepCountTiming = RepCountTiming.TOP,
+        val perSetRestTime: Boolean = false,
+        val restSecondsPerSet: List<Int> = emptyList(),
+        val echoLevel: EchoLevel = EchoLevel.HARDER,
+        val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
+        val setEchoLevels: List<EchoLevel?> = emptyList(),
+        val isAmrapFlag: Boolean? = null,
+    )
+
+    private fun parseV2Settings(row: RawRow, issues: MutableList<RoutineCsvIssue>, layout: Layout): V2Settings {
+        if (layout.version != RoutineCsvFormat.VERSION_V2) return V2Settings()
+        return V2Settings(
+            usePercentOfPR = optionalBool(row, COL_USE_PERCENT_OF_PR, "use_percent_of_pr", false, issues) ?: false,
+            weightPercentOfPR = optionalInt(row, COL_WEIGHT_PERCENT_OF_PR, "weight_percent_of_pr", 0, RoutineCsvFormat.MAX_PERCENT, issues)
+                ?: 80,
+            prTypeForScaling = parseEnum<PRType>(row, COL_PR_TYPE_FOR_SCALING, "pr_type_for_scaling", issues) ?: PRType.MAX_WEIGHT,
+            setWeightsPercentOfPR = parsePercentList(row, COL_SET_WEIGHTS_PERCENT_OF_PR, "set_weights_percent_of_pr", issues).orEmpty(),
+            scalingBasis = parseEnum<ScalingBasis>(row, COL_SCALING_BASIS, "scaling_basis", issues),
+            warmupSets = parseWarmupSets(row, issues).orEmpty(),
+            defaultRackItemIds = parsePipeList(row.text(COL_DEFAULT_RACK_ITEM_IDS)),
+            rackBehaviorOverrides = parseRackBehaviorOverrides(row, issues).orEmpty(),
+            dropSetEnabled = optionalBool(row, COL_DROP_SET_ENABLED, "drop_set_enabled", false, issues) ?: false,
+            dropSetMinWeightKg = optionalWeight(row, COL_DROP_SET_MIN_WEIGHT_KG, "drop_set_min_weight_kg", issues),
+            durationSeconds = optionalInt(row, COL_DURATION_SECONDS, "duration_seconds", RoutineCsvFormat.MIN_TIMED_DURATION_SECONDS, RoutineCsvFormat.MAX_TIMED_DURATION_SECONDS, issues),
+            progressionKg = parseProgressionKg(row, issues) ?: 0f,
+            stallDetectionEnabled = optionalBool(row, COL_STALL_DETECTION_ENABLED, "stall_detection_enabled", true, issues) ?: true,
+            stopAtTop = optionalBool(row, COL_STOP_AT_TOP, "stop_at_top", false, issues) ?: false,
+            repCountTiming = parseEnum<RepCountTiming>(row, COL_REP_COUNT_TIMING, "rep_count_timing", issues) ?: RepCountTiming.TOP,
+            perSetRestTime = optionalBool(row, COL_PER_SET_REST_TIME, "per_set_rest_time", false, issues) ?: false,
+            restSecondsPerSet = parseRestList(row, issues).orEmpty(),
+            echoLevel = parseEnum<EchoLevel>(row, COL_ECHO_LEVEL, "echo_level", issues) ?: EchoLevel.HARDER,
+            eccentricLoad = parseEnum<EccentricLoad>(row, COL_ECCENTRIC_LOAD, "eccentric_load", issues) ?: EccentricLoad.LOAD_100,
+            setEchoLevels = parseEchoLevelList(row, issues).orEmpty(),
+            isAmrapFlag = optionalBoolOrNull(row, COL_IS_AMRAP_FLAG, "is_amrap_flag", issues),
+        )
+    }
+
+    private inline fun <reified T : Enum<T>> parseEnum(row: RawRow, column: Int, label: String, issues: MutableList<RoutineCsvIssue>): T? {
+        val cell = row.raw(column)
+        if (cell.isEmpty()) return null
+        return enumValues<T>().firstOrNull { it.name.equals(cell, ignoreCase = true) } ?: run {
+            issues += RoutineCsvIssue(
+                row.line,
+                "$label must be one of: ${enumValues<T>().joinToString { it.name }}.",
+            )
+            null
+        }
+    }
+
+    private fun optionalBool(row: RawRow, column: Int, label: String, default: Boolean, issues: MutableList<RoutineCsvIssue>): Boolean? {
+        val cell = row.raw(column).lowercase()
+        if (cell.isEmpty()) return default
+        return when (cell) {
+            "true" -> true
+            "false" -> false
+            else -> {
+                issues += RoutineCsvIssue(row.line, "$label must be true or false.")
+                default
+            }
+        }
+    }
+
+    /** Like [optionalBool] but blank means absent (null), for cells whose default depends on the row. */
+    private fun optionalBoolOrNull(row: RawRow, column: Int, label: String, issues: MutableList<RoutineCsvIssue>): Boolean? {
+        val cell = row.raw(column).lowercase()
+        return when (cell) {
+            "" -> null
+            "true" -> true
+            "false" -> false
+            else -> {
+                issues += RoutineCsvIssue(row.line, "$label must be true or false.")
+                null
+            }
+        }
+    }
+
+    /** A single kg-per-cable cell like [parseWeights] accepts; blank means absent. */
+    private fun optionalWeight(row: RawRow, column: Int, label: String, issues: MutableList<RoutineCsvIssue>): Float? {
+        val cell = row.raw(column)
+        if (cell.isEmpty()) return null
+        val weight = cell.toFloatOrNull()
+        if (weight == null || !weight.isFinite() || weight < 0f || weight > RoutineCsvFormat.MAX_WEIGHT_KG_PER_CABLE || cell.contains(',')) {
+            issues += RoutineCsvIssue(
+                row.line,
+                "'$cell' in $label is not a kg per cable weight from 0 to ${RoutineCsvFormat.formatNumber(RoutineCsvFormat.MAX_WEIGHT_KG_PER_CABLE)}.",
+            )
+            return null
+        }
+        return weight
+    }
+
+    /**
+     * Per-rep progression is a number cell: it stays a number in the file (no text formula
+     * guard) and reads back as one. Blank means no progression; otherwise the machine's
+     * per-rep limit applies.
+     */
+    private fun parseProgressionKg(row: RawRow, issues: MutableList<RoutineCsvIssue>): Float? {
+        val cell = row.raw(COL_PROGRESSION_KG)
+        if (cell.isEmpty()) return null
+        val value = cell.toFloatOrNull()
+        if (value == null || !value.isFinite() || cell.contains(',') ||
+            kotlin.math.abs(value) > CommandLimits.MAX_PROGRESSION_KG
+        ) {
+            issues += RoutineCsvIssue(
+                row.line,
+                "'$cell' in progression_kg is not a kg per rep from " +
+                    "-${RoutineCsvFormat.formatNumber(CommandLimits.MAX_PROGRESSION_KG)} " +
+                    "to ${RoutineCsvFormat.formatNumber(CommandLimits.MAX_PROGRESSION_KG)}.",
+            )
+            return null
+        }
+        return value
+    }
+
+    /** `reps:percent_of_working` per entry; blank means no warm-up sets. */
+    private fun parseWarmupSets(row: RawRow, issues: MutableList<RoutineCsvIssue>): List<WarmupSet>? {
+        val cell = row.text(COL_WARMUP_SETS)
+        if (cell.isEmpty()) return emptyList()
+        val sets = mutableListOf<WarmupSet>()
+        for (entry in cell.split('|')) {
+            val parts = entry.trim().split(':')
+            val reps = parts.getOrNull(0)?.trim()?.toIntOrNull()
+            val percent = parts.getOrNull(1)?.trim()?.toIntOrNull()
+            if (parts.size != 2 || reps == null || percent == null ||
+                reps !in 1..RoutineCsvFormat.MAX_REPS || percent !in 0..RoutineCsvFormat.MAX_PERCENT
+            ) {
+                issues += RoutineCsvIssue(
+                    row.line,
+                    "'$entry' in warmup_sets is not reps:percent_of_working (reps 1-${RoutineCsvFormat.MAX_REPS}, percent 0-${RoutineCsvFormat.MAX_PERCENT}).",
+                )
+                return null
+            }
+            sets += WarmupSet(reps = reps, percentOfWorking = percent)
+        }
+        return sets
+    }
+
+    /** `rack_item_id=BEHAVIOR` per entry; blank means no overrides. Ids stay opaque. */
+    private fun parseRackBehaviorOverrides(row: RawRow, issues: MutableList<RoutineCsvIssue>): Map<String, RackItemBehavior>? {
+        val cell = row.text(COL_RACK_BEHAVIOR_OVERRIDES)
+        if (cell.isEmpty()) return emptyMap()
+        val overrides = linkedMapOf<String, RackItemBehavior>()
+        for (entry in cell.split('|')) {
+            val separator = entry.trim().indexOf('=')
+            val id = if (separator > 0) entry.trim().substring(0, separator) else ""
+            val behavior = entry.trim().substring(separator + 1).takeIf { separator > 0 }
+                ?.let { name -> RackItemBehavior.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+            if (id.isEmpty() || behavior == null) {
+                issues += RoutineCsvIssue(
+                    row.line,
+                    "'$entry' in rack_behavior_overrides is not rack_item_id=${RackItemBehavior.entries.joinToString("|") { it.name }}.",
+                )
+                return null
+            }
+            if (overrides.containsKey(id)) {
+                issues += RoutineCsvIssue(row.line, "'$id' is listed twice in rack_behavior_overrides.")
+                return null
+            }
+            overrides[id] = behavior
+        }
+        return overrides
+    }
+
+    /** Rest times as stored, one per entry; blank means the v1 single `rest_seconds` for every set. */
+    private fun parseRestList(row: RawRow, issues: MutableList<RoutineCsvIssue>): List<Int>? {
+        val cell = row.raw(COL_REST_SECONDS_PER_SET)
+        if (cell.isEmpty()) return emptyList()
+        if (hasMoreThanMaxSets(cell)) {
+            issues += RoutineCsvIssue(row.line, "rest_seconds_per_set has more than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
+            return null
+        }
+        return cell.split('|').map { it.trim() }.map { part ->
+            val rest = part.toIntOrNull()
+            if (rest == null || rest < 0 || rest > RoutineCsvFormat.MAX_REST_SECONDS) {
+                issues += RoutineCsvIssue(
+                    row.line,
+                    "'$part' in rest_seconds_per_set is not a whole number from 0 to ${RoutineCsvFormat.MAX_REST_SECONDS}.",
+                )
+                return null
+            }
+            rest
+        }
+    }
+
+    /** Per-set percentages, one per entry; blank means the base `weight_percent_of_pr` for every set. */
+    private fun parsePercentList(row: RawRow, column: Int, label: String, issues: MutableList<RoutineCsvIssue>): List<Int>? {
+        val cell = row.raw(column)
+        if (cell.isEmpty()) return emptyList()
+        if (hasMoreThanMaxSets(cell)) {
+            issues += RoutineCsvIssue(row.line, "$label has more than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
+            return null
+        }
+        return cell.split('|').map { it.trim() }.map { part ->
+            val percent = part.toIntOrNull()
+            if (percent == null || percent < 0 || percent > RoutineCsvFormat.MAX_PERCENT) {
+                issues += RoutineCsvIssue(
+                    row.line,
+                    "'$part' in $label is not a percent from 0 to ${RoutineCsvFormat.MAX_PERCENT}.",
+                )
+                return null
+            }
+            percent
+        }
+    }
+
+    /** Per-set Echo levels, blank entries falling back to the exercise level; blank cell means none. */
+    private fun parseEchoLevelList(row: RawRow, issues: MutableList<RoutineCsvIssue>): List<EchoLevel?>? {
+        val cell = row.text(COL_SET_ECHO_LEVELS)
+        if (cell.isEmpty()) return emptyList()
+        if (hasMoreThanMaxSets(cell)) {
+            issues += RoutineCsvIssue(row.line, "set_echo_levels has more than ${RoutineCsvFormat.MAX_SETS_PER_EXERCISE} sets.")
+            return null
+        }
+        return cell.split('|').map { it.trim() }.map { part ->
+            if (part.isEmpty()) {
+                null
+            } else {
+                EchoLevel.entries.firstOrNull { it.name.equals(part, ignoreCase = true) } ?: run {
+                    issues += RoutineCsvIssue(
+                        row.line,
+                        "'$part' in set_echo_levels must be blank or one of: ${EchoLevel.entries.joinToString { it.name }}.",
+                    )
+                    return null
+                }
+            }
+        }
+    }
+
+    /** Pipe-separated opaque entries as written (trimmed per entry); blank means none. */
+    private fun parsePipeList(cell: String): List<String> =
+        if (cell.isEmpty()) emptyList() else cell.split('|').map { it.trim() }
 
     private fun parseReps(row: RawRow, issues: MutableList<RoutineCsvIssue>): List<Int?>? {
         val cell = row.raw(12)
