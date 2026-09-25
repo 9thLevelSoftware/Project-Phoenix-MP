@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -259,10 +257,16 @@ fun RestTimerCard(
                 },
         )
 
+        // Issue #893: no verticalScroll on this body Column. RestTimerCard is
+        // composed inside WorkoutTab's vertically scrolling Column
+        // (WorkoutTab.kt:380), which measures children with unbounded height;
+        // a nested scrollable throws "Vertically scrollable component was
+        // measured with an infinity maximum height constraints". WorkoutTab's
+        // scroll is the sole full-screen scroll owner and keeps this content
+        // (including the equipment rack card) reachable on compact viewports.
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
