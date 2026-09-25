@@ -75,7 +75,7 @@ class RoutineCsvImportRepositoryTest {
     }
 
     @Test
-    fun anImportWithGroupsAndSupersetsIsStoredAndExportsTheSameFile() = runTest {
+    fun anImportWithGroupsAndSupersetsIsStoredAndExportsTheSameContent() = runTest {
         val text = csv(
             ",Upper,Two pairs,Strength,1,bench-id,Bench Press,0,a,Pair,,15,8|8,40|42.5,120,OLD_SCHOOL,false",
             ",Upper,Two pairs,Strength,1,row-id,Seated Row,1,a,Pair,,15,10|10,30|30,120,PUMP,false",
@@ -95,6 +95,7 @@ class RoutineCsvImportRepositoryTest {
         assertEquals(stored.supersets.single().id, stored.exercises.last().supersetId)
 
         val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(stored, group.name, group.orderIndex))
+        assertTrue(exported.content.startsWith("# phoenix_routine_csv_version=2"), "stored routines export as version 2")
         val reparsed = assertIs<RoutineCsvParseResult.Parsed>(RoutineCsvCodec.parse(exported.content)).routines.single()
         assertEquals(stored.id, reparsed.routineId)
         assertEquals(listOf(listOf(8, 8), listOf(10, 10)), reparsed.exercises.map { it.setReps })

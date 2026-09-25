@@ -184,7 +184,7 @@
     <string name="create_new_routine">Neue Routine erstellen</string>
     <string name="add_exercise">Übung hinzufügen</string>
     <string name="delete_routine">Routine löschen</string>
-    <string name="delete_routine_message">Bist du sicher, dass du \'%1$s\' löschen möchtest?</string>
+    <string name="delete_routine_message">Bist du sicher, dass du '%1$s' löschen möchtest?</string>
     <!-- #772: routine CSV import and export -->
     <string name="routine_csv_import">Routinen aus CSV importieren</string>
     <string name="routine_csv_export">Als CSV exportieren</string>
@@ -208,7 +208,7 @@
     <string name="routine_csv_export_blocked_message">CSV-Dateien können diese Einstellungen noch nicht speichern, beim Export gingen sie verloren:</string>
     <string name="delete_selected_routines">%1$d Routinen löschen?</string>
     <string name="duplicate_selected_routines">%1$d Routinen duplizieren?</string>
-    <string name="duplicate_routines_message">Neue Kopien werden mit \'(Kopie)\' Suffix erstellt.</string>
+    <string name="duplicate_routines_message">Neue Kopien werden mit '(Kopie)' Suffix erstellt.</string>
     <string name="move_to_profile">Zum Profil verschieben</string>
     <string name="copy_to_profile">Zum Profil kopieren</string>
     <string name="move_routines_confirm">%1$d Routinen nach %2$s verschieben?</string>
