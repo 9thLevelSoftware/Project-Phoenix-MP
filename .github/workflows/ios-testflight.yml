@@ -43,8 +43,12 @@ jobs:
 
   build:
     needs: tests
-    # Kotlin/Native's iOS release link needs 12 GiB; use the x64 14 GiB image.
-    runs-on: macos-26-large
+    # Measured memory profile (cold compile + link, Sep 2026): the JVM peaks
+    # ~5 GB in DevirtualizationAnalysis and the LLVM link peaks ~6.3 GB after it
+    # — the phases are sequential, ~8 GB concurrent max. The standard x64 14 GB
+    # image fits that with headroom and is free for public repos; larger runners
+    # (macos-26-large, 30 GB) are always billed and drain the spending limit.
+    runs-on: macos-26-intel
     outputs:
       build_number: ${{ steps.build_number.outputs.build_number }}
 
