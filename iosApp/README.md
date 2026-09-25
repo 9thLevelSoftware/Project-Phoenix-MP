@@ -123,49 +123,29 @@ On iOS, CoreBluetooth automatically requests permission when BLE scanning starts
 
 The app supports background BLE execution via `UIBackgroundModes` with `bluetooth-central` in `Info.plist`. This allows BLE connections to persist when the app is backgrounded, similar to Android's foreground service.
 
-## Beta Preparation
+## Assets
 
-### Quick Setup
+Icons, the launch image, and the launch background are already in the Xcode asset catalog. CI archives that catalog as-is. Details are in [SETUP_ASSETS.md](SETUP_ASSETS.md).
 
-Run the automated setup script on macOS:
+### App icon
 
-```bash
-cd iosApp
-chmod +x prepare_ios_beta.sh
-./prepare_ios_beta.sh
-```
-
-This script will:
-1. Build the shared XCFramework (a release XCFramework; the Xcode project itself links the debug framework described above)
-2. Convert sound files from OGG to CAF (requires ffmpeg)
-3. Generate all app icon sizes
-4. Create launch screen assets
-
-The script does not build the framework or the Compose resources that the Xcode project uses, so run the Gradle tasks in [Building the Shared Framework](#building-the-shared-framework) as well.
-
-### Manual Setup
-
-If you prefer manual setup, run each script individually:
+`Assets.xcassets/AppIcon.appiconset` is a single universal 1024×1024 PNG (`AppIcon1024.png`). The same file is also at `iosApp/AppIcon1024.png`. `ios-testflight.yml` validates both before signing:
 
 ```bash
-# 1. Build the framework and resources (from project root)
-./gradlew :shared:linkDebugFrameworkIosArm64 :shared:generateComposeResClass \
-  :shared:iosArm64ProcessResources -Pskip.supabase.check=true
-
-# 2. Convert sounds (requires ffmpeg: brew install ffmpeg)
-cd iosApp
-./convert_sounds.sh
-
-# 3. Generate app icons
-./generate_icons.sh
-
-# 4. Create launch screen assets
-./setup_launch_assets.sh
+python3 scripts/validate_ios_app_icons.py --source iosApp/AppIcon1024.png
+python3 scripts/test_ios_app_icons.py
 ```
 
-### Asset Setup Details
+### Launch screen
 
-See [SETUP_ASSETS.md](SETUP_ASSETS.md) for detailed asset configuration instructions.
+`Info.plist` `UILaunchScreen` names two catalog entries that are checked in:
+
+- `LaunchIcon.imageset` — 200pt mark (1x/2x/3x) downsampled from `AppIcon1024.png`
+- `LaunchScreenBackground.colorset` — light `#F8FAFC`, dark `#0F172A` (same window background as Android)
+
+### Sounds
+
+`iosApp/convert_sounds.sh` converts `shared/src/androidMain/res/raw/*.ogg` to `PhoenixApp/PhoenixApp/Sounds/*.caf`. Run it on macOS only when those OGG sources change (`brew install ffmpeg`). The Xcode project uses a synchronized group, so new `.caf` files in that folder are bundled without adding them by hand.
 
 ### TestFlight Deployment
 
