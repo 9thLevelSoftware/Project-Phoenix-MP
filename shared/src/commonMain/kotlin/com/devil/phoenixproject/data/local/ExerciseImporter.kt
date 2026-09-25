@@ -94,12 +94,17 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
         coerceInputValues = true
     }
 
+    /**
+     * Imports the bundled free-exercise-db catalogue plus the issue #883 supplemental seed
+     * rows (see [SupplementalCatalogSeed]), which the upstream asset cannot express.
+     */
     @OptIn(ExperimentalResourceApi::class)
     suspend fun importExercises(): Result<Int> = withContext(Dispatchers.IO) {
         try {
             Logger.d { "Starting exercise import from bundled free-exercise-db JSON..." }
             val jsonBytes = Res.readBytes("files/exercises.json")
-            importFromFreeExerciseJson(jsonBytes.decodeToString())
+            val bundled = json.decodeFromString<List<FreeExerciseJson>>(jsonBytes.decodeToString())
+            importRows(mergedCatalogueRows(bundled))
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises from bundled JSON" }
             Result.failure(e)
@@ -108,118 +113,128 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
 
     suspend fun importFromFreeExerciseJson(jsonString: String): Result<Int> = withContext(Dispatchers.IO) {
         try {
-            val exercises = json.decodeFromString<List<FreeExerciseJson>>(jsonString)
-            val displayNames = generateDisplayNames(exercises)
-            Logger.d { "Parsed ${exercises.size} exercises from free-exercise-db" }
-
-            var importedCount = 0
-            var imageCount = 0
-
-            queries.transaction {
-                for (exercise in exercises) {
-                    try {
-                        if (queries.selectExerciseById(exercise.id).executeAsOneOrNull()?.isCustom == 1L) {
-                            continue
-                        }
-                        val muscleNames = (exercise.primaryMuscles + exercise.secondaryMuscles)
-                            .map { mapMuscleGroup(it) }
-                            .distinct()
-                        val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
-                        val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
-                        val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
-                        val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
-                        // #857: apply the id-keyed naming overlay once so the insert and update
-                        // paths below share one source for name, displayName, and aliases.
-                        val overlay = CATALOG_OVERLAY[exercise.id]
-                        val name = overlay?.name ?: exercise.name.trim()
-                        val displayName = overlay?.displayName ?: displayNames[exercise.id]
-                        val aliases = overlay?.aliases
-                        val description = exercise.instructions.joinToString("\n").ifBlank { null }
-                        val muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
-                            .joinToString(",")
-                            .ifBlank { null }
-                        val muscleGroups = muscleNames.joinToString(",")
-
-                        queries.insertExerciseIfAbsent(
-                            id = exercise.id,
-                            name = name,
-                            displayName = displayName,
-                            description = description,
-                            created = 0L,
-                            muscleGroup = primaryMuscle,
-                            muscleGroups = muscleGroups,
-                            muscles = muscles,
-                            equipment = equipmentLabel,
-                            movement = exercise.category,
-                            sidedness = sidedness,
-                            grip = null,
-                            gripWidth = null,
-                            minRepRange = null,
-                            popularity = 0.0,
-                            archived = 0L,
-                            isFavorite = 0L,
-                            isCustom = 0L,
-                            timesPerformed = 0L,
-                            lastPerformed = null,
-                            aliases = aliases,
-                            defaultCableConfig = cableConfig,
-                            one_rep_max_kg = null,
-                            mvtOverrideMs = null,
-                            isBodyweight = isBodyweight,
-                        )
-                        queries.updateCatalogExercise(
-                            name = name,
-                            displayName = displayName,
-                            description = description,
-                            muscleGroup = primaryMuscle,
-                            muscleGroups = muscleGroups,
-                            muscles = muscles,
-                            equipment = equipmentLabel,
-                            movement = exercise.category,
-                            sidedness = sidedness,
-                            grip = null,
-                            gripWidth = null,
-                            minRepRange = null,
-                            aliases = aliases,
-                            defaultCableConfig = cableConfig,
-                            isBodyweight = isBodyweight,
-                            id = exercise.id,
-                        )
-                        importedCount++
-
-                        queries.deleteImagesForExercise(exercise.id)
-                        exercise.images.forEachIndexed { index, path ->
-                            val url = if (path.startsWith("http://") || path.startsWith("https://")) {
-                                path
-                            } else {
-                                "$FREE_EXERCISE_IMAGE_BASE$path"
-                            }
-                            queries.insertImage(
-                                exerciseId = exercise.id,
-                                url = url,
-                                sortOrder = index.toLong(),
-                            )
-                            imageCount++
-                        }
-                    } catch (e: Exception) {
-                        Logger.w { "Failed to import exercise ${exercise.name}: ${e.message}" }
-                    }
-                }
-            }
-
-            if (exercises.isNotEmpty() && importedCount == 0) {
-                Logger.e { "Imported 0 of ${exercises.size} free-exercise-db rows" }
-                return@withContext Result.failure(
-                    Exception("Imported 0 of ${exercises.size} exercises"),
-                )
-            }
-
-            Logger.d { "Successfully imported $importedCount exercises with $imageCount images" }
-            Result.success(importedCount)
+            importRows(json.decodeFromString(jsonString))
         } catch (e: Exception) {
             Logger.e(e) { "Failed to parse free-exercise-db JSON" }
             Result.failure(e)
         }
+    }
+
+    /**
+     * The bundled free-exercise-db rows followed by [SupplementalCatalogSeed] (#883). Kept as
+     * a seam so tests can pin that the shipped import path carries the supplemental rows.
+     */
+    internal fun mergedCatalogueRows(bundled: List<FreeExerciseJson>): List<FreeExerciseJson> =
+        bundled + SupplementalCatalogSeed.rows
+
+    private suspend fun importRows(exercises: List<FreeExerciseJson>): Result<Int> {
+        val displayNames = generateDisplayNames(exercises)
+        Logger.d { "Parsed ${exercises.size} exercises from free-exercise-db" }
+
+        var importedCount = 0
+        var imageCount = 0
+
+        queries.transaction {
+            for (exercise in exercises) {
+                try {
+                    if (queries.selectExerciseById(exercise.id).executeAsOneOrNull()?.isCustom == 1L) {
+                        continue
+                    }
+                    val muscleNames = (exercise.primaryMuscles + exercise.secondaryMuscles)
+                        .map { mapMuscleGroup(it) }
+                        .distinct()
+                    val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
+                    val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
+                    val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
+                    val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
+                    // #857: apply the id-keyed naming overlay once so the insert and update
+                    // paths below share one source for name, displayName, and aliases.
+                    val overlay = CATALOG_OVERLAY[exercise.id]
+                    val name = overlay?.name ?: exercise.name.trim()
+                    val displayName = overlay?.displayName ?: displayNames[exercise.id]
+                    val aliases = overlay?.aliases
+                    val description = exercise.instructions.joinToString("\n").ifBlank { null }
+                    val muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
+                        .joinToString(",")
+                        .ifBlank { null }
+                    val muscleGroups = muscleNames.joinToString(",")
+
+                    queries.insertExerciseIfAbsent(
+                        id = exercise.id,
+                        name = name,
+                        displayName = displayName,
+                        description = description,
+                        created = 0L,
+                        muscleGroup = primaryMuscle,
+                        muscleGroups = muscleGroups,
+                        muscles = muscles,
+                        equipment = equipmentLabel,
+                        movement = exercise.category,
+                        sidedness = sidedness,
+                        grip = null,
+                        gripWidth = null,
+                        minRepRange = null,
+                        popularity = 0.0,
+                        archived = 0L,
+                        isFavorite = 0L,
+                        isCustom = 0L,
+                        timesPerformed = 0L,
+                        lastPerformed = null,
+                        aliases = aliases,
+                        defaultCableConfig = cableConfig,
+                        one_rep_max_kg = null,
+                        mvtOverrideMs = null,
+                        isBodyweight = isBodyweight,
+                    )
+                    queries.updateCatalogExercise(
+                        name = name,
+                        displayName = displayName,
+                        description = description,
+                        muscleGroup = primaryMuscle,
+                        muscleGroups = muscleGroups,
+                        muscles = muscles,
+                        equipment = equipmentLabel,
+                        movement = exercise.category,
+                        sidedness = sidedness,
+                        grip = null,
+                        gripWidth = null,
+                        minRepRange = null,
+                        aliases = aliases,
+                        defaultCableConfig = cableConfig,
+                        isBodyweight = isBodyweight,
+                        id = exercise.id,
+                    )
+                    importedCount++
+
+                    queries.deleteImagesForExercise(exercise.id)
+                    exercise.images.forEachIndexed { index, path ->
+                        val url = if (path.startsWith("http://") || path.startsWith("https://")) {
+                            path
+                        } else {
+                            "$FREE_EXERCISE_IMAGE_BASE$path"
+                        }
+                        queries.insertImage(
+                            exerciseId = exercise.id,
+                            url = url,
+                            sortOrder = index.toLong(),
+                        )
+                        imageCount++
+                    }
+                } catch (e: Exception) {
+                    Logger.w { "Failed to import exercise ${exercise.name}: ${e.message}" }
+                }
+            }
+        }
+
+        if (exercises.isNotEmpty() && importedCount == 0) {
+            Logger.e { "Imported 0 of ${exercises.size} free-exercise-db rows" }
+            return Result.failure(
+                Exception("Imported 0 of ${exercises.size} exercises"),
+            )
+        }
+
+        Logger.d { "Successfully imported $importedCount exercises with $imageCount images" }
+        return Result.success(importedCount)
     }
 
     /**
@@ -366,7 +381,10 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
     }
 
     companion object {
-        const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1+issue-857"
+        // #883: the second token bump makes upgraded installs run the importer once more so
+        // SupplementalCatalogSeed's belt rows land in existing libraries. The literal token
+        // is pinned by `bundled catalog source token is bumped for #883`.
+        const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1+issue-857+issue-883"
 
         /**
          * Per-id catalogue naming overlay applied at import so a renamed stock row keeps one

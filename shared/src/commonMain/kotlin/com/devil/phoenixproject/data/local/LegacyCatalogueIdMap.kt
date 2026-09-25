@@ -101,6 +101,16 @@ object LegacyCatalogueIdMap {
         "dolYIaKI1o1wn_Oh" to "Upright_Barbell_Row",
         "7d141cfb-fdde-4320-8553-1e03f6b4e9bd" to "Upright_Barbell_Row",
         "JgArpiAO2lQCWput" to "Windmills",
+        // Issue #883: reviewed belt-squat continuity onto SupplementalCatalogSeed's stable ids.
+        // "Sumo Belt Squat" also resolves by exact name once the seed row is active; the
+        // explicit entry additionally lets name-less restore/pull rows resolve. "Squat Pulses"
+        // was the belt squat pulses row of the retired catalogue (equipment ['BELT']) and folds
+        // onto the reviewed replacement name instead of forking a second identity. The remaining
+        // legacy belt rows have no active belt equivalents and stay archived-but-resolvable;
+        // folding them anywhere would be bulk relabeling. lpnNPw86Vud67vWQ -> Barbell_Squat is
+        // an already-applied remap and is deliberately NOT reversed here (needs product approval).
+        "CJWWuqMMu0_BvQ2R" to "Sumo_Belt_Squat",
+        "l8SH5y7rpXyMCwJj" to "Belt_Squat_Pulses",
     )
 
     /**
