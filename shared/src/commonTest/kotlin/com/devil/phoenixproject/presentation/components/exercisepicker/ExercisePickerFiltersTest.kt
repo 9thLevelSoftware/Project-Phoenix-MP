@@ -163,5 +163,37 @@ class ExercisePickerFiltersTest {
 
         assertEquals(listOf(favouriteEssential), result)
     }
+
+    // Issue #883: the Belt chip must be an exact-token filter over real BELT rows. Widening it
+    // onto barbell/other/machine would re-introduce the false matches the fix must avoid.
+    @Test
+    fun beltChipMatchesBeltTokenRowsOnly() {
+        val beltSquat = exercise("Belt_Squat", name = "Belt Squat", equipment = "belt")
+        val sumoBeltSquat = exercise("Sumo_Belt_Squat", name = "Sumo Belt Squat", equipment = "BELT")
+        val barbellSquat = exercise("Barbell_Squat", name = "Barbell Squat", equipment = "barbell")
+        val weightedSquat = exercise("Weighted_Squat", name = "Weighted Squat", equipment = "other")
+        val machineSquat = exercise("Squat_Machine", name = "Machine Squat", equipment = "machine")
+        val cableRow = exercise("face-pull", equipment = "cable")
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(beltSquat, sumoBeltSquat, barbellSquat, weightedSquat, machineSquat, cableRow),
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Belt")),
+        )
+
+        assertEquals(listOf(beltSquat, sumoBeltSquat), result)
+    }
+
+    @Test
+    fun beltChipMatchesBeltInMultiTokenEquipmentLabels() {
+        val beltAndBench = exercise("Belt_Squat_Pulses", name = "Belt Squat Pulses", equipment = "BENCH, BELT")
+        val handlesOnly = exercise("row", equipment = "HANDLES")
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(beltAndBench, handlesOnly),
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Belt")),
+        )
+
+        assertEquals(listOf(beltAndBench), result)
+    }
 }
 

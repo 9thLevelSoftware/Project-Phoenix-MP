@@ -2,15 +2,21 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
+import com.devil.phoenixproject.data.local.FreeExerciseJson
+import com.devil.phoenixproject.data.local.SupplementalCatalogSeed
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
+import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
+import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Before
 import org.junit.Test
 
@@ -1040,10 +1046,14 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `bundled catalog source token is bumped for #857`() = runTest {
-        // Acceptance 5's regression lock: this bump is what makes an install holding the
-        // pre-#857 value run the importer exactly once on its next launch.
-        assertEquals("free-exercise-db@unlicense-1+issue-857", ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+    fun `bundled catalog source token is bumped for #883`() = runTest {
+        // Acceptance 5's regression lock (#857), deliberately re-pinned for #883: this second
+        // bump is what makes a v1.0.2 install holding the #857 value run the importer exactly
+        // once more so SupplementalCatalogSeed's belt rows land in existing libraries.
+        assertEquals(
+            "free-exercise-db@unlicense-1+issue-857+issue-883",
+            ExerciseImporter.BUNDLED_CATALOG_SOURCE,
+        )
     }
 
     @Test
@@ -1127,6 +1137,148 @@ class SqlDelightExerciseRepositoryTest {
         assertTrue(repo.importExercises().isSuccess)
         assertEquals(4, repository.getExerciseById(replacement)!!.timesPerformed)
         assertTrue(database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId(legacy).executeAsList().isEmpty())
+    }
+
+    // ===================== Issue #883: belt squat supplemental seed =====================
+
+    private fun seedRowsJson(): String = Json.encodeToString(SupplementalCatalogSeed.rows)
+
+    private suspend fun importBeltSeed(): Result<Int> =
+        importer.importFromFreeExerciseJson(seedRowsJson())
+
+    @Test
+    fun `shipped import merges the supplemental seed after the bundled catalogue`() = runTest {
+        val bundled = listOf(
+            FreeExerciseJson(id = "Barbell_Squat", name = "Barbell Squat", equipment = "barbell"),
+        )
+
+        val merged = importer.mergedCatalogueRows(bundled)
+
+        assertEquals(
+            listOf("Barbell_Squat", "Belt_Squat", "Sumo_Belt_Squat", "Belt_Squat_Pulses"),
+            merged.map { it.id },
+        )
+    }
+
+    @Test
+    fun `belt seed imports an active belt squat findable by name search and the belt chip`() = runTest {
+        val result = importBeltSeed()
+        assertTrue(result.isSuccess, "belt seed import failed: ${result.exceptionOrNull()}")
+
+        repository.searchExercises("Belt Squat").test {
+            val found = awaitItem()
+            assertEquals(
+                setOf("Belt_Squat", "Sumo_Belt_Squat", "Belt_Squat_Pulses"),
+                found.mapNotNull { it.id }.toSet(),
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        val beltSquat = repository.getExerciseById("Belt_Squat")
+        assertNotNull(beltSquat)
+        assertEquals("Belt Squat", beltSquat.name)
+        assertEquals("belt", beltSquat.equipment)
+        assertEquals(false, beltSquat.isBodyweight)
+
+        // The real picker route: exact-token Belt chip over the mapped exercises keeps every
+        // belt row and never conflates Belt with barbell/other/machine (arch condition C).
+        insertExercise(id = "Barbell_Squat", name = "Barbell Squat", muscleGroup = "Legs", equipment = "barbell")
+        val candidates = listOfNotNull(
+            repository.getExerciseById("Belt_Squat"),
+            repository.getExerciseById("Sumo_Belt_Squat"),
+            repository.getExerciseById("Belt_Squat_Pulses"),
+            repository.getExerciseById("Barbell_Squat"),
+        )
+        val chipFiltered = filterExercisePickerCandidates(
+            candidates = candidates,
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Belt")),
+        )
+        assertEquals(
+            setOf("Belt_Squat", "Sumo_Belt_Squat", "Belt_Squat_Pulses"),
+            chipFiltered.mapNotNull { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun `belt seed is duplicate-free on reimport and preserves custom rows and user fields`() = runTest {
+        assertTrue(importBeltSeed().isSuccess)
+        repository.toggleFavorite("Belt_Squat")
+        executeRaw("UPDATE Exercise SET one_rep_max_kg = 123.5 WHERE id = 'Belt_Squat'")
+        insertExercise(id = "custom_883", name = "Belt Squat", muscleGroup = "Legs", equipment = "HANDLES", isCustom = 1L)
+
+        assertTrue(importBeltSeed().isSuccess)
+
+        assertEquals(
+            listOf("Belt_Squat", "Belt_Squat_Pulses", "Sumo_Belt_Squat"),
+            database.phoenixDatabaseQueries.selectStockExercisesForRemap().executeAsList().map { it.id }.sorted(),
+        )
+        val beltSquat = database.phoenixDatabaseQueries.selectExerciseById("Belt_Squat").executeAsOne()
+        assertEquals(1L, beltSquat.isFavorite)
+        assertEquals(123.5, beltSquat.one_rep_max_kg)
+        val custom = database.phoenixDatabaseQueries.selectExerciseById("custom_883").executeAsOne()
+        assertEquals("Belt Squat", custom.name)
+        assertEquals(1L, custom.isCustom)
+    }
+
+    @Test
+    fun `upgrade from the shipped release remaps legacy belt squat references onto the belt seed rows`() = runTest {
+        // v1.0.2 -> next shaped fixture (v43 -> v44 schema): migration 43 archives every
+        // non-custom stock row and the picker only lists archived = 0, so the legacy belt
+        // squat rows are present but hidden.
+        insertExercise(id = "Barbell_Squat", name = "Barbell Squat", muscleGroup = "Legs", equipment = "barbell")
+        insertExercise(id = "CJWWuqMMu0_BvQ2R", name = "Sumo Belt Squat", muscleGroup = "Legs", equipment = "BELT", archived = 1L, timesPerformed = 2L)
+        insertExercise(id = "l8SH5y7rpXyMCwJj", name = "Squat Pulses", muscleGroup = "Legs", equipment = "BELT", archived = 1L, timesPerformed = 1L)
+        insertExercise(id = "lpnNPw86Vud67vWQ", name = "Squat ", muscleGroup = "Legs", equipment = "BELT", archived = 1L, timesPerformed = 1L)
+        insertPr(exerciseId = "CJWWuqMMu0_BvQ2R", exerciseName = "Sumo Belt Squat", weight = 100.0)
+        insertPr(exerciseId = "l8SH5y7rpXyMCwJj", exerciseName = "Squat Pulses", weight = 90.0)
+        insertPr(exerciseId = "lpnNPw86Vud67vWQ", exerciseName = "Squat", weight = 140.0)
+
+        // The #883 token bump re-runs the importer on upgrade, then the remap heals references.
+        assertTrue(importBeltSeed().isSuccess)
+        assertEquals(3, importer.remapLegacyCatalogueIds())
+
+        // Reviewed continuity: the two unmapped belt-squat rows fold onto the seed rows...
+        assertEquals(1, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("Sumo_Belt_Squat").executeAsList().size)
+        assertEquals(1, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("Belt_Squat_Pulses").executeAsList().size)
+        // ...and the already-applied lpnNPw86Vud67vWQ -> Barbell_Squat remap is NOT reversed.
+        assertEquals(1, database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("Barbell_Squat").executeAsList().size)
+        listOf("CJWWuqMMu0_BvQ2R", "l8SH5y7rpXyMCwJj", "lpnNPw86Vud67vWQ").forEach { legacy ->
+            assertTrue(
+                database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId(legacy).executeAsList().isEmpty(),
+                "$legacy still holds references after the reviewed remap",
+            )
+        }
+
+        repository.searchExercises("Belt Squat").test {
+            val found = awaitItem()
+            assertEquals(
+                setOf("Belt_Squat", "Sumo_Belt_Squat", "Belt_Squat_Pulses"),
+                found.mapNotNull { it.id }.toSet(),
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `reimporting an archived same-id row cannot unarchive it`() = runTest {
+        // The archived-same-id trap the #883 seed deliberately avoids: insertExerciseIfAbsent is
+        // INSERT OR IGNORE and updateCatalogExercise never touches `archived`, so a seed row
+        // sharing an archived id can never come back to the picker. That is why
+        // SupplementalCatalogSeed ships brand-new stable ids instead of reusing retired ones.
+        insertExercise(id = "Belt_Squat", name = "Belt Squat", muscleGroup = "Legs", equipment = "BELT", archived = 1L)
+
+        assertTrue(importBeltSeed().isSuccess)
+
+        val row = database.phoenixDatabaseQueries.selectExerciseById("Belt_Squat").executeAsOne()
+        assertEquals(1L, row.archived)
+        repository.searchExercises("Belt Squat").test {
+            val found = awaitItem()
+            assertEquals(
+                setOf("Sumo_Belt_Squat", "Belt_Squat_Pulses"),
+                found.mapNotNull { it.id }.toSet(),
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     private fun executeRaw(sql: String) {

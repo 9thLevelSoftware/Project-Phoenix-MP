@@ -32,6 +32,32 @@ import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 
 /**
+ * Issue #883: the equipment chips the picker advertises.
+ *
+ * Contract (regression-tested in EquipmentChipContractTest): every chip must map through
+ * [com.devil.phoenixproject.presentation.components.getEquipmentDatabaseValues] to tokens
+ * that at least one row the app can produce actually carries — otherwise it is a dead
+ * filter like the one reported in #883. Current producers: the bundled catalogue
+ * (BARBELL/CABLE/BODYWEIGHT/...), the issue #883 supplemental belt seed (BELT), and custom
+ * exercises (HANDLES for cable rows, BODYWEIGHT otherwise — CreateExerciseDialog).
+ *
+ * The #883 chip audit retired "Short Bar", "Rope", "Ankle Strap", and "Bench": no seed row,
+ * custom-exercise path, or wger refresh can ever carry SHORT_BAR / ROPE / ANKLE_STRAP /
+ * STRAPS / BENCH, so those chips only ever showed an empty list. Their token aliases remain
+ * in `getEquipmentDatabaseValues` and `formatEquipmentCompact` so legacy custom rows restored
+ * from old backups still render and filter by name search. "Belt" stays and is now backed by
+ * the supplemental seed; "Bodyweight" stays (isBodyweight flag branch); "Handles" stays
+ * because every custom cable exercise carries the HANDLES token.
+ */
+internal val EQUIPMENT_FILTER_CHIPS: List<String> = listOf(
+    "Long Bar",
+    "Handles",
+    "Belt",
+    "Cable",
+    "Bodyweight",
+)
+
+/**
  * Unified horizontal filter shelf combining favorites, custom, muscle, and equipment filters.
  * Replaces the previous 4-row filter UI with a single scrollable row.
  */
@@ -59,18 +85,8 @@ fun ExerciseFilterShelf(
     modifier: Modifier = Modifier,
 ) {
     val muscleGroups = listOf("Chest", "Back", "Legs", "Shoulders", "Arms", "Core")
-    val equipmentTypes =
-        listOf(
-            "Long Bar",
-            "Short Bar",
-            "Handles",
-            "Rope",
-            "Belt",
-            "Ankle Strap",
-            "Cable",
-            "Bench",
-            "Bodyweight",
-        )
+    // Issue #883: see EQUIPMENT_FILTER_CHIPS for the chip contract and retired chips.
+    val equipmentTypes = EQUIPMENT_FILTER_CHIPS
 
     val previouslyCompletedDescription =
         stringResource(Res.string.cd_filter_previously_completed)
