@@ -71,7 +71,7 @@
     <string name="waiting_for_data">Waiting for data…</string>
     <string name="reconnect">Reconnect</string>
     <string name="workout_teardown_finishing">Finishing previous workout…</string>
-    <string name="workout_teardown_failed">Trainer reset didn\'t complete</string>
+    <string name="workout_teardown_failed">Trainer reset didn't complete</string>
     <string name="workout_teardown_retry">Retry</string>
     <string name="workout_save_failed">Workout data couldn't be saved.</string>
     <string name="workout_save_retry_failed">That set can no longer be retried.</string>
@@ -220,12 +220,12 @@
     <string name="create_new_routine">Create New Routine</string>
     <string name="add_exercise">Add Exercise</string>
     <string name="delete_routine">Delete Routine</string>
-    <string name="delete_routine_message">Are you sure you want to delete \'%1$s\'?</string>
+    <string name="delete_routine_message">Are you sure you want to delete '%1$s'?</string>
     <!-- #772: routine CSV import and export -->
     <string name="routine_csv_import">Import routines from CSV</string>
     <string name="routine_csv_export">Export CSV</string>
     <string name="routine_csv_import_title">Import routines</string>
-    <string name="routine_csv_unreadable_title">Can\'t import this file</string>
+    <string name="routine_csv_unreadable_title">Can't import this file</string>
     <string name="routine_csv_issues_title">Fix these problems in the file, then pick it again:</string>
     <string name="routine_csv_more_issues">…and %1$d more</string>
     <string name="routine_csv_action_create">New</string>
@@ -240,13 +240,13 @@
     <string name="routine_csv_commit_failed">The import failed. Nothing was saved.</string>
     <string name="routine_csv_confirm">Import</string>
     <string name="routine_csv_imported">Imported %1$d routines.</string>
-    <string name="routine_csv_export_blocked_title">Can\'t export %1$s</string>
-    <string name="routine_csv_export_blocked_message">CSV files can\'t hold these settings yet, so exporting would lose them:</string>
+    <string name="routine_csv_export_blocked_title">Can't export %1$s</string>
+    <string name="routine_csv_export_blocked_message">CSV files can't hold these settings yet, so exporting would lose them:</string>
     <string name="delete_selected_routines">Delete %1$d routines?</string>
     <string name="delete_group_title">Delete Group</string>
     <string name="delete_group_message">Delete group \"%1$s\"? Routines in this group will become ungrouped.</string>
     <string name="duplicate_selected_routines">Duplicate %1$d routines?</string>
-    <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
+    <string name="duplicate_routines_message">New copies will be created with '(Copy)' suffix.</string>
     <string name="move_to_profile">Move to Profile</string>
     <string name="copy_to_profile">Copy to Profile</string>
     <string name="move_routines_confirm">Move %1$d routines to %2$s?</string>
@@ -678,7 +678,7 @@
     <string name="settings_dominatrix_unlock_toast">Dominatrix Mode unlocked</string>
     <string name="settings_adults_only_title">Adults Only</string>
     <string name="settings_adults_only_body">Vulgar Mode contains profanity and mature themes. Are you 18 or older?</string>
-    <string name="settings_adults_only_confirm">I\'m 18+ and Grandma Can\'t Hear Me</string>
+    <string name="settings_adults_only_confirm">I'm 18+ and Grandma Can't Hear Me</string>
     <string name="settings_adults_only_decline">Keep It Clean</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Strong Language + Suggestive Themes</string>
 
@@ -886,7 +886,7 @@
     <string name="profile_disco_requires_connection">Connect to your trainer to use Disco Mode</string>
     <string name="profile_disco_unlocked_title">Disco Mode unlocked</string>
     <string name="profile_disco_unlocked_body">Turn on Disco Mode in LED preferences to make your trainer party.</string>
-    <string name="profile_disco_unlocked_action">Let\'s party</string>
+    <string name="profile_disco_unlocked_action">Let's party</string>
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
     <string name="label_previously_completed">Previously completed</string>
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
@@ -916,10 +916,10 @@
     <string name="voice_stop_reason_audio_focus_lost">another app took the microphone</string>
     <string name="voice_stop_reason_start_failed">speech recognition could not start</string>
     <!-- PR 11: account-switch dialog and ownership-conflict recovery -->
-    <string name="account_switch_title">This phone\'s data belongs to another account</string>
-    <string name="account_switch_message">You signed in as %1$s, but this phone\'s data belongs to %2$s. Workouts already synced to %2$s stay on this phone and in that account; they won\'t be uploaded to %1$s.</string>
+    <string name="account_switch_title">This phone's data belongs to another account</string>
+    <string name="account_switch_message">You signed in as %1$s, but this phone's data belongs to %2$s. Workouts already synced to %2$s stay on this phone and in that account; they won't be uploaded to %1$s.</string>
     <string name="account_switch_upload_never_synced">Upload workouts not yet synced</string>
-    <string name="account_switch_exclude_all">Don\'t upload existing data</string>
+    <string name="account_switch_exclude_all">Don't upload existing data</string>
     <string name="ownership_conflict_title">Upload refused</string>
     <string name="ownership_conflict_message">The portal refused data that belongs to another account: %1$s</string>
     <string name="ownership_conflict_action">Stop uploading data from before the account switch</string>

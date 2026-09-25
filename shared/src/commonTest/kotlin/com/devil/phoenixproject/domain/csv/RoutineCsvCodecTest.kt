@@ -1,21 +1,31 @@
 package com.devil.phoenixproject.domain.csv
 
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WarmupSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Issue #772: the v1 routine CSV contract. */
+/**
+ * Issue #772: the v1 routine CSV contract. Issue #896: version 2, which carries every advanced
+ * setting so export is only refused when no CSV row can hold the routine at all.
+ */
 class RoutineCsvCodecTest {
     private val header = RoutineCsvFormat.COLUMNS.joinToString(",")
+    private val headerV2 = RoutineCsvFormat.COLUMNS_V2.joinToString(",")
 
     private fun exercise(id: String, name: String) = Exercise(id = id, name = name, muscleGroup = "Chest")
 
@@ -47,6 +57,9 @@ class RoutineCsvCodecTest {
     private val row = exercise("row-id", "Row")
     private val pulldown = exercise("pulldown-id", "Lat Pulldown")
     private val pushUp = exercise("pushup-id", "Push Up")
+    private val squat = exercise("squat-id", "Barbell Squat")
+    private val calfRaise = exercise("calf-id", "Standing Calf Raises")
+    private val deadlift = exercise("deadlift-id", "Stiff Leg Deadlift")
 
     private fun sampleRoutine() = Routine(
         id = "routine-1",
@@ -67,13 +80,22 @@ class RoutineCsvCodecTest {
         assertIs<RoutineCsvParseResult.Parsed>(RoutineCsvCodec.parse(text), "issues: ${(RoutineCsvCodec.parse(text) as? RoutineCsvParseResult.Invalid)?.issues}").routines
 
     private fun issues(text: String): List<RoutineCsvIssue> = assertIs<RoutineCsvParseResult.Invalid>(RoutineCsvCodec.parse(text)).issues
-
     private fun file(vararg rows: String) = (listOf(RoutineCsvFormat.VERSION_LINE, header) + rows).joinToString("\n")
+    private fun fileV2(vararg rows: String) = (listOf(RoutineCsvFormat.VERSION_V2_LINE, headerV2) + rows).joinToString("\n")
+
+    /** A hand-written version 2 row: the fixed v1 cells, then [values] by column name. */
+    private fun rowV2(vararg values: Pair<String, String>, name: String = "Barbell Squat"): String {
+        val byName = values.toMap()
+        val cells = listOf("", name, "", "", "", "", name, "0", "", "", "", "", "8|8|6", "40|40|42.5", "120", "", "false", "") +
+            RoutineCsvFormat.COLUMNS_V2_ONLY.map { byName[it].orEmpty() }
+        return cells.joinToString(",")
+    }
 
     @Test
     fun exportParsesBackToTheSameRoutine() {
         val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(sampleRoutine(), "Strength", 2))
         assertEquals("phoenix-routine-upper-heavy.csv", exported.fileName)
+        assertTrue(exported.content.startsWith(RoutineCsvFormat.VERSION_V2_LINE), "exports are version 2")
 
         val draft = parsed(exported.content).single()
         assertEquals("routine-1", draft.routineId)
@@ -127,10 +149,35 @@ class RoutineCsvCodecTest {
             ",Pull,,,,,Row,0,a,Pair,,15,10,30,90,,false",
             ",Pull,,,,,Curl,1,a,Pair,,15,10,20,90,,false",
         ).joinToString("\n")
-
         val exercises = parsed(text).single().exercises
         assertEquals(listOf("a", "a"), exercises.map { it.supersetKey })
         assertEquals(listOf(null, null), exercises.map { it.supersetColor })
+    }
+
+    @Test
+    fun version1KeepsReadingExactlyAsReleased() {
+        // v1 never carried advanced settings; a v1 row leaves them at their defaults and Echo
+        // and Eccentric Only are still refused.
+        val exercise = parsed(file(",Push,,,,,Bench Press,0,,,,,8,40,,Old School,false,")).single().exercises.single()
+        assertEquals(ProgramMode.OldSchool, exercise.mode)
+        assertEquals(false, exercise.usePercentOfPR)
+        assertEquals(emptyList(), exercise.warmupSets)
+        assertEquals(emptyList(), exercise.defaultRackItemIds)
+        assertEquals(emptyMap(), exercise.rackBehaviorOverrides)
+        assertEquals(false, exercise.dropSetEnabled)
+        assertNull(exercise.dropSetMinWeightKg)
+        assertNull(exercise.durationSeconds)
+        assertEquals(0f, exercise.progressionKg)
+        assertEquals(true, exercise.stallDetectionEnabled)
+        assertEquals(false, exercise.stopAtTop)
+        assertEquals(RepCountTiming.TOP, exercise.repCountTiming)
+        assertEquals(emptyList(), exercise.restSecondsPerSet)
+        assertEquals(EchoLevel.HARDER, exercise.echoLevel)
+        assertEquals(EccentricLoad.LOAD_100, exercise.eccentricLoad)
+        assertNull(exercise.isAmrapFlag)
+
+        val found = issues(file(",Push,,,,,Bench Press,0,,,,,8,40,,Echo,false,"))
+        assertTrue(found.single().message.contains("Echo"))
     }
 
     @Test
@@ -141,7 +188,6 @@ class RoutineCsvCodecTest {
                 ",Push,,Strength, 2 ,,Dip,1,,,,,8,0,,,",
             ),
         ).single()
-
         assertEquals(2, draft.groupOrder)
         assertEquals(2, draft.exercises.size)
     }
@@ -163,34 +209,164 @@ class RoutineCsvCodecTest {
     }
 
     @Test
-    fun exportIsBlockedWhenASettingWouldBeLost() {
+    fun negativeProgressionStaysANumberAndIsNotFormulaGuarded() {
+        val routine = sampleRoutine().copy(
+            exercises = listOf(sampleRoutine().exercises.first().copy(progressionKg = -1.25f)),
+        )
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+        assertTrue(exported.content.contains(",-1.25,"), exported.content)
+        assertTrue(!exported.content.contains(",'-1.25"), "a numeric cell must not take the text formula guard")
+        assertEquals(-1.25f, parsed(exported.content).single().exercises.single().progressionKg)
+    }
+
+    @Test
+    fun structuredTextCellsAreGuardedAndUnguarded() {
+        val routine = sampleRoutine().copy(exercises = listOf(
+            sampleRoutine().exercises.first().copy(
+                defaultRackItemIds = listOf("-rack,a"),
+                rackBehaviorOverrides = mapOf("-rack,a" to RackItemBehavior.DISPLAY_ONLY),
+                warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50)),
+            ),
+        ))
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+        assertTrue(exported.content.contains("\"'-rack,a\""), exported.content)
+        val draft = parsed(exported.content).single().exercises.single()
+        assertEquals(listOf("-rack,a"), draft.defaultRackItemIds)
+        assertEquals(mapOf("-rack,a" to RackItemBehavior.DISPLAY_ONLY), draft.rackBehaviorOverrides)
+    }
+
+    @Test
+    fun advancedSettingsRoundTripThroughVersion2() {
+        val base = sampleRoutine().exercises.first()
+        val fridayLower = Routine(
+            id = "routine-896",
+            name = "Friday Lower (Old School)",
+            exercises = listOf(
+                base.copy(
+                    id = "squat",
+                    exercise = squat,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    prTypeForScaling = PRType.MAX_VOLUME,
+                    setWeightsPercentOfPR = listOf(75, 80, 85),
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                    warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50), WarmupSet(reps = 3, percentOfWorking = 70)),
+                    defaultRackItemIds = listOf("rack-a", "rack-b"),
+                    rackBehaviorOverrides = mapOf("rack-a" to RackItemBehavior.COUNTERWEIGHT),
+                    stopAtTop = true,
+                ),
+                base.copy(
+                    id = "calf",
+                    exercise = calfRaise,
+                    programMode = ProgramMode.Echo,
+                    echoLevel = EchoLevel.EPIC,
+                    eccentricLoad = EccentricLoad.LOAD_120,
+                    setEchoLevels = listOf(EchoLevel.HARD, null, EchoLevel.HARDEST),
+                    progressionKg = -1.25f,
+                    isAMRAP = true,
+                ),
+                base.copy(
+                    id = "deadlift",
+                    exercise = deadlift,
+                    usePercentOfPR = true,
+                    warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50)),
+                    dropSetEnabled = true,
+                    dropSetMinWeightKg = 20f,
+                    duration = 45,
+                    stallDetectionEnabled = false,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                    perSetRestTime = true,
+                    setRestSeconds = listOf(60, 90, 120),
+                    programMode = ProgramMode.EccentricOnly,
+                ),
+            ),
+        )
+
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(fridayLower, null, null))
+        val exercises = parsed(exported.content).single().exercises
+
+        val squatRow = exercises[0]
+        assertEquals(true, squatRow.usePercentOfPR)
+        assertEquals(80, squatRow.weightPercentOfPR)
+        assertEquals(PRType.MAX_VOLUME, squatRow.prTypeForScaling)
+        assertEquals(listOf(75, 80, 85), squatRow.setWeightsPercentOfPR)
+        assertEquals(ScalingBasis.ESTIMATED_1RM, squatRow.scalingBasis)
+        assertEquals(listOf(WarmupSet(5, 50), WarmupSet(3, 70)), squatRow.warmupSets)
+        assertEquals(listOf("rack-a", "rack-b"), squatRow.defaultRackItemIds)
+        assertEquals(mapOf("rack-a" to RackItemBehavior.COUNTERWEIGHT), squatRow.rackBehaviorOverrides)
+        assertEquals(true, squatRow.stopAtTop)
+
+        val calfRow = exercises[1]
+        assertEquals(ProgramMode.Echo, calfRow.mode)
+        assertEquals(EchoLevel.EPIC, calfRow.echoLevel)
+        assertEquals(EccentricLoad.LOAD_120, calfRow.eccentricLoad)
+        assertEquals(listOf(EchoLevel.HARD, null, EchoLevel.HARDEST), calfRow.setEchoLevels)
+        assertEquals(-1.25f, calfRow.progressionKg)
+        assertEquals(true, calfRow.isAmrapFlag, "the legacy AMRAP flag keeps its own column")
+
+        val deadliftRow = exercises[2]
+        assertEquals(true, deadliftRow.usePercentOfPR)
+        assertEquals(listOf(WarmupSet(5, 50)), deadliftRow.warmupSets)
+        assertEquals(true, deadliftRow.dropSetEnabled)
+        assertEquals(20f, deadliftRow.dropSetMinWeightKg)
+        assertEquals(45, deadliftRow.durationSeconds)
+        assertEquals(false, deadliftRow.stallDetectionEnabled)
+        assertEquals(RepCountTiming.BOTTOM, deadliftRow.repCountTiming)
+        assertEquals(true, deadliftRow.perSetRestTime)
+        assertEquals(listOf(60, 90, 120), deadliftRow.restSecondsPerSet)
+        assertEquals(ProgramMode.EccentricOnly, deadliftRow.mode)
+    }
+
+    @Test
+    fun theLegacyAmrapFlagNeverOverloadsIsAmrap() {
+        // Older routines mark only the last set AMRAP while set_reps keeps numeric reps.
+        val routine = sampleRoutine().copy(
+            exercises = listOf(sampleRoutine().exercises.first().copy(isAMRAP = true)),
+        )
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+        val exercise = parsed(exported.content).single().exercises.single()
+        assertEquals(listOf(8, 8, 6), exercise.setReps)
+        assertEquals(true, exercise.isAmrapFlag)
+    }
+
+    @Test
+    fun everySettingV1RefusedNowExports() {
         val base = sampleRoutine()
-        fun blocked(change: (RoutineExercise) -> RoutineExercise): List<String> {
+        fun exports(change: (RoutineExercise) -> RoutineExercise) {
             val routine = base.copy(exercises = listOf(change(base.exercises.first())) + base.exercises.drop(1))
-            return assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(routine, null, null)).reasons
+            assertEquals(emptyList(), RoutineCsvCodec.exportBlockers(routine))
+            assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
         }
-        assertTrue(blocked { it.copy(programMode = ProgramMode.Echo) }.single().contains("Echo"))
-        assertTrue(blocked { it.copy(usePercentOfPR = true) }.single().contains("% of PR"))
-        assertTrue(blocked { it.copy(warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50))) }.single().contains("warm-up"))
-        assertTrue(blocked { it.copy(defaultRackItemIds = listOf("rack-1")) }.single().contains("rack"))
-        assertTrue(blocked { it.copy(dropSetEnabled = true, dropSetMinWeightKg = 10f) }.single().contains("drop sets"))
-        assertTrue(blocked { it.copy(duration = 30) }.single().contains("timed"))
-        assertTrue(blocked { it.copy(progressionKg = 2.5f) }.single().contains("progression"))
-        assertTrue(blocked { it.copy(stallDetectionEnabled = false) }.single().contains("stall"))
-        assertTrue(blocked { it.copy(stopAtTop = true) }.single().contains("top"))
-        assertTrue(blocked { it.copy(repCountTiming = RepCountTiming.BOTTOM) }.single().contains("bottom"))
-        assertTrue(blocked { it.copy(setRestSeconds = listOf(60, 90, 120), perSetRestTime = true) }.single().contains("rest"))
-        // Missing entries rest 60 s at runtime (getRestForSet), so [90] over three sets is 90, 60, 60.
-        assertTrue(blocked { it.copy(isAMRAP = true) }.single().contains("AMRAP"))
-        assertTrue(blocked { it.copy(setRestSeconds = listOf(90)) }.single().contains("rest"))
+        exports { it.copy(programMode = ProgramMode.Echo) }
+        exports { it.copy(usePercentOfPR = true) }
+        exports { it.copy(warmupSets = listOf(WarmupSet(reps = 5, percentOfWorking = 50))) }
+        exports { it.copy(defaultRackItemIds = listOf("rack-1")) }
+        exports { it.copy(dropSetEnabled = true, dropSetMinWeightKg = 10f) }
+        exports { it.copy(duration = 30) }
+        exports { it.copy(progressionKg = 2.5f) }
+        exports { it.copy(stallDetectionEnabled = false) }
+        exports { it.copy(stopAtTop = true) }
+        exports { it.copy(repCountTiming = RepCountTiming.BOTTOM) }
+        exports { it.copy(setRestSeconds = listOf(60, 90, 120), perSetRestTime = true) }
+        exports { it.copy(isAMRAP = true) }
+        exports { it.copy(setRestSeconds = listOf(90)) }
+    }
+
+    @Test
+    fun exportIsOnlyBlockedWhenARowCannotHoldTheRoutine() {
+        val base = sampleRoutine()
 
         val empty = assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(base.copy(exercises = emptyList()), null, null))
-        assertEquals(1, empty.reasons.size)
+        assertEquals(listOf("The routine has no exercises."), empty.reasons)
+
+        val noSets = base.copy(exercises = listOf(base.exercises.first().copy(setReps = emptyList(), setWeightsPerCableKg = emptyList())))
+        val blocked = assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(noSets, null, null))
+        assertTrue(blocked.reasons.single().contains("no sets"))
     }
 
     @Test
     fun byteOrderMarkCrlfCommentsBlankLinesAndTrailingEmptyCellsAreAccepted() {
-        val text = "﻿" + RoutineCsvFormat.VERSION_LINE + "\r\n# written by hand\r\n\r\n" + header + ",,\r\n" +
+        val text = "\ufeff" + RoutineCsvFormat.VERSION_LINE + "\r\n# written by hand\r\n\r\n" + header + ",,\r\n" +
             ",Legs,,,,,Squat,0,,,,,5|5|5,60|60|60,180,Old School,false,,\r\n\r\n"
         val draft = parsed(text).single()
         assertEquals("Legs", draft.name)
@@ -223,10 +399,34 @@ class RoutineCsvCodecTest {
     fun fileLevelProblemsAreReported() {
         assertTrue(issues("").single().message.contains("empty"))
         assertTrue(issues("routine_id\n").single().message.contains(RoutineCsvFormat.VERSION_LINE))
-        assertTrue(issues("# phoenix_routine_csv_version=2\n$header").single().message.contains("version"))
+        assertTrue(issues("# phoenix_routine_csv_version=3\n$headerV2").single().message.contains("version"))
+        assertTrue(issues("# phoenix_routine_csv_version=2\n$header").single().message.contains("header"))
         assertTrue(issues(RoutineCsvFormat.VERSION_LINE + "\nroutine_id;routine_name").single().message.contains("semicolons"))
         assertTrue(issues(RoutineCsvFormat.VERSION_LINE + "\nroutine_id,routine_name").single().message.contains("header"))
         assertTrue(issues(file()).single().message.contains("no routine rows"))
+    }
+
+    @Test
+    fun version2CellsAreValidated() {
+        fun oneCellProblem(value: Pair<String, String>): String =
+            issues(fileV2(rowV2(value))).single().message
+
+        assertTrue(oneCellProblem("use_percent_of_pr" to "maybe").contains("use_percent_of_pr"))
+        assertTrue(oneCellProblem("weight_percent_of_pr" to "500").contains("weight_percent_of_pr"))
+        assertTrue(oneCellProblem("pr_type_for_scaling" to "BIGGEST").contains("pr_type_for_scaling"))
+        assertTrue(oneCellProblem("set_weights_percent_of_pr" to "80|900").contains("set_weights_percent_of_pr"))
+        assertTrue(oneCellProblem("scaling_basis" to "VIBE").contains("scaling_basis"))
+        assertTrue(oneCellProblem("warmup_sets" to "5-50").contains("warmup_sets"))
+        assertTrue(oneCellProblem("rack_behavior_overrides" to "rack-a=LOUD").contains("rack_behavior_overrides"))
+        assertTrue(oneCellProblem("drop_set_min_weight_kg" to "999").contains("drop_set_min_weight_kg"))
+        assertTrue(oneCellProblem("duration_seconds" to "500").contains("duration_seconds"))
+        assertTrue(oneCellProblem("progression_kg" to "-9").contains("progression_kg"))
+        assertTrue(oneCellProblem("rep_count_timing" to "MIDDLE").contains("rep_count_timing"))
+        assertTrue(oneCellProblem("rest_seconds_per_set" to "60|999").contains("rest_seconds_per_set"))
+        assertTrue(oneCellProblem("echo_level" to "MEGA").contains("echo_level"))
+        assertTrue(oneCellProblem("eccentric_load" to "LOAD_9000").contains("eccentric_load"))
+        assertTrue(oneCellProblem("set_echo_levels" to "HARD|MEGA").contains("set_echo_levels"))
+        assertTrue(oneCellProblem("is_amrap_flag" to "nah").contains("is_amrap_flag"))
     }
 
     @Test
@@ -237,7 +437,7 @@ class RoutineCsvCodecTest {
                 ",Push,,,,,Dip,x,,,,,8,0,,,", // line 4: bad order
                 ",Pull,,,,,Row,0,,,,,0,30,,,", // line 5: reps must be positive
                 ",Pull,,,,,Curl,1,,,,,8,300,,,", // line 6: weight over the per-cable limit
-                ",Legs,,,,,Squat,0,,,,,8,60,,Echo,", // line 7: unsupported mode
+                ",Legs,,,,,Squat,0,,,,,8,60,,Echo,", // line 7: unsupported mode in v1
                 ",Legs,,,,,Lunge,1,,,,,8,20,,Zumba,", // line 8: unknown mode
                 ",Arms,,,,,Curl,0,,,,,AMRAP,10,,,false", // line 9: is_amrap contradicts
                 ",Core,,,,,Crunch,0,,,,,\"8|10,", // line 10: unclosed quote
@@ -283,6 +483,7 @@ class RoutineCsvCodecTest {
         val tooManySets = List(RoutineCsvFormat.MAX_SETS_PER_EXERCISE + 1) { "5" }.joinToString("|")
         assertTrue(issues(file(",R,,,,,Squat,0,,,,,5,$tooManySets,,,")).single().message.contains("set_weights_kg has more than"))
         assertTrue(issues(file(",R,,,,,Squat,0,,,,,$tooManySets,60,,,")).any { it.message.contains("set_reps has more than") })
+        assertTrue(issues(fileV2(rowV2("rest_seconds_per_set" to tooManySets))).single().message.contains("rest_seconds_per_set has more than"))
 
         val huge = RoutineCsvFormat.VERSION_LINE + "\n" + "x".repeat(RoutineCsvFormat.MAX_BYTES)
         assertTrue(issues(huge).single().message.contains("2 MB"))

@@ -65,11 +65,11 @@
     <string name="label_description_optional">Description (facultatif)</string>
 
     <!-- Workout controls -->
-    <string name="start_workout">Démarrer l\'entraînement</string>
-    <string name="start_exercise">DÉMARRER L\'EXERCICE</string>
+    <string name="start_workout">Démarrer l'entraînement</string>
+    <string name="start_exercise">DÉMARRER L'EXERCICE</string>
     <string name="stop_set">Arrêter la série</string>
-    <string name="end_workout">Terminer l\'entraînement</string>
-    <string name="skip_exercise">Passer l\'exercice</string>
+    <string name="end_workout">Terminer l'entraînement</string>
+    <string name="skip_exercise">Passer l'exercice</string>
     <string name="just_lift">Soulever simplement</string>
     <string name="finish_at_top">Terminer en haut</string>
     <string name="amrap_mode">Mode AMRAP</string>
@@ -82,16 +82,16 @@
     <string name="workout_teardown_retry">Réessayer</string>
 
     <string name="stop_current_set_title">Arrêter la série en cours ?</string>
-    <string name="stop_current_set_message">Arrêtez cette série, passez cet exercice ou terminez tout l\'entraînement.</string>
-    <string name="exit_workout_title">Quitter l\'entraînement ?</string>
-    <string name="exit_workout_message">L\'entraînement est en cours. Êtes-vous sûr de vouloir quitter ?</string>
+    <string name="stop_current_set_message">Arrêtez cette série, passez cet exercice ou terminez tout l'entraînement.</string>
+    <string name="exit_workout_title">Quitter l'entraînement ?</string>
+    <string name="exit_workout_message">L'entraînement est en cours. Êtes-vous sûr de vouloir quitter ?</string>
     <string name="exit_routine_title">Quitter la routine ?</string>
     <string name="exit_routine_message">La progression sera sauvegardée.</string>
 
     <!-- Connection -->
     <string name="not_connected">Non connecté</string>
     <string name="scan">Scanner</string>
-    <string name="scanning_for_devices">Recherche d\'appareils…</string>
+    <string name="scanning_for_devices">Recherche d'appareils…</string>
     <string name="connecting">Connexion…</string>
     <string name="connection_failed">Échec de la connexion</string>
     <string name="disconnect">Déconnecter</string>
@@ -105,16 +105,16 @@
     <string name="settings_weight_unit">Unité de poids</string>
     <string name="settings_appearance">Apparence</string>
     <string name="settings_theme_mode">Thème</string>
-    <string name="settings_theme_mode_description">Suivre le thème du système ou garder l\'application en mode clair ou sombre</string>
+    <string name="settings_theme_mode_description">Suivre le thème du système ou garder l'application en mode clair ou sombre</string>
     <string name="settings_theme_system">Système</string>
     <string name="settings_theme_light">Clair</string>
     <string name="settings_theme_dark">Sombre</string>
     <string name="settings_dynamic_color">Couleurs Material You</string>
-    <string name="settings_dynamic_color_description">Utiliser les couleurs de votre fond d\'écran Android lorsqu\'elles sont disponibles</string>
+    <string name="settings_dynamic_color_description">Utiliser les couleurs de votre fond d'écran Android lorsqu'elles sont disponibles</string>
     <string name="settings_version">Version : %1$s</string>
     <string name="settings_language">Langue</string>
     <string name="settings_language_help">Aidez à améliorer les traductions</string>
-    <string name="settings_machine_diagnostics_description">Afficher un instantané expurgé des diagnostics machine : temps de fonctionnement, codes de défaut, températures, données de plantage et avertissements. Ce n\'est pas une sauvegarde complète.</string>
+    <string name="settings_machine_diagnostics_description">Afficher un instantané expurgé des diagnostics machine : temps de fonctionnement, codes de défaut, températures, données de plantage et avertissements. Ce n'est pas une sauvegarde complète.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Diagnostics machine</string>
@@ -124,9 +124,9 @@
     <string name="diagnostics_status_no_active_faults">Aucun défaut actif</string>
     <string name="diagnostics_copy_action">Copier les diagnostics</string>
     <string name="diagnostics_empty_title">Connectez-vous à une machine pour lire les diagnostics.</string>
-    <string name="diagnostics_empty_description">Les défauts, températures, temps de fonctionnement, données de plantage et avertissements s\'afficheront ici.</string>
+    <string name="diagnostics_empty_description">Les défauts, températures, temps de fonctionnement, données de plantage et avertissements s'afficheront ici.</string>
     <string name="diagnostics_waiting_title">En attente des diagnostics</string>
-    <string name="diagnostics_waiting_description">Connecté. En attente du retour d\'un instantané par la caractéristique de diagnostic.</string>
+    <string name="diagnostics_waiting_description">Connecté. En attente du retour d'un instantané par la caractéristique de diagnostic.</string>
     <string name="diagnostics_uptime">Temps de fonctionnement</string>
     <string name="diagnostics_faults">Défauts</string>
     <string name="diagnostics_temperatures">Températures</string>
@@ -145,7 +145,7 @@
 
     <!-- Backup -->
     <string name="backup_all_data">Sauvegarder toutes les données</string>
-    <string name="backup_description">Ceci est une exportation complète de données personnelles : historique d\'entraînement, routines, cycles d\'entraînement, succès, profils, notes et paramètres.\n\nElle n\'inclut pas les jetons d\'authentification/session, la configuration Supabase ni les données de keystore. Les exportations de diagnostics machine sont des instantanés de dépannage distincts et expurgés, et ne peuvent pas restaurer vos entraînements.</string>
+    <string name="backup_description">Ceci est une exportation complète de données personnelles : historique d'entraînement, routines, cycles d'entraînement, succès, profils, notes et paramètres.\n\nElle n'inclut pas les jetons d'authentification/session, la configuration Supabase ni les données de keystore. Les exportations de diagnostics machine sont des instantanés de dépannage distincts et expurgés, et ne peuvent pas restaurer vos entraînements.</string>
     <string name="restore_from_backup">Restaurer depuis une sauvegarde</string>
     <string name="restore_description">Sélectionnez un fichier de sauvegarde pour restaurer vos données.\n\nLes données existantes ne seront PAS écrasées — seuls les nouveaux enregistrements seront importés.</string>
     <string name="select_file">Sélectionner un fichier</string>
@@ -184,12 +184,12 @@
     <string name="create_new_routine">Créer une nouvelle routine</string>
     <string name="add_exercise">Ajouter un exercice</string>
     <string name="delete_routine">Supprimer la routine</string>
-    <string name="delete_routine_message">Êtes-vous sûr de vouloir supprimer \'%1$s\' ?</string>
+    <string name="delete_routine_message">Êtes-vous sûr de vouloir supprimer '%1$s' ?</string>
     <!-- #772: routine CSV import and export -->
     <string name="routine_csv_import">Importer des routines depuis un CSV</string>
     <string name="routine_csv_export">Exporter en CSV</string>
     <string name="routine_csv_import_title">Importer des routines</string>
-    <string name="routine_csv_unreadable_title">Impossible d\'importer ce fichier</string>
+    <string name="routine_csv_unreadable_title">Impossible d'importer ce fichier</string>
     <string name="routine_csv_issues_title">Corrigez ces problèmes dans le fichier, puis sélectionnez-le à nouveau :</string>
     <string name="routine_csv_more_issues">…et %1$d de plus</string>
     <string name="routine_csv_action_create">Nouvelle</string>
@@ -200,20 +200,20 @@
     <string name="routine_csv_matches_found">Certaines routines de ce fichier correspondent à des routines existantes.</string>
     <string name="routine_csv_mode_copies">Les importer comme copies</string>
     <string name="routine_csv_mode_overwrite">Remplacer les routines existantes</string>
-    <string name="routine_csv_refreshed">Vos routines ont changé depuis cet aperçu. Vérifiez-le à nouveau avant d\'importer.</string>
-    <string name="routine_csv_commit_failed">L\'importation a échoué. Rien n\'a été enregistré.</string>
+    <string name="routine_csv_refreshed">Vos routines ont changé depuis cet aperçu. Vérifiez-le à nouveau avant d'importer.</string>
+    <string name="routine_csv_commit_failed">L'importation a échoué. Rien n'a été enregistré.</string>
     <string name="routine_csv_confirm">Importer</string>
     <string name="routine_csv_imported">%1$d routines importées.</string>
-    <string name="routine_csv_export_blocked_title">Impossible d\'exporter %1$s</string>
-    <string name="routine_csv_export_blocked_message">Les fichiers CSV ne gèrent pas encore ces réglages ; l\'export les perdrait :</string>
+    <string name="routine_csv_export_blocked_title">Impossible d'exporter %1$s</string>
+    <string name="routine_csv_export_blocked_message">Les fichiers CSV ne gèrent pas encore ces réglages ; l'export les perdrait :</string>
     <string name="delete_selected_routines">Supprimer %1$d routines ?</string>
     <string name="duplicate_selected_routines">Dupliquer %1$d routines ?</string>
-    <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe \'(Copie)\'.</string>
+    <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe '(Copie)'.</string>
     <string name="move_to_profile">Déplacer vers le profil</string>
     <string name="copy_to_profile">Copier vers le profil</string>
     <string name="move_routines_confirm">Déplacer %1$d routines vers %2$s ?</string>
     <string name="copy_routines_confirm">Copier %1$d routines vers %2$s ?</string>
-    <string name="no_other_profiles">Aucun autre profil disponible. Créez d\'abord un nouveau profil.</string>
+    <string name="no_other_profiles">Aucun autre profil disponible. Créez d'abord un nouveau profil.</string>
     <string name="cannot_be_undone">Cette action est irréversible.</string>
     <string name="delete_all">Tout supprimer</string>
 
@@ -233,10 +233,10 @@
     <string name="create_exercise">Créer un exercice</string>
     <string name="clear_filters">Effacer les filtres</string>
 
-    <string name="exercise_name_label">Nom de l\'exercice *</string>
+    <string name="exercise_name_label">Nom de l'exercice *</string>
     <string name="label_cables">Câbles</string>
     <string name="label_bodyweight">Poids corporel</string>
-    <string name="delete_exercise_title">Supprimer l\'exercice ?</string>
+    <string name="delete_exercise_title">Supprimer l'exercice ?</string>
     <string name="delete_exercise_message">Êtes-vous sûr de vouloir supprimer \"%1$s\" ? Cette action est irréversible.</string>
 
     <!-- Workout Modes -->
@@ -258,7 +258,7 @@
     <string name="add_profile">Ajouter un profil</string>
     <string name="edit_profile">Modifier le profil</string>
     <string name="delete_profile">Supprimer le profil</string>
-    <string name="resume_workout_title">Reprendre l\'entraînement ?</string>
+    <string name="resume_workout_title">Reprendre l'entraînement ?</string>
     <string name="resume_workout_saved">Vous avez une progression sauvegardée :</string>
     <string name="restart_from_set_1">Redémarrer depuis la série 1</string>
     <string name="rest_between_exercises">Repos entre les exercices</string>
@@ -279,7 +279,7 @@
     <string name="rest_pause">Pause</string>
     <string name="rest_reset">Réinitialiser</string>
     <string name="rest_skip">Passer le repos</string>
-    <string name="rest_end_workout">Terminer l\'entraînement</string>
+    <string name="rest_end_workout">Terminer l'entraînement</string>
     <string name="rest_continue">Continuer</string>
     <string name="rest_complete_announcement">Repos terminé</string>
     <string name="rest_seconds_remaining">%1$d secondes restantes</string>
@@ -320,16 +320,16 @@
     <string name="export_import_data">Exporter / Importer des données</string>
     <string name="choose_export">Choisissez ce que vous souhaitez exporter :</string>
     <string name="personal_records_count">Records personnels (%1$d)</string>
-    <string name="workout_history_count">Historique d\'entraînement (%1$d)</string>
+    <string name="workout_history_count">Historique d'entraînement (%1$d)</string>
     <string name="pr_progression">Progression des RP</string>
     <string name="import_label">Importer :</string>
-    <string name="import_workout_csv">Importer l\'historique d\'entraînement (CSV)</string>
+    <string name="import_workout_csv">Importer l'historique d'entraînement (CSV)</string>
     <string name="no_result_available">Aucun résultat disponible.</string>
 
     <!-- Assessment -->
     <string name="actual_weight_label">Poids réellement utilisé (kg)</string>
     <string name="mean_velocity_label">Vitesse moyenne (m/s)</string>
-    <string name="cancel_assessment">Annuler l\'évaluation</string>
+    <string name="cancel_assessment">Annuler l'évaluation</string>
     <string name="assessment_save_failed">Impossible d’enregistrer l’évaluation. Réessayez.</string>
     <string name="enter_estimate_label">Entrez votre propre estimation (kg)</string>
     <string name="leave_empty_hint">Laissez vide pour utiliser la valeur calculée</string>
@@ -337,12 +337,12 @@
 
     <!-- Smart Insights -->
     <string name="no_workouts_this_week">Aucun entraînement cette semaine</string>
-    <string name="no_balance_data">Pas assez de données pour l\'analyse d\'équilibre</string>
+    <string name="no_balance_data">Pas assez de données pour l'analyse d'équilibre</string>
     <string name="great_variety">Grande variété ! Tous les exercices effectués récemment.</string>
     <string name="no_plateaus">Aucun plateau détecté. Continuez à progresser !</string>
 
     <string name="workout_in_progress">Entraînement en cours</string>
-    <string name="stop_before_editing">Veuillez arrêter l\'entraînement en cours avant de modifier les routines.</string>
+    <string name="stop_before_editing">Veuillez arrêter l'entraînement en cours avant de modifier les routines.</string>
 
     <string name="starting_weight">Poids de départ</string>
     <string name="eccentric_overload">Surcharge excentrique</string>
@@ -560,39 +560,39 @@
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
     <string name="settings_voice_stop_description">Dites votre mot de s\u00e9curit\u00e9 pendant un entra\u00eenement pour arr\u00eater la s\u00e9rie imm\u00e9diatement</string>
-    <string name="settings_voice_stop_enable">Activer l\'arr\u00eat vocal</string>
+    <string name="settings_voice_stop_enable">Activer l'arr\u00eat vocal</string>
     <string name="settings_safe_word_label">Mot de s\u00e9curit\u00e9</string>
     <string name="settings_safe_word_hint">Entrez un mot de s\u00e9curit\u00e9 (ex. PHOENIX)</string>
     <string name="settings_calibrate_button">Calibrer</string>
-    <string name="settings_calibrate_first">Calibrez votre mot de s\u00e9curit\u00e9 avant de pouvoir l\'utiliser pendant les entra\u00eenements</string>
+    <string name="settings_calibrate_first">Calibrez votre mot de s\u00e9curit\u00e9 avant de pouvoir l'utiliser pendant les entra\u00eenements</string>
     <string name="settings_calibrated_badge">Calibr\u00e9</string>
     <string name="settings_calibration_title">Calibrer le mot de s\u00e9curit\u00e9</string>
     <string name="settings_calibration_prompt">Dites votre mot de s\u00e9curit\u00e9 :</string>
     <string name="settings_calibration_listening">\u00c9coute en cours…</string>
     <string name="settings_calibration_progress">%1$d sur 3 d\u00e9tections</string>
-    <string name="settings_calibration_mic_error">Impossible d\'acc\u00e9der au microphone. V\u00e9rifiez les autorisations et r\u00e9essayez.</string>
+    <string name="settings_calibration_mic_error">Impossible d'acc\u00e9der au microphone. V\u00e9rifiez les autorisations et r\u00e9essayez.</string>
     <string name="settings_calibration_open_settings">Ouvrir les paramètres</string>
     <string name="cd_calibration_check">Vérification de calibration</string>
 
     <!-- ==================== Encouragement verbal (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Encouragement verbal</string>
     <string name="settings_vulgar_mode_title">Mode vulgaire</string>
-    <string name="settings_vulgar_mode_headphone_warning">Utilisation d\'un casque fortement recommandée.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Utilisation d'un casque fortement recommandée.</string>
     <string name="settings_vulgar_mode_tier_label">Niveau de grossièreté</string>
     <string name="settings_vulgar_mode_tier_mild">Doux</string>
     <string name="settings_vulgar_mode_tier_strong">Fort</string>
     <string name="settings_vulgar_mode_tier_mix">Mixte</string>
     <string name="settings_dominatrix_mode_title">Mode Dominatrix</string>
-    <string name="settings_dominatrix_mode_description">Commandes vocales de Charlotte. Remplace le pool vulgaire lorsqu\'il est actif.</string>
+    <string name="settings_dominatrix_mode_description">Commandes vocales de Charlotte. Remplace le pool vulgaire lorsqu'il est actif.</string>
     <string name="settings_dominatrix_unlock_toast">Mode Dominatrix déverrouillé</string>
     <string name="settings_adults_only_title">Réservé aux adultes</string>
     <string name="settings_adults_only_body">Le mode vulgaire contient des grossièretés et des thèmes adultes. Avez-vous 18 ans ou plus ?</string>
-    <string name="settings_adults_only_confirm">J\'ai 18+ et mamie ne m\'entend pas</string>
+    <string name="settings_adults_only_confirm">J'ai 18+ et mamie ne m'entend pas</string>
     <string name="settings_adults_only_decline">Garder propre</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC : Langage grossier + Thèmes suggestifs</string>
     <string name="settings_ble_compat_title">Mode de compatibilité BLE</string>
-    <string name="settings_ble_compat_description">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l\'active que sur ces appareils.</string>
-    <string name="settings_ble_compat_description_affected">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l\'active que sur ces appareils (cet appareil est concerné).</string>
+    <string name="settings_ble_compat_description">Chemin d'écriture à petite MTU qui corrige les déconnexions au démarrage de l'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l'active que sur ces appareils.</string>
+    <string name="settings_ble_compat_description_affected">Chemin d'écriture à petite MTU qui corrige les déconnexions au démarrage de l'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l'active que sur ces appareils (cet appareil est concerné).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Activé</string>
     <string name="settings_ble_compat_off">Désactivé</string>
@@ -604,10 +604,10 @@
     <string name="action_tag">Associer</string>
     <string name="action_change">Modifier</string>
     <string name="tag_lift_title">Associer ce mouvement ?</string>
-    <string name="tag_lift_message">Cette série Just Lift n\'est pas encore associée à un exercice. L\'associer garde votre historique précis.</string>
+    <string name="tag_lift_message">Cette série Just Lift n'est pas encore associée à un exercice. L'associer garde votre historique précis.</string>
     <string name="tag_exercise_prompt">Associer cet exercice</string>
     <string name="tag_exercise_hint">Associez ce mouvement pour le suivre</string>
-    <string name="tag_exercise_action">Associer l\'exercice</string>
+    <string name="tag_exercise_action">Associer l'exercice</string>
     <string name="exercise_tagged">Exercice associé</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Démarrer récupération active…</string>
@@ -619,19 +619,19 @@
     <string name="routine_modifier_heavy_deload_description">Les répétitions sont réduites au pourcentage de volume sélectionné ; les charges restent identiques.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->
-    <string name="equipment_rack_title">Rack d\'équipement</string>
-    <string name="equipment_rack_description">Gérez les accessoires locaux et la charge ajoutée pour les séances d\'entraînement.</string>
+    <string name="equipment_rack_title">Rack d'équipement</string>
+    <string name="equipment_rack_description">Gérez les accessoires locaux et la charge ajoutée pour les séances d'entraînement.</string>
     <string name="equipment_rack_empty">Aucun élément dans le rack pour le moment.</string>
     <string name="equipment_rack_add_item">Ajouter un élément au rack</string>
-    <string name="equipment_rack_edit_item">Modifier l\'élément du rack</string>
-    <string name="equipment_rack_name_label">Nom de l\'élément</string>
+    <string name="equipment_rack_edit_item">Modifier l'élément du rack</string>
+    <string name="equipment_rack_name_label">Nom de l'élément</string>
     <string name="equipment_rack_weight_label">Poids (%1$s)</string>
     <string name="equipment_rack_category_label">Catégorie</string>
     <string name="equipment_rack_behavior_label">Comportement de la charge</string>
     <string name="equipment_rack_enabled">Activé</string>
     <string name="equipment_rack_invalid_name">Le nom est requis.</string>
     <string name="equipment_rack_invalid_weight">Saisissez un poids fini non négatif.</string>
-    <string name="equipment_rack_active_selection">Rack d\'équipement</string>
+    <string name="equipment_rack_active_selection">Rack d'équipement</string>
     <string name="equipment_rack_manage">Gérer</string>
     <string name="equipment_rack_no_enabled_items">Aucun élément activé dans le rack.</string>
     <string name="equipment_rack_none_selected">Aucun élément sélectionné.</string>
@@ -653,7 +653,7 @@
     <string name="equipment_rack_save_override_message">Enregistrer cette configuration de comportement comme valeur par défaut pour %1$s dans cette routine ?</string>
     <string name="equipment_rack_save_override_confirm">Enregistrer</string>
     <string name="equipment_rack_save_override_dismiss">Seulement cette fois</string>
-    <string name="cd_equipment_rack">Rack d\'équipement</string>
+    <string name="cd_equipment_rack">Rack d'équipement</string>
     <string name="bodyweight_effective_load_includes">Inclus : %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d de plus</string>
     <!-- ==================== Set type labels (Issue #646) ==================== -->
@@ -731,7 +731,7 @@
     <string name="cd_select_profile_color">Sélectionner %1$s comme couleur du profil</string>
     <string name="profile_automatic">Automatique</string>
     <string name="profile_manual">Manuel</string>
-    <string name="profile_master_beeps">Bips d\'entraînement</string>
+    <string name="profile_master_beeps">Bips d'entraînement</string>
     <string name="profile_body_weight_unset">Non défini</string>
     <string name="profile_body_weight_invalid">Saisissez un poids corporel compris entre 20 et 300 kg</string>
     <string name="profile_body_weight_imported">Correspond à une mesure de santé importée</string>
@@ -749,8 +749,8 @@
     <string name="profile_disco_requires_connection">Connectez votre machine pour utiliser le mode disco</string>
     <string name="profile_disco_unlocked_title">Mode disco déverrouillé</string>
     <string name="profile_disco_unlocked_body">Activez le mode disco dans les préférences LED pour faire danser votre machine.</string>
-    <string name="profile_disco_unlocked_action">C\'est parti !</string>
-    <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
+    <string name="profile_disco_unlocked_action">C'est parti !</string>
+    <string name="profile_adult_enable_partial_failure">La confirmation de l'âge a été enregistrée, mais le mode vulgaire n'a pas pu être activé. Réessayez.</string>
     <string name="label_previously_completed">Déjà terminés</string>
     <string name="cd_filter_previously_completed">Filtrer les exercices déjà terminés</string>
     <!-- #764: startup storage failure screen -->
