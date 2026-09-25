@@ -539,8 +539,6 @@ class MainViewModel(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
-        ApplyRoutineModifierUseCase(personalRecordRepository, profileExerciseBaselineRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -555,6 +553,14 @@ class MainViewModel(
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    // Issue #882: placed after velocityOneRepMaxRepository so the default can delegate
+    // baseline lookup to the canonical ResolveRoutineScalingBaselineUseCase.
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
+        ApplyRoutineModifierUseCase(
+            personalRecordRepository,
+            profileExerciseBaselineRepository,
+            velocityOneRepMaxRepository,
+        ),
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,

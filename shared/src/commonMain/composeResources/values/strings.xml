@@ -693,7 +693,7 @@
     <string name="routine_modifier_percent_label">Modifier</string>
     <string name="routine_modifier_start">Start</string>
     <string name="routine_modifier_cancel">Cancel</string>
-    <string name="routine_modifier_active_recovery_description">Weights reduced to selected 1RM percentage; working reps stay the same; warmups simplified.</string>
+    <string name="routine_modifier_active_recovery_description">Weights reduced to the selected percentage of your 1RM when known, otherwise of the programmed weight; bodyweight-only exercises keep their loads. Working reps stay the same; warmups simplified.</string>
     <string name="routine_modifier_heavy_deload_description">Reps reduced to selected volume percentage; weights stay the same.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->
