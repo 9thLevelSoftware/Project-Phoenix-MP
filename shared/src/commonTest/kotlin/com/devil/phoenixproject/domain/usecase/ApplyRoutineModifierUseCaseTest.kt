@@ -370,6 +370,20 @@ class ApplyRoutineModifierUseCaseTest {
         assertEquals(0f, adjusted.exercises.single().weightPerCableKg)
     }
 
+    @Test
+    fun `active recovery zero set weight falls back to scaled scalar`() = runTest {
+        val routine = routineWith(
+            routineExercise(weight = 20f, setWeights = listOf(40f, 0f)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+        val exercise = adjusted.exercises.single()
+
+        assertEquals(10f, exercise.weightPerCableKg)
+        // Set 1 has no positive weight of its own: it takes the scaled scalar (10), not 0.
+        assertEquals(listOf(20f, 10f), exercise.setWeightsPerCableKg)
+    }
+
     private fun routineWith(vararg exercises: RoutineExercise): Routine = Routine(
         id = "routine-1",
         name = "Routine",

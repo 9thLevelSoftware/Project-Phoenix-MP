@@ -82,20 +82,25 @@ class ApplyRoutineModifierUseCase(
             // percent of the baseline; programmed per-set variation is preserved proportionally.
             val targetScalar = roundToHalfKg(baseline * fraction)
             val setFactor = if (scalarLoad > 0f) targetScalar / scalarLoad else null
-            val scaledSets = when {
-                setLoads.isEmpty() -> emptyList()
-                setFactor != null -> setLoads.map { roundToHalfKg(it * setFactor) }
-                // Zero-scalar rows have no ratio to preserve: all sets take the baseline target.
-                else -> List(setLoads.size) { targetScalar }
+            val scaledSets = setLoads.map { load ->
+                when {
+                    // A set with no positive weight falls back to the scalar target (RCA rule).
+                    load <= 0f -> targetScalar
+                    setFactor != null -> roundToHalfKg(load * setFactor)
+                    // Zero-scalar rows have no ratio to preserve: all sets take the baseline target.
+                    else -> targetScalar
+                }
             }
             ScaledLoads(targetScalar, scaledSets)
         } else {
             // No-baseline fallback: the selected percent of each programmed set load,
             // preserving per-set variation. Never fabricate a floor weight.
-            ScaledLoads(
-                scalar = roundToHalfKg(scalarLoad * fraction),
-                sets = setLoads.map { roundToHalfKg(it * fraction) },
-            )
+            val targetScalar = roundToHalfKg(scalarLoad * fraction)
+            val scaledSets = setLoads.map { load ->
+                // A set with no positive weight falls back to the scalar target (RCA rule).
+                if (load > 0f) roundToHalfKg(load * fraction) else targetScalar
+            }
+            ScaledLoads(targetScalar, scaledSets)
         }
     }
 
