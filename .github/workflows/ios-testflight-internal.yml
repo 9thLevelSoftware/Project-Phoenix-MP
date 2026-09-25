@@ -22,7 +22,9 @@ jobs:
 
   build:
     needs: tests
-    runs-on: macos-26-large
+    # Standard x64 14 GB image: fits the ~8 GB measured build peak and is free
+    # for public repos (larger runners are always billed). See ios-testflight.yml.
+    runs-on: macos-26-intel
     outputs:
       build_number: ${{ steps.build_number.outputs.build_number }}
 
