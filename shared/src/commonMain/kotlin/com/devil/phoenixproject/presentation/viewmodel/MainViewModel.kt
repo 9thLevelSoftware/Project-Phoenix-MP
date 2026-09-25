@@ -67,6 +67,7 @@ import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
@@ -539,8 +540,6 @@ class MainViewModel(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
-        ApplyRoutineModifierUseCase(personalRecordRepository, profileExerciseBaselineRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -555,6 +554,16 @@ class MainViewModel(
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    // Issue #882: declared after velocityOneRepMaxRepository so the default can reuse the
+    // shared baseline resolver (PR/1RM precedence) instead of a private lookup order.
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
+        ApplyRoutineModifierUseCase(
+            ResolveRoutineScalingBaselineUseCase(
+                personalRecordRepository,
+                profileExerciseBaselineRepository,
+                velocityOneRepMaxRepository,
+            ),
+        ),
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,

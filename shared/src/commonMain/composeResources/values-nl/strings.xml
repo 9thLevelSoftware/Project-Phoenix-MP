@@ -585,7 +585,7 @@
     <string name="routine_modifier_percent_label">Modifier</string>
     <string name="routine_modifier_start">Starten</string>
     <string name="routine_modifier_cancel">Annuleren</string>
-    <string name="routine_modifier_active_recovery_description">Gewichten worden verlaagd naar het gekozen 1RM-percentage; werkherhalingen blijven gelijk; warming-ups worden vereenvoudigd.</string>
+    <string name="routine_modifier_active_recovery_description">Gewichten worden verlaagd naar het gekozen 1RM-percentage, of naar hetzelfde percentage van elke geplande last wanneer er geen 1RM beschikbaar is; werkherhalingen blijven gelijk; warming-ups worden vereenvoudigd.</string>
     <string name="routine_modifier_heavy_deload_description">Herhalingen worden verlaagd naar het gekozen volumepercentage; gewichten blijven gelijk.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->

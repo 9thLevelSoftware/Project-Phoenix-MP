@@ -1,8 +1,5 @@
 package com.devil.phoenixproject.domain.usecase
 
-import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
-import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -15,10 +12,22 @@ import kotlin.math.roundToInt
  *
  * The input routine is never mutated. Callers should resolve percent-of-PR routine weights
  * before invoking this use case so fallback weights are absolute kg values.
+ *
+ * Active Recovery weight semantics (Issue #882):
+ * - Eligibility is driven by effective load, not [com.devil.phoenixproject.domain.model.Exercise.isBodyweight]
+ *   metadata: any row with a positive scalar or per-set weight is scaled, so misclassified
+ *   weighted rows (issue #635 class) are no longer skipped. Genuine zero-load rows
+ *   (e.g. bodyweight exercises) keep their weights untouched.
+ * - When a scoped baseline exists ([ResolveRoutineScalingBaselineUseCase], honoring
+ *   [com.devil.phoenixproject.domain.model.RoutineExercise.effectiveScalingBasis]), weights are
+ *   reduced to the selected percent of that baseline ("selected 1RM percentage" copy).
+ *   The scalar lands exactly on percent-of-baseline and programmed per-set variation is
+ *   preserved proportionally around it, with per-set half-kg rounding.
+ * - When no baseline exists, each programmed load (scalar and per set) is reduced to the
+ *   selected percent of itself. This is the only fallback; the 0.5 kg floor is never fabricated.
  */
 class ApplyRoutineModifierUseCase(
-    private val prRepository: PersonalRecordRepository,
-    private val baselineRepository: ProfileExerciseBaselineRepository,
+    private val scalingBaselineResolver: ResolveRoutineScalingBaselineUseCase,
 ) {
     suspend operator fun invoke(
         routine: Routine,
@@ -31,25 +40,64 @@ class ApplyRoutineModifierUseCase(
 
     private suspend fun applyActiveRecovery(routine: Routine, percent: Int, profileId: String): Routine = routine.copy(
         exercises = routine.exercises.map { exercise ->
-            if (exercise.exercise.isBodyweight) {
-                exercise.copy(warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent))
-            } else {
-                val baseline = resolveBaselineOneRepMax(exercise, profileId)
-                val adjustedWeight = roundToHalfKg(baseline * percent / 100f).coerceAtLeast(MIN_WEIGHT_KG)
-                val adjustedSetWeights = if (exercise.setWeightsPerCableKg.isNotEmpty()) {
-                    List(exercise.setWeightsPerCableKg.size) { adjustedWeight }
-                } else {
-                    emptyList()
-                }
-
-                exercise.copy(
-                    weightPerCableKg = adjustedWeight,
-                    setWeightsPerCableKg = adjustedSetWeights,
-                    warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent),
-                )
-            }
+            val loads = scaleActiveRecoveryLoads(exercise, percent, profileId)
+            exercise.copy(
+                weightPerCableKg = loads.scalar,
+                setWeightsPerCableKg = loads.sets,
+                warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent),
+            )
         },
     )
+
+    private data class ScaledLoads(val scalar: Float, val sets: List<Float>)
+
+    private suspend fun scaleActiveRecoveryLoads(
+        exercise: RoutineExercise,
+        percent: Int,
+        profileId: String,
+    ): ScaledLoads {
+        val scalarLoad = exercise.weightPerCableKg
+        val setLoads = exercise.setWeightsPerCableKg
+        // Issue #882: eligibility from effective load, not isBodyweight metadata.
+        val hasPositiveLoad = scalarLoad > 0f || setLoads.any { it > 0f }
+        if (!hasPositiveLoad) {
+            return ScaledLoads(scalarLoad, setLoads)
+        }
+
+        val fraction = percent / 100f
+        val baseline = exercise.exercise.id
+            ?.let { exerciseId ->
+                scalingBaselineResolver(
+                    exerciseId = exerciseId,
+                    mode = exercise.programMode,
+                    profileId = profileId,
+                    basis = exercise.effectiveScalingBasis,
+                )
+            }
+            ?.weightPerCableKg
+            ?.takeIf { it > 0f }
+
+        return if (baseline != null) {
+            // Documented percent-of-1RM semantics: the scalar lands exactly on the selected
+            // percent of the baseline; programmed per-set variation is preserved proportionally.
+            val targetScalar = roundToHalfKg(baseline * fraction)
+            val setFactor = if (scalarLoad > 0f) targetScalar / scalarLoad else null
+            val scaledSets = when {
+                setLoads.isEmpty() -> emptyList()
+                setFactor != null -> setLoads.map { roundToHalfKg(it * setFactor) }
+                // Zero-scalar rows have no ratio to preserve: all sets take the baseline target.
+                else -> List(setLoads.size) { targetScalar }
+            }
+            ScaledLoads(targetScalar, scaledSets)
+        } else {
+            // No-baseline fallback: the selected percent of each programmed set load,
+            // preserving per-set variation. Never fabricate a floor weight.
+            ScaledLoads(
+                scalar = roundToHalfKg(scalarLoad * fraction),
+                sets = setLoads.map { roundToHalfKg(it * fraction) },
+            )
+        }
+    }
 
     private fun applyHeavyDeload(routine: Routine, percent: Int): Routine = routine.copy(
         exercises = routine.exercises.map { exercise ->
@@ -62,22 +110,6 @@ class ApplyRoutineModifierUseCase(
             )
         },
     )
-
-    private suspend fun resolveBaselineOneRepMax(exercise: RoutineExercise, profileId: String): Float {
-        val exerciseId = exercise.exercise.id
-        val weightPrOneRepMax = exerciseId
-            ?.let { prRepository.getBestWeightPRForWorkoutMode(it, exercise.programMode.displayName, profileId) }
-            ?.oneRepMax
-            ?.takeIf { it > 0 }
-
-        if (weightPrOneRepMax != null) return weightPrOneRepMax
-
-        val storedOneRepMax = exerciseId
-            ?.let { baselineRepository.get(profileId, it)?.oneRepMaxPerCableKg }
-            ?.takeIf { it > 0 }
-
-        return storedOneRepMax ?: exercise.weightPerCableKg.takeIf { it > 0 } ?: MIN_WEIGHT_KG
-    }
 
     private fun scaleFirstWarmupOnly(warmupSets: List<WarmupSet>, percent: Int): List<WarmupSet> = warmupSets
         .firstOrNull()
@@ -93,8 +125,4 @@ class ApplyRoutineModifierUseCase(
     }
 
     private fun roundToHalfKg(value: Float): Float = (value * 2f).roundToInt() / 2f
-
-    private companion object {
-        const val MIN_WEIGHT_KG = 0.5f
-    }
 }

@@ -607,7 +607,7 @@
     <string name="routine_modifier_percent_label">Modificador</string>
     <string name="routine_modifier_start">Iniciar</string>
     <string name="routine_modifier_cancel">Cancelar</string>
-    <string name="routine_modifier_active_recovery_description">Los pesos se reducen al porcentaje de 1RM seleccionado; las repeticiones de trabajo no cambian; los calentamientos se simplifican.</string>
+    <string name="routine_modifier_active_recovery_description">Los pesos se reducen al porcentaje de 1RM seleccionado o, cuando no hay 1RM, al mismo porcentaje de cada peso programado; las repeticiones de trabajo no cambian; los calentamientos se simplifican.</string>
     <string name="routine_modifier_heavy_deload_description">Las repeticiones se reducen al porcentaje de volumen seleccionado; los pesos no cambian.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->

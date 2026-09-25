@@ -607,7 +607,7 @@
     <string name="routine_modifier_percent_label">Modifikator</string>
     <string name="routine_modifier_start">Starten</string>
     <string name="routine_modifier_cancel">Abbrechen</string>
-    <string name="routine_modifier_active_recovery_description">Gewichte werden auf den gewählten 1RM-Prozentsatz reduziert; Arbeitswiederholungen bleiben gleich; Aufwärmen wird vereinfacht.</string>
+    <string name="routine_modifier_active_recovery_description">Gewichte werden auf den gewählten 1RM-Prozentsatz reduziert oder, wenn kein 1RM vorliegt, auf denselben Prozentsatz des trainierten Gewichts; Arbeitswiederholungen bleiben gleich; Aufwärmen wird vereinfacht.</string>
     <string name="routine_modifier_heavy_deload_description">Wiederholungen werden auf den gewählten Volumen-Prozentsatz reduziert; Gewichte bleiben gleich.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->

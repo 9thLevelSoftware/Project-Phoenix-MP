@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BiomechanicsRepProcessor
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -342,8 +343,11 @@ internal class DWSMTestHarness(
 
     val repCounter = RepCounterFromMachine()
     val fakeBaselineRepo = FakeProfileExerciseBaselineRepository()
-    val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeBaselineRepo, FakeVelocityOneRepMaxRepository())
-    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(fakePRRepo, fakeBaselineRepo)
+    val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
+    val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeBaselineRepo, fakeVelocityRepo)
+    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(
+        ResolveRoutineScalingBaselineUseCase(fakePRRepo, fakeBaselineRepo, fakeVelocityRepo),
+    )
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
     val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 

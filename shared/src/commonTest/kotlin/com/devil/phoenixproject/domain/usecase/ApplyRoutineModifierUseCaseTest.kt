@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 class ApplyRoutineModifierUseCaseTest {
     private lateinit var prRepository: FakePersonalRecordRepository
     private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
+    private lateinit var velocityRepository: FakeVelocityOneRepMaxRepository
     private lateinit var useCase: ApplyRoutineModifierUseCase
 
     private val cableExercise = Exercise(
@@ -41,7 +43,10 @@ class ApplyRoutineModifierUseCaseTest {
     fun setup() {
         prRepository = FakePersonalRecordRepository()
         baselineRepository = FakeProfileExerciseBaselineRepository()
-        useCase = ApplyRoutineModifierUseCase(prRepository, baselineRepository)
+        velocityRepository = FakeVelocityOneRepMaxRepository()
+        useCase = ApplyRoutineModifierUseCase(
+            ResolveRoutineScalingBaselineUseCase(prRepository, baselineRepository, velocityRepository),
+        )
     }
 
     @Test
@@ -58,8 +63,11 @@ class ApplyRoutineModifierUseCaseTest {
         val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 55))
         val exercise = adjusted.exercises.single()
 
+        // Percent-of-baseline semantics: the scalar lands exactly on 55% of the 100 kg baseline,
+        // and programmed per-set variation is preserved proportionally with per-set half-kg
+        // rounding (issue #882: per-set weights must not be flattened).
         assertEquals(55f, exercise.weightPerCableKg)
-        assertEquals(listOf(55f, 55f, 55f), exercise.setWeightsPerCableKg)
+        assertEquals(listOf(55f, 57f, 59f), exercise.setWeightsPerCableKg)
         assertEquals(listOf(10, 8, 6), exercise.setReps)
     }
 
@@ -125,7 +133,6 @@ class ApplyRoutineModifierUseCaseTest {
         )
 
         val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 60))
-
         assertEquals(0f, adjusted.exercises.single().weightPerCableKg)
         assertEquals(listOf(15, 12), adjusted.exercises.single().setReps)
     }
@@ -239,6 +246,128 @@ class ApplyRoutineModifierUseCaseTest {
         )
 
         assertEquals(40f, adjusted.exercises.single().weightPerCableKg)
+    }
+
+    // ===== Issue #882: mixed-routine application matrix =====
+
+    @Test
+    fun `active recovery mixed routine scales positive loads and leaves zero load rows`() = runTest {
+        // Baseline row: 80 kg max-weight PR in the exercise's own mode.
+        prRepository.addRecord(
+            PersonalRecord(
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 80f,
+                reps = 1,
+                oneRepMax = 80f,
+                timestamp = 1L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 80f,
+                phase = WorkoutPhase.CONCENTRIC,
+            ),
+        )
+        val noPrExercise = Exercise(id = "squat", name = "Back Squat", muscleGroup = "Legs", equipment = "BARBELL")
+        // Issue #635 class: unknown equipment derives isBodyweight=true despite positive load.
+        val misclassifiedExercise = Exercise(id = "row", name = "Seated Cable Row", muscleGroup = "Back", equipment = "other")
+        val perSetExercise = Exercise(id = "fly", name = "Cable Fly", muscleGroup = "Chest", equipment = "CABLE")
+
+        val routine = routineWith(
+            routineExercise(exercise = cableExercise, weight = 60f),
+            routineExercise(exercise = noPrExercise, weight = 50f),
+            routineExercise(exercise = misclassifiedExercise, weight = 10f),
+            routineExercise(exercise = bodyweightExercise, weight = 0f),
+            routineExercise(exercise = perSetExercise, weight = 0f, setWeights = listOf(40f, 45f)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+
+        // PR 80 / programmed 60 at 50% -> 40 (percent-of-1RM).
+        assertEquals(40f, adjusted.exercises[0].weightPerCableKg)
+        // No-PR programmed 50 -> 25 (percent-of-programmed-load fallback).
+        assertEquals(25f, adjusted.exercises[1].weightPerCableKg)
+        // Positive-load 'other'-classified 10 -> 5 (load-based eligibility, not isBodyweight).
+        assertEquals(5f, adjusted.exercises[2].weightPerCableKg)
+        // Genuine zero-load bodyweight -> 0 (untouched).
+        assertEquals(0f, adjusted.exercises[3].weightPerCableKg)
+        assertEquals(emptyList(), adjusted.exercises[3].setWeightsPerCableKg)
+        // Zero scalar / per-set 40 -> 20 with distinct set variation preserved.
+        assertEquals(0f, adjusted.exercises[4].weightPerCableKg)
+        assertEquals(listOf(20f, 22.5f), adjusted.exercises[4].setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `active recovery scales misclassified bodyweight rows that carry load`() = runTest {
+        // Empty equipment derives isBodyweight=true (pre-migration-39 rows).
+        val derivedBodyweight = Exercise(id = "row", name = "Seated Cable Row", muscleGroup = "Back", equipment = "")
+        // Explicit bodyweight flag on a loaded cable lift (retired portal 'Bodyweight' sentinel).
+        val sentinelBodyweight = Exercise(
+            id = "fly",
+            name = "Cable Fly",
+            muscleGroup = "Chest",
+            equipment = "CABLE",
+            isBodyweightOverride = true,
+        )
+        val routine = routineWith(
+            routineExercise(exercise = derivedBodyweight, weight = 50f, setWeights = listOf(50f, 50f)),
+            routineExercise(exercise = sentinelBodyweight, weight = 40f, setWeights = listOf(40f, 42f)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+
+        assertEquals(25f, adjusted.exercises[0].weightPerCableKg)
+        assertEquals(listOf(25f, 25f), adjusted.exercises[0].setWeightsPerCableKg)
+        assertEquals(20f, adjusted.exercises[1].weightPerCableKg)
+        assertEquals(listOf(20f, 21f), adjusted.exercises[1].setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `active recovery no baseline fallback preserves per set variation`() = runTest {
+        val routine = routineWith(
+            routineExercise(weight = 60f, setWeights = listOf(60f, 63f, 66f)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+        val exercise = adjusted.exercises.single()
+
+        assertEquals(30f, exercise.weightPerCableKg)
+        assertEquals(listOf(30f, 31.5f, 33f), exercise.setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `active recovery uses cross mode PR baseline like load time resolution`() = runTest {
+        // PR exists only in Pump mode while the routine runs Old School: the shared resolver's
+        // same-profile cross-mode fallback (used at load time) must also drive the modifier.
+        prRepository.addRecord(
+            PersonalRecord(
+                exerciseId = "incline",
+                exerciseName = "Incline DB Press",
+                weightPerCableKg = 100f,
+                reps = 1,
+                oneRepMax = 100f,
+                timestamp = 1L,
+                workoutMode = "Pump",
+                prType = PRType.MAX_WEIGHT,
+                volume = 100f,
+                phase = WorkoutPhase.CONCENTRIC,
+            ),
+        )
+        val incline = Exercise(id = "incline", name = "Incline DB Press", muscleGroup = "Chest", equipment = "DUMBBELL")
+        val routine = routineWith(routineExercise(exercise = incline, weight = 80f, setWeights = listOf(80f, 80f)))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+
+        assertEquals(50f, adjusted.exercises.single().weightPerCableKg)
+        assertEquals(listOf(50f, 50f), adjusted.exercises.single().setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `active recovery never fabricates a floor weight for tiny loads`() = runTest {
+        val routine = routineWith(routineExercise(weight = 0.6f))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 10))
+
+        assertEquals(0f, adjusted.exercises.single().weightPerCableKg)
     }
 
     private fun routineWith(vararg exercises: RoutineExercise): Routine = Routine(

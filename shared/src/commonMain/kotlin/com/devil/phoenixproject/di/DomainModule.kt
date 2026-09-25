@@ -50,7 +50,7 @@ val domainModule = module {
     single { DropSetEligibilityPolicy(get(), get()) }
     factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get()) }
     factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get()) }
-    factory { ApplyRoutineModifierUseCase(get(), get()) }
+    factory { ApplyRoutineModifierUseCase(get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get(), get()) }
 
