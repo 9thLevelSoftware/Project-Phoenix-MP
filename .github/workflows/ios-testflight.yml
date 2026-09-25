@@ -43,12 +43,24 @@ jobs:
 
   build:
     needs: tests
-    # Kotlin/Native's iOS release link needs 12 GiB; use the 14 GiB Intel image.
-    runs-on: macos-26-intel
+    # Kotlin/Native's iOS release link needs 12 GiB; use the x64 14 GiB image.
+    runs-on: macos-26-large
     outputs:
       build_number: ${{ steps.build_number.outputs.build_number }}
 
     steps:
+      - name: Verify iOS release runner capacity
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          memory_bytes="$(sysctl -n hw.memsize)"
+          echo "Runner architecture: $arch"
+          echo "Runner memory bytes: $memory_bytes"
+          if [[ "$arch" != "x86_64" || "$memory_bytes" -lt 12884901888 ]]; then
+            echo "::error::Kotlin/Native release linking requires an x64 runner with at least 12 GiB RAM."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
