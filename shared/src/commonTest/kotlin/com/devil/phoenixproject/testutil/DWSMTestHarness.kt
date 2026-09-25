@@ -343,7 +343,7 @@ internal class DWSMTestHarness(
     val repCounter = RepCounterFromMachine()
     val fakeBaselineRepo = FakeProfileExerciseBaselineRepository()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeBaselineRepo, FakeVelocityOneRepMaxRepository())
-    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(fakePRRepo, fakeBaselineRepo)
+    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(fakePRRepo, fakeBaselineRepo, FakeVelocityOneRepMaxRepository())
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
     val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 
