@@ -105,7 +105,13 @@ jobs:
             exit 1
           fi
 
+          # Google Play intermittently returns 5xx while reading track state.
+          # curl retries transient HTTP failures with bounded exponential backoff.
           TRACKS_RESPONSE="$(curl --silent --show-error --fail \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --retry 4 \
+            --retry-max-time 45 \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits/$EDIT_ID/tracks")"
           PLAY_MAX_VERSION_CODE="$(printf '%s' "$TRACKS_RESPONSE" | jq -r '[.tracks[]?.releases[]?.versionCodes[]? | tonumber] | max // empty')"

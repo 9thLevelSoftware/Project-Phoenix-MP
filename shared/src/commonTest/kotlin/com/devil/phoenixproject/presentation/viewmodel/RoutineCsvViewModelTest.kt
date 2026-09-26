@@ -178,9 +178,21 @@ class RoutineCsvViewModelTest {
         advanceUntilIdle()
         assertIs<RoutineCsvExportUiState.Ready>(viewModel.exportState.value)
 
-        viewModel.exportRoutine(routine.copy(exercises = routine.exercises.map { it.copy(stopAtTop = true) }))
+        // Issue #896: advanced settings export in v2, so only a routine no CSV row can hold is
+        // still refused — here an exercise without sets.
+        viewModel.exportRoutine(
+            routine.copy(exercises = routine.exercises.map { it.copy(setReps = emptyList(), setWeightsPerCableKg = emptyList()) }),
+        )
         advanceUntilIdle()
         val blocked = assertIs<RoutineCsvExportUiState.Blocked>(viewModel.exportState.value)
         assertEquals("Push", blocked.routineName)
+    }
+
+    @Test
+    fun advancedSettingsExportInsteadOfBeingRefused() = runTest(dispatcher) {
+        val routine = existing("Push")
+        viewModel.exportRoutine(routine.copy(exercises = routine.exercises.map { it.copy(stopAtTop = true) }))
+        advanceUntilIdle()
+        assertIs<RoutineCsvExportUiState.Ready>(viewModel.exportState.value)
     }
 }

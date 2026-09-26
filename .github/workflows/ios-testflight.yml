@@ -43,11 +43,28 @@ jobs:
 
   build:
     needs: tests
-    runs-on: macos-26
+    # Measured memory profile (cold compile + link, Sep 2026): the JVM peaks
+    # ~5 GB in DevirtualizationAnalysis and the LLVM link peaks ~6.3 GB after it
+    # — the phases are sequential, ~8 GB concurrent max. The standard x64 14 GB
+    # image fits that with headroom and is free for public repos; larger runners
+    # (macos-26-large, 30 GB) are always billed and drain the spending limit.
+    runs-on: macos-26-intel
     outputs:
       build_number: ${{ steps.build_number.outputs.build_number }}
 
     steps:
+      - name: Verify iOS release runner capacity
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          memory_bytes="$(sysctl -n hw.memsize)"
+          echo "Runner architecture: $arch"
+          echo "Runner memory bytes: $memory_bytes"
+          if [[ "$arch" != "x86_64" || "$memory_bytes" -lt 12884901888 ]]; then
+            echo "::error::Kotlin/Native release linking requires an x64 runner with at least 12 GiB RAM."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

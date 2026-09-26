@@ -287,6 +287,10 @@ class RoutineCsvImportPlanner(
 
         val routineExercises = draft.exercises.mapIndexed { flatIndex, row ->
             val supersetId = row.supersetKey?.let(supersetIds::getValue)
+            // Every field the file carried is written through here (Issue #896): an imported
+            // exercise restores its advanced settings instead of falling back to constructor
+            // defaults. durationSyncKnown and isLaunchAdjustedDuration are runtime/sync state
+            // and never in the file.
             RoutineExercise(
                 id = newId(),
                 exercise = exercises[flatIndex],
@@ -295,15 +299,39 @@ class RoutineCsvImportPlanner(
                 weightPerCableKg = row.setWeightsKg.first(),
                 setWeightsPerCableKg = row.setWeightsKg,
                 programMode = row.mode,
-                setRestSeconds = List(row.setReps.size) { row.restSeconds },
-                perSetRestTime = false,
-                isAMRAP = row.setReps.all { it == null },
+                eccentricLoad = row.eccentricLoad,
+                echoLevel = row.echoLevel,
+                progressionKg = row.progressionKg,
+                setRestSeconds = if (row.restSecondsPerSet.isNotEmpty()) {
+                    row.restSecondsPerSet
+                } else {
+                    List(row.setReps.size) { row.restSeconds }
+                },
+                setEchoLevels = row.setEchoLevels,
+                duration = row.durationSeconds,
+                isAMRAP = row.isAmrapFlag ?: row.setReps.all { it == null },
+                perSetRestTime = row.perSetRestTime,
+                stallDetectionEnabled = row.stallDetectionEnabled,
+                dropSetEnabled = row.dropSetEnabled,
+                dropSetMinWeightKg = row.dropSetMinWeightKg,
+                repCountTiming = row.repCountTiming,
+                stopAtTop = row.stopAtTop,
                 supersetId = supersetId,
                 orderInSuperset = if (supersetId == null) {
                     0
                 } else {
                     draft.exercises.take(flatIndex).count { it.supersetKey == row.supersetKey }
                 },
+                usePercentOfPR = row.usePercentOfPR,
+                weightPercentOfPR = row.weightPercentOfPR,
+                prTypeForScaling = row.prTypeForScaling,
+                setWeightsPercentOfPR = row.setWeightsPercentOfPR,
+                scalingBasis = row.scalingBasis,
+                warmupSets = row.warmupSets,
+                defaultRackItemIds = row.defaultRackItemIds,
+                rackBehaviorOverrides = row.rackBehaviorOverrides,
+                durationSyncKnown = false,
+                isLaunchAdjustedDuration = false,
             )
         }
 
