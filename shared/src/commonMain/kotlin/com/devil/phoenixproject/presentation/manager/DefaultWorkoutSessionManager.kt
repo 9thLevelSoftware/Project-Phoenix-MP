@@ -891,7 +891,6 @@ class DefaultWorkoutSessionManager(
 
     fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
     fun hasResumableProgress(routineId: String): Boolean = routineFlowManager.hasResumableProgress(routineId)
-    fun getResumableProgressInfo(): ResumableProgressInfo? = routineFlowManager.getResumableProgressInfo()
     fun advanceToNextExercise() = routineFlowManager.advanceToNextExercise()
     fun jumpToExercise(index: Int) = routineFlowManager.jumpToExercise(index)
     fun skipCurrentExercise() = routineFlowManager.skipCurrentExercise()

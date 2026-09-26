@@ -83,7 +83,6 @@ import com.devil.phoenixproject.presentation.manager.MachineSafetyRecoveryReques
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
-import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscardResult
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
 import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
@@ -1199,7 +1198,6 @@ class MainViewModel(
     fun clearLoadedRoutine() = workoutSessionManager.clearLoadedRoutine()
     fun getCurrentExercise(): RoutineExercise? = workoutSessionManager.getCurrentExercise()
     fun hasResumableProgress(routineId: String): Boolean = workoutSessionManager.hasResumableProgress(routineId)
-    fun getResumableProgressInfo(): ResumableProgressInfo? = workoutSessionManager.getResumableProgressInfo()
     suspend fun discoverRoutineResume(
         routine: Routine,
         launchOrigin: RoutineLaunchOrigin,
