@@ -127,7 +127,7 @@ class AndroidDataBackupManager(
      * When a custom backup destination is configured, writes there first.
      * Falls back to default location if the custom destination is inaccessible.
      */
-    override fun writeSessionBackupFile(filePath: String, content: String) {
+    override suspend fun writeSessionBackupFile(filePath: String, content: String) {
         // Check for custom backup destination (synchronous read of current preference value)
         val destination = preferencesManager.preferencesFlow.value.backupDestination
         if (destination is BackupDestination.Custom) {
