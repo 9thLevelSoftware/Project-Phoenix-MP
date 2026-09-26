@@ -222,10 +222,8 @@ sqldelight {
     databases {
         create("PhoenixDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Schema version is derived from migrations (highest N.sqm + 1); this value is
-            // not authoritative. Do not bump it when adding a migration (see CLAUDE.md).
-            // SchemaParityTest's EXPECTED_SCHEMA_VERSION is the value to keep in step.
-            version = 47
+            // Schema.version is highest N.sqm + 1. This block has no version property;
+            // assigning version here sets the Gradle project version.
         }
     }
 }
