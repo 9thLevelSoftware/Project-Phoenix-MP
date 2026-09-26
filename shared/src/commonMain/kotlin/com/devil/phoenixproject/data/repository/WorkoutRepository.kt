@@ -13,19 +13,6 @@ import kotlinx.coroutines.flow.Flow
 const val MAX_RECENT_EXERCISE_SESSIONS = 5
 
 /**
- * Personal record entity.
- */
-data class PersonalRecordEntity(
-    val id: Long = 0,
-    val exerciseId: String,
-    val weightPerCableKg: Float,
-    val reps: Int,
-    val timestamp: Long,
-    val workoutMode: String,
-    val uuid: String? = null,
-)
-
-/**
  * Workout Repository interface.
  * Implemented by SqlDelightWorkoutRepository for type-safe database operations.
  */
@@ -159,14 +146,6 @@ interface WorkoutRepository {
     )
 
     /**
-     * Mark routine as used (updates lastUsed and increments useCount)
-     */
-    suspend fun markRoutineUsed(routineId: String)
-
-    // Personal records
-    fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>>
-
-    /**
      * Get average set duration in milliseconds for a specific exercise.
      * Returns null if no historical data is available.
      * Issue #225: Used by RoutineTimeEstimator.
@@ -179,36 +158,11 @@ interface WorkoutRepository {
      */
     suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long
 
-    // Metrics storage
-    suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>)
-
-    /**
-     * Get metrics for a workout session
-     */
-    fun getMetricsForSession(sessionId: String): Flow<List<com.devil.phoenixproject.domain.model.WorkoutMetric>>
-
-    /**
-     * Get metrics for a workout session synchronously (for export)
-     */
-    suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric>
-
     /**
      * Get recent workout sessions synchronously (for export / import de-duplication).
      * Unlike [getRecentSessions] this includes soft-deleted rows.
      */
     suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
-
-    // Phase Statistics (heuristic data from machine)
-
-    /**
-     * Save phase statistics for a workout session
-     */
-    suspend fun savePhaseStatistics(sessionId: String, stats: com.devil.phoenixproject.domain.model.HeuristicStatistics)
-
-    /**
-     * Get all phase statistics
-     */
-    fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>>
 
     /**
      * Issue #517: Velocity-based 1RM foundation.
@@ -230,27 +184,6 @@ interface WorkoutRepository {
      */
     suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String>
 }
-
-/**
- * Phase statistics data class for repository layer
- */
-data class PhaseStatisticsData(
-    val id: Long = 0,
-    val sessionId: String,
-    val concentricKgAvg: Float,
-    val concentricKgMax: Float,
-    val concentricVelAvg: Float,
-    val concentricVelMax: Float,
-    val concentricWattAvg: Float,
-    val concentricWattMax: Float,
-    val eccentricKgAvg: Float,
-    val eccentricKgMax: Float,
-    val eccentricVelAvg: Float,
-    val eccentricVelMax: Float,
-    val eccentricWattAvg: Float,
-    val eccentricWattMax: Float,
-    val timestamp: Long,
-)
 
 /** A routine a CSV import was going to overwrite was deleted or moved to another profile (#772). */
 class RoutineCsvImportConflictException(routineId: String) :

@@ -1199,46 +1199,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             .executeAsOne()
     }
 
-    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = queries.selectAllRecords(profileId = profileId) {
-            id,
-            exerciseId,
-            exerciseName,
-            weight,
-            reps,
-            oneRepMax,
-            achievedAt,
-            workoutMode,
-            prType,
-            volume,
-            phase,
-            updatedAt,
-            serverId,
-            deletedAt,
-            profileId_,
-            cableCount,
-            uuid,
-        ->
-        PersonalRecordEntity(
-            id = id,
-            exerciseId = exerciseId,
-            weightPerCableKg = weight.toFloat(),
-            reps = reps.toInt(),
-            timestamp = achievedAt,
-            workoutMode = workoutMode,
-            uuid = uuid,
-        )
-    }.asFlow().mapToList(Dispatchers.IO)
-
-    override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                queries.deleteMetricsBySession(sessionId)
-                metrics.forEach { metric -> insertMetricRow(sessionId, metric) }
-                queries.markWorkoutComponentDirty(sessionId)
-            }
-        }
-    }
-
     // ========== New methods for full parity ==========
 
     override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentVisibleSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
@@ -1273,93 +1233,8 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         ).executeAsList()
     }
 
-    override suspend fun markRoutineUsed(routineId: String) {
-        withContext(Dispatchers.IO) {
-            if (routineId.isBlank()) return@withContext
-            queries.updateRoutineLastUsed(currentTimeMillis(), routineId)
-            Logger.d { "Marked routine used: $routineId" }
-        }
-    }
-
-    override fun getMetricsForSession(sessionId: String): Flow<List<com.devil.phoenixproject.domain.model.WorkoutMetric>> = queries.selectMetricsBySession(sessionId) {
-            id,
-            sessId,
-            timestamp,
-            position,
-            positionB,
-            velocity,
-            velocityB,
-            load,
-            loadB,
-            power,
-            status,
-        ->
-        com.devil.phoenixproject.domain.model.WorkoutMetric(
-            timestamp = timestamp,
-            loadA = load?.toFloat() ?: 0f,
-            loadB = loadB?.toFloat() ?: 0f,
-            positionA = position?.toFloat() ?: 0f,
-            positionB = positionB?.toFloat() ?: 0f,
-            velocityA = velocity ?: 0.0,
-            velocityB = velocityB ?: 0.0,
-            status = status.toInt(),
-        )
-    }.asFlow().mapToList(Dispatchers.IO)
-
-    override suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric> = withContext(Dispatchers.IO) {
-        queries.selectMetricsBySession(sessionId) {
-                id,
-                sessId,
-                timestamp,
-                position,
-                positionB,
-                velocity,
-                velocityB,
-                load,
-                loadB,
-                power,
-                status,
-            ->
-            com.devil.phoenixproject.domain.model.WorkoutMetric(
-                timestamp = timestamp,
-                loadA = load?.toFloat() ?: 0f,
-                loadB = loadB?.toFloat() ?: 0f,
-                positionA = position?.toFloat() ?: 0f,
-                positionB = positionB?.toFloat() ?: 0f,
-                velocityA = velocity ?: 0.0,
-                velocityB = velocityB ?: 0.0,
-                status = status.toInt(),
-            )
-        }.executeAsList()
-    }
-
     override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> = withContext(Dispatchers.IO) {
         queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession).executeAsList()
-    }
-
-    override suspend fun savePhaseStatistics(sessionId: String, stats: com.devil.phoenixproject.domain.model.HeuristicStatistics) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                queries.insertPhaseStatistics(
-                    sessionId = sessionId,
-                    concentricKgAvg = stats.concentric.kgAvg.toDouble(),
-                    concentricKgMax = stats.concentric.kgMax.toDouble(),
-                    concentricVelAvg = stats.concentric.velAvg.toDouble(),
-                    concentricVelMax = stats.concentric.velMax.toDouble(),
-                    concentricWattAvg = stats.concentric.wattAvg.toDouble(),
-                    concentricWattMax = stats.concentric.wattMax.toDouble(),
-                    eccentricKgAvg = stats.eccentric.kgAvg.toDouble(),
-                    eccentricKgMax = stats.eccentric.kgMax.toDouble(),
-                    eccentricVelAvg = stats.eccentric.velAvg.toDouble(),
-                    eccentricVelMax = stats.eccentric.velMax.toDouble(),
-                    eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
-                    eccentricWattMax = stats.eccentric.wattMax.toDouble(),
-                    timestamp = stats.timestamp,
-                )
-                queries.markWorkoutComponentDirty(sessionId)
-            }
-            Logger.d { "Saved phase statistics for session $sessionId" }
-        }
     }
 
     override suspend fun getVelocityPointsForExercise(
@@ -1381,42 +1256,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         withContext(Dispatchers.IO) {
             queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
         }
-
-    override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = queries.selectAllPhaseStats {
-            id,
-            sessionId,
-            concentricKgAvg,
-            concentricKgMax,
-            concentricVelAvg,
-            concentricVelMax,
-            concentricWattAvg,
-            concentricWattMax,
-            eccentricKgAvg,
-            eccentricKgMax,
-            eccentricVelAvg,
-            eccentricVelMax,
-            eccentricWattAvg,
-            eccentricWattMax,
-            timestamp,
-        ->
-        PhaseStatisticsData(
-            id = id,
-            sessionId = sessionId,
-            concentricKgAvg = concentricKgAvg.toFloat(),
-            concentricKgMax = concentricKgMax.toFloat(),
-            concentricVelAvg = concentricVelAvg.toFloat(),
-            concentricVelMax = concentricVelMax.toFloat(),
-            concentricWattAvg = concentricWattAvg.toFloat(),
-            concentricWattMax = concentricWattMax.toFloat(),
-            eccentricKgAvg = eccentricKgAvg.toFloat(),
-            eccentricKgMax = eccentricKgMax.toFloat(),
-            eccentricVelAvg = eccentricVelAvg.toFloat(),
-            eccentricVelMax = eccentricVelMax.toFloat(),
-            eccentricWattAvg = eccentricWattAvg.toFloat(),
-            eccentricWattMax = eccentricWattMax.toFloat(),
-            timestamp = timestamp,
-        )
-    }.asFlow().mapToList(Dispatchers.IO)
 }
 
 /** Name given to a healed routine exercise whose stored name and id are both blank (#774). */
