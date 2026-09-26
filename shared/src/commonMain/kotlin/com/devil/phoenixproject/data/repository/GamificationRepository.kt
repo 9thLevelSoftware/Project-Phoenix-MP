@@ -76,12 +76,6 @@ interface GamificationRepository {
     suspend fun saveRpgProfile(profile: RpgProfile, profileId: String)
 
     /**
-     * Get progress toward a specific badge
-     * @return Pair of (current progress, target) or null if badge not found
-     */
-    suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>?
-
-    /**
      * Get all badges with their earned status and progress
      */
     suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress>

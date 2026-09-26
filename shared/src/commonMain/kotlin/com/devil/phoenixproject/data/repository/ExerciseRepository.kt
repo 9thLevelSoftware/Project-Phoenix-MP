@@ -34,26 +34,6 @@ interface ExerciseRepository {
     fun searchExercises(query: String): Flow<List<Exercise>>
 
     /**
-     * Filter exercises by muscle group
-     * @param muscleGroup Target muscle group (e.g., "Chest", "Back")
-     * @return Flow emitting filtered exercises
-     */
-    fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>>
-
-    /**
-     * Filter exercises by equipment
-     * @param equipment Required equipment (e.g., "Barbell", "Dumbbells")
-     * @return Flow emitting filtered exercises
-     */
-    fun filterByEquipment(equipment: String): Flow<List<Exercise>>
-
-    /**
-     * Get favorite exercises
-     * @return Flow emitting list of favorite exercises
-     */
-    fun getFavorites(): Flow<List<Exercise>>
-
-    /**
      * Toggle favorite status for an exercise
      * @param id Exercise ID
      */
@@ -79,12 +59,6 @@ interface ExerciseRepository {
      * @return Result indicating success or failure
      */
     suspend fun importExercises(): Result<Unit>
-
-    /**
-     * Check if exercise library is empty
-     * @return true if empty, false otherwise
-     */
-    suspend fun isExerciseLibraryEmpty(): Boolean
 
     /**
      * Merge additional exercises from wger (CC-BY-SA). Never overwrites bundled rows.

@@ -673,16 +673,6 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
         }
     }
 
-    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? {
-        return withContext(Dispatchers.IO) {
-            val badge = BadgeDefinitions.getBadgeById(badgeId) ?: return@withContext null
-            val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
-                ?: return@withContext Pair(0, badge.getTargetValue())
-
-            Pair(badgeProgress(badge, stats, BadgePass(profileId)), badge.getTargetValue())
-        }
-    }
-
     private fun badgeProgress(
         badge: Badge,
         stats: com.devil.phoenixproject.database.GamificationStats,
