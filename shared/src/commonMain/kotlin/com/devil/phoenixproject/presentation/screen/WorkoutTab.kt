@@ -78,7 +78,6 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
-import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
@@ -152,7 +151,6 @@ fun WorkoutTab(
         repCount = state.repCount,
         repRanges = state.repRanges,
         autoStopState = state.autoStopState,
-        autoStartCountdown = state.autoStartCountdown,
         weightUnit = state.weightUnit,
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
@@ -237,7 +235,6 @@ fun WorkoutTab(
     repCount: RepCount,
     repRanges: RepRanges?,
     autoStopState: AutoStopUiState,
-    autoStartCountdown: Int? = null,
     weightUnit: WeightUnit,
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
@@ -719,19 +716,6 @@ fun WorkoutTab(
                 AutoStopOverlay(
                     autoStopState = autoStopState,
                     isJustLift = workoutParameters.isJustLift,
-                )
-            }
-        }
-
-        // Auto-start overlay - shows when user grabs handles in Idle state (Just Lift)
-        if (workoutState is WorkoutState.Idle && autoStartCountdown != null) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                AutoStartOverlay(
-                    isActive = true,
-                    secondsRemaining = autoStartCountdown,
                 )
             }
         }

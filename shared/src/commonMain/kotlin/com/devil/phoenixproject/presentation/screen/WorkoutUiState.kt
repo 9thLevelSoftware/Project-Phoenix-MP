@@ -33,7 +33,6 @@ import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
  * @property repCount Current rep counts (warmup + working)
  * @property repRanges Detected min/max positions for rep counting
  * @property autoStopState Auto-stop countdown state for Just Lift mode
- * @property autoStartCountdown Countdown seconds when auto-starting
  * @property weightUnit User's preferred weight display unit
  * @property enableVideoPlayback Whether to show exercise demonstration images
  * @property loadedRoutine Currently loaded routine (null for single exercise)
@@ -61,7 +60,6 @@ data class WorkoutUiState(
     val repCount: RepCount = RepCount(),
     val repRanges: RepRanges? = null,
     val autoStopState: AutoStopUiState = AutoStopUiState(),
-    val autoStartCountdown: Int? = null,
     val weightUnit: WeightUnit = WeightUnit.KG,
     val enableVideoPlayback: Boolean = true,
     val loadedRoutine: Routine? = null,

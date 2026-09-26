@@ -465,7 +465,6 @@
     <string name="cd_end_workout">End workout</string>
     <string name="cd_close_workout">Close workout</string>
     <string name="cd_hands_off_handles">Hands off handles</string>
-    <string name="cd_starting_workout">Starting workout</string>
     <string name="cd_workout_completed">Workout completed</string>
     <string name="cd_workout_error">Workout error</string>
     <string name="cd_workout_session_icon">Workout session icon</string>
