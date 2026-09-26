@@ -137,7 +137,7 @@ import projectphoenix.shared.generated.resources.profile_switch_failed
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
  * Provides consistent scaffolding across all screens with:
- * - Dynamic TopAppBar (title, back button, actions, connection status, theme toggle)
+ * - Dynamic TopAppBar (title, back button, connection status, theme toggle)
  * - Compact bottom navigation (Analytics, Insights, Home, Profile, Settings)
  * - Home opens the existing Workouts destination
  * - Conditional visibility based on current route
@@ -160,7 +160,6 @@ fun EnhancedMainScreen(
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
     val machineSafetyUiState by viewModel.machineSafetyUiState.collectAsState()
     val topBarTitle by viewModel.topBarTitle.collectAsState()
-    val topBarActions by viewModel.topBarActions.collectAsState()
     val topBarBackAction by viewModel.topBarBackAction.collectAsState()
 
     // Dynamic title sources
@@ -449,17 +448,6 @@ fun EnhancedMainScreen(
                                 actionIconContentColor = MaterialTheme.colorScheme.onSurface,
                             ),
                             actions = {
-                                // Dynamic Actions from Screens
-                                topBarActions.forEach { action ->
-                                    IconButton(onClick = action.onClick) {
-                                        Icon(
-                                            imageVector = action.icon,
-                                            contentDescription = action.description,
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-
                                 // Cloud sync status icon
                                 SyncStatusIcon(
                                     syncState = syncState,

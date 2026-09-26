@@ -2707,7 +2707,6 @@ class DropSetRuntimeRecoveryTest {
             val configPackets = harness.fakeBleRepo.commandsReceived.size
             val startCalls = harness.fakeBleRepo.programCommands.size
             val teardownCalls = harness.fakeBleRepo.stopWorkoutCallCount
-            val stopPackets = harness.fakeBleRepo.stopPacketCallCount
             val navigation = harness.dwsm.restTransitionNavigationLookupsForTest
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
@@ -2737,7 +2736,6 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(startCalls, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCalls, harness.fakeBleRepo.stopWorkoutCallCount)
-            assertEquals(stopPackets, harness.fakeBleRepo.stopPacketCallCount)
             assertEquals(navigation, harness.dwsm.restTransitionNavigationLookupsForTest)
         } finally {
             harness.cleanup()
@@ -2781,7 +2779,6 @@ class DropSetRuntimeRecoveryTest {
             val configPackets = harness.fakeBleRepo.commandsReceived.size
             val startCalls = harness.fakeBleRepo.programCommands.size
             val teardownCalls = harness.fakeBleRepo.stopWorkoutCallCount
-            val stopPackets = harness.fakeBleRepo.stopPacketCallCount
             val navigation = harness.dwsm.restTransitionNavigationLookupsForTest
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
@@ -2801,7 +2798,6 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(startCalls, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCalls, harness.fakeBleRepo.stopWorkoutCallCount)
-            assertEquals(stopPackets, harness.fakeBleRepo.stopPacketCallCount)
             assertEquals(navigation, harness.dwsm.restTransitionNavigationLookupsForTest)
         } finally {
             harness.cleanup()

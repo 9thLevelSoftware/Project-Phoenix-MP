@@ -171,8 +171,6 @@ class FakeGamificationRepository : GamificationRepository {
         return awarded
     }
 
-    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? = badgeProgress[badgeId]
-
     override suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress> = BadgeDefinitions.allBadges.map { badge ->
         val progress = badgeProgress[badge.id] ?: (0 to badge.getTargetValue())
         val earned = earnedBadges[badge.id]

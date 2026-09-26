@@ -97,7 +97,7 @@ See `gradle/libs.versions.toml` (single source of truth; don't copy versions int
 4. Add entry `N` to `getMigrationStatements` in `data/local/MigrationStatements.kt` (the resilient-migration fallback replays it when `Schema.migrate` throws). Keep entries contiguous with the `.sqm` files and backfill any missing N.
 5. Verify: `:shared:validateSchemaManifest` (runs automatically before codegen) and `:shared:testAndroidHostTest --tests '*SchemaParityTest*'`.
 
-The schema version is derived from the migration files (highest `N.sqm` + 1). Don't edit `version` in `shared/build.gradle.kts`; it isn't authoritative.
+The schema version is derived from the migration files (highest `N.sqm` + 1). Do not assign `version` inside the SQLDelight database block in `shared/build.gradle.kts`; that property is not a schema version and sets the Gradle project version instead.
 
 ## Releasing
 1. Bump the version with the `update-phoenix-version` skill (`.agents/skills/update-phoenix-version/`). It keeps Android `versionName`, `Constants.APP_VERSION` and both iOS `MARKETING_VERSION` values aligned.

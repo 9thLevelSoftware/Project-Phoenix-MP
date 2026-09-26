@@ -24,12 +24,9 @@ import com.devil.phoenixproject.domain.model.RoutineItem
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.SetType
-import com.devil.phoenixproject.domain.model.Superset
-import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
@@ -1503,53 +1500,6 @@ class RoutineFlowManager(
         }
     }
 
-    /**
-     * Internal helper to perform the actual exercise navigation.
-     */
-    private fun navigateToExerciseInternal(routine: Routine, index: Int) {
-        supersedeConfigurationInputIntent()
-        val exercise = routine.exercises[index]
-        val setReps = exercise.setReps.getOrNull(0)
-        val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, 0)
-        val rackSelection = resolveDefaultRackSelection(exercise)
-        val nextParams = coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            echoLevel = exercise.echoLevel,
-            eccentricLoad = exercise.eccentricLoad,
-            reps = setReps ?: exercise.reps,
-            weightPerCableKg = setWeight,
-            progressionRegressionKg = exercise.progressionKg,
-            warmupReps = 3,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-        )
-        val isBodyweight = exercise.exercise.isBodyweight
-        val hasVariableWarmups = exercise.warmupSets.isNotEmpty() && !isBodyweight
-        lifecycleDelegate.mutateConfigurationInputs {
-            markExerciseActive(index)
-            coordinator._currentExerciseIndex.value = index
-            coordinator._currentSetIndex.value = 0
-            publishRackSelection(rackSelection)
-            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
-                coordinator._workoutParameters.value,
-            )
-            coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-            coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
-            coordinator._workoutState.value = WorkoutState.Idle
-            coordinator._repCount.value = RepCount()
-        }
-        if (hasVariableWarmups) {
-            Logger.d("RoutineFlowManager") {
-                "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets"
-            }
-        }
-        lifecycleDelegate.resetRepCounter()
-
-        Logger.i("RoutineFlowManager") { "Jumped to exercise $index: ${exercise.exercise.name}" }
-    }
-
     fun advanceToNextExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
         val currentExIndex = coordinator._currentExerciseIndex.value
@@ -1717,104 +1667,6 @@ class RoutineFlowManager(
         }
     }
 
-    // ===== Superset CRUD =====
-
-    /**
-     * Create a new superset in a routine.
-     */
-    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()): Superset {
-        val routine = getRoutineById(routineId) ?: throw IllegalArgumentException("Routine not found")
-        val existingColors = routine.supersets.map { it.colorIndex }.toSet()
-        val colorIndex = SupersetColors.next(existingColors)
-        val supersetCount = routine.supersets.size
-        val autoName = name ?: "Superset ${'A' + supersetCount}"
-        val orderIndex = routine.getItems().maxOfOrNull { it.orderIndex }?.plus(1) ?: 0
-
-        val superset = Superset(
-            id = generateSupersetId(),
-            routineId = routineId,
-            name = autoName,
-            colorIndex = colorIndex,
-            restBetweenSeconds = 10,
-            orderIndex = orderIndex,
-        )
-
-        val updatedSupersets = routine.supersets + superset
-        val updatedExercises = exercises.mapIndexed { index, exercise ->
-            exercise.copy(supersetId = superset.id, orderInSuperset = index)
-        } + routine.exercises.filter { it.id !in exercises.map { e -> e.id } }
-
-        val updatedRoutine = routine.copy(supersets = updatedSupersets, exercises = updatedExercises)
-        workoutRepository.updateRoutine(updatedRoutine)
-
-        return superset
-    }
-
-    /**
-     * Update superset properties (name, rest time, color).
-     */
-    suspend fun updateSuperset(routineId: String, superset: Superset) {
-        val routine = getRoutineById(routineId) ?: return
-        val updatedSupersets = routine.supersets.map {
-            if (it.id == superset.id) superset else it
-        }
-        val updatedRoutine = routine.copy(supersets = updatedSupersets)
-        workoutRepository.updateRoutine(updatedRoutine)
-    }
-
-    /**
-     * Delete a superset. Exercises become standalone.
-     */
-    suspend fun deleteSuperset(routineId: String, supersetId: String) {
-        val routine = getRoutineById(routineId) ?: return
-        val updatedSupersets = routine.supersets.filter { it.id != supersetId }
-        val updatedExercises = routine.exercises.map { exercise ->
-            if (exercise.supersetId == supersetId) {
-                exercise.copy(supersetId = null, orderInSuperset = 0)
-            } else {
-                exercise
-            }
-        }
-        val updatedRoutine = routine.copy(supersets = updatedSupersets, exercises = updatedExercises)
-        workoutRepository.updateRoutine(updatedRoutine)
-    }
-
-    /**
-     * Move an exercise into a superset.
-     */
-    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) {
-        val routine = getRoutineById(routineId) ?: return
-        val superset = routine.supersets.find { it.id == supersetId } ?: return
-        val currentExercisesInSuperset = routine.exercises.filter { it.supersetId == supersetId }
-        val newOrderInSuperset = currentExercisesInSuperset.maxOfOrNull { it.orderInSuperset }?.plus(1) ?: 0
-
-        val updatedExercises = routine.exercises.map { exercise ->
-            if (exercise.id == exerciseId) {
-                exercise.copy(supersetId = supersetId, orderInSuperset = newOrderInSuperset)
-            } else {
-                exercise
-            }
-        }
-        val updatedRoutine = routine.copy(exercises = updatedExercises)
-        workoutRepository.updateRoutine(updatedRoutine)
-    }
-
-    /**
-     * Remove an exercise from a superset (becomes standalone).
-     */
-    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) {
-        val routine = getRoutineById(routineId) ?: return
-        val updatedExercises = routine.exercises.map { exercise ->
-            if (exercise.id == exerciseId) {
-                exercise.copy(supersetId = null, orderInSuperset = 0)
-            } else {
-                exercise
-            }
-        }
-        val updatedRoutine = routine.copy(exercises = updatedExercises)
-        workoutRepository.updateRoutine(updatedRoutine)
-    }
-
     // ===== State Query Helpers =====
 
     fun getCurrentExercise(): RoutineExercise? {
@@ -1875,21 +1727,6 @@ class RoutineFlowManager(
             )
         }
         return capture.value?.copy(configurationInputEpoch = capture.configurationInputEpoch)
-    }
-
-    /**
-     * Get information about resumable progress for display in dialog.
-     */
-    fun getResumableProgressInfo(): ResumableProgressInfo? {
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val exercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value) ?: return null
-        return ResumableProgressInfo(
-            exerciseName = exercise.exercise.displayName,
-            currentSet = coordinator._currentSetIndex.value + 1,
-            totalSets = exercise.setReps.size,
-            currentExercise = coordinator._currentExerciseIndex.value + 1,
-            totalExercises = routine.exercises.size,
-        )
     }
 
     /**

@@ -128,7 +128,6 @@ class RepMetricRepositoryTest {
             val _get: suspend (String) -> List<com.devil.phoenixproject.domain.model.RepMetricData> =
                 repo::getRepMetrics
             val _delete: suspend (String) -> Unit = repo::deleteRepMetrics
-            val _count: suspend (String) -> Long = repo::getRepMetricCount
         }
         // If we get here, the interface has no tier parameters (GATE-04 compliant)
         assertTrue(true, "RepMetricRepository interface has sessionId-only signatures (GATE-04)")

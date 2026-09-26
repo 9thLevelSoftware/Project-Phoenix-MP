@@ -70,26 +70,6 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     // ========== PersonalRecordRepository interface implementation ==========
 
-    override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = records.values
-        .filter {
-            it.exerciseId == exerciseId &&
-                it.profileId == profileId &&
-                normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode)
-        }
-        .maxByOrNull { it.timestamp }
-
-    override fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
-        list.filter { it.exerciseId == exerciseId && it.profileId == profileId }
-    }
-
-    override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? = records.values
-        .filter {
-            it.exerciseId == exerciseId && it.profileId == profileId &&
-                it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED
-        }
-        // Production ranks the max-weight PR by weight, not volume.
-        .maxByOrNull { it.weightPerCableKg }
-
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
         list.filter { it.profileId == profileId }
     }
@@ -109,45 +89,6 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         }?.key ?: return
         records.remove(key)
         updateRecordsFlow()
-    }
-
-    override suspend fun updatePRIfBetter(
-        exerciseId: String,
-        weightPerCableKg: Float,
-        reps: Int,
-        workoutMode: String,
-        timestamp: Long,
-        profileId: String,
-        cableCount: Int?,
-    ): Result<Boolean> {
-        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
-
-        val normalizedMode = normalizeWorkoutModeKey(workoutMode)
-        val key = recordKey(exerciseId, normalizedMode, PRType.MAX_VOLUME, WorkoutPhase.COMBINED, profileId)
-        val existing = records[key]
-        val newVolume = weightPerCableKg * reps
-
-        return if (existing == null || newVolume > existing.volume) {
-            records[key] = PersonalRecord(
-                id = existing?.id ?: records.size.toLong(),
-                exerciseId = exerciseId,
-                exerciseName = existing?.exerciseName ?: exerciseId,
-                weightPerCableKg = weightPerCableKg,
-                reps = reps,
-                oneRepMax = calculateOneRepMax(weightPerCableKg, reps),
-                timestamp = timestamp,
-                workoutMode = workoutMode,
-                prType = PRType.MAX_VOLUME,
-                volume = newVolume,
-                phase = WorkoutPhase.COMBINED,
-                profileId = profileId,
-                cableCount = cableCount,
-            )
-            updateRecordsFlow()
-            Result.success(true)
-        } else {
-            Result.success(false)
-        }
     }
 
     override suspend fun getWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = records.values

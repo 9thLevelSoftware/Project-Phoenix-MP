@@ -171,19 +171,9 @@ class ConnectionLogRepository {
     }
 
     /**
-     * Get logs filtered by level.
-     */
-    fun getLogsByLevel(level: LogLevel): List<ConnectionLogEntity> = _logs.value.filter { it.level == level.name }
-
-    /**
      * Get logs filtered by event type.
      */
     fun getLogsByEventType(eventType: String): List<ConnectionLogEntity> = _logs.value.filter { it.eventType == eventType }
-
-    /**
-     * Get logs for a specific device.
-     */
-    fun getLogsForDevice(deviceAddress: String): List<ConnectionLogEntity> = _logs.value.filter { it.deviceAddress == deviceAddress }
 
     private fun formatTimestamp(timestamp: Long): String {
         // Use kotlinx-datetime for KMP-compatible formatting

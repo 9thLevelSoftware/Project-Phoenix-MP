@@ -8,14 +8,16 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 
 /**
- * Repository for per-rep biomechanics data CRUD operations.
+ * Reads per-rep biomechanics captured for a session.
+ *
+ * Writes go through [SqlDelightWorkoutRepository.commitCompletedSet], which inserts
+ * the same rows via [insertRepBiomechanicsRow]. `RepBiomechanics.sessionId` is
+ * `ON DELETE CASCADE`, so deleting the session removes them.
  *
  * Data is captured for ALL users regardless of subscription status.
  */
 interface BiomechanicsRepository {
-    suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>)
     suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult>
-    suspend fun deleteRepBiomechanics(sessionId: String)
 }
 
 /**
@@ -27,15 +29,6 @@ interface BiomechanicsRepository {
 class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : BiomechanicsRepository {
 
     private val queries = db.phoenixDatabaseQueries
-
-    override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                results.forEach { result -> queries.insertRepBiomechanicsRow(sessionId, result) }
-                queries.markWorkoutComponentDirty(sessionId)
-            }
-        }
-    }
 
     override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> = withContext(Dispatchers.IO) {
         queries.selectRepBiomechanicsBySession(sessionId).executeAsList().map { row ->
@@ -80,21 +73,11 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
             )
         }
     }
-
-    override suspend fun deleteRepBiomechanics(sessionId: String) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                queries.deleteRepBiomechanicsBySession(sessionId)
-                queries.markWorkoutComponentDirty(sessionId)
-            }
-        }
-    }
 }
 
 /**
- * The single RepBiomechanics insert. Shared with
- * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
- * transaction writes exactly the rows this repository would have written.
+ * The single RepBiomechanics insert. [SqlDelightWorkoutRepository.commitCompletedSet]
+ * writes these rows inside the completion transaction.
  */
 internal fun PhoenixDatabaseQueries.insertRepBiomechanicsRow(sessionId: String, result: BiomechanicsRepResult) {
     insertRepBiomechanics(

@@ -70,27 +70,6 @@ class SqlDelightPersonalRecordRepository(
         deletedAt = deletedAt,
     )
 
-    override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
-        recordsForExercise(exerciseId, profileId)
-            .filter {
-                normalizeWorkoutModeKey(it.workoutMode) ==
-                    normalizeWorkoutModeKey(workoutMode)
-            }
-            .maxByOrNull { it.timestamp }
-    }
-
-    override fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>> = queries.selectRecordsByExercise(exerciseId, profileId = profileId, mapper = ::mapToPR)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-
-    override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
-        // FP-5: a CONCENTRIC/ECCENTRIC peak-force row is a different metric and
-        // routinely exceeds the commanded load — never the "best PR".
-        recordsForExercise(exerciseId, profileId)
-            .filter { it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED }
-            .maxByOrNull { it.weightPerCableKg }
-    }
-
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = queries.selectAllRecords(profileId = profileId, mapper = ::mapToPR)
         .asFlow()
         .mapToList(Dispatchers.IO)
@@ -114,33 +93,6 @@ class SqlDelightPersonalRecordRepository(
                 id = prId,
                 profileId = profileId,
             )
-        }
-    }
-
-    override suspend fun updatePRIfBetter(
-        exerciseId: String,
-        weightPerCableKg: Float,
-        reps: Int,
-        workoutMode: String,
-        timestamp: Long,
-        profileId: String,
-        cableCount: Int?,
-    ): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val brokenPRs = updatePRsIfBetterInternal(
-                exerciseId = exerciseId,
-                weightPRWeightPerCableKg = weightPerCableKg,
-                volumePRWeightPerCableKg = weightPerCableKg,
-                reps = reps,
-                workoutMode = workoutMode,
-                timestamp = timestamp,
-                phase = WorkoutPhase.COMBINED,
-                profileId = profileId,
-                cableCount = cableCount,
-            )
-            Result.success(brokenPRs.isNotEmpty())
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 

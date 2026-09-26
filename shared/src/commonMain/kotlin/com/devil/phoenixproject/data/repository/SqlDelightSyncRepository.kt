@@ -2662,8 +2662,7 @@ class SqlDelightSyncRepository(
             }
 
             // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures
-            // is left empty by SyncManager), so there is nothing to enumerate here. The
-            // push-side filter still covers the entity type when a later push fills it.
+            // is left empty by SyncManager), so there is nothing to enumerate here.
         }
     }
 

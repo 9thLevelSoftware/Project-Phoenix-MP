@@ -28,8 +28,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * - Heuristic: 4Hz (250ms interval) for force telemetry
  * - Heartbeat: 0.5Hz (2000ms interval) for connection keep-alive
  *
- * Critical invariant (Issue #222): [stopMonitorOnly] MUST preserve diagnostic, heuristic,
- * and heartbeat polling. Each loop has an independent Job reference for selective cancellation.
+ * Each loop has an independent Job. [restartAll] always restarts monitor polling and
+ * restarts diagnostic, heuristic, and heartbeat only when they are not already active.
+ * [stopAll] cancels every loop.
  *
  * Timeout disconnect (POLL-03): After [BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS] consecutive
  * monitor read timeouts, [onConnectionLost] is invoked to trigger a full disconnect.
@@ -52,7 +53,7 @@ class MetricPollingEngine(
     private val diagnosticCharacteristic = BleConstants.diagnosticCharacteristic
     private val heuristicCharacteristic = BleConstants.heuristicCharacteristic
 
-    // Job references — each independently cancellable for selective stop (Issue #222)
+    // Job references — each loop is started and cancelled independently.
     private var monitorPollingJob: Job? = null
     private var diagnosticPollingJob: Job? = null
     private var heuristicPollingJob: Job? = null
@@ -155,11 +156,6 @@ class MetricPollingEngine(
         if (diagnosticPollingJob?.isActive != true) startFakeJob(PollingType.DIAGNOSTIC)
         if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
         if (heuristicPollingJob?.isActive != true) startFakeJob(PollingType.HEURISTIC)
-    }
-
-    internal fun restartDiagnosticAndHeartbeatFake() {
-        if (diagnosticPollingJob?.isActive != true) startFakeJob(PollingType.DIAGNOSTIC)
-        if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
     }
 
     internal fun incrementDiagnosticCount() {
@@ -485,20 +481,6 @@ class MetricPollingEngine(
     }
 
     /**
-     * Stop monitor polling only — diagnostic, heuristic, and heartbeat CONTINUE.
-     * Issue #222: Used during bodyweight exercises to prevent BLE link degradation.
-     */
-    fun stopMonitorOnly() {
-        log.d { "Stopping monitor polling only - diagnostic polling + heartbeat continue" }
-        monitorPollingJob?.cancel()
-        monitorPollingJob = null
-        log.d {
-            "Monitor-only stop: diagnostic=${diagnosticPollingJob?.isActive}, " +
-                "heuristic=${heuristicPollingJob?.isActive}, heartbeat=${heartbeatJob?.isActive}"
-        }
-    }
-
-    /**
      * Restart all polling loops with conditional restart for non-monitor loops.
      * Monitor is always restarted. Others are only restarted if not already active.
      * Maps to KableBleRepository.startActiveWorkoutPolling().
@@ -528,28 +510,6 @@ class MetricPollingEngine(
         if (heuristicPollingJob?.isActive != true) {
             log.d { "Issue #222 v16: Restarting heuristic polling" }
             startHeuristicPolling(peripheral)
-        }
-    }
-
-    /**
-     * Restart diagnostic polling and heartbeat only (not monitor).
-     * Issue #222 v10: Maintains BLE link during rest between bodyweight sets.
-     */
-    fun restartDiagnosticAndHeartbeat(peripheral: Peripheral) {
-        log.d { "Restarting diagnostic polling + heartbeat (Issue #222 v10)" }
-
-        if (diagnosticPollingJob?.isActive != true) {
-            startDiagnosticPolling(peripheral)
-        } else {
-            log.d { "Diagnostic polling already active - skip restart" }
-        }
-
-        if (heartbeatJob?.isActive == true) {
-            log.d { "Heartbeat already active - skip restart" }
-        } else if (includeHeartbeatForSession) {
-            startHeartbeat(peripheral)
-        } else {
-            log.d { "[#333 compat] Heartbeat suppressed on small-MTU compatibility path" }
         }
     }
 

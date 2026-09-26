@@ -4329,8 +4329,11 @@ abstract class BaseDataBackupManager(
     /**
      * Write backup JSON content to a file at the given path.
      * Platform subclasses override this with native file I/O.
+     *
+     * Suspend so the iOS override can call [BackupDestinationResolver], the same
+     * path full export uses for security-scoped bookmarks.
      */
-    protected open fun writeSessionBackupFile(filePath: String, content: String) {
+    protected open suspend fun writeSessionBackupFile(filePath: String, content: String) {
         // Default implementation using BackupJsonWriter (works on both platforms)
         val writer = BackupJsonWriter(filePath)
         try {

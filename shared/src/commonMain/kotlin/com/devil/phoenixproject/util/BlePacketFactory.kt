@@ -78,14 +78,6 @@ object BlePacketFactory {
     fun createStopCommand(): ByteArray = byteArrayOf(0x05, 0x00, 0x00, 0x00)
 
     /**
-     * Creates the soft-stop command (0x50 0x00, 2 bytes).
-     * Observed machine packet layout:
-     * - Uses StopPacket (0x50 0x00) to end sessions and CLEAR FAULTS
-     * - This is a "soft stop" that releases tension and clears the blinking red light fault state
-     */
-    fun createSoftStopPacket(): ByteArray = byteArrayOf(0x50, 0x00)
-
-    /**
      * Creates the RESET command (4 bytes).
      * The device accepts 0x0A as reset/init; usable as a recovery stop.
      * Use for recovery if device gets stuck.

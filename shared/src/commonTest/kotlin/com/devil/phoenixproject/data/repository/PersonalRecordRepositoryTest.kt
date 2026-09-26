@@ -11,7 +11,6 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -147,21 +146,6 @@ class PersonalRecordRepositoryTest {
         assertTrue(allPRs.isEmpty())
     }
 
-    @Test
-    fun `getPRsForExercise flow returns all modes`() = runTest {
-        // Insert PRs for multiple modes
-        repository.updatePRsIfBetter(exerciseId, 35f, 10, "OldSchool", 1000L, profileId)
-        repository.updatePRsIfBetter(exerciseId, 50f, 8, "Echo", 2000L, profileId)
-
-        // Get PRs via Flow
-        val allPRs = repository.getPRsForExercise(exerciseId, profileId).first()
-
-        // Should contain PRs from both modes
-        val modes = allPRs.map { it.workoutMode }.toSet()
-        assertTrue(modes.contains("OldSchool"))
-        assertTrue(modes.contains("Echo"))
-    }
-
     // ========== Test 3: Mode-specific upsert updates only that mode ==========
 
     @Test
@@ -230,17 +214,6 @@ class PersonalRecordRepositoryTest {
     // ========== Additional edge case tests ==========
 
     @Test
-    fun `getLatestPR returns most recent PR for mode`() = runTest {
-        // Insert multiple PRs for same mode at different times
-        repository.updatePRsIfBetter(exerciseId, 35f, 10, "OldSchool", 1000L, profileId)
-        repository.updatePRsIfBetter(exerciseId, 40f, 10, "OldSchool", 2000L, profileId)
-
-        val latestPR = repository.getLatestPR(exerciseId, "OldSchool", profileId)
-        assertNotNull(latestPR)
-        assertEquals(2000L, latestPR.timestamp)
-    }
-
-    @Test
     fun `getWeightPR and getVolumePR return correct PR types for mode`() = runTest {
         // Insert PR that creates both types
         repository.updatePRsIfBetter(exerciseId, 40f, 8, "OldSchool", 1000L, profileId)
@@ -252,21 +225,6 @@ class PersonalRecordRepositoryTest {
         assertNotNull(volumePR)
         assertEquals(PRType.MAX_WEIGHT, weightPR.prType)
         assertEquals(PRType.MAX_VOLUME, volumePR.prType)
-    }
-
-    @Test
-    fun `getBestPR returns highest volume across all modes`() = runTest {
-        // Insert PRs with different volumes (per-cable: weight * reps)
-        // OldSchool: 30kg * 10 = 300kg per-cable volume
-        repository.updatePRsIfBetter(exerciseId, 30f, 10, "OldSchool", 1000L, profileId)
-        // Echo: 50kg * 8 = 400kg per-cable volume
-        repository.updatePRsIfBetter(exerciseId, 50f, 8, "Echo", 2000L, profileId)
-
-        val bestPR = repository.getBestPR(exerciseId, profileId)
-        assertNotNull(bestPR)
-        // Volume is per-cable (weight * reps). Display multiplier (x2) is portal-only.
-        assertEquals(400f, bestPR.volume)
-        assertEquals("Echo", bestPR.workoutMode)
     }
 
     @Test

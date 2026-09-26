@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
@@ -51,7 +50,6 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
-import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -85,7 +83,6 @@ import com.devil.phoenixproject.presentation.manager.MachineSafetyRecoveryReques
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
-import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscardResult
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
 import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
@@ -127,11 +124,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
-
-/**
- * Represents a dynamic action for the top app bar.
- */
-data class TopBarAction(val icon: ImageVector, val description: String, val onClick: () -> Unit)
 
 data class SettingsGlobalUiState(
     val enableVideoPlayback: Boolean,
@@ -1206,7 +1198,6 @@ class MainViewModel(
     fun clearLoadedRoutine() = workoutSessionManager.clearLoadedRoutine()
     fun getCurrentExercise(): RoutineExercise? = workoutSessionManager.getCurrentExercise()
     fun hasResumableProgress(routineId: String): Boolean = workoutSessionManager.hasResumableProgress(routineId)
-    fun getResumableProgressInfo(): ResumableProgressInfo? = workoutSessionManager.getResumableProgressInfo()
     suspend fun discoverRoutineResume(
         routine: Routine,
         launchOrigin: RoutineLaunchOrigin,
@@ -1300,14 +1291,6 @@ class MainViewModel(
     suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = workoutSessionManager.getSingleExerciseDefaults(exerciseId)
     fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) = workoutSessionManager.saveSingleExerciseDefaults(defaults)
 
-    // ===== Superset CRUD Delegation =====
-
-    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()) = workoutSessionManager.createSuperset(routineId, name, exercises)
-    suspend fun updateSuperset(routineId: String, superset: Superset) = workoutSessionManager.updateSuperset(routineId, superset)
-    suspend fun deleteSuperset(routineId: String, supersetId: String) = workoutSessionManager.deleteSuperset(routineId, supersetId)
-    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) = workoutSessionManager.addExerciseToSuperset(routineId, exerciseId, supersetId)
-    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) = workoutSessionManager.removeExerciseFromSuperset(routineId, exerciseId)
-
     // ===== Training Cycle Delegation =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
@@ -1321,17 +1304,6 @@ class MainViewModel(
 
     fun updateTopBarTitle(title: String) {
         _topBarTitle.value = title
-    }
-
-    private val _topBarActions = MutableStateFlow<List<TopBarAction>>(emptyList())
-    val topBarActions: StateFlow<List<TopBarAction>> = _topBarActions.asStateFlow()
-
-    fun setTopBarActions(actions: List<TopBarAction>) {
-        _topBarActions.value = actions
-    }
-
-    fun clearTopBarActions() {
-        _topBarActions.value = emptyList()
     }
 
     private val _topBarBackAction = MutableStateFlow<(() -> Unit)?>(null)

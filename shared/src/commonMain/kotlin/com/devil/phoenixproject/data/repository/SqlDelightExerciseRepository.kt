@@ -105,18 +105,6 @@ class SqlDelightExerciseRepository(
         .asFlow()
         .mapToList(Dispatchers.IO)
 
-    override fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>> = queries.filterExercisesByMuscle(muscleGroup, ::mapToExercise)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-
-    override fun filterByEquipment(equipment: String): Flow<List<Exercise>> = queries.filterExercisesByEquipment(equipment, ::mapToExercise)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-
-    override fun getFavorites(): Flow<List<Exercise>> = queries.selectFavorites(::mapToExercise)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-
     override suspend fun toggleFavorite(id: String) {
         withContext(Dispatchers.IO) {
             val exercise = queries.selectExerciseById(id).executeAsOneOrNull()
@@ -164,11 +152,6 @@ class SqlDelightExerciseRepository(
             Logger.e(e) { "Failed to import exercises" }
             Result.failure(e)
         }
-    }
-
-    override suspend fun isExerciseLibraryEmpty(): Boolean = withContext(Dispatchers.IO) {
-        val count = queries.countExercises().executeAsOne()
-        count == 0L
     }
 
     override suspend fun updateFromWger(): Result<Int> = exerciseImporter.updateFromWger()

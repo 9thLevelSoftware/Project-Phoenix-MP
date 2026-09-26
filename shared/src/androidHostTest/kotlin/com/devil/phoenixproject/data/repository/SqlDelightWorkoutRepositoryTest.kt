@@ -3,11 +3,9 @@ package com.devil.phoenixproject.data.repository
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -37,37 +35,6 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     // ========== Session CRUD Tests ==========
-
-    @Test
-    fun `saving raw metrics again replaces rows for the stable session id`() = runTest {
-        val firstAttempt = listOf(
-            WorkoutMetric(
-                timestamp = 10L,
-                loadA = 20f,
-                loadB = 21f,
-                positionA = 100f,
-                positionB = 101f,
-                velocityA = 1.0,
-                velocityB = 1.1,
-            ),
-            WorkoutMetric(
-                timestamp = 20L,
-                loadA = 22f,
-                loadB = 23f,
-                positionA = 110f,
-                positionB = 111f,
-                velocityA = 1.2,
-                velocityB = 1.3,
-            ),
-        )
-        val retrySnapshot = listOf(firstAttempt.single { it.timestamp == 20L })
-
-        repository.saveSession(createTestSession(id = "stable-session"))
-        repository.saveMetrics("stable-session", firstAttempt)
-        repository.saveMetrics("stable-session", retrySnapshot)
-
-        assertEquals(retrySnapshot, repository.getMetricsForSessionSync("stable-session"))
-    }
 
     @Test
     fun `saveSession persists session to database`() = runTest {
@@ -278,32 +245,6 @@ class SqlDelightWorkoutRepositoryTest {
         repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertTrue(sessions.isEmpty())
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `getAllPersonalRecords preserves stable uuid`() = runTest {
-        val stableUuid = "62345678-1234-4abc-8def-1234567890ab"
-        database.phoenixDatabaseQueries.insertRecord(
-            exerciseId = "deadlift",
-            exerciseName = "Deadlift",
-            weight = 85.0,
-            reps = 5L,
-            oneRepMax = 99.17,
-            achievedAt = 1_700_000_000_000L,
-            workoutMode = "Old School",
-            prType = PRType.MAX_WEIGHT.name,
-            volume = 425.0,
-            phase = "COMBINED",
-            profile_id = "default",
-            cable_count = 2L,
-            uuid = stableUuid,
-        )
-
-        repository.getAllPersonalRecords("default").test {
-            val record = awaitItem().single()
-            assertEquals(stableUuid, record.uuid)
             cancelAndIgnoreRemainingEvents()
         }
     }

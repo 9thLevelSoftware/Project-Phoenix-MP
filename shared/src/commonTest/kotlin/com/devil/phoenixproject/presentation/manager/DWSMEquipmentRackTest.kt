@@ -345,9 +345,12 @@ class DWSMEquipmentRackTest {
     /**
      * Issue #536 regression guard: a Weighted Vest selected on exercise 0 via the SetReady
      * mid-flow toggle must not leak into exercise 1's live HUD rack snapshot when the user
-     * advances via [RoutineFlowManager.jumpToExercise] / [RoutineFlowManager.advanceToNextExercise]
-     * (the [RoutineFlowManager.navigateToExerciseInternal] path, which is distinct from the
-     * `enterSetReady` path covered by the test above).
+     * advances via [RoutineFlowManager.jumpToExercise] (also reached from
+     * [RoutineFlowManager.advanceToNextExercise]).
+     *
+     * [RoutineFlowManager.jumpToExercise] requests teardown, then enters Set Ready through
+     * [RoutineFlowManager.enterSetReady], which must reset the rack selection. The test
+     * above covers [RoutineFlowManager.enterSetReady] called directly.
      *
      * The vest is added to the previous exercise's [WorkoutParameters.externalAddedLoadKg] /
      * [WorkoutParameters.counterweightKg] / [WorkoutCoordinator._activeRackItemIds]; without
