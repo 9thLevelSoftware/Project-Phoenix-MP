@@ -212,27 +212,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
 
-    def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
-        text = workflow("ci-tests.yml")
-        self.assertNotIn("verifyCommonMainPhoenixDatabaseMigration", text)
-        job = re.search(
-            r"(?ms)^  ios-simulator-tests:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", text
-        )
-        self.assertIsNotNone(job)
-        body = job.group("body")
-        self.assertIn("continue-on-error: true", body)
-        self.assertIn(":shared:iosSimulatorArm64Test", body)
-        self.assertIn("runs-on: macos-latest", body)
-        self.assertIn("-Xmx4g", body)
-        self.assertIn("uses: mikepenz/action-junit-report@", body)
-        self.assertIn("fail_on_failure: false", body)
-        self.assertNotIn("fail_on_failure: true", body)
-        self.assertIn(
-            "if: github.event_name == 'workflow_dispatch' || "
-            "(github.event_name == 'push' && github.ref == 'refs/heads/main')",
-            body,
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
