@@ -1503,53 +1503,6 @@ class RoutineFlowManager(
         }
     }
 
-    /**
-     * Internal helper to perform the actual exercise navigation.
-     */
-    private fun navigateToExerciseInternal(routine: Routine, index: Int) {
-        supersedeConfigurationInputIntent()
-        val exercise = routine.exercises[index]
-        val setReps = exercise.setReps.getOrNull(0)
-        val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, 0)
-        val rackSelection = resolveDefaultRackSelection(exercise)
-        val nextParams = coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            echoLevel = exercise.echoLevel,
-            eccentricLoad = exercise.eccentricLoad,
-            reps = setReps ?: exercise.reps,
-            weightPerCableKg = setWeight,
-            progressionRegressionKg = exercise.progressionKg,
-            warmupReps = 3,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-        )
-        val isBodyweight = exercise.exercise.isBodyweight
-        val hasVariableWarmups = exercise.warmupSets.isNotEmpty() && !isBodyweight
-        lifecycleDelegate.mutateConfigurationInputs {
-            markExerciseActive(index)
-            coordinator._currentExerciseIndex.value = index
-            coordinator._currentSetIndex.value = 0
-            publishRackSelection(rackSelection)
-            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
-                coordinator._workoutParameters.value,
-            )
-            coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-            coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
-            coordinator._workoutState.value = WorkoutState.Idle
-            coordinator._repCount.value = RepCount()
-        }
-        if (hasVariableWarmups) {
-            Logger.d("RoutineFlowManager") {
-                "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets"
-            }
-        }
-        lifecycleDelegate.resetRepCounter()
-
-        Logger.i("RoutineFlowManager") { "Jumped to exercise $index: ${exercise.exercise.name}" }
-    }
-
     fun advanceToNextExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
         val currentExIndex = coordinator._currentExerciseIndex.value
@@ -1875,21 +1828,6 @@ class RoutineFlowManager(
             )
         }
         return capture.value?.copy(configurationInputEpoch = capture.configurationInputEpoch)
-    }
-
-    /**
-     * Get information about resumable progress for display in dialog.
-     */
-    fun getResumableProgressInfo(): ResumableProgressInfo? {
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val exercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value) ?: return null
-        return ResumableProgressInfo(
-            exerciseName = exercise.exercise.displayName,
-            currentSet = coordinator._currentSetIndex.value + 1,
-            totalSets = exercise.setReps.size,
-            currentExercise = coordinator._currentExerciseIndex.value + 1,
-            totalExercises = routine.exercises.size,
-        )
     }
 
     /**
