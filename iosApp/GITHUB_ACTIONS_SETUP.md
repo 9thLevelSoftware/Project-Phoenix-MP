@@ -15,8 +15,7 @@ by the release workflows (`workflow_call`). None runs on pull requests or on pus
 
 | Workflow | File | What it does |
 |----------|------|--------------|
-| iOS TestFlight | `.github/workflows/ios-testflight.yml` | Builds a signed .ipa, uploads it to App Store Connect, and adds it to the TestFlight group |
-| iOS TestFlight (Internal Only) | `.github/workflows/ios-testflight-internal.yml` | Builds and uploads for internal testers only |
+| iOS TestFlight | `.github/workflows/ios-testflight.yml` | Builds a signed .ipa, uploads it to App Store Connect, and adds it to the TestFlight group. Set `skip_distribution` to upload without group distribution |
 | iOS Release IPA | `.github/workflows/ios-release-ipa.yml` | Builds a signed .ipa and attaches it to a GitHub release |
 | Release All Platforms | `.github/workflows/release-all.yml` | Creates the `v<version>` tag and runs the Play Store, APK, IPA and TestFlight workflows |
 | Release All (Existing) | `.github/workflows/release-all-existing.yml` | Re-runs the Play Store, APK, IPA and TestFlight workflows for an existing release tag |
@@ -59,15 +58,15 @@ GitHub secrets before the next release.
 
 ### App Store Connect Secrets (TestFlight only)
 
-Both TestFlight workflows use the API key secrets and `APP_APPLE_ID`; `ios-testflight.yml` also needs `TESTFLIGHT_GROUP_NAME`. `ios-release-ipa.yml` needs only the signing and Supabase secrets.
+`ios-testflight.yml` uses the API key secrets and `APP_APPLE_ID`. `TESTFLIGHT_GROUP_NAME` is required unless the run sets `skip_distribution`. `ios-release-ipa.yml` needs only the signing and Supabase secrets.
 
 | Secret Name | Description | How to Get |
 |-------------|-------------|------------|
 | `APPSTORE_API_KEY_ID` | App Store Connect API Key ID | See Step 4 below |
 | `APPSTORE_ISSUER_ID` | App Store Connect Issuer ID | See Step 4 below |
 | `APPSTORE_API_KEY` | API Key .p8 file contents | See Step 4 below |
-| `APP_APPLE_ID` | The app's numeric Apple ID (App Store Connect → App Information) | Used by both TestFlight workflows |
-| `TESTFLIGHT_GROUP_NAME` | TestFlight beta group to add builds to | Used by `ios-testflight.yml` |
+| `APP_APPLE_ID` | The app's numeric Apple ID (App Store Connect → App Information) | Used by `ios-testflight.yml` |
+| `TESTFLIGHT_GROUP_NAME` | TestFlight beta group to add builds to | Used by `ios-testflight.yml` unless `skip_distribution` is set |
 
 ---
 
@@ -180,10 +179,10 @@ If you haven't registered the App ID:
 ### Manual Trigger
 
 After adding the secrets:
-1. Go to **Actions** → **iOS TestFlight** (or **iOS TestFlight (Internal Only)**)
+1. Go to **Actions** → **iOS TestFlight**
 2. Click **Run workflow**
-3. Select the branch and run
-4. Watch the run and check that the build appears in TestFlight
+3. Select the branch. Leave `skip_distribution` off to add the build to the TestFlight group. Turn it on to upload only: icon validation and unit tests still run, then the build is uploaded to App Store Connect and the workflow stops before the tester group, Beta App Review, and the `testflight/*` tag.
+4. Watch the run and check that the build appears in App Store Connect. When distribution ran, it also appears in the TestFlight group.
 
 ---
 
@@ -232,8 +231,7 @@ After adding the secrets:
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/ios-testflight.yml` | TestFlight build and upload |
-| `.github/workflows/ios-testflight-internal.yml` | Internal-only TestFlight build |
+| `.github/workflows/ios-testflight.yml` | TestFlight build, upload, and optional group distribution |
 | `.github/workflows/ios-release-ipa.yml` | Release .ipa for a GitHub release |
 | `.github/workflows/release-all.yml` | Full release across platforms |
 | `iosApp/ExportOptions.plist` | Archive export settings |
@@ -254,10 +252,10 @@ PROVISIONING_PROFILE_NAME   = name of profile in Apple Developer
 SUPABASE_URL                = Supabase project URL
 SUPABASE_ANON_KEY           = Supabase anon key
 
-# App Store Connect (TestFlight workflows only):
+# App Store Connect (ios-testflight.yml):
 APPSTORE_API_KEY_ID         = App Store Connect API Key ID
 APPSTORE_ISSUER_ID          = App Store Connect Issuer ID
 APPSTORE_API_KEY            = contents of .p8 file
-APP_APPLE_ID                = numeric Apple ID of the app (TestFlight workflows)
-TESTFLIGHT_GROUP_NAME       = TestFlight beta group (ios-testflight.yml)
+APP_APPLE_ID                = numeric Apple ID of the app
+TESTFLIGHT_GROUP_NAME       = TestFlight beta group (not used when skip_distribution is set)
 ```

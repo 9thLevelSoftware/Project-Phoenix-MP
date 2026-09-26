@@ -26,7 +26,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         for name in (
             "ios-release-ipa.yml",
             "ios-testflight.yml",
-            "ios-testflight-internal.yml",
         ):
             with self.subTest(workflow=name):
                 text = workflow(name)
@@ -40,7 +39,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         for name in (
             "ios-release-ipa.yml",
             "ios-testflight.yml",
-            "ios-testflight-internal.yml",
         ):
             with self.subTest(workflow=name):
                 text = workflow(name)
@@ -52,7 +50,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 )
 
     def test_testflight_build_and_upload_use_compatible_runners(self) -> None:
-        for name in ("ios-testflight.yml", "ios-testflight-internal.yml"):
+        for name in ("ios-testflight.yml",):
             with self.subTest(workflow=name):
                 text = workflow(name)
                 # Contract is SHA-pinned uses + runner/tooling split. Do not assert
@@ -120,7 +118,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             ("android-release-apk.yml", "build-and-attach"),
             ("ios-release-ipa.yml", "build-and-attach"),
             ("ios-testflight.yml", "build"),
-            ("ios-testflight-internal.yml", "build"),
         ):
             with self.subTest(workflow=name):
                 text = workflow(name)
@@ -179,10 +176,56 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     r"(?m)^      skip_tests:\n(?:        (?!default:).*\n)*        default: false\n",
                 )
                 self.assertEqual(text.count("skip_tests"), 2)
-        internal = workflow("ios-testflight-internal.yml")
-        self.assertIn(
-            "\n  tests:\n    uses: ./.github/workflows/release-tests.yml\n\n", internal
-        )  # no `with:`, so it can never be skipped
+
+    def test_testflight_skip_distribution_keeps_validation_and_unit_tests(self) -> None:
+        self.assertFalse((WORKFLOWS / "ios-testflight-internal.yml").exists())
+        for path in WORKFLOWS.glob("*.yml"):
+            self.assertNotIn(
+                "ios-testflight-internal",
+                path.read_text(encoding="utf-8"),
+                path.name,
+            )
+
+        text = workflow("ios-testflight.yml")
+        declarations = re.findall(
+            r"(?m)^      skip_distribution:\n"
+            r"(?:        .+\n)*?"
+            r"        type: boolean\n"
+            r"        default: false\n",
+            text,
+        )
+        self.assertEqual(len(declarations), 2)
+        self.assertEqual(text.count("if: ${{ !inputs.skip_distribution }}"), 2)
+        self.assertRegex(
+            text,
+            r"(?m)^      - name: Add build to TestFlight test group\n"
+            r"        if: \$\{\{ !inputs\.skip_distribution \}\}$",
+        )
+        self.assertRegex(
+            text,
+            r"(?m)^      - name: Tag build for release notes tracking\n"
+            r"        if: \$\{\{ !inputs\.skip_distribution \}\}$",
+        )
+        self.assertRegex(
+            text,
+            r"(?m)^      - name: Upload to TestFlight\n        env:\n",
+        )
+
+        icon = re.search(
+            r"(?ms)^      - name: Validate release app icons\n(?P<body>.*?)(?=^      - name: )",
+            text,
+        )
+        self.assertIsNotNone(icon)
+        icon_body = icon.group("body")
+        self.assertNotIn("if:", icon_body)
+        self.assertNotIn("skip_distribution", icon_body)
+        self.assertIn("python3 scripts/validate_ios_app_icons.py", icon_body)
+        self.assertIn("python3 scripts/test_ios_app_icons.py", icon_body)
+
+        tests = re.search(r"(?ms)^  tests:\n(?P<body>.*?)(?=^  build:\n)", text)
+        self.assertIsNotNone(tests)
+        self.assertNotIn("skip_distribution", tests.group("body"))
+        self.assertIn("uses: ./.github/workflows/release-tests.yml", tests.group("body"))
 
     def test_release_workflow_actions_are_sha_pinned(self) -> None:
         for name in (
@@ -193,7 +236,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             "android-release-apk.yml",
             "ios-release-ipa.yml",
             "ios-testflight.yml",
-            "ios-testflight-internal.yml",
         ):
             with self.subTest(workflow=name):
                 refs = re.findall(r"(?m)^\s*(?:- )?uses: (\S+)", workflow(name))

@@ -7,6 +7,10 @@ on:
         description: "Fail the run if adding the build to the TestFlight group or the Beta App Review submission fails. Set true for external-tester workflows; leave false for internal-only groups (audit F073)."
         type: boolean
         default: false
+      skip_distribution:
+        description: "Upload to App Store Connect without adding the build to the TestFlight group, submitting Beta App Review, or pushing a testflight/* tag. Icon validation and unit tests still run."
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       source_ref:
@@ -15,6 +19,11 @@ on:
       fail_on_distribution_error:
         required: false
         type: boolean
+      skip_distribution:
+        description: "Upload to App Store Connect without adding the build to the TestFlight group, submitting Beta App Review, or pushing a testflight/* tag. Icon validation and unit tests still run."
+        required: false
+        type: boolean
+        default: false
       skip_tests:
         description: 'Set by release-all workflows, which already ran the release test gate.'
         required: false
@@ -395,7 +404,10 @@ jobs:
 
           echo "=== Upload completed ==="
 
+      # Upload-only path: no tester group, Beta App Review, or testflight/* tag.
+      # The tag only seeds the next group's "What to Test" notes.
       - name: Add build to TestFlight test group
+        if: ${{ !inputs.skip_distribution }}
         env:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
@@ -704,6 +716,7 @@ jobs:
           fi
 
       - name: Tag build for release notes tracking
+        if: ${{ !inputs.skip_distribution }}
         run: |
           BUILD_VERSION="${{ needs.build.outputs.build_number }}"
           TAG_NAME="testflight/$BUILD_VERSION"
