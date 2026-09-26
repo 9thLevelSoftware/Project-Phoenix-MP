@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.openAppSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.CoreBluetooth.*
 import platform.darwin.NSObject
@@ -203,6 +205,7 @@ fun RequireBlePermissions(
         is BlePermissionState.Denied -> {
             PermissionScreenTheme {
                 BlePermissionDeniedScreen(
+                    onOpenSettings = { openAppSettings() },
                     onRetry = {
                         // Re-check the authorization status
                         // User might have enabled it in Settings
@@ -333,6 +336,7 @@ private fun BlePermissionRequestingScreen() {
  */
 @Composable
 private fun BlePermissionDeniedScreen(
+    onOpenSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
     Surface(
@@ -374,6 +378,27 @@ private fun BlePermissionDeniedScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Button(
+                onClick = onOpenSettings,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Open Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
                 onClick = onRetry,
                 modifier = Modifier
                     .fillMaxWidth()
