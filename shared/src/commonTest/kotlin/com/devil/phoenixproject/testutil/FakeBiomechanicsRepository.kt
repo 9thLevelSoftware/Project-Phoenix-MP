@@ -6,13 +6,17 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 class FakeBiomechanicsRepository : BiomechanicsRepository {
     val savedBiomechanics = mutableMapOf<String, List<BiomechanicsRepResult>>()
 
-    override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
-        savedBiomechanics[sessionId] = (savedBiomechanics[sessionId] ?: emptyList()) + results
-    }
-
     override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> = savedBiomechanics[sessionId] ?: emptyList()
 
-    override suspend fun deleteRepBiomechanics(sessionId: String) {
-        savedBiomechanics.remove(sessionId)
+    /**
+     * Stand-in for the workout transaction's delete-then-insert. History still
+     * reads [getRepBiomechanics].
+     */
+    fun replaceForSession(sessionId: String, results: List<BiomechanicsRepResult>) {
+        if (results.isEmpty()) {
+            savedBiomechanics.remove(sessionId)
+        } else {
+            savedBiomechanics[sessionId] = results.toList()
+        }
     }
 }

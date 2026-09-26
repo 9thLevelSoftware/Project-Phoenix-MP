@@ -13,33 +13,6 @@ import kotlinx.coroutines.flow.Flow
  */
 interface PersonalRecordRepository {
     /**
-     * Get the latest PR for an exercise in a specific workout mode
-     * @param exerciseId Exercise ID
-     * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
-     * @return PersonalRecord or null if no PR exists
-     */
-    suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
-
-    /**
-     * Get all PRs for an exercise across all workout modes
-     * @param exerciseId Exercise ID
-     * @return Flow emitting list of personal records
-     */
-    fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>>
-
-    /**
-     * Get the best max-weight PR for an exercise across all modes.
-     *
-     * FP-5: only `MAX_WEIGHT` records in the `COMBINED` phase count — a
-     * CONCENTRIC/ECCENTRIC peak-force row is a different metric and routinely
-     * exceeds the commanded load.
-     *
-     * @param exerciseId Exercise ID
-     * @return PersonalRecord or null if no max-weight PR exists
-     */
-    suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord?
-
-    /**
      * Get all personal records
      * @return Flow emitting list of all personal records
      */
@@ -58,40 +31,6 @@ interface PersonalRecordRepository {
 
     /** Soft-delete one active-profile PR snapshot by its local row ID. */
     suspend fun deletePR(prId: Long, profileId: String)
-
-    /**
-     * Update PR if the new performance is better
-     * Compares the new weight and reps with the existing PR for the exercise/mode combination
-     * and updates if the new performance is better (higher volume = weight * reps)
-     *
-     * @param exerciseId Exercise ID
-     * @param weightPerCableKg Weight per cable in kg
-     * @param reps Number of reps completed
-     * @param workoutMode Workout mode
-     * @param timestamp Timestamp of the performance
-     * @return Result.success(true) if a new PR was set, Result.success(false) otherwise, or Result.failure on error
-     */
-    suspend fun updatePRIfBetter(
-        exerciseId: String,
-        weightPerCableKg: Float,
-        reps: Int,
-        workoutMode: String,
-        timestamp: Long,
-        profileId: String,
-        cableCount: Int? = null,
-    ): Result<Boolean> = updatePRsIfBetter(
-        exerciseId = exerciseId,
-        weightPRWeightPerCableKg = weightPerCableKg,
-        volumePRWeightPerCableKg = weightPerCableKg,
-        reps = reps,
-        workoutMode = workoutMode,
-        timestamp = timestamp,
-        profileId = profileId,
-        cableCount = cableCount,
-    ).fold(
-        onSuccess = { Result.success(it.isNotEmpty()) },
-        onFailure = { Result.failure(it) },
-    )
 
     // ========== Volume/Weight PR Methods (parity with parent) ==========
 
