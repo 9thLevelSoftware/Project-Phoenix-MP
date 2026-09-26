@@ -214,23 +214,6 @@ data class CycleProgress(
     val rotationCount: Int = 0,
 ) {
     /**
-     * Calculate days since last workout for gap detection.
-     */
-    fun daysSinceLastWorkout(): Int? {
-        if (lastCompletedDate == null) return null
-        val now = currentTimeMillis()
-        return ((now - lastCompletedDate) / (24 * 60 * 60 * 1000L)).toInt()
-    }
-
-    /**
-     * Check if user has been away long enough to trigger recovery dialog.
-     */
-    fun needsRecoveryDialog(): Boolean {
-        val daysSince = daysSinceLastWorkout() ?: return false
-        return daysSince >= 3
-    }
-
-    /**
      * Calculate how many calendar day boundaries have passed since the last advance.
      * Falls back to cycle start date when the cycle has never been advanced manually.
      */
@@ -560,45 +543,12 @@ data class ProgressionEvent(
         }
 
         /**
-         * Create a deload suggestion (weight decrease).
-         */
-        fun createDeload(
-            id: String = generateUUID(),
-            exerciseId: String,
-            previousWeightKg: Float,
-            reason: ProgressionReason,
-            profileId: String = "default",
-        ): ProgressionEvent {
-            val suggestedWeight = calculateDeloadWeight(previousWeightKg)
-            return ProgressionEvent(
-                id = id,
-                exerciseId = exerciseId,
-                suggestedWeightKg = suggestedWeight,
-                previousWeightKg = previousWeightKg,
-                reason = reason,
-                userResponse = null,
-                actualWeightKg = null,
-                timestamp = currentTimeMillis(),
-                profileId = profileId,
-            )
-        }
-
-        /**
          * Calculate progression weight: 2.5% increase, rounded to 0.5kg, minimum 0.5kg increment.
          */
         fun calculateProgressionWeight(currentWeight: Float): Float {
             val rawIncrease = currentWeight * 0.025f
             val increment = maxOf(0.5f, (rawIncrease * 2).toInt() / 2f)
             return currentWeight + increment
-        }
-
-        /**
-         * Calculate deload weight: 10% decrease, rounded to 0.5kg, minimum 0.5kg decrement.
-         */
-        fun calculateDeloadWeight(currentWeight: Float): Float {
-            val rawDecrease = currentWeight * 0.10f
-            val decrement = maxOf(0.5f, (rawDecrease * 2).toInt() / 2f)
-            return maxOf(0f, currentWeight - decrement)
         }
     }
 }

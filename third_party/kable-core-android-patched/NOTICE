@@ -1,0 +1,13 @@
+This directory is a patched vendor copy of:
+
+    com.juul.kable:kable-core-android:0.43.1
+
+Upstream: https://github.com/JuulLabs/kable (tag 0.43.1)
+Copyright 2020 JUUL Labs, Inc.
+License: Apache License, Version 2.0
+
+LICENSE in this directory is the upstream LICENSE.txt from that tag.
+Upstream does not publish a NOTICE file with this artifact.
+
+The local modification is the Android GATT characteristic write path
+described in README.md.

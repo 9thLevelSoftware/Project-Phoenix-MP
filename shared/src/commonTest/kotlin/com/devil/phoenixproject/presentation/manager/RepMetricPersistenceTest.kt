@@ -139,7 +139,7 @@ class RepMetricPersistenceTest {
         advanceUntilIdle()
 
         // Verify count matches
-        val savedCount = harness.fakeRepMetricRepo.getRepMetricCount(sessionId)
+        val savedCount = (harness.fakeRepMetricRepo.savedMetrics[sessionId]?.size ?: 0).toLong()
         assertEquals(
             expectedCount.toLong(),
             savedCount,

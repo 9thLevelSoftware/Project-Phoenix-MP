@@ -36,8 +36,14 @@
     <!-- Haptic feedback / vibration permission -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Microphone permission for safe word voice detection -->
+    <!-- Microphone permission for safe word voice detection.
+         Safe word is optional and off by default. RECORD_AUDIO would otherwise
+         make Play treat android.hardware.microphone as required and hide the app
+         from devices without a mic. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
 
     <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
     <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />

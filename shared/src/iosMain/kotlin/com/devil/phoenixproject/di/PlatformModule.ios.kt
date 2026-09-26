@@ -102,7 +102,7 @@ actual val platformModule: Module = module {
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }
-    single<BackupDestinationResolver> { IosBackupDestinationResolver() }
+    single<BackupDestinationResolver> { IosBackupDestinationResolver(get()) }
     single<DataBackupManager> { IosDataBackupManager(get(), get(), get(), get(), get(), get(), get()) }
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }

@@ -28,6 +28,4 @@ class FakeRepMetricRepository : RepMetricRepository {
     override suspend fun deleteRepMetrics(sessionId: String) {
         savedMetrics.remove(sessionId)
     }
-
-    override suspend fun getRepMetricCount(sessionId: String): Long = (savedMetrics[sessionId]?.size ?: 0).toLong()
 }

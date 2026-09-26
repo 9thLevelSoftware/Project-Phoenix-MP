@@ -33,7 +33,7 @@ class FakePersonalRecordRepositoryTest {
         repository.addRecord(record("Old School", weightPerCableKg = 50f, reps = 10))
         repository.addRecord(record("Pump", weightPerCableKg = 60f, reps = 5))
 
-        assertEquals(60f, repository.getBestPR("bench", "default")?.weightPerCableKg)
+        assertEquals(60f, repository.getBestWeightPR("bench", "default")?.weightPerCableKg)
         assertEquals(60f, repository.getAllPRsGrouped("default").first().single().weightPerCableKg)
     }
 }

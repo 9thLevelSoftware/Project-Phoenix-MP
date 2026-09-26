@@ -95,15 +95,6 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createSoftStopPacket returns 2-byte soft stop`() {
-        val packet = BlePacketFactory.createSoftStopPacket()
-
-        assertEquals(2, packet.size)
-        assertEquals(0x50.toByte(), packet[0])
-        assertEquals(0x00.toByte(), packet[1])
-    }
-
-    @Test
     fun `createResetCommand returns 4-byte reset packet`() {
         val packet = BlePacketFactory.createResetCommand()
 

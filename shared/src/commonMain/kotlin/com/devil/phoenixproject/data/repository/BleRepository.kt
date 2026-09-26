@@ -186,20 +186,12 @@ interface BleRepository {
     val connectedModel: PhoenixModel?
         get() = (connectionState.value as? ConnectionState.Connected)?.hardwareModel
 
-    // High-level workout control (parity with parent repo)
+    // High-level workout control (parity with parent repo).
+    // RESET 0x0A via stopWorkout is the only stop path.
     suspend fun stopWorkout(): Result<Unit>
-
-    /**
-     * Send stop command to machine WITHOUT stopping polling.
-     * Use this for Just Lift mode where we need continuous polling for auto-start detection.
-     */
-    suspend fun sendStopCommand(): Result<Unit>
 
     // Handle detection for auto-start (arms the state machine in WaitingForRest)
     fun enableHandleDetection(enabled: Boolean)
-
-    // Reset handle state machine to initial state (for re-arming Just Lift)
-    fun resetHandleState()
 
     /**
      * Enable Just Lift waiting mode after set completion.
@@ -230,23 +222,6 @@ interface BleRepository {
      * Does NOT disconnect the device.
      */
     fun stopPolling()
-
-    /**
-     * Stop only monitor polling, keeping diagnostic, heuristic, and heartbeat polling running.
-     * Use this during bodyweight exercises to keep BLE connection "warm" (via diagnostic polling
-     * at 500ms intervals) while not emitting workout metrics.
-     *
-     * Issue #222: The 2-second heartbeat alone is insufficient for extended bodyweight exercises
-     * (90+ seconds). Diagnostic polling must remain active to prevent BLE link degradation.
-     */
-    fun stopMonitorPollingOnly()
-
-    /**
-     * Restart diagnostic polling and heartbeat only (not monitor polling).
-     * Issue #222 v10: Use after bodyweight set completion to maintain BLE link during rest.
-     * stopWorkout() kills all polling, leaving machine with no BLE activity during rest.
-     */
-    fun restartDiagnosticPolling()
 
     // ========== Disco Mode (Easter Egg) ==========
 

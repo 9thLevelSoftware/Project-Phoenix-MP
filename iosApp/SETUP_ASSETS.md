@@ -1,134 +1,98 @@
-# iOS App Assets Setup Guide
+# iOS App Assets
 
-This guide covers the manual setup steps required to complete iOS app asset configuration. These steps must be performed in Xcode.
+Icons and the launch screen are committed in `PhoenixApp/PhoenixApp/Assets.xcassets`. The iOS workflows archive those files directly. Local setup is the Gradle framework build in [README.md](README.md), plus `convert_sounds.sh` when the Android OGG sources change.
 
-## App Icons
+## App icon
 
-### Source Image
-The app icon source image is located at:
-- `androidApp/src/main/res/drawable-xxxhdpi/phoenix_logo_foreground.png`
+`AppIcon.appiconset` contains one universal iOS icon:
 
-### Setup Steps
+- `AppIcon1024.png` (1024×1024, opaque RGB PNG)
+- The same bytes are at `iosApp/AppIcon1024.png`, which TestFlight passes to the validator as `--source`
 
-1. **Open Xcode Project**
-   - Open your Xcode project for PhoenixApp
+`ios-testflight.yml` checks them before signing:
 
-2. **Create AppIcon Asset**
-   - In Xcode, select your project in the navigator
-   - Select the target → General tab
-   - Scroll to "App Icons and Launch Screen"
-   - Click "Use Asset Catalog" if not already using one
-   - Open `Assets.xcassets` in the navigator
-   - Right-click and select "New Image Set" → Name it `AppIcon`
+```bash
+python3 scripts/validate_ios_app_icons.py --source iosApp/AppIcon1024.png
+python3 scripts/test_ios_app_icons.py
+```
 
-3. **Add Icon Sizes**
-   - Select the `AppIcon` image set
-   - Drag the source image (`phoenix_logo_foreground.png`) into the appropriate slots:
-     - **iPhone**: 20pt, 29pt, 40pt, 60pt (2x and 3x for each)
-     - **iPad**: 20pt, 29pt, 40pt, 76pt, 83.5pt (1x, 2x for each)
-     - **App Store**: 1024pt (1x)
-   - Or use an app icon generator tool to create all sizes from the source
+`Contents.json` lists that one universal image with `"size" : "1024x1024"`. `scripts/validate_ios_app_icons.py` checks each declared `size` against the PNG pixel dimensions, and this file is 1024×1024.
 
-4. **Configure in Project Settings**
-   - Select target → General → App Icons and Launch Screen
-   - Set "App Icons Source" to `AppIcon`
+## Launch screen
 
-## Launch Screen Assets
+`Info.plist` already points `UILaunchScreen` at the catalog:
 
-### Launch Icon
+```xml
+<key>UILaunchScreen</key>
+<dict>
+    <key>UIColorName</key>
+    <string>LaunchScreenBackground</string>
+    <key>UIImageName</key>
+    <string>LaunchIcon</string>
+</dict>
+```
 
-1. **Create LaunchIcon Image Set**
-   - In `Assets.xcassets`, create a new Image Set named `LaunchIcon`
-   - Add the logo image (same source as app icon)
-   - Configure for 1x, 2x, 3x scales
+`LaunchIcon.imageset` is a 200pt centered mark derived from `AppIcon1024.png`:
 
-### Launch Screen Background Color
+| File | Pixels | Scale |
+|------|--------|-------|
+| `LaunchIcon.png` | 200×200 | 1x |
+| `LaunchIcon@2x.png` | 400×400 | 2x |
+| `LaunchIcon@3x.png` | 600×600 | 3x |
 
-1. **Create Color Asset**
-   - In `Assets.xcassets`, create a new Color Set named `LaunchScreenBackground`
-   - Set the color to match the app theme background:
-     - Light mode: `#F8FAFC` (SurfaceContainerLight)
-     - Dark mode: `#0F172A` (SurfaceContainerDark)
-   - Or use the color from `androidApp/src/main/res/drawable/ic_launcher_background.xml` (#000000)
+`LaunchScreenBackground.colorset` matches the app window background:
 
-2. **Verify Info.plist**
-   - Ensure `Info.plist` references these assets:
-     ```xml
-     <key>UILaunchScreen</key>
-     <dict>
-         <key>UIColorName</key>
-         <string>LaunchScreenBackground</string>
-         <key>UIImageName</key>
-         <string>LaunchIcon</string>
-     </dict>
-     ```
+- Any appearance (light): `#F8FAFC`
+- Dark: `#0F172A`
 
-## Sound Files
+Those are the same values as `phoenix_window_background` (`values/colors.xml` and `values-night/colors.xml`).
 
-iOS sound playback is implemented in `HapticFeedbackEffect.ios.kt` using AVAudioPlayer. The code automatically looks for sound files in the app bundle.
+## Shared framework
 
-### Source Files
-Android sound files are located in the shared Kotlin Multiplatform library resources:
-- `shared/src/androidMain/res/raw/*.ogg`
+The Xcode project links the debug framework. From the repo root, with Supabase checks skipped for a local build that does not need credentials:
 
-This directory contains 60+ sound files including core workout tones, rep-count announcements (`rep_01` through `rep_25`), and various badge/PR celebration tracks.
+```bash
+./gradlew :shared:linkDebugFrameworkIosArm64 \
+  :shared:generateComposeResClass \
+  :shared:iosArm64ProcessResources \
+  -Pskip.supabase.check=true
+```
 
-### Automated Conversion (Recommended)
+Release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) use the release framework in one Gradle invocation:
 
-To dynamically scan and convert all raw sound files from the shared KMP resources to iOS Core Audio Format (.caf) and place them directly in the synced Xcode target folder:
+```bash
+./gradlew :shared:linkReleaseFrameworkIosArm64 \
+  :shared:generateComposeResClass \
+  :shared:iosArm64ProcessResources \
+  --no-parallel -Pskip.supabase.check=true
+```
 
-Run the conversion script on macOS:
+Outputs the Xcode project expects:
+
+- `shared/build/bin/iosArm64/debugFramework/shared.framework` (local debug builds)
+- `shared/build/processedResources/iosArm64/main/composeResources` (copied into the app bundle by an Xcode build phase)
+
+## Sound files
+
+iOS playback is in `shared/src/iosMain/.../HapticFeedbackEffect.ios.kt` (AVAudioPlayer). It loads `.caf` files from the app bundle, trying `.caf`, then `.m4a`, `.wav`, and `.mp3`.
+
+Sources live in `shared/src/androidMain/res/raw/*.ogg` (workout tones, `rep_01`–`rep_25`, badge and PR tracks). Convert them when those OGG files change:
+
 ```bash
 cd iosApp
 chmod +x convert_sounds.sh
 ./convert_sounds.sh
 ```
 
-This script works dynamically and utilizes either `afconvert` (native macOS tool) + `ffmpeg` (to generate highly optimized ADPCM `ima4` compressed `.caf` audio files) or falls back to `ffmpeg` alone.
+The script prefers `afconvert` (Xcode command-line tools) plus `ffmpeg`, and falls back to `ffmpeg` alone (`brew install ffmpeg`). It writes `PhoenixApp/PhoenixApp/Sounds/*.caf`. That folder sits in the synchronized `PhoenixApp` group, so the files are bundled without a manual target-membership change.
 
-### Manual Conversion Steps
+Startup logs `Loaded sound: beep.caf` for files it finds, and `Sound file not found: beep` when one is missing. Haptics still run if a sound file is absent.
 
-1. **Convert OGG to iOS Format**
-   - iOS supports `.caf` (Core Audio Format), `.m4a`, `.wav`, or `.mp3`
-   - Use ffmpeg (recommended):
-     ```bash
-     ffmpeg -i beep.ogg beep.caf
-     ```
-   - Or use `afconvert` with intermediate WAV:
-     ```bash
-     ffmpeg -i beep.ogg beep.wav
-     afconvert beep.wav beep.caf -d ima4 -f caff
-     ```
+## What is already in git
 
-2. **Verification in Xcode Project**
-   - The converted files are placed directly in the `PhoenixApp/PhoenixApp/Sounds/` folder on disk.
-   - Because the Xcode project uses file-system synchronized groups, these files are **automatically** picked up and bundled with the iOS target. No manual dragging or target membership configuration is needed.
-
-3. **Verify Sound Loading**
-   - The app will log sound loading status at startup
-   - Check console for: "Loaded sound: beep.caf" messages
-   - Missing sounds will show: "Sound file not found: beep"
-
-## Quick Setup Checklist
-
-- [ ] Create `AppIcon.appiconset` with all required sizes
-- [ ] Configure app icon in target settings
-- [ ] Create `LaunchIcon.imageset` with logo
-- [ ] Create `LaunchScreenBackground.colorset` with theme colors (#0F172A dark / #F8FAFC light)
-- [ ] Verify `Info.plist` references launch assets correctly
-- [ ] Run `./convert_sounds.sh` to dynamically convert and synchronize all sound files
-- [ ] Build shared framework: `./gradlew :shared:assembleXCFramework`
-- [ ] Verify shared.xcframework is linked in Xcode
-- [ ] Test app icons display correctly on device
-- [ ] Test launch screen displays correctly
-- [ ] Test sound playback and haptic feedback during workout
-
-## Notes
-
-- App icons and launch screen assets are required for App Store submission
-- Sound files are optional but enhance user experience (haptic feedback works without them)
-- All asset setup must be done in Xcode - these cannot be automated via Gradle
-- The `Info.plist` already references `LaunchIcon` and `LaunchScreenBackground` - you just need to create the assets
-- Sound playback is implemented in `shared/src/iosMain/.../HapticFeedbackEffect.ios.kt` using AVAudioPlayer
-- The app supports `.caf`, `.m4a`, `.wav`, and `.mp3` formats (tries them in that order)
-
+- [x] `AppIcon.appiconset` — one universal 1024×1024 icon
+- [x] `LaunchIcon.imageset` — 1x/2x/3x mark from that icon
+- [x] `LaunchScreenBackground.colorset` — `#F8FAFC` light / `#0F172A` dark
+- [x] `Info.plist` `UILaunchScreen` references both launch assets
+- [ ] `./convert_sounds.sh` — only after `shared/src/androidMain/res/raw/*.ogg` changes
+- [ ] Debug framework build — the Gradle command above, before opening the project in Xcode
