@@ -55,16 +55,6 @@ class FakeExerciseRepository : ExerciseRepository {
         }
     }
 
-    override fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>> = _exercisesFlow.map { list ->
-        list.filter { it.muscleGroup.equals(muscleGroup, ignoreCase = true) }
-    }
-
-    override fun filterByEquipment(equipment: String): Flow<List<Exercise>> = _exercisesFlow.map { list ->
-        list.filter { it.equipment.contains(equipment, ignoreCase = true) }
-    }
-
-    override fun getFavorites(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.isFavorite } }
-
     override suspend fun toggleFavorite(id: String) {
         exercises[id]?.let { exercise ->
             exercises[id] = exercise.copy(isFavorite = !exercise.isFavorite)
@@ -77,8 +67,6 @@ class FakeExerciseRepository : ExerciseRepository {
     override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = images[exerciseId] ?: emptyList()
 
     override suspend fun importExercises(): Result<Unit> = importResult
-
-    override suspend fun isExerciseLibraryEmpty(): Boolean = exercises.isEmpty()
 
     override suspend fun updateFromWger(): Result<Int> = updateFromWgerResult
 

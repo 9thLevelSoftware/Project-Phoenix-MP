@@ -742,26 +742,6 @@ object BadgeDefinitions {
     fun getBadgeById(id: String): Badge? = allBadges.find { it.id == id }
 
     /**
-     * Get badges by category
-     */
-    fun getBadgesByCategory(category: BadgeCategory): List<Badge> = allBadges.filter { it.category == category }
-
-    /**
-     * Get badges by tier
-     */
-    fun getBadgesByTier(tier: BadgeTier): List<Badge> = allBadges.filter { it.tier == tier }
-
-    /**
-     * Get non-secret badges (visible when locked)
-     */
-    fun getVisibleBadges(): List<Badge> = allBadges.filter { !it.isSecret }
-
-    /**
-     * Get secret badges (only shown when earned)
-     */
-    fun getSecretBadges(): List<Badge> = allBadges.filter { it.isSecret }
-
-    /**
      * Total badge count
      */
     val totalBadgeCount: Int = allBadges.size

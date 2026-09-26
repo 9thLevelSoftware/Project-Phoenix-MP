@@ -139,7 +139,7 @@ class SqlDelightGamificationRepositoryTest {
         val profileBBadges = repository.checkAndAwardBadges("profile-b").map { it.id }.toSet()
         assertTrue("workouts_1" in profileBBadges, "control: B earns its own badges: $profileBBadges")
         assertTrue(PEAK_POWER_BADGES.none { it in profileBBadges }, "B leaked A's power: $profileBBadges")
-        assertEquals(0 to 500, repository.getBadgeProgress("power_500", "profile-b"))
+        assertEquals(0 to 500, badgeProgress("power_500", "profile-b"))
 
         repository.updateStats("profile-a")
         val profileABadges = repository.checkAndAwardBadges("profile-a").map { it.id }.toSet()
@@ -158,7 +158,7 @@ class SqlDelightGamificationRepositoryTest {
         assertTrue("power_500" in badges, "$badges")
         assertFalse("power_750" in badges, "$badges")
         assertFalse("power_1000" in badges, "$badges")
-        assertEquals(600 to 750, repository.getBadgeProgress("power_750", profileId))
+        assertEquals(600 to 750, badgeProgress("power_750", profileId))
     }
 
     @Test
@@ -170,7 +170,7 @@ class SqlDelightGamificationRepositoryTest {
         database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(1L, 1L, "deleted-run")
 
         repository.updateStats(profileId)
-        assertEquals(400 to 500, repository.getBadgeProgress("power_500", profileId))
+        assertEquals(400 to 500, badgeProgress("power_500", profileId))
     }
 
     @Test
@@ -219,11 +219,11 @@ class SqlDelightGamificationRepositoryTest {
             val comeback = days.zipWithNext().any { (a, b) -> b - a >= 7 }
 
             val label = "fixture $index hours=$hours"
-            assertEquals((if (inclusive(0, 6)) 1 else 0) to 1, repository.getBadgeProgress("early_bird", profileId), label)
-            assertEquals((if (inclusive(22, 24)) 1 else 0) to 1, repository.getBadgeProgress("night_owl", profileId), label)
-            assertEquals((if (inclusive(11, 13)) 1 else 0) to 1, repository.getBadgeProgress("lunch_lifter", profileId), label)
-            assertEquals(halfOpenCount(0, 7) to 10, repository.getBadgeProgress("dawn_patrol_10", profileId), label)
-            assertEquals((if (comeback) 1 else 0) to 1, repository.getBadgeProgress("comeback_7", profileId), label)
+            assertEquals((if (inclusive(0, 6)) 1 else 0) to 1, badgeProgress("early_bird", profileId), label)
+            assertEquals((if (inclusive(22, 24)) 1 else 0) to 1, badgeProgress("night_owl", profileId), label)
+            assertEquals((if (inclusive(11, 13)) 1 else 0) to 1, badgeProgress("lunch_lifter", profileId), label)
+            assertEquals(halfOpenCount(0, 7) to 10, badgeProgress("dawn_patrol_10", profileId), label)
+            assertEquals((if (comeback) 1 else 0) to 1, badgeProgress("comeback_7", profileId), label)
 
             val awarded = repository.checkAndAwardBadges(profileId).map { it.id }.toSet()
             assertEquals(inclusive(0, 6), "early_bird" in awarded, label)
@@ -259,11 +259,11 @@ class SqlDelightGamificationRepositoryTest {
         repository.updateStats(profileId)
         repository.updateStats("someone-else")
 
-        assertEquals(3 to 5, repository.getBadgeProgress("weekend_warrior", profileId))
+        assertEquals(3 to 5, badgeProgress("weekend_warrior", profileId))
         assertFalse("weekend_warrior" in repository.checkAndAwardBadges(profileId).map { it.id })
 
         // The other profile earns it from its own six, independently.
-        assertEquals(6 to 5, repository.getBadgeProgress("weekend_warrior", "someone-else"))
+        assertEquals(6 to 5, badgeProgress("weekend_warrior", "someone-else"))
         assertTrue("weekend_warrior" in repository.checkAndAwardBadges("someone-else").map { it.id })
     }
 
@@ -277,7 +277,7 @@ class SqlDelightGamificationRepositoryTest {
         insertWorkoutSession(id = "other", totalReps = 10, weightPerCableKg = 999.0, profileId = "someone-else")
         repository.updateStats(profileId)
 
-        assertEquals(2_000 to 5_000, repository.getBadgeProgress("marathon_session", profileId))
+        assertEquals(2_000 to 5_000, badgeProgress("marathon_session", profileId))
     }
 
     @Test
@@ -291,9 +291,12 @@ class SqlDelightGamificationRepositoryTest {
 
         val progress = repository.getAllBadgesWithProgress(profileId).associateBy { it.badge.id }
         assertTrue(progress.getValue("workouts_1").isEarned)
-        for ((id, item) in progress) {
-            assertEquals(repository.getBadgeProgress(id, profileId), item.currentProgress to item.targetProgress, id)
-        }
+        assertEquals(1 to 1, progress.getValue("workouts_1").currentProgress to progress.getValue("workouts_1").targetProgress)
+    }
+
+    private suspend fun badgeProgress(badgeId: String, profileId: String): Pair<Int, Int> {
+        val item = repository.getAllBadgesWithProgress(profileId).single { it.badge.id == badgeId }
+        return item.currentProgress to item.targetProgress
     }
 
     private fun insertRepMetric(sessionId: String, peakPowerWatts: Double) {

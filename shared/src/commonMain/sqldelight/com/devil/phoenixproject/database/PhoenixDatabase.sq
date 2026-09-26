@@ -592,15 +592,6 @@ WHERE archived = 0
   )
 ORDER BY popularity DESC, name ASC;
 
-filterExercisesByMuscle:
-SELECT * FROM Exercise WHERE archived = 0 AND muscleGroups LIKE ('%' || :muscle || '%') ORDER BY name ASC;
-
-filterExercisesByEquipment:
-SELECT * FROM Exercise WHERE archived = 0 AND equipment LIKE ('%' || :equipment || '%') ORDER BY name ASC;
-
-selectFavorites:
-SELECT * FROM Exercise WHERE archived = 0 AND isFavorite = 1 ORDER BY name ASC;
-
 selectExerciseById:
 SELECT * FROM Exercise WHERE id = ?;
 
@@ -659,9 +650,6 @@ WHERE id = :id
   AND isCustom = 1
   AND (updatedAt IS NULL OR updatedAt <= :updatedAt)
   AND (deletedAt IS NULL OR :deletedAt IS NOT NULL);
-
-countExercises:
-SELECT COUNT(*) FROM Exercise;
 
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;

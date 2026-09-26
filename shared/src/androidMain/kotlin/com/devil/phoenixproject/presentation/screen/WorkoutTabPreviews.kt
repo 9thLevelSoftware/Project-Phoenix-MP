@@ -1068,14 +1068,10 @@ private fun WorkoutTabWarmupPreview() {
 private class PreviewExerciseRepository : ExerciseRepository {
     override fun getAllExercises(): Flow<List<Exercise>> = flowOf(emptyList())
     override fun searchExercises(query: String): Flow<List<Exercise>> = flowOf(emptyList())
-    override fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>> = flowOf(emptyList())
-    override fun filterByEquipment(equipment: String): Flow<List<Exercise>> = flowOf(emptyList())
-    override fun getFavorites(): Flow<List<Exercise>> = flowOf(emptyList())
     override suspend fun toggleFavorite(id: String) {}
     override suspend fun getExerciseById(id: String): Exercise? = null
     override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = emptyList()
     override suspend fun importExercises(): Result<Unit> = Result.success(Unit)
-    override suspend fun isExerciseLibraryEmpty(): Boolean = true
     override suspend fun updateFromWger(): Result<Int> = Result.success(0)
 
     // Custom exercise methods
