@@ -51,7 +51,6 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
-import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -1299,14 +1298,6 @@ class MainViewModel(
     fun saveJustLiftDefaults(defaults: JustLiftDefaults) = workoutSessionManager.saveJustLiftDefaults(defaults)
     suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = workoutSessionManager.getSingleExerciseDefaults(exerciseId)
     fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) = workoutSessionManager.saveSingleExerciseDefaults(defaults)
-
-    // ===== Superset CRUD Delegation =====
-
-    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()) = workoutSessionManager.createSuperset(routineId, name, exercises)
-    suspend fun updateSuperset(routineId: String, superset: Superset) = workoutSessionManager.updateSuperset(routineId, superset)
-    suspend fun deleteSuperset(routineId: String, supersetId: String) = workoutSessionManager.deleteSuperset(routineId, supersetId)
-    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) = workoutSessionManager.addExerciseToSuperset(routineId, exerciseId, supersetId)
-    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) = workoutSessionManager.removeExerciseFromSuperset(routineId, exerciseId)
 
     // ===== Training Cycle Delegation =====
 
