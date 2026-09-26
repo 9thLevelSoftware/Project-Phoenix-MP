@@ -9,7 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 
 /**
- * Tests for MetricPollingEngine job lifecycle and partial-stop behavior.
+ * Tests for MetricPollingEngine job lifecycle.
  *
  * Testing approach: Since Kable's Peripheral can't be mocked in KMP common tests,
  * we use internal test helpers (startFakeJobs/startFakeJob) to create jobs without
@@ -131,78 +131,6 @@ class MetricPollingEngineTest {
         assertTrue(
             engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
             "New monitor job should be active",
-        )
-
-        engine.stopAll()
-    }
-
-    // =========================================================================
-    // Partial Stop - Issue #222 (4 tests, CRITICAL)
-    // =========================================================================
-
-    @Test
-    fun `stopMonitorOnly cancels only monitor job`() = runTest {
-        val engine = createTestEngine()
-        engine.startFakeJobs()
-        delay(50)
-
-        engine.stopMonitorOnly()
-        delay(50)
-
-        assertFalse(
-            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
-            "Monitor job should be cancelled",
-        )
-
-        engine.stopAll()
-    }
-
-    @Test
-    fun `stopMonitorOnly preserves diagnostic job`() = runTest {
-        val engine = createTestEngine()
-        engine.startFakeJobs()
-        delay(50)
-
-        engine.stopMonitorOnly()
-        delay(50)
-
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
-            "Diagnostic job should still be active",
-        )
-
-        engine.stopAll()
-    }
-
-    @Test
-    fun `stopMonitorOnly preserves heartbeat job`() = runTest {
-        val engine = createTestEngine()
-        engine.startFakeJobs()
-        delay(50)
-
-        engine.stopMonitorOnly()
-        delay(50)
-
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
-            "Heartbeat job should still be active",
-        )
-
-        engine.stopAll()
-    }
-
-    @Test
-    fun `stopMonitorOnly preserves heuristic job`() = runTest {
-        val engine = createTestEngine()
-        engine.startFakeJobs()
-        delay(50)
-
-        engine.stopMonitorOnly()
-        delay(50)
-
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
-            "Heuristic job should still be active",
         )
 
         engine.stopAll()
@@ -380,59 +308,6 @@ class MetricPollingEngineTest {
         engine.checkTimeoutThreshold()
 
         assertFalse(connectionLostCalled, "onConnectionLost should NOT fire at MAX-1")
-    }
-
-    // =========================================================================
-    // Diagnostic/Heartbeat Restart (2 tests)
-    // =========================================================================
-
-    @Test
-    fun `restartDiagnosticAndHeartbeat starts both if not active`() = runTest {
-        val engine = createTestEngine()
-
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC))
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT))
-
-        engine.restartDiagnosticAndHeartbeatFake()
-        delay(50)
-
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
-            "Diagnostic should be started",
-        )
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
-            "Heartbeat should be started",
-        )
-
-        engine.stopAll()
-    }
-
-    @Test
-    fun `restartDiagnosticAndHeartbeat skips if already active`() = runTest {
-        val engine = createTestEngine()
-
-        // Start diagnostic and heartbeat first
-        engine.startFakeJobs()
-        delay(50)
-
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC))
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT))
-
-        // Calling restart should not create duplicates
-        engine.restartDiagnosticAndHeartbeatFake()
-        delay(50)
-
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
-            "Diagnostic should remain active",
-        )
-        assertTrue(
-            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
-            "Heartbeat should remain active",
-        )
-
-        engine.stopAll()
     }
 
     @Test

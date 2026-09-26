@@ -570,22 +570,6 @@ class PhantomBleRepository(
         }
     }
 
-    override suspend fun sendStopCommand(): Result<Unit> {
-        return lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
-                Result.failure(IllegalStateException("Phantom repository is shut down"))
-            } else {
-                val expectedConnectionGeneration = connectionAttemptGeneration.value
-                logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                    Result.failure(IllegalStateException("Phantom repository is shut down"))
-                } else {
-                    Result.success(Unit)
-                }
-            }
-        }
-    }
-
     override fun enableHandleDetection(enabled: Boolean) {
         lifecycleLock.withLock {
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
@@ -627,30 +611,6 @@ class PhantomBleRepository(
                 return@withLock
             }
             logRepo.info(LogEventType.NOTIFICATION, "Phantom handle detection ${if (enabled) "enabled" else "disabled"}")
-        }
-    }
-
-    override fun resetHandleState() {
-        lifecycleLock.withLock {
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
-            if (
-                terminal.value ||
-                lifecycleCleanupInProgress ||
-                connectionAttemptReservationActive ||
-                connectionAttemptGeneration.value != expectedConnectionGeneration
-            ) {
-                return@withLock
-            }
-            handleStateControlGeneration += 1
-            _handleState.value = HandleState.WaitingForRest
-            if (
-                terminal.value ||
-                lifecycleCleanupInProgress ||
-                connectionAttemptReservationActive ||
-                connectionAttemptGeneration.value != expectedConnectionGeneration
-            ) {
-                return@withLock
-            }
         }
     }
 
@@ -751,31 +711,6 @@ class PhantomBleRepository(
             diagnosticJob?.cancel()
             heartbeatJob?.cancel()
             logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
-        }
-    }
-
-    override fun stopMonitorPollingOnly() {
-        lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
-                return@withLock
-            }
-            metricsGeneration += 1
-            metricsJob?.cancel()
-            logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
-        }
-    }
-
-    override fun restartDiagnosticPolling() {
-        lifecycleLock.withLock {
-            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
-                val expectedConnectionGeneration = connectionAttemptGeneration.value
-                if (!startDiagnostics(expectedConnectionGeneration) ||
-                    terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
-                ) {
-                    return@withLock
-                }
-                startHeartbeat(expectedConnectionGeneration)
-            }
         }
     }
 
