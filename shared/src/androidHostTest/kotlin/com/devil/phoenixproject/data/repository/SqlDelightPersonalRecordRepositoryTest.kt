@@ -86,31 +86,6 @@ class SqlDelightPersonalRecordRepositoryTest {
     }
 
     @Test
-    fun `getBestPR returns highest weight`() = runTest {
-        repository.updatePRsIfBetter(
-            exerciseId = "bench",
-            weightPRWeightPerCableKg = 40f,
-            volumePRWeightPerCableKg = 40f,
-            reps = 8,
-            workoutMode = "OldSchool",
-            timestamp = 1000L,
-            profileId = "default",
-        )
-        repository.updatePRsIfBetter(
-            exerciseId = "bench",
-            weightPRWeightPerCableKg = 60f,
-            volumePRWeightPerCableKg = 60f,
-            reps = 3,
-            workoutMode = "OldSchool",
-            timestamp = 2000L,
-            profileId = "default",
-        )
-
-        val best = repository.getBestPR("bench", profileId = "default")
-        assertEquals(60f, best?.weightPerCableKg)
-    }
-
-    @Test
     fun `normalized lookup reads legacy mode rows before migration cleanup`() = runTest {
         database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "bench",
@@ -348,7 +323,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(PRType.MAX_WEIGHT, benchPr.prType)
         assertEquals(WorkoutPhase.COMBINED, benchPr.phase)
 
-        assertEquals(60f, repository.getBestPR("bench", profileId = "default")?.weightPerCableKg)
+        assertEquals(60f, repository.getBestWeightPR("bench", profileId = "default")?.weightPerCableKg)
     }
 
     @Test

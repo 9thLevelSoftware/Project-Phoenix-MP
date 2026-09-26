@@ -227,19 +227,6 @@ class KableBleRepository : BleRepository {
         }
     }
 
-    override suspend fun sendStopCommand(): Result<Unit> {
-        log.i { "Sending stop command (polling continues)" }
-        return try {
-            val stopPacket = BlePacketFactory.createSoftStopPacket()
-            log.d { "Sending StopPacket (0x50)..." }
-            sendWorkoutCommand(stopPacket)
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to send stop command: ${e.message}" }
-            Result.failure(e)
-        }
-    }
-
     // ===== Polling and handle detection delegations =====
     override fun enableHandleDetection(enabled: Boolean) {
         log.i { "Handle detection ${if (enabled) "ENABLED" else "DISABLED"}" }
@@ -253,8 +240,6 @@ class KableBleRepository : BleRepository {
             handleDetector.disable()
         }
     }
-
-    override fun resetHandleState() = handleDetector.reset()
 
     override fun enableJustLiftWaitingMode() = handleDetector.enableJustLiftWaiting()
 
@@ -279,16 +264,6 @@ class KableBleRepository : BleRepository {
     }
 
     override fun stopPolling() = pollingEngine.stopAll()
-
-    override fun stopMonitorPollingOnly() = pollingEngine.stopMonitorOnly()
-
-    override fun restartDiagnosticPolling() {
-        val p = connectionManager.currentPeripheral ?: run {
-            log.w { "Cannot restart diagnostic polling - peripheral is null" }
-            return
-        }
-        pollingEngine.restartDiagnosticAndHeartbeat(p)
-    }
 
     // ===== Parsing methods (stay in facade) =====
 

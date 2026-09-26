@@ -24,7 +24,6 @@ interface RepMetricRepository {
      */
     suspend fun getRepMetricSummaries(sessionId: String): List<RepMetricSummary> = emptyList()
     suspend fun deleteRepMetrics(sessionId: String)
-    suspend fun getRepMetricCount(sessionId: String): Long
 }
 
 /**
@@ -118,15 +117,6 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                 queries.deleteRepMetricsBySession(sessionId)
                 queries.markWorkoutComponentDirty(sessionId)
             }
-        }
-    }
-
-    override suspend fun getRepMetricCount(sessionId: String): Long = withContext(Dispatchers.IO) {
-        try {
-            queries.countRepMetricsBySession(sessionId).executeAsOne()
-        } catch (e: Exception) {
-            // Defensive: return 0 if table is missing due to migration gap.
-            0L
         }
     }
 }

@@ -823,14 +823,6 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `clearTopBarActions clears actions`() = runTest(testCoroutineRule.dispatcher) {
-        // Set some actions first using reflection or public method if available
-        viewModel.clearTopBarActions()
-
-        assertTrue(viewModel.topBarActions.value.isEmpty())
-    }
-
-    @Test
     fun `setTopBarBackAction sets back action`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.topBarBackAction.value)
 

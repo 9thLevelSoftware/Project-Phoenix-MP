@@ -123,7 +123,6 @@ class FakeBleRepository : BleRepository {
     var connectDelay: Long = 0L
     var stopWorkoutBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
     var stopWorkoutCallCount = 0
-    var stopPacketCallCount = 0
     var stopPollingCallCount = 0
     var restartPollingCallCount = 0
     var monitorPollingActive = false
@@ -241,7 +240,6 @@ class FakeBleRepository : BleRepository {
         connectDelay = 0L
         stopWorkoutBlock = { Result.success(Unit) }
         stopWorkoutCallCount = 0
-        stopPacketCallCount = 0
         stopPollingCallCount = 0
         restartPollingCallCount = 0
         monitorPollingActive = false
@@ -402,13 +400,11 @@ class FakeBleRepository : BleRepository {
 
     /**
      * Frames that encode no load: init/reset (0x0A), legacy start (0x03), stop (0x05),
-     * soft-stop (0x50 0x00), the INIT preset coefficient table and the colour-scheme frame.
+     * the INIT preset coefficient table and the colour-scheme frame.
      */
     private fun isKnownZeroLoadControlFrame(command: ByteArray): Boolean {
         val opcode = command.firstOrNull() ?: return false
         return when (command.size) {
-            // Soft stop (0x50 0x00).
-            2 -> opcode == BleConstants.Commands.STOP_COMMAND && command[1] == 0x00.toByte()
             // Reset/init (0x0A), legacy start (0x03) and stop (0x05).
             4 -> opcode == BleConstants.Commands.RESET_COMMAND ||
                 opcode == 0x03.toByte() ||
@@ -437,19 +433,10 @@ class FakeBleRepository : BleRepository {
         }
     }
 
-    override suspend fun sendStopCommand(): Result<Unit> {
-        stopPacketCallCount++
-        return Result.success(Unit)
-    }
-
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {
             _handleState.value = HandleState.WaitingForRest
         }
-    }
-
-    override fun resetHandleState() {
-        _handleState.value = HandleState.WaitingForRest
     }
 
     override fun enableJustLiftWaitingMode() {
@@ -469,14 +456,6 @@ class FakeBleRepository : BleRepository {
     override fun stopPolling() {
         stopPollingCallCount++
         monitorPollingActive = false
-    }
-
-    override fun stopMonitorPollingOnly() {
-        monitorPollingActive = false
-    }
-
-    override fun restartDiagnosticPolling() {
-        // No-op in fake
     }
 
     override fun startDiscoMode() {

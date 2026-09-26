@@ -108,7 +108,6 @@ fun SafeWordCalibrationDialog(
     val currentListener = listener
     if (currentListener != null) {
         val listenerState by currentListener.state.collectAsState()
-        val isListening = listenerState is SafeWordState.Armed
 
         LaunchedEffect(currentListener) {
             currentListener.detectedWord.collect {
@@ -120,10 +119,21 @@ fun SafeWordCalibrationDialog(
             }
         }
 
-        LaunchedEffect(isListening) {
-            if (!isListening && detectionCount == 0) {
-                kotlinx.coroutines.delay(3000)
-                if (currentListener.state.value !is SafeWordState.Armed && detectionCount == 0) micError = true
+        // Disabled is the in-flight RECORD_AUDIO prompt: do not flip to Open
+        // Settings while the user is still answering. Unavailable (including a
+        // permanent denial) keeps that Settings path. Arming still times out if
+        // the recognizer never actually holds the microphone.
+        LaunchedEffect(listenerState) {
+            when (listenerState) {
+                is SafeWordState.Unavailable -> micError = true
+                is SafeWordState.Armed -> micError = false
+                SafeWordState.Arming -> {
+                    kotlinx.coroutines.delay(3000)
+                    if (currentListener.state.value !is SafeWordState.Armed && detectionCount == 0) {
+                        micError = true
+                    }
+                }
+                SafeWordState.Disabled -> Unit
             }
         }
     }

@@ -1046,7 +1046,6 @@ class DWSMRoutineFlowTest {
             runCurrent()
 
             assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
-            assertEquals(0, harness.fakeBleRepo.stopPacketCallCount)
             assertEquals(0, harness.coordinator.currentExerciseIndex.value)
             assertEquals(
                 outgoingExecutionId,

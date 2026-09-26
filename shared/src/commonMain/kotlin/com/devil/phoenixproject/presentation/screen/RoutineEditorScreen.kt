@@ -171,14 +171,6 @@ fun RoutineEditorScreen(
         selectionMode = false
     }
 
-    // Helper to check if selected exercises are all in same superset
-    fun selectedExercisesInSameSuperset(): String? {
-        val selected = state.exercises.filter { it.id in selectedExerciseIds }
-        if (selected.isEmpty()) return null
-        val supersetId = selected.first().supersetId
-        return if (selected.all { it.supersetId == supersetId }) supersetId else null
-    }
-
     // Helper to check if any selected exercises are in supersets
     fun anySelectedInSuperset(): Boolean = state.exercises.any { it.id in selectedExerciseIds && it.supersetId != null }
 
@@ -290,70 +282,12 @@ fun RoutineEditorScreen(
         }
     }
 
-    // Helper: Dissolve Superset (remove container, keep exercises as standalone)
-    fun dissolveSuperset(supersetId: String) {
-        val routine = state.routine ?: return
-        val updatedExercises = routine.exercises.map { ex ->
-            if (ex.supersetId == supersetId) {
-                ex.copy(supersetId = null, orderInSuperset = 0)
-            } else {
-                ex
-            }
-        }
-        val updatedSupersets = routine.supersets.filter { it.id != supersetId }
-        updateRoutine { it.copy(exercises = updatedExercises, supersets = updatedSupersets) }
-    }
-
     // Helper: Delete Superset with all exercises
     fun deleteSupersetWithExercises(supersetId: String) {
         val routine = state.routine ?: return
         val updatedExercises = routine.exercises.filter { it.supersetId != supersetId }
         val updatedSupersets = routine.supersets.filter { it.id != supersetId }
         updateRoutine { it.copy(exercises = updatedExercises, supersets = updatedSupersets) }
-    }
-
-    // Helper: Create superset with next exercise
-    fun createSupersetWithNext(exerciseId: String) {
-        val routine = state.routine ?: return
-        val exercises = routine.exercises
-        val currentIndex = exercises.indexOfFirst { it.id == exerciseId }
-
-        if (currentIndex < 0 || currentIndex >= exercises.lastIndex) return // No next exercise
-
-        val current = exercises[currentIndex]
-        val next = exercises[currentIndex + 1]
-
-        // Skip if either already in a superset
-        if (current.supersetId != null || next.supersetId != null) return
-
-        val newSupersetId = generateSupersetId()
-        val existingColors = routine.supersets.map { it.colorIndex }.toSet()
-        val newColor = SupersetColors.next(existingColors)
-
-        // Create new superset
-        val newSuperset = Superset(
-            id = newSupersetId,
-            routineId = routine.id,
-            name = "Superset",
-            colorIndex = newColor,
-            orderIndex = current.orderIndex,
-        )
-
-        // Update both exercises
-        val updatedExercises = exercises.map { ex ->
-            when (ex.id) {
-                current.id -> ex.copy(supersetId = newSupersetId, orderInSuperset = 0)
-                next.id -> ex.copy(supersetId = newSupersetId, orderInSuperset = 1)
-                else -> ex
-            }
-        }
-
-        updateRoutine {
-            it.copy(
-                exercises = updatedExercises,
-                supersets = routine.supersets + newSuperset,
-            )
-        }
     }
 
     // Helper: Create new superset with selected exercises
@@ -418,18 +352,6 @@ fun RoutineEditorScreen(
 
         updateExercises(updatedExercises)
         clearSelection()
-    }
-
-    // Helper: Unlink exercise from superset (make it standalone)
-    fun unlinkFromSuperset(exerciseId: String) {
-        val updatedExercises = state.exercises.map { ex ->
-            if (ex.id == exerciseId) {
-                ex.copy(supersetId = null, orderInSuperset = 0)
-            } else {
-                ex
-            }
-        }
-        updateExercises(updatedExercises)
     }
 
     // Reorderable state for drag-and-drop on routine items

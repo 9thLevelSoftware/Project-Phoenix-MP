@@ -685,10 +685,10 @@ class WorkoutExitPersistenceTest {
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
 
-            assertEquals(rawMetrics, harness.fakeWorkoutRepo.getMetricsForSessionSync(lease.sessionId))
+            assertEquals(rawMetrics, harness.fakeWorkoutRepo.metricsForSession(lease.sessionId))
             assertEquals(
                 2,
-                harness.fakeWorkoutRepo.saveMetricsAttempts.count { it.first == lease.sessionId },
+                harness.fakeWorkoutRepo.committedMetricSnapshots.count { it.first == lease.sessionId },
             )
         } finally {
             harness.cleanup()
@@ -844,7 +844,7 @@ class WorkoutExitPersistenceTest {
 
             assertTrue(
                 successfulSessionIds.all { sessionId ->
-                    harness.fakeWorkoutRepo.saveMetricsAttempts.count { it.first == sessionId } == 1
+                    harness.fakeWorkoutRepo.committedMetricSnapshots.count { it.first == sessionId } == 1
                 },
             )
 

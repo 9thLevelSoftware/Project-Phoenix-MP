@@ -41,7 +41,6 @@ import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightAction
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.SetEndReason
-import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -937,15 +936,6 @@ class DefaultWorkoutSessionManager(
     fun dismissWeightRecommendation() {
         coordinator._weightAdjustmentRecommendation.value = null
     }
-
-    // ===== Superset CRUD — delegated to RoutineFlowManager =====
-
-    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()): Superset = routineFlowManager.createSuperset(routineId, name, exercises)
-
-    suspend fun updateSuperset(routineId: String, superset: Superset) = routineFlowManager.updateSuperset(routineId, superset)
-    suspend fun deleteSuperset(routineId: String, supersetId: String) = routineFlowManager.deleteSuperset(routineId, supersetId)
-    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) = routineFlowManager.addExerciseToSuperset(routineId, exerciseId, supersetId)
-    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) = routineFlowManager.removeExerciseFromSuperset(routineId, exerciseId)
 
     // ===== Workout Lifecycle — delegated to ActiveSessionEngine =====
 

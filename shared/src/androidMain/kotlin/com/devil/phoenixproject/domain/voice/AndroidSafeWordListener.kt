@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * - Continuous listening via auto-restart on end-of-speech or recoverable errors
  * - Coexists with music via [AudioManager.AUDIOFOCUS_GAIN_TRANSIENT]
  * - All SpeechRecognizer calls dispatched to main thread (API requirement)
+ * - RECORD_AUDIO is requested before the first listen when it is not already
+ *   granted. Restarts do not ask again.
  */
 class AndroidSafeWordListener(
     private val context: Context,
@@ -41,6 +43,7 @@ class AndroidSafeWordListener(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val recordAudioPermission = RecordAudioPermissionRequest(context)
     private var recognizer: SpeechRecognizer? = null
 
     private val _state = MutableStateFlow<SafeWordState>(SafeWordState.Disabled)
@@ -52,6 +55,12 @@ class AndroidSafeWordListener(
     /** Tracks whether we *want* to be listening (guards auto-restart). */
     private var shouldBeListening = false
 
+    /** Bumped on every start/stop so a late permission callback cannot arm a stopped listener. */
+    private var listenGeneration = 0
+
+    /** True while the system RECORD_AUDIO dialog is outstanding. */
+    private var permissionRequestInFlight = false
+
     /** Last time we emitted a detection — used to debounce partial+final duplicates. */
     private var lastEmitTimeMs = 0L
 
@@ -62,7 +71,7 @@ class AndroidSafeWordListener(
     private val armingTracker = SafeWordArmingTracker()
 
     override fun startListening() {
-        if (shouldBeListening) return
+        if (shouldBeListening || permissionRequestInFlight) return
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             // F-039: report instead of returning silently — the user believes
@@ -72,17 +81,55 @@ class AndroidSafeWordListener(
             return
         }
 
-        shouldBeListening = true
-        _state.value = SafeWordState.Arming
-        mainHandler.post { startRecognition() }
+        // Prompt only when RECORD_AUDIO is not granted yet. Already-granted
+        // sessions, and the recognition restart loop, go straight to listening.
+        val generation = ++listenGeneration
+        permissionRequestInFlight = true
+        var completedSynchronously = false
+        val status = recordAudioPermission.request(
+            requestKey = "safe_word_record_audio_${System.identityHashCode(this)}_$generation",
+        ) { granted ->
+            completedSynchronously = true
+            onRecordAudioPermissionResult(generation, granted)
+        }
+        if (status != RecordAudioPermissionStatus.Requesting || completedSynchronously) {
+            permissionRequestInFlight = false
+        }
+        when (status) {
+            RecordAudioPermissionStatus.Granted -> beginListening()
+            RecordAudioPermissionStatus.Denied -> {
+                Log.w(TAG, "RECORD_AUDIO unavailable; safe word will not arm")
+                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
+            }
+            RecordAudioPermissionStatus.Requesting -> Unit
+        }
     }
 
     override fun stopListening() {
+        listenGeneration++
+        permissionRequestInFlight = false
         shouldBeListening = false
         mainHandler.post {
             tearDown()
             _state.value = SafeWordState.Disabled
         }
+    }
+
+    private fun onRecordAudioPermissionResult(generation: Int, granted: Boolean) {
+        if (generation != listenGeneration) return
+        permissionRequestInFlight = false
+        if (granted) {
+            beginListening()
+        } else {
+            Log.w(TAG, "RECORD_AUDIO denied; safe word will not arm")
+            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
+        }
+    }
+
+    private fun beginListening() {
+        shouldBeListening = true
+        _state.value = SafeWordState.Arming
+        mainHandler.post { startRecognition() }
     }
 
     // ---- internal ----
