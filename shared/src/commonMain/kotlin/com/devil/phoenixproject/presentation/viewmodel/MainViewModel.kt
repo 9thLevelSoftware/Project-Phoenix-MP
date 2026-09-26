@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
@@ -127,11 +126,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
-
-/**
- * Represents a dynamic action for the top app bar.
- */
-data class TopBarAction(val icon: ImageVector, val description: String, val onClick: () -> Unit)
 
 data class SettingsGlobalUiState(
     val enableVideoPlayback: Boolean,
@@ -1321,17 +1315,6 @@ class MainViewModel(
 
     fun updateTopBarTitle(title: String) {
         _topBarTitle.value = title
-    }
-
-    private val _topBarActions = MutableStateFlow<List<TopBarAction>>(emptyList())
-    val topBarActions: StateFlow<List<TopBarAction>> = _topBarActions.asStateFlow()
-
-    fun setTopBarActions(actions: List<TopBarAction>) {
-        _topBarActions.value = actions
-    }
-
-    fun clearTopBarActions() {
-        _topBarActions.value = emptyList()
     }
 
     private val _topBarBackAction = MutableStateFlow<(() -> Unit)?>(null)
