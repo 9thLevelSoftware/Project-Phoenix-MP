@@ -461,7 +461,6 @@
     <string name="cd_end_workout">Training beëindigen</string>
     <string name="cd_close_workout">Training sluiten</string>
     <string name="cd_hands_off_handles">Handen van de handgrepen</string>
-    <string name="cd_starting_workout">Training wordt gestart</string>
     <string name="cd_workout_completed">Training voltooid</string>
     <string name="cd_workout_error">Trainingsfout</string>
     <string name="cd_workout_session_icon">Trainingssessie-icoon</string>

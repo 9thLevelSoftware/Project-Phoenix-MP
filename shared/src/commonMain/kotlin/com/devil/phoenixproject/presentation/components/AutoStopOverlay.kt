@@ -5,7 +5,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -120,76 +119,6 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Auto-start overlay for Just Lift mode - appears when user picks up handles
- * to indicate workout will start automatically.
- */
-@Composable
-fun AutoStartOverlay(isActive: Boolean, secondsRemaining: Int, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = isActive,
-        enter = fadeIn(animationSpec = tween(200)) +
-            scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
-        exit = fadeOut(animationSpec = tween(150)) +
-            scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
-        modifier = modifier,
-    ) {
-        // Responsive dialog width based on screen size
-        val windowSizeClass = LocalWindowSizeClass.current
-        val dialogMaxWidth = when (windowSizeClass.widthSizeClass) {
-            WindowWidthSizeClass.Expanded -> 400.dp
-            WindowWidthSizeClass.Medium -> 340.dp
-            WindowWidthSizeClass.Compact -> 280.dp
-        }
-
-        Card(
-            modifier = Modifier.widthIn(max = dialogMaxWidth),
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = stringResource(Res.string.cd_starting_workout),
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-
-                Text(
-                    text = "AUTO-START",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    letterSpacing = 1.5.sp,
-                )
-
-                Text(
-                    text = "$secondsRemaining",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-
-                Text(
-                    text = "Workout starting...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     textAlign = TextAlign.Center,
                 )
             }

@@ -12,7 +12,6 @@ import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepRanges
-import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import kotlinx.coroutines.flow.Flow
@@ -1089,7 +1088,7 @@ private class PreviewExerciseRepository : ExerciseRepository {
 }
 
 // ============================================================================
-// COMPONENT PREVIEWS - AutoStop/AutoStart Overlays
+// COMPONENT PREVIEWS - AutoStop Overlay
 // ============================================================================
 
 /**
@@ -1146,31 +1145,6 @@ private fun AutoStopOverlayRegularPreview() {
                     progress = 0.6f,
                 ),
                 isJustLift = false,
-            )
-        }
-    }
-}
-
-/**
- * AutoStartOverlay - Shows when user picks up handles to start workout
- */
-@Preview(
-    name = "Component - AutoStart Overlay",
-    showBackground = true,
-    backgroundColor = 0xFF0F172A,
-    widthDp = 320,
-    heightDp = 300,
-)
-@Composable
-private fun AutoStartOverlayPreview() {
-    MaterialTheme {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            AutoStartOverlay(
-                isActive = true,
-                secondsRemaining = 3,
             )
         }
     }
