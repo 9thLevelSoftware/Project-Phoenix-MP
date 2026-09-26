@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
-import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
@@ -170,62 +169,33 @@ class IosDataBackupManager(
     }
 
     /**
-     * Override to route session backups to a custom destination when configured.
-     * Falls back to default location if the custom destination is inaccessible.
+     * Route session backups through [tryCustomDestination], the same resolver path
+     * full export uses. That resolves the security-scoped bookmark and refreshes
+     * it when stale. Falls back to the default location if the custom destination
+     * is inaccessible.
      */
-    override fun writeSessionBackupFile(filePath: String, content: String) {
+    override suspend fun writeSessionBackupFile(filePath: String, content: String) {
         val destination = preferencesManager.preferencesFlow.value.backupDestination
         if (destination is BackupDestination.Custom) {
+            val tempPath = "${NSTemporaryDirectory()}session_backup_temp.json"
             try {
                 val fileName = filePath.substringAfterLast('/')
-                // Write content to a temp file, then copy to custom destination
-                val tempPath = "${NSTemporaryDirectory()}session_backup_temp.json"
                 val data = NSString.create(string = content).dataUsingEncoding(NSUTF8StringEncoding)
                     ?: throw Exception("Failed to encode session backup content")
                 val written = data.writeToFile(tempPath, atomically = true)
                 if (!written) throw Exception("Failed to write temp session backup file")
 
-                // Try to resolve and write to custom destination
-                // Note: This is called from a coroutine context in exportSession,
-                // so we can use the bookmark resolution synchronously
-                val base64 = destination.bookmarkData
-                if (!base64.isNullOrBlank()) {
-                    val bookmarkData = NSData.create(base64EncodedString = base64, options = 0u)
-                    if (bookmarkData != null) {
-                        @Suppress("UNCHECKED_CAST")
-                        val url = NSURL.URLByResolvingBookmarkData(
-                            bookmarkData = bookmarkData,
-                            options = platform.Foundation.NSURLBookmarkResolutionWithoutUI,
-                            relativeToURL = null,
-                            bookmarkDataIsStale = null,
-                            error = null,
-                        )
-                        if (url != null) {
-                            val accessing = url.startAccessingSecurityScopedResource()
-                            try {
-                                val dirPath = url.path
-                                if (dirPath != null) {
-                                    val destPath = "$dirPath/$fileName"
-                                    if (fileManager.fileExistsAtPath(destPath)) {
-                                        fileManager.removeItemAtPath(destPath, error = null)
-                                    }
-                                    val success = data.writeToFile(destPath, atomically = true)
-                                    if (success) {
-                                        fileManager.removeItemAtPath(tempPath, error = null)
-                                        Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
-                                        return
-                                    }
-                                }
-                            } finally {
-                                if (accessing) url.stopAccessingSecurityScopedResource()
-                            }
-                        }
-                    }
+                val customResult = tryCustomDestination(destination, fileName, tempPath)
+                if (customResult != null) {
+                    Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
+                    return
                 }
-                fileManager.removeItemAtPath(tempPath, error = null)
-                Logger.w { "Custom backup destination not accessible, falling back to default" }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            } finally {
+                fileManager.removeItemAtPath(tempPath, error = null)
             }
         }
 
@@ -255,6 +225,8 @@ class IosDataBackupManager(
                 Logger.w(result.exceptionOrNull()) { "Falling back to default backup location after custom destination write failure" }
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.w(e) { "Falling back to default backup location after custom destination error" }
             null
