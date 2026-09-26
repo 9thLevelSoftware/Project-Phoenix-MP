@@ -223,8 +223,3 @@ data class GamificationStats(
         val EMPTY = GamificationStats()
     }
 }
-
-/**
- * Event emitted when a badge is earned
- */
-data class BadgeEarnedEvent(val badge: Badge, val earnedAt: Long)

@@ -978,24 +978,6 @@ object PortalSyncAdapter {
         eccentricWattMax = stats.eccentricWattMax.toFloat(),
     )
 
-    // ─── Exercise Signatures (GAP 8) ────────────────────────────────
-
-    /**
-     * Convert SQLDelight ExerciseSignature to portal DTO.
-     */
-    fun toPortalExerciseSignature(sig: com.devil.phoenixproject.database.ExerciseSignature): PortalExerciseSignatureDto = PortalExerciseSignatureDto(
-        id = generateUUID(),
-        exerciseId = sig.exerciseId,
-        romMm = sig.romMm.toFloat(),
-        durationMs = sig.durationMs,
-        symmetryRatio = sig.symmetryRatio.toFloat(),
-        velocityProfile = sig.velocityProfile,
-        cableConfig = sig.cableConfig,
-        sampleCount = sig.sampleCount.toInt(),
-        confidence = sig.confidence.toFloat(),
-        updatedAt = epochToIso8601(sig.updatedAt),
-    )
-
     // ─── VBT Assessments (GAP 9) ────────────────────────────────────
 
     /**

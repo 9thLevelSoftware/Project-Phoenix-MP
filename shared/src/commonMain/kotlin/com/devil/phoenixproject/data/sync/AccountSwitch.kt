@@ -159,8 +159,6 @@ data class SyncExclusionFilter(
 
     fun excludesAssessment(assessmentId: String): Boolean = assessmentId in assessments
 
-    fun excludesExerciseSignature(signatureId: String): Boolean = signatureId in exerciseSignatures
-
     fun excludesExternalActivity(activityId: String): Boolean = activityId in externalActivities
 
     fun excludesEarnedBadge(badgeId: String): Boolean = badgeId in earnedBadges
