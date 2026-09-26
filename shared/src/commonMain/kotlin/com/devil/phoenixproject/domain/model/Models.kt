@@ -129,7 +129,6 @@ sealed class WorkoutState {
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
-    object ExerciseComplete : WorkoutState()
     object RoutineComplete : WorkoutState()
     data class Error(val message: String) : WorkoutState()
     data class Resting(
