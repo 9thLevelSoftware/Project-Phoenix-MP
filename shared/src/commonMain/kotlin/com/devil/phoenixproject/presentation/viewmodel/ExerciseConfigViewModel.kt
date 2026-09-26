@@ -24,6 +24,7 @@ import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -654,10 +655,8 @@ class ExerciseConfigViewModel constructor(
         val baseline = baselineKgForCurrentBasis() ?: return null
         val percent = _weightPercentOfPR.value
         if (percent <= 0) return null
-        return (baseline * percent / 100f).roundToHalfKg()
+        return UnitConverter.roundToMachineIncrement(baseline * percent / 100f)
     }
-
-    private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 
     private fun normalizeSetWeightPercentages(source: List<Int>, setCount: Int, fallbackPercent: Int): List<Int> {
         if (setCount <= 0) return emptyList()
@@ -684,7 +683,7 @@ class ExerciseConfigViewModel constructor(
         applyPendingPercentOfPREdits(baselineKg)
         ensureSetWeightPercentages()
         return setWeightsPercentOfPR.map { percent ->
-            (baselineKg * percent / 100f).roundToHalfKg()
+            UnitConverter.roundToMachineIncrement(baselineKg * percent / 100f)
         }
     }
 
@@ -702,7 +701,7 @@ class ExerciseConfigViewModel constructor(
     }
 
     private fun displayWeightFromPercent(percent: Int, baselineKg: Float): Float {
-        val resolvedWeightKg = (baselineKg * percent / 100f).roundToHalfKg()
+        val resolvedWeightKg = UnitConverter.roundToMachineIncrement(baselineKg * percent / 100f)
         return kgToDisplay(resolvedWeightKg, weightUnit)
     }
 

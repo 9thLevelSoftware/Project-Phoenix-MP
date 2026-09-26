@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.domain.model.RoutineExercise
-import kotlin.math.roundToInt
+import com.devil.phoenixproject.util.UnitConverter
 
 /**
  * Resolves the programmed per-cable weight for one routine set.
@@ -37,10 +37,12 @@ object RoutineSetWeightResolver {
             else -> exercise.setWeightsPerCableKg.getOrNull(request.setIndex) ?: exercise.weightPerCableKg
         }
         val occurrenceWeight = programmedWeight * request.occurrenceMultiplier
-        val roundedWeight = if (usesPrPercentage) occurrenceWeight.roundToHalfKg() else occurrenceWeight
+        val roundedWeight = if (usesPrPercentage) {
+            UnitConverter.roundToMachineIncrement(occurrenceWeight)
+        } else {
+            occurrenceWeight
+        }
 
         return roundedWeight + (request.manualAdjustmentPerCableKg ?: 0f)
     }
 }
-
-private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f

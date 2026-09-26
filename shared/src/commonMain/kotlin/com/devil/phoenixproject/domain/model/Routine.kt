@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.domain.model
 
-import kotlin.math.roundToInt
+import com.devil.phoenixproject.util.UnitConverter
 import kotlinx.serialization.Serializable
 
 /**
@@ -196,7 +196,7 @@ data class RoutineExercise(
      * @return The resolved weight in kg, rounded to nearest 0.5kg increment
      */
     fun resolveWeight(currentPR: Float?): Float = if (usePercentOfPR && currentPR != null && currentPR > 0 && weightPercentOfPR > 0) {
-        (currentPR * weightPercentOfPR / 100f).roundToHalfKg()
+        UnitConverter.roundToMachineIncrement(currentPR * weightPercentOfPR / 100f)
     } else {
         weightPerCableKg
     }
@@ -220,7 +220,7 @@ data class RoutineExercise(
                 List(sets) { weightPercentOfPR }
             }
             return percents.map { percent ->
-                if (percent > 0) (currentPR * percent / 100f).roundToHalfKg() else weightPerCableKg
+                if (percent > 0) UnitConverter.roundToMachineIncrement(currentPR * percent / 100f) else weightPerCableKg
             }
         }
 
@@ -230,31 +230,6 @@ data class RoutineExercise(
         // list that mismatches setReps downstream.
         return List(sets) { index -> setWeightsPerCableKg.getOrNull(index) ?: weightPerCableKg }
     }
-}
-
-/**
- * Round to nearest 0.5kg increment.
- * Phoenix machines use 0.5kg increments, so this ensures valid weight values.
- */
-private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
-
-/**
- * Round to nearest given increment.
- * Issue #266: Configurable weight rounding for user-facing values.
- *
- * @deprecated Use [com.devil.phoenixproject.util.UnitConverter.roundToIncrement] instead.
- * This extension function is a duplicate; consolidating to a single implementation.
- */
-@Deprecated(
-    message = "Use UnitConverter.roundToIncrement(value, increment) instead",
-    replaceWith = ReplaceWith(
-        "com.devil.phoenixproject.util.UnitConverter.roundToIncrement(this, increment)",
-        "com.devil.phoenixproject.util.UnitConverter",
-    ),
-)
-fun Float.roundToIncrement(increment: Float): Float {
-    if (increment <= 0f) return this
-    return (kotlin.math.round(this / increment) * increment)
 }
 
 // ==================== SUPERSET SUPPORT ====================

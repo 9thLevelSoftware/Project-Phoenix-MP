@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.roundToInt
 
 /**
@@ -118,7 +119,7 @@ class ApplyRoutineModifierUseCase(
         exercise.weightPerCableKg > 0f || exercise.setWeightsPerCableKg.any { it > 0f }
 
     private fun scaleLoad(loadKg: Float, percent: Int): Float =
-        roundToHalfKg(loadKg * percent / 100f).coerceAtLeast(MIN_WEIGHT_KG)
+        UnitConverter.roundToMachineIncrement(loadKg * percent / 100f).coerceAtLeast(MIN_WEIGHT_KG)
 
     private fun scaleFirstWarmupOnly(warmupSets: List<WarmupSet>, percent: Int): List<WarmupSet> = warmupSets
         .firstOrNull()
@@ -132,8 +133,6 @@ class ApplyRoutineModifierUseCase(
     } else {
         duration
     }
-
-    private fun roundToHalfKg(value: Float): Float = (value * 2f).roundToInt() / 2f
 
     private companion object {
         const val MIN_WEIGHT_KG = 0.5f
