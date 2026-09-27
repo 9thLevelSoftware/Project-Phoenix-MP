@@ -28,18 +28,8 @@ import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
 import platform.Foundation.dataWithContentsOfFile
-import platform.Foundation.setValue
 import platform.Foundation.timeIntervalSince1970
-import platform.Foundation.valueForKey
 import platform.Foundation.writeToFile
-import platform.UIKit.UIActivityViewController
-import platform.UIKit.UIApplication
-import platform.UIKit.UIDevice
-import platform.UIKit.UIUserInterfaceIdiomPad
-import platform.UIKit.UIWindowScene
-import platform.darwin.NSObject
-import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_main_queue
 
 actual val autoBackupLocationNote: String? = null
 
@@ -235,30 +225,10 @@ class IosDataBackupManager(
 
     override fun openBackupFolder() {
         val dir = getSessionBackupDirectory()
-        val fileURL = NSURL.fileURLWithPath(dir)
-
-        dispatch_async(dispatch_get_main_queue()) {
-            val scenes = UIApplication.sharedApplication.connectedScenes
-            val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
-            val rootViewController = windowScene?.keyWindow?.rootViewController ?: return@dispatch_async
-
-            val activityVC = UIActivityViewController(
-                activityItems = listOf(fileURL),
-                applicationActivities = null,
-            )
-
-            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
-                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
-                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
-                }
-            }
-
-            rootViewController.presentViewController(
-                activityVC,
-                animated = true,
-                completion = null,
-            )
-        }
+        presentShareSheet(
+            items = listOf(NSURL.fileURLWithPath(dir)),
+            onShown = {},
+        )
     }
 
     override fun createBackupWriter(): BackupJsonWriter {
@@ -323,32 +293,9 @@ class IosDataBackupManager(
      */
     override suspend fun shareBackup() {
         val cachePath = withContext(Dispatchers.IO) { exportToCache() }
-        val fileURL = NSURL.fileURLWithPath(cachePath)
-
-        // Present share sheet on main thread
-        dispatch_async(dispatch_get_main_queue()) {
-            val scenes = UIApplication.sharedApplication.connectedScenes
-            val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
-            val rootViewController = windowScene?.keyWindow?.rootViewController ?: return@dispatch_async
-
-            val activityVC = UIActivityViewController(
-                activityItems = listOf(fileURL),
-                applicationActivities = null,
-            )
-
-            // Configure popover for iPad - required to prevent crash
-            // Access popoverPresentationController via ObjC KVC since K/N bindings don't expose it directly
-            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
-                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
-                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
-                }
-            }
-
-            rootViewController.presentViewController(
-                activityVC,
-                animated = true,
-                completion = null,
-            )
-        }
+        presentShareSheet(
+            items = listOf(NSURL.fileURLWithPath(cachePath)),
+            onShown = {},
+        )
     }
 }

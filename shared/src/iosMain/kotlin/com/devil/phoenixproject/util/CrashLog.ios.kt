@@ -102,11 +102,13 @@ actual fun shareCrashReport(report: String, onShown: () -> Unit) {
 }
 
 /**
- * Presents the system share sheet for [items]; [onShown] runs only once it actually appeared,
- * [onNotShown] when there is no window to present from.
+ * Single share-sheet presenter for crash reports, CSV export, backup folder/share, and database export.
+ *
+ * [items] are activity items (plain text or file URLs). Presents from the top-most controller so a
+ * sheet can stack; UIKit ignores `present` on a controller that is already presenting.
+ * [onShown] runs only once the sheet actually appeared, [onNotShown] when there is no window.
  */
 internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit, onNotShown: () -> Unit = {}) {
-    // Same presentation as IosCsvExporter.shareCSV.
     dispatch_async(dispatch_get_main_queue()) {
         val scenes = UIApplication.sharedApplication.connectedScenes
         val windowScene = scenes.firstOrNull {
@@ -118,7 +120,6 @@ internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit, onNotShown
                 onNotShown()
                 return@dispatch_async
             }
-        // Present from the top-most controller; presenting on one that is already presenting is ignored.
         while (true) {
             presenter = presenter.presentedViewController ?: break
         }
@@ -129,6 +130,7 @@ internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit, onNotShown
         )
 
         // iPad requires a popover anchor or presenting crashes.
+        // popoverPresentationController is not in the K/N UIKit bindings, so set the anchor via KVC.
         if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
             activityVC.valueForKey("popoverPresentationController")?.let { popover ->
                 (popover as? NSObject)?.setValue(presenter.view, forKey = "sourceView")
