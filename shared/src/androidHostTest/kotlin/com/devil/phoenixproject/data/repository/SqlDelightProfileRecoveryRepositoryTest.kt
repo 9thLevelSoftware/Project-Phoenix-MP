@@ -14,6 +14,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 
 class SqlDelightProfileRecoveryRepositoryTest {
@@ -36,6 +37,29 @@ class SqlDelightProfileRecoveryRepositoryTest {
             assertEquals(0L, fixture.profileRowCount(table, profileColumn, "default"), table)
             assertTrue(fixture.profileRowCount(table, profileColumn, target.id) > 0L, table)
         }
+    }
+
+    @Test
+    fun `observeUnresolved reads pending rows without refresh`() = runTest {
+        val fixture = fixture()
+        fixture.queries.insertPendingProfileRecoveryIfAbsent(
+            recoveryId = "r1",
+            kind = ProfileRecoveryKind.PROFILE_DATA.name,
+            sourceKey = "profile:default",
+            sourceProfileId = "default",
+            sourceProfileName = "Default",
+            ownerUserId = null,
+            countsJson = encodeProfileRecoveryCounts(
+                ProfileRecoveryCounts(mapOf("WorkoutSession" to 1L)),
+            ),
+            discoveredAt = 5L,
+        )
+
+        val pending = fixture.repository.observeUnresolved().first().single()
+
+        assertEquals("r1", pending.recoveryId)
+        assertEquals(1L, pending.counts.tableCounts["WorkoutSession"])
+        assertEquals(emptyList(), fixture.repository.pendingRecoveries.value)
     }
 
     @Test
