@@ -428,3 +428,137 @@ afterEvaluate {
     tasks.findByName("generateCommonMainPhoenixDatabaseInterface")
         ?.dependsOn("validateSchemaManifest")
 }
+
+// ============================================================
+// iOS privacy manifest
+//
+// Required-reason calls (UserDefaults, file timestamps, system boot time)
+// are compiled into the static shared framework and linked into the app.
+// The framework is also embedded, so the same manifest has to be inside
+// shared.framework for App Store Connect to attribute those symbols.
+// The source file lives in the Xcode app target; link tasks copy it to
+// shared.framework/PrivacyInfo.xcprivacy after they produce the bundle.
+// ============================================================
+
+val iosPrivacyManifest = rootProject.layout.projectDirectory.file(
+    "iosApp/PhoenixApp/PhoenixApp/PrivacyInfo.xcprivacy",
+)
+
+val iosFrameworkLinkTask = Regex("^link(Debug|Release)Framework(IosArm64|IosSimulatorArm64)$")
+
+fun privacyManifestDestination(linkTaskName: String): java.io.File? {
+    val match = iosFrameworkLinkTask.matchEntire(linkTaskName) ?: return null
+    val buildType = if (match.groupValues[1] == "Debug") "debug" else "release"
+    val target = if (match.groupValues[2] == "IosArm64") "iosArm64" else "iosSimulatorArm64"
+    return layout.buildDirectory.get().asFile.resolve(
+        "bin/$target/${buildType}Framework/shared.framework/PrivacyInfo.xcprivacy",
+    )
+}
+
+tasks.register("validateIosPrivacyManifest") {
+    group = "verification"
+    description = "Checks PrivacyInfo.xcprivacy declares UserDefaults, file timestamp, and system boot time."
+
+    val manifestPath = iosPrivacyManifest.asFile.absolutePath
+    inputs.file(iosPrivacyManifest)
+
+    doLast {
+        val manifest = File(manifestPath)
+
+        fun org.w3c.dom.Node.elements(): List<org.w3c.dom.Element> {
+            val elements = mutableListOf<org.w3c.dom.Element>()
+            val children = childNodes
+            for (index in 0 until children.length) {
+                val child = children.item(index)
+                if (child is org.w3c.dom.Element) elements.add(child)
+            }
+            return elements
+        }
+
+        fun org.w3c.dom.Element.dict(): Map<String, org.w3c.dom.Element> {
+            val children = elements()
+            if (children.size % 2 != 0) {
+                throw GradleException("plist dict in ${manifest.path} has an unpaired key")
+            }
+            return children.chunked(2).associate { (keyNode, valueNode) ->
+                if (keyNode.nodeName != "key") {
+                    throw GradleException("Expected plist key in ${manifest.path}, found ${keyNode.nodeName}")
+                }
+                keyNode.textContent.trim() to valueNode
+            }
+        }
+
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        val document = factory.newDocumentBuilder().parse(manifest)
+        val plist = document.documentElement
+            ?: throw GradleException("Privacy manifest ${manifest.path} has no root element")
+        if (plist.nodeName != "plist") {
+            throw GradleException("Privacy manifest ${manifest.path} root is ${plist.nodeName}, expected plist")
+        }
+        val rootDict = plist.elements().singleOrNull { it.nodeName == "dict" }
+            ?: throw GradleException("Privacy manifest ${manifest.path} is missing the root dict")
+        val accessedApis = rootDict.dict()["NSPrivacyAccessedAPITypes"]
+            ?: throw GradleException("Privacy manifest ${manifest.path} is missing NSPrivacyAccessedAPITypes")
+        if (accessedApis.nodeName != "array") {
+            throw GradleException("NSPrivacyAccessedAPITypes must be an array")
+        }
+        val reasons = accessedApis.elements().associate { entry ->
+            if (entry.nodeName != "dict") {
+                throw GradleException("NSPrivacyAccessedAPITypes entries must be dicts")
+            }
+            val fields = entry.dict()
+            val category = fields["NSPrivacyAccessedAPIType"]
+                ?.takeIf { it.nodeName == "string" }
+                ?.textContent
+                ?.trim()
+                .orEmpty()
+            val reasonNode = fields["NSPrivacyAccessedAPITypeReasons"]
+                ?: throw GradleException("Missing reasons for $category")
+            if (reasonNode.nodeName != "array") {
+                throw GradleException("Reasons for $category must be an array")
+            }
+            val codes = reasonNode.elements().map { reason ->
+                if (reason.nodeName != "string") {
+                    throw GradleException("Reason codes for $category must be strings")
+                }
+                reason.textContent.trim()
+            }.toSet()
+            if (category.isEmpty() || codes.isEmpty()) {
+                throw GradleException("Privacy manifest entry is missing a category or reason code")
+            }
+            category to codes
+        }
+        val expected = mapOf(
+            "NSPrivacyAccessedAPICategoryUserDefaults" to setOf("CA92.1"),
+            "NSPrivacyAccessedAPICategoryFileTimestamp" to setOf("C617.1"),
+            "NSPrivacyAccessedAPICategorySystemBootTime" to setOf("35F9.1"),
+        )
+        if (reasons != expected) {
+            throw GradleException(
+                "Privacy manifest ${manifest.path} declared $reasons, expected $expected",
+            )
+        }
+        println("iOS privacy manifest validated: ${expected.keys.joinToString()}")
+    }
+}
+
+tasks.configureEach {
+    val destination = privacyManifestDestination(name) ?: return@configureEach
+    val manifestPath = iosPrivacyManifest.asFile.absolutePath
+    val destinationPath = destination.absolutePath
+    inputs.file(iosPrivacyManifest)
+    dependsOn("validateIosPrivacyManifest")
+    doLast {
+        val frameworkDir = File(destinationPath).parentFile
+        if (!frameworkDir.isDirectory) {
+            throw GradleException(
+                "shared.framework not found at ${frameworkDir.path} after $name; " +
+                    "cannot embed PrivacyInfo.xcprivacy",
+            )
+        }
+        File(manifestPath).copyTo(File(destinationPath), overwrite = true)
+    }
+}
