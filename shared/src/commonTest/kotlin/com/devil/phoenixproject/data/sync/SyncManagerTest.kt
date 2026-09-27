@@ -1498,38 +1498,39 @@ class SyncManagerTest {
     }
 
     @Test
-    fun syncFailsBeforePushWhenPortalPayloadHasDuplicateRoutineIds() = runTest {
+    fun syncHoldsBackConflictingCaseVariantRoutineDuplicatesWithoutBlocking() = runTest {
         setupAuthenticated()
         val routineId = "8db61128-c19d-48dc-a05e-ade968afa87e"
         val upperId = routineId.uppercase()
         fakeSyncRepo.routinesToReturn = listOf(
             makeRoutine(id = routineId, name = "Strength A"),
             makeRoutine(id = upperId, name = "Strength B"),
+            makeRoutine(id = "3db61128-c19d-48dc-a05e-ade968afa87e", name = "Unaffected"),
         )
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         val manager = createManager()
 
         val result = manager.sync()
 
-        assertTrue(result.isFailure)
-        val error = result.exceptionOrNull()
-        assertIs<PortalApiException>(error)
-        assertEquals(400, error.statusCode)
+        // Issue #634: the old preflight hard-failed the whole sync here with
+        // "Duplicate IDs in local push payload: routines" and left the device
+        // sync-blocked. Case-variant ids are one server identity (uuid PKs fold
+        // case) with conflicting content, so BOTH versions are held back from the
+        // push, reported, and re-armed to retry — never merged, deleted or sent.
+        assertTrue(result.isSuccess, "A local identity conflict must not block the whole sync")
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Unaffected rows still push")
+        assertEquals(listOf("3db61128-c19d-48dc-a05e-ade968afa87e"), payload.routines.map { it.id })
+        assertEquals(setOf(routineId, upperId), fakeSyncRepo.clearedRoutineUpdatedAtIds)
         assertTrue(
-            error.message.orEmpty().contains("routines contains duplicate key(s): $upperId"),
-            "Local preflight should name the duplicate routine key",
+            fakeSyncRepo.stampedRoutineIdCalls.flatten().none { it == routineId || it == upperId },
+            "Held-back rows must not be stamped as synced",
         )
         val state = manager.syncState.value
-        assertIs<SyncState.Error>(state)
-        assertTrue(state.message.contains("Duplicate IDs in local push payload: routines"))
-        assertEquals(0, fakeApi.pushCallCount, "Payload with duplicate keys should not be pushed")
-        assertEquals(0, fakeApi.pullCallCount, "Failed push preflight should not start pull")
-        assertNull(fakeApi.lastPushPayload, "No doomed payload should be sent")
+        assertIs<SyncState.Success>(state)
         assertTrue(
-            fakeSyncRepo.updateSessionTimestampCalls.isEmpty(),
-            "Local validation failures must not stamp sessions as synced",
+            state.heldBackSummary.orEmpty().contains("routines"),
+            "The held-back routines are reported to the user",
         )
-        assertEquals(0L, tokenStorage.getPullCursor("user-123", "default"))
-        assertEquals(0L, tokenStorage.getPushWatermark("user-123", "default"))
     }
 
     @Test

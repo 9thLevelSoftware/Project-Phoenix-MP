@@ -96,7 +96,7 @@ sealed class SyncState {
         val entitiesFetched: Int,
     ) : SyncState()
 
-    data class Success(val syncTime: Long) : SyncState()
+    data class Success(val syncTime: Long, val heldBackSummary: String? = null) : SyncState()
 
     /**
      * Partial sync success: push succeeded but pull failed.
@@ -108,6 +108,7 @@ sealed class SyncState {
         val pullSucceeded: Boolean,
         val lastSyncTime: Long,
         val pullError: String? = null,
+        val heldBackSummary: String? = null,
     ) : SyncState()
 
     data class Error(val message: String, val errorCategory: SyncErrorCategory? = null) : SyncState()
@@ -1166,6 +1167,10 @@ class SyncManager(
     private fun isPendingDeletionProfile(profile: UserProfile): Boolean =
         userProfileRepository.pendingDeletionProfiles.value.any { it.id == profile.id }
 
+    /** Issue #634: one user-visible line for every profile that held rows back. */
+    private fun heldBackSummaryOf(outcomes: List<ProfileSyncOutcome>): String? =
+        outcomes.mapNotNull { it.heldBackSummary }.distinct().joinToString(" ").ifEmpty { null }
+
     /** What one profile's push+pull contributed to the overall sync. */
     private data class ProfileSyncOutcome(
         val profileId: String,
@@ -1179,6 +1184,8 @@ class SyncManager(
         val syncTimeEpoch: Long = 0L,
         val pullSyncTime: Long? = null,
         val error: Throwable? = null,
+        /** Issue #634: held-back conflicting rows reported by this profile's push. */
+        val heldBackSummary: String? = null,
     )
 
     private fun combineProfileOutcomes(outcomes: List<ProfileSyncOutcome>): Result<Long> {
@@ -1227,7 +1234,7 @@ class SyncManager(
                 val minPull = outcomes.mapNotNull { it.pullSyncTime }
                     .filter { it > 0L }
                     .minOrNull() ?: reportTime
-                _syncState.value = SyncState.Success(minPull)
+                _syncState.value = SyncState.Success(minPull, heldBackSummaryOf(outcomes))
                 Result.success(minPull)
             }
             anyPush && anyPull -> {
@@ -1236,6 +1243,7 @@ class SyncManager(
                     pullSucceeded = false,
                     lastSyncTime = reportTime,
                     pullError = firstError?.message ?: "Pull failed for at least one profile",
+                    heldBackSummary = heldBackSummaryOf(outcomes),
                 )
                 Result.success(reportTime)
             }
@@ -1246,6 +1254,7 @@ class SyncManager(
                     pullSucceeded = false,
                     lastSyncTime = reportTime,
                     pullError = pullErrorMsg,
+                    heldBackSummary = heldBackSummaryOf(outcomes),
                 )
                 Result.success(reportTime)
             }
@@ -1333,7 +1342,12 @@ class SyncManager(
                     "Pending-deletion profile ${profile.id}: portal wrote ${pushOutcome.personalRecordsWritten} of " +
                         "${pushOutcome.personalRecordTombstonesSent} PR tombstone(s); kept pending for the next sync"
                 }
-                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+                return ProfileSyncOutcome(
+                    profileId = profile.id,
+                    pushSucceeded = true,
+                    pullSucceeded = true,
+                    heldBackSummary = pushOutcome.reconcileReport.heldBackSummary(),
+                )
             }
             if (outstandingCycleDeletions.isNotEmpty()) {
                 val restampAt = currentTimeMillis()
@@ -1344,7 +1358,12 @@ class SyncManager(
                     "Pending-deletion profile ${profile.id}: ${outstandingCycleDeletions.size} cycle deletion(s) " +
                         "not accepted yet; re-stamped and kept pending for the next sync"
                 }
-                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+                return ProfileSyncOutcome(
+                    profileId = profile.id,
+                    pushSucceeded = true,
+                    pullSucceeded = true,
+                    heldBackSummary = pushOutcome.reconcileReport.heldBackSummary(),
+                )
             }
             return finishPendingProfileDeletion(userId, profile, pushOutcome.response.syncTime)
         }
@@ -1497,6 +1516,7 @@ class SyncManager(
                 pullSucceeded = true,
                 syncTimeEpoch = syncTimeEpoch,
                 pullSyncTime = completedPull.syncTime,
+                heldBackSummary = pushOutcome.reconcileReport.heldBackSummary(),
             )
         } else {
             // Partial success: push succeeded but pull failed
@@ -1518,6 +1538,7 @@ class SyncManager(
                 pullSucceeded = false,
                 syncTimeEpoch = syncTimeEpoch,
                 error = pullError,
+                heldBackSummary = pushOutcome.reconcileReport.heldBackSummary(),
             )
         }
     }
@@ -1722,6 +1743,8 @@ class SyncManager(
         val personalRecordTombstonesSent: Int = 0,
         /** Sum of the portal's `personalRecordsInserted` across every request. */
         val personalRecordsWritten: Int = 0,
+        /** Issue #634: rows held back as conflicting + identical duplicates collapsed. */
+        val reconcileReport: PushPayloadReconcileReport = PushPayloadReconcileReport(),
     )
 
     /** The payload envelope fields a post-rejection re-push has to repeat. */
@@ -2176,6 +2199,9 @@ class SyncManager(
         }
         // Each PR is paired with the session key it belongs to so its DTO carries the
         // portal session id it was set in (PR↔session link).
+        // Issue #634: one shared report for every payload-identity decision in this
+        // push (held-back conflicts + collapsed identical duplicates).
+        val reconcileReport = PushPayloadReconcileReport()
         val personalRecordDtosByPrKey = recentPRs.map { pr ->
             val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
@@ -2187,7 +2213,39 @@ class SyncManager(
                 muscleGroup = muscleGroup,
             )
         }
-        val personalRecordDtos = personalRecordDtosByPrKey.map { it.second }
+        val rawPersonalRecordDtos = personalRecordDtosByPrKey.map { it.second }
+        // Issue #634: reconcile PR payload identity against the PORTAL contract —
+        // dedicated rows key on their UUID (two distinct UUIDs are always distinct,
+        // even with equal timestamps/modes), id-less legacy rows on the portal's
+        // derived identity (which has no workoutMode). Identical duplicates collapse
+        // to one canonical entry; genuinely conflicting rows are held back from this
+        // push (never merged, never deleted, never stamped) and re-armed below so
+        // they retry on the next sync.
+        val prPayloadRows = recentPRs.zip(rawPersonalRecordDtos)
+        val reconciledPrEntries = reconcileByIdentity(
+            entries = prPayloadRows.indices.toList(),
+            table = "personal_records",
+            identityOf = { PushPayloadIdentity.personalRecordKey(prPayloadRows[it].second) },
+            describe = { "localRowId=${prPayloadRows[it].first.id} ${describePersonalRecord(prPayloadRows[it].second)}" },
+            report = reconcileReport,
+            contentOf = { prPayloadRows[it].second.canonicalized() },
+        )
+        val keptPrIndices = reconciledPrEntries.kept
+        val personalRecordDtos = keptPrIndices.map { prPayloadRows[it].second }
+        val heldBackPrRows = reconciledPrEntries.heldBack.map { prPayloadRows[it].first }
+        if (heldBackPrRows.isNotEmpty()) {
+            // Re-arm: clear updatedAt so `selectPRsModifiedSince`'s `updatedAt IS NULL`
+            // clause keeps picking these rows up after the push watermark advances.
+            // The rows are NOT stamped as synced and stay local and retryable.
+            val rearmIds = heldBackPrRows.map { it.id }.filter { it >= 0L }.distinct()
+            if (rearmIds.isNotEmpty()) {
+                syncRepository.clearPersonalRecordUpdatedAt(rearmIds)
+            }
+            Logger.w("SyncManager") {
+                "Issue #634: held back ${heldBackPrRows.size} conflicting personal record row(s) " +
+                    "(ids=${rearmIds.joinToString()}) from this push; re-armed for retry"
+            }
+        }
 
         // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
@@ -2333,19 +2391,109 @@ class SyncManager(
             }
         }
 
+        // ─── Issue #634: payload identity reconcile (gather/DTO boundary) ────
+        // The pre-#634 preflight hard-failed the whole sync on repeated payload
+        // keys and keyed dedicated PRs without UUID/workoutMode, false-blocking
+        // legitimate rows. Every list is now reconciled against the portal's
+        // identity contract: identical duplicates collapse to one canonical
+        // entry; genuinely conflicting rows are held back (never merged, deleted
+        // or stamped) and stay local and retryable.
+        val deliverableCustomExercises = reconcileByIdentity(
+            entries = customExerciseDtos,
+            table = "exercise_catalog",
+            identityOf = { PushPayloadIdentity.uuidKey(it.clientId) },
+            describe = { "clientId=${it.clientId} updatedAt=${it.updatedAt} deletedAt=${it.deletedAt}" },
+            report = reconcileReport,
+            contentOf = { it.canonicalized() },
+        ).kept
+        val deliverablePortalSessions = reconcileSessionTrees(portalSessions, reconcileReport)
+        val routineRowsWithDtos = routines.zip(
+            routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) },
+        )
+        val reconciledRoutineRows = reconcileByIdentity(
+            entries = routineRowsWithDtos,
+            table = "routines",
+            identityOf = { PushPayloadIdentity.uuidKey(it.second.id) },
+            describe = { (row, dto) -> "localRowId=${row.id} routineId=${dto.id} updatedAt=${dto.updatedAt}" },
+            report = reconcileReport,
+            contentOf = { it.second.canonicalized() },
+        )
+        val routineDtos = reconciledRoutineRows.kept.map { it.second }
+        val heldBackRoutineIds = reconciledRoutineRows.heldBack.map { it.second.id }.distinct()
+        if (heldBackRoutineIds.isNotEmpty()) {
+            // Same re-arm rule as held-back PRs: `selectRoutinesModifiedSince`
+            // matches `updatedAt IS NULL`, so the rows retry instead of stalling
+            // below the advanced push watermark. Not stamped as synced.
+            syncRepository.clearRoutineUpdatedAt(heldBackRoutineIds)
+            Logger.w("SyncManager") {
+                "Issue #634: held back ${heldBackRoutineIds.size} conflicting routine row(s) " +
+                    "(ids=${heldBackRoutineIds.joinToString()}) from this push; re-armed for retry"
+            }
+        }
+        val cycleRowsWithDtos = cyclesWithContext.map {
+            it to PortalSyncAdapter.toPortalTrainingCycle(it, userId)
+        }
+        val cycleDtos = reconcileByIdentity(
+            entries = cycleRowsWithDtos,
+            table = "training_cycles",
+            identityOf = { PushPayloadIdentity.uuidKey(it.second.id) },
+            describe = { (ctx, dto) ->
+                "localRowId=${ctx.cycle.id} cycleId=${dto.id} updatedAt=${dto.updatedAt} " +
+                    "startedAt=${dto.startedAt} durationWeeks=${dto.durationWeeks} days=${dto.days.size}"
+            },
+            report = reconcileReport,
+            contentOf = { it.second.canonicalized() },
+        ).kept.map { it.second }
+        // Held-back cycles need no re-arm: the cycle gather is generation-based
+        // (CycleSyncState.dirty_generation), so unacknowledged cycles stay dirty
+        // and retry automatically. Local cycle rows are never merged or deleted.
+        val deliverableTelemetry = reconcileByIdentity(
+            entries = effectiveTelemetry,
+            table = "rep_telemetry",
+            identityOf = { PushPayloadIdentity.uuidKey(it.id) },
+            describe = { "telemetryId=${it.id} setId=${it.setId} timestampMs=${it.timestampMs}" },
+            report = reconcileReport,
+            contentOf = { it.canonicalized() },
+        ).kept
+
+        // Portal hazard guard (personalRecordRow.buildPersonalRecordRowsForPush):
+        // a request carrying PR-flagged sets but NO dedicated personal-record rows
+        // makes the portal derive id-less set-derived PR rows from every set.isPr.
+        // When every dedicated PR row was held back as conflicting there is no
+        // suppressor row left, so hold back those sessions too rather than let the
+        // portal mint derived rows from conflicting data.
+        val sessionsForPayload = if (personalRecordDtos.isEmpty() && rawPersonalRecordDtos.isNotEmpty()) {
+            val prFlaggedSessions = deliverablePortalSessions.filter { session ->
+                session.exercises.any { exercise -> exercise.sets.any { set -> set.isPr } }
+            }
+            if (prFlaggedSessions.isEmpty()) {
+                deliverablePortalSessions
+            } else {
+                reconcileReport.recordConflict(
+                    table = "workout_sessions",
+                    identity = "pr_flagged_sets_without_dedicated_pr_suppressor",
+                    entries = prFlaggedSessions.map { "sessionId=${it.id}" },
+                )
+                Logger.w("SyncManager") {
+                    "Issue #634: holding back ${prFlaggedSessions.size} PR-flagged session(s): " +
+                        "every dedicated personal record was held back, and the portal would " +
+                        "derive id-less set-derived rows from their set.isPr flags"
+                }
+                deliverablePortalSessions.filterNot { it in prFlaggedSessions }
+            }
+        } else {
+            deliverablePortalSessions
+        }
+
         // Build a telemetry index keyed by set ID for batch slicing.
         // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
-        val sessionSetIds = portalSessions.associate { session ->
+        val sessionSetIds = sessionsForPayload.associate { session ->
             val setIds = session.exercises.flatMap { ex -> ex.sets.map { s -> s.id } }.toSet()
             session.id to setIds
         }
-        val telemetryBySetId = effectiveTelemetry.groupBy { it.setId }
+        val telemetryBySetId = deliverableTelemetry.groupBy { it.setId }
 
-        // 7b. Profile data for portal tagging and profile-scoped filtering
-        val routineDtos = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) }
-        val cycleDtos = cyclesWithContext.map {
-            PortalSyncAdapter.toPortalTrainingCycle(it, userId)
-        }
+        reconcileReport.logDetails("Push payload")
         val payloadProfileId = activeProfile?.id ?: "default"
         // Every profile name on the wire is bounded: an unbounded name in the request
         // envelope would make even an empty request oversized (codex #856 P2).
@@ -2426,7 +2574,7 @@ class SyncManager(
         //    An item that cannot fit in any request is skipped and logged: it is never
         //    sent, never stamped and never acknowledged (see PushPlanner).
         //    IMPORTANT: We do NOT advance the push watermark until ALL requests succeed.
-        val allSessions = portalSessions
+        val allSessions = sessionsForPayload
         val telemetryCountBySessionId = allSessions.associate { session ->
             val count = (sessionSetIds[session.id] ?: emptySet()).sumOf { setId ->
                 telemetryBySetId[setId]?.size ?: 0
@@ -2471,8 +2619,6 @@ class SyncManager(
             ::sessionBatchPayload,
             onSkip,
         )
-        val deliverableSessions = sessionBatches.flatten()
-        val deliverableSessionIds = deliverableSessions.mapTo(hashSetOf()) { it.id }
 
         // Everything that is not a session, as the final request would carry it.
         fun finalFields(
@@ -2491,7 +2637,7 @@ class SyncManager(
             badges = if (includeSingletons) badgeDtos else emptyList(),
             gamificationStats = if (includeSingletons) gamStatsDto else null,
             assessments = if (includeSingletons) assessmentDtos else emptyList(),
-            customExercises = if (includeSingletons) customExerciseDtos else emptyList(),
+            customExercises = if (includeSingletons) deliverableCustomExercises else emptyList(),
             allProfiles = if (includeSingletons) sendableProfileDtos else null,
             externalActivities = if (includeSingletons) externalActivityDtos else emptyList(),
         )
@@ -2520,7 +2666,7 @@ class SyncManager(
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
-                customExercises = customExerciseDtos,
+                customExercises = deliverableCustomExercises,
                 assessments = assessmentDtos,
                 badges = badgeDtos,
                 externalActivities = externalActivityDtos,
@@ -2531,16 +2677,24 @@ class SyncManager(
             )
             sessionBatches.map(::sessionBatchPayload) + tails
         }
-        val totalBatches = requests.size.coerceAtLeast(1)
-        // What actually goes out: anything the planner skipped is never stamped or acked.
-        val sentPrDtos = requests.flatMapTo(hashSetOf()) { it.personalRecords }
-        val sentRoutineIds = requests.flatMapTo(hashSetOf()) { r -> r.routines.map { it.id } }
+        // Issue #634 (Layer 2): the planner can still emit one entity twice inside
+        // a single request. Reconcile the assembled requests — identical
+        // duplicates collapse to one canonical entry, divergent ones are removed
+        // and reported — BEFORE any send/stamp bookkeeping reads them.
+        val deliverableRequests = reconcileAssembledRequests(requests, reconcileReport)
+        // What actually goes out: anything the planner skipped or the reconciler
+        // held back is never stamped or acked.
+        val deliverableSessions = deliverableRequests.flatMap { it.sessions }.distinctBy { it.id }
+        val deliverableSessionIds = deliverableSessions.mapTo(hashSetOf()) { it.id }
+        val totalBatches = deliverableRequests.size.coerceAtLeast(1)
+        val sentPrDtos = deliverableRequests.flatMapTo(hashSetOf()) { it.personalRecords }
+        val sentRoutineIds = deliverableRequests.flatMapTo(hashSetOf()) { r -> r.routines.map { it.id } }
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches request(s)), " +
-                "${effectiveTelemetry.size} telemetry points, " +
+                "${deliverableTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
-                "${customExerciseDtos.size} custom exercises, " +
+                "${deliverableCustomExercises.size} custom exercises, " +
                 "${personalRecordDtos.size} personal records, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${assessmentDtos.size} assessments"
@@ -2553,7 +2707,7 @@ class SyncManager(
         var personalRecordsWritten = 0
         val skippedDeletedRoutines = linkedSetOf<String>()
         val skippedDeletedCycles = linkedSetOf<String>()
-        requests.forEachIndexed { index, payload ->
+        deliverableRequests.forEachIndexed { index, payload ->
             Logger.i("SyncManager") {
                 "Sync request ${index + 1}/$totalBatches: ${payload.sessions.size} sessions, " +
                     "${payload.routines.size} routines, ${payload.cycles.size} cycles, " +
@@ -2688,17 +2842,24 @@ class SyncManager(
         }
 
         // Stamp pushed PRs (Issue #528) so getFullPRsModifiedSince doesn't keep
-        // re-shipping the same rows on every push. Re-use the exact recentPRs
-        // collected for this payload, deduped by id, and stamp only after the
+        // re-shipping the same rows on every push. Re-use the exact sendable PRs
+        // collected for this payload (Issue #634 held-back rows excluded), deduped
+        // by id, and stamp only after the
         // server confirmed the push. This gives PersonalRecord rows the same
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
-        // Only PRs a request actually carried: one skipped as oversized was never sent.
-        val pushedPrIds = recentPRs
-            .filterIndexed { index, pr ->
-                pr.deletedAt == null && pr.id >= 0L && personalRecordDtos[index] in sentPrDtos
+        // Only rows a request actually carried (or an identical twin carried —
+        // collapsed duplicate rows share their canonical entry's identity and were
+        // delivered byte-identically): anything held back by the Issue #634
+        // reconciler or skipped as oversized was never sent and must never stamp.
+        val sentPrIdentities = sentPrDtos.map { PushPayloadIdentity.personalRecordKey(it) }.toSet()
+        val pushedPrIds = (prPayloadRows.indices - reconciledPrEntries.heldBack.toSet())
+            .map { prPayloadRows[it] }
+            .filter { (row, dto) ->
+                row.deletedAt == null && row.id >= 0L &&
+                    PushPayloadIdentity.personalRecordKey(dto) in sentPrIdentities
             }
-            .map { it.id }
+            .map { (row, _) -> row.id }
             .distinct()
         if (pushedPrIds.isNotEmpty()) {
             // Stamp with gatherStartedAt, the value that becomes this profile's push
@@ -2767,6 +2928,7 @@ class SyncManager(
                     personalRecords = personalRecordDtos,
                     repairGroupIds = repairGroupIds.keys,
                 ),
+                reconcileReport = reconcileReport,
             ),
         )
         // No updateServerIds() -- portal uses client-provided UUIDs
@@ -4479,104 +4641,25 @@ class SyncManager(
         return deduped
     }
 
+    /**
+     * Hard safety guard behind [reconcileAssembledRequests] / the payload
+     * reconciler. Issue #634: reports EVERY offending table in one message (the
+     * pre-#634 code surfaced only the first via `firstOrNull`), so a device
+     * carrying several collision shapes shows the full picture per attempt.
+     */
     private fun rejectDuplicatePushPayloadKeys(
         payload: PortalSyncPayload,
     ): PortalApiException? {
-        val duplicate = findPushPayloadDuplicateKeys(payload).firstOrNull() ?: return null
-        val message = duplicate.toExceptionMessage()
+        val duplicates = findPushPayloadDuplicateKeys(payload)
+        if (duplicates.isEmpty()) return null
+        val message = "Duplicate IDs in local push payload: " +
+            duplicates.joinToString("; ") { it.toExceptionMessage() }
         Logger.e("SyncManager") { message }
         return PortalApiException(message, null, 400)
     }
 
     /** The failure a failed push Result carries. */
     private fun Result<PortalSyncPushResponse>.pushError(): Throwable = exceptionOrNull() ?: PortalApiException("Push failed")
-}
-
-internal data class PushPayloadDuplicateKeys(
-    val table: String,
-    val ids: List<String>,
-) {
-    fun toExceptionMessage(): String = "Duplicate IDs in local push payload: $table contains duplicate key(s): ${ids.joinToString()}"
-}
-
-internal fun findPushPayloadDuplicateKeys(
-    payload: PortalSyncPayload,
-): List<PushPayloadDuplicateKeys> {
-    val reports = mutableListOf<PushPayloadDuplicateKeys>()
-
-    reports.addDuplicateKeys(
-        table = "workout_sessions",
-        values = payload.sessions.map { session -> session.id },
-    )
-    reports.addDuplicateKeys(
-        table = "routines",
-        values = payload.routines.map { routine -> routine.id },
-    )
-    reports.addDuplicateKeys(
-        table = "training_cycles",
-        values = payload.cycles.map { cycle -> cycle.id },
-    )
-    reports.addDuplicateKeys(
-        table = "exercise_catalog",
-        values = payload.customExercises.map { exercise -> exercise.clientId },
-    )
-    reports.addDuplicateKeys(
-        table = "exercises",
-        values = payload.sessions.flatMap { session ->
-            session.exercises.map { exercise -> exercise.id }
-        },
-    )
-    reports.addDuplicateKeys(
-        table = "sets",
-        values = payload.sessions.flatMap { session ->
-            session.exercises.flatMap { exercise -> exercise.sets.map { set -> set.id } }
-        },
-    )
-    reports.addDuplicateKeys(
-        table = "rep_summaries",
-        values = payload.sessions.flatMap { session ->
-            session.exercises.flatMap { exercise ->
-                exercise.sets.flatMap { set -> set.repSummaries.map { rep -> rep.id } }
-            }
-        },
-    )
-    reports.addDuplicateKeys(
-        table = "rep_telemetry",
-        values = payload.telemetry.map { telemetry -> telemetry.id },
-    )
-    reports.addDuplicateKeys(
-        table = "personal_records",
-        values = payload.personalRecords.map { record ->
-            val exerciseKey = record.exerciseId?.let { "id:$it" }
-                ?: "name:${record.exerciseName}"
-            listOf(
-                record.localProfileId ?: "__no_profile__",
-                exerciseKey,
-                record.achievedAt,
-                record.recordType,
-                record.workoutPhase,
-            ).joinToString("|")
-        },
-    )
-
-    return reports
-}
-
-private fun MutableList<PushPayloadDuplicateKeys>.addDuplicateKeys(
-    table: String,
-    values: List<String>,
-) {
-    val seen = mutableSetOf<String>()
-    val duplicates = linkedSetOf<String>()
-    values.forEach { value ->
-        val normalized = value.lowercase()
-        if (normalized.isNotBlank() && !seen.add(normalized)) {
-            duplicates.add(value)
-        }
-    }
-    if (duplicates.isNotEmpty()) {
-        add(PushPayloadDuplicateKeys(table, duplicates.toList()))
-    }
 }
 
 /**

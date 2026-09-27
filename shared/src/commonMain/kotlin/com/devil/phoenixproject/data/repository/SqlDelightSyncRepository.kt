@@ -294,6 +294,24 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun clearPersonalRecordUpdatedAt(prIds: List<Long>) {
+        if (prIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            prIds.chunked(900).forEach { chunk ->
+                queries.clearPersonalRecordUpdatedAt(ids = chunk)
+            }
+        }
+    }
+
+    override suspend fun clearRoutineUpdatedAt(routineIds: List<String>) {
+        if (routineIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            routineIds.chunked(900).forEach { chunk ->
+                queries.clearRoutineUpdatedAt(ids = chunk)
+            }
+        }
+    }
+
     // === ID Mapping ===
 
     override suspend fun updateServerIds(mappings: IdMappings) {

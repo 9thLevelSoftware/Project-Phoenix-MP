@@ -287,6 +287,23 @@ class FakeSyncRepository : SyncRepository {
         stampedRoutineIdCalls += routineIds
     }
 
+    // Issue #634: capture re-arm calls so tests can assert that rows held back as
+    // conflicting payload duplicates are cleared back to updatedAt = NULL (retryable)
+    // instead of being stamped as synced.
+    val clearedPersonalRecordUpdatedAtIds: MutableSet<Long> = mutableSetOf()
+    val clearedRoutineUpdatedAtIds: MutableSet<String> = mutableSetOf()
+
+    override suspend fun clearPersonalRecordUpdatedAt(prIds: List<Long>) {
+        prIds.forEach { id ->
+            updatedPersonalRecordTimestamps.remove(id)
+            clearedPersonalRecordUpdatedAtIds += id
+        }
+    }
+
+    override suspend fun clearRoutineUpdatedAt(routineIds: List<String>) {
+        clearedRoutineUpdatedAtIds += routineIds
+    }
+
     // === Parity Sync: Entity ID lists (simulate local database content) ===
 
     var sessionIds: List<String> = emptyList()
