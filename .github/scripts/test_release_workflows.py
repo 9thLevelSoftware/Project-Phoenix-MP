@@ -212,6 +212,19 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
 
+    def test_ci_path_filter_still_runs_for_sealed_backend_handoff_docs(self) -> None:
+        text = workflow("ci-tests.yml")
+        on_block = text.split("permissions:", 1)[0]
+        self.assertNotIn("paths-ignore:", on_block)
+        sealed_paths = (
+            "    paths:\n"
+            "      - '**'\n"
+            "      - '!**.md'\n"
+            "      - '!docs/**'\n"
+            "      - 'docs/backend-handoff/**'\n"
+        )
+        self.assertEqual(on_block.count(sealed_paths), 2)
+
     def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
         text = workflow("ci-tests.yml")
         self.assertNotIn("verifyCommonMainPhoenixDatabaseMigration", text)
