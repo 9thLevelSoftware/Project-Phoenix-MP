@@ -71,15 +71,91 @@ class RepNotificationFreshnessGateTest {
 
     @Test
     fun `armed execution rejects a later modern packet when target changes`() {
+        // Issue #652 (2026-09-26 recurrence) rewrite: distinguishes STALE from CURRENT
+        // monotonic progress. A changed repsSetTotal is only ignored for a packet that
+        // proves new current-set progress on this armed lease; stale traffic keeps the
+        // strict TARGET_MISMATCH drop.
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 3, cutover = 1_000L)
-        gate.evaluate(lease, modernPacket(timestamp = 1_001L))
+        gate.evaluate(
+            lease,
+            modernPacket(topCounter = 1, completeCounter = 1, repsSetCount = 1, repsSetTotal = 3, timestamp = 1_001L),
+        )
+
+        // Stale: the set counter does not advance past the last accepted rep and the
+        // directional counters rewind — prior-set traffic, not current progress.
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 0, completeCounter = 0, repsSetCount = 1, repsSetTotal = 4, timestamp = 1_002L),
+            ),
+        )
+        // Stale: a beyond-target count cannot be this execution's progress.
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 2, completeCounter = 2, repsSetCount = 4, repsSetTotal = 4, timestamp = 1_003L),
+            ),
+        )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `armed execution accepts current monotonic rep progress when the wire target changes mid-set`() {
+        // Issue #652 (2026-09-26 recurrence): after this lease is independently armed, a
+        // changed repsSetTotal is not packet identity. The machine re-targets mid-set
+        // (10 -> 8), but the counters keep advancing on THIS execution, so each completed
+        // rep must count. The lease target stays the completion authority.
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 10, cutover = 1_000L)
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 1, completeCounter = 1, repsRomCount = 1, repsSetCount = 1, repsSetTotal = 10, timestamp = 1_001L),
+            ),
+        )
+
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 2, completeCounter = 2, repsRomCount = 1, repsSetCount = 2, repsSetTotal = 8, timestamp = 1_002L),
+            ),
+        )
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 3, completeCounter = 3, repsRomCount = 1, repsSetCount = 3, repsSetTotal = 8, timestamp = 1_003L),
+            ),
+        )
+        // The completing rep at the CONFIGURED target is accepted as well even though the
+        // wire target changed: completion authority is the lease target, not the wire.
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 10, completeCounter = 10, repsRomCount = 1, repsSetCount = 10, repsSetTotal = 8, timestamp = 1_004L),
+            ),
+        )
+    }
+
+    @Test
+    fun `unarmed mismatched packet is never accepted as current progress`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 10, cutover = 1_000L)
 
         assertEquals(
             RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
-            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 4, timestamp = 1_002L)),
+            gate.evaluate(
+                lease,
+                modernPacket(topCounter = 1, completeCounter = 1, repsSetCount = 1, repsSetTotal = 8, timestamp = 1_001L),
+            ),
         )
-        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+        assertEquals(RepFreshnessState.AwaitingEvidence, gate.stateFor(lease))
     }
 
     @Test

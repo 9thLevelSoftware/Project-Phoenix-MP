@@ -34,15 +34,24 @@ internal class RepNotificationFreshnessGate {
     private val states = mutableMapOf<LeaseIdentity, RepFreshnessState>()
     private val invalidatedLeases = mutableSetOf<LeaseIdentity>()
 
+    /**
+     * Issue #652 (2026-09-26 TestFlight recurrence): the high-water counters this lease has
+     * accepted from the machine's live stream. They are the only in-packet proof that a
+     * changed-target packet belongs to THIS execution rather than to a stale previous set.
+     */
+    private val observedModernCounters = mutableMapOf<LeaseIdentity, ModernCounterProgress>()
+
     fun resetFor(lease: ExecutionLease) {
         val identity = lease.identity()
         invalidatedLeases.remove(identity)
+        observedModernCounters.remove(identity)
         states[identity] = RepFreshnessState.AwaitingEvidence
     }
 
     fun invalidate(lease: ExecutionLease) {
         val identity = lease.identity()
         states.remove(identity)
+        observedModernCounters.remove(identity)
         invalidatedLeases.add(identity)
     }
 
@@ -87,8 +96,25 @@ internal class RepNotificationFreshnessGate {
             isUnlimitedTimedCablePacket ||
             notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
-        if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
-        if (stateFor(lease) is RepFreshnessState.Armed) return RepFreshnessDecision.Process
+        if (!targetMatches) {
+            // Issue #652 (2026-09-26 TestFlight recurrence): once this lease is
+            // independently Armed, repsSetTotal is NOT packet identity — the machine can
+            // re-target mid-set (Adaptive Echo). A changed-target packet is accepted ONLY
+            // when it independently proves current-set monotonic progress within the
+            // configured target; every other mismatch (stale prior-set traffic, unarmed,
+            // rewound counters, beyond-target carryover) keeps the strict drop. Completion
+            // authority stays with lease.workingRepTarget; the wire target is never written
+            // back into the lease.
+            if (stateFor(lease) is RepFreshnessState.Armed && provesCurrentSetProgress(identity, lease, notification)) {
+                recordModernProgress(identity, notification)
+                return RepFreshnessDecision.Process
+            }
+            return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
+        }
+        if (stateFor(lease) is RepFreshnessState.Armed) {
+            recordModernProgress(identity, notification)
+            return RepFreshnessDecision.Process
+        }
 
         // Issue #698/#700: Just Lift and AMRAP have no finite rep target,
         // so repsSetCount should never be treated as terminal.
@@ -123,15 +149,54 @@ internal class RepNotificationFreshnessGate {
 
         if (allZero || timedCableBaseline) {
             states[identity] = RepFreshnessState.Armed
+            recordModernProgress(identity, notification)
             return RepFreshnessDecision.BaselineOnly
         }
         if (hasNonTerminalProgress) {
             states[identity] = RepFreshnessState.Armed
+            recordModernProgress(identity, notification)
             return RepFreshnessDecision.Process
         }
         if (terminal) return RepFreshnessDecision.Drop(RepDropReason.TERMINAL_BEFORE_EVIDENCE)
 
+        recordModernProgress(identity, notification)
         return RepFreshnessDecision.BaselineOnly
+    }
+
+    /**
+     * Issue #652 (2026-09-26 TestFlight recurrence): the narrow post-arm current-progress
+     * proof. A changed `repsSetTotal` is only ignored when the packet independently shows
+     * it belongs to this execution's live rep stream:
+     *  1. the machine's own `repsSetCount` strictly advances what this lease has already
+     *     accepted (monotonic current-set progress, not a replay of an older count),
+     *  2. it stays within the configured completion authority (`lease.workingRepTarget`) —
+     *     a set's completed-rep count can never pass the configured target, so beyond-target
+     *     counts are prior-set carryover,
+     *  3. the directional/ROM counters never rewind against this lease's high-water marks;
+     *     those machine counters run continuously, so a rewound packet is stale traffic.
+     */
+    private fun provesCurrentSetProgress(
+        identity: LeaseIdentity,
+        lease: ExecutionLease,
+        notification: RepNotification,
+    ): Boolean {
+        if (lease.workingRepTarget <= 0) return false
+        val observed = observedModernCounters[identity] ?: return false
+        if (notification.repsSetCount > lease.workingRepTarget) return false
+        if (notification.repsSetCount <= observed.repsSetCount) return false
+        return notification.topCounter >= observed.topCounter &&
+            notification.completeCounter >= observed.completeCounter &&
+            notification.repsRomCount >= observed.repsRomCount
+    }
+
+    private fun recordModernProgress(identity: LeaseIdentity, notification: RepNotification) {
+        val observed = observedModernCounters[identity]
+        observedModernCounters[identity] = ModernCounterProgress(
+            topCounter = maxOf(observed?.topCounter ?: 0, notification.topCounter),
+            completeCounter = maxOf(observed?.completeCounter ?: 0, notification.completeCounter),
+            repsRomCount = maxOf(observed?.repsRomCount ?: 0, notification.repsRomCount),
+            repsSetCount = maxOf(observed?.repsSetCount ?: 0, notification.repsSetCount),
+        )
     }
 
     /**
@@ -167,5 +232,12 @@ internal class RepNotificationFreshnessGate {
     private data class LeaseIdentity(
         val executionId: Long,
         val sessionId: String,
+    )
+
+    private data class ModernCounterProgress(
+        val topCounter: Int,
+        val completeCounter: Int,
+        val repsRomCount: Int,
+        val repsSetCount: Int,
     )
 }

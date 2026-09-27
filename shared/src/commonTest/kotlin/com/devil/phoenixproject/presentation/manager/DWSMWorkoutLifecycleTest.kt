@@ -5580,10 +5580,11 @@ class DWSMWorkoutLifecycleTest {
     }
 
     // ===== Issue #652 TestFlight recurrence (2026-09-26, build 2026090521) =====
-    // Test-only characterization of the suspected residual failure path:
-    // RepNotificationFreshnessGate drops rep evidence with TARGET_MISMATCH when the
-    // machine's reported repsSetTotal changes mid-set, which both undercounts the set
-    // and skips the completed-rep stall reset added for #652.
+    // Regression tests for the residual failure path: RepNotificationFreshnessGate used
+    // to drop rep evidence with TARGET_MISMATCH when the machine's reported repsSetTotal
+    // changed mid-set (Adaptive Echo re-target), which both undercounted the set and
+    // skipped the completed-rep stall reset added for #652. These were RED
+    // characterizations before the narrow post-arm current-progress gate exception.
 
     @Test
     fun `Issue 652 recurrence - a completed working rep must count even when the wire target changes mid-set`() = runTest {
@@ -5692,7 +5693,7 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `Issue 652 recurrence - a stale stall countdown must not end a set whose rep evidence was dropped`() = runTest {
+    fun `Issue 652 recurrence - a stall countdown armed before a completed rep must not expire into a set stop`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.updateWorkoutParameters(
@@ -5719,8 +5720,9 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
         assertNotNull(harness.dwsm.coordinator.stallStartTime)
 
-        // The athlete completes a working rep but the notification is target-mismatched
-        // (repsSetTotal 10 -> 8) and dropped, so the countdown survives (previous test).
+        // The athlete completes a working rep whose notification carries a changed wire
+        // target (repsSetTotal 10 -> 8). Pre-fix it was dropped and the pre-rep countdown
+        // survived into the expiry window; post-fix it counts and clears the countdown.
         harness.fakeBleRepo.emitRepNotification(
             RepNotification(
                 topCounter = 5,
@@ -5736,10 +5738,18 @@ class DWSMWorkoutLifecycleTest {
             ),
         )
         advanceUntilIdle()
+        assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "A completed working rep must cancel the armed stall countdown even when its notification carries a changed target",
+        )
 
-        // Let the stale countdown expire while the athlete is mid-set.
-        harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
-        harness.dwsm.coordinator.isCurrentlyStalled = true
+        // Six seconds later the athlete is still mid-set. The countdown armed BEFORE the
+        // completed rep must not expire into STALL_FAILURE: it was cleared at the rep, so
+        // this sample can only arm a NEW countdown.
+        advanceTimeBy(6_000)
+        runCurrent()
         harness.fakeBleRepo.emitMetric(
             WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
         )
@@ -5747,9 +5757,186 @@ class DWSMWorkoutLifecycleTest {
 
         assertIs<WorkoutState.Active>(
             harness.dwsm.coordinator.workoutState.value,
-            "A stale stall countdown must not end a set the athlete is still performing after completing a working rep",
+            "A stall countdown armed before a completed rep must not end a set the athlete is still performing",
         )
+        harness.dwsm.coordinator.stallStartTime?.let { freshStart ->
+            assertTrue(
+                freshStart >= currentTimeMillis() - 1_000L,
+                "Any countdown after the completed rep must be a NEW arm, not the stale pre-rep one",
+            )
+        }
         harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 652 recurrence - progressive Hard to Hardest Echo sets count current reps and stop only at the configured target or a new stall`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            suspend fun startEchoSet(level: EchoLevel) {
+                harness.dwsm.updateWorkoutParameters(
+                    WorkoutParameters(
+                        programMode = ProgramMode.Echo,
+                        echoLevel = level,
+                        reps = 10,
+                        warmupReps = 0,
+                        stallDetectionEnabled = true,
+                        isAMRAP = false,
+                        isJustLift = false,
+                    ),
+                )
+                harness.dwsm.startWorkout(skipCountdown = true)
+                advanceUntilIdle()
+                assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+            }
+
+            suspend fun driveWorkingReps(fromRep: Int, toRep: Int, wireTotal: Int) {
+                for (rep in fromRep..toRep) {
+                    harness.fakeBleRepo.emitMetric(
+                        WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 80.0, velocityB = 80.0, loadA = 10f, loadB = 10f),
+                    )
+                    harness.fakeBleRepo.emitRepNotification(
+                        RepNotification(
+                            topCounter = 3 + rep,
+                            completeCounter = 3 + rep,
+                            repsRomCount = 3,
+                            repsRomTotal = 3,
+                            repsSetCount = rep,
+                            repsSetTotal = wireTotal,
+                            rangeTop = 800f,
+                            rangeBottom = 0f,
+                            rawData = ByteArray(24),
+                            timestamp = harness.nowMs + rep + 50L,
+                        ),
+                    )
+                    advanceUntilIdle()
+                }
+            }
+
+            suspend fun armVelocityStall() {
+                harness.fakeBleRepo.emitMetric(
+                    WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+                )
+                advanceUntilIdle()
+                assertNotNull(harness.dwsm.coordinator.stallStartTime)
+            }
+
+            // ===== Set 1 (HARD): no re-target. Every current rep counts and the set
+            // completes at the CONFIGURED target with full rep count. =====
+            startEchoSet(EchoLevel.HARD)
+            completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+            completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+            advanceUntilIdle()
+            assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+            driveWorkingReps(fromRep = 2, toRep = 8, wireTotal = 10)
+            assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+            assertEquals(8, harness.dwsm.coordinator.repCount.value.workingReps)
+
+            driveWorkingReps(fromRep = 9, toRep = 10, wireTotal = 10)
+            val summaryHard = assertIs<WorkoutState.SetSummary>(
+                harness.dwsm.coordinator.workoutState.value,
+                "HARD set must complete at the configured 10-rep target",
+            )
+            assertEquals(10, summaryHard.repCount)
+
+            // ===== Set 2 (HARDER): mid-set wire re-target (10 -> 8). The completed rep
+            // counts, clears the armed stall, and the wire target is NOT the completion
+            // authority — the set stays Active past 8 and completes at 10. =====
+            startEchoSet(EchoLevel.HARDER)
+            completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+            completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+            advanceUntilIdle()
+
+            armVelocityStall()
+            harness.fakeBleRepo.emitRepNotification(
+                RepNotification(
+                    topCounter = 5,
+                    completeCounter = 5,
+                    repsRomCount = 3,
+                    repsRomTotal = 3,
+                    repsSetCount = 2,
+                    repsSetTotal = 8,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = harness.nowMs + 5L,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+            assertEquals(
+                null,
+                harness.dwsm.coordinator.stallStartTime,
+                "An accepted completed rep must clear the armed stall countdown even when its wire target changed",
+            )
+            assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+            driveWorkingReps(fromRep = 3, toRep = 8, wireTotal = 8)
+            assertEquals(
+                8,
+                harness.dwsm.coordinator.repCount.value.workingReps,
+                "Reps must keep counting after the wire re-target",
+            )
+            assertIs<WorkoutState.Active>(
+                harness.dwsm.coordinator.workoutState.value,
+                "The changed wire target (8) must not become the completion authority",
+            )
+
+            driveWorkingReps(fromRep = 9, toRep = 10, wireTotal = 8)
+            val summaryHarder = assertIs<WorkoutState.SetSummary>(
+                harness.dwsm.coordinator.workoutState.value,
+                "HARDER set must complete at the configured 10-rep target, not the changed wire target",
+            )
+            assertEquals(10, summaryHarder.repCount)
+
+            // ===== Set 3 (HARDEST): same re-target recovery, then a NEW real five-second
+            // stall legitimately ends the set mid-lift. =====
+            startEchoSet(EchoLevel.HARDEST)
+            completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+            completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+            advanceUntilIdle()
+
+            armVelocityStall()
+            harness.fakeBleRepo.emitRepNotification(
+                RepNotification(
+                    topCounter = 5,
+                    completeCounter = 5,
+                    repsRomCount = 3,
+                    repsRomTotal = 3,
+                    repsSetCount = 2,
+                    repsSetTotal = 8,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = harness.nowMs + 5L,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+            assertEquals(null, harness.dwsm.coordinator.stallStartTime)
+            assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+            driveWorkingReps(fromRep = 3, toRep = 4, wireTotal = 8)
+            assertEquals(4, harness.dwsm.coordinator.repCount.value.workingReps)
+            assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+            // A NEW five-second stall is still the real failed-lift safety path.
+            armVelocityStall()
+            harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
+            harness.dwsm.coordinator.isCurrentlyStalled = true
+            harness.fakeBleRepo.emitMetric(
+                WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+            )
+            advanceUntilIdle()
+            assertIs<WorkoutState.SetSummary>(
+                harness.dwsm.coordinator.workoutState.value,
+                "A NEW real five-second stall must still end the set",
+            )
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test
