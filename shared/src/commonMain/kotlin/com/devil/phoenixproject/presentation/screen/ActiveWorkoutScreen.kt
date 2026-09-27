@@ -99,6 +99,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val autoplayEnabled by viewModel.autoplayEnabled.collectAsState()
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
     val currentSetIndex by viewModel.currentSetIndex.collectAsState()
@@ -400,10 +401,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val canSkipForward =
         !isSetActive && loadedRoutine != null &&
             currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
-
-    // Issue #167: autoplayEnabled now derived from summaryCountdownSeconds
-    // 0 (Unlimited) = autoplay OFF, != 0 (-1 or 5-30) = autoplay ON
-    val autoplayEnabled = userPreferences.summaryCountdownSeconds != 0
 
     val workoutUiState = remember(
         connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
