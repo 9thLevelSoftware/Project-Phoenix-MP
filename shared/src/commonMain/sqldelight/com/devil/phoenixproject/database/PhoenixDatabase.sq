@@ -4005,6 +4005,20 @@ AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
 clearSessionTimestamps:
 UPDATE WorkoutSession SET updatedAt = NULL WHERE id IN :ids;
 
+-- Issue #634 re-arm: a personal record held back as a conflicting payload duplicate was
+-- never sent, so it must not be stamped either. Clearing updatedAt puts it back into the
+-- ordinary delta (`updatedAt IS NULL OR updatedAt > lastSync`) where it retries with the
+-- next sync instead of stalling below the advanced push watermark. Collapsed-away
+-- identical duplicates are NOT re-armed -- their content was delivered by the kept row.
+clearPersonalRecordUpdatedAt:
+UPDATE PersonalRecord SET updatedAt = NULL WHERE id IN :ids;
+
+-- Issue #634 re-arm for routine rows held back as conflicting payload duplicates; same
+-- retry rule as clearPersonalRecordUpdatedAt (selectRoutinesModifiedSince also matches
+-- `updatedAt IS NULL`).
+clearRoutineUpdatedAt:
+UPDATE Routine SET updatedAt = NULL WHERE id IN :ids;
+
 -- Mark a session as portal-pulled (the hold-guard sibling in
 -- selectBlockedRoutineGroupSiblings keys off this). On main the pulled-origin
 -- marker is WorkoutSession.portalOrigin = 1 (migration 48); an earlier draft

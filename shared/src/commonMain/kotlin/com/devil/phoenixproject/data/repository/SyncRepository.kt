@@ -460,6 +460,20 @@ interface SyncRepository {
      */
     suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long)
 
+    /**
+     * Issue #634: re-arm personal record rows the push held back as conflicting
+     * payload duplicates. They were never sent, so they must not be stamped:
+     * clearing `updatedAt` puts them back into the ordinary delta where they
+     * retry with the next sync instead of stalling below the push watermark.
+     */
+    suspend fun clearPersonalRecordUpdatedAt(prIds: List<Long>) {}
+
+    /**
+     * Issue #634: re-arm routine rows the push held back as conflicting payload
+     * duplicates (see [clearPersonalRecordUpdatedAt]).
+     */
+    suspend fun clearRoutineUpdatedAt(routineIds: List<String>) {}
+
     // === ID Mapping (after push) ===
 
     /**
