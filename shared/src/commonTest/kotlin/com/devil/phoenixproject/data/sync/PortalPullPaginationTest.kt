@@ -636,14 +636,12 @@ class PortalPullPaginationTest {
 
         createManager().sync()
 
-        assertEquals(
-            emptyList(),
-            fakeSyncRepo.hardDeletedRoutineIds,
+        assertTrue(
+            fakeSyncRepo.serverDeletionCalls.none { routineId in it.routineIds },
             "A delta pull omits unchanged known routines; omission is not a deletion signal",
         )
-        assertEquals(
-            emptyList(),
-            fakeSyncRepo.hardDeletedCycleIds,
+        assertTrue(
+            fakeSyncRepo.serverDeletionCalls.none { cycleId in it.cycleIds },
             "A delta pull omits unchanged known cycles; omission is not a deletion signal",
         )
     }

@@ -242,12 +242,6 @@ class SqlDelightSyncRepository(
 
     // === Post-Push Stamping ===
 
-    override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
-        withContext(Dispatchers.IO) {
-            queries.updateSessionTimestamp(timestamp, sessionId)
-        }
-    }
-
     override suspend fun updateSessionTimestamps(
         sessionIds: Collection<String>,
         timestamp: Long,
@@ -2458,35 +2452,6 @@ class SqlDelightSyncRepository(
         }
     }
 
-    // === Parity Reconciliation ===
-
-    override suspend fun hardDeleteCyclesByIds(ids: List<String>) {
-        if (ids.isEmpty()) return
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                // Delete progress and days first (explicit cleanup before parent deletion)
-                for (id in ids) {
-                    queries.deleteCycleProgress(id)
-                    queries.deleteCycleDaysByCycle(id)
-                }
-                queries.hardDeleteCyclesByIds(ids)
-            }
-        }
-    }
-
-    override suspend fun hardDeleteRoutinesByIds(ids: List<String>) {
-        if (ids.isEmpty()) return
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                for (id in ids) {
-                    queries.deleteRoutineExercises(id)
-                    queries.deleteSupersetsByRoutine(id)
-                }
-                queries.hardDeleteRoutinesByIds(ids)
-            }
-        }
-    }
-
     // === Parity Sync Operations ===
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
@@ -3749,20 +3714,6 @@ class SqlDelightSyncRepository(
             )
             queries.markWorkoutPortalParentDirty(portalSessionId)
         }
-    }
-
-    override suspend fun getSessionNotesForPortalParents(
-        portalSessionIds: List<String>,
-    ): Map<String, SessionNotesEntry> = withContext(Dispatchers.IO) {
-        if (portalSessionIds.isEmpty()) return@withContext emptyMap()
-        portalSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE)
-            .flatMap { ids -> queries.selectSessionNotesForIds(ids).executeAsList() }
-            .associate { row ->
-                row.routineSessionId to SessionNotesEntry(
-                    notes = row.notes,
-                    updatedAtMillis = row.updatedAt ?: 0L,
-                )
-            }
     }
 
     private fun mergeSessionNotesInTransaction(notes: Map<String, SessionNotesEntry>) {

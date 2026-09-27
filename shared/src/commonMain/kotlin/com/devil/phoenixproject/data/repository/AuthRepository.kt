@@ -15,7 +15,6 @@ interface AuthRepository {
     val authState: StateFlow<AuthState>
     val currentUser: AuthUser?
 
-    suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser>
     suspend fun signInWithEmail(email: String, password: String): Result<AuthUser>
     suspend fun signInWithGoogle(): Result<AuthUser>
     suspend fun signInWithApple(): Result<AuthUser>
