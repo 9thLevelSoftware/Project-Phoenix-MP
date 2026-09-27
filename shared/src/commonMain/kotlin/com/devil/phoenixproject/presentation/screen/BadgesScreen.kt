@@ -86,7 +86,6 @@ fun BadgesScreen(
             rpgProfile?.let { profile ->
                 RpgAttributeCard(
                     profile = profile,
-                    onPortalLink = { /* Portal deep link - deferred to v0.6.0+ (PORTAL-02) */ },
                     modifier = Modifier.padding(horizontal = Spacing.medium),
                 )
                 Spacer(modifier = Modifier.height(Spacing.small))
