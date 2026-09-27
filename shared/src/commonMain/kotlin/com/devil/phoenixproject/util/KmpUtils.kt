@@ -20,15 +20,7 @@ data class KmpLocalDate(val year: Int, val month: Int, val dayOfMonth: Int) : Co
         return KmpLocalDate(result.year, result.month.number, result.day)
     }
 
-    fun plusDays(days: Int): KmpLocalDate {
-        val localDate = LocalDate(year, month, dayOfMonth)
-        val result = localDate.plus(days, DateTimeUnit.DAY)
-        return KmpLocalDate(result.year, result.month.number, result.day)
-    }
-
     fun isBefore(other: KmpLocalDate): Boolean = this < other
-
-    fun isAfter(other: KmpLocalDate): Boolean = this > other
 
     override fun compareTo(other: KmpLocalDate): Int {
         val yearCmp = year.compareTo(other.year)
@@ -159,64 +151,10 @@ object KmpUtils {
     }
 
     /**
-     * Format a relative timestamp (e.g., "2 hours ago", "Yesterday")
-     * @param timestamp Unix timestamp in milliseconds
-     * @return Relative time string
-     */
-    fun formatRelativeTimestamp(timestamp: Long): String {
-        val now = currentInstant().toEpochMilliseconds()
-        val diffMs = now - timestamp
-        val diffMinutes = diffMs / (1000 * 60)
-        val diffHours = diffMinutes / 60
-        val diffDays = diffHours / 24
-
-        return when {
-            // F422: a future timestamp (clock skew / imported data) makes
-            // diffMinutes negative and would otherwise render as "Just now".
-            // Allow ~1 min of skew, else show the absolute date.
-            diffMinutes < -1 -> formatTimestamp(timestamp, "MMM dd, yyyy")
-            diffMinutes < 1 -> "Just now"
-            diffMinutes < 60 -> "${diffMinutes}m ago"
-            diffHours < 24 -> "${diffHours}h ago"
-            diffDays == 1L -> "Yesterday"
-            diffDays < 7 -> "${diffDays}d ago"
-            else -> formatTimestamp(timestamp, "MMM dd, yyyy")
-        }
-    }
-
-    /**
      * Get current time in milliseconds
      * @return Current Unix timestamp in milliseconds
      */
     fun currentTimeMillis(): Long = currentInstant().toEpochMilliseconds()
-
-    /**
-     * Get current day of week (ISO-8601: 1=Monday, 7=Sunday)
-     * @return Day of week value (1-7)
-     */
-    fun currentDayOfWeek(): Int {
-        val now = currentInstant()
-        val localDate = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
-        return localDate.dayOfWeek.isoDayNumber
-    }
-
-    /**
-     * Format a duration in milliseconds to a human-readable string
-     * @param millis Duration in milliseconds
-     * @return Formatted duration string (e.g., "1h 23m 45s")
-     */
-    fun formatDuration(millis: Long): String {
-        val totalSeconds = millis / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        val seconds = totalSeconds % 60
-
-        return when {
-            hours > 0 -> "${hours}h ${minutes}m ${seconds}s"
-            minutes > 0 -> "${minutes}m ${seconds}s"
-            else -> "${seconds}s"
-        }
-    }
 
     /**
      * Format a float with specified decimal places
@@ -254,14 +192,6 @@ object KmpUtils {
     }
 
     /**
-     * Format a double with specified decimal places
-     * @param value Double value to format
-     * @param decimals Number of decimal places
-     * @return Formatted string
-     */
-    fun formatDouble(value: Double, decimals: Int): String = formatFloat(value.toFloat(), decimals)
-
-    /**
      * Generate a random UUID string (KMP-compatible)
      * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
      * where x is a random hex digit and y is 8, 9, a, or b
@@ -293,8 +223,3 @@ object KmpUtils {
  * Extension function to format Float
  */
 fun Float.format(decimals: Int): String = KmpUtils.formatFloat(this, decimals)
-
-/**
- * Extension function to format Double
- */
-fun Double.format(decimals: Int): String = KmpUtils.formatDouble(this, decimals)

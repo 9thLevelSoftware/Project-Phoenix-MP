@@ -69,33 +69,6 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
 
     // ==================== Mapping Functions ====================
 
-    private suspend fun mapToTrainingCycle(
-        id: String,
-        name: String,
-        description: String?,
-        created_at: Long,
-        is_active: Long,
-        // Multi-profile support (migration 21)
-        profileId: String,
-        template_id: String?,
-        week_number: Long,
-        updatedAt: Long,
-    ): TrainingCycle {
-        val days = getCycleDays(id)
-        return TrainingCycle(
-            id = id,
-            name = name,
-            description = description,
-            days = days,
-            createdAt = created_at,
-            isActive = is_active == 1L,
-            profileId = profileId,
-            templateId = template_id,
-            weekNumber = week_number.toInt(),
-            updatedAt = updatedAt,
-        )
-    }
-
     private fun mapToCycleDay(
         id: String,
         cycle_id: String,

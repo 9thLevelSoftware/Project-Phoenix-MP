@@ -3287,109 +3287,6 @@ abstract class BaseDataBackupManager(
         )
     }
 
-    private fun buildRoutineNameResolutionContextFromBackup(
-        routines: List<RoutineBackup>,
-        routineExercises: List<RoutineExerciseBackup>,
-    ): RoutineNameResolutionContext {
-        val routineNameById = routines.associate { routine ->
-            routine.id to sanitizeEntityName(routine.name, "Unnamed Routine")
-        }
-        val nonTemplateRoutineIds = routines
-            .asSequence()
-            .filterNot { it.id.startsWith("cycle_routine_") }
-            .map { it.id }
-            .toSet()
-
-        fun collectUniqueRoutineNames(
-            allowedRoutineIds: Set<String>? = null,
-        ): Map<String, String> {
-            val routineIdsByExerciseId = mutableMapOf<String, MutableSet<String>>()
-            routineExercises.forEach { exercise ->
-                if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
-                val exerciseId = sanitizeLegacyLabel(exercise.exerciseId) ?: return@forEach
-                routineIdsByExerciseId.getOrPut(exerciseId) { mutableSetOf() }.add(exercise.routineId)
-            }
-
-            val uniqueRoutineNames = mutableMapOf<String, String>()
-            routineIdsByExerciseId.forEach { (exerciseId, routineIds) ->
-                if (routineIds.size != 1) return@forEach
-                val routineId = routineIds.first()
-                val routineName = routineNameById[routineId] ?: return@forEach
-                uniqueRoutineNames[exerciseId] = routineName
-            }
-            return uniqueRoutineNames
-        }
-
-        fun collectUniqueRoutineNamesByExerciseName(
-            allowedRoutineIds: Set<String>? = null,
-        ): Map<String, String> {
-            val routineIdsByExerciseName = mutableMapOf<String, MutableSet<String>>()
-            routineExercises.forEach { exercise ->
-                if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
-                val normalizedExerciseName = normalizeExerciseToken(exercise.exerciseName) ?: return@forEach
-                routineIdsByExerciseName.getOrPut(normalizedExerciseName) { mutableSetOf() }.add(exercise.routineId)
-            }
-
-            val uniqueRoutineNames = mutableMapOf<String, String>()
-            routineIdsByExerciseName.forEach { (normalizedExerciseName, routineIds) ->
-                if (routineIds.size != 1) return@forEach
-                val routineId = routineIds.first()
-                val routineName = routineNameById[routineId] ?: return@forEach
-                uniqueRoutineNames[normalizedExerciseName] = routineName
-            }
-            return uniqueRoutineNames
-        }
-
-        // Prefer user-authored/non-template routines first to avoid cycle template noise.
-        val uniqueFromNonTemplate = collectUniqueRoutineNames(
-            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() },
-        )
-        val uniqueFromAll = collectUniqueRoutineNames()
-        val uniqueRoutineNameByExerciseId = uniqueFromAll.toMutableMap().apply {
-            putAll(uniqueFromNonTemplate)
-        }
-        val uniqueByNameFromNonTemplate = collectUniqueRoutineNamesByExerciseName(
-            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() },
-        )
-        val uniqueByNameFromAll = collectUniqueRoutineNamesByExerciseName()
-        val uniqueRoutineNameByExerciseName = uniqueByNameFromAll.toMutableMap().apply {
-            putAll(uniqueByNameFromNonTemplate)
-        }
-
-        return RoutineNameResolutionContext(
-            routineNameById = routineNameById,
-            uniqueRoutineNameByExerciseId = uniqueRoutineNameByExerciseId,
-            uniqueRoutineNameByExerciseName = uniqueRoutineNameByExerciseName,
-        )
-    }
-
-    private fun resolveImportedRoutineName(
-        session: WorkoutSessionBackup,
-        routineNameResolutionContext: RoutineNameResolutionContext,
-    ): String? {
-        val existingRoutineName = sanitizeRoutineName(session.routineName)
-        val directLookupName = session.routineId?.let { routineId ->
-            routineNameResolutionContext.routineNameById[routineId]
-        }
-        val inferredRoutineNameById = session.exerciseId?.let { exerciseId ->
-            routineNameResolutionContext.uniqueRoutineNameByExerciseId[exerciseId]
-        }
-        val inferredRoutineNameByExerciseName = normalizeExerciseToken(session.exerciseName)?.let { normalizedExerciseName ->
-            routineNameResolutionContext.uniqueRoutineNameByExerciseName[normalizedExerciseName]
-        }
-        val inferredRoutineName = inferredRoutineNameById ?: inferredRoutineNameByExerciseName
-        val existingLooksLikeExercisePlaceholder =
-            normalizeExerciseToken(existingRoutineName) == normalizeExerciseToken(session.exerciseName)
-
-        return when {
-            session.isJustLift -> "Just Lift"
-            directLookupName != null -> directLookupName
-            inferredRoutineName != null && (existingRoutineName == null || existingLooksLikeExercisePlaceholder) -> inferredRoutineName
-            existingRoutineName != null && !existingLooksLikeExercisePlaceholder -> existingRoutineName
-            else -> null
-        }
-    }
-
     /**
      * Treat low-quality legacy values as missing.
      * Examples filtered out: blank, "null", ":", "--", punctuation-only tokens.
@@ -3621,12 +3518,6 @@ abstract class BaseDataBackupManager(
         queries.setActiveProfile(activeProfileId)
         return activeProfileId
     }
-
-    private fun resolveImportedProfileId(
-        requestedProfileId: String?,
-        activeProfileId: String,
-        availableProfileIds: Set<String>,
-    ): String = requestedProfileId?.takeIf { it in availableProfileIds } ?: activeProfileId
 
     private inline fun <reified T> decodeBackupSection(
         profileId: String,

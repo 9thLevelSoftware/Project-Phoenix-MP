@@ -177,17 +177,6 @@ object CsvParser {
     }
 
     /**
-     * Parse a date string in yyyy-MM-dd format to epoch milliseconds (midnight).
-     */
-    private fun parseDateToEpochMs(dateStr: String): Long? = try {
-        val localDate = LocalDate.parse(dateStr)
-        val instant = localDate.atStartOfDayIn(TimeZone.currentSystemDefault())
-        instant.toEpochMilliseconds()
-    } catch (_: Exception) {
-        null
-    }
-
-    /**
      * Parse date + optional time to epoch milliseconds.
      * Time format expected: "HH:mm" or "HH:mm:ss".
      * Falls back to midnight if time is null or unparseable.
