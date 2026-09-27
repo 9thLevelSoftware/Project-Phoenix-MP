@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.onerepmax
 
 import com.devil.phoenixproject.domain.assessment.AssessmentConfig
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
+import com.devil.phoenixproject.domain.assessment.LoadCeiling
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import kotlin.math.roundToInt
 
@@ -44,8 +45,13 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
         }
 
         // minSets=MIN_DISTINCT_LOADS matches our gate; oneRmVelocityMs is the resolved MVT.
+        // Points are per-cable kilograms, so the fit is capped at the per-cable hardware max.
         val config = AssessmentConfig(minSets = MIN_DISTINCT_LOADS, oneRmVelocityMs = mvtMs)
-        val assessment = assessmentEngine.estimateOneRepMax(lvPoints, config) ?: return null
+        val assessment = assessmentEngine.estimateOneRepMax(
+            points = lvPoints,
+            config = config,
+            loadCeiling = LoadCeiling.PER_CABLE,
+        ) ?: return null
 
         // Issue #644: AssessmentEngine clamps the extrapolated load to the 1.0 kg hardware
         // floor. A result at the floor means the regression couldn't reach the 1RM velocity
