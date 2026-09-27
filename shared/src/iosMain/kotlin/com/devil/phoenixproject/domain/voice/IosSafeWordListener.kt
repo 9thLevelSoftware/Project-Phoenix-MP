@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioFormat
 import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionCategoryOptionDefaultToSpeaker
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
@@ -237,7 +238,8 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
                 tearDown()
             }
 
-            // Configure audio session for recording while allowing music playback
+            // Record on PlayAndRecord while mixing with other audio and routing
+            // playback to the speaker (the category otherwise uses the receiver).
             configureAudioSession()
 
             // Create the recognition request
@@ -313,9 +315,16 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
     private fun configureAudioSession() {
         try {
             val session = AVAudioSession.sharedInstance()
+            // PlayAndRecord is required for the microphone tap. Without
+            // DefaultToSpeaker that category routes playback to the receiver,
+            // and HapticFeedbackEffect will not leave PlayAndRecord once this
+            // listener owns the process-wide session. MixWithOthers stays so
+            // background audio keeps playing. The option only changes the
+            // output route; input capture is unchanged.
             session.setCategory(
                 AVAudioSessionCategoryPlayAndRecord,
-                AVAudioSessionCategoryOptionMixWithOthers,
+                AVAudioSessionCategoryOptionMixWithOthers or
+                    AVAudioSessionCategoryOptionDefaultToSpeaker,
                 null,
             )
             session.setMode(AVAudioSessionModeDefault, null)
