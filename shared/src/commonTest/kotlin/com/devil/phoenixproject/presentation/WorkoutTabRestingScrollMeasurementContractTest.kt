@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
  *
  *   WorkoutTab.kt:380
  *     Column(Modifier.fillMaxSize()...verticalScroll(rememberScrollState()))  // outer scroll
- *       ... OVERLAYS `when (workoutState)` (WorkoutTab.kt:427)
+ *       ... state-card `when (workoutState)` (historically commented "OVERLAYS")
  *         is WorkoutState.Resting -> RestTimerCard(...)                      // WorkoutTab.kt:594/607
  *
  *   RestTimerCard.kt body Column (crash node before this fix)
@@ -34,12 +34,18 @@ import kotlin.test.assertTrue
  *    full-body scroll under the scrolling WorkoutTab column.
  * 2. WorkoutTab.kt keeps exactly one `.verticalScroll(...)` — it is the sole
  *    full-screen scroll owner.
- * 3. The OVERLAYS `when` (including the Resting branch and its RestTimerCard
+ * 3. The state-card `when` (including the Resting branch and its RestTimerCard
  *    call) stays inside that scrolling Column — it must not be moved out as a
  *    workaround.
  * 4. EquipmentRackSelectionCard keeps its independently bounded local list
  *    scroll (`heightIn(max = 260.dp)` + `verticalScroll`) so rack items remain
  *    reachable without reintroducing a nested full-body scroll.
+ * 5. RestTimerCard is content-sized for its unbounded host: no `fillMaxSize`
+ *    and no `verticalArrangement = Arrangement.SpaceBetween`. Both were written
+ *    for a bounded full-screen host and silently degrade under the scroll
+ *    (fillMaxSize -> wrap, SpaceBetween -> Top); that mismatch is what led
+ *    PR #787 to "fix" overflow with the crashing nested scroll. The component
+ *    must state the contract it actually runs under.
  *
  * ## Why source-level assertions instead of a Compose measurement test?
  *
@@ -85,6 +91,34 @@ class WorkoutTabRestingScrollMeasurementContractTest {
     }
 
     @Test
+    fun restTimerCardBody_isContentSizedForUnboundedHost() {
+        val src = stripComments(readRestTimerCardSource())
+
+        // Under WorkoutTab's scroll the incoming maxHeight is Infinity, so
+        // fillMaxSize cannot fill anything and SpaceBetween has nothing to
+        // distribute. Keeping them advertises a bounded-host layout that does
+        // not exist and invites a nested scroll "to make it fit" (issue #893).
+        assertTrue(
+            !src.contains("fillMaxSize"),
+            "RestTimerCard.kt must not use Modifier.fillMaxSize(): it is content inside " +
+                "WorkoutTab's vertically scrolling Column and is measured with an unbounded " +
+                "max height. Size to content with fillMaxWidth (issue #893 host contract).",
+        )
+        assertTrue(
+            !src.contains("verticalArrangement = Arrangement.SpaceBetween"),
+            "RestTimerCard.kt must not lay out its body with " +
+                "verticalArrangement = Arrangement.SpaceBetween: under WorkoutTab's unbounded " +
+                "scroll there is no remaining space to distribute, so the arrangement is a " +
+                "no-op that misdescribes the host contract (issue #893).",
+        )
+        assertTrue(
+            !src.contains("LazyColumn(") && !src.contains("LazyVerticalGrid("),
+            "RestTimerCard.kt must not compose a LazyColumn/LazyVerticalGrid: lazy lists are " +
+                "vertically scrollable and throw under WorkoutTab's unbounded scroll (issue #893).",
+        )
+    }
+
+    @Test
     fun workoutTab_isSoleFullScreenScrollOwner() {
         val src = stripComments(readWorkoutTabSource())
 
@@ -117,9 +151,9 @@ class WorkoutTabRestingScrollMeasurementContractTest {
         )
         assertTrue(
             scrollIdx < restingIdx && restingIdx < restCardIdx,
-            "The OVERLAYS `when` Resting branch and RestTimerCard(...) call must remain inside " +
+            "The state-card `when` Resting branch and RestTimerCard(...) call must remain inside " +
                 "WorkoutTab's scrolling Column (after the .verticalScroll(...) modifier). Do not " +
-                "move the in-column OVERLAYS `when` out of the scrolling Column as a workaround " +
+                "move the in-column state-card `when` out of the scrolling Column as a workaround " +
                 "(issue #893 architecture review binding constraint).",
         )
     }

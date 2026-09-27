@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -222,10 +221,21 @@ fun RestTimerCard(
         }
     }
 
-    // Background gradient - respects theme mode
+    // Background gradient - respects theme mode.
+    //
+    // Host contract (issue #893): RestTimerCard is CONTENT inside WorkoutTab's
+    // vertically scrolling Column (WorkoutTab.kt), not a screen. That parent
+    // measures it with an unbounded max height, so this layout must
+    //   - size itself to its content (fillMaxWidth, never fillMaxSize/weight),
+    //   - never add a vertical scrollable (verticalScroll/LazyColumn); a nested
+    //     one throws "Vertically scrollable component was measured with an
+    //     infinity maximum height constraints" at measure time, and
+    //   - rely on the parent scroll for reachability on short viewports.
+    // The equipment rack card keeps its own list scroll only because it is
+    // height-bounded (heightIn(max = ...)), which is legal under this parent.
     Box(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(screenBackgroundBrush())
             .systemBarsPadding()
             .padding(20.dp),
@@ -257,18 +267,15 @@ fun RestTimerCard(
                 },
         )
 
-        // Issue #893: no verticalScroll on this body Column. RestTimerCard is
-        // composed inside WorkoutTab's vertically scrolling Column
-        // (WorkoutTab.kt:380), which measures children with unbounded height;
-        // a nested scrollable throws "Vertically scrollable component was
-        // measured with an infinity maximum height constraints". WorkoutTab's
-        // scroll is the sole full-screen scroll owner and keeps this content
-        // (including the equipment rack card) reachable on compact viewports.
+        // Issue #893: content-sized body, no verticalScroll (see the host
+        // contract above). fillMaxSize + Arrangement.SpaceBetween were written
+        // for a bounded full-screen host; under WorkoutTab's unbounded scroll
+        // they silently degrade to wrap-content + top alignment, and that
+        // mismatch is what invited the crashing nested scroll in PR #787.
         Column(
             modifier = Modifier
-                .fillMaxSize(),
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Spacer(modifier = Modifier.height(8.dp))
             // REST TIME Header - shows superset info if applicable
