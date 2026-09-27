@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.components
 
-import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -32,37 +31,47 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.devil.phoenixproject.ui.theme.ApplyStatusBarAppearance
 
 /**
- * BLE and notification permissions required for the app.
+ * Runtime permissions for the BLE connection gate.
  * Android 12+ (API 31+) requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT.
- * Android 13+ (API 33+) requires POST_NOTIFICATIONS for workout notifications.
- * On older versions, only location permission is needed.
+ * Older versions need location for BLE scanning.
+ * POST_NOTIFICATIONS (API 33+) is optional: it may be requested with the
+ * Bluetooth prompt, but denying it must not block the gate. Workout
+ * notifications are posted best-effort.
  */
 object BlePermissions {
     /**
-     * Get the list of permissions required based on Android version.
+     * Permissions that must be granted before the app can scan and connect.
+     * Does not include POST_NOTIFICATIONS.
      */
-    fun getRequiredPermissions(): List<String> = buildList {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
-            add(Manifest.permission.BLUETOOTH_SCAN)
-            add(Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            // Older versions need location for BLE scanning
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ requires POST_NOTIFICATIONS for workout notifications
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
+    fun getRequiredPermissions(): List<String> =
+        BlePermissionPolicy.requiredPermissions(Build.VERSION.SDK_INT)
 
     /**
-     * Check if all required BLE permissions are granted.
+     * Permissions requested alongside the BLE gate but not required to pass it.
      */
-    fun arePermissionsGranted(context: Context): Boolean = getRequiredPermissions().all { permission ->
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-    }
+    fun getOptionalPermissions(): List<String> =
+        BlePermissionPolicy.optionalPermissions(Build.VERSION.SDK_INT)
+
+    /**
+     * Required BLE permissions plus optional notification permission.
+     */
+    fun getPermissionsToRequest(): List<String> =
+        BlePermissionPolicy.permissionsToRequest(Build.VERSION.SDK_INT)
+
+    /**
+     * True when every required BLE permission is granted. A denied
+     * POST_NOTIFICATIONS permission does not fail this check.
+     */
+    fun arePermissionsGranted(context: Context): Boolean =
+        missingRequiredPermissions(context).isEmpty()
+
+    /**
+     * Required BLE permissions that are not currently granted.
+     */
+    fun missingRequiredPermissions(context: Context): List<String> =
+        getRequiredPermissions().filter { permission ->
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
 }
 
 /**
@@ -128,7 +137,7 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
             PermissionScreenTheme {
                 BlePermissionRequestScreen(
                     onRequestPermission = {
-                        permissionLauncher.launch(BlePermissions.getRequiredPermissions().toTypedArray())
+                        permissionLauncher.launch(BlePermissions.getPermissionsToRequest().toTypedArray())
                     },
                 )
             }
@@ -137,10 +146,14 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
         is BlePermissionState.Denied -> {
             val activity = context as? Activity
 
+            val missingPermissions = BlePermissions.missingRequiredPermissions(context)
+
             // Detect permanent denial: shouldShowRequestPermissionRationale returns false
-            // when the user checked "Don't ask again" or when the system won't show the dialog
-            val canRetry = remember(permissionState) {
-                activity != null && BlePermissions.getRequiredPermissions().any { permission ->
+            // when the user checked "Don't ask again" or when the system won't show the dialog.
+            // Only required BLE permissions count; a denied notification permission must not
+            // keep the user on this screen.
+            val canRetry = remember(missingPermissions) {
+                activity != null && missingPermissions.any { permission ->
                     ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
                 }
             }
@@ -164,8 +177,9 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
             PermissionScreenTheme {
                 BlePermissionDeniedScreen(
                     canRetry = canRetry,
+                    missingPermissions = missingPermissions,
                     onRetry = {
-                        permissionLauncher.launch(BlePermissions.getRequiredPermissions().toTypedArray())
+                        permissionLauncher.launch(BlePermissions.getPermissionsToRequest().toTypedArray())
                     },
                     onOpenSettings = {
                         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -250,16 +264,24 @@ private fun BlePermissionRequestScreen(onRequestPermission: () -> Unit) {
 }
 
 /**
- * Screen shown when BLE permissions have been denied.
+ * Screen shown when a required BLE permission has been denied.
  *
  * @param canRetry true if the system permission dialog can still be shown (user has not
  *   permanently denied). false if the user selected "Don't ask again" or the OS won't
  *   show the dialog — in that case we direct them to app Settings instead.
+ * @param missingPermissions Required permissions that are still not granted. Copy names these
+ *   instead of always saying Bluetooth.
  * @param onRetry Re-request permissions via the system dialog.
  * @param onOpenSettings Open the app's Settings page so the user can toggle permissions manually.
  */
 @Composable
-private fun BlePermissionDeniedScreen(canRetry: Boolean, onRetry: () -> Unit, onOpenSettings: () -> Unit) {
+private fun BlePermissionDeniedScreen(
+    canRetry: Boolean,
+    missingPermissions: List<String>,
+    onRetry: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val copy = BlePermissionPolicy.denialCopy(missingPermissions, canRetry)
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -290,11 +312,7 @@ private fun BlePermissionDeniedScreen(canRetry: Boolean, onRetry: () -> Unit, on
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = if (canRetry) {
-                    "Bluetooth permission is required to connect to your Phoenix Trainer. Please grant the permission to continue."
-                } else {
-                    "Bluetooth permission has been permanently denied. Please enable it in your device's Settings to use Project Phoenix."
-                },
+                text = copy.body,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -339,11 +357,7 @@ private fun BlePermissionDeniedScreen(canRetry: Boolean, onRetry: () -> Unit, on
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = if (canRetry) {
-                    "If the permission dialog doesn't appear, you may need to enable Bluetooth permissions in your device's Settings > Apps > Project Phoenix > Permissions."
-                } else {
-                    "Navigate to Permissions and enable Bluetooth access, then return here. The app will detect the change automatically."
-                },
+                text = copy.hint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
