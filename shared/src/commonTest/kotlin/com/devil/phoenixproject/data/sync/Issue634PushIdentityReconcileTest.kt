@@ -121,7 +121,7 @@ class Issue634PushIdentityReconcileTest {
     // ─── Acceptance criterion 1: distinct mode/UUID PR rows stay distinct ───
 
     @Test
-    fun `distinct PR workoutMode and UUID rows are both pushed and stamped, never merged`() = runTest {
+    fun `distinct PR workoutMode and UUID rows are both pushed and stamped and never merged`() = runTest {
         setupAuthenticated()
         val achievedAtMs = 1_770_569_713_326L
         fakeSyncRepo.fullPRsToReturn = listOf(
@@ -216,7 +216,7 @@ class Issue634PushIdentityReconcileTest {
     // ─── Acceptance criterion 3: conflicts stay visible + retryable, never stamped ───
 
     @Test
-    fun `conflicting same-identity PR rows are held back, reported and re-armed, never merged`() = runTest {
+    fun `conflicting same-identity PR rows are held back reported and re-armed and never merged`() = runTest {
         setupAuthenticated()
         fakeSyncRepo.fullPRsToReturn = listOf(
             makePr(id = 1, timestamp = 1_770_569_713_326L, uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", weightPerCableKg = 60f),

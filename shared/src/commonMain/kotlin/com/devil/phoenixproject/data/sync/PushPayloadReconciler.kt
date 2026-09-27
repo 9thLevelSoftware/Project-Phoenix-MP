@@ -133,10 +133,16 @@ internal fun PortalRepTelemetryDto.canonicalized(): PortalRepTelemetryDto = copy
 
 internal fun PortalRoutineSyncDto.canonicalized(): PortalRoutineSyncDto = copy(
     id = id.lowercase(),
+    // updatedAt folds `updatedAt ?: createdAt` where Routine.createdAt defaults to
+    // currentTimeMillis() — a volatile creation stamp, not content. Keep it out of
+    // duplicate detection (same trap as personal-record updatedAt).
+    updatedAt = null,
 )
 
 internal fun PortalTrainingCycleSyncDto.canonicalized(): PortalTrainingCycleSyncDto = copy(
     id = id.lowercase(),
+    // Same volatile-stamp rule as routines (updatedAt folds createdAt).
+    updatedAt = null,
 )
 
 internal fun CustomExerciseSyncDto.canonicalized(): CustomExerciseSyncDto = copy(
@@ -148,6 +154,11 @@ internal fun PortalPersonalRecordDto.canonicalized(): PortalPersonalRecordDto = 
     exerciseId = exerciseId?.lowercase(),
     sessionId = sessionId?.lowercase(),
     achievedAt = PushPayloadIdentity.normalizeAchievedAt(achievedAt),
+    // updatedAt is the volatile upload stamp — toPortalPersonalRecord fills
+    // currentTimeMillis() for unstamped rows — so it is not row content and must
+    // not decide duplicate detection (it made identical twins race into a false
+    // conflict). The kept canonical entry carries its own stamp.
+    updatedAt = null,
 )
 
 /** A same-identity group whose entries disagree: every entry is held back. */
