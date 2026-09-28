@@ -48,7 +48,6 @@
     <string name="drop_set_remaining_one">1 drop rimanente</string>
     <string name="drop_set_remaining_many">%1$d drop rimanenti</string>
     <string name="drop_set_accepted_waiting">Nuovo tentativo a %1$s — %2$s per cavo</string>
-    <string name="drop_set_saving">Salvataggio del tentativo fallito</string>
     <string name="drop_set_preparing">Preparazione dell’attrezzo</string>
     <string name="drop_set_ready">Pronto per riprovare</string>
     <string name="drop_set_recovery">Riconnettiti per riprovare questo drop set</string>
