@@ -95,7 +95,6 @@ import projectphoenix.shared.generated.resources.drop_set_recovery
 import projectphoenix.shared.generated.resources.drop_set_remaining_many
 import projectphoenix.shared.generated.resources.drop_set_remaining_one
 import projectphoenix.shared.generated.resources.drop_set_retry_set
-import projectphoenix.shared.generated.resources.drop_set_saving
 import projectphoenix.shared.generated.resources.drop_set_skip
 import projectphoenix.shared.generated.resources.drop_set_skip_rest_blocked
 import projectphoenix.shared.generated.resources.drop_set_waiting_timer
@@ -505,7 +504,6 @@ fun RestTimerCard(
                     formatWeight = formatWeightWithUnit ?: { _, _ -> "" },
                     onSelectionChange = onRackSelectionChange,
                     onBehaviorOverrideChange = onRackBehaviorOverrideChange,
-                    showBehaviorOverrides = true,
                 )
             }
 
@@ -798,9 +796,6 @@ internal fun DropSetOfferCard(
                     formatWeight,
                 )
                 val waitText = when (offer.waitState) {
-                    DropSetRetryWaitState.SAVING_FAILED_ATTEMPT ->
-                        stringResource(Res.string.drop_set_saving)
-
                     DropSetRetryWaitState.PREPARING_TRAINER ->
                         stringResource(Res.string.drop_set_preparing)
 
