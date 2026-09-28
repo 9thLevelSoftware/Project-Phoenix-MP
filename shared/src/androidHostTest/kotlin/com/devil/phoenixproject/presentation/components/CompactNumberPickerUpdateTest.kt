@@ -4,6 +4,8 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * NumberPicker keeps the labels, max, and listener installed by AndroidView's factory.
@@ -193,12 +195,51 @@ class CompactNumberPickerUpdateTest {
             wheel.value = 5
         }
     }
+
+    @Test
+    fun rangeChanges_leaveWrappingOffAfterLegacyPickerReenablesIt() {
+        val wheel = StrictNumberPicker()
+        val coarse = (0..10).map { it * 5f }
+        applyCompactNumberPickerState(
+            picker = wheel,
+            values = coarse,
+            step = 5f,
+            suffix = "kg",
+            selectedIndex = 0,
+            onValueChange = {},
+        )
+        assertFalse(wheel.wrapSelectorWheel)
+        assertTrue(wheel.wrapReenabledByRange > 0, "fake must model the API 26-28 range reset")
+
+        val fine = (0..50).map { it.toFloat() }
+        applyCompactNumberPickerState(
+            picker = wheel,
+            values = fine,
+            step = 1f,
+            suffix = "kg",
+            selectedIndex = 0,
+            onValueChange = {},
+        )
+        assertFalse(wheel.wrapSelectorWheel)
+
+        applyCompactNumberPickerState(
+            picker = wheel,
+            values = coarse,
+            step = 5f,
+            suffix = "lbs",
+            selectedIndex = 0,
+            onValueChange = {},
+        )
+        assertFalse(wheel.wrapSelectorWheel)
+    }
 }
 
 /**
  * Stand-in for [android.widget.NumberPicker]'s update rules. Growing [maxValue] while a
  * shorter [displayedValues] array is installed crashes the real selector cache; setting
  * [value] above max is rejected here so a finer step cannot silently clamp.
+ * Like the API 26-28 widget, changing [minValue] or [maxValue] recomputes
+ * [wrapSelectorWheel] from the range and discards an earlier `false`.
  */
 private class StrictNumberPicker : CompactWheelPicker {
     private var labels: Array<String>? = null
@@ -209,6 +250,16 @@ private class StrictNumberPicker : CompactWheelPicker {
         private set
     var displayedValuesAssigned: Int = 0
         private set
+    var wrapReenabledByRange: Int = 0
+        private set
+
+    override var wrapSelectorWheel: Boolean = false
+
+    private fun recomputeWrapLikeLegacyPicker() {
+        val wrap = maxValue - minValue > LEGACY_SELECTOR_WHEEL_ITEM_COUNT
+        if (wrap && !wrapSelectorWheel) wrapReenabledByRange += 1
+        wrapSelectorWheel = wrap
+    }
 
     override var minValue: Int = 0
         set(newMin) {
@@ -218,6 +269,7 @@ private class StrictNumberPicker : CompactWheelPicker {
             if (valueField < field) {
                 valueField = field
             }
+            recomputeWrapLikeLegacyPicker()
             validateCoverage()
         }
 
@@ -229,6 +281,7 @@ private class StrictNumberPicker : CompactWheelPicker {
             if (valueField > field) {
                 valueField = field
             }
+            recomputeWrapLikeLegacyPicker()
             validateCoverage()
         }
 
@@ -288,3 +341,6 @@ private class StrictNumberPicker : CompactWheelPicker {
         }
     }
 }
+
+/** NumberPicker.SELECTOR_WHEEL_ITEM_COUNT on API 26-28. */
+private const val LEGACY_SELECTOR_WHEEL_ITEM_COUNT = 3
