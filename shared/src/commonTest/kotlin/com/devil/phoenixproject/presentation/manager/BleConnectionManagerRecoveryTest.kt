@@ -6,9 +6,7 @@ import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -161,8 +159,9 @@ class BleConnectionManagerRecoveryTest {
             harness.manager.ensureConnection(onConnected = { staleConnectedCalls++ })
             runCurrent()
             oldScanStarted.await()
-            assertTrue(harness.manager.isAutoConnecting.value)
-            harness.manager.setConnectionError("stale connection error")
+            harness.bleErrors.tryEmit("stale connection error")
+            runCurrent()
+            assertEquals("stale connection error", harness.manager.connectionError.value)
 
             harness.manager.reconnectForWorkoutRecovery(
                 onConnected = {},
@@ -170,7 +169,6 @@ class BleConnectionManagerRecoveryTest {
             )
             runCurrent()
 
-            assertFalse(harness.manager.isAutoConnecting.value)
             assertNull(harness.manager.connectionError.value)
             assertEquals(0, staleConnectedCalls)
 
@@ -212,7 +210,6 @@ class BleConnectionManagerRecoveryTest {
             runCurrent()
 
             assertNull(harness.manager.connectionError.value)
-            assertFalse(harness.manager.isAutoConnecting.value)
 
             repository.fake.simulateConnect("Vee_Test")
             successfulScan.complete(Result.success(Unit))
@@ -236,11 +233,12 @@ class BleConnectionManagerRecoveryTest {
         private val profiles = FakeUserProfileRepository().apply { setActiveProfileForTest() }
         private val settings = SettingsManager(preferences, profiles, managerScope)
 
+        val bleErrors = MutableSharedFlow<String>(extraBufferCapacity = 1)
         val manager = BleConnectionManager(
             bleRepository = repository,
             settingsManager = settings,
             workoutStateProvider = InactiveWorkoutStateProvider,
-            bleErrorEvents = MutableSharedFlow(),
+            bleErrorEvents = bleErrors,
             scope = managerScope,
         )
 

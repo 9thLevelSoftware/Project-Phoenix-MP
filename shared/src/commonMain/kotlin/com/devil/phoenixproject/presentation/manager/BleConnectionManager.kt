@@ -56,9 +56,6 @@ class BleConnectionManager(
     // Delegate directly to the repository's scanned devices (populated by KableBleConnectionManager)
     val scannedDevices: StateFlow<List<ScannedDevice>> = bleRepository.scannedDevices
 
-    private val _isAutoConnecting = MutableStateFlow(false)
-    val isAutoConnecting: StateFlow<Boolean> = _isAutoConnecting.asStateFlow()
-
     private val _connectionError = MutableStateFlow<String?>(null)
     val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
 
@@ -221,24 +218,8 @@ class BleConnectionManager(
         _connectionError.value = null
     }
 
-    /**
-     * Set connection error from external code (e.g., workout BLE command failures).
-     * Used by workout code that catches BLE send exceptions.
-     */
-    fun setConnectionError(message: String) {
-        _connectionError.value = message
-    }
-
     fun dismissConnectionLostAlert() {
         _connectionLostDuringWorkout.value = false
-    }
-
-    fun cancelAutoConnecting() {
-        _isAutoConnecting.value = false
-        _connectionError.value = null
-        connectionJob?.cancel()
-        connectionJob = null
-        scope.launch { bleRepository.stopScanning() }
     }
 
     /**
@@ -268,7 +249,6 @@ class BleConnectionManager(
         if (staleAttemptInProgress) {
             Logger.d { "ensureConnection: Restarting in-progress connection with new callbacks" }
             _pendingConnectionCallback = null
-            _isAutoConnecting.value = false
         }
 
         // Start new connection
@@ -283,15 +263,12 @@ class BleConnectionManager(
                     bleRepository.stopScanning()
                     bleRepository.cancelConnection()
                 }
-                _isAutoConnecting.value = true
                 _connectionError.value = null
                 _pendingConnectionCallback = onConnected
 
                 // Simple scan-and-connect matching parent repo behavior
                 Logger.d { "ensureConnection: Starting scanAndConnect..." }
                 val result = bleRepository.scanAndConnect(timeoutMs = 30000L)
-
-                _isAutoConnecting.value = false
 
                 if (result.isSuccess) {
                     // Wait briefly for connection state to propagate
@@ -331,7 +308,6 @@ class BleConnectionManager(
                 Logger.e { "ensureConnection error: ${e.message}" }
                 bleRepository.cancelConnection()
                 _pendingConnectionCallback = null
-                _isAutoConnecting.value = false
                 _connectionError.value = "Error: ${e.message}"
                 onFailed()
             }
@@ -347,7 +323,6 @@ class BleConnectionManager(
             try {
                 connectionJob?.cancelAndJoin()
                 connectionJob = null
-                _isAutoConnecting.value = false
                 _pendingConnectionCallback = null
                 _connectionError.value = null
                 bleRepository.stopScanning()
@@ -377,7 +352,6 @@ class BleConnectionManager(
         connectionJob?.cancel()
         connectionJob = null
         _pendingConnectionCallback = null
-        _isAutoConnecting.value = false
         scope.launch {
             bleRepository.stopScanning()
             bleRepository.cancelConnection()

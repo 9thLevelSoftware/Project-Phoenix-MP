@@ -181,20 +181,6 @@ internal class RoutineResumeActionAuthority(
         }
         return loaded && isCurrent()
     }
-
-    fun mayCommitInMemory(handleStillCurrent: Boolean): Boolean = isCurrent() && handleStillCurrent
-
-    fun validateCurrentContext(
-        contextIsValid: Boolean,
-        onCurrentInvalid: () -> Unit,
-    ): Boolean {
-        if (!isCurrent()) return false
-        if (!contextIsValid) {
-            onCurrentInvalid()
-            return false
-        }
-        return true
-    }
 }
 
 internal class RoutineResumeOperationGate {
@@ -773,13 +759,6 @@ class MainViewModel(
     fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
 
     /**
-     * F-040: the session id of a completion whose commit failed, or null. The
-     * screen that shows it offers Retry and then drains it, so the offer is
-     * made exactly once even though the failure can outlive the screen.
-     */
-    val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
-
-    /**
      * The offer as a distinct value per publication, so a Retry that fails again is
      * shown again. The Retry snackbar keys on this.
      */
@@ -807,7 +786,6 @@ class MainViewModel(
     val currentSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentSetIndex
     val skippedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.skippedExercises
     val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.completedExercises
-    val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
     val selectedBodyweightVariants: StateFlow<Map<String, BodyweightVariantOption>> get() = workoutSessionManager.selectedBodyweightVariants
     val sessionBodyweightState: StateFlow<SessionBodyweightState> get() = workoutSessionManager.sessionBodyweightState
@@ -825,7 +803,6 @@ class MainViewModel(
 
     val connectionState: StateFlow<ConnectionState> get() = bleConnectionManager.connectionState
     val scannedDevices: StateFlow<List<ScannedDevice>> get() = bleConnectionManager.scannedDevices
-    val isAutoConnecting: StateFlow<Boolean> get() = bleConnectionManager.isAutoConnecting
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
     val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
