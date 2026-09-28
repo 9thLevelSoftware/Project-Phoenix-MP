@@ -96,8 +96,8 @@ fun GoTrueAuthResponse.toPortalAuthResponse(): PortalAuthResponse = PortalAuthRe
 // === Subscription Check DTO ===
 
 /**
- * Minimal DTO for checking subscription status from the subscriptions table.
- * Used by PortalApiClient.checkPremiumStatus() to determine if user has an active paid tier.
+ * Minimal DTO for one row of the subscriptions table (`tier`, `status`).
+ * [subscriptionEntitlement] derives both the premium flag and the active tier from these rows.
  */
 @Serializable
 data class SubscriptionCheckDto(
