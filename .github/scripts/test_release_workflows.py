@@ -77,6 +77,35 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40}.*?overwrite: true",
                 )
 
+    def test_internal_testflight_upload_does_not_probe_distribution(self) -> None:
+        # The internal workflow uploads with altool and stops. It has no
+        # distribution step, so the copied JWT poll (and its "will retry"
+        # warning) must not come back. The public workflow still uses that JWT.
+        internal = workflow("ios-testflight-internal.yml")
+        upload = re.search(
+            r"(?ms)^  upload:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+            internal,
+        )
+        self.assertIsNotNone(upload)
+        body = upload.group("body")
+        self.assertIn("xcrun altool --upload-package", body)
+        self.assertIn("AuthKey_${APPSTORE_API_KEY_ID}.p8", body)
+        for absent in (
+            "setup-python",
+            "pip install cryptography",
+            "generate_jwt",
+            "sleep 30",
+            "distribution step will retry",
+            "Verifying upload reached App Store Connect",
+        ):
+            self.assertNotIn(absent, internal)
+
+        public = workflow("ios-testflight.yml")
+        self.assertIn("pip install cryptography", public)
+        self.assertIn("generate_jwt", public)
+        self.assertIn("distribution step will retry", public)
+        self.assertIn("- name: Add build to TestFlight test group", public)
+
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:
         for name, release_job in (("release-all.yml", "create-release"),):
             with self.subTest(workflow=name):
