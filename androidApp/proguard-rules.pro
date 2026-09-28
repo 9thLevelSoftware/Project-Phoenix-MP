@@ -46,8 +46,8 @@
 -dontwarn io.ktor.**
 
 # ==================== OkHttp (Ktor Android engine) ====================
-# OkHttp's consumer rules are -dontwarn plus -keepnames for
-# PublicSuffixDatabase. The app does not load OkHttp by reflection.
+# okhttp-android 5.3.2 consumer rules are -dontwarn only. The app does not
+# load OkHttp by reflection.
 -dontwarn okhttp3.**
 
 # ==================== SQLDelight ====================
@@ -93,6 +93,11 @@
 # parsed with Enum.name / valueOf / enumValues (settings, CSV, history).
 -keepnames class com.devil.phoenixproject.domain.model.ProgramMode$*
 -keepclassmembernames enum com.devil.phoenixproject.domain.model.** {
+    public static <fields>;
+}
+# Startup diagnostics embed PreferenceMigrationFailureCode.name
+# ("PREFERENCES_${code.name}"). Other preference types are not name-stable.
+-keepclassmembernames enum com.devil.phoenixproject.data.preferences.PreferenceMigrationFailureCode {
     public static <fields>;
 }
 
