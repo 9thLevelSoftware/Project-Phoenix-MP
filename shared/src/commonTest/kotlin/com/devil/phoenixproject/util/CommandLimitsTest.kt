@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.PhoenixModel
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -71,10 +73,12 @@ class CommandLimitsTest {
         assertFalse(resolved.weightCapped)
         assertEquals(100f, resolved.weightPerCableKg)
         assertTrue(
-            WorkoutCommandValidator.validateLegacyWorkoutCommand(
-                programMode = com.devil.phoenixproject.domain.model.ProgramMode.OldSchool,
-                weightPerCableKg = lbAtCeiling,
-                targetReps = 8,
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = lbAtCeiling,
+                ),
                 maxWeightPerCableKg = CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG,
             ).isSuccess,
         )
