@@ -28,9 +28,11 @@ Every Gradle invocation configures `androidApp`, which fails without Supabase cr
 # Schema manifest check (also runs automatically before SQLDelight codegen)
 ./gradlew -Pskip.supabase.check=true :shared:validateSchemaManifest
 
-# iOS (macOS only; verified by the CI iOS workflows, not on Windows/Linux)
+# iOS (macOS only; verified by the CI iOS workflows, not on Windows/Linux).
+# Xcode links shared/build/bin/iosArm64/xcodeFramework for Debug and Release.
+# Local debug uses linkDebugFrameworkIosArm64 and install-xcode-framework.sh debug.
 ./gradlew -Pskip.supabase.check=true :shared:linkReleaseFrameworkIosArm64 :shared:generateComposeResClass :shared:iosArm64ProcessResources
-./gradlew -Pskip.supabase.check=true :shared:assembleXCFramework
+iosApp/install-xcode-framework.sh release
 ```
 
 There is no `:shared:testDebugUnitTest`. Gradle runs can modify `gradle.properties` or create `gradle/gradle-daemon-jvm.properties`; don't commit either.
