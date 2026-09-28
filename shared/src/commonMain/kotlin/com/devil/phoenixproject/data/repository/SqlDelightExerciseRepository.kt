@@ -197,7 +197,9 @@ class SqlDelightExerciseRepository(
                 one_rep_max_kg = null,
                 mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
                 // Custom exercises carry no explicit flag; classification derives from
-                // their equipment token (HANDLES/BODYWEIGHT set by CreateExerciseDialog).
+                // their equipment token. CreateExerciseDialog writes one accessory token
+                // via CustomExerciseEquipment (HANDLES / SHORT_BAR / BAR / ROPE / BELT /
+                // STRAPS) for cable rows and BODYWEIGHT otherwise (issue #970).
                 isBodyweight = null,
             )
 

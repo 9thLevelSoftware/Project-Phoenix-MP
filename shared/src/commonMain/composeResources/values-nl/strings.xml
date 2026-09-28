@@ -237,6 +237,7 @@
     <string name="exercise_name_label">Oefening naam *</string>
     <string name="label_cables">Kabels</string>
     <string name="label_bodyweight">Lichaamsgewicht</string>
+    <string name="label_equipment">Apparatuur</string>
     <string name="delete_exercise_title">Oefening verwijderen?</string>
     <string name="delete_exercise_message">Weet je zeker dat je \"%1$s\" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.</string>
 

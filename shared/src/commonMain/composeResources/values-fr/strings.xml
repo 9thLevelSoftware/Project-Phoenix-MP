@@ -236,6 +236,7 @@
     <string name="exercise_name_label">Nom de l'exercice *</string>
     <string name="label_cables">Câbles</string>
     <string name="label_bodyweight">Poids corporel</string>
+    <string name="label_equipment">Équipement</string>
     <string name="delete_exercise_title">Supprimer l'exercice ?</string>
     <string name="delete_exercise_message">Êtes-vous sûr de vouloir supprimer \"%1$s\" ? Cette action est irréversible.</string>
 

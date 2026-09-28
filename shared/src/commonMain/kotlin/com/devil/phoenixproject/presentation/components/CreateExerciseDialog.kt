@@ -32,6 +32,7 @@ import projectphoenix.shared.generated.resources.Res
  * - Exercise name (required)
  * - Muscle group (required)
  * - Resistance type (Cables or Bodyweight)
+ * - Equipment accessory (Cables only; issue #970, via CustomExerciseEquipment)
  * - Cable configuration (defaults to DOUBLE)
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,8 +57,28 @@ fun CreateExerciseDialog(
     var usesCables by remember(existingExercise) {
         mutableStateOf(existingExercise?.let { !it.isBodyweight } ?: true)
     }
+    // Issue #970: equipment preselect + preserved-unknown-token state. The listed
+    // option token (explicit pick or known preselect) and the preserved unrecognized
+    // existing token (BARBELL, CABLE, comma lists, ...) are tracked separately so a
+    // save-without-change never coerces an unknown token to HANDLES.
+    val equipmentPreselect = remember(existingExercise) { preselectCustomEquipment(existingExercise) }
+    var selectedEquipmentToken by remember(existingExercise) {
+        mutableStateOf(equipmentPreselect.selectedToken.takeIf { equipmentPreselect.isListedOption })
+    }
+    var preservedEquipmentToken by remember(existingExercise) {
+        mutableStateOf(
+            equipmentPreselect.selectedToken.takeIf {
+                !equipmentPreselect.isListedOption && equipmentPreselect.usesCables
+            },
+        )
+    }
+    val selectedOrPreservedEquipmentToken = selectedEquipmentToken ?: preservedEquipmentToken ?: ""
+    val equipmentFieldLabel = labelForCustomEquipmentToken(
+        selectedOrPreservedEquipmentToken.ifBlank { "HANDLES" },
+    )
 
     var showMuscleGroupDropdown by remember { mutableStateOf(false) }
+    var showEquipmentDropdown by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
@@ -212,6 +233,58 @@ fun CreateExerciseDialog(
                         )
                     }
 
+                    // Equipment (issue #970): single-select accessory dropdown, shown only
+                    // for Cables. Same outlined-field + overlay + DropdownMenu pattern as the
+                    // Muscle Group dropdown; BODYWEIGHT hides it and is saved instead.
+                    if (usesCables) {
+                        Spacer(modifier = Modifier.height(Spacing.medium))
+
+                        Box {
+                            OutlinedTextField(
+                                value = equipmentFieldLabel,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        stringResource(Res.string.label_equipment),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                                ),
+                            )
+
+                            // Transparent clickable overlay
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable { showEquipmentDropdown = true },
+                            )
+
+                            DropdownMenu(
+                                expanded = showEquipmentDropdown,
+                                onDismissRequest = { showEquipmentDropdown = false },
+                            ) {
+                                customCableEquipmentOptions().forEach { (token, label) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = {
+                                            selectedEquipmentToken = token
+                                            preservedEquipmentToken = null
+                                            showEquipmentDropdown = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.large))
+                    }
+
                     Spacer(modifier = Modifier.height(Spacing.large))
 
                     // Buttons
@@ -251,7 +324,13 @@ fun CreateExerciseDialog(
                                 if (name.isBlank()) {
                                     showError = true
                                 } else {
-                                    val equipmentValue = if (usesCables) "HANDLES" else "BODYWEIGHT"
+                                    // Issue #970: BODYWEIGHT when Bodyweight is selected; otherwise
+                                    // the picked accessory token, or the preserved unrecognized
+                                    // existing token on save-without-change (never coerced).
+                                    val equipmentValue = equipmentTokenForCustomSave(
+                                        usesCables = usesCables,
+                                        selectedOrPreservedToken = selectedOrPreservedEquipmentToken,
+                                    )
                                     val exercise = Exercise(
                                         id = existingExercise?.id,
                                         name = name.trim(),

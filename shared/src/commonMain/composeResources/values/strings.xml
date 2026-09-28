@@ -276,6 +276,7 @@
     <string name="exercise_name_label">Exercise Name *</string>
     <string name="label_cables">Cables</string>
     <string name="label_bodyweight">Bodyweight</string>
+    <string name="label_equipment">Equipment</string>
     <string name="delete_exercise_title">Delete Exercise?</string>
     <string name="delete_exercise_message">Are you sure you want to delete \"%1$s\"? This action cannot be undone.</string>
 

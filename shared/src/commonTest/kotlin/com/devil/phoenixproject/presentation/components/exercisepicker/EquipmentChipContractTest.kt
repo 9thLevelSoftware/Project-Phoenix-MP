@@ -45,9 +45,48 @@ class EquipmentChipContractTest {
 
     @Test
     fun deadChipsFromTheIssue883AuditAreRetired() {
-        listOf("Short Bar", "Rope", "Ankle Strap", "Bench").forEach { chip ->
-            assertFalse(chip in EQUIPMENT_FILTER_CHIPS, "'$chip' matches no producible row and must stay retired")
+        // Issue #970 restored Short Bar / Rope / Ankle Strap: the custom-exercise dialog can
+        // now produce SHORT_BAR / ROPE / STRAPS via CustomExerciseEquipment. Only "Bench"
+        // remains dead (no producer for BENCH) and must stay retired.
+        assertFalse("Bench" in EQUIPMENT_FILTER_CHIPS, "'Bench' matches no producible row and must stay retired")
+    }
+
+    @Test
+    fun issue970RestoredChipsAreAdvertisedAndMapToDatabaseTokens() {
+        for (chip in listOf("Short Bar", "Rope", "Ankle Strap")) {
+            assertTrue(chip in EQUIPMENT_FILTER_CHIPS, "'$chip' must be advertised since the dialog can produce it")
+            assertTrue(
+                getEquipmentDatabaseValues(chip).isNotEmpty(),
+                "restored chip '$chip' has no database tokens and would be a dead filter",
+            )
         }
+    }
+
+    @Test
+    fun shortBarChipMatchesCustomShortBarRowsOnly() {
+        val shortBarCustom = Exercise(
+            id = "custom_short_bar",
+            name = "Custom Press",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest",
+            equipment = "SHORT_BAR",
+            isCustom = true,
+        )
+        val handlesCustom = Exercise(
+            id = "custom_handles",
+            name = "Custom Curl",
+            muscleGroup = "Arms",
+            muscleGroups = "Arms",
+            equipment = "HANDLES",
+            isCustom = true,
+        )
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(shortBarCustom, handlesCustom),
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Short Bar")),
+        )
+
+        assertEquals(listOf("custom_short_bar"), result.map { it.id })
     }
 
     @Test

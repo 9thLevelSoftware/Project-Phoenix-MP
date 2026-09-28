@@ -236,6 +236,7 @@
     <string name="exercise_name_label">Übungsname *</string>
     <string name="label_cables">Kabel</string>
     <string name="label_bodyweight">Körpergewicht</string>
+    <string name="label_equipment">Gerät</string>
     <string name="delete_exercise_title">Übung löschen?</string>
     <string name="delete_exercise_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.</string>
 
