@@ -1042,15 +1042,6 @@ class RoutineFlowManager(
         )
     }
 
-    fun loadRoutineById(routineId: String) {
-        val routine = coordinator._routines.value.find { it.id == routineId }
-        if (routine != null) {
-            lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
-            clearCycleContext()
-            loadRoutine(routine)
-        }
-    }
-
     /**
      * Enter routine overview mode.
      */

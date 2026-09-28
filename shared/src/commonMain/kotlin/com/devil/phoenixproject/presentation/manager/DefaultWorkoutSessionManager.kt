@@ -867,7 +867,6 @@ class DefaultWorkoutSessionManager(
         cycleDayNumber = null,
         publicationStillCurrent = publicationStillCurrent,
     )
-    fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = routineFlowManager.enterRoutineOverview(routine, modifier)
 
@@ -940,8 +939,6 @@ class DefaultWorkoutSessionManager(
     // ===== Workout Lifecycle — delegated to ActiveSessionEngine =====
 
     fun resetForNewWorkout() = activeSessionEngine.resetForNewWorkout()
-    fun recaptureLoadBaseline() = activeSessionEngine.recaptureLoadBaseline()
-    fun resetLoadBaseline() = activeSessionEngine.resetLoadBaseline()
     fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
     fun setWorkoutParametersInternal(params: WorkoutParameters) = activeSessionEngine.setWorkoutParametersInternal(params)
     fun updateActiveRackSelection(itemIds: List<String>) = activeSessionEngine.updateActiveRackSelection(itemIds)
@@ -1006,9 +1003,7 @@ class DefaultWorkoutSessionManager(
     fun disableHandleDetection() = activeSessionEngine.disableHandleDetection()
     fun prepareForJustLift() = activeSessionEngine.prepareForJustLift()
     suspend fun getJustLiftDefaults(): JustLiftDefaults = activeSessionEngine.getJustLiftDefaults()
-    fun saveJustLiftDefaults(defaults: JustLiftDefaults) = activeSessionEngine.saveJustLiftDefaults(defaults)
     suspend fun getSingleExerciseDefaults(exerciseId: String) = activeSessionEngine.getSingleExerciseDefaults(exerciseId)
-    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) = activeSessionEngine.saveSingleExerciseDefaults(defaults)
 
     // ===== Training Cycles — delegated to ActiveSessionEngine =====
 
