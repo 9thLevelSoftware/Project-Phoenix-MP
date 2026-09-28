@@ -104,13 +104,24 @@ If you get "No such module 'shared'" error:
 
 ### Koin Initialization and Migrations
 
-The app initializes Koin and runs migrations in `PhoenixAppEntry.init()`:
+`PhoenixAppEntry.init()` in `PhoenixApp/PhoenixApp/PhoenixApp.swift` starts Koin before the SwiftUI scene is shown:
+
 ```swift
-try KoinInitIosKt.doInitKoin()   // declared in shared/iosMain/.../KoinInitIos.kt (@Throws)
-KoinInitKt.runMigrations()        // declared in shared/commonMain/.../KoinInit.kt
+try KoinInitIosKt.doInitKoin()
 ```
 
-This must be called before any Compose UI is rendered. Migrations run automatically on app startup, matching Android behavior.
+`doInitKoin()` is declared in `shared/src/iosMain/kotlin/com/devil/phoenixproject/di/KoinInitIos.kt` with `@Throws(Throwable::class)`, so the Swift `try` receives initialization failures. It delegates to `doInitKoinInternal()` in `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`, which calls `initKoin()`.
+
+Required startup work runs later, inside the Compose host. `ContentView` (`PhoenixApp/PhoenixApp/ContentView.swift`) creates the UI with `MainViewControllerKt.MainViewController()`. `MainViewController()` in `shared/src/iosMain/kotlin/com/devil/phoenixproject/MainViewController.kt` builds a `ComposeUIViewController` whose content is `IosAppHost()`.
+
+`IosAppHost` (`shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt`) then:
+
+1. Draws `StartupPendingSurface()` (the splash) while startup is still unresolved.
+2. On `Dispatchers.Default`, `prepareAppHostDependencies` resolves `PersistedFileStartupPrerequisite` and `MigrationManager`, then calls `runRequiredMigrations()` and `awaitRequiredMigrations()`.
+3. On failure, shows `PersistedFileStartupFailureScreen`, which can retry.
+4. On success, shows `RequireBlePermissions` around `IosAppContent`.
+
+Android follows the same gate in `AndroidAppHost`: `runRequiredMigrations()` and `awaitRequiredMigrations()` finish before the feature UI.
 
 ### BLE Permission Handling
 

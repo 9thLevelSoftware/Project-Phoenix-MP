@@ -132,13 +132,6 @@ class PortalAuthRepository private constructor(
         }
     }
 
-    override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> {
-        val displayName = email.substringBefore("@")
-        val response = apiClient.signUp(email, password, displayName)
-            .getOrElse { return Result.failure(it) }
-        return commitAuthenticatedIdentity(response)
-    }
-
     override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> {
         val response = apiClient.signIn(email, password).getOrElse { return Result.failure(it) }
         return commitAuthenticatedIdentity(response)

@@ -195,9 +195,6 @@ internal class PushPayloadReconcileReport {
         collapseItems += PushPayloadCollapse(table, identity, duplicatesRemoved)
     }
 
-    /** Tables with at least one held-back conflict, in first-seen order. */
-    fun heldBackTables(): List<String> = conflictItems.map { it.table }.distinct()
-
     /**
      * User-facing summary: names every offending table and how many rows were
      * held back. Conflicts stay visible on every sync until they are resolved

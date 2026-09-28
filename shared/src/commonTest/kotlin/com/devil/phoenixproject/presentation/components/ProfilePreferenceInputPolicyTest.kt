@@ -76,14 +76,26 @@ class ProfilePreferenceInputPolicyTest {
             dominatrixModeActive = true,
         )
 
-        listOf(
-            vbtAfterEnabledSelection(unlockedAndActive, false),
-            vbtAfterVerbalEncouragementSelection(unlockedAndActive, false),
-            vbtAfterVulgarModeSelection(unlockedAndActive, false),
-        ).forEach { updated ->
-            assertEquals(true, updated.dominatrixModeUnlocked)
-            assertEquals(false, updated.dominatrixModeActive)
-        }
+        val vbtOff = vbtAfterEnabledSelection(unlockedAndActive, false)
+        assertEquals(false, vbtOff.enabled)
+        assertEquals(true, vbtOff.verbalEncouragementEnabled)
+        assertEquals(true, vbtOff.vulgarModeEnabled)
+        assertEquals(true, vbtOff.dominatrixModeUnlocked)
+        assertEquals(false, vbtOff.dominatrixModeActive)
+
+        val verbalOff = vbtAfterVerbalEncouragementSelection(unlockedAndActive, false)
+        assertEquals(true, verbalOff.enabled)
+        assertEquals(false, verbalOff.verbalEncouragementEnabled)
+        assertEquals(false, verbalOff.vulgarModeEnabled)
+        assertEquals(true, verbalOff.dominatrixModeUnlocked)
+        assertEquals(false, verbalOff.dominatrixModeActive)
+
+        val vulgarOff = vbtAfterVulgarModeSelection(unlockedAndActive, false)
+        assertEquals(true, vulgarOff.enabled)
+        assertEquals(true, vulgarOff.verbalEncouragementEnabled)
+        assertEquals(false, vulgarOff.vulgarModeEnabled)
+        assertEquals(true, vulgarOff.dominatrixModeUnlocked)
+        assertEquals(false, vulgarOff.dominatrixModeActive)
     }
 
     @Test

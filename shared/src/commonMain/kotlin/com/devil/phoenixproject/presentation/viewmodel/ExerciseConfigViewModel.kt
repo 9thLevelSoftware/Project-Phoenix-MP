@@ -96,10 +96,6 @@ class ExerciseConfigViewModel constructor(
     private val _routineScalingBaseline = MutableStateFlow<RoutineScalingBaseline?>(null)
     val routineScalingBaseline: StateFlow<RoutineScalingBaseline?> = _routineScalingBaseline.asStateFlow()
 
-    // Convenience accessor for just the PR weight (useful for PRIndicator component)
-    val currentExercisePRWeight: Float?
-        get() = _currentExercisePR.value?.weightPerCableKg
-
     private val _exerciseType = MutableStateFlow(ExerciseType.STANDARD)
     val exerciseType: StateFlow<ExerciseType> = _exerciseType.asStateFlow()
 
@@ -553,10 +549,6 @@ class ExerciseConfigViewModel constructor(
         }
     }
 
-    fun onPRTypeForScalingChange(prType: PRType) {
-        _prTypeForScaling.value = prType
-    }
-
     // Issue #517: explicit 3-way scaling basis selector
     fun onScalingBasisChange(basis: ScalingBasis) {
         _scalingBasis.value = basis
@@ -642,19 +634,6 @@ class ExerciseConfigViewModel constructor(
             WarmupSet(reps = 8, percentOfWorking = 70),
             WarmupSet(reps = 4, percentOfWorking = 85),
         )
-    }
-
-    /**
-     * Calculate the resolved preview weight for the currently-selected scaling basis.
-     * Returns null if no baseline is available for the selected basis, or if percentage
-     * scaling is disabled.
-     */
-    fun calculateResolvedWeight(): Float? {
-        if (!_usePercentOfPR.value) return null
-        val baseline = baselineKgForCurrentBasis() ?: return null
-        val percent = _weightPercentOfPR.value
-        if (percent <= 0) return null
-        return (baseline * percent / 100f).roundToHalfKg()
     }
 
     private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
@@ -838,9 +817,6 @@ class ExerciseConfigViewModel constructor(
             if (set.id == setId) set.copy(repeatCount = coerced) else set
         }
     }
-
-    val totalExpandedSetCount: Int
-        get() = _sets.value.sumOf { it.repeatCount.coerceIn(1, 20) }
 
     fun onSave(onSaveCallback: (RoutineExercise) -> Unit) {
         if (_sets.value.isEmpty() || !_isDropSetMinWeightValid.value) return

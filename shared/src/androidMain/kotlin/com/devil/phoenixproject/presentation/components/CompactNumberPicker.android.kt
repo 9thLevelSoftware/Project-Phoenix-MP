@@ -101,21 +101,14 @@ actual fun CompactNumberPicker(
             AndroidView(
                 factory = { context ->
                     NumberPicker(context).apply {
-                        minValue = 0
-                        maxValue = values.size - 1
-                        this.value = currentIndex.coerceIn(0, values.size - 1)
-                        wrapSelectorWheel = false
-
-                        // Format displayed values with precision matching the picker step.
-                        val displayValues = values.map {
-                            val formatted = formatCompactNumberPickerValue(it, step)
-                            if (suffix.isNotEmpty()) "$formatted $suffix" else formatted
-                        }.toTypedArray()
-                        this.displayedValues = displayValues
-
-                        setOnValueChangedListener { _, _, newIndex ->
-                            onValueChange(values[newIndex])
-                        }
+                        applyCompactNumberPickerState(
+                            picker = NumberPickerCompactWheel(this),
+                            values = values,
+                            step = step,
+                            suffix = suffix,
+                            selectedIndex = currentIndex,
+                            onValueChange = onValueChange,
+                        )
 
                         // Set text color for all Android versions
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -163,10 +156,16 @@ actual fun CompactNumberPicker(
                     }
                 },
                 update = { picker ->
-                    // Update picker when value changes externally
-                    if (picker.value != currentIndex) {
-                        picker.value = currentIndex.coerceIn(0, values.size - 1)
-                    }
+                    // Unit, increment, and suffix changes reuse this view. Refresh labels,
+                    // range, and the listener here; factory alone keeps the first unit's wheel.
+                    applyCompactNumberPickerState(
+                        picker = NumberPickerCompactWheel(picker),
+                        values = values,
+                        step = step,
+                        suffix = suffix,
+                        selectedIndex = currentIndex,
+                        onValueChange = onValueChange,
+                    )
 
                     // Update text color on every recomposition
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -262,4 +261,124 @@ actual fun CompactNumberPicker(
         step = 1.0f,
         compactWheel = false,
     )
+}
+
+/**
+ * Android [NumberPicker] surface used by [applyCompactNumberPickerState].
+ * Tests supply a strict stand-in that enforces the same length and index rules.
+ */
+internal interface CompactWheelPicker {
+    var displayedValues: Array<String>?
+    var minValue: Int
+    var maxValue: Int
+    var value: Int
+    var wrapSelectorWheel: Boolean
+    fun setOnIndexSelected(listener: (Int) -> Unit)
+}
+
+/**
+ * Installs labels, range, selection, and the value listener on an existing wheel.
+ *
+ * NumberPicker indexes the installed label array while applying a new max, and the
+ * selected index has to stay inside that max. A longer list (finer step, or a unit
+ * change) therefore clears the old labels before the range grows, installs the new
+ * labels, then moves the selection. The listener is replaced on every call so a
+ * user scroll reads the current value list.
+ *
+ * When the labels and range are already current, only the listener and selected
+ * index are updated.
+ *
+ * Wrapping is switched off after the range is applied. On API 26-28, NumberPicker's
+ * setMinValue/setMaxValue recompute wrapSelectorWheel from the range size and discard an
+ * earlier setWrapSelectorWheel(false), so the weight wheel would otherwise wrap from its
+ * minimum straight to its maximum.
+ */
+internal fun applyCompactNumberPickerState(
+    picker: CompactWheelPicker,
+    values: List<Float>,
+    step: Float,
+    suffix: String,
+    selectedIndex: Int,
+    onValueChange: (Float) -> Unit,
+) {
+    if (values.isEmpty()) return
+
+    val displayValues = compactNumberPickerLabels(values, step, suffix)
+    val newMax = values.lastIndex
+    val safeIndex = selectedIndex.coerceIn(0, newMax)
+    val installed = picker.displayedValues
+    val rangeMatchesInstalled = installed != null &&
+        installed.size == displayValues.size &&
+        picker.minValue == 0 &&
+        picker.maxValue == newMax
+    if (installed != null && !rangeMatchesInstalled) {
+        picker.displayedValues = null
+    }
+    if (picker.minValue != 0) {
+        picker.minValue = 0
+    }
+    if (picker.maxValue != newMax) {
+        picker.maxValue = newMax
+    }
+    if (picker.displayedValues?.contentEquals(displayValues) != true) {
+        picker.displayedValues = displayValues
+    }
+    if (picker.wrapSelectorWheel) {
+        picker.wrapSelectorWheel = false
+    }
+    picker.setOnIndexSelected { index ->
+        values.getOrNull(index)?.let(onValueChange)
+    }
+    if (picker.value != safeIndex) {
+        picker.value = safeIndex
+    }
+}
+
+internal fun compactNumberPickerLabels(
+    values: List<Float>,
+    step: Float,
+    suffix: String,
+): Array<String> = Array(values.size) { index ->
+    val formatted = formatCompactNumberPickerValue(values[index], step)
+    if (suffix.isNotEmpty()) "$formatted $suffix" else formatted
+}
+
+private class NumberPickerCompactWheel(
+    private val picker: NumberPicker,
+) : CompactWheelPicker {
+    override var displayedValues: Array<String>?
+        get() = picker.displayedValues
+        set(value) {
+            picker.displayedValues = value
+        }
+
+    override var minValue: Int
+        get() = picker.minValue
+        set(value) {
+            picker.minValue = value
+        }
+
+    override var maxValue: Int
+        get() = picker.maxValue
+        set(value) {
+            picker.maxValue = value
+        }
+
+    override var value: Int
+        get() = picker.value
+        set(value) {
+            picker.value = value
+        }
+
+    override var wrapSelectorWheel: Boolean
+        get() = picker.wrapSelectorWheel
+        set(value) {
+            picker.wrapSelectorWheel = value
+        }
+
+    override fun setOnIndexSelected(listener: (Int) -> Unit) {
+        picker.setOnValueChangedListener { _, _, newIndex ->
+            listener(newIndex)
+        }
+    }
 }

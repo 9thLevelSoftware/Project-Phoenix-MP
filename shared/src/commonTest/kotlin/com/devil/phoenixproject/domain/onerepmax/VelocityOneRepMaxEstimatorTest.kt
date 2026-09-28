@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.domain.onerepmax
 
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
+import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,6 +24,31 @@ class VelocityOneRepMaxEstimatorTest {
         assertNotNull(result)
         assertTrue(result.passedQualityGate, "3 clean points on a line should pass")
         assertTrue(result.estimatedPerCableKg in 95f..105f, "expected ~100kg, got ${result.estimatedPerCableKg}")
+    }
+
+    @Test fun `per-cable extrapolation between the two ceilings is clamped to the per-cable max`() {
+        // 70 @ 0.80 m/s, 90 @ 0.60, 110 @ 0.40 → slope -0.01, intercept 1.50.
+        // At 0.30 m/s: (0.30 - 1.50) / -0.01 = 120 kg per cable.
+        // 120 is above the per-cable max (110) and below the machine total (220),
+        // so a total-machine clamp would have kept it.
+        val result = estimator.estimate(
+            points = listOf(point(70f, 800f), point(90f, 600f), point(110f, 400f)),
+            mvtMs = 0.30f,
+        )
+        assertNotNull(result)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result.estimatedPerCableKg, 0.1f)
+        assertTrue(result.passedQualityGate, "a ceiling-capped per-cable estimate is still a usable baseline")
+    }
+
+    @Test fun `per-cable extrapolation past the machine total clamps to the per-cable max`() {
+        // Gentle slope: 90 @ 1.00, 95 @ 0.99, 100 @ 0.98 → at 0.30 m/s the line is ~440 kg.
+        // That used to be stored as the 220 kg machine total, which is not a per-cable load.
+        val result = estimator.estimate(
+            points = listOf(point(90f, 1000f), point(95f, 990f), point(100f, 980f)),
+            mvtMs = 0.30f,
+        )
+        assertNotNull(result)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result.estimatedPerCableKg, 0.1f)
     }
 
     @Test fun `single distinct load returns null`() {

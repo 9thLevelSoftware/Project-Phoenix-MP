@@ -22,7 +22,6 @@ data class DropSetCandidateUiState(
 )
 
 enum class DropSetRetryWaitState {
-    SAVING_FAILED_ATTEMPT,
     PREPARING_TRAINER,
     READY_TO_RETRY,
 }
@@ -52,15 +51,6 @@ data class DropSetOfferSelection(
     val offerId: String,
     val percentage: DropPercentage? = null,
 )
-
-fun selectionForDropSetOffer(
-    previous: DropSetOfferSelection?,
-    offerId: String,
-): DropSetOfferSelection = if (previous?.offerId == offerId) {
-    previous
-} else {
-    DropSetOfferSelection(offerId)
-}
 
 fun canRetryDropSet(
     offer: DropSetOfferUiState.Unresolved,

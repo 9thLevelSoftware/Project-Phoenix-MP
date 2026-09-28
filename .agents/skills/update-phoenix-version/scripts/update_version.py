@@ -40,11 +40,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Update Project Phoenix Android, iOS, and Settings app version metadata.",
     )
-    parser.add_argument("--version", required=True, help="Marketing/app version, for example 0.10.0.")
+    parser.add_argument(
+        "--version",
+        required=True,
+        help=(
+            "Marketing/app version in numeric x.y.z form (sample shape 1.2.3). "
+            "Read the current versionName (checked-in 1.0.3) and pass the bumped value."
+        ),
+    )
     parser.add_argument(
         "--android-code",
         type=int,
-        help="Optional Android default versionCode for androidApp/build.gradle.kts.",
+        help=(
+            "Optional Android default versionCode for androidApp/build.gradle.kts. "
+            "Checked-in default is 8; pass the next code when that default must move."
+        ),
     )
     parser.add_argument(
         "--ios-build",
@@ -62,7 +72,7 @@ def parse_args() -> argparse.Namespace:
 
 def validate_args(args: argparse.Namespace) -> None:
     if not VERSION_PATTERN.fullmatch(args.version):
-        raise ValueError("--version must use numeric x.y.z format, for example 0.10.0.")
+        raise ValueError("--version must use numeric x.y.z format, for example 1.2.3.")
 
     if args.android_code is not None and not (ANDROID_CODE_MIN <= args.android_code <= ANDROID_CODE_MAX):
         raise ValueError(f"--android-code must be between {ANDROID_CODE_MIN} and {ANDROID_CODE_MAX}.")

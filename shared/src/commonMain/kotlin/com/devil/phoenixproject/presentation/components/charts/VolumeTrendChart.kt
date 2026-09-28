@@ -41,6 +41,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.DataColors
+import com.devil.phoenixproject.util.UnitConverter
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
@@ -78,7 +79,6 @@ enum class HistoryTimePeriod(val label: String) {
 fun VolumeTrendChart(
     workoutSessions: List<WorkoutSession>,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
     modifier: Modifier = Modifier,
 ) {
     if (workoutSessions.isEmpty()) {
@@ -331,7 +331,7 @@ private fun processVolumeData(sessions: List<WorkoutSession>, weightUnit: Weight
         }.toFloat()
 
         val displayVolume = if (weightUnit == WeightUnit.LB) {
-            totalVolume * 2.20462f
+            UnitConverter.kgToLb(totalVolume)
         } else {
             totalVolume
         }

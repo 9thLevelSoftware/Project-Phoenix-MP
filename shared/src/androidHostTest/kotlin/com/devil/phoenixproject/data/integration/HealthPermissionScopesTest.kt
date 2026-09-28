@@ -77,20 +77,4 @@ class HealthPermissionScopesTest {
             "Permission prompt must still request the body-weight read permission so new users can opt into body-weight sync from the same dialog.",
         )
     }
-
-    @Test
-    fun workoutExportRequestedHealthPermissions_doesNotIncludeBodyWeightRead() {
-        // The workout-export retry path only requests workout write + optional
-        // calories. Sneaking body-weight read into this set would degrade the
-        // permission prompt with an unrelated permission for users who never
-        // enabled the body-weight feature.
-        assertFalse(
-            workoutExportRequestedHealthPermissions.contains(weightReadPermission),
-            "workoutExportRequestedHealthPermissions must NOT request body-weight read; onboarding only needs workout-export permissions.",
-        )
-        assertTrue(
-            workoutExportRequestedHealthPermissions.contains(workoutWritePermission),
-            "workoutExportRequestedHealthPermissions must request the workout-write permission.",
-        )
-    }
 }

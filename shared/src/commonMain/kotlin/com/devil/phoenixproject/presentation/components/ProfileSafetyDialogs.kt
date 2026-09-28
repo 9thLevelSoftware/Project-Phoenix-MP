@@ -246,32 +246,19 @@ private fun CalibrationProgress(detectionCount: Int) {
 
 @Composable
 private fun AdultModeDialogCard(
-    presentation: AdultModePresentation,
     content: @Composable () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
-            containerColor = adultModeContainerColor(presentation.containerTone),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
         shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, adultModeBorderColor(presentation)),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         content()
     }
-}
-
-@Composable
-private fun adultModeContainerColor(tone: AdultModeDialogTone): Color = when (tone) {
-    AdultModeDialogTone.ThemeSurface -> MaterialTheme.colorScheme.surfaceContainerHighest
-}
-
-@Composable
-private fun adultModeBorderColor(presentation: AdultModePresentation): Color = when {
-    presentation.usesBespokePinkAccent -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
-    presentation.usesBrandAccent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-    else -> MaterialTheme.colorScheme.outlineVariant
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -283,8 +270,6 @@ fun AdultsOnlyConfirmDialog(
     onDecline: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val presentation = AdultModePresentation.adultsOnlyConfirmation()
-
     BasicAlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
         properties = DialogProperties(
@@ -292,7 +277,7 @@ fun AdultsOnlyConfirmDialog(
             dismissOnClickOutside = !isSubmitting,
         ),
     ) {
-        AdultModeDialogCard(presentation = presentation) {
+        AdultModeDialogCard {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(Spacing.large),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
@@ -394,10 +379,9 @@ fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
         ),
         label = "dominatrix_dialog_scale",
     )
-    val presentation = AdultModePresentation.dominatrixUnlock()
 
     BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.scale(scale)) {
-        AdultModeDialogCard(presentation) {
+        AdultModeDialogCard {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(Spacing.large),
                 horizontalAlignment = Alignment.CenterHorizontally,

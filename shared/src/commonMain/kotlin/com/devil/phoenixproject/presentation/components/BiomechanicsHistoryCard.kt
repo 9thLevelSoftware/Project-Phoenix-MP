@@ -268,21 +268,17 @@ private fun VelocityZoneChip(zone: BiomechanicsVelocityZone) {
 /**
  * Per-rep biomechanics detail list, shown when the user expands from the summary.
  *
- * Each rep row shows MCV, velocity zone, velocity loss %, and optionally asymmetry.
+ * Each rep row shows MCV, velocity zone, velocity loss %, and asymmetry.
  * Tapping a rep row expands to show its force curve sparkline with sticking point
  * and strength profile annotations.
  *
  * @param repResults List of per-rep biomechanics results (lazy-loaded from DB)
  * @param isLoading True while data is being fetched
- * @param showAsymmetry True for Elite tier users (controls asymmetry column visibility)
- * @param showForceCurves True for Phoenix+ tier users (controls force curve visibility)
  */
 @Composable
 fun RepBiomechanicsDetail(
     repResults: List<BiomechanicsRepResult>,
     isLoading: Boolean,
-    showAsymmetry: Boolean = true,
-    showForceCurves: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -304,11 +300,7 @@ fun RepBiomechanicsDetail(
             )
         } else {
             repResults.forEach { rep ->
-                RepBiomechanicsRow(
-                    rep = rep,
-                    showAsymmetry = showAsymmetry,
-                    showForceCurves = showForceCurves,
-                )
+                RepBiomechanicsRow(rep = rep)
             }
         }
     }
@@ -318,7 +310,7 @@ fun RepBiomechanicsDetail(
  * Single rep row with expandable force curve sparkline.
  */
 @Composable
-private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolean, showForceCurves: Boolean) {
+private fun RepBiomechanicsRow(rep: BiomechanicsRepResult) {
     var isExpanded by remember { mutableStateOf(false) }
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val zone = rep.velocity.zone
@@ -378,83 +370,75 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolea
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                     }
 
-                    if (showForceCurves) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .rotate(if (isExpanded) 180f else 0f),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(if (isExpanded) 180f else 0f),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            val sideLabel = when (rep.asymmetry.dominantSide) {
+                "A" -> "Cable A"
+                "B" -> "Cable B"
+                "BALANCED" -> "Balanced"
+                else -> rep.asymmetry.dominantSide
+            }
+            Text(
+                "Asymmetry: ${KmpUtils.formatFloat(
+                    rep.asymmetry.asymmetryPercent,
+                    1,
+                )}% ($sideLabel)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+                exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+            ) {
+                Column(modifier = Modifier.padding(top = Spacing.small)) {
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    // Force curve sparkline (reuse existing ForceSparkline)
+                    if (rep.forceCurve.normalizedForceN.isNotEmpty()) {
+                        ForceSparkline(
+                            forceData = rep.forceCurve.normalizedForceN,
+                            peakIndex = null, // Normalized curve, no single peak index
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                }
-            }
 
-            // Asymmetry row (Elite only)
-            if (showAsymmetry) {
-                Spacer(modifier = Modifier.height(2.dp))
-                val sideLabel = when (rep.asymmetry.dominantSide) {
-                    "A" -> "Cable A"
-                    "B" -> "Cable B"
-                    "BALANCED" -> "Balanced"
-                    else -> rep.asymmetry.dominantSide
-                }
-                Text(
-                    "Asymmetry: ${KmpUtils.formatFloat(
-                        rep.asymmetry.asymmetryPercent,
-                        1,
-                    )}% ($sideLabel)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                    Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
-            // Expandable force curve sparkline (Phoenix+ with FORCE_CURVES)
-            if (showForceCurves) {
-                AnimatedVisibility(
-                    visible = isExpanded,
-                    enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
-                    exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
-                ) {
-                    Column(modifier = Modifier.padding(top = Spacing.small)) {
-                        HorizontalDivider(
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                        Spacer(modifier = Modifier.height(Spacing.small))
-
-                        // Force curve sparkline (reuse existing ForceSparkline)
-                        if (rep.forceCurve.normalizedForceN.isNotEmpty()) {
-                            ForceSparkline(
-                                forceData = rep.forceCurve.normalizedForceN,
-                                peakIndex = null, // Normalized curve, no single peak index
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(Spacing.extraSmall))
-
-                        // Annotations: sticking point + strength profile
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            rep.forceCurve.stickingPointPct?.let { sp ->
-                                Text(
-                                    "Sticking point: ${KmpUtils.formatFloat(sp, 0)}% ROM",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            } ?: Spacer(modifier = Modifier.width(1.dp))
-
+                    // Annotations: sticking point + strength profile
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        rep.forceCurve.stickingPointPct?.let { sp ->
                             Text(
-                                strengthProfileLabel(rep.forceCurve.strengthProfile),
+                                "Sticking point: ${KmpUtils.formatFloat(sp, 0)}% ROM",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        }
+                        } ?: Spacer(modifier = Modifier.width(1.dp))
+
+                        Text(
+                            strengthProfileLabel(rep.forceCurve.strengthProfile),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

@@ -1,7 +1,13 @@
 package com.devil.phoenixproject.data.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.OwnershipTransferOutbox
 import com.devil.phoenixproject.database.PhoenixDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -26,6 +32,12 @@ class SqlDelightOwnershipTransferRepository(
         queries.selectAllPendingOwnershipTransfers()
             .executeAsList()
             .map(OwnershipTransferOutbox::toMutation)
+
+    override fun observePending(): Flow<List<OwnershipTransferMutation>> =
+        queries.selectAllPendingOwnershipTransfers()
+            .asFlow()
+            .mapToList(Dispatchers.IO)
+            .map { rows -> rows.map(OwnershipTransferOutbox::toMutation) }
 
     override suspend fun acknowledge(
         ownerUserId: String,

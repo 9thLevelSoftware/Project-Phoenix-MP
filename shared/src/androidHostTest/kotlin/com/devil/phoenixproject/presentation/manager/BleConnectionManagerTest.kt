@@ -161,7 +161,6 @@ class BleConnectionManagerTest {
 
             assertEquals(1, connectedCalls)
             assertEquals(0, failedCalls)
-            assertFalse(manager.isAutoConnecting.value)
         } finally {
             managerScope.cancel()
         }
@@ -193,7 +192,6 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertEquals(1, failedCalls)
-            assertFalse(manager.isAutoConnecting.value)
             assertTrue(manager.connectionError.value?.isNotBlank() == true)
         } finally {
             managerScope.cancel()

@@ -1,5 +1,28 @@
 package com.devil.phoenixproject.domain.assessment
 
+import com.devil.phoenixproject.util.Constants
+
+/**
+ * Hardware ceiling for a load-velocity extrapolation.
+ *
+ * Callers declare whether the loads they pass are per cable or the total across both cables.
+ * The assessment wizard records a combined load, so its ceiling is twice the per-cable maximum.
+ * Velocity OLS records one cable, so its ceiling is [Constants.MAX_WEIGHT_PER_CABLE_KG].
+ */
+enum class LoadCeiling {
+    /** Per-cable kilograms. Ceiling is [Constants.MAX_WEIGHT_PER_CABLE_KG] (110 kg). */
+    PER_CABLE,
+
+    /** Total kilograms across both cables. Ceiling is twice the per-cable maximum (220 kg). */
+    TOTAL,
+    ;
+
+    fun maxKg(): Float = when (this) {
+        PER_CABLE -> Constants.MAX_WEIGHT_PER_CABLE_KG
+        TOTAL -> Constants.MAX_WEIGHT_PER_CABLE_KG * 2f
+    }
+}
+
 /**
  * A single load-velocity data point from one assessment set.
  *

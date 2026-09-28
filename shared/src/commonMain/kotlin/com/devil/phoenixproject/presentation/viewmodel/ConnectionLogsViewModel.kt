@@ -73,13 +73,6 @@ class ConnectionLogsViewModel : ViewModel() {
     val isLoggingEnabled: StateFlow<Boolean> = repository.isEnabled
 
     /**
-     * Update the filter settings.
-     */
-    fun updateFilter(newFilter: LogFilter) {
-        _filter.value = newFilter
-    }
-
-    /**
      * Toggle visibility of a specific log level.
      */
     fun toggleLevel(level: LogLevel) {

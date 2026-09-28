@@ -61,11 +61,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.DropPercentage
-import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
@@ -74,10 +71,8 @@ import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
@@ -125,14 +120,14 @@ import projectphoenix.shared.generated.resources.tag_lift_title
 import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
- * WorkoutTab with State Holder Pattern (2025 Material Expressive).
- * This overload accepts consolidated state and actions for cleaner API.
+ * Active-workout surface. Production and previews both pass [WorkoutUiState] and [WorkoutActions].
  *
  * @param state Consolidated UI state
  * @param actions Callback interface for UI events
  * @param exerciseRepository Repository for loading exercise details/images
- * @param hapticEvents Optional flow for triggering haptic feedback
+ * @param hapticEvents Optional flow retained for call-site compatibility. Playback is global in EnhancedMainScreen.
  */
+@Suppress("SENSELESS_COMPARISON", "UNUSED_PARAMETER") // Smart-cast helpers; hapticEvents is played globally
 @Composable
 fun WorkoutTab(
     state: WorkoutUiState,
@@ -141,174 +136,75 @@ fun WorkoutTab(
     hapticEvents: SharedFlow<HapticEvent>? = null,
     modifier: Modifier = Modifier,
 ) {
-    // Delegate to the original implementation
-    WorkoutTab(
-        connectionState = state.connectionState,
-        workoutState = state.workoutState,
-        currentMetric = state.currentMetric,
-        currentHeuristicKgMax = state.currentHeuristicKgMax,
-        workoutParameters = state.workoutParameters,
-        repCount = state.repCount,
-        repRanges = state.repRanges,
-        autoStopState = state.autoStopState,
-        weightUnit = state.weightUnit,
-        enableVideoPlayback = state.enableVideoPlayback,
-        exerciseRepository = exerciseRepository,
-        machineTeardownState = state.machineTeardownState,
-        hapticEvents = hapticEvents,
-        loadedRoutine = state.loadedRoutine,
-        currentExerciseIndex = state.currentExerciseIndex,
-        currentSetIndex = state.currentSetIndex,
-        skippedExercises = state.skippedExercises,
-        completedExercises = state.completedExercises,
-        autoplayEnabled = state.autoplayEnabled,
-        summaryCountdownSeconds = state.summaryCountdownSeconds,
-        onJumpToExercise = actions::onJumpToExercise,
-        canGoBack = state.canGoBack,
-        canSkipForward = state.canSkipForward,
-        kgToDisplay = actions::kgToDisplay,
-        displayToKg = actions::displayToKg,
-        formatWeight = actions::formatWeight,
-        onScan = actions::onScan,
-        onCancelScan = actions::onCancelScan,
-        onDisconnect = actions::onDisconnect,
-        onStartWorkout = actions::onStartWorkout,
-        onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
-        onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
-        onStopWorkout = actions::onStopWorkout,
-        onSkipRest = { actions.onSkipRest() },
-        onSkipRestWithIdentity = { identity -> actions.onSkipRest(identity) },
-        onAcceptDropSet = actions::onAcceptDropSet,
-        onDeclineDropSet = actions::onDeclineDropSet,
-        onExtendRest = actions::onExtendRest,
-        onToggleRestPause = actions::onToggleRestPause,
-        onResetRest = actions::onResetRest,
-        onSkipCountdown = actions::onSkipCountdown,
-        onProceedFromSummary = actions::onProceedFromSummary,
-        onRpeLogged = actions::onRpeLogged,
-        onResetForNewWorkout = actions::onResetForNewWorkout,
-        onStartNextExercise = actions::onStartNextExercise,
-        onUpdateParameters = actions::onUpdateParameters,
-        onUpdateRackSelection = actions::onUpdateRackSelection,
-        onUpdateRackBehaviorOverrides = actions::onUpdateRackBehaviorOverrides,
-        rackItems = state.rackItems,
-        activeRackItemIds = state.activeRackItemIds,
-        activeRackBehaviorOverrides = state.activeRackBehaviorOverrides,
-        modifier = modifier,
-        loadBaselineA = state.loadBaselineA,
-        loadBaselineB = state.loadBaselineB,
-        timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
-        isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight,
-        latestRepQualityScore = state.latestRepQualityScore,
-        latestBiomechanicsResult = state.latestBiomechanicsResult,
-        onTagJustLiftSessionExercise = actions::onTagJustLiftSessionExercise,
-        motionStartHoldProgress = state.motionStartHoldProgress,
-        isRestPaused = state.isRestPaused,
-        justLiftRestCountdown = state.justLiftRestCountdown,
-        isExerciseTimerPaused = state.isExerciseTimerPaused,
-        onPauseExerciseTimer = actions::onPauseExerciseTimer,
-        onResumeExerciseTimer = actions::onResumeExerciseTimer,
-        onResetExerciseTimer = actions::onResetExerciseTimer,
-        onConfirmBodyweightSetResult = actions::onConfirmBodyweightSetResult,
-        vbtEnabled = state.vbtEnabled,
-        velocityLossThresholdPercent = state.velocityLossThresholdPercent,
-        weightStepKg = state.weightStepKg,
-        rackLoadAdjustment = state.rackLoadAdjustment,
-        currentWarmupSetIndex = state.currentWarmupSetIndex,
-        restTransitionPlan = state.restTransitionPlan,
-        recentJustLiftExerciseIds = state.recentJustLiftExerciseIds,
-    )
-}
+    val connectionState = state.connectionState
+    val workoutState = state.workoutState
+    val currentMetric = state.currentMetric
+    val currentHeuristicKgMax = state.currentHeuristicKgMax
+    val workoutParameters = state.workoutParameters
+    val repCount = state.repCount
+    val repRanges = state.repRanges
+    val autoStopState = state.autoStopState
+    val weightUnit = state.weightUnit
+    val enableVideoPlayback = state.enableVideoPlayback
+    val machineTeardownState = state.machineTeardownState
+    val loadedRoutine = state.loadedRoutine
+    val currentExerciseIndex = state.currentExerciseIndex
+    val currentSetIndex = state.currentSetIndex
+    val skippedExercises = state.skippedExercises
+    val completedExercises = state.completedExercises
+    val autoplayEnabled = state.autoplayEnabled
+    val summaryCountdownSeconds = state.summaryCountdownSeconds
+    val onJumpToExercise = actions::onJumpToExercise
+    val canGoBack = state.canGoBack
+    val canSkipForward = state.canSkipForward
+    val kgToDisplay = actions::kgToDisplay
+    val displayToKg = actions::displayToKg
+    val formatWeight = actions::formatWeight
+    val onScan = actions::onScan
+    val onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown
+    val onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown
+    val onStopWorkout = actions::onStopWorkout
+    val onSkipRest = { actions.onSkipRest() }
+    val onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { identity -> actions.onSkipRest(identity) }
+    val onAcceptDropSet = actions::onAcceptDropSet
+    val onDeclineDropSet = actions::onDeclineDropSet
+    val onExtendRest = actions::onExtendRest
+    val onToggleRestPause = actions::onToggleRestPause
+    val onResetRest = actions::onResetRest
+    val onSkipCountdown = actions::onSkipCountdown
+    val onProceedFromSummary = actions::onProceedFromSummary
+    val onRpeLogged = actions::onRpeLogged
+    val onResetForNewWorkout = actions::onResetForNewWorkout
+    val onStartNextExercise = actions::onStartNextExercise
+    val onUpdateParameters = actions::onUpdateParameters
+    val onUpdateRackSelection = actions::onUpdateRackSelection
+    val onUpdateRackBehaviorOverrides = actions::onUpdateRackBehaviorOverrides
+    val loadBaselineA = state.loadBaselineA
+    val loadBaselineB = state.loadBaselineB
+    val timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds
+    val isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight
+    val latestRepQualityScore = state.latestRepQualityScore
+    val latestBiomechanicsResult = state.latestBiomechanicsResult
+    val onTagJustLiftSessionExercise = actions::onTagJustLiftSessionExercise
+    val motionStartHoldProgress = state.motionStartHoldProgress
+    val isRestPaused = state.isRestPaused
+    val justLiftRestCountdown = state.justLiftRestCountdown
+    val isExerciseTimerPaused = state.isExerciseTimerPaused
+    val onPauseExerciseTimer = actions::onPauseExerciseTimer
+    val onResumeExerciseTimer = actions::onResumeExerciseTimer
+    val onResetExerciseTimer = actions::onResetExerciseTimer
+    val onConfirmBodyweightSetResult = actions::onConfirmBodyweightSetResult
+    val vbtEnabled = state.vbtEnabled
+    val velocityLossThresholdPercent = state.velocityLossThresholdPercent
+    val weightStepKg = state.weightStepKg
+    val rackLoadAdjustment = state.rackLoadAdjustment
+    val currentWarmupSetIndex = state.currentWarmupSetIndex
+    val restTransitionPlan = state.restTransitionPlan
+    val rackItems = state.rackItems
+    val activeRackItemIds = state.activeRackItemIds
+    val activeRackBehaviorOverrides = state.activeRackBehaviorOverrides
+    val recentJustLiftExerciseIds = state.recentJustLiftExerciseIds
 
-/**
- * Workout Tab - displays workout controls during active workout
- * Full implementation matching parent project
- */
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helpers: null checks needed for non-null usage below
-@Composable
-fun WorkoutTab(
-    connectionState: ConnectionState,
-    workoutState: WorkoutState,
-    currentMetric: WorkoutMetric?,
-    currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
-    workoutParameters: WorkoutParameters,
-    repCount: RepCount,
-    repRanges: RepRanges?,
-    autoStopState: AutoStopUiState,
-    weightUnit: WeightUnit,
-    enableVideoPlayback: Boolean,
-    exerciseRepository: ExerciseRepository,
-    machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
-    hapticEvents: SharedFlow<HapticEvent>? = null,
-    loadedRoutine: Routine? = null,
-    currentExerciseIndex: Int = 0,
-    currentSetIndex: Int = 0,
-    skippedExercises: Set<Int> = emptySet(),
-    completedExercises: Set<Int> = emptySet(),
-    autoplayEnabled: Boolean = false,
-    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Manual: wait for the user)
-    onJumpToExercise: (Int) -> Unit = {},
-    canGoBack: Boolean = false,
-    canSkipForward: Boolean = false,
-    kgToDisplay: (Float, WeightUnit) -> Float,
-    displayToKg: (Float, WeightUnit) -> Float,
-    formatWeight: (Float, WeightUnit) -> String,
-    onScan: () -> Unit,
-    onCancelScan: () -> Unit,
-    onDisconnect: () -> Unit,
-    onStartWorkout: () -> Unit,
-    onRetryWorkoutTeardown: () -> Unit = {},
-    onReconnectWorkoutTeardown: () -> Unit = {},
-    onStopWorkout: () -> Unit,
-    onSkipRest: () -> Unit,
-    onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { onSkipRest() },
-    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
-    onDeclineDropSet: (RestActionIdentity) -> Unit = {},
-    onExtendRest: (Int) -> Unit = {},
-    onToggleRestPause: () -> Unit = {},
-    onResetRest: () -> Unit = {},
-    onSkipCountdown: () -> Unit,
-    onProceedFromSummary: () -> Unit = {},
-    onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback for set summary
-    onResetForNewWorkout: () -> Unit,
-    onStartNextExercise: () -> Unit = {},
-    onUpdateParameters: (WorkoutParameters) -> Unit,
-    onUpdateRackSelection: (List<String>) -> Unit = {},
-    onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
-    modifier: Modifier = Modifier,
-    loadBaselineA: Float = 0f,
-    loadBaselineB: Float = 0f,
-    timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
-    isCurrentExerciseBodyweight: Boolean = false,
-    latestRepQualityScore: Int? = null, // Rep quality score (null = not available or free tier)
-    latestBiomechanicsResult: BiomechanicsRepResult? = null, // Latest biomechanics analysis result
-    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
-    // Issue #237: Motion-triggered set start
-    motionStartHoldProgress: Float? = null,
-    // Issue #297, #228: Rest timer pause state
-    isRestPaused: Boolean = false,
-    // Issue #113: Just Lift visual rest countdown (null = not resting)
-    justLiftRestCountdown: Int? = null,
-    // Issue #190: Exercise timer controls
-    isExerciseTimerPaused: Boolean = false,
-    onPauseExerciseTimer: () -> Unit = {},
-    onResumeExerciseTimer: () -> Unit = {},
-    onResetExerciseTimer: () -> Unit = {},
-    onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
-    // Issue #313: VBT velocity loss threshold for HUD visualization
-    vbtEnabled: Boolean = true,
-    velocityLossThresholdPercent: Int = 20,
-    // Issue #266/#410: Configurable weight step from user preferences (kg)
-    weightStepKg: Float = 0.25f,
-    rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
-    // Issue #646: -1 means not currently in variable warm-up phase
-    currentWarmupSetIndex: Int = -1,
-    restTransitionPlan: RestTransitionPlan? = null,
-    rackItems: List<RackItem> = emptyList(),
-    activeRackItemIds: List<String> = emptyList(),
-    activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
-    recentJustLiftExerciseIds: List<String> = emptyList(),
-) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
 
@@ -319,7 +215,6 @@ fun WorkoutTab(
     if (workoutState is WorkoutState.Active && connectionState is ConnectionState.Connected) {
         Box(modifier = modifier) {
             WorkoutHud(
-                activeState = workoutState,
                 metric = currentMetric,
                 workoutParameters = workoutParameters,
                 repCount = repCount,
@@ -333,8 +228,6 @@ fun WorkoutTab(
                 enableVideoPlayback = enableVideoPlayback,
                 onStopWorkout = onStopWorkout,
                 formatWeight = formatWeight,
-                onUpdateParameters = onUpdateParameters,
-                onStartNextExercise = onStartNextExercise,
                 currentHeuristicKgMax = currentHeuristicKgMax,
                 loadBaselineA = loadBaselineA,
                 loadBaselineB = loadBaselineB,
@@ -504,7 +397,6 @@ fun WorkoutTab(
                             workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
-                            formatWeight = formatWeight,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
                                 // Just Lift set. If the user already decided, or the set isn't a

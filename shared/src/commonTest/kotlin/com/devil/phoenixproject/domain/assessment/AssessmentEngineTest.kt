@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.assessment
 
+import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -124,9 +125,30 @@ class AssessmentEngineTest {
             LoadVelocityPoint(100f, 1.0f),
             LoadVelocityPoint(105f, 0.99f),
         )
-        val result = engine.estimateOneRepMax(points)
+        val result = engine.estimateOneRepMax(points, loadCeiling = LoadCeiling.TOTAL)
         assertNotNull(result)
-        assertEquals(220f, result.estimatedOneRepMaxKg, 0.1f)
+        assertEquals(LoadCeiling.TOTAL.maxKg(), result.estimatedOneRepMaxKg, 0.1f)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG * 2f, result.estimatedOneRepMaxKg, 0.1f)
+    }
+
+    @Test
+    fun `estimateOneRepMax clamps a per-cable result between the two ceilings to the per-cable max`() {
+        // Perfectly linear: slope = -0.01, intercept = 1.5.
+        // At the default 0.17 m/s: load = (0.17 - 1.5) / -0.01 = 133 kg.
+        // 133 sits between the per-cable max (110) and the dual-cable total (220).
+        val points = listOf(
+            LoadVelocityPoint(70f, 0.80f),
+            LoadVelocityPoint(90f, 0.60f),
+            LoadVelocityPoint(110f, 0.40f),
+        )
+
+        val perCable = engine.estimateOneRepMax(points, loadCeiling = LoadCeiling.PER_CABLE)
+        assertNotNull(perCable)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, perCable.estimatedOneRepMaxKg, 0.1f)
+
+        val total = engine.estimateOneRepMax(points, loadCeiling = LoadCeiling.TOTAL)
+        assertNotNull(total)
+        assertEquals(133f, total.estimatedOneRepMaxKg, tolerance)
     }
 
     // =========================================================================
@@ -309,14 +331,24 @@ class AssessmentEngineTest {
     }
 
     @Test
-    fun `suggestNextWeight clamps to max 220kg`() {
-        val result = engine.suggestNextWeight(215f, 1.0f)
-        // 215 + 20 = 235, clamped to 220
+    fun `suggestNextWeight clamps to the dual cable total maximum`() {
+        val result = engine.suggestNextWeight(215f, 1.0f, loadCeiling = LoadCeiling.TOTAL)
+        // 215 + 20 = 235, clamped to the total ceiling (220 kg)
         assertEquals(
-            220f,
+            Constants.MAX_WEIGHT_PER_CABLE_KG * 2f,
             result,
-            "Should clamp to maximum 220kg",
+            "Should clamp to the dual-cable total maximum",
         )
+    }
+
+    @Test
+    fun `suggestNextWeight clamps a per-cable suggestion to the per-cable maximum`() {
+        val perCable = engine.suggestNextWeight(100f, 1.0f, loadCeiling = LoadCeiling.PER_CABLE)
+        // 100 + 20 = 120, which is above 110 kg per cable and below the 220 kg total.
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, perCable)
+
+        val total = engine.suggestNextWeight(100f, 1.0f, loadCeiling = LoadCeiling.TOTAL)
+        assertEquals(120f, total)
     }
 
     @Test

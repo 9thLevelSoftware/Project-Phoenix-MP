@@ -21,17 +21,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FitnessCenter
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -93,7 +90,6 @@ import projectphoenix.shared.generated.resources.cd_streak
 import projectphoenix.shared.generated.resources.start_workout
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
-internal const val ONE_REP_MAX_COMING_SOON_TITLE = "Coming Soon!"
 
 @Composable
 fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
@@ -115,7 +111,6 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var discardRetryPending by remember { mutableStateOf(false) }
     var manualLoadRetry by remember { mutableStateOf<RoutineResumeUiOperation.RetryManualLoad?>(null) }
     val resumeOperationGate = remember { RoutineResumeOperationGate() }
-    var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(activeCycle) {
@@ -316,7 +311,6 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                     onSingleExercise = { navController.navigate(NavigationRoutes.SingleExercise.route) },
                     onRoutines = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
                     onCycles = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                    onAssessOneRepMaxComingSoon = { showOneRepMaxComingSoonDialog = true },
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
@@ -365,18 +359,6 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
             )
         }
 
-        if (showOneRepMaxComingSoonDialog) {
-            AlertDialog(
-                onDismissRequest = { showOneRepMaxComingSoonDialog = false },
-                title = { Text(ONE_REP_MAX_COMING_SOON_TITLE) },
-                confirmButton = {
-                    TextButton(onClick = { showOneRepMaxComingSoonDialog = false }) {
-                        Text("OK")
-                    }
-                },
-            )
-        }
-
         pendingResumeHandle?.let { handle ->
             ResumeRoutineDialog(
                 progressInfo = handle.progressInfo,
@@ -415,7 +397,6 @@ private fun HomeLaunchPad(
     onSingleExercise: () -> Unit,
     onRoutines: () -> Unit,
     onCycles: () -> Unit,
-    onAssessOneRepMaxComingSoon: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cycleStatus = activeCycle?.let { cycle ->
@@ -457,7 +438,6 @@ private fun HomeLaunchPad(
                 onSingleExercise = onSingleExercise,
                 onRoutines = onRoutines,
                 onCycles = onCycles,
-                onAssessOneRepMaxComingSoon = onAssessOneRepMaxComingSoon,
             ),
             stacked = stackedShortcuts,
             buttonHeight = shortcutHeight,
@@ -789,7 +769,6 @@ internal fun buildHomeShortcutActions(
     onSingleExercise: () -> Unit,
     onRoutines: () -> Unit,
     onCycles: () -> Unit,
-    onAssessOneRepMaxComingSoon: () -> Unit,
 ): List<HomeActionSpec> = listOf(
     HomeActionSpec(
         label = "Single Exercise",
@@ -809,13 +788,6 @@ internal fun buildHomeShortcutActions(
         icon = Icons.Default.Loop,
         onClick = onCycles,
         iconAnimation = IconAnimation.ROTATE,
-    ),
-    HomeActionSpec(
-        label = "Assess 1RM",
-        contentDescription = "Assess 1RM coming soon",
-        icon = Icons.Default.FitnessCenter,
-        onClick = onAssessOneRepMaxComingSoon,
-        enabled = false,
     ),
 )
 

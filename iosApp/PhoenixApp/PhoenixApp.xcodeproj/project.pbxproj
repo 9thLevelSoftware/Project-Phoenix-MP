@@ -106,6 +106,7 @@
 				DFE6BD452EEDF42200886589 /* Resources */,
 				DFE6BD812EEE200000886589 /* Copy Compose Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
+				E7A1C0DE2F10000100886589 /* Copy Privacy Manifest */,
 			);
 			buildRules = (
 			);
@@ -182,6 +183,22 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphoneos*)\n        ;;\n    *)\n        echo \"error: PhoenixApp links the iosArm64 device framework; unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/iosArm64/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/.\" \"$DEST/\"\nelse\n    echo \"error: Processed Compose resources not found at $SOURCE\" >&2\n    exit 1\nfi\n";
+		};
+		E7A1C0DE2F10000100886589 /* Copy Privacy Manifest */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/PhoenixApp/PrivacyInfo.xcprivacy",
+			);
+			name = "Copy Privacy Manifest";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nMANIFEST=\"${SRCROOT}/PhoenixApp/PrivacyInfo.xcprivacy\"\nif [ ! -f \"${MANIFEST}\" ]; then\n    echo \"error: PrivacyInfo.xcprivacy not found at ${MANIFEST}\" >&2\n    exit 1\nfi\n\n# shared is a static framework, so its required-reason calls are linked into\n# the app executable. The manifest must sit at the app bundle root.\nAPP_DEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PrivacyInfo.xcprivacy\"\nmkdir -p \"$(dirname \"${APP_DEST}\")\"\ncp \"${MANIFEST}\" \"${APP_DEST}\"\n\n# The same framework is still embedded. When App Store Connect attributes the\n# calls to that binary, it looks for the manifest at the framework bundle root.\nFRAMEWORK_DIR=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/shared.framework\"\nif [ -d \"${FRAMEWORK_DIR}\" ]; then\n    cp \"${MANIFEST}\" \"${FRAMEWORK_DIR}/PrivacyInfo.xcprivacy\"\nelse\n    echo \"warning: embedded shared.framework not found at ${FRAMEWORK_DIR}; app-bundle manifest was still copied\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -334,12 +351,6 @@
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/xcodeFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PhoenixApp/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -378,12 +389,6 @@
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/xcodeFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PhoenixApp/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

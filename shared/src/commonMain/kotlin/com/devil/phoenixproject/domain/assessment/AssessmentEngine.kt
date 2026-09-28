@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.domain.assessment
 
-import com.devil.phoenixproject.util.Constants
 import kotlin.math.roundToInt
 
 /**
@@ -22,9 +21,15 @@ class AssessmentEngine {
      *
      * @param points Load-velocity data points from assessment sets
      * @param config Assessment configuration parameters
+     * @param loadCeiling Whether [points] are per-cable loads or the total across both cables.
+     *   Defaults to [LoadCeiling.TOTAL], which is the assessment wizard's unit.
      * @return Assessment result with estimated 1RM, or null if insufficient/invalid data
      */
-    fun estimateOneRepMax(points: List<LoadVelocityPoint>, config: AssessmentConfig = AssessmentConfig()): AssessmentResult? {
+    fun estimateOneRepMax(
+        points: List<LoadVelocityPoint>,
+        config: AssessmentConfig = AssessmentConfig(),
+        loadCeiling: LoadCeiling = LoadCeiling.TOTAL,
+    ): AssessmentResult? {
         if (points.size < config.minSets) return null
 
         val n = points.size.toDouble()
@@ -44,11 +49,11 @@ class AssessmentEngine {
         if (slope >= 0.0) return null
 
         // Extrapolate load at 1RM velocity: load = (velocity - intercept) / slope
-        // Clamp to at least 1 kg -- 1RM cannot be negative or zero
-        // Assessment loads are total across both cables, so the hardware ceiling is 2 x per-cable max.
+        // Floor at 1 kg. A 1RM cannot be negative or zero.
+        // Ceiling follows the caller's load unit: per cable, or total across both cables.
         val estimatedLoad = ((config.oneRmVelocityMs.toDouble() - intercept) / slope)
             .coerceAtLeast(1.0)
-            .coerceAtMost((Constants.MAX_WEIGHT_PER_CABLE_KG * 2f).toDouble())
+            .coerceAtMost(loadCeiling.maxKg().toDouble())
 
         // Compute R-squared
         val meanY = sumY / n
@@ -86,14 +91,21 @@ class AssessmentEngine {
      * - > 0.3 m/s: small jump (0.5x increment)
      * - <= 0.3 m/s: no more sets needed
      *
-     * Result is clamped to 0.5kg increments (machine resolution) and max 220kg.
+     * Result is snapped to 0.5 kg increments (machine resolution) and clamped to [loadCeiling].
+     * The assessment wizard passes total load, so the default ceiling is 220 kg.
      *
      * @param currentLoadKg Current set weight in kilograms
      * @param currentVelocity Mean concentric velocity of current set (m/s)
      * @param config Assessment configuration parameters
+     * @param loadCeiling Whether [currentLoadKg] is per cable or the total across both cables.
      * @return Suggested weight for next set in kilograms
      */
-    fun suggestNextWeight(currentLoadKg: Float, currentVelocity: Float, config: AssessmentConfig = AssessmentConfig()): Float {
+    fun suggestNextWeight(
+        currentLoadKg: Float,
+        currentVelocity: Float,
+        config: AssessmentConfig = AssessmentConfig(),
+        loadCeiling: LoadCeiling = LoadCeiling.TOTAL,
+    ): Float {
         val increment = when {
             currentVelocity > 0.8f -> config.weightIncrementKg * 2f
             currentVelocity > 0.5f -> config.weightIncrementKg
@@ -106,7 +118,6 @@ class AssessmentEngine {
         // Clamp to 0.5kg increments (machine resolution)
         val snapped = (rawWeight * 2f).roundToInt() / 2f
 
-        // Clamp to max 220kg
-        return snapped.coerceAtMost(220f)
+        return snapped.coerceAtMost(loadCeiling.maxKg())
     }
 }

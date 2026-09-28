@@ -93,7 +93,6 @@ fun InsightsTab(
     exerciseRepository: ExerciseRepository,
     modifier: Modifier = Modifier,
     weightUnit: WeightUnit = WeightUnit.KG,
-    formatWeight: (Float, WeightUnit) -> String = { w, u -> "${w.toInt()} ${u.name.lowercase()}" },
 ) {
     var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
     val useCompactAccessibility = isCompactAccessibilityLayout()
@@ -281,7 +280,6 @@ fun InsightsTab(
                     TotalVolumeCard(
                         workoutSessions = filteredSessions,
                         weightUnit = weightUnit,
-                        formatWeight = formatWeight,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

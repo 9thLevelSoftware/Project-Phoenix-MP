@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
@@ -215,24 +214,6 @@ actual class HealthIntegration : HealthWorkoutWriter {
             log.e(e) { "Failed to request HealthKit permissions" }
             false
         }
-    }
-
-    /**
-     * Writes a completed workout session to HealthKit as a strength training workout.
-     *
-     * Creates an HKWorkout with:
-     * - Activity type: Traditional Strength Training
-     * - Duration derived from session.duration (stored in milliseconds, converted to seconds)
-     * - Optional calorie data from session.estimatedCalories
-     * - Metadata with external UUID (session.id) for deduplication
-     *
-     * Weight display follows persisted display semantics: prefer displayMultiplier,
-     * fall back to raw physical cableCount only for legacy sessions, then default to 1.
-     */
-    actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
-        val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(session, completedSets = emptyList())
-            ?: return Result.failure(IllegalArgumentException("Workout session has no completed reps to write"))
-        return writeHealthWorkout(data)
     }
 
     /**

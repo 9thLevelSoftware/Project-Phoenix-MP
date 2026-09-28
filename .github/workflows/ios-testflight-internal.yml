@@ -255,14 +255,6 @@ jobs:
       - name: Select Xcode 16.4 upload tooling
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
-      - name: Set up Python (for upload verification)
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - name: Install Python cryptography library
-        run: pip install cryptography
-
       - name: Upload to TestFlight
         env:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
@@ -283,35 +275,7 @@ jobs:
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          # --- Write JWT generation script (used here and in the next step) ---
-          cat > "$RUNNER_TEMP/generate_jwt.py" << 'PYEOF'
-          import base64, json, time, os
-          from cryptography.hazmat.primitives import hashes
-          from cryptography.hazmat.primitives.asymmetric import ec
-          from cryptography.hazmat.primitives.serialization import load_pem_private_key
-          from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-
-          def b64url(data):
-              if isinstance(data, str):
-                  data = data.encode()
-              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
-
-          kid = os.environ['APPSTORE_API_KEY_ID']
-          iss = os.environ['APPSTORE_ISSUER_ID']
-          with open(os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{kid}.p8'), 'rb') as f:
-              key = load_pem_private_key(f.read(), password=None)
-          now = int(time.time())
-          hdr = b64url(json.dumps({"alg": "ES256", "kid": kid, "typ": "JWT"}, separators=(',', ':')))
-          pay = b64url(json.dumps({"iss": iss, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}, separators=(',', ':')))
-          msg = f"{hdr}.{pay}"
-          r, s = decode_dss_signature(key.sign(msg.encode(), ec.ECDSA(hashes.SHA256())))
-          print(f"{msg}.{b64url(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}")
-          PYEOF
-          sed -i '' 's/^          //' "$RUNNER_TEMP/generate_jwt.py"
-
-          generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
-
-          # --- Upload via xcrun altool ---
+          # Upload only. This workflow has no TestFlight distribution step.
           echo "=== Uploading IPA to App Store Connect ==="
 
           set +e
@@ -340,25 +304,6 @@ jobs:
           if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
             echo "ERROR: altool reported errors despite exit code 0"
             exit 1
-          fi
-
-          # Verify the upload actually reached Apple
-          echo "=== Verifying upload reached App Store Connect ==="
-          sleep 30
-          VERIFY_JWT=$(generate_jwt)
-          API_BASE="https://api.appstoreconnect.apple.com/v1"
-          VERIFY_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $VERIFY_JWT" \
-            "$API_BASE/builds?filter[version]=$BUILD_VERSION&limit=1")
-          VERIFY_STATUS=$(echo "$VERIFY_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['data'][0]['attributes'].get('processingState','UNKNOWN') if data.get('data') else 'NOT_FOUND')" 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Build status 30s after upload: $VERIFY_STATUS"
-          if [ "$VERIFY_STATUS" = "NOT_FOUND" ]; then
-            echo ""
-            echo "============================================"
-            echo "WARNING: Build not found in App Store Connect 30s after upload."
-            echo "Build may still be propagating. The distribution step will retry."
-            echo "============================================"
-            echo ""
           fi
 
           echo "=== Upload completed ==="

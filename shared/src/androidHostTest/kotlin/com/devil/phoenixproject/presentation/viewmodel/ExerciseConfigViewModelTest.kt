@@ -243,7 +243,6 @@ class ExerciseConfigViewModelTest {
         )
 
         waitForCondition { viewModel.sets.value.first().weightPerCable == 37.5f }
-        assertEquals(37.5f, viewModel.calculateResolvedWeight())
         assertEquals(37.5f, viewModel.sets.value.first().weightPerCable)
     }
 
@@ -679,7 +678,6 @@ class ExerciseConfigViewModelTest {
         assertNull(viewModel.currentExercisePR.value)
         waitForCondition { viewModel.baselineKgForCurrentBasis() == 60f }
         waitForCondition { viewModel.sets.value.first().weightPerCable == 48f }
-        assertEquals(48f, viewModel.calculateResolvedWeight())
     }
 
     @Test
@@ -953,27 +951,6 @@ class ExerciseConfigViewModelTest {
 
         viewModel.onRepeatCountChange(setId, 25)
         assertEquals(20, viewModel.sets.value[0].repeatCount, "25 should coerce to 20")
-    }
-
-    @Test
-    fun `totalExpandedSetCount sums repeatCounts`() = runTest {
-        val viewModel = createViewModel()
-        val exercise = RoutineExercise(
-            id = "rex-667-3",
-            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
-            orderIndex = 0,
-            setReps = listOf(10, 10, 10),
-            weightPerCableKg = 20f,
-            setWeightsPerCableKg = listOf(20f, 20f, 20f),
-        )
-        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
-
-        assertEquals(3, viewModel.totalExpandedSetCount, "All repeatCount=1 → 3")
-
-        val setIds = viewModel.sets.value.map { it.id }
-        viewModel.onRepeatCountChange(setIds[1], 3)
-        viewModel.onRepeatCountChange(setIds[2], 2)
-        assertEquals(6, viewModel.totalExpandedSetCount, "[1,3,2] → 6")
     }
 
     @Test

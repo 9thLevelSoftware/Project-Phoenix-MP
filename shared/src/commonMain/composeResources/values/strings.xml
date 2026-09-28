@@ -353,7 +353,6 @@
     <string name="drop_set_remaining_one">1 drop remaining</string>
     <string name="drop_set_remaining_many">%1$d drops remaining</string>
     <string name="drop_set_accepted_waiting">Retrying at %1$s — %2$s per cable</string>
-    <string name="drop_set_saving">Saving the failed attempt</string>
     <string name="drop_set_preparing">Preparing the trainer</string>
     <string name="drop_set_ready">Ready to retry</string>
     <string name="drop_set_recovery">Reconnect to retry this drop set</string>
