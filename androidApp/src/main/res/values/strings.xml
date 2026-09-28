@@ -1,4 +1,23 @@
 <resources>
     <string name="app_name">Project Phoenix</string>
     <string name="workout_mode_bodyweight">Bodyweight</string>
+
+    <!-- Workout foreground notification. Default English copy; values-* can override. -->
+    <string name="workout_notification_channel_name">Phoenix Workout</string>
+    <string name="workout_notification_channel_description">Shows ongoing workout status</string>
+    <string name="workout_notification_title_initializing">Phoenix Workout</string>
+    <string name="workout_notification_title_countdown">Workout Starting</string>
+    <string name="workout_notification_title_active">Workout Active</string>
+    <string name="workout_notification_title_set_complete">Set Complete</string>
+    <string name="workout_notification_title_rest">Rest Timer</string>
+    <string name="workout_notification_title_just_lift_rest">Just Lift Rest</string>
+    <string name="workout_notification_title_paused">Workout Paused</string>
+    <string name="workout_notification_preparing">Preparing %1$s</string>
+    <string name="workout_notification_starts_in">Starts in %1$ds</string>
+    <string name="workout_notification_next">Next: %1$s</string>
+    <string name="workout_notification_seconds_remaining">%1$ds remaining</string>
+    <string name="workout_notification_set_progress">Set %1$d/%2$d</string>
+    <string name="workout_notification_reps_progress">Reps %1$d/%2$d</string>
+    <string name="workout_notification_reps">Reps %1$d</string>
+    <string name="workout_notification_in_progress">Phoenix workout in progress</string>
 </resources>
