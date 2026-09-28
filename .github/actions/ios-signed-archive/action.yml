@@ -1,0 +1,218 @@
+name: Signed iOS archive
+description: >-
+  Shared signed-archive sequence for the iOS release workflows.
+  Writes Supabase.xcconfig, optionally validates app icons, restores the
+  Konan cache, sets the build number, selects Xcode 26.2, links the release
+  framework, stages Compose resources, signs, archives, and exports an IPA.
+
+inputs:
+  validate_icons:
+    description: >-
+      When true, run scripts/validate_ios_app_icons.py before building.
+      Enable for App Store Connect uploads.
+    required: true
+  supabase_url:
+    description: Supabase project URL written to Supabase.xcconfig
+    required: true
+  supabase_anon_key:
+    description: Supabase anon key written to Supabase.xcconfig
+    required: true
+  build_certificate_base64:
+    description: Base64-encoded Apple distribution certificate (.p12)
+    required: true
+  p12_password:
+    description: Password for the distribution certificate
+    required: true
+  provision_profile_base64:
+    description: Base64-encoded provisioning profile
+    required: true
+  keychain_password:
+    description: Password for the temporary signing keychain
+    required: true
+  team_id:
+    description: Apple Developer team id
+    required: true
+  provisioning_profile_name:
+    description: Provisioning profile name passed to xcodebuild
+    required: true
+
+outputs:
+  build_number:
+    description: CURRENT_PROJECT_VERSION written into the Xcode project
+    value: ${{ steps.build_number.outputs.build_number }}
+
+runs:
+  using: composite
+  steps:
+    - name: Write Supabase.xcconfig from secrets
+      shell: bash
+      env:
+        SUPABASE_URL: ${{ inputs.supabase_url }}
+        SUPABASE_ANON_KEY: ${{ inputs.supabase_anon_key }}
+      run: |
+        mkdir -p iosApp/PhoenixApp/Config
+        # xcconfig treats `//` as an inline comment, so URLs like `https://foo`
+        # must be written as `https:/$()/foo` (empty xcconfig substitution) or
+        # the value gets truncated to `https:` at parse time. Apply to both
+        # fields defensively.
+        url_escaped=$(printf '%s' "$SUPABASE_URL" | sed 's|//|/$()/|g')
+        key_escaped=$(printf '%s' "$SUPABASE_ANON_KEY" | sed 's|//|/$()/|g')
+        {
+          echo "SUPABASE_URL = $url_escaped"
+          echo "SUPABASE_ANON_KEY = $key_escaped"
+        } > iosApp/PhoenixApp/Config/Supabase.xcconfig
+
+    - name: Validate release app icons
+      if: inputs.validate_icons == 'true'
+      shell: bash
+      run: |
+        python3 scripts/validate_ios_app_icons.py \
+          --source iosApp/AppIcon1024.png
+        python3 scripts/test_ios_app_icons.py
+
+    - name: Set up Java 17
+      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+    - name: Cache Kotlin/Native compiler
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.konan
+        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-konan-
+
+    - name: Generate build number
+      id: build_number
+      shell: bash
+      run: |
+        # Generate build number from date and run number.
+        # [0-9][0-9]* requires at least one digit to avoid matching empty strings.
+        BUILD_NUM=$(date +%Y%m%d)${{ github.run_number }}
+        echo "build_number=$BUILD_NUM" >> "$GITHUB_OUTPUT"
+        echo "Build number: $BUILD_NUM"
+
+        sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
+          iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj
+
+        grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
+
+    # Compose Multiplatform 1.11 links UIKit symbols from the iOS 26 SDK.
+    # Gradle/Kotlin Native and xcodebuild must use that same SDK.
+    - name: Select Xcode 26.2
+      shell: bash
+      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+    - name: Build shared framework and resources
+      shell: bash
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
+      run: |
+        # Single Gradle invocation — linkReleaseFrameworkIosArm64 already depends on
+        # generateComposeResClass and resource processing, but listing them explicitly
+        # ensures they run even if a dependency edge is missing. One JVM startup, not three.
+        ./gradlew :shared:linkReleaseFrameworkIosArm64 \
+          :shared:generateComposeResClass \
+          :shared:iosArm64ProcessResources \
+          --no-parallel -Pskip.supabase.check=true
+
+    - name: Copy Compose resources to Xcode project directory
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Compose MP's DefaultIOsResourceReader looks for resources in the
+        # app's main bundle at compose-resources/composeResources/[module]/...
+        # With isStatic=true, resources CANNOT live inside the framework — they
+        # are lost during static linking. They must be in the app bundle root.
+        #
+        # Resources are placed OUTSIDE the Xcode fileSystemSynchronizedGroups
+        # directory (at iosApp/PhoenixApp/compose-resources/, not inside
+        # PhoenixApp/PhoenixApp/) to prevent auto-inclusion that
+        # flattens locale folders and causes .cvr filename collisions.
+        # A Run Script Build Phase in the Xcode project copies them to the
+        # bundle preserving directory structure.
+        #
+        # The CMP runtime expects: Bundle.main/compose-resources/composeResources/[module]/...
+        # iosArm64ProcessResources writes one directory. A missing directory is a
+        # failed resource build; do not search shared/build for another copy.
+        RESOURCE_DST="iosApp/PhoenixApp/compose-resources"
+        rm -rf "$RESOURCE_DST"
+        mkdir -p "$RESOURCE_DST"
+
+        PROCESSED="shared/build/processedResources/iosArm64/main/composeResources"
+        if [ ! -d "$PROCESSED" ]; then
+          echo "ERROR: Processed Compose resources not found at $PROCESSED" >&2
+          exit 1
+        fi
+        cp -R "$PROCESSED" "$RESOURCE_DST/"
+        echo "Copied compose resources from $PROCESSED"
+
+    - name: Install shared.framework for Xcode
+      shell: bash
+      run: |
+        # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
+        # Copy the release bundle there. The Xcode project does not link an
+        # XCFramework, and it does not read the debug framework path at archive time.
+        iosApp/install-xcode-framework.sh release
+
+    - name: Install certificate and profile
+      shell: bash
+      env:
+        BUILD_CERTIFICATE_BASE64: ${{ inputs.build_certificate_base64 }}
+        P12_PASSWORD: ${{ inputs.p12_password }}
+        PROVISION_PROFILE_BASE64: ${{ inputs.provision_profile_base64 }}
+        KEYCHAIN_PASSWORD: ${{ inputs.keychain_password }}
+      run: |
+        CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+        PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+        echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+        echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+        security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+        security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+        security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+        security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+        security list-keychain -d user -s $KEYCHAIN_PATH
+
+        mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+        cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+
+    - name: Archive app
+      shell: bash
+      env:
+        SCHEME: PhoenixApp
+        PROJECT_PATH: iosApp/PhoenixApp/PhoenixApp.xcodeproj
+        TEAM_ID: ${{ inputs.team_id }}
+        PROVISIONING_PROFILE_NAME: ${{ inputs.provisioning_profile_name }}
+      run: |
+        xcodebuild archive \
+          -project "$PROJECT_PATH" \
+          -scheme "$SCHEME" \
+          -configuration Release \
+          -destination 'generic/platform=iOS' \
+          -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
+          DEVELOPMENT_TEAM="$TEAM_ID" \
+          CODE_SIGN_STYLE=Manual \
+          CODE_SIGN_IDENTITY="Apple Distribution" \
+          PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_NAME"
+
+    - name: Export .ipa
+      shell: bash
+      run: |
+        xcodebuild -exportArchive \
+          -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
+          -exportPath $RUNNER_TEMP/export \
+          -exportOptionsPlist iosApp/ExportOptions.plist
+
+    - name: Clean up keychain
+      if: always()
+      shell: bash
+      run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
