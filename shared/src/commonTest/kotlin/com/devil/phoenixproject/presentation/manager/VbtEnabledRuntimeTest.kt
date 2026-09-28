@@ -117,7 +117,11 @@ class VbtEnabledRuntimeTest {
             processRep(harness, repNumber = 2, velocityMmS = 70.0)
             assertTrue(events.none { it is HapticEvent.VELOCITY_THRESHOLD_REACHED })
 
-            harness.settingsManager.setVbtEnabled(true)
+            val ready = assertIs<ActiveProfileContext.Ready>(harness.fakeUserProfileRepo.activeProfileContext.value)
+            harness.fakeUserProfileRepo.updateVbt(
+                ready.profile.id,
+                ready.preferences.vbt.value.copy(enabled = true),
+            )
             advanceUntilIdle()
 
             assertEquals(20f, harness.coordinator.biomechanicsEngine.currentVelocityLossThresholdPercent)

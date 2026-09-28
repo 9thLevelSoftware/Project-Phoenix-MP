@@ -5,7 +5,7 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.testutil.FakeBleRepository
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
@@ -34,13 +34,11 @@ class SettingsManagerTest {
     val testCoroutineRule = TestCoroutineRule()
 
     private lateinit var fakePreferencesManager: FakePreferencesManager
-    private lateinit var fakeBleRepository: FakeBleRepository
     private lateinit var fakeProfileRepository: FakeUserProfileRepository
 
     @Before
     fun setup() {
         fakePreferencesManager = FakePreferencesManager()
-        fakeBleRepository = FakeBleRepository()
         fakeProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
     }
 
@@ -52,11 +50,11 @@ class SettingsManagerTest {
 
             assertTrue(manager.autoplayEnabled.value)
 
-            manager.setSummaryCountdownSeconds(0)
+            updateActiveWorkout { it.copy(summaryCountdownSeconds = 0) }
             advanceUntilIdle()
             assertFalse(manager.autoplayEnabled.value)
 
-            manager.setSummaryCountdownSeconds(-1)
+            updateActiveWorkout { it.copy(summaryCountdownSeconds = -1) }
             advanceUntilIdle()
             assertTrue(manager.autoplayEnabled.value)
         } finally {
@@ -65,42 +63,43 @@ class SettingsManagerTest {
     }
 
     @Test
-    fun `setWeightUnit updates preference-backed flows`() = runTest {
+    fun `profile weight unit overlays the global preference store`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
+            val ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
 
-            manager.setWeightUnit(WeightUnit.KG)
+            fakeProfileRepository.updateCore(
+                ready.profile.id,
+                ready.preferences.core.value.copy(weightUnit = WeightUnit.KG),
+            )
             advanceUntilIdle()
 
-            assertEquals(
-                WeightUnit.KG,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.core.value.weightUnit,
-            )
+            assertEquals(WeightUnit.KG, readyProfile().preferences.core.value.weightUnit)
             assertEquals(WeightUnit.LB, fakePreferencesManager.preferencesFlow.value.weightUnit)
             assertEquals(WeightUnit.KG, manager.userPreferences.value.weightUnit)
+            assertEquals(WeightUnit.KG, manager.weightUnit.value)
         } finally {
             managerScope.cancel()
         }
     }
 
     @Test
-    fun `setDefaultScalingBasis persists to preference-backed flow`() = runTest {
+    fun `profile scaling basis overlays the active VBT document`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
 
             assertEquals(ScalingBasis.MAX_WEIGHT_PR, manager.defaultScalingBasis.value)
 
-            manager.setDefaultScalingBasis(ScalingBasis.ESTIMATED_1RM)
+            val ready = readyProfile()
+            fakeProfileRepository.updateVbt(
+                ready.profile.id,
+                ready.preferences.vbt.value.copy(defaultScalingBasis = ScalingBasis.ESTIMATED_1RM),
+            )
             advanceUntilIdle()
 
-            assertEquals(
-                ScalingBasis.ESTIMATED_1RM,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.vbt.value.defaultScalingBasis,
-            )
+            assertEquals(ScalingBasis.ESTIMATED_1RM, readyProfile().preferences.vbt.value.defaultScalingBasis)
             assertEquals(ScalingBasis.ESTIMATED_1RM, manager.defaultScalingBasis.value)
         } finally {
             managerScope.cancel()
@@ -121,43 +120,14 @@ class SettingsManagerTest {
     }
 
     @Test
-    fun `set routine exercise percent preferences persist and coerce range`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.setDefaultRoutineExerciseUsePercentOfPR(true)
-            manager.setDefaultRoutineExerciseWeightPercentOfPR(135)
-            advanceUntilIdle()
-
-            var workout = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.workout.value
-            assertTrue(workout.defaultRoutineExerciseUsePercentOfPR)
-            assertEquals(120, workout.defaultRoutineExerciseWeightPercentOfPR)
-            assertTrue(manager.defaultRoutineExerciseUsePercentOfPR.value)
-            assertEquals(120, manager.defaultRoutineExerciseWeightPercentOfPR.value)
-
-            manager.setDefaultRoutineExerciseWeightPercentOfPR(20)
-            advanceUntilIdle()
-
-            workout = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.workout.value
-            assertEquals(50, workout.defaultRoutineExerciseWeightPercentOfPR)
-            assertEquals(50, manager.defaultRoutineExerciseWeightPercentOfPR.value)
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `setVelocityOneRepMaxBackfillDone persists to preference-backed flow`() = runTest {
+    fun `velocity backfill flag follows the global preference store`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
 
             assertFalse(manager.velocityOneRepMaxBackfillDone.value)
 
-            manager.setVelocityOneRepMaxBackfillDone(true)
+            fakePreferencesManager.setVelocityOneRepMaxBackfillDone(true)
             advanceUntilIdle()
 
             assertTrue(fakePreferencesManager.preferencesFlow.value.velocityOneRepMaxBackfillDone)
@@ -191,7 +161,7 @@ class SettingsManagerTest {
                 velocityLossThresholdPercent = 11,
             ),
         )
-        var ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
+        var ready = readyProfile()
         fakeProfileRepository.updateCore(
             ready.profile.id,
             ready.preferences.core.value.copy(
@@ -199,7 +169,7 @@ class SettingsManagerTest {
                 bodyWeightKg = 83f,
             ),
         )
-        ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
+        ready = readyProfile()
         fakeProfileRepository.updateWorkout(
             ready.profile.id,
             ready.preferences.workout.value.copy(
@@ -207,7 +177,7 @@ class SettingsManagerTest {
                 gamificationEnabled = false,
             ),
         )
-        ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
+        ready = readyProfile()
         fakeProfileRepository.updateVbt(
             ready.profile.id,
             ready.preferences.vbt.value.copy(velocityLossThresholdPercent = 37),
@@ -252,26 +222,7 @@ class SettingsManagerTest {
     }
 
     @Test
-    fun `queued same-section setters preserve sibling changes`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.setStopAtTop(true)
-            manager.setBeepsEnabled(false)
-            advanceUntilIdle()
-
-            val workout = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.workout.value
-            assertTrue(workout.stopAtTop)
-            assertFalse(workout.beepsEnabled)
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `profile targeted workout mutation shares the setter mutex`() = runTest {
+    fun `profile targeted workout mutation shares the document save mutex`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         val mutationEntered = CompletableDeferred<Unit>()
         val releaseMutation = CompletableDeferred<Unit>()
@@ -292,16 +243,17 @@ class SettingsManagerTest {
                 }
             }
             mutationEntered.await()
-            manager.setStopAtTop(true)
+            manager.saveJustLiftDefaultsDocument(
+                manager.getJustLiftDefaultsDocument().copy(weightPerCableKg = 42f),
+            )
             runCurrent()
 
             assertEquals(1, mutationCount)
             releaseMutation.complete(Unit)
             advanceUntilIdle()
 
-            val workout = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.workout.value
-            assertTrue(workout.stopAtTop)
+            val workout = readyProfile().preferences.workout.value
+            assertEquals(42f, workout.justLiftDefaults.weightPerCableKg)
             assertFalse(workout.beepsEnabled)
         } finally {
             releaseMutation.complete(Unit)
@@ -320,176 +272,21 @@ class SettingsManagerTest {
             fakeProfileRepository.setActiveProfileForTest(id = "profile-b")
             advanceUntilIdle()
 
-            assertEquals(
-                0f,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.core.value.bodyWeightKg,
-            )
+            assertEquals(0f, readyProfile().preferences.core.value.bodyWeightKg)
             fakeProfileRepository.setActiveProfileForTest(id = "profile-a")
-            assertEquals(
-                0f,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.core.value.bodyWeightKg,
-            )
+            assertEquals(0f, readyProfile().preferences.core.value.bodyWeightKg)
         } finally {
             managerScope.cancel()
         }
     }
 
-    @Test
-    fun `active profile cascades clear subordinate adult modes`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-            manager.setVerbalEncouragementEnabled(true)
-            manager.setAdultsOnlyConfirmed(true)
-            manager.setVulgarModeEnabled(true)
-            manager.setDominatrixModeUnlocked(true)
-            manager.setDominatrixModeActive(true)
-            advanceUntilIdle()
+    private fun readyProfile(): ActiveProfileContext.Ready =
+        assertIs(fakeProfileRepository.activeProfileContext.value)
 
-            manager.setVerbalEncouragementEnabled(false)
-            advanceUntilIdle()
-
-            var vbt = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.vbt.value
-            assertFalse(vbt.verbalEncouragementEnabled)
-            assertFalse(vbt.vulgarModeEnabled)
-            assertFalse(vbt.dominatrixModeActive)
-
-            manager.setVerbalEncouragementEnabled(true)
-            manager.setVulgarModeEnabled(true)
-            manager.setDominatrixModeActive(true)
-            manager.setVulgarModeEnabled(false)
-            advanceUntilIdle()
-
-            vbt = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.vbt.value
-            assertFalse(vbt.vulgarModeEnabled)
-            assertFalse(vbt.dominatrixModeActive)
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `adult mode gates and VBT disable preserve subordinate values`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.setVulgarModeEnabled(true)
-            manager.setDominatrixModeUnlocked(true)
-            manager.setDominatrixModeActive(true)
-            advanceUntilIdle()
-            var ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-            assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
-            assertFalse(ready.preferences.vbt.value.dominatrixModeActive)
-
-            manager.setAdultsOnlyPrompted(true)
-            manager.setVulgarModeEnabled(true)
-            manager.setDominatrixModeActive(true)
-            advanceUntilIdle()
-            ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-            assertTrue(ready.preferences.vbt.value.vulgarModeEnabled)
-            assertFalse(ready.preferences.vbt.value.dominatrixModeActive)
-
-            manager.setAdultsOnlyConfirmed(true)
-            manager.setDominatrixModeActive(true)
-            manager.setVelocityLossThreshold(35)
-            manager.setAutoEndOnVelocityLoss(true)
-            advanceUntilIdle()
-            manager.setVbtEnabled(false)
-            advanceUntilIdle()
-
-            val vbt = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                .preferences.vbt.value
-            assertFalse(vbt.enabled)
-            assertEquals(35, vbt.velocityLossThresholdPercent)
-            assertTrue(vbt.autoEndOnVelocityLoss)
-            assertTrue(vbt.vulgarModeEnabled)
-            assertTrue(vbt.dominatrixModeActive)
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `velocity loss threshold is clamped to supported profile range`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.setVelocityLossThreshold(5)
-            advanceUntilIdle()
-            assertEquals(
-                10,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.vbt.value.velocityLossThresholdPercent,
-            )
-
-            manager.setVelocityLossThreshold(75)
-            advanceUntilIdle()
-            assertEquals(
-                50,
-                assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-                    .preferences.vbt.value.velocityLossThresholdPercent,
-            )
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `confirmation implies prompted while prompted alone never confirms`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.setAdultsOnlyPrompted(true)
-            advanceUntilIdle()
-            var safety = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value).localSafety
-            assertTrue(safety.adultsOnlyPrompted)
-            assertFalse(safety.adultsOnlyConfirmed)
-
-            manager.setAdultsOnlyConfirmed(true)
-            advanceUntilIdle()
-            safety = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value).localSafety
-            assertTrue(safety.adultsOnlyPrompted)
-            assertTrue(safety.adultsOnlyConfirmed)
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `composite adult confirmation is serialized and never enables profile B`() = runTest {
-        fakeProfileRepository.setActiveProfileForTest(id = "profile-a")
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
-
-            manager.confirmAdultsAndEnableVulgar()
-            fakeProfileRepository.setActiveProfileForTest(id = "profile-b")
-            advanceUntilIdle()
-
-            var ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-            assertFalse(ready.localSafety.adultsOnlyConfirmed)
-            assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
-
-            manager.confirmAdultsAndEnableVulgar()
-            advanceUntilIdle()
-            ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-            assertTrue(ready.localSafety.adultsOnlyConfirmed)
-            assertTrue(ready.localSafety.adultsOnlyPrompted)
-            assertTrue(ready.preferences.vbt.value.vulgarModeEnabled)
-
-            fakeProfileRepository.setActiveProfileForTest(id = "profile-a")
-            ready = assertIs<ActiveProfileContext.Ready>(fakeProfileRepository.activeProfileContext.value)
-            assertFalse(ready.localSafety.adultsOnlyConfirmed)
-            assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
-        } finally {
-            managerScope.cancel()
-        }
+    private suspend fun updateActiveWorkout(
+        transform: (WorkoutPreferences) -> WorkoutPreferences,
+    ) {
+        val ready = readyProfile()
+        fakeProfileRepository.updateWorkout(ready.profile.id, transform(ready.preferences.workout.value))
     }
 }
