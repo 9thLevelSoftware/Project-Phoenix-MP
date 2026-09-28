@@ -501,7 +501,6 @@ fun WorkoutTab(
                             workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
-                            formatWeight = formatWeight,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
                                 // Just Lift set. If the user already decided, or the set isn't a

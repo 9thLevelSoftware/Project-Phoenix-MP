@@ -124,7 +124,6 @@ fun HistoryTab(
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     recentJustLiftExerciseIds: List<String> = emptyList(),
-    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
@@ -455,7 +454,6 @@ fun WorkoutHistoryCard(
                             workoutMode = session.mode,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
-                            formatWeight = formatWeight,
                             onContinue = { },
                             autoplayEnabled = false,
                             summaryCountdownSeconds = 0, // History view - no auto-continue
@@ -523,7 +521,6 @@ fun WorkoutHistoryCard(
                         sessionId = session.id,
                         cableCount = null,
                         weightUnit = weightUnit,
-                        formatWeight = formatWeight,
                     )
 
                     // Rep Details Section
@@ -607,7 +604,6 @@ private fun CompletedSetsSection(
     sessionId: String,
     cableCount: Int?,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
 ) {
     val completedSetRepository: CompletedSetRepository = koinInject()
     var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
@@ -1024,7 +1020,6 @@ fun GroupedRoutineCard(
                                 workoutMode = session.mode,
                                 weightUnit = weightUnit,
                                 kgToDisplay = kgToDisplay,
-                                formatWeight = formatWeight,
                                 onContinue = { },
                                 autoplayEnabled = false,
                                 summaryCountdownSeconds = 0, // History view - no auto-continue
@@ -1090,7 +1085,6 @@ fun GroupedRoutineCard(
                             sessionId = session.id,
                             cableCount = null,
                             weightUnit = weightUnit,
-                            formatWeight = formatWeight,
                         )
 
                         // Rep Details Section per session
