@@ -68,9 +68,9 @@ import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.presentation.components.EccentricLoadSlider
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
-import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
@@ -101,7 +101,6 @@ import projectphoenix.shared.generated.resources.drop_set_skip_rest_blocked
 import projectphoenix.shared.generated.resources.drop_set_waiting_timer
 import projectphoenix.shared.generated.resources.rest_complete_announcement
 import projectphoenix.shared.generated.resources.rest_continue
-import projectphoenix.shared.generated.resources.rest_eccentric_load
 import projectphoenix.shared.generated.resources.rest_end_workout
 import projectphoenix.shared.generated.resources.rest_exercise_of
 import projectphoenix.shared.generated.resources.rest_mode
@@ -558,7 +557,7 @@ fun RestTimerCard(
                                 },
                             )
 
-                            RestTimerEccentricLoadSlider(
+                            EccentricLoadSlider(
                                 percent = editedEccentricPercent,
                                 onPercentChange = { newPercent ->
                                     editedEccentricPercent = newPercent
@@ -722,44 +721,6 @@ private fun formatRestTime(seconds: Int): String {
     val minutes = safeSeconds / 60
     val remainingSeconds = safeSeconds % 60
     return "$minutes:${remainingSeconds.toString().padStart(2, '0')}"
-}
-
-/**
- * Eccentric Load slider for Rest Timer (100-150%)
- */
-@Composable
-private fun RestTimerEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(Res.string.rest_eccentric_load),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
-            )
-            Text(
-                text = percentLabel(percent),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        // Fine-grained slider (5% increments) - callback snaps to nearest valid EccentricLoad enum
-        ExpressiveSlider(
-            value = percent.toFloat(),
-            onValueChange = { onPercentChange(it.toInt()) },
-            valueRange = 0f..150f,
-            steps = 29, // 5% increments: 0, 5, 10, ... 150
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
