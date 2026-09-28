@@ -101,7 +101,6 @@ actual fun CompactNumberPicker(
             AndroidView(
                 factory = { context ->
                     NumberPicker(context).apply {
-                        wrapSelectorWheel = false
                         applyCompactNumberPickerState(
                             picker = NumberPickerCompactWheel(this),
                             values = values,
@@ -273,6 +272,7 @@ internal interface CompactWheelPicker {
     var minValue: Int
     var maxValue: Int
     var value: Int
+    var wrapSelectorWheel: Boolean
     fun setOnIndexSelected(listener: (Int) -> Unit)
 }
 
@@ -287,6 +287,11 @@ internal interface CompactWheelPicker {
  *
  * When the labels and range are already current, only the listener and selected
  * index are updated.
+ *
+ * Wrapping is switched off after the range is applied. On API 26-28, NumberPicker's
+ * setMinValue/setMaxValue recompute wrapSelectorWheel from the range size and discard an
+ * earlier setWrapSelectorWheel(false), so the weight wheel would otherwise wrap from its
+ * minimum straight to its maximum.
  */
 internal fun applyCompactNumberPickerState(
     picker: CompactWheelPicker,
@@ -317,6 +322,9 @@ internal fun applyCompactNumberPickerState(
     }
     if (picker.displayedValues?.contentEquals(displayValues) != true) {
         picker.displayedValues = displayValues
+    }
+    if (picker.wrapSelectorWheel) {
+        picker.wrapSelectorWheel = false
     }
     picker.setOnIndexSelected { index ->
         values.getOrNull(index)?.let(onValueChange)
@@ -360,6 +368,12 @@ private class NumberPickerCompactWheel(
         get() = picker.value
         set(value) {
             picker.value = value
+        }
+
+    override var wrapSelectorWheel: Boolean
+        get() = picker.wrapSelectorWheel
+        set(value) {
+            picker.wrapSelectorWheel = value
         }
 
     override fun setOnIndexSelected(listener: (Int) -> Unit) {
