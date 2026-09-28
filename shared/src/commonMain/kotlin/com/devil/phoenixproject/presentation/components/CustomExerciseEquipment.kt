@@ -14,9 +14,9 @@ import com.devil.phoenixproject.domain.model.Exercise
  * - Bodyweight mode hides the dropdown and saves BODYWEIGHT.
  * - A save without an explicit pick preserves unrecognized existing tokens
  *   (BARBELL, CABLE, comma lists, ...); they are never coerced to HANDLES.
- * - Labels here are the same display names `formatEquipmentCompact` (list subtitle)
- *   and the equipment filter chips use, so the picker can find what this dialog
- *   creates. Do not let the dialog invent a third set of names.
+ * - Labels come from the shared [EquipmentVocabulary], the same names the list
+ *   subtitle (`compactEquipmentLabel`) and the equipment filter chips use, so the
+ *   picker can find what this dialog creates. Never define a private set of names here.
  */
 data class CustomEquipmentPreselect(
     /** Resistance-type chip state: true = Cables (dropdown visible), false = Bodyweight. */
@@ -37,17 +37,13 @@ private const val BODYWEIGHT_TOKEN = "BODYWEIGHT"
 
 /**
  * The signed-off accessory options in stable display order, `(token, label)`.
- * Tokens are the existing equipment vocabulary; labels match the list subtitle
- * (`formatEquipmentCompact`) and the exercise-picker filter chips exactly.
+ * Tokens are the existing equipment vocabulary; labels are read from the shared
+ * [EquipmentVocabulary] so they match the list subtitle and the exercise-picker
+ * filter chips exactly.
  */
-fun customCableEquipmentOptions(): List<Pair<String, String>> = listOf(
-    HANDLES_TOKEN to "Handles",
-    "SHORT_BAR" to "Short Bar",
-    "BAR" to "Long Bar",
-    "ROPE" to "Rope",
-    "BELT" to "Belt",
-    "STRAPS" to "Ankle Strap",
-)
+fun customCableEquipmentOptions(): List<Pair<String, String>> =
+    listOf(HANDLES_TOKEN, "SHORT_BAR", "BAR", "ROPE", "BELT", "STRAPS")
+        .map { token -> token to EquipmentVocabulary.TOKEN_LABELS.getValue(token) }
 
 /**
  * Token stored by the custom-exercise save path.
@@ -116,9 +112,9 @@ fun preselectCustomEquipment(existing: Exercise?): CustomEquipmentPreselect {
 
 /**
  * Display label for a stored equipment token: the listed option label when it is one
- * of the six, else the same compact mapping `formatEquipmentCompact` uses, else the
- * raw token. The raw fallback is mandatory: `formatEquipmentCompact` is private and
- * drops unknown tokens entirely, which would leave the field blank.
+ * of the six, else the same compact mapping `compactEquipmentLabel` uses, else the
+ * raw token. The raw fallback is mandatory: the compact mapping drops unknown tokens
+ * entirely, which would leave the field blank.
  */
 fun labelForCustomEquipmentToken(token: String): String {
     val trimmed = token.trim()
@@ -128,44 +124,5 @@ fun labelForCustomEquipmentToken(token: String): String {
         optionToken.equals(trimmed, ignoreCase = true)
     }?.let { (_, label) -> return label }
 
-    val compact = trimmed
-        .split(",")
-        .map { it.trim().uppercase() }
-        .filter { it !in COMPACT_EQUIPMENT_NOISE_TOKENS }
-        .mapNotNull { COMPACT_EQUIPMENT_LABELS[it] }
-        .distinct()
-        .joinToString(", ")
-
-    return compact.ifBlank { trimmed }
+    return compactEquipmentLabel(trimmed).ifBlank { trimmed }
 }
-
-// Mirrors the private `formatEquipmentCompact` map in ExerciseRowContent.kt (see note I1
-// in the implementation spec): duplicated on purpose so this helper stays pure and the
-// dialog never invents a third set of equipment names.
-private val COMPACT_EQUIPMENT_LABELS = mapOf(
-    "BAR" to "Long Bar",
-    "LONG_BAR" to "Long Bar",
-    "BARBELL" to "Long Bar",
-    "SHORT_BAR" to "Short Bar",
-    "BENCH" to "Bench",
-    "HANDLES" to "Handles",
-    "SINGLE_HANDLE" to "Handles",
-    "BOTH_HANDLES" to "Handles",
-    "STRAPS" to "Ankle Strap",
-    "ANKLE_STRAP" to "Ankle Strap",
-    "BELT" to "Belt",
-    "ROPE" to "Rope",
-    "BODYWEIGHT" to "Bodyweight",
-)
-
-private val COMPACT_EQUIPMENT_NOISE_TOKENS = setOf(
-    "BLACK_CABLES",
-    "RED_CABLES",
-    "GREY_CABLES",
-    "CABLES",
-    "CABLE",
-    "NULL",
-    "",
-    "PUMP_HANDLES",
-    "DUMBBELLS",
-)

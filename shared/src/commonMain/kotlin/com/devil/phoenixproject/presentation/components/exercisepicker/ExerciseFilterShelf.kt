@@ -46,8 +46,9 @@ import projectphoenix.shared.generated.resources.Res
  * Issue #970 restored "Short Bar", "Rope", and "Ankle Strap": the custom-exercise dialog can
  * now produce SHORT_BAR / ROPE / STRAPS, so those filters are live again. "Bench" stays
  * retired (issue #883): no seed row, custom-exercise path, or wger refresh carries BENCH.
- * Token aliases remain in `getEquipmentDatabaseValues` and `formatEquipmentCompact` so
- * legacy custom rows restored from old backups still render and filter by name search.
+ * Token aliases live once in `EquipmentVocabulary` (shared by `getEquipmentDatabaseValues`,
+ * the `compactEquipmentLabel` subtitle, and the custom-exercise dropdown) so legacy custom
+ * rows restored from old backups still render and filter by name search.
  * "Belt" stays and is backed by the supplemental seed; "Bodyweight" stays (isBodyweight flag
  * branch); "Handles" stays because custom cable exercises default to the HANDLES token.
  */
