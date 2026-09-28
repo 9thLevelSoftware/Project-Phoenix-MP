@@ -7,7 +7,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.domain.model.Routine
@@ -54,13 +53,9 @@ import projectphoenix.shared.generated.resources.Res
 fun DailyRoutinesScreen(
     navController: NavController,
     viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
 ) {
     val routines by viewModel.routines.collectAsState()
     val routineGroups by viewModel.routineGroups.collectAsState()
-    val weightUnit by viewModel.weightUnit.collectAsState()
-    val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
@@ -197,13 +192,6 @@ fun DailyRoutinesScreen(
         // Reuse RoutinesTab content
         RoutinesTab(
             routines = routines,
-            exerciseRepository = exerciseRepository,
-            personalRecordRepository = viewModel.personalRecordRepository,
-            formatWeight = viewModel::formatWeight,
-            weightUnit = weightUnit,
-            enableVideoPlayback = enableVideoPlayback,
-            kgToDisplay = viewModel::kgToDisplay,
-            displayToKg = viewModel::displayToKg,
             onStartWorkout = { routine ->
                 pendingResumeHandle = null
                 resumeOperationInFlight = true
@@ -281,7 +269,6 @@ fun DailyRoutinesScreen(
                     pickRoutineCsv = true
                 }
             },
-            themeMode = themeMode,
             modifier = Modifier.fillMaxSize(),
         )
 
