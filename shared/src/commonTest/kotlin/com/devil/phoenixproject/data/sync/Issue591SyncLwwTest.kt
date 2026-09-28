@@ -270,7 +270,7 @@ class Issue591SyncLwwTest {
     // PR 29: per-exercise cableCount pulled from the portal must reach the local DB
     // through the real LWW merge, and a pulled null (unknown) must never clobber it.
 
-    private fun pulledSession(sessionId: String, cableCount: Int?): WorkoutSession {
+    private suspend fun pulledSession(sessionId: String, cableCount: Int?): WorkoutSession {
         val dto = PullWorkoutSessionDto(
             id = "portal-$sessionId",
             userId = "user-1",
@@ -288,7 +288,10 @@ class Issue591SyncLwwTest {
                 ),
             ),
         )
-        return PortalPullAdapter.toWorkoutSessions(dto, profileId = testProfileId).single()
+        return PortalPullAdapter.toWorkoutSessionsWithLookup(
+            dto,
+            profileId = testProfileId,
+        ) { _, _, _ -> null }.single()
     }
 
     private fun localRowSession(sessionId: String, cableCount: Int?) = WorkoutSession(
