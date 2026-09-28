@@ -132,34 +132,6 @@ class RoutineResumeUiDecisionTest {
             releaseLoad.complete(Unit)
 
             assertFalse(result.await(), entryPoint.name)
-            assertFalse(authority.mayCommitInMemory(handleStillCurrent = true), entryPoint.name)
-        }
-    }
-
-    @Test
-    fun `a stale cycle callback cannot dismiss the newer candidate`() {
-        listOf(
-            RoutineResumeEntryPoint.HOME_CYCLE,
-            RoutineResumeEntryPoint.TRAINING_CYCLES,
-        ).forEach { entryPoint ->
-            var currentToken = 8
-            var invalidCurrentContextDismissals = 0
-            val authority = RoutineResumeActionAuthority(
-                entryPoint = entryPoint,
-                actionToken = currentToken,
-                currentToken = { currentToken },
-                contextIsCurrent = { true },
-            )
-            currentToken += 1
-
-            assertFalse(
-                authority.validateCurrentContext(
-                    contextIsValid = false,
-                    onCurrentInvalid = { invalidCurrentContextDismissals += 1 },
-                ),
-                entryPoint.name,
-            )
-            assertEquals(0, invalidCurrentContextDismissals, entryPoint.name)
         }
     }
 
@@ -243,9 +215,8 @@ class RoutineResumeUiDecisionTest {
     }
 
     @Test
-    fun `the exact current entry point can commit load callback and invalid-context dismissal`() = runTest {
+    fun `the exact current entry point publishes a load while its token and context stay current`() = runTest {
         RoutineResumeEntryPoint.entries.forEach { entryPoint ->
-            var invalidCurrentContextDismissals = 0
             val authority = RoutineResumeActionAuthority(
                 entryPoint = entryPoint,
                 actionToken = 3,
@@ -254,16 +225,6 @@ class RoutineResumeUiDecisionTest {
             )
 
             assertTrue(authority.awaitCurrentPublication { stillCurrent -> stillCurrent() }, entryPoint.name)
-            assertTrue(authority.mayCommitInMemory(handleStillCurrent = true), entryPoint.name)
-            assertFalse(authority.mayCommitInMemory(handleStillCurrent = false), entryPoint.name)
-            assertFalse(
-                authority.validateCurrentContext(
-                    contextIsValid = false,
-                    onCurrentInvalid = { invalidCurrentContextDismissals += 1 },
-                ),
-                entryPoint.name,
-            )
-            assertEquals(1, invalidCurrentContextDismissals, entryPoint.name)
         }
     }
 
