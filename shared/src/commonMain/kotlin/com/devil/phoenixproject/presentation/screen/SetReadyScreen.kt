@@ -75,11 +75,11 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.EccentricLoadSlider
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
-import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -94,7 +94,6 @@ import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
-import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
@@ -670,7 +669,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             )
 
                             // Eccentric Load slider - matching RestTimerCard style
-                            SetReadyEccentricLoadSlider(
+                            EccentricLoadSlider(
                                 percent = setReadyState.eccentricLoadPercent ?: 100,
                                 onPercentChange = { viewModel.updateSetReadyEccentricLoad(it) },
                             )
@@ -1073,41 +1072,6 @@ private fun parseBodyWeightInputKg(input: String, weightUnit: WeightUnit): Float
     return when (weightUnit) {
         WeightUnit.KG -> displayValue
         WeightUnit.LB -> UnitConverter.lbToKg(displayValue)
-    }
-}
-
-/**
- * Eccentric Load slider matching RestTimerCard style (0-150%)
- */
-@Composable
-private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "ECCENTRIC LOAD",
-                style = labelSmallAllCaps,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = "$percent%",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        ExpressiveSlider(
-            value = percent.toFloat(),
-            onValueChange = { onPercentChange(it.toInt()) },
-            valueRange = 0f..150f,
-            steps = 29, // 5% increments: 0, 5, 10, ... 150
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
