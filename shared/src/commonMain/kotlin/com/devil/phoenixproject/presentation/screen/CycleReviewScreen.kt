@@ -52,9 +52,10 @@ fun CycleReviewScreen(
     // Track expanded state for each day by id (stable key)
     val expandedDays = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Clear topbar title to allow dynamic title from EnhancedMainScreen
-    LaunchedEffect(Unit) {
-        viewModel?.updateTopBarTitle("")
+    // Publish this cycle's name. A blank name clears the title so the shell
+    // falls back to "Cycle Review".
+    LaunchedEffect(cycleName) {
+        viewModel?.updateTopBarTitle(cycleName)
     }
 
     Scaffold(
