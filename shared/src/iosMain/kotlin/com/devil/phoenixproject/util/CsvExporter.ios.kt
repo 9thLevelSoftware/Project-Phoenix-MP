@@ -7,17 +7,10 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.*
-import platform.UIKit.UIActivityViewController
-import platform.UIKit.UIApplication
-import platform.UIKit.UIDevice
-import platform.UIKit.UIUserInterfaceIdiomPad
-import platform.darwin.NSObject
-import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_main_queue
 
 /**
  * iOS implementation of CsvExporter.
- * Uses Foundation APIs for file I/O and UIActivityViewController for sharing.
+ * Uses Foundation APIs for file I/O and [presentShareSheet] for sharing.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosCsvExporter : CsvExporter {
@@ -134,38 +127,10 @@ class IosCsvExporter : CsvExporter {
     }
 
     override fun shareCSV(fileUri: String, fileName: String) {
-        val url = NSURL.fileURLWithPath(fileUri)
-
-        // Dispatch to main thread - UIKit requires all UI operations on main thread
-        dispatch_async(dispatch_get_main_queue()) {
-            // Get the key window's root view controller
-            val scenes = UIApplication.sharedApplication.connectedScenes
-            val windowScene = scenes.firstOrNull {
-                it is platform.UIKit.UIWindowScene
-            } as? platform.UIKit.UIWindowScene
-
-            val rootViewController = windowScene?.keyWindow?.rootViewController
-                ?: return@dispatch_async
-
-            val activityVC = UIActivityViewController(
-                activityItems = listOf(url),
-                applicationActivities = null,
-            )
-
-            // Configure popover for iPad - required to prevent crash
-            // Access popoverPresentationController via ObjC KVC since K/N bindings don't expose it directly
-            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
-                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
-                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
-                }
-            }
-
-            rootViewController.presentViewController(
-                activityVC,
-                animated = true,
-                completion = null,
-            )
-        }
+        presentShareSheet(
+            items = listOf(NSURL.fileURLWithPath(fileUri)),
+            onShown = {},
+        )
     }
 
     /**
