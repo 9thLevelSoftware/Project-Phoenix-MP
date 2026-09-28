@@ -94,12 +94,16 @@ class ProfileQaSeedReceiverTest {
     }
 
     @Test
-    fun `debug manifest exports only the explicit QA seed action`() {
+    fun `debug manifest exports the QA seed receiver only to DUMP holders`() {
         val manifest = locateDebugManifest().readText()
+        val receiver = manifest
+            .substringAfter("<receiver", missingDelimiterValue = "")
+            .substringBefore("</receiver>", missingDelimiterValue = "")
 
-        assertTrue(manifest.contains(".qa.ProfileQaSeedReceiver"))
-        assertTrue(manifest.contains("android:exported=\"true\""))
-        assertTrue(manifest.contains("com.devil.phoenixproject.QA_SEED_PROFILE"))
+        assertTrue(receiver.contains(".qa.ProfileQaSeedReceiver"))
+        assertTrue(receiver.contains("android:exported=\"true\""))
+        assertTrue(receiver.contains("android:permission=\"android.permission.DUMP\""))
+        assertTrue(receiver.contains("com.devil.phoenixproject.QA_SEED_PROFILE"))
     }
 
     private fun intent(action: String): Intent = mockk<Intent>().also {

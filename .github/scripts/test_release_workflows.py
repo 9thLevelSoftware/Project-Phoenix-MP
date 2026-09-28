@@ -77,6 +77,35 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40}.*?overwrite: true",
                 )
 
+    def test_internal_testflight_upload_does_not_probe_distribution(self) -> None:
+        # The internal workflow uploads with altool and stops. It has no
+        # distribution step, so the copied JWT poll (and its "will retry"
+        # warning) must not come back. The public workflow still uses that JWT.
+        internal = workflow("ios-testflight-internal.yml")
+        upload = re.search(
+            r"(?ms)^  upload:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+            internal,
+        )
+        self.assertIsNotNone(upload)
+        body = upload.group("body")
+        self.assertIn("xcrun altool --upload-package", body)
+        self.assertIn("AuthKey_${APPSTORE_API_KEY_ID}.p8", body)
+        for absent in (
+            "setup-python",
+            "pip install cryptography",
+            "generate_jwt",
+            "sleep 30",
+            "distribution step will retry",
+            "Verifying upload reached App Store Connect",
+        ):
+            self.assertNotIn(absent, internal)
+
+        public = workflow("ios-testflight.yml")
+        self.assertIn("pip install cryptography", public)
+        self.assertIn("generate_jwt", public)
+        self.assertIn("distribution step will retry", public)
+        self.assertIn("- name: Add build to TestFlight test group", public)
+
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:
         for name, release_job in (("release-all.yml", "create-release"),):
             with self.subTest(workflow=name):
@@ -201,6 +230,29 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 for ref in refs:
                     if not ref.startswith("./"):
                         self.assertRegex(ref, r"@[0-9a-f]{40}$")
+
+    def test_play_version_preflight_is_one_shared_script(self) -> None:
+        script = ROOT / ".github" / "scripts" / "resolve-play-version-code.sh"
+        self.assertTrue(script.is_file())
+        steps = []
+        for name in ("android-release-apk.yml", "android-playstore.yml"):
+            text = workflow(name)
+            start = text.index("      # This workflow may build a historical tag, whose checkout predates the helper.\n")
+            end = text.index("      - name: Write Supabase credentials to local.properties")
+            step = text[start:end]
+            steps.append(step)
+            self.assertIn(".github/scripts/resolve-play-version-code.sh", step)
+            self.assertIn("${{ github.workflow_sha }}", step)
+            self.assertIn("id: version", step)
+            self.assertIn("PACKAGE_NAME: com.devil.phoenixproject", step)
+            self.assertIn("VERSION_CODE_OVERRIDE: ${{ inputs.versionCodeOverride }}", step)
+            self.assertNotIn("androidpublisher.googleapis.com", step)
+            self.assertNotIn("PLAY_MAX_VERSION_CODE", step)
+            self.assertIn(
+                "-Pversion.code=${{ steps.version.outputs.selected_version_code }}",
+                text,
+            )
+        self.assertEqual(steps[0], steps[1])
 
     def test_release_asset_replacement_is_staged_and_uses_workflow_sha_helper(self) -> None:
         for name in ("android-release-apk.yml", "ios-release-ipa.yml"):

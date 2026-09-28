@@ -420,7 +420,10 @@ fun WorkoutTab(
                 )
             }
 
-            // OVERLAYS - These float on top of all content
+            // State cards. Despite the historical "overlay" name these do NOT
+            // float: they are children of the scrolling Column above and are
+            // measured with an unbounded max height. Nothing composed here may
+            // add its own unbounded vertical scrollable (issue #893).
             when (workoutState) {
                 is WorkoutState.Countdown -> {
                     if (!workoutParameters.isJustLift) {
