@@ -38,12 +38,6 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // fix(audit): H — empty catch blocks below used to swallow errors silently.
-    // Surface the error via state so the UI can render an empty/error state
-    // instead of just sitting at loading=false with no data.
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
-
     // Streak info from repository (real-time, reactive to profile switches)
     val streakInfo: StateFlow<StreakInfo> = activeProfileId
         .flatMapLatest { profileId -> repository.getStreakInfo(profileId) }
@@ -53,11 +47,6 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
     val gamificationStats: StateFlow<GamificationStats> = activeProfileId
         .flatMapLatest { profileId -> repository.getGamificationStats(profileId) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GamificationStats.EMPTY)
-
-    // Uncelebrated badges for celebration dialog (reactive to profile switches)
-    val uncelebratedBadges: StateFlow<List<EarnedBadge>> = activeProfileId
-        .flatMapLatest { profileId -> repository.getUncelebratedBadges(profileId) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // RPG Profile state (computed on demand from BadgesScreen)
     private val _rpgProfile = MutableStateFlow<RpgProfile?>(null)
@@ -83,11 +72,10 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
         get() = BadgeDefinitions.totalBadgeCount
 
     init {
-        // F049: badge progress must track profile switches like streaks/stats/
-        // uncelebrated badges above. getAllBadgesWithProgress is suspend (not a
-        // Flow), so collect activeProfileId and reload; collectLatest cancels an
-        // in-flight load for a previous profile, preventing a stale slow result
-        // from overwriting the new profile's badges.
+        // F049: badge progress must track profile switches like streaks and stats.
+        // getAllBadgesWithProgress is suspend (not a Flow), so collect activeProfileId
+        // and reload. collectLatest cancels an in-flight load for a previous profile,
+        // preventing a stale slow result from overwriting the new profile's badges.
         viewModelScope.launch {
             activeProfileId.collectLatest { profileId ->
                 loadBadgesForProfile(profileId)
@@ -102,16 +90,14 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
 
     private suspend fun loadBadgesForProfile(profileId: String) {
         _isLoading.value = true
-        _loadError.value = null
         // Clear stale badges so the UI doesn't show the previous profile's data
-        // while the new profile loads.
+        // while the new profile loads. Load failures are logged only; nothing collects
+        // an error state for this screen.
         _badgesWithProgress.value = emptyList()
         try {
             _badgesWithProgress.value = repository.getAllBadgesWithProgress(profileId)
         } catch (e: Exception) {
-            // fix(audit): H — log and surface the error instead of silently swallowing.
             Logger.e("GamificationViewModel", e) { "Failed to load badges: ${e.message}" }
-            _loadError.value = e.message ?: "Failed to load badges"
         } finally {
             _isLoading.value = false
         }
@@ -144,30 +130,5 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
 
     fun selectCategory(category: BadgeCategory?) {
         _selectedCategory.value = category
-    }
-
-    fun markBadgeCelebrated(badgeId: String) {
-        viewModelScope.launch {
-            val profileId = activeProfileId.value
-            try {
-                repository.markBadgeCelebrated(badgeId, profileId)
-            } catch (e: Exception) {
-                Logger.w("GamificationViewModel", e) { "Failed to mark badge celebrated: ${e.message}" }
-            }
-        }
-    }
-
-    /**
-     * Update stats and check for new badges
-     * Should be called after workout completion
-     */
-    suspend fun updateAndCheckBadges(): List<Badge> {
-        val profileId = activeProfileId.value
-        repository.updateStats(profileId)
-        val newBadges = repository.checkAndAwardBadges(profileId)
-        if (newBadges.isNotEmpty()) {
-            loadBadges() // Refresh badge list
-        }
-        return newBadges
     }
 }

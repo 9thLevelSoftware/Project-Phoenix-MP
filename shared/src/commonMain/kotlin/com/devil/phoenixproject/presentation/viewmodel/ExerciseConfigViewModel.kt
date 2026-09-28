@@ -553,10 +553,6 @@ class ExerciseConfigViewModel constructor(
         }
     }
 
-    fun onPRTypeForScalingChange(prType: PRType) {
-        _prTypeForScaling.value = prType
-    }
-
     // Issue #517: explicit 3-way scaling basis selector
     fun onScalingBasisChange(basis: ScalingBasis) {
         _scalingBasis.value = basis

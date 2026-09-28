@@ -6918,7 +6918,7 @@ class ActiveSessionEngine(
 
     suspend fun getJustLiftDefaults(): JustLiftDefaults = settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
 
-    fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
+    internal fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
         Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
     }
@@ -6986,7 +6986,7 @@ class ActiveSessionEngine(
         exerciseId: String,
     ): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
 
-    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
+    internal fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
         settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
         Logger.d("saveSingleExerciseDefaults: exerciseId=${defaults.exerciseId}")
     }
@@ -7431,20 +7431,6 @@ class ActiveSessionEngine(
         coordinator._selectedBodyweightVariants.value = emptyMap()
         coordinator.bodyweightCompletionVariantOverride = null
         coordinator.clearActiveRackSelection()
-    }
-
-    fun recaptureLoadBaseline() {
-        coordinator._currentMetric.value?.let { metric ->
-            coordinator._loadBaselineA.value = metric.loadA
-            coordinator._loadBaselineB.value = metric.loadB
-            Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Manually recaptured loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
-        }
-    }
-
-    fun resetLoadBaseline() {
-        coordinator._loadBaselineA.value = 0f
-        coordinator._loadBaselineB.value = 0f
-        Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
     /**
