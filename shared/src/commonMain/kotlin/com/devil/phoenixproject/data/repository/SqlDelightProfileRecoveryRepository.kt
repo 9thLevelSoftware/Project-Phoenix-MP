@@ -1,14 +1,20 @@
 package com.devil.phoenixproject.data.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.database.PendingProfileRecovery
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 
 class SqlDelightProfileRecoveryRepository(
     private val database: PhoenixDatabase,
@@ -28,6 +34,12 @@ class SqlDelightProfileRecoveryRepository(
     private val _pendingRecoveries = MutableStateFlow<List<PendingProfileRecoveryGroup>>(emptyList())
     override val pendingRecoveries: StateFlow<List<PendingProfileRecoveryGroup>> =
         _pendingRecoveries.asStateFlow()
+
+    override fun observeUnresolved(): Flow<List<PendingProfileRecoveryGroup>> =
+        queries.selectUnresolvedProfileRecoveries()
+            .asFlow()
+            .mapToList(Dispatchers.IO)
+            .map { rows -> rows.map(PendingProfileRecovery::toRecoveryGroup) }
 
     override suspend fun refresh() {
         refreshSync()
