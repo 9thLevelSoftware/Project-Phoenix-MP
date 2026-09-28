@@ -104,14 +104,8 @@ abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
 
     @TaskAction
     fun verifyRuntimeConfig() {
-        val url = configuredSupabaseUrl.get()
-        val uri = runCatching { URI(url) }.getOrNull()
-            ?: throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
-        if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
-            throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
-        }
-
-        val host = uri.host.lowercase()
+        val uri = validateSupabaseUrl(configuredSupabaseUrl.get())
+        val host = checkNotNull(uri.host).lowercase()
 
         val addresses = InetAddress.getAllByName(host)
         if (addresses.isEmpty()) {
@@ -119,6 +113,16 @@ abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
         }
 
         println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}, authPath=/auth/v1")
+    }
+
+    companion object {
+        fun validateSupabaseUrl(url: String): URI {
+            val uri = runCatching { URI(url) }.getOrNull()
+            if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
+                throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
+            }
+            return uri
+        }
     }
 }
 
@@ -143,15 +147,6 @@ val supabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.is
     ?: System.getenv("SUPABASE_ANON_KEY")
     ?: ""
 
-fun validateSupabaseUrl(url: String) {
-    val uri = runCatching { URI(url) }.getOrNull()
-        ?: throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
-
-    if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
-        throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
-    }
-}
-
 // Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
 val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
 if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
@@ -162,7 +157,7 @@ if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) 
     )
 }
 if (!skipSupabaseCheck && supabaseUrl.isNotBlank()) {
-    validateSupabaseUrl(supabaseUrl)
+    VerifySupabaseRuntimeConfigTask.validateSupabaseUrl(supabaseUrl)
 }
 
 tasks.register<VerifySupabaseRuntimeConfigTask>("verifySupabaseRuntimeConfig") {
@@ -258,12 +253,22 @@ android {
     }
 }
 
-// Fail fast when release builds lack an injected version code.
-// The defaultConfig fallback (versionCode = 8) is fine for debug but would produce
-// an APK with a lower versionCode than any Play Store release, making it
-// uninstallable as an upgrade. This guard fires only for release tasks.
+// Fail fast when a release APK or app bundle would be packaged without an injected
+// version code. The defaultConfig fallback is fine for debug, but a release artifact
+// with that versionCode cannot upgrade a Play install. AGP 9.2 writes those artifacts
+// from the tasks below; compile, lint, and resource tasks stay runnable.
+val releasePackagingTaskNames = setOf(
+    "assembleRelease",
+    "packageRelease",
+    "bundleRelease",
+    "packageReleaseBundle",
+    "signReleaseBundle",
+    "packageReleaseUniversalApk",
+    "makeApkFromBundleForRelease",
+    "zipApksForRelease",
+)
 tasks.configureEach {
-    if (name.contains("Release", ignoreCase = true) && injectedVersionCode == null) {
+    if (name in releasePackagingTaskNames && injectedVersionCode == null) {
         doFirst {
             throw GradleException(
                 "version.code property must be set for release builds. " +
@@ -314,9 +319,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.ktor.client.mock)
-    testImplementation(libs.multiplatform.settings)
-    testImplementation(libs.multiplatform.settings.test)
+    // QaBlockingPortalApiClientTest in src/testDebug is the only androidApp user.
+    // MapSettings comes from multiplatform-settings-test, not the main settings artifact.
+    testDebugImplementation(libs.ktor.client.mock)
+    testDebugImplementation(libs.multiplatform.settings)
+    testDebugImplementation(libs.multiplatform.settings.test)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.security.crypto)
     androidTestImplementation(libs.multiplatform.settings)
