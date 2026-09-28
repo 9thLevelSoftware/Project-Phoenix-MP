@@ -576,15 +576,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 }
                             }
                             if (resolvedBodyWeightKg > 0f) {
-                                val effectiveKg = if (selectedVariant.percentage > 0f) {
-                                    (
-                                        resolvedBodyWeightKg * selectedVariant.percentage +
-                                            currentRackLoadAdjustment.externalAddedLoadKg -
-                                            currentRackLoadAdjustment.counterweightKg
-                                        ).coerceAtLeast(0f)
-                                } else {
-                                    0f
-                                }
+                                val effectiveKg = BodyweightVolumeCalculator.effectiveWeight(
+                                    bodyWeightKg = resolvedBodyWeightKg,
+                                    percentage = selectedVariant.percentage,
+                                    externalAddedLoadKg = currentRackLoadAdjustment.externalAddedLoadKg,
+                                    counterweightKg = currentRackLoadAdjustment.counterweightKg,
+                                )
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
                                     "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
                                 } else {

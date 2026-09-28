@@ -73,6 +73,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
@@ -969,15 +970,12 @@ private fun BodyweightRepEntryDialog(
     var expanded by remember { mutableStateOf(false) }
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
-    val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
-        (
-            entry.bodyWeightKg * selectedVariant.percentage +
-                rackLoadAdjustment.externalAddedLoadKg -
-                rackLoadAdjustment.counterweightKg
-            ).coerceAtLeast(0f)
-    } else {
-        0f
-    }
+    val effectiveWeightKg = BodyweightVolumeCalculator.effectiveWeight(
+        bodyWeightKg = entry.bodyWeightKg,
+        percentage = selectedVariant.percentage,
+        externalAddedLoadKg = rackLoadAdjustment.externalAddedLoadKg,
+        counterweightKg = rackLoadAdjustment.counterweightKg,
+    )
     val volumeKg = effectiveWeightKg * reps
     val rackLoadContributionSummary = formatRackLoadContributionSummary(
         contributions = rackLoadAdjustment.loadContributions,

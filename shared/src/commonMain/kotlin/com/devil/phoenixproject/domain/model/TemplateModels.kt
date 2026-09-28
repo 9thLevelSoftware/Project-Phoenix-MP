@@ -69,17 +69,6 @@ fun defaultPercentOfOneRmForReps(reps: Int?): Int = when {
 }
 
 /**
- * Calculate weight for a percentage-based set.
- * Uses 90% of 1RM as "training max" per Wendler's method.
- */
-fun calculateSetWeight(oneRepMaxKg: Float, percentageSet: PercentageSet): Float {
-    val trainingMax = oneRepMaxKg * 0.9f
-    val rawWeight = trainingMax * percentageSet.percent
-    // Round to nearest 0.5kg
-    return (rawWeight * 2).toInt() / 2f
-}
-
-/**
  * An exercise within a template, before being resolved to actual Exercise.
  *
  * @param exerciseName Name to look up in exercise library (fallback)
