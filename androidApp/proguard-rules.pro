@@ -46,9 +46,9 @@
 -dontwarn io.ktor.**
 
 # ==================== OkHttp (Ktor Android engine) ====================
+# OkHttp's consumer rules are -dontwarn plus -keepnames for
+# PublicSuffixDatabase. The app does not load OkHttp by reflection.
 -dontwarn okhttp3.**
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
 
 # ==================== SQLDelight ====================
 -keep class com.devil.phoenixproject.database.** { *; }
@@ -66,7 +66,7 @@
 -keep interface com.russhwolf.settings.** { *; }
 
 # ==================== Kermit Logging ====================
--keep class co.touchlab.kermit.** { *; }
+# Called directly. Kermit 2.1 ships no consumer keep rules.
 -dontwarn co.touchlab.kermit.**
 
 # ==================== Compose ====================
@@ -85,10 +85,16 @@
     <init>(...);
 }
 
-# ==================== Domain Models ====================
-# Keep all domain models for reflection/serialization
--keep class com.devil.phoenixproject.domain.model.** { *; }
--keep class com.devil.phoenixproject.data.preferences.** { *; }
+# ==================== Domain model names ====================
+# kotlinx.serialization does not need these types kept; $$serializer / KSerializer
+# rules above cover @Serializable models and preference documents.
+# ProgramMode nested objects are matched by Kotlin simpleName to stored mode
+# names ("OldSchool", "TUTBeast", ...). Enum constant names are persisted and
+# parsed with Enum.name / valueOf / enumValues (settings, CSV, history).
+-keepnames class com.devil.phoenixproject.domain.model.ProgramMode$*
+-keepclassmembernames enum com.devil.phoenixproject.domain.model.** {
+    public static <fields>;
+}
 
 # ==================== Okio (used by SQLDelight) ====================
 -dontwarn org.codehaus.mojo.animal_sniffer.*
