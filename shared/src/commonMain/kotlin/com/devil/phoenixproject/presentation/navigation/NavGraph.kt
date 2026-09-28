@@ -212,8 +212,6 @@ fun NavGraph(
                 DailyRoutinesScreen(
                     navController = navController,
                     viewModel = viewModel,
-                    exerciseRepository = exerciseRepository,
-                    themeMode = themeMode,
                 )
             }
 
