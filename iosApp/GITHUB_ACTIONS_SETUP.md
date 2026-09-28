@@ -55,7 +55,7 @@ GitHub secrets before the next release.
 | `PROVISION_PROFILE_BASE64` | Provisioning profile as base64 | See Step 2 below |
 | `KEYCHAIN_PASSWORD` | Any random password | Generate: `openssl rand -base64 32` |
 | `TEAM_ID` | 10-character Apple Team ID | See Step 3 below |
-| `PROVISIONING_PROFILE_NAME` | Name of provisioning profile | e.g., "Phoenix Distribution" |
+| `PROVISIONING_PROFILE_NAME` | Name of the provisioning profile | `macdevil` (already in `iosApp/ExportOptions.plist`) |
 
 ### App Store Connect Secrets (TestFlight only)
 
@@ -107,25 +107,22 @@ Both TestFlight workflows use the API key secrets and `APP_APPLE_ID`; `ios-testf
 4. Select your App ID: `com.devil.phoenixproject.projectphoenix`
    - If it doesn't exist, create it under **Identifiers** first
 5. Select your Distribution certificate
-6. Name it (e.g., "Phoenix Distribution")
+6. Name it `macdevil` (the name already committed in `iosApp/ExportOptions.plist`)
 7. Download the `.mobileprovision` file
 8. Convert to base64:
    ```bash
-   base64 -i Phoenix_Distribution.mobileprovision | pbcopy
+   base64 -i macdevil.mobileprovision | pbcopy
    ```
 9. Paste into GitHub secret `PROVISION_PROFILE_BASE64`
-10. Save the profile name as `PROVISIONING_PROFILE_NAME`
+10. Save the profile name `macdevil` as `PROVISIONING_PROFILE_NAME`
 
 ### Step 3: Find Your Team ID
 
 1. Go to [Apple Developer → Membership](https://developer.apple.com/account/#!/membership)
-2. Your **Team ID** is listed (10-character alphanumeric, e.g., `ABC123XYZ9`)
-3. Save as `TEAM_ID`
-4. **Also update** `iosApp/ExportOptions.plist`:
-   ```xml
-   <key>teamID</key>
-   <string>YOUR_ACTUAL_TEAM_ID</string>
-   ```
+2. Your **Team ID** is listed (10-character alphanumeric)
+3. Save it as the `TEAM_ID` secret
+
+`iosApp/ExportOptions.plist` already sets `teamID` to `BDJDR669ZV`. The archive step passes `DEVELOPMENT_TEAM` from `TEAM_ID` and exports with that plist unchanged, so the secret should be `BDJDR669ZV`.
 
 ### Step 4: Create App Store Connect API Key (for the TestFlight workflows)
 
@@ -142,22 +139,22 @@ Both TestFlight workflows use the API key secrets and `APP_APPLE_ID`; `ios-testf
    - `APPSTORE_ISSUER_ID` = Issuer ID
    - `APPSTORE_API_KEY` = Contents of the .p8 file
 
-### Step 5: Update ExportOptions.plist
+### Step 5: ExportOptions.plist
 
-Edit `iosApp/ExportOptions.plist` with your actual values:
+`iosApp/ExportOptions.plist` is already committed with the export values the workflows use:
 
 ```xml
 <key>teamID</key>
-<string>YOUR_TEAM_ID</string>
+<string>BDJDR669ZV</string>
 
 <key>provisioningProfiles</key>
 <dict>
     <key>com.devil.phoenixproject.projectphoenix</key>
-    <string>YOUR_PROVISIONING_PROFILE_NAME</string>
+    <string>macdevil</string>
 </dict>
 ```
 
-Commit this change.
+Leave this file as it is. `xcodebuild -exportArchive` reads it through `-exportOptionsPlist`. `TEAM_ID` and `PROVISIONING_PROFILE_NAME` stay GitHub secrets (Steps 3 and 2); the archive step supplies them as `DEVELOPMENT_TEAM` and `PROVISIONING_PROFILE_SPECIFIER`.
 
 ### Step 6: Create App ID (if needed)
 
@@ -248,8 +245,8 @@ BUILD_CERTIFICATE_BASE64    = base64 of .p12 certificate
 P12_PASSWORD                = password for .p12
 PROVISION_PROFILE_BASE64    = base64 of .mobileprovision
 KEYCHAIN_PASSWORD           = random string (e.g., openssl rand -base64 32)
-TEAM_ID                     = 10-char Apple Team ID
-PROVISIONING_PROFILE_NAME   = name of profile in Apple Developer
+TEAM_ID                     = BDJDR669ZV (matches ExportOptions.plist teamID)
+PROVISIONING_PROFILE_NAME   = macdevil (matches ExportOptions.plist)
 
 SUPABASE_URL                = Supabase project URL
 SUPABASE_ANON_KEY           = Supabase anon key
