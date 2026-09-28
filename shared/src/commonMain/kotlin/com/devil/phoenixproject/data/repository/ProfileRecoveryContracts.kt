@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.auth.sha256
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
 
 enum class ProfileRecoveryKind {
     PROFILE_DATA,
@@ -40,6 +42,10 @@ sealed interface ProfileRecoveryResolution {
 
 interface ProfileRecoveryRepository {
     val pendingRecoveries: StateFlow<List<PendingProfileRecoveryGroup>>
+
+    /** Live unresolved groups. Defaults to the refreshed snapshot for fakes. */
+    fun observeUnresolved(): Flow<List<PendingProfileRecoveryGroup>> = pendingRecoveries
+
     suspend fun refresh()
     suspend fun keepWithDefault(
         recoveryId: String,
@@ -123,6 +129,13 @@ data class OwnershipTransferMutation(
 interface OwnershipTransferRepository {
     suspend fun pendingForOwner(ownerUserId: String): List<OwnershipTransferMutation>
     suspend fun pendingAll(): List<OwnershipTransferMutation> = emptyList()
+
+    /**
+     * Pending cloud acknowledgements.
+     * The database implementation emits on change; the default is a single snapshot.
+     */
+    fun observePending(): Flow<List<OwnershipTransferMutation>> = flow { emit(pendingAll()) }
+
     suspend fun acknowledge(
         ownerUserId: String,
         mutationIds: Set<String>,

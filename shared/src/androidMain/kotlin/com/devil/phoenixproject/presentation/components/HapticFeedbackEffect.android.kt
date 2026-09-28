@@ -202,7 +202,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         mediaPlayer = MediaPlayer.create(context, cue.rawResId, buildCueAudioAttributes(), 0) ?: return
 
         mediaPlayer.setVolume(1.0f, 1.0f)
-        if (event is HapticEvent.COUNTDOWN_TICK && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (event is HapticEvent.COUNTDOWN_TICK) {
             runCatching {
                 mediaPlayer.setPlaybackParams(
                     PlaybackParams().setSpeed(ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)),
@@ -426,194 +426,126 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
     // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - no haptic feedback
     if (event is HapticEvent.VERBAL_ENCOURAGEMENT) return
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        // Use VibrationEffect for better control
-        val effect = when (event) {
-            is HapticEvent.REP_COMPLETED -> {
-                // Light, quick click for each rep
-                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
-            }
-
-            is HapticEvent.FINAL_REP -> {
-                // Stronger vibration for final rep — double pulse with escalating amplitude
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 80, 60, 120),
-                    intArrayOf(0, 200, 0, 255),
-                    -1,
-                )
-            }
-
-            is HapticEvent.WARMUP_COMPLETE -> {
-                // Double pulse - strong
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 100, 100, 100),
-                    intArrayOf(0, 200, 0, 200),
-                    -1,
-                )
-            }
-
-            is HapticEvent.WORKOUT_COMPLETE -> {
-                // Triple pulse - celebration pattern
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 100, 80, 100, 80, 150),
-                    intArrayOf(0, 150, 0, 200, 0, 255),
-                    -1,
-                )
-            }
-
-            is HapticEvent.WORKOUT_START -> {
-                // Two quick pulses - attention getter
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 80, 60, 80),
-                    intArrayOf(0, 180, 0, 180),
-                    -1,
-                )
-            }
-
-            is HapticEvent.WORKOUT_END -> {
-                // Same as start - symmetrical experience
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 80, 60, 80),
-                    intArrayOf(0, 180, 0, 180),
-                    -1,
-                )
-            }
-
-            is HapticEvent.REST_ENDING -> {
-                // Warning pattern - gets attention
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 150, 100, 150, 100, 150),
-                    intArrayOf(0, 100, 0, 150, 0, 200),
-                    -1,
-                )
-            }
-
-            is HapticEvent.ERROR -> {
-                // Sharp error pulse
-                VibrationEffect.createOneShot(200, 255)
-            }
-
-            is HapticEvent.DISCO_MODE_UNLOCKED -> {
-                // Funky disco celebration pattern - rhythmic pulses
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 80, 60, 80, 60, 80, 60, 120, 80, 120),
-                    intArrayOf(0, 180, 0, 200, 0, 220, 0, 255, 0, 255),
-                    -1,
-                )
-            }
-
-            // Issue #611: Dominatrix unlock - sharper single-pulse to match the whip crack SFX
-            is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
-                VibrationEffect.createOneShot(150, 255)
-            }
-
-            is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
-                // Celebration pattern - escalating pulses for achievement
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 100, 60, 120, 60, 150),
-                    intArrayOf(0, 180, 0, 220, 0, 255),
-                    -1,
-                )
-            }
-
-            is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
-                // Strong alert — double heavy pulse for velocity threshold
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 120, 80, 150),
-                    intArrayOf(0, 255, 0, 255),
-                    -1,
-                )
-            }
-
-            is HapticEvent.COUNTDOWN_TICK -> {
-                // Very light tick for rest countdown (last 10 seconds)
-                VibrationEffect.createOneShot(30, 80)
-            }
-
-            is HapticEvent.WARMUP_TO_WORKING -> {
-                // Ascending double pulse for warmup-to-working transition
-                VibrationEffect.createWaveform(
-                    longArrayOf(0, 80, 60, 120),
-                    intArrayOf(0, 150, 0, 220),
-                    -1,
-                )
-            }
-
-            is HapticEvent.REP_COUNT_ANNOUNCED -> {
-                // Already handled above, but needed for exhaustive when
-                return
-            }
-
-            // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - early return at top of fn,
-            // but the exhaustive when requires an explicit arm.
-            is HapticEvent.VERBAL_ENCOURAGEMENT -> return
+    // Use VibrationEffect for better control
+    val effect = when (event) {
+        is HapticEvent.REP_COMPLETED -> {
+            // Light, quick click for each rep
+            VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
         }
-        vibrator.vibrate(effect)
-    } else {
-        // Fallback for older devices
-        @Suppress("DEPRECATION")
-        when (event) {
-            is HapticEvent.REP_COMPLETED -> {
-                vibrator.vibrate(50)
-            }
 
-            is HapticEvent.FINAL_REP -> {
-                vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
-            }
-
-            is HapticEvent.WARMUP_COMPLETE -> {
-                vibrator.vibrate(longArrayOf(0, 100, 100, 100), -1)
-            }
-
-            is HapticEvent.WORKOUT_COMPLETE -> {
-                vibrator.vibrate(longArrayOf(0, 100, 80, 100, 80, 150), -1)
-            }
-
-            is HapticEvent.WORKOUT_START, is HapticEvent.WORKOUT_END -> {
-                vibrator.vibrate(longArrayOf(0, 80, 60, 80), -1)
-            }
-
-            is HapticEvent.REST_ENDING -> {
-                vibrator.vibrate(longArrayOf(0, 150, 100, 150, 100, 150), -1)
-            }
-
-            is HapticEvent.ERROR -> {
-                vibrator.vibrate(200)
-            }
-
-            is HapticEvent.DISCO_MODE_UNLOCKED -> {
-                vibrator.vibrate(longArrayOf(0, 80, 60, 80, 60, 80, 60, 120, 80, 120), -1)
-            }
-
-            // Issue #611: Dominatrix unlock - sharper single-pulse to match the whip crack SFX
-            is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
-                vibrator.vibrate(longArrayOf(0, 150), -1)
-            }
-
-            is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
-                vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
-            }
-
-            is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
-                vibrator.vibrate(longArrayOf(0, 120, 80, 150), -1)
-            }
-
-            is HapticEvent.COUNTDOWN_TICK -> {
-                vibrator.vibrate(30)
-            }
-
-            is HapticEvent.WARMUP_TO_WORKING -> {
-                vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
-            }
-
-            is HapticEvent.REP_COUNT_ANNOUNCED -> {
-                // No haptic for rep count announcement - audio only
-            }
-
-            // Issue #611: VERBAL_ENCOURAGEMENT is audio-only.
-            is HapticEvent.VERBAL_ENCOURAGEMENT -> {
-                // No haptic for verbal encouragement - audio only
-            }
+        is HapticEvent.FINAL_REP -> {
+            // Stronger vibration for final rep — double pulse with escalating amplitude
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 80, 60, 120),
+                intArrayOf(0, 200, 0, 255),
+                -1,
+            )
         }
+
+        is HapticEvent.WARMUP_COMPLETE -> {
+            // Double pulse - strong
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 100, 100, 100),
+                intArrayOf(0, 200, 0, 200),
+                -1,
+            )
+        }
+
+        is HapticEvent.WORKOUT_COMPLETE -> {
+            // Triple pulse - celebration pattern
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 100, 80, 100, 80, 150),
+                intArrayOf(0, 150, 0, 200, 0, 255),
+                -1,
+            )
+        }
+
+        is HapticEvent.WORKOUT_START -> {
+            // Two quick pulses - attention getter
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 80, 60, 80),
+                intArrayOf(0, 180, 0, 180),
+                -1,
+            )
+        }
+
+        is HapticEvent.WORKOUT_END -> {
+            // Same as start - symmetrical experience
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 80, 60, 80),
+                intArrayOf(0, 180, 0, 180),
+                -1,
+            )
+        }
+
+        is HapticEvent.REST_ENDING -> {
+            // Warning pattern - gets attention
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 150, 100, 150, 100, 150),
+                intArrayOf(0, 100, 0, 150, 0, 200),
+                -1,
+            )
+        }
+
+        is HapticEvent.ERROR -> {
+            // Sharp error pulse
+            VibrationEffect.createOneShot(200, 255)
+        }
+
+        is HapticEvent.DISCO_MODE_UNLOCKED -> {
+            // Funky disco celebration pattern - rhythmic pulses
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 80, 60, 80, 60, 80, 60, 120, 80, 120),
+                intArrayOf(0, 180, 0, 200, 0, 220, 0, 255, 0, 255),
+                -1,
+            )
+        }
+
+        // Issue #611: Dominatrix unlock - sharper single-pulse to match the whip crack SFX
+        is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
+            VibrationEffect.createOneShot(150, 255)
+        }
+
+        is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
+            // Celebration pattern - escalating pulses for achievement
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 100, 60, 120, 60, 150),
+                intArrayOf(0, 180, 0, 220, 0, 255),
+                -1,
+            )
+        }
+
+        is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
+            // Strong alert — double heavy pulse for velocity threshold
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 120, 80, 150),
+                intArrayOf(0, 255, 0, 255),
+                -1,
+            )
+        }
+
+        is HapticEvent.COUNTDOWN_TICK -> {
+            // Very light tick for rest countdown (last 10 seconds)
+            VibrationEffect.createOneShot(30, 80)
+        }
+
+        is HapticEvent.WARMUP_TO_WORKING -> {
+            // Ascending double pulse for warmup-to-working transition
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 80, 60, 120),
+                intArrayOf(0, 150, 0, 220),
+                -1,
+            )
+        }
+
+        is HapticEvent.REP_COUNT_ANNOUNCED -> {
+            // Already handled above, but needed for exhaustive when
+            return
+        }
+
+        // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - early return at top of fn,
+        // but the exhaustive when requires an explicit arm.
+        is HapticEvent.VERBAL_ENCOURAGEMENT -> return
     }
+    vibrator.vibrate(effect)
 }

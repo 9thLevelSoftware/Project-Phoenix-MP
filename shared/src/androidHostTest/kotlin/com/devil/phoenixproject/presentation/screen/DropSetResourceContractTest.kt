@@ -29,7 +29,6 @@ class DropSetResourceContractTest {
         "drop_set_remaining_one",
         "drop_set_remaining_many",
         "drop_set_accepted_waiting",
-        "drop_set_saving",
         "drop_set_preparing",
         "drop_set_ready",
         "drop_set_recovery",

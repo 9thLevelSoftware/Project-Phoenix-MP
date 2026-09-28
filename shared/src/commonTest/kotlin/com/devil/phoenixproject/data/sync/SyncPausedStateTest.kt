@@ -66,8 +66,11 @@ class SyncPausedStateTest {
             ),
         )
         tokenStorage.updatePremiumStatus(false)
-        // Both entitlement calls read the subscriptions table: one active EMBER row.
+        tokenStorage.updateSubscriptionTier("FLAME")
+        // One subscriptions read: an active EMBER row sets premium and tier together.
+        var requests = 0
         val engine = MockEngine {
+            requests++
             respond(
                 content = """[{"tier":"EMBER","status":"active"}]""",
                 status = HttpStatusCode.OK,
@@ -93,7 +96,9 @@ class SyncPausedStateTest {
         // Real dispatcher: Ktor's HttpTimeout would fire instantly on runTest's virtual clock.
         withContext(Dispatchers.Default) { manager.refreshPremiumStatusFromServer() }
 
+        assertEquals(1, requests, "premium and tier come from one subscriptions read")
         assertEquals(true, tokenStorage.currentUser.value?.isPremium)
+        assertEquals("EMBER", tokenStorage.getSubscriptionTier())
         assertIs<SyncState.Idle>(manager.syncState.value)
     }
 
@@ -112,7 +117,12 @@ class SyncPausedStateTest {
         )
         // A 402/403 sync paused this account while the cached entitlement is still premium.
         tokenStorage.updatePremiumStatus(true)
-        val engine = MockEngine { respond(content = "", status = HttpStatusCode.ServiceUnavailable) }
+        tokenStorage.updateSubscriptionTier("INFERNO")
+        var requests = 0
+        val engine = MockEngine {
+            requests++
+            respond(content = "", status = HttpStatusCode.ServiceUnavailable)
+        }
         val api = PortalApiClient(SupabaseConfig("https://fake.supabase.co", "anon"), tokenStorage, engine)
         val manager = SyncManager(
             apiClient = api,
@@ -130,7 +140,9 @@ class SyncPausedStateTest {
 
         withContext(Dispatchers.Default) { manager.refreshPremiumStatusFromServer() }
 
+        assertEquals(1, requests)
         assertEquals(true, tokenStorage.currentUser.value?.isPremium) // cached flag kept on failure
+        assertEquals("INFERNO", tokenStorage.getSubscriptionTier()) // cached tier kept with it
         assertIs<SyncState.NotPremium>(manager.syncState.value)
     }
 }

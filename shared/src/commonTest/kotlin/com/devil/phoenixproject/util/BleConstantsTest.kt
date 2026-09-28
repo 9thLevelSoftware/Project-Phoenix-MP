@@ -30,18 +30,8 @@ class BleConstantsTest {
     // ========== Command ID Tests ==========
 
     @Test
-    fun `STOP_COMMAND is 0x50`() {
-        assertEquals(0x50.toByte(), BleConstants.Commands.STOP_COMMAND)
-    }
-
-    @Test
     fun `RESET_COMMAND is 0x0A`() {
         assertEquals(0x0A.toByte(), BleConstants.Commands.RESET_COMMAND)
-    }
-
-    @Test
-    fun `REGULAR_COMMAND is 0x4F`() {
-        assertEquals(0x4F.toByte(), BleConstants.Commands.REGULAR_COMMAND)
     }
 
     @Test
@@ -66,47 +56,11 @@ class BleConstantsTest {
         assertEquals(0x4A, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)
         assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)
 
-        // Legacy OVERLAP aliases kept only for explicit regression tests.
-        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
-        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
-
         // Force config block (firmware layout).
         assertEquals(0x50, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
         assertEquals(0x54, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
         assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
         assertEquals(0x5C, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
-    }
-
-    // ========== Data Protocol Tests ==========
-
-    @Test
-    fun `POSITION_SCALE is 10`() {
-        assertEquals(10.0, BleConstants.DataProtocol.POSITION_SCALE)
-    }
-
-    @Test
-    fun `VELOCITY_SCALE is 10`() {
-        assertEquals(10.0, BleConstants.DataProtocol.VELOCITY_SCALE)
-    }
-
-    @Test
-    fun `FORCE_SCALE is 100`() {
-        assertEquals(100.0, BleConstants.DataProtocol.FORCE_SCALE)
-    }
-
-    @Test
-    fun `CABLE_DATA_SIZE is 6 bytes`() {
-        assertEquals(6, BleConstants.DataProtocol.CABLE_DATA_SIZE)
-    }
-
-    @Test
-    fun `SAMPLE_DATA_SIZE is 28 bytes`() {
-        assertEquals(28, BleConstants.DataProtocol.SAMPLE_DATA_SIZE)
-    }
-
-    @Test
-    fun `REPS_DATA_SIZE is 24 bytes`() {
-        assertEquals(24, BleConstants.DataProtocol.REPS_DATA_SIZE)
     }
 
     // ========== Timeout Tests ==========

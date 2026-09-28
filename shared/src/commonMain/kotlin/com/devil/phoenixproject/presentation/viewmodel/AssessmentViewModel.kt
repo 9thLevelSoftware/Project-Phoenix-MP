@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.assessment.AssessmentResult
 import com.devil.phoenixproject.domain.assessment.AssessmentSetResult
+import com.devil.phoenixproject.domain.assessment.LoadCeiling
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -224,7 +225,7 @@ class AssessmentViewModel(
         if (shouldStop || updatedSets.size >= 5) {
             // Try to estimate 1RM
             val points = updatedSets.map { LoadVelocityPoint(it.loadKg, it.meanVelocityMs) }
-            val result = assessmentEngine.estimateOneRepMax(points)
+            val result = assessmentEngine.estimateOneRepMax(points, loadCeiling = LoadCeiling.TOTAL)
 
             if (result != null) {
                 assessmentResult = result
@@ -245,7 +246,11 @@ class AssessmentViewModel(
             }
         } else {
             // Continue with next set
-            val nextWeight = assessmentEngine.suggestNextWeight(loadKg, meanVelocityMs)
+            val nextWeight = assessmentEngine.suggestNextWeight(
+                loadKg,
+                meanVelocityMs,
+                loadCeiling = LoadCeiling.TOTAL,
+            )
             _currentStep.value = AssessmentStep.ProgressiveLoading(
                 currentSetNumber = current.currentSetNumber + 1,
                 suggestedWeightKg = nextWeight,

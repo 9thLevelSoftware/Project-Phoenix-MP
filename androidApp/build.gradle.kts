@@ -258,8 +258,8 @@ android {
     }
 }
 
-// Finding [13]: Fail fast when release builds lack an injected version code.
-// The defaultConfig fallback (versionCode = 5) is fine for debug but would produce
+// Fail fast when release builds lack an injected version code.
+// The defaultConfig fallback (versionCode = 8) is fine for debug but would produce
 // an APK with a lower versionCode than any Play Store release, making it
 // uninstallable as an upgrade. This guard fires only for release tasks.
 tasks.configureEach {

@@ -119,7 +119,6 @@ import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeComp
 import com.devil.phoenixproject.presentation.viewmodel.runFreshCycleUiOperation
 import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -208,7 +207,7 @@ internal class CycleCreationSubmissionGate {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
+fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
     val workoutRepository: WorkoutRepository = koinInject()

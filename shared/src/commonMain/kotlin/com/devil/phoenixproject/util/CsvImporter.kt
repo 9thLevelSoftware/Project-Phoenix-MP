@@ -14,9 +14,6 @@ data class CsvImportResult(val imported: Int, val skipped: Int, val failed: Int,
     /** True if at least one record was successfully imported */
     val hasImports: Boolean get() = imported > 0
 
-    /** Total rows processed (regardless of outcome) */
-    val totalProcessed: Int get() = imported + skipped + failed
-
     /** Human-readable summary for display in UI */
     fun summary(): String = buildString {
         append("$imported imported")

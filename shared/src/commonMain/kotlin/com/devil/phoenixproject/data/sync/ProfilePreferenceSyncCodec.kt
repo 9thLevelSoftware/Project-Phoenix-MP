@@ -147,18 +147,6 @@ internal class ProfilePreferenceSyncCodec {
         is DecodedProfilePreferenceValue.Vbt -> vbtPayload(value.value)
     }
 
-    fun validateCanonicalPayload(
-        section: ProfilePreferenceSectionName,
-        documentVersion: Int,
-        payload: JsonObject,
-    ): ProfilePreferencePayloadValidation {
-        val reason = canonicalPayloadIssue(section, documentVersion, payload)
-        return ProfilePreferencePayloadValidation(
-            isValid = reason == null,
-            reason = reason?.name.orEmpty(),
-        )
-    }
-
     fun encodeDirtyRow(row: ProfilePreferenceRow): EncodedDirtyProfilePreferenceRow {
         val dirtySections = ProfilePreferenceSectionName.entries.filter { section ->
             sectionDirty(row, section)
@@ -604,11 +592,6 @@ internal class ProfilePreferenceSyncCodec {
             hasCanonicalDivergence(row, decoded.columns)
     }
 }
-
-internal data class ProfilePreferencePayloadValidation(
-    val isValid: Boolean,
-    val reason: String,
-)
 
 internal enum class ProfilePreferenceSyncIssueReason {
     INVALID_PROFILE_ID,

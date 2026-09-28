@@ -471,7 +471,7 @@ class MainViewModelTest {
     fun `production graph preserves bodyweight control without safety arm or absent link write`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Bodyweight", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
-        viewModel.loadRoutine(
+        viewModel.workoutSessionManager.loadRoutine(
             Routine(
                 id = "routine-production-bodyweight",
                 name = "Production Bodyweight",
@@ -906,7 +906,7 @@ class MainViewModelTest {
             ),
         )
         fakeWorkoutRepository.addRoutine(storedRoutine)
-        viewModel.loadRoutine(launchRoutine)
+        viewModel.workoutSessionManager.loadRoutine(launchRoutine)
         advanceUntilIdle()
 
         val overrides = mapOf("vest" to RackItemBehavior.COUNTERWEIGHT)
@@ -1085,7 +1085,7 @@ class MainViewModelTest {
                 ),
             ),
         )
-        viewModel.loadRoutine(bodyweightRoutine)
+        viewModel.workoutSessionManager.loadRoutine(bodyweightRoutine)
         advanceUntilIdle()
         viewModel.enterSetReady(0, 0)
         advanceUntilIdle()
@@ -1136,7 +1136,7 @@ class MainViewModelTest {
             weightPerCableKg = 20f,
             duration = 60,
         )
-        viewModel.loadRoutine(
+        viewModel.workoutSessionManager.loadRoutine(
             Routine(
                 id = "routine-timed-1",
                 name = "Timed Cable Warmup Regression",

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetConfiguration
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
@@ -789,7 +790,11 @@ class DWSMEquipmentRackTest {
             )
             snapshotMutationEntered.await()
 
-            harness.settingsManager.setStopAtTop(true)
+            val ready = assertIs<ActiveProfileContext.Ready>(harness.fakeUserProfileRepo.activeProfileContext.value)
+            harness.fakeUserProfileRepo.updateWorkout(
+                ready.profile.id,
+                ready.preferences.workout.value.copy(stopAtTop = true),
+            )
             runCurrent()
             releaseSnapshotMutation.complete(Unit)
             advanceUntilIdle()

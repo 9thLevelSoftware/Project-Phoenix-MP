@@ -4,7 +4,6 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
-import kotlin.concurrent.Volatile
 
 /**
  * BLE Packet Factory - Builds the binary protocol frames the trainer firmware accepts.
@@ -13,14 +12,6 @@ import kotlin.concurrent.Volatile
  * KMP-compatible version using manual byte manipulation (no java.nio.ByteBuffer)
  */
 object BlePacketFactory {
-
-    enum class ForceConfigVariant {
-        NON_OVERLAP,
-        OVERLAP,
-    }
-
-    @Volatile
-    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.NON_OVERLAP
 
     // ========== Little-Endian Byte Helpers ==========
 
@@ -41,41 +32,7 @@ object BlePacketFactory {
         putIntLE(buffer, offset, bits)
     }
 
-    // ========== Init Commands ==========
-
-    /**
-     * Creates an INIT/Reset command (0x0A) - 4 bytes.
-     * Used to initialize or reset the device state.
-     */
-    fun createInitCommand(): ByteArray = byteArrayOf(0x0A, 0x00, 0x00, 0x00)
-
-    /**
-     * Build the INIT preset frame with coefficient table (34 bytes)
-     */
-    fun createInitPreset(): ByteArray = byteArrayOf(
-        0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0xCD.toByte(), 0xCC.toByte(), 0xCC.toByte(), 0x3E.toByte(), // 0.4 as float32 LE
-        0xFF.toByte(), 0x00, 0x4C, 0xFF.toByte(),
-        0x23, 0x8C.toByte(), 0xFF.toByte(), 0x8C.toByte(),
-        0x8C.toByte(), 0xFF.toByte(), 0x00, 0x4C,
-        0xFF.toByte(), 0x23, 0x8C.toByte(), 0xFF.toByte(),
-        0x8C.toByte(), 0x8C.toByte(),
-    )
-
     // ========== Control Commands ==========
-
-    /**
-     * Creates the legacy Phoenix START command (4 bytes).
-     * Activation-mode starts do not need this after the CONFIG packet.
-     */
-    fun createStartCommand(): ByteArray = byteArrayOf(0x03, 0x00, 0x00, 0x00)
-
-    /**
-     * Creates the primary STOP command (4 bytes).
-     * NOTE: v0.5.0-beta used 0x05 and it WORKED for Just Lift autostop
-     */
-    fun createStopCommand(): ByteArray = byteArrayOf(0x05, 0x00, 0x00, 0x00)
 
     /**
      * Creates the RESET command (4 bytes).
@@ -83,42 +40,6 @@ object BlePacketFactory {
      * Use for recovery if device gets stuck.
      */
     fun createResetCommand(): ByteArray = byteArrayOf(0x0A, 0x00, 0x00, 0x00)
-
-    // ========== Legacy Workout Command (backward compatibility) ==========
-
-    /**
-     * The legacy 25-byte REGULAR_COMMAND frame.
-     *
-     * Retained as protocol documentation and for the byte-layout tests: it has had no
-     * production caller since ActiveSessionEngine.sendWeightUpdateToMachine was deleted
-     * (F-059). It is validated, so it is not one of the unvalidated builders KD-9 removes,
-     * but note that FakeBleRepository does not decode this shape — anything that revives it
-     * must teach the fake first. For full protocol support use createProgramParams().
-     */
-    fun createWorkoutCommand(
-        programMode: ProgramMode,
-        weightPerCableKg: Float,
-        targetReps: Int,
-        maxWeightPerCableKg: Float,
-    ): ByteArray {
-        WorkoutCommandValidator.validateLegacyWorkoutCommand(
-            programMode,
-            weightPerCableKg,
-            targetReps,
-            maxWeightPerCableKg,
-        ).getOrThrow()
-
-        val buffer = ByteArray(25)
-        buffer[0] = BleConstants.Commands.REGULAR_COMMAND
-        buffer[1] = programMode.modeValue.toByte()
-
-        val weightScaled = (weightPerCableKg * 100).toInt()
-        buffer[2] = (weightScaled and 0xFF).toByte()
-        buffer[3] = ((weightScaled shr 8) and 0xFF).toByte()
-        buffer[4] = targetReps.toByte()
-
-        return buffer
-    }
 
     // ========== Full Protocol: Program Mode ==========
 
@@ -129,39 +50,21 @@ object BlePacketFactory {
      * the force config block at 0x50-0x5F. The machine keeps these regions
      * separate: 0x48-0x4F remains the mode profile's eccentric-up ramp, while
      * selected force/progression live at 0x58/0x5C.
-     *
-     * The default [ForceConfigVariant.NON_OVERLAP] preserves that firmware layout.
-     * [ForceConfigVariant.OVERLAP] is retained only to reproduce the legacy Phoenix
-     * behavior that overwrote 0x48/0x4C after copying the profile.
      */
     fun createProgramParams(
         params: WorkoutParameters,
-        variant: ForceConfigVariant = defaultForceConfigVariant,
         // Required, with no default: a builder that guesses the ceiling reopens exactly the
         // bypass KD-9 closes. Callers pass the CONNECTED model's ceiling.
         maxWeightPerCableKg: Float,
     ): ByteArray {
         WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg).getOrThrow()
 
-        // Resolve the profile up front so the variant decision can key off it.
         val profileMode = if (params.isEchoMode) {
             ProgramMode.OldSchool // Echo profile unused; Echo builds the 0x4E packet separately
         } else {
             params.programMode
         }
 
-        // EccentricOnly relies on the eccentric-up ramp bytes at 0x48-0x4F
-        // (minMmS=-100, maxMmS=-50, ramp=20.0f). The OVERLAP variant overwrites
-        // those bytes with softMax/increment, which leaves the firmware unable
-        // to apply weight during the eccentric phase (reps count, but the
-        // chosen weight is never engaged). The machine preserves the
-        // profile tail for this mode. Gate on the resolved profile so that
-        // EccentricOnly always uses NON_OVERLAP regardless of isJustLift.
-        val effectiveVariant = if (profileMode is ProgramMode.EccentricOnly) {
-            ForceConfigVariant.NON_OVERLAP
-        } else {
-            variant
-        }
         val frame = ByteArray(96)
 
         // Header section - Command 0x04 for PROGRAM mode
@@ -227,8 +130,10 @@ object BlePacketFactory {
         profile.copyInto(frame, 0x30)
 
         // The activation force config block keeps the selected force separate
-        // from per-rep progression. The increment field controls progression;
+        // from per-rep progression. The progression field controls progression;
         // targetWeight and forceMax stay anchored to the selected force.
+        // 0x48-0x4F stays the copied profile's eccentric-up ramp. Overwriting it
+        // with force/progression leaves EccentricOnly unable to apply weight.
         val targetWeightPerCable = params.weightPerCableKg
         // forceMax (0x54) is the firmware's force-limit headroom, not a commanded load: it is
         // deliberately targetWeight + 10 and therefore sits ABOVE the per-cable ceiling (110 on
@@ -237,11 +142,6 @@ object BlePacketFactory {
         // records it without asserting on it.
         val effectiveKg = targetWeightPerCable + 10.0f
 
-        // Normal force modes keep softMax tied to the selected force
-        // per cable. Unlimited-rep behavior is controlled by the reps field
-        // (0xFF), not by raising softMax to the machine maximum.
-        val softMax = params.weightPerCableKg
-
         // Issue #390: Detect suspiciously low weight values that would cause the machine
         // to start at near-zero and ramp up slowly instead of the configured weight.
         if (!params.isJustLift && params.weightPerCableKg > 0f && params.weightPerCableKg < 2f) {
@@ -249,17 +149,6 @@ object BlePacketFactory {
                 "Issue #390: weightPerCableKg=${params.weightPerCableKg}kg is suspiciously low. " +
                     "Expected > 2kg for a working set. Check weight resolution pipeline."
             }
-        }
-
-        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
-            // Legacy Phoenix behavior: overwrite the profile tail with softMax
-            // and increment. Production uses NON_OVERLAP to match machine behavior.
-            putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
-            putFloatLE(
-                frame,
-                BleConstants.ActivationPacket.OFFSET_INCREMENT,
-                params.progressionRegressionKg,
-            )
         }
 
         // Force config block at 0x50-0x5F
@@ -283,24 +172,10 @@ object BlePacketFactory {
         Logger.d("BlePacket") {
             "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
-        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
-            Logger.d("BlePacket") {
-                "legacy softMax[0x48]=${readFloatLE(
-                    frame,
-                    BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
-                )}kg, " +
-                    "legacy increment[0x4C]=${readFloatLE(
-                        frame,
-                        BleConstants.ActivationPacket.OFFSET_INCREMENT,
-                    )}kg/rep"
-            }
-        } else {
-            Logger.d("BlePacket") {
-                "non-overlap layout active: " +
-                    "ecc.up.minMmS[0x48]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
-                    "ecc.up.maxMmS[0x4A]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
-                    "ecc.up.ramp[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
-            }
+        Logger.d("BlePacket") {
+            "ecc.up.minMmS[0x48]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
+                "ecc.up.maxMmS[0x4A]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
+                "ecc.up.ramp[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
         }
         Logger.d("BlePacket") {
             "forceMin[0x50]=${readFloatLE(
@@ -331,19 +206,6 @@ object BlePacketFactory {
     }
 
     // ========== Full Protocol: Echo Mode ==========
-
-    /**
-     * Creates a simplified Echo command for backward compatibility.
-     * For full protocol support, use createEchoControl() instead.
-     */
-    fun createEchoCommand(level: Int, eccentricLoad: Int): ByteArray {
-        // Issue #553: Default fallback changed from HARD (strictest) to HARDER
-        // to match WorkoutParameters.echoLevel default. Legacy callers passing an
-        // out-of-range level integer now also fall back to the less-strict timing
-        // window so the firmware's heuristic pipeline can emit warm-up rep events.
-        val echoLevel = EchoLevel.entries.find { it.levelValue == level } ?: EchoLevel.HARDER
-        return createEchoControl(echoLevel, eccentricPct = eccentricLoad)
-    }
 
     /**
      * Build Echo mode control frame (32 bytes) with full parameters.

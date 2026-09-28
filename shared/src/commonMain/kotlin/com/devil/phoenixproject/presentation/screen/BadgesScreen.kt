@@ -47,16 +47,15 @@ import com.devil.phoenixproject.ui.theme.Slate50
 import com.devil.phoenixproject.ui.theme.Slate900
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BadgesScreen(
-    onBack: () -> Unit,
     mainViewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel,
-    viewModel: GamificationViewModel = koinInject(),
+    viewModel: GamificationViewModel = koinViewModel(),
 ) {
     val badges by viewModel.filteredBadges.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
@@ -86,7 +85,6 @@ fun BadgesScreen(
             rpgProfile?.let { profile ->
                 RpgAttributeCard(
                     profile = profile,
-                    onPortalLink = { /* Portal deep link - deferred to v0.6.0+ (PORTAL-02) */ },
                     modifier = Modifier.padding(horizontal = Spacing.medium),
                 )
                 Spacer(modifier = Modifier.height(Spacing.small))

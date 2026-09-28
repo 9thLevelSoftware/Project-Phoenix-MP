@@ -284,20 +284,6 @@ interface SyncRepository {
      */
     suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
 
-    // === Parity Reconciliation (hard-delete entities removed on server) ===
-
-    /**
-     * Hard-delete cycles by IDs. Used during parity reconciliation when
-     * server confirms these cycles no longer exist (portal deletion).
-     */
-    suspend fun hardDeleteCyclesByIds(ids: List<String>)
-
-    /**
-     * Hard-delete routines by IDs. Used during parity reconciliation when
-     * server confirms these routines no longer exist (portal deletion).
-     */
-    suspend fun hardDeleteRoutinesByIds(ids: List<String>)
-
     // === Parity Sync Operations (get local entity IDs for comparison) ===
 
     /**
@@ -416,12 +402,6 @@ interface SyncRepository {
     // === Post-Push Stamping ===
 
     /**
-     * Stamp pushed sessions with current timestamp so they are not re-sent on next sync.
-     * Sessions with NULL updatedAt would otherwise match every delta query indefinitely.
-     */
-    suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long)
-
-    /**
      * Stamp exactly the session rows the portal accepted, in one transaction.
      *
      * A row edited or inserted after [gatherStartedAt] (device time captured just
@@ -443,7 +423,7 @@ interface SyncRepository {
 
     /**
      * Stamp pushed personal records with the same timestamp used for
-     * [updateSessionTimestamp] so they are not re-sent on every subsequent
+     * [updateSessionTimestamps] so they are not re-sent on every subsequent
      * push. PRs with NULL `updatedAt` would otherwise match every
      * `getFullPRsModifiedSince(lastSync, ...)` delta query indefinitely.
      *
@@ -638,10 +618,6 @@ interface SyncRepository {
     ) {
         // Default no-op for fakes / older implementations.
     }
-
-    suspend fun getSessionNotesForPortalParents(
-        portalSessionIds: List<String>,
-    ): Map<String, SessionNotesEntry> = emptyMap()
 
     /**
      * Hard-delete routines and cycles the server reports as deleted

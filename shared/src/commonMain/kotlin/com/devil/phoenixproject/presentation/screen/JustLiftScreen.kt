@@ -110,7 +110,6 @@ import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.CommandLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -141,7 +140,7 @@ import projectphoenix.shared.generated.resources.rep_count_timing_top
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
+fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
     val workoutState by viewModel.workoutState.collectAsState()
     val workoutParameters by viewModel.workoutParameters.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()

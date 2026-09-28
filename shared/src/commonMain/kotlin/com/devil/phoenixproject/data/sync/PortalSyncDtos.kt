@@ -527,10 +527,6 @@ private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
     "legacymigrationversion",
 )
 
-private fun normalizedProfilePreferenceWireKey(key: String): String = key
-    .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
-    .lowercase()
-
 internal enum class ProfilePreferenceWireSafetyViolation {
     INVALID_TEXT_TREE,
     LOCAL_ONLY_KEY,
@@ -566,11 +562,14 @@ internal fun profilePreferenceWireSafetyViolation(
 
     is kotlinx.serialization.json.JsonObject -> {
         value.entries.firstNotNullOfOrNull { (key, child) ->
+            val normalizedKey = key
+                .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+                .lowercase()
             when {
                 !isPostgresCompatibleText(key) ->
                     ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
 
-                normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
+                normalizedKey in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
                     ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
 
                 else -> profilePreferenceWireSafetyViolation(child)

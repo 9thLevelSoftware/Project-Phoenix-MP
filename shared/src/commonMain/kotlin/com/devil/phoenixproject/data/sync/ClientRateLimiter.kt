@@ -92,7 +92,4 @@ class ClientRateLimiter(
             waitFor(waitMillis)
         }
     }
-
-    /** Wipe all recorded attempts. Intended for test fixtures only. */
-    suspend fun resetForTest() = mutex.withLock { attempts.clear() }
 }
