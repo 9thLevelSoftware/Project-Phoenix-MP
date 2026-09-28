@@ -686,6 +686,11 @@
     <string name="tag_exercise_hint">Label this lift to track it</string>
     <string name="tag_exercise_action">Tag exercise</string>
     <string name="exercise_tagged">Exercise tagged</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Clear</string>
+    <string name="clear_exercise_label_title">Remove this exercise label?</string>
+    <string name="clear_exercise_label_message">The lift stays in your history. It will show as Just Lift until you label it again.</string>
+    <string name="clear_exercise_label_confirm">Remove label</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Start Active Recovery…</string>
     <string name="routine_modifier_heavy_deload">Start Heavy Deload…</string>

@@ -799,6 +799,8 @@ class MainViewModel(
 
     suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) = workoutSessionManager.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
 
+    suspend fun clearJustLiftSessionExercise(sessionId: String) = workoutSessionManager.clearJustLiftSessionExercise(sessionId)
+
     // ===== BLE Connection Delegation =====
 
     val connectionState: StateFlow<ConnectionState> get() = bleConnectionManager.connectionState

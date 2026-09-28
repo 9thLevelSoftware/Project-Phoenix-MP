@@ -1177,6 +1177,18 @@ SET exerciseId = ?, exerciseName = ?, updatedAt = ?,
     local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
+-- #972: remove a Just Lift exercise label. Writes SQL NULL (never "") so the
+-- untagged row shape matches freshly recorded Just Lift rows and the portal
+-- Just Lift title fallback (exerciseName NULL) keeps working. Matches
+-- updateSessionExerciseTag's unconditional generation bump (including
+-- portalOrigin = 1 rows) so selectSessionsModifiedSince and
+-- selectDirtyWorkoutPortalParentIds both see the correction.
+clearSessionExerciseTag:
+UPDATE WorkoutSession
+SET exerciseId = NULL, exerciseName = NULL, updatedAt = ?,
+    local_sync_generation = local_sync_generation + 1
+WHERE id = ?;
+
 -- Metric Queries
 selectMetricsBySession:
 SELECT * FROM MetricSample WHERE sessionId = ? ORDER BY timestamp ASC;
@@ -2446,10 +2458,12 @@ UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 clearCompletedSetPr:
 UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
 
+-- #972: retagging a completed Just Lift set must NOT rewrite set_type. The
+-- existing row's set type (e.g. AMRAP) is preserved; only the first insert
+-- (see ensureCompletedSetForTaggedJustLift) chooses AMRAP/STANDARD.
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet
-SET set_type = ?,
-    actual_reps = ?,
+SET actual_reps = ?,
     actual_weight_kg = ?,
     logged_rpe = ?,
     completed_at = ?

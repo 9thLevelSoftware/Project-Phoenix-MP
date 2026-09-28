@@ -187,6 +187,9 @@ interface WorkoutActions {
     /** Tag an already-saved Just Lift session from the set summary. */
     suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean)
 
+    /** #972: remove the exercise label from an already-saved Just Lift session. */
+    suspend fun onClearJustLiftSessionExercise(sessionId: String)
+
     /** Pause the exercise timer for timed exercises (Issue #190) */
     fun onPauseExerciseTimer()
 
@@ -232,6 +235,7 @@ fun workoutActions(
     displayToKg: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
@@ -264,6 +268,7 @@ fun workoutActions(
     override fun displayToKg(display: Float, unit: WeightUnit) = displayToKg(display, unit)
     override fun formatWeight(weight: Float, unit: WeightUnit) = formatWeight(weight, unit)
     override suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) = onTagJustLiftSessionExercise(sessionId, exercise, isAmrap)
+    override suspend fun onClearJustLiftSessionExercise(sessionId: String) = onClearJustLiftSessionExercise(sessionId)
     override fun onPauseExerciseTimer() = onPauseExerciseTimer()
     override fun onResumeExerciseTimer() = onResumeExerciseTimer()
     override fun onResetExerciseTimer() = onResetExerciseTimer()

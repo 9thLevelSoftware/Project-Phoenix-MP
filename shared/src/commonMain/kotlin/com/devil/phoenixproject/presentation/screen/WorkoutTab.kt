@@ -75,6 +75,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
@@ -114,6 +115,9 @@ import projectphoenix.shared.generated.resources.cd_start_new_workout
 import projectphoenix.shared.generated.resources.cd_stop_workout
 import projectphoenix.shared.generated.resources.cd_workout_completed
 import projectphoenix.shared.generated.resources.cd_workout_error
+import projectphoenix.shared.generated.resources.clear_exercise_label_confirm
+import projectphoenix.shared.generated.resources.clear_exercise_label_message
+import projectphoenix.shared.generated.resources.clear_exercise_label_title
 import projectphoenix.shared.generated.resources.reconnect
 import projectphoenix.shared.generated.resources.save_set
 import projectphoenix.shared.generated.resources.tag_lift_message
@@ -187,6 +191,7 @@ fun WorkoutTab(
     val latestRepQualityScore = state.latestRepQualityScore
     val latestBiomechanicsResult = state.latestBiomechanicsResult
     val onTagJustLiftSessionExercise = actions::onTagJustLiftSessionExercise
+    val onClearJustLiftSessionExercise = actions::onClearJustLiftSessionExercise
     val motionStartHoldProgress = state.motionStartHoldProgress
     val isRestPaused = state.isRestPaused
     val justLiftRestCountdown = state.justLiftRestCountdown
@@ -353,6 +358,9 @@ fun WorkoutTab(
                 is WorkoutState.SetSummary -> {
                     val summarySessionId = workoutState.sessionId
                     var showExerciseTagPicker by remember(summarySessionId) { mutableStateOf(false) }
+                    // #972: destructive confirm for clearing a Just Lift label from the live
+                    // summary. Same dialog component and copy as the History card.
+                    var showClearLabelConfirm by remember(summarySessionId) { mutableStateOf(false) }
                     // One-time "tag this lift?" prompt shown when the user tries to dismiss an
                     // untagged Just Lift set that has real reps. Once the user decides (tag or
                     // skip) for this summary, the decision sticks so we never re-prompt (no nag).
@@ -415,6 +423,14 @@ fun WorkoutTab(
                             isJustLiftTaggingEnabled = workoutParameters.isJustLift && summarySessionId != null,
                             taggedExerciseName = workoutState.taggedExerciseName,
                             onTagExerciseClick = { showExerciseTagPicker = true },
+                            // #972: Clear sits beside Change on an already tagged set. It does
+                            // not touch tagPromptResolved: the one-time "tag this lift?" nudge
+                            // must not re-open after a clear.
+                            onClearExerciseLabel = if (workoutState.taggedExerciseName != null) {
+                                { showClearLabelConfirm = true }
+                            } else {
+                                null
+                            },
                             buttonLabel = buttonLabel,
                         )
 
@@ -437,6 +453,28 @@ fun WorkoutTab(
                                         }
                                     }
                                 },
+                            )
+                        }
+
+                        // #972: one destructive confirm shared with the History card. The
+                        // manager clears the label (SQL NULL) and the in-memory summary name,
+                        // so this section returns to the untagged prompt.
+                        if (showClearLabelConfirm && summarySessionId != null) {
+                            DestructiveConfirmDialog(
+                                title = stringResource(Res.string.clear_exercise_label_title),
+                                message = stringResource(Res.string.clear_exercise_label_message),
+                                confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+                                onConfirm = {
+                                    showClearLabelConfirm = false
+                                    scope.launch {
+                                        try {
+                                            onClearJustLiftSessionExercise(summarySessionId)
+                                        } catch (e: Exception) {
+                                            co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to clear Just Lift label: ${e.message}" }
+                                        }
+                                    }
+                                },
+                                onDismiss = { showClearLabelConfirm = false },
                             )
                         }
 

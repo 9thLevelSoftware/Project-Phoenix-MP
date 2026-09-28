@@ -65,6 +65,9 @@ fun SetSummaryCard(
     isJustLiftTaggingEnabled: Boolean = false,
     taggedExerciseName: String? = null,
     onTagExerciseClick: (() -> Unit)? = null,
+    // #972: optional clear action for an already-labeled Just Lift segment. When
+    // null the section keeps the Change-only treatment.
+    onClearExerciseLabel: (() -> Unit)? = null,
     buttonLabel: String = "Done", // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
 ) {
     // State for RPE tracking
@@ -290,6 +293,7 @@ fun SetSummaryCard(
                 ExerciseTagSection(
                     taggedExerciseName = taggedExerciseName,
                     onClick = onTagExerciseClick,
+                    onClear = onClearExerciseLabel,
                 )
             }
 
@@ -395,6 +399,7 @@ fun SetSummaryCard(
 private fun ExerciseTagSection(
     taggedExerciseName: String?,
     onClick: () -> Unit,
+    onClear: (() -> Unit)? = null,
 ) {
     val isUntagged = taggedExerciseName == null
     Surface(
@@ -463,6 +468,17 @@ private fun ExerciseTagSection(
             } else {
                 TextButton(onClick = onClick) {
                     Text(stringResource(Res.string.action_change))
+                }
+                // #972: Clear is its own control and must never open the picker.
+                if (onClear != null) {
+                    TextButton(
+                        onClick = onClear,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        Text(stringResource(Res.string.action_clear_label))
+                    }
                 }
             }
         }

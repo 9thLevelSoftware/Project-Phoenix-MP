@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
@@ -19,6 +20,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.seedExercise
@@ -119,6 +121,48 @@ class SqlDelightSyncRepositoryTest {
         )
         val retry = repository.getDirtyWorkoutSnapshot("active-profile")
         assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    /**
+     * Issue #972: clearing a Just Lift label must make the session eligible for the
+     * portal push again. The clear bumps local_sync_generation once, so a previously
+     * acknowledged (clean) row shows up in the next dirty snapshot. This is the
+     * portal-eligibility proof; no portal HTTP is asserted here.
+     */
+    @Test
+    fun `clearing a Just Lift label re-dirties a synced session for the portal`() = runTest {
+        insertHistoricalSession(
+            id = "label-clear-just-lift",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        repository.acknowledgeWorkoutSnapshot(
+            repository.getDirtyWorkoutSnapshot("active-profile"),
+            setOf("label-clear-just-lift"),
+        )
+        val synced = database.phoenixDatabaseQueries.selectSessionById("label-clear-just-lift").executeAsOne()
+        assertEquals(
+            synced.synced_sync_generation,
+            synced.local_sync_generation,
+            "Precondition: the acknowledged row is clean",
+        )
+
+        SqlDelightWorkoutRepository(
+            database,
+            SqlDelightExerciseRepository(database, ExerciseImporter(database), FakePreferencesManager()),
+        ).clearSessionExerciseTag("label-clear-just-lift")
+
+        assertTrue(
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.any { it.id == "label-clear-just-lift" },
+            "a cleared label must be pushed to the portal",
+        )
     }
 
     @Test

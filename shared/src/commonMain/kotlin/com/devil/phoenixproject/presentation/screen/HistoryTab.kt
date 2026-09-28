@@ -33,6 +33,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -96,9 +97,15 @@ import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_change
+import projectphoenix.shared.generated.resources.action_clear_label
 import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_tag
 import projectphoenix.shared.generated.resources.cd_delete_routine
 import projectphoenix.shared.generated.resources.cd_delete_workout
+import projectphoenix.shared.generated.resources.clear_exercise_label_confirm
+import projectphoenix.shared.generated.resources.clear_exercise_label_message
+import projectphoenix.shared.generated.resources.clear_exercise_label_title
 import projectphoenix.shared.generated.resources.delete_all_sets
 import projectphoenix.shared.generated.resources.delete_routine_session_message
 import projectphoenix.shared.generated.resources.delete_routine_session_title
@@ -123,6 +130,7 @@ fun HistoryTab(
     onDeleteRoutineGroup: (String, String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
@@ -217,6 +225,7 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
+                                onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
@@ -231,6 +240,7 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
+                                onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
@@ -258,6 +268,7 @@ fun WorkoutHistoryCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
     onDelete: () -> Unit,
 ) {
@@ -265,6 +276,9 @@ fun WorkoutHistoryCard(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
     var showExerciseTagPicker by remember { mutableStateOf(false) }
+    // #972: destructive confirm for clearing the label. Shared by the header
+    // controls and the expanded ExerciseTagSection.
+    var showClearLabelConfirm by remember { mutableStateOf(false) }
     // analytics-history-13: gate all animations on reduceMotion
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
@@ -278,9 +292,11 @@ fun WorkoutHistoryCard(
     // Get exercise name from session (no DB lookup needed!)
     val exerciseName = session.exerciseName ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise"
 
-    // Retroactive Just Lift tagging is only offered for untagged Just Lift sessions.
-    // Once tagged, exerciseId is non-null so the affordance disappears and the name shows.
-    val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
+    // #972: label repair is offered for every Just Lift session, labeled or not —
+    // a mislabeled segment must be correctable after the fact. Routine-driven
+    // sessions keep the exercise the routine assigned.
+    val canEditJustLiftLabel = session.isJustLift
+    val isLabeled = !session.exerciseId.isNullOrBlank() || !session.exerciseName.isNullOrBlank()
 
     ExpressiveCard(
         onClick = { isExpanded = !isExpanded },
@@ -323,13 +339,62 @@ fun WorkoutHistoryCard(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Exercise Name (or "Just Lift" if Just Lift mode)
-            Text(
-                exerciseName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            // #972: exercise name + label controls on the card header, visible while
+            // collapsed — that discoverability is the point of this change. The
+            // controls are real buttons (not bare text) so a tap opens the picker or
+            // the clear confirm instead of toggling the card's expand state. Unlabeled
+            // Just Lift segments keep today's Tag affordance.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                Text(
+                    exerciseName,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (canEditJustLiftLabel) {
+                    if (isLabeled) {
+                        TextButton(
+                            onClick = { showExerciseTagPicker = true },
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Text(
+                                stringResource(Res.string.action_change),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        TextButton(
+                            onClick = { showClearLabelConfirm = true },
+                            modifier = Modifier.height(40.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Text(
+                                stringResource(Res.string.action_clear_label),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = { showExerciseTagPicker = true },
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Text(
+                                stringResource(Res.string.action_tag),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
 
             // Date and Time (no label, just the timestamp)
             Text(
@@ -459,30 +524,22 @@ fun WorkoutHistoryCard(
                             summaryCountdownSeconds = 0, // History view - no auto-continue
                             isHistoryView = true,
                             savedRpe = session.rpe,
-                            // Retroactive Just Lift tagging (untagged Just Lift sessions only)
-                            isJustLiftTaggingEnabled = canTagJustLift,
-                            onTagExerciseClick = if (canTagJustLift) {
+                            // #972: the tag section doubles as the label editor on History —
+                            // it shows the stored name with Change/Clear once a segment is
+                            // labeled, and the Tag prompt when it is not.
+                            isJustLiftTaggingEnabled = canEditJustLiftLabel,
+                            taggedExerciseName = session.exerciseName,
+                            onTagExerciseClick = if (canEditJustLiftLabel) {
                                 { showExerciseTagPicker = true }
                             } else {
                                 null
                             },
+                            onClearExerciseLabel = if (canEditJustLiftLabel && isLabeled) {
+                                { showClearLabelConfirm = true }
+                            } else {
+                                null
+                            },
                         )
-
-                        if (showExerciseTagPicker) {
-                            MiniExercisePickerDialog(
-                                exerciseRepository = exerciseRepository,
-                                recentExerciseIds = recentJustLiftExerciseIds,
-                                onDismiss = { showExerciseTagPicker = false },
-                                onExerciseSelected = { exercise ->
-                                    showExerciseTagPicker = false
-                                    scope.launch {
-                                        // No amrap flag is persisted on a saved session, so default
-                                        // to false (STANDARD set type) for retroactive tagging.
-                                        onTagJustLiftSessionExercise(session.id, exercise, false)
-                                    }
-                                },
-                            )
-                        }
                     } else {
                         // Pre-v0.2.1 session - show message
                         Card(
@@ -574,6 +631,40 @@ fun WorkoutHistoryCard(
                 }
             }
         }
+    }
+
+    // #972: one picker and one clear confirm, shared by the header controls and the
+    // expanded ExerciseTagSection. They live at card scope (next to the delete
+    // dialog) so a legacy card whose toSetSummary() is null can still relabel or
+    // clear a segment from the header.
+    if (showExerciseTagPicker) {
+        MiniExercisePickerDialog(
+            exerciseRepository = exerciseRepository,
+            recentExerciseIds = recentJustLiftExerciseIds,
+            onDismiss = { showExerciseTagPicker = false },
+            onExerciseSelected = { exercise ->
+                showExerciseTagPicker = false
+                scope.launch {
+                    // No amrap flag is persisted on a saved session, so default to
+                    // false (STANDARD set type) for retroactive tagging. The stored
+                    // set type is preserved by the repository (ADR-4).
+                    onTagJustLiftSessionExercise(session.id, exercise, false)
+                }
+            },
+        )
+    }
+
+    if (showClearLabelConfirm) {
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.clear_exercise_label_title),
+            message = stringResource(Res.string.clear_exercise_label_message),
+            confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+            onConfirm = {
+                showClearLabelConfirm = false
+                scope.launch { onClearJustLiftSessionExercise(session.id) }
+            },
+            onDismiss = { showClearLabelConfirm = false },
+        )
     }
 
     // Material 3 Expressive: Delete dialog
@@ -765,6 +856,7 @@ fun GroupedRoutineCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
+    onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
@@ -777,6 +869,8 @@ fun GroupedRoutineCard(
     // Tracks which session's exercise-tag picker is open (null = none).
     // A nullable session id is used because multiple sessions render in the loop below.
     var taggingSessionId by remember { mutableStateOf<String?>(null) }
+    // #972: same idea for the destructive clear confirm.
+    var clearingSessionId by remember { mutableStateOf<String?>(null) }
     // analytics-history-13: gate all animations on reduceMotion
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
@@ -795,8 +889,10 @@ fun GroupedRoutineCard(
                 val totalSets = sessions.size
                 val highestWeightPerCableKg = sessions.maxOfOrNull { it.effectiveHeaviestKgPerCable() } ?: 0f
                 val mode = sessions.firstOrNull()?.mode ?: "Unknown"
-                // Use exerciseName from the session (stored when workout was saved)
-                val exerciseName = sessions.firstOrNull()?.exerciseName ?: "Unknown Exercise"
+                // Use exerciseName from the session (stored when workout was saved).
+                // #972: an all-Just-Lift group reads as "Just Lift", not "Unknown Exercise".
+                val exerciseName = sessions.firstOrNull()?.exerciseName
+                    ?: if (sessions.all { it.isJustLift }) "Just Lift" else "Unknown Exercise"
 
                 ExerciseGroup(
                     exerciseId = exerciseId,
@@ -998,12 +1094,64 @@ fun GroupedRoutineCard(
                     groupedItem.sessions.forEachIndexed { index, session ->
                         val summary = session.toSetSummary()
 
-                        Text(
-                            session.exerciseName ?: "Unknown Exercise",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        // #972: the per-session title row carries the label controls
+                        // (the routine header stays free of Change/Clear). Routine-driven
+                        // rows are excluded by the isJustLift condition.
+                        val canEditJustLiftLabel = session.isJustLift
+                        val isLabeled = !session.exerciseId.isNullOrBlank() || !session.exerciseName.isNullOrBlank()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                        ) {
+                            Text(
+                                session.exerciseName
+                                    ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            if (canEditJustLiftLabel) {
+                                if (isLabeled) {
+                                    TextButton(
+                                        onClick = { taggingSessionId = session.id },
+                                        modifier = Modifier.height(36.dp),
+                                    ) {
+                                        Text(
+                                            stringResource(Res.string.action_change),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { clearingSessionId = session.id },
+                                        modifier = Modifier.height(36.dp),
+                                        colors = ButtonDefaults.textButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.error,
+                                        ),
+                                    ) {
+                                        Text(
+                                            stringResource(Res.string.action_clear_label),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                } else {
+                                    FilledTonalButton(
+                                        onClick = { taggingSessionId = session.id },
+                                        modifier = Modifier.height(36.dp),
+                                    ) {
+                                        Text(
+                                            stringResource(Res.string.action_tag),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(Spacing.small))
 
                         RackContextRow(
@@ -1011,8 +1159,6 @@ fun GroupedRoutineCard(
                             weightUnit = weightUnit,
                             formatWeight = formatWeight,
                         )
-
-                        val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
 
                         if (summary != null) {
                             SetSummaryCard(
@@ -1025,30 +1171,20 @@ fun GroupedRoutineCard(
                                 summaryCountdownSeconds = 0, // History view - no auto-continue
                                 isHistoryView = true,
                                 savedRpe = session.rpe,
-                                // Retroactive Just Lift tagging (untagged Just Lift sessions only)
-                                isJustLiftTaggingEnabled = canTagJustLift,
-                                onTagExerciseClick = if (canTagJustLift) {
+                                // #972: label editing, same treatment as the single-session card.
+                                isJustLiftTaggingEnabled = canEditJustLiftLabel,
+                                taggedExerciseName = session.exerciseName,
+                                onTagExerciseClick = if (canEditJustLiftLabel) {
                                     { taggingSessionId = session.id }
                                 } else {
                                     null
                                 },
+                                onClearExerciseLabel = if (canEditJustLiftLabel && isLabeled) {
+                                    { clearingSessionId = session.id }
+                                } else {
+                                    null
+                                },
                             )
-
-                            if (taggingSessionId == session.id) {
-                                MiniExercisePickerDialog(
-                                    exerciseRepository = exerciseRepository,
-                                    recentExerciseIds = recentJustLiftExerciseIds,
-                                    onDismiss = { taggingSessionId = null },
-                                    onExerciseSelected = { exercise ->
-                                        taggingSessionId = null
-                                        scope.launch {
-                                            // No amrap flag is persisted on a saved session, so
-                                            // default to false (STANDARD set type) when retro-tagging.
-                                            onTagJustLiftSessionExercise(session.id, exercise, false)
-                                        }
-                                    },
-                                )
-                            }
                         } else {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1143,6 +1279,45 @@ fun GroupedRoutineCard(
                 }
             }
         }
+    }
+
+    // #972: one picker and one clear confirm shared by every per-session row in
+    // this card, hoisted to card scope so they open from the title row even for a
+    // legacy session whose toSetSummary() is null.
+    if (taggingSessionId != null) {
+        MiniExercisePickerDialog(
+            exerciseRepository = exerciseRepository,
+            recentExerciseIds = recentJustLiftExerciseIds,
+            onDismiss = { taggingSessionId = null },
+            onExerciseSelected = { exercise ->
+                val sessionId = taggingSessionId
+                taggingSessionId = null
+                if (sessionId != null) {
+                    scope.launch {
+                        // No amrap flag is persisted on a saved session, so default to
+                        // false (STANDARD set type) when retro-tagging. The stored set
+                        // type is preserved by the repository (ADR-4).
+                        onTagJustLiftSessionExercise(sessionId, exercise, false)
+                    }
+                }
+            },
+        )
+    }
+
+    if (clearingSessionId != null) {
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.clear_exercise_label_title),
+            message = stringResource(Res.string.clear_exercise_label_message),
+            confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+            onConfirm = {
+                val sessionId = clearingSessionId
+                clearingSessionId = null
+                if (sessionId != null) {
+                    scope.launch { onClearJustLiftSessionExercise(sessionId) }
+                }
+            },
+            onDismiss = { clearingSessionId = null },
+        )
     }
 
     // Material 3 Expressive: Delete dialog

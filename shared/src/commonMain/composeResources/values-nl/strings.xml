@@ -578,6 +578,11 @@
     <string name="tag_exercise_hint">Label deze lift om hem bij te houden</string>
     <string name="tag_exercise_action">Oefening labelen</string>
     <string name="exercise_tagged">Oefening gelabeld</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Wissen</string>
+    <string name="clear_exercise_label_title">Dit oefeninglabel verwijderen?</string>
+    <string name="clear_exercise_label_message">De lift blijft in je geschiedenis. Hij wordt Just Lift tot je hem opnieuw labelt.</string>
+    <string name="clear_exercise_label_confirm">Label verwijderen</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Actief herstel starten…</string>
     <string name="routine_modifier_heavy_deload">Zware deload starten…</string>

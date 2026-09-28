@@ -418,6 +418,107 @@ class SqlDelightCompletedSetRepositoryTest {
         )
     }
 
+    // ===== GitHub #972: the set type is frozen across a relabel =====
+    // The commonTest FakeCompletedSetRepository returns the existing row unchanged,
+    // so a manager-level green run cannot prove this. These run against the real
+    // SqlDelightCompletedSetRepository (androidHostTest) on purpose.
+
+    @Test
+    fun `retagging an existing AMRAP Just Lift set keeps AMRAP`() = runTest {
+        insertWorkoutSession(
+            id = "amrap-just-lift",
+            exerciseId = "deadlift",
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+        repository.saveCompletedSet(
+            completedSet(
+                id = "cset-amrap",
+                sessionId = "amrap-just-lift",
+                setNumber = 1,
+                setType = SetType.AMRAP,
+            ),
+        )
+
+        val ensured = repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("amrap-just-lift", exerciseId = "row"),
+            isAmrap = false,
+        )
+
+        assertEquals("cset-amrap", ensured?.id, "the existing row is updated, never duplicated")
+        assertEquals(SetType.AMRAP, ensured?.setType, "the returned set keeps its captured type")
+        val persisted = repository.getCompletedSets("amrap-just-lift").single()
+        assertEquals("cset-amrap", persisted.id)
+        assertEquals(SetType.AMRAP, persisted.setType, "a History Change must not flatten AMRAP to STANDARD")
+    }
+
+    @Test
+    fun `retagging an existing STANDARD Just Lift set does not turn it into AMRAP`() = runTest {
+        insertWorkoutSession(
+            id = "standard-just-lift",
+            exerciseId = "deadlift",
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+        repository.saveCompletedSet(
+            completedSet(
+                id = "cset-standard",
+                sessionId = "standard-just-lift",
+                setNumber = 1,
+                setType = SetType.STANDARD,
+            ),
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("standard-just-lift", exerciseId = "row"),
+            isAmrap = true,
+        )
+
+        val persisted = repository.getCompletedSets("standard-just-lift").single()
+        assertEquals("cset-standard", persisted.id)
+        assertEquals(SetType.STANDARD, persisted.setType)
+    }
+
+    @Test
+    fun `first tag of a Just Lift set with isAmrap true creates one AMRAP row`() = runTest {
+        insertWorkoutSession(
+            id = "new-amrap-just-lift",
+            exerciseId = null,
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("new-amrap-just-lift", exerciseId = "deadlift"),
+            isAmrap = true,
+        )
+
+        val persisted = repository.getCompletedSets("new-amrap-just-lift").single()
+        assertEquals(SetType.AMRAP, persisted.setType)
+    }
+
+    @Test
+    fun `first tag of a Just Lift set with isAmrap false creates one STANDARD row`() = runTest {
+        insertWorkoutSession(
+            id = "new-standard-just-lift",
+            exerciseId = null,
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("new-standard-just-lift", exerciseId = "deadlift"),
+            isAmrap = false,
+        )
+
+        val persisted = repository.getCompletedSets("new-standard-just-lift").single()
+        assertEquals(SetType.STANDARD, persisted.setType)
+    }
+
     private fun plannedSet(
         id: String,
         routineExerciseId: String,

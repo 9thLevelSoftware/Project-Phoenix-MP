@@ -503,6 +503,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
                 viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
             },
+            onClearJustLiftSessionExercise = { sessionId ->
+                viewModel.clearJustLiftSessionExercise(sessionId)
+            },
             onPauseExerciseTimer = { viewModel.pauseExerciseTimer() },
             onResumeExerciseTimer = { viewModel.resumeExerciseTimer() },
             onResetExerciseTimer = { viewModel.resetExerciseTimer() },
