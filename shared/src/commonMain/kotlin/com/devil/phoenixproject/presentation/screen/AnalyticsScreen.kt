@@ -55,7 +55,6 @@ fun ProgressTab(
     workoutSessions: List<WorkoutSession>,
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
     assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
@@ -318,7 +317,6 @@ fun ProgressTab(
 @Composable
 fun AnalyticsScreen(
     viewModel: MainViewModel,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
     assessmentProfileId: String?,
     onNavigateToStrengthAssessment: (String) -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
@@ -528,7 +526,6 @@ fun AnalyticsScreen(
                         workoutSessions = workoutHistory,
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -537,7 +534,6 @@ fun AnalyticsScreen(
                         workoutSessions = allWorkoutSessions,
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
                         assessmentEnabled = assessmentProfileId != null,
                         onNavigateToStrengthAssessment = {
                             assessmentProfileId?.let(onNavigateToStrengthAssessment)
@@ -571,7 +567,6 @@ fun AnalyticsScreen(
                             viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
                         },
                         recentJustLiftExerciseIds = recentJustLiftExerciseIds,
-                        onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

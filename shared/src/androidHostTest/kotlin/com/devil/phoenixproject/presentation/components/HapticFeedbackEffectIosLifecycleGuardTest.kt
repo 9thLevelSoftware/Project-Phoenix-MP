@@ -167,9 +167,10 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         val source = iosHapticSource.readText()
 
         // The lifecycle-recovery path must prepare every cached player list
-        // (event map, badge sounds, PR sounds, rep count sounds, and the
-        // countdown tick player). This guards against a regression where only
-        // a subset of players is re-primed.
+        // (event map, badge sounds, PR sounds, rep count sounds, the
+        // countdown tick player, and the four verbal-encouragement pools).
+        // This guards against a regression where only a subset of players
+        // is re-primed.
         val recoverIndex = source.indexOf("private fun recoverAudioSession()")
         val prepareHelperIndex = source.indexOf("prepareAllPlayers()", recoverIndex)
 
@@ -204,6 +205,22 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         assertTrue(
             "countdownTickPlayer?.prepareToPlay()" in helperBody,
             "prepareAllPlayers() must re-prepare the countdown tick player.",
+        )
+        assertTrue(
+            "encouragementNeutralSoundPlayers.forEach { it?.prepareToPlay() }" in helperBody,
+            "prepareAllPlayers() must iterate the neutral encouragement players.",
+        )
+        assertTrue(
+            "encouragementMildSoundPlayers.forEach { it?.prepareToPlay() }" in helperBody,
+            "prepareAllPlayers() must iterate the mild encouragement players.",
+        )
+        assertTrue(
+            "encouragementStrongSoundPlayers.forEach { it?.prepareToPlay() }" in helperBody,
+            "prepareAllPlayers() must iterate the strong encouragement players.",
+        )
+        assertTrue(
+            "encouragementDominatrixSoundPlayers.forEach { it?.prepareToPlay() }" in helperBody,
+            "prepareAllPlayers() must iterate the dominatrix encouragement players.",
         )
     }
 }

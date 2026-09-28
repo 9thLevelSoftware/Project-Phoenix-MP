@@ -11,6 +11,7 @@ import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -117,7 +118,11 @@ class VbtEnabledRuntimeTest {
             processRep(harness, repNumber = 2, velocityMmS = 70.0)
             assertTrue(events.none { it is HapticEvent.VELOCITY_THRESHOLD_REACHED })
 
-            harness.settingsManager.setVbtEnabled(true)
+            val ready = assertIs<ActiveProfileContext.Ready>(harness.fakeUserProfileRepo.activeProfileContext.value)
+            harness.fakeUserProfileRepo.updateVbt(
+                ready.profile.id,
+                ready.preferences.vbt.value.copy(enabled = true),
+            )
             advanceUntilIdle()
 
             assertEquals(20f, harness.coordinator.biomechanicsEngine.currentVelocityLossThresholdPercent)
@@ -288,12 +293,11 @@ class VbtUiWiringTest {
         assertTrue(rememberBlock.contains("userPreferences.vbtEnabled"))
         assertTrue(screen.contains("vbtEnabled = userPreferences.vbtEnabled,"))
 
-        val outerTab = tab.substringAfter("fun WorkoutTab(\n    state: WorkoutUiState")
-            .substringBefore("@Suppress(\"SENSELESS_COMPARISON\")")
-        assertTrue(outerTab.contains("vbtEnabled = state.vbtEnabled,"))
-        val innerTab = tab.substringAfter("@Suppress(\"SENSELESS_COMPARISON\")")
-        assertTrue(innerTab.contains("vbtEnabled: Boolean = true"))
-        assertTrue(innerTab.contains("vbtEnabled = vbtEnabled,"))
+        assertEquals(1, Regex("""fun WorkoutTab\(""").findAll(tab).count())
+        assertTrue(tab.contains("val vbtEnabled = state.vbtEnabled"))
+        val hudCall = tab.substringAfter("WorkoutHud(").substringBefore("RepQualityIndicator")
+        assertTrue(hudCall.contains("vbtEnabled = vbtEnabled,"))
+        assertFalse(tab.contains("vbtEnabled: Boolean"))
 
         assertTrue(hud.contains("vbtEnabled: Boolean = true"))
         assertTrue(hud.contains("vbtEnabled = vbtEnabled,"))

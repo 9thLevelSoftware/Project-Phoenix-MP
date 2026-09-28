@@ -1509,7 +1509,7 @@ class ActiveSessionEngine(
         ) ?: return preparation.rackSelection
         val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextStep.first)
             ?: return preparation.rackSelection
-        if (isBodyweightExercise(nextExercise)) return preparation.rackSelection
+        if (nextExercise.exercise.isBodyweight) return preparation.rackSelection
         return flowDelegate?.prepareRoutineForRecovery(
             routine = preparation.resolvedRoutine,
             exerciseIndex = nextStep.first,
@@ -6918,7 +6918,7 @@ class ActiveSessionEngine(
 
     suspend fun getJustLiftDefaults(): JustLiftDefaults = settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
 
-    fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
+    internal fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
         Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
     }
@@ -6986,7 +6986,7 @@ class ActiveSessionEngine(
         exerciseId: String,
     ): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
 
-    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
+    internal fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
         settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
         Logger.d("saveSingleExerciseDefaults: exerciseId=${defaults.exerciseId}")
     }
@@ -7433,20 +7433,6 @@ class ActiveSessionEngine(
         coordinator.clearActiveRackSelection()
     }
 
-    fun recaptureLoadBaseline() {
-        coordinator._currentMetric.value?.let { metric ->
-            coordinator._loadBaselineA.value = metric.loadA
-            coordinator._loadBaselineB.value = metric.loadB
-            Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Manually recaptured loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
-        }
-    }
-
-    fun resetLoadBaseline() {
-        coordinator._loadBaselineA.value = 0f
-        coordinator._loadBaselineB.value = 0f
-        Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
-    }
-
     /**
      * Tell the user what [CommandLimits.resolve] capped, once per command that actually
      * reached the machine. Stored routine values are deliberately left as they are, so
@@ -7766,7 +7752,7 @@ class ActiveSessionEngine(
         }
         if (acceptedRetryStartClaim.value != null) return
         val exercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-        if (!isBodyweightExercise(exercise) && deferStartUntilOwnedResetCompletes(skipCountdown, isJustLiftMode)) {
+        if (exercise?.exercise?.isBodyweight != true && deferStartUntilOwnedResetCompletes(skipCountdown, isJustLiftMode)) {
             return
         }
         executionGuard.supersedeQueuedSuccessors()
@@ -7876,7 +7862,7 @@ class ActiveSessionEngine(
         ) {
             return null
         }
-        val isBodyweightAtStart = isBodyweightExercise(currentExercise)
+        val isBodyweightAtStart = currentExercise?.exercise?.isBodyweight ?: false
         val requiresMachine = !isBodyweightAtStart
         if (requiresMachine) {
             when (executionGuard.machineTeardownState.value) {
@@ -8043,7 +8029,7 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val isBodyweight = isBodyweightExercise(currentExercise)
+                val isBodyweight = currentExercise?.exercise?.isBodyweight ?: false
                 // Revalidate at execution start. Stored durations must satisfy the editor
                 // contract; launch modifiers may safely reduce a valid duration below it.
                 val exerciseDuration = currentExercise?.executionTimedDurationSeconds
@@ -11277,7 +11263,7 @@ class ActiveSessionEngine(
         val currentExerciseAtCapture = coordinator._loadedRoutine.value
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
-        val shouldPromptBodyweightAtCapture = isBodyweightExercise(currentExerciseAtCapture) &&
+        val shouldPromptBodyweightAtCapture = (currentExerciseAtCapture?.exercise?.isBodyweight ?: false) &&
             currentExerciseAtCapture != null &&
             coordinator.bodyweightCompletionVariantOverride == null &&
             coordinator._loadedRoutine.value != null
@@ -11327,7 +11313,7 @@ class ActiveSessionEngine(
             coordinator._isCurrentExerciseBodyweight.value = false
 
             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-            val wasBodyweight = isBodyweightExercise(currentExercise)
+            val wasBodyweight = currentExercise?.exercise?.isBodyweight ?: false
             // Issue #593: gate on "any routine bodyweight set whose reps have not been
             // confirmed via the rep-entry dialog". The pre-#593 check `currentExercise.duration
             // > 0` caused every default-reps-mode routine (duration == null) to fall through
@@ -11853,7 +11839,7 @@ class ActiveSessionEngine(
 
             // Publish the upcoming entry's defaults before the rest UI is rendered. The
             // current exercise index intentionally remains on the completed entry during rest.
-            if (nextStep != null && nextExerciseFromStep != null && !isBodyweightExercise(nextExerciseFromStep)) {
+            if (nextStep != null && nextExerciseFromStep != null && !nextExerciseFromStep.exercise.isBodyweight) {
                 flowDelegate?.seedRackSelectionForExercise(nextStep.first)
             }
 
@@ -11926,7 +11912,7 @@ class ActiveSessionEngine(
             val nextExercise = nextExerciseFromStep
 
             val exerciseForNextSet = nextExerciseFromStep ?: currentExercise
-            val nextExerciseIsBodyweight = isBodyweightExercise(exerciseForNextSet)
+            val nextExerciseIsBodyweight = exerciseForNextSet?.exercise?.isBodyweight ?: false
 
             if (persistedTimerClaim == null && !deferredTransition && exerciseForNextSet != null && !nextExerciseIsBodyweight) {
                 val nextSetIdx = nextSetIdxFromStep ?: (completedSetIndex + 1)
@@ -12358,7 +12344,7 @@ class ActiveSessionEngine(
             navigation != null &&
             nextExercise != null &&
             nextSetIndex != null &&
-            !isBodyweightExercise(nextExercise) &&
+            !nextExercise.exercise.isBodyweight &&
             nextSetIndex < nextExercise.setReps.size
         ) {
             val nextSetReps = nextExercise.setReps.getOrNull(nextSetIndex)
@@ -12873,7 +12859,7 @@ class ActiveSessionEngine(
                 nextExercise.progressionKg
             }
 
-            val nextIsBodyweight = isBodyweightExercise(nextExercise)
+            val nextIsBodyweight = nextExercise.exercise.isBodyweight
 
             val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
             val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)

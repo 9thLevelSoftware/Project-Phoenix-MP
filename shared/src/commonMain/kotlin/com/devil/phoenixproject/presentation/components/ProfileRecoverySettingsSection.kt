@@ -33,7 +33,8 @@ import com.devil.phoenixproject.data.repository.ProfileRecoveryResolution
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -42,44 +43,55 @@ import org.koin.compose.koinInject
 fun ProfileRecoverySettingsSection() {
     val recoveryRepository: ProfileRecoveryRepository = koinInject()
     val ownershipTransfers: OwnershipTransferRepository = koinInject()
+    val pending by recoveryRepository.observeUnresolved().collectAsState(initial = emptyList())
+    val cloudPending by ownershipTransfers.observePending().collectAsState(initial = emptyList())
+    // Survives the card leaving composition so the last recovery is not cancelled mid-write.
+    val operationScope = rememberCoroutineScope()
+    if (pending.isEmpty() && cloudPending.isEmpty()) return
+
+    VisibleProfileRecoverySettings(
+        recoveryRepository = recoveryRepository,
+        pending = pending,
+        cloudPending = cloudPending,
+        operationScope = operationScope,
+    )
+}
+
+@Composable
+private fun VisibleProfileRecoverySettings(
+    recoveryRepository: ProfileRecoveryRepository,
+    pending: List<PendingProfileRecoveryGroup>,
+    cloudPending: List<OwnershipTransferMutation>,
+    operationScope: CoroutineScope,
+) {
     val profilesRepository: UserProfileRepository = koinInject()
     val authRepository: AuthRepository = koinInject()
-    val pending by recoveryRepository.pendingRecoveries.collectAsState()
     val profiles by profilesRepository.allProfiles.collectAsState()
-    val authState by authRepository.authState.collectAsState()
-    val scope = rememberCoroutineScope()
-    var cloudPending by remember { mutableStateOf<List<OwnershipTransferMutation>>(emptyList()) }
     var operationInProgress by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
 
-    suspend fun refresh() {
-        recoveryRepository.refresh()
-        cloudPending = ownershipTransfers.pendingAll()
+    // This section is composed only while a recovery is visible. Leaving it stops the refresh.
+    LaunchedEffect(recoveryRepository) {
+        refreshProfileRecoveryWhileShown(
+            shown = MutableStateFlow(true),
+            refresh = recoveryRepository::refresh,
+        )
     }
 
     suspend fun runRecovery(operation: suspend () -> ProfileRecoveryResolution) {
         operationInProgress = true
         try {
             resultMessage = resolutionMessage(operation())
-            refresh()
+            recoveryRepository.refresh()
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
             resultMessage = "Recovery could not be completed. Try again."
-            runCatching { refresh() }
+            runCatching { recoveryRepository.refresh() }
         } finally {
             operationInProgress = false
         }
     }
-
-    LaunchedEffect(authState) {
-        refresh()
-        while (true) {
-            delay(3_000)
-            cloudPending = ownershipTransfers.pendingAll()
-        }
-    }
-    if (pending.isEmpty() && cloudPending.isEmpty()) return
 
     ProfileRecoveryCard(
         pending = pending,
@@ -88,14 +100,14 @@ fun ProfileRecoverySettingsSection() {
         operationInProgress = operationInProgress,
         resultMessage = resultMessage,
         onKeepDefault = { recoveryId ->
-            scope.launch {
+            operationScope.launch {
                 runRecovery {
                     recoveryRepository.keepWithDefault(recoveryId, authRepository.currentUser?.id)
                 }
             }
         },
         onMove = { recoveryId, targetProfileId ->
-            scope.launch {
+            operationScope.launch {
                 runRecovery {
                     recoveryRepository.moveToProfile(
                         recoveryId,

@@ -98,7 +98,6 @@ import projectphoenix.shared.generated.resources.search_logs
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectionLogsScreen(
-    onNavigateBack: () -> Unit,
     mainViewModel: MainViewModel,
     logsViewModel: ConnectionLogsViewModel = koinViewModel(),
 ) {

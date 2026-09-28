@@ -67,10 +67,6 @@ class GamificationManager(
     private val _badgeEarnedEvents = MutableSharedFlow<List<Badge>>()
     val badgeEarnedEvents: SharedFlow<List<Badge>> = _badgeEarnedEvents.asSharedFlow()
 
-    // Issue #319: Flow for PR tracking errors that UI can observe
-    private val _prTrackingErrorEvents = MutableSharedFlow<String>()
-    val prTrackingErrorEvents: SharedFlow<String> = _prTrackingErrorEvents.asSharedFlow()
-
     /** Consecutive sets with quality score above minimum threshold (session-scoped) */
     private var consecutiveQualitySets: Int = 0
 
@@ -176,8 +172,6 @@ class GamificationManager(
                     }.onFailure { e ->
                         val errorMsg = "Failed to save PR for ${exercise?.name ?: exId}: ${e.message}"
                         Logger.e { "PR_TRACK: $errorMsg (profile=$effectiveProfileId)" }
-                        // Issue #319: Emit to UI-visible error flow
-                        _prTrackingErrorEvents.emit(errorMsg)
                     }
 
                     // Check phase-specific PRs (Issue #111)
@@ -248,10 +242,7 @@ class GamificationManager(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    val errorMsg = "Unexpected error checking PR: ${e.message}"
-                    Logger.e(e) { "PR_TRACK: $errorMsg" }
-                    // Issue #319: Emit to UI-visible error flow (direct emit in suspend function)
-                    _prTrackingErrorEvents.emit(errorMsg)
+                    Logger.e(e) { "PR_TRACK: Unexpected error checking PR: ${e.message}" }
                 }
             }
         }

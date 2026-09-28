@@ -51,6 +51,28 @@ internal fun highestKnownTier(subscriptions: List<SubscriptionCheckDto>): String
     .maxByOrNull { (_, rank) -> rank }
     ?.first
 
+/**
+ * Premium flag and active tier from a single subscriptions-table read.
+ *
+ * [isPremium] is true exactly when [tier] is a known paid tier. A null [tier]
+ * means that read confirmed there is no active EMBER, FLAME, or INFERNO row.
+ * A failed read is a [Result] failure, not a null tier, so callers can keep
+ * the previous pair instead of mixing a new flag with a stale tier.
+ */
+data class SubscriptionEntitlement(
+    val isPremium: Boolean,
+    val tier: String?,
+)
+
+/**
+ * Derives [SubscriptionEntitlement] from one subscriptions response.
+ * Premium and tier come from the same known-tier set, so they cannot disagree.
+ */
+internal fun subscriptionEntitlement(subscriptions: List<SubscriptionCheckDto>): SubscriptionEntitlement {
+    val tier = highestKnownTier(subscriptions)
+    return SubscriptionEntitlement(isPremium = tier != null, tier = tier)
+}
+
 private fun HttpClientConfig<*>.configurePortalHttpClient() {
     install(ContentNegotiation) {
         json(PortalWireJson)
@@ -389,13 +411,20 @@ open class PortalApiClient(
     }
 
     /**
-     * Checks premium subscription status by querying the subscriptions table.
-     * Returns true if the user has an active or trialing subscription at EMBER tier or above.
+     * Reads active and trialing subscriptions once and derives both the premium
+     * flag and the highest known tier.
      *
-     * On network failure, returns null to allow callers to preserve existing premium status.
-     * This prevents downgrading paid users to free tier due to transient network issues.
+     * One `GET /rest/v1/subscriptions` (`select=tier,status`, `status=in.(active,trialing)`).
+     * When several rows match, [TIER_PRECEDENCE] picks the tier (INFERNO > FLAME > EMBER).
+     * Unknown tier strings are ignored. Success with a null tier means the user has
+     * no active paid subscription. On 401 this returns an auth failure; on any other
+     * HTTP or network error it returns a classified failure so callers can keep the
+     * previously known premium flag and tier together.
+     *
+     * [SyncManager] uses this for login and foreground refresh. Inferno-only features
+     * (50 Hz force-curve telemetry sync) read the tier from the same result.
      */
-    suspend fun checkPremiumStatus(): Result<Boolean> {
+    open suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> {
         val token = tokenStorage.getToken() ?: return Result.failure(
             PortalApiException("Not authenticated", null, 401),
         )
@@ -409,65 +438,13 @@ open class PortalApiClient(
             }
             if (response.status.isSuccess()) {
                 val subscriptions = response.body<List<SubscriptionCheckDto>>()
-                // User is premium if they have any active/trialing subscription at EMBER or above
-                val isPremium = subscriptions.any { sub ->
-                    sub.tier in listOf("EMBER", "FLAME", "INFERNO")
-                }
-                Result.success(isPremium)
-            } else if (response.status.value == 401) {
-                Result.failure(PortalApiException("Unauthorized", null, 401))
-            } else {
-                // Non-auth failures should preserve existing status
-                Result.failure(
-                    PortalApiException("Subscription check failed: ${response.status}", null, response.status.value),
-                )
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            // Network failures return failure to allow callers to preserve existing premium status
-            val classified = classifyError(e, "Subscription check")
-            Result.failure(classified.toException())
-        }
-    }
-
-    /**
-     * Resolves the highest active subscription tier for the current user.
-     *
-     * Returns `Result.success(tier)` where `tier` is one of "INFERNO", "FLAME",
-     * "EMBER", or `null` (no active subscription). When the user holds multiple
-     * active/trialing subscriptions simultaneously, the highest-ranked tier wins
-     * per [TIER_PRECEDENCE] (INFERNO > FLAME > EMBER). Unknown tier strings are
-     * ignored.
-     *
-     * On 401 this returns an AUTH failure; on any other network or HTTP error it
-     * returns a classified failure so callers can preserve the previously known
-     * tier rather than downgrading paid users on a transient hiccup.
-     *
-     * Mirrors [checkPremiumStatus] end-to-end but returns the tier string instead
-     * of collapsing to a boolean. Used by [SyncManager] to gate Inferno-only
-     * features (50 Hz force-curve telemetry sync).
-     */
-    open suspend fun getActiveSubscriptionTier(): Result<String?> {
-        val token = tokenStorage.getToken() ?: return Result.failure(
-            PortalApiException("Not authenticated", null, 401),
-        )
-        return try {
-            val response = httpClient.get("${supabaseConfig.url}/rest/v1/subscriptions") {
-                header("apikey", supabaseConfig.anonKey)
-                bearerAuth(token)
-                parameter("select", "tier,status")
-                parameter("status", "in.(active,trialing)")
-                header("Accept", "application/json")
-            }
-            if (response.status.isSuccess()) {
-                val subscriptions = response.body<List<SubscriptionCheckDto>>()
-                Result.success(highestKnownTier(subscriptions))
+                Result.success(subscriptionEntitlement(subscriptions))
             } else if (response.status.value == 401) {
                 Result.failure(PortalApiException("Unauthorized", null, 401))
             } else {
                 Result.failure(
                     PortalApiException(
-                        "Subscription tier check failed: ${response.status}",
+                        "Subscription check failed: ${response.status}",
                         null,
                         response.status.value,
                     ),
@@ -475,7 +452,7 @@ open class PortalApiClient(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            val classified = classifyError(e, "Subscription tier check")
+            val classified = classifyError(e, "Subscription check")
             Result.failure(classified.toException())
         }
     }

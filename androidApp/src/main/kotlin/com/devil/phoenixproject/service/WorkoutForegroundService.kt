@@ -7,14 +7,18 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.os.IBinder
+import android.os.LocaleList
 import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
 import com.devil.phoenixproject.R
 import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
+import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
+import java.util.Locale
 
 /**
  * Foreground service to keep the app alive during workouts.
@@ -25,6 +29,9 @@ class WorkoutForegroundService : Service() {
     companion object {
         const val CHANNEL_ID = "phoenix_workout_channel"
         const val NOTIFICATION_ID = 1
+
+        /** Same key [MainActivity] reads from [ThemeViewModel.THEME_PREFS_FILE]. */
+        private const val PERSISTED_LANGUAGE_KEY = "language"
 
         private val log = Logger.withTag("WorkoutForegroundService")
     }
@@ -43,6 +50,8 @@ class WorkoutForegroundService : Service() {
 
     private var notificationState = NotificationState()
     private var isForegroundActive = false
+    private var postedChannelName: String? = null
+    private var postedChannelDescription: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -128,13 +137,39 @@ class WorkoutForegroundService : Service() {
         }
     }
 
+    /**
+     * Context whose string resources follow the in-app locale.
+     *
+     * API 33+ per-app locales set by [MainActivity] already apply to this service.
+     * API 26-32 only update the activity configuration, so resolve copy against the
+     * same persisted language before reading notification strings.
+     */
+    private fun notificationStringsContext(): Context {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return this
+        val langCode = runCatching {
+            getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
+                .getString(PERSISTED_LANGUAGE_KEY, null)
+        }.getOrNull()
+        if (langCode.isNullOrBlank()) return this
+        val locale = Locale.forLanguageTag(langCode)
+        val config = Configuration(resources.configuration)
+        config.setLocale(locale)
+        config.setLocales(LocaleList(locale))
+        return createConfigurationContext(config)
+    }
+
     private fun createNotificationChannel() {
+        val strings = notificationStringsContext()
+        val name = strings.getString(R.string.workout_notification_channel_name)
+        val description = strings.getString(R.string.workout_notification_channel_description)
+        if (name == postedChannelName && description == postedChannelDescription) return
+
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Phoenix Workout",
+            name,
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Shows ongoing workout status"
+            this.description = description
             setShowBadge(false)
         }
 
@@ -142,94 +177,115 @@ class WorkoutForegroundService : Service() {
             Context.NOTIFICATION_SERVICE,
         ) as NotificationManager
         notificationManager.createNotificationChannel(channel)
+        postedChannelName = name
+        postedChannelDescription = description
     }
 
     private fun updateNotification() {
+        // Channel name is fixed at creation unless we post it again. Refresh only when
+        // the resolved copy changed (language switch); steady-state updates skip this.
+        createNotificationChannel()
         val notificationManager = getSystemService(
             Context.NOTIFICATION_SERVICE,
         ) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, createNotification())
     }
 
-    private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle(notificationTitle())
-        .setContentText(notificationText())
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setOngoing(true)
-        .setCategory(NotificationCompat.CATEGORY_WORKOUT)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .setContentIntent(createPendingIntent())
-        .build()
-
-    private fun notificationTitle(): String = when (notificationState.phase) {
-        WorkoutServicePhase.INITIALIZING -> "Phoenix Workout"
-        WorkoutServicePhase.COUNTDOWN -> "Workout Starting"
-        WorkoutServicePhase.ACTIVE -> notificationState.exerciseName ?: "Workout Active"
-        WorkoutServicePhase.SET_SUMMARY -> "Set Complete"
-        WorkoutServicePhase.RESTING -> "Rest Timer"
-        WorkoutServicePhase.JUST_LIFT_REST -> "Just Lift Rest"
-        WorkoutServicePhase.PAUSED -> "Workout Paused"
+    private fun createNotification() = notificationStringsContext().let { strings ->
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(notificationTitle(strings))
+            .setContentText(notificationText(strings))
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(createPendingIntent())
+            .build()
     }
 
-    private fun notificationText(): String {
+    private fun notificationTitle(strings: Context): String = when (notificationState.phase) {
+        WorkoutServicePhase.INITIALIZING -> strings.getString(R.string.workout_notification_title_initializing)
+        WorkoutServicePhase.COUNTDOWN -> strings.getString(R.string.workout_notification_title_countdown)
+        WorkoutServicePhase.ACTIVE -> notificationState.exerciseName
+            ?: strings.getString(R.string.workout_notification_title_active)
+        WorkoutServicePhase.SET_SUMMARY -> strings.getString(R.string.workout_notification_title_set_complete)
+        WorkoutServicePhase.RESTING -> strings.getString(R.string.workout_notification_title_rest)
+        WorkoutServicePhase.JUST_LIFT_REST -> strings.getString(R.string.workout_notification_title_just_lift_rest)
+        WorkoutServicePhase.PAUSED -> strings.getString(R.string.workout_notification_title_paused)
+    }
+
+    private fun notificationText(strings: Context): String {
         val details = mutableListOf<String>()
 
         when (notificationState.phase) {
-            WorkoutServicePhase.INITIALIZING -> details += "Preparing ${notificationState.workoutMode}"
+            WorkoutServicePhase.INITIALIZING ->
+                details += strings.getString(
+                    R.string.workout_notification_preparing,
+                    notificationState.workoutMode,
+                )
 
             WorkoutServicePhase.COUNTDOWN -> {
                 notificationState.exerciseName?.let(details::add)
-                notificationState.secondsRemaining?.let { details += "Starts in ${it}s" }
+                notificationState.secondsRemaining?.let { seconds ->
+                    details += strings.getString(R.string.workout_notification_starts_in, seconds)
+                }
             }
 
             WorkoutServicePhase.ACTIVE -> {
-                notificationState.currentSetLabel()?.let(details::add)
-                notificationState.repLabel()?.let(details::add)
+                notificationState.currentSetLabel(strings)?.let(details::add)
+                notificationState.repLabel(strings)?.let(details::add)
                 details += notificationState.workoutMode
             }
 
             WorkoutServicePhase.SET_SUMMARY -> {
                 notificationState.exerciseName?.let(details::add)
-                notificationState.repLabel()?.let(details::add)
-                notificationState.currentSetLabel()?.let(details::add)
+                notificationState.repLabel(strings)?.let(details::add)
+                notificationState.currentSetLabel(strings)?.let(details::add)
             }
 
             WorkoutServicePhase.RESTING -> {
-                notificationState.nextExerciseName?.let { details += "Next: $it" }
-                notificationState.currentSetLabel()?.let(details::add)
-                notificationState.secondsRemaining?.let { details += "${it}s remaining" }
+                notificationState.nextExerciseName?.let { name ->
+                    details += strings.getString(R.string.workout_notification_next, name)
+                }
+                notificationState.currentSetLabel(strings)?.let(details::add)
+                notificationState.secondsRemaining?.let { seconds ->
+                    details += strings.getString(R.string.workout_notification_seconds_remaining, seconds)
+                }
             }
 
             WorkoutServicePhase.JUST_LIFT_REST -> {
                 notificationState.exerciseName?.let(details::add)
-                notificationState.secondsRemaining?.let { details += "${it}s remaining" }
+                notificationState.secondsRemaining?.let { seconds ->
+                    details += strings.getString(R.string.workout_notification_seconds_remaining, seconds)
+                }
             }
 
             WorkoutServicePhase.PAUSED -> {
                 notificationState.exerciseName?.let(details::add)
-                notificationState.currentSetLabel()?.let(details::add)
+                notificationState.currentSetLabel(strings)?.let(details::add)
             }
         }
 
         return details.filter { it.isNotBlank() }.joinToString(" | ").ifBlank {
-            "Phoenix workout in progress"
+            strings.getString(R.string.workout_notification_in_progress)
         }
     }
 
-    private fun NotificationState.currentSetLabel(): String? {
+    private fun NotificationState.currentSetLabel(strings: Context): String? {
         val set = currentSet
         val total = totalSets
         if (set == null || total == null || set <= 0 || total <= 0) return null
-        return "Set $set/$total"
+        return strings.getString(R.string.workout_notification_set_progress, set, total)
     }
 
-    private fun NotificationState.repLabel(): String? {
+    private fun NotificationState.repLabel(strings: Context): String? {
         val reps = completedReps
         val target = targetReps
         return when {
             reps == null || reps < 0 -> null
-            target != null && target > 0 -> "Reps $reps/$target"
-            else -> "Reps $reps"
+            target != null && target > 0 ->
+                strings.getString(R.string.workout_notification_reps_progress, reps, target)
+            else -> strings.getString(R.string.workout_notification_reps, reps)
         }
     }
 
@@ -263,7 +319,8 @@ class WorkoutForegroundService : Service() {
     }
 
     private fun localizedWorkoutMode(mode: String): String = when (mode) {
-        WorkoutServiceProtocol.WORKOUT_MODE_BODYWEIGHT -> getString(R.string.workout_mode_bodyweight)
+        WorkoutServiceProtocol.WORKOUT_MODE_BODYWEIGHT ->
+            notificationStringsContext().getString(R.string.workout_mode_bodyweight)
         else -> mode
     }
 

@@ -355,6 +355,23 @@ class PortalTokenStorageTest {
     }
 
     @Test
+    fun updateSubscriptionEntitlementWritesPremiumAndTierTogether() {
+        val storage = createStorage()
+        val nowSec = currentTimeMillis() / 1000
+        saveAuthWithExpiry(storage, nowSec + 3600)
+
+        storage.updateSubscriptionEntitlement(isPremium = true, tier = "FLAME")
+
+        assertEquals(true, storage.currentUser.value?.isPremium)
+        assertEquals("FLAME", storage.getSubscriptionTier())
+
+        storage.updateSubscriptionEntitlement(isPremium = false, tier = null)
+
+        assertEquals(false, storage.currentUser.value?.isPremium)
+        assertNull(storage.getSubscriptionTier())
+    }
+
+    @Test
     fun recordCompletedPullStoresPerProfileCursor() {
         val storage = PortalTokenStorage(MapSettings())
         storage.recordCompletedPull("u1", "default", 1234L)
