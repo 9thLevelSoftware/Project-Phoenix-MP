@@ -49,9 +49,10 @@ fun CycleEditorScreen(
     // Collect ViewModel state
     val uiState by cycleEditorViewModel.uiState.collectAsState()
 
-    // Clear topbar title to allow dynamic title from EnhancedMainScreen
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("")
+    // Publish the live cycle name. A blank name clears the title so the shell
+    // falls back to "Training Cycle".
+    LaunchedEffect(uiState.cycleName) {
+        viewModel.updateTopBarTitle(uiState.cycleName)
     }
 
     // Initialize ViewModel with cycle data

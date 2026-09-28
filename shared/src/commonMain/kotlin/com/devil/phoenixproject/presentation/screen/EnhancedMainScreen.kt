@@ -166,11 +166,6 @@ fun EnhancedMainScreen(
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val currentRoutineName = loadedRoutine?.name ?: ""
 
-    // Cycle name display: ViewModel does not currently expose editingCycle state,
-    // so the top bar will show an empty cycle name. This is acceptable because
-    // cycle editing navigates to its own screen with its own title.
-    val editingCycleName = ""
-
     // For exercise detail - derive from loaded routine and current exercise index
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
     val selectedExerciseName = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.exercise?.name ?: ""
@@ -355,17 +350,19 @@ fun EnhancedMainScreen(
         ) {
             val useCompactTopBar = isCompactAccessibilityLayout() ||
                 windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
-            val fullTopBarTitle = if (topBarTitle.isNotEmpty()) {
-                topBarTitle
-            } else {
-                getScreenTitle(
-                    route = currentRoute,
-                    profileTitle = profileTitle,
-                    routineName = currentRoutineName,
-                    exerciseName = selectedExerciseName,
-                    cycleName = editingCycleName,
-                )
-            }
+            // Cycle editor and review publish the cycle name through topBarTitle.
+            // On those routes that name wins; a blank name uses the static fallback.
+            val fullTopBarTitle = cycleShellTitle(currentRoute, topBarTitle)
+                ?: if (topBarTitle.isNotEmpty()) {
+                    topBarTitle
+                } else {
+                    getScreenTitle(
+                        route = currentRoute,
+                        profileTitle = profileTitle,
+                        routineName = currentRoutineName,
+                        exerciseName = selectedExerciseName,
+                    )
+                }
             val visibleTopBarTitle = if (useCompactTopBar) {
                 getCompactScreenTitle(currentRoute, fullTopBarTitle)
             } else {
@@ -1051,21 +1048,49 @@ private fun ConnectionStatusIndicator(
 }
 
 /**
- * Get the screen title based on the current route.
- * Supports dynamic titles for routine, exercise, and cycle flows.
+ * Shell title for the cycle editor and review routes.
+ *
+ * [cycleName] is the title those screens publish (the editor's cycle name, or the
+ * review route's cycle name). A non-blank name is shown trimmed. A blank name uses
+ * the static fallback. Returns null for every other route.
  */
+internal fun cycleShellTitle(route: String, cycleName: String): String? {
+    val fallback = when {
+        route.startsWith("cycle_editor") -> "Training Cycle"
+        route.startsWith("cycleReview") -> "Cycle Review"
+        else -> return null
+    }
+    return cycleName.trim().ifEmpty { fallback }
+}
+
+/**
+ * Compact top-bar label for cycle routes. A real cycle name is kept (the bar
+ * ellipsizes it). The static fallbacks stay short.
+ */
+internal fun compactCycleShellTitle(route: String, title: String): String? = when {
+    route.startsWith("cycle_editor") ->
+        if (title.isBlank() || title == "Training Cycle") "Cycle" else title
+    route.startsWith("cycleReview") ->
+        if (title.isBlank() || title == "Cycle Review") "Review" else title
+    else -> null
+}
+
 private fun isSingleExerciseRoute(route: String): Boolean = route == NavigationRoutes.SingleExercise.route ||
     route.startsWith("${NavigationRoutes.SingleExercise.route}/")
 
 internal fun shouldKeepScreenOnForRoute(route: String, isInWorkoutSession: Boolean): Boolean =
     isInWorkoutSession || route == NavigationRoutes.JustLift.route
 
+/**
+ * Screen title for routes that do not publish one.
+ * Routine and exercise flows fill in the loaded name. Cycle editor and review
+ * titles are resolved earlier by [cycleShellTitle].
+ */
 private fun getScreenTitle(
     route: String,
     profileTitle: String,
     routineName: String = "",
     exerciseName: String = "",
-    cycleName: String = "",
 ): String = when {
     // Main tabs (static titles)
     route == NavigationRoutes.Home.route -> "Choose Your Workout"
@@ -1096,11 +1121,6 @@ private fun getScreenTitle(
     // Exercise detail (dynamic - uses exercise name)
     route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
 
-    // Cycle flow (dynamic - uses cycle name)
-    route.startsWith("cycle_editor") -> cycleName.ifEmpty { "Training Cycle" }
-
-    route.startsWith("cycleReview") -> cycleName.ifEmpty { "Cycle Review" }
-
     // Routine editor (dynamic - uses routine name)
     route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
 
@@ -1120,18 +1140,19 @@ private fun getScreenTitle(
     else -> "Project Phoenix"
 }
 
-private fun getCompactScreenTitle(route: String, title: String): String = when {
-    route == NavigationRoutes.Home.route -> "Workouts"
-    route == NavigationRoutes.DailyRoutines.route -> "Routines"
-    route == NavigationRoutes.TrainingCycles.route -> "Cycles"
-    route == NavigationRoutes.SmartInsights.route -> "Insights"
-    route == NavigationRoutes.Profile.route -> title
-    route == NavigationRoutes.EquipmentRack.route -> "Rack"
-    isSingleExerciseRoute(route) -> "Exercise"
-    route.startsWith("cycle_editor") -> "Cycle"
-    route.startsWith("cycleReview") -> "Review"
-    route.startsWith("routine_editor") -> "Edit"
-    else -> title
+private fun getCompactScreenTitle(route: String, title: String): String {
+    compactCycleShellTitle(route, title)?.let { return it }
+    return when {
+        route == NavigationRoutes.Home.route -> "Workouts"
+        route == NavigationRoutes.DailyRoutines.route -> "Routines"
+        route == NavigationRoutes.TrainingCycles.route -> "Cycles"
+        route == NavigationRoutes.SmartInsights.route -> "Insights"
+        route == NavigationRoutes.Profile.route -> title
+        route == NavigationRoutes.EquipmentRack.route -> "Rack"
+        isSingleExerciseRoute(route) -> "Exercise"
+        route.startsWith("routine_editor") -> "Edit"
+        else -> title
+    }
 }
 
 private fun shouldResumeActiveWorkout(workoutState: WorkoutState): Boolean = when (workoutState) {
