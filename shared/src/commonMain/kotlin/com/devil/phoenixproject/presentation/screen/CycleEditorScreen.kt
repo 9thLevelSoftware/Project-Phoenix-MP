@@ -28,7 +28,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import projectphoenix.shared.generated.resources.*
@@ -41,7 +41,7 @@ fun CycleEditorScreen(
     navController: androidx.navigation.NavController,
     viewModel: MainViewModel,
     routines: List<Routine>,
-    cycleEditorViewModel: CycleEditorViewModel = koinInject(),
+    cycleEditorViewModel: CycleEditorViewModel = koinViewModel(),
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
