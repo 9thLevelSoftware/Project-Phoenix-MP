@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 
 class SqlDelightOwnershipTransferRepositoryTest {
@@ -32,5 +33,31 @@ class SqlDelightOwnershipTransferRepositoryTest {
         assertEquals(1, repository.pendingForOwner("owner-a").size)
         assertEquals(1, repository.acknowledge("owner-a", setOf("mutation-1"), 21L))
         assertEquals(emptyList(), repository.pendingForOwner("owner-a"))
+    }
+
+    @Test
+    fun `observePending follows unacknowledged transfers without polling`() = runTest {
+        val database = createTestDatabase()
+        val queries = database.phoenixDatabaseQueries
+        val repository = SqlDelightOwnershipTransferRepository(database)
+
+        assertEquals(emptyList(), repository.observePending().first())
+        queries.insertOwnershipTransferOutbox(
+            mutationId = "mutation-1",
+            ownerUserId = "owner-a",
+            sourceProfileId = "source",
+            targetProfileId = "target",
+            workoutSessionIdsJson = "[\"portal-parent\"]",
+            routineIdsJson = "[]",
+            cycleIdsJson = "[]",
+            personalRecordIdsJson = "[]",
+            createdAt = 10L,
+        )
+
+        val pending = repository.observePending().first().single()
+        assertEquals("mutation-1", pending.mutationId)
+        assertEquals(listOf("portal-parent"), pending.workoutSessionIds)
+        assertEquals(1, repository.acknowledge("owner-a", setOf("mutation-1"), 21L))
+        assertEquals(emptyList(), repository.observePending().first())
     }
 }
