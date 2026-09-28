@@ -789,7 +789,6 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     showSaveOverridePrompt = true
                 },
                 onManageRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
-                showBehaviorOverrides = true,
                 // Issue #582: regression tag for Compose UI / screenshot tests that
                 // verify the Equipment Rack card is reachable on cable SetReady.
                 modifier = Modifier.testTag(SetReadyTestTags.RACK_CARD),

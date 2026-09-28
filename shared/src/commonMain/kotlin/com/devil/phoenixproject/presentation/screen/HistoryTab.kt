@@ -1290,8 +1290,6 @@ private fun BiomechanicsSection(session: WorkoutSession) {
         RepBiomechanicsDetail(
             repResults = repBiomechanics,
             isLoading = isLoadingBiomechanics,
-            showAsymmetry = true,
-            showForceCurves = true,
         )
     }
 }

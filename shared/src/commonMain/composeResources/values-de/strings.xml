@@ -295,7 +295,6 @@
     <string name="drop_set_remaining_one">1 Drop übrig</string>
     <string name="drop_set_remaining_many">%1$d Drops übrig</string>
     <string name="drop_set_accepted_waiting">Wiederholung bei %1$s — %2$s je Seil</string>
-    <string name="drop_set_saving">Fehlversuch wird gespeichert</string>
     <string name="drop_set_preparing">Trainer wird vorbereitet</string>
     <string name="drop_set_ready">Bereit zur Wiederholung</string>
     <string name="drop_set_recovery">Verbinde erneut, um diesen Drop-Set zu wiederholen</string>
