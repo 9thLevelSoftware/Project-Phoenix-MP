@@ -407,6 +407,16 @@ internal fun missingAcknowledgedMutationIds(
     acknowledged: Set<String>,
 ): Set<String> = sent - acknowledged
 
+/**
+ * Premium flag and tier after applying one subscription fetch.
+ * [serverConfirmedPremium] is true only when that fetch succeeded with a paid tier.
+ */
+private data class AppliedSubscriptionEntitlement(
+    val isPremium: Boolean,
+    val tier: String?,
+    val serverConfirmedPremium: Boolean,
+)
+
 class SyncManager(
     private val apiClient: PortalApiClient,
     private val tokenStorage: PortalTokenStorage,
@@ -565,17 +575,17 @@ class SyncManager(
 
                     val fallbackPremium = if (sameAccount) previousPremium else false
                     val fallbackTier = if (sameAccount) previousTier else null
-                    val premiumResult = apiClient.checkPremiumStatus()
-                    val isPremium = if (premiumResult.isSuccess) premiumResult.getOrNull() ?: false else fallbackPremium
-                    tokenStorage.updatePremiumStatus(isPremium)
-                    val tierResult = apiClient.getActiveSubscriptionTier()
-                    val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else fallbackTier
-                    tokenStorage.updateSubscriptionTier(resolvedTier)
+                    val entitlementResult = apiClient.fetchSubscriptionEntitlement()
+                    val applied = applySubscriptionEntitlement(
+                        entitlementResult,
+                        fallbackPremium = fallbackPremium,
+                        fallbackTier = fallbackTier,
+                    )
 
                     Logger.i("SyncManager") {
-                        "Login successful, premium=$isPremium, " +
-                            "tier=${resolvedTier ?: "none"} (sameAccount=$sameAccount, " +
-                            "server checks: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
+                        "Login successful, premium=${applied.isPremium}, " +
+                            "tier=${applied.tier ?: "none"} (sameAccount=$sameAccount, " +
+                            "server check=${entitlementResult.isSuccess})"
                     }
                     Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
                 }
@@ -889,7 +899,7 @@ class SyncManager(
     }
 
     /**
-     * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
+     * Refreshes premium status and the active tier from one subscription read.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
     override suspend fun refreshPremiumStatusFromServer() {
@@ -903,8 +913,7 @@ class SyncManager(
                 // Serialize the account-scoped response with every identity transition.
                 // The generation fence also fails closed if a future identity writer does
                 // not share syncMutex but does advance token state.
-                val premiumResult = apiClient.checkPremiumStatus()
-                val tierResult = apiClient.getActiveSubscriptionTier()
+                val entitlementResult = apiClient.fetchSubscriptionEntitlement()
                 val identityUnchanged = tokenStorage.authGeneration() == expectedGeneration &&
                     tokenStorage.currentUser.value?.id == expectedUserId
                 if (!identityUnchanged) {
@@ -912,18 +921,15 @@ class SyncManager(
                     return@withProfileMutationBarrier
                 }
 
-                // A successful `null` from the server means the user has no active
-                // subscription (a real downgrade) and MUST clear the cached tier.
-                // Only a failed call (network, 5xx) preserves the existing value.
-                val isPremium = if (premiumResult.isSuccess) {
-                    premiumResult.getOrNull() ?: false
-                } else {
-                    existingPremium
-                }
-                val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
-                tokenStorage.updatePremiumStatus(isPremium)
-                tokenStorage.updateSubscriptionTier(resolvedTier)
-                if (premiumResult.getOrNull() == true) {
+                // A successful null tier means the user has no active subscription
+                // (a real downgrade) and MUST clear the cached tier and premium flag
+                // together. Only a failed call (network, 5xx) preserves the existing pair.
+                val applied = applySubscriptionEntitlement(
+                    entitlementResult,
+                    fallbackPremium = existingPremium,
+                    fallbackTier = existingTier,
+                )
+                if (applied.serverConfirmedPremium) {
                     // Server-confirmed renewal: drop the "subscription required" banner now
                     // (the next automatic sync may still be held by throttle/backoff). A failed
                     // check falls back to the cached flag, which a 402/403 may have left stale,
@@ -932,11 +938,39 @@ class SyncManager(
                 }
 
                 Logger.d("SyncManager") {
-                    "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +
-                        "(network ok: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
+                    "refreshPremiumStatusFromServer: premium=${applied.isPremium}, tier=${applied.tier ?: "none"} " +
+                        "(network ok: ${entitlementResult.isSuccess})"
                 }
             }
         }
+    }
+
+    /**
+     * Writes premium and tier from one subscription fetch.
+     * On failure both stay at the fallback pair, so a single error cannot update
+     * one field and leave the other stale.
+     */
+    private fun applySubscriptionEntitlement(
+        result: Result<SubscriptionEntitlement>,
+        fallbackPremium: Boolean,
+        fallbackTier: String?,
+    ): AppliedSubscriptionEntitlement {
+        val fetched = result.getOrNull()
+        val applied = if (result.isSuccess && fetched != null) {
+            AppliedSubscriptionEntitlement(
+                isPremium = fetched.isPremium,
+                tier = fetched.tier,
+                serverConfirmedPremium = fetched.isPremium,
+            )
+        } else {
+            AppliedSubscriptionEntitlement(
+                isPremium = fallbackPremium,
+                tier = fallbackTier,
+                serverConfirmedPremium = false,
+            )
+        }
+        tokenStorage.updateSubscriptionEntitlement(applied.isPremium, applied.tier)
+        return applied
     }
 
     // === Sync Operations ===

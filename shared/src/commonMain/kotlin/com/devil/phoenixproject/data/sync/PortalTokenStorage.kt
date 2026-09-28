@@ -813,6 +813,21 @@ class PortalTokenStorage(private val settings: Settings) {
         }
     }
 
+    /**
+     * Persists the premium flag and active tier from one subscription read.
+     * Both keys are written before [currentUser] is published, so a successful
+     * fetch cannot surface a new premium flag beside a stale tier.
+     */
+    fun updateSubscriptionEntitlement(isPremium: Boolean, tier: String?) {
+        settings[KEY_IS_PREMIUM] = isPremium
+        if (tier == null) {
+            settings.remove(KEY_SUBSCRIPTION_TIER)
+        } else {
+            settings[KEY_SUBSCRIPTION_TIER] = tier
+        }
+        _currentUser.value = _currentUser.value?.copy(isPremium = isPremium)
+    }
+
     fun getSubscriptionTier(): String? = settings[KEY_SUBSCRIPTION_TIER]
 
     fun clearAuth() {

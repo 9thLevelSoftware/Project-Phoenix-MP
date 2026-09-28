@@ -36,12 +36,6 @@ import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -495,32 +489,17 @@ class SyncManagerTest {
         fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
         val entitlementEntered = CompletableDeferred<Unit>()
         val releaseEntitlement = CompletableDeferred<Unit>()
-        val engine = MockEngine {
-            respond(
-                content = if (tokenStorage.currentUser.value?.id == "owner-b") {
-                    """[{"tier":"INFERNO","status":"active"}]"""
-                } else {
-                    "[]"
-                },
-                status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
-            )
-        }
-        val api = object : PortalApiClient(
-            SupabaseConfig("https://fake.supabase.co", "anon"),
-            tokenStorage,
-            httpClientEngine = engine,
-        ) {
+        val api = object : FakePortalApiClient() {
             override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
                 Result.success(createAuthResponse(userId = "owner-c", email = email))
 
-            override suspend fun getActiveSubscriptionTier(): Result<String?> {
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> {
                 if (tokenStorage.currentUser.value?.id == "owner-b") {
                     entitlementEntered.complete(Unit)
                     releaseEntitlement.await()
-                    return Result.success("INFERNO")
+                    return Result.success(SubscriptionEntitlement(isPremium = true, tier = "INFERNO"))
                 }
-                return Result.success(null)
+                return Result.success(SubscriptionEntitlement(isPremium = false, tier = null))
             }
         }
         val manager = SyncManager(
@@ -553,6 +532,134 @@ class SyncManagerTest {
         assertEquals("owner-c", tokenStorage.currentUser.value?.id)
         assertFalse(tokenStorage.currentUser.value?.isPremium ?: true)
         assertNull(tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `login applies premium and tier from one subscription fetch`() = runTest {
+        setupAuthenticated(userId = "user-123")
+        tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = "user-123")
+        var fetches = 0
+        val api = object : FakePortalApiClient() {
+            override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
+                Result.success(createAuthResponse(userId = "user-123", email = email))
+
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> {
+                fetches++
+                return Result.success(SubscriptionEntitlement(isPremium = true, tier = "INFERNO"))
+            }
+        }
+        val manager = createManager(api)
+
+        val result = manager.login("user-123@example.com", "password")
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, fetches)
+        assertEquals(true, tokenStorage.currentUser.value?.isPremium)
+        assertEquals("INFERNO", tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `login keeps the same account entitlement pair when the subscription fetch fails`() = runTest {
+        setupAuthenticated(userId = "user-123")
+        tokenStorage.updatePremiumStatus(true)
+        tokenStorage.updateSubscriptionTier("FLAME")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = "user-123")
+        val api = object : FakePortalApiClient() {
+            override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
+                Result.success(createAuthResponse(userId = "user-123", email = email))
+
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> =
+                Result.failure(PortalApiException("Subscription check failed", statusCode = 503))
+        }
+        val manager = createManager(api)
+
+        val result = manager.login("user-123@example.com", "password")
+
+        assertTrue(result.isSuccess)
+        assertEquals(true, tokenStorage.currentUser.value?.isPremium)
+        assertEquals("FLAME", tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `login to another account clears both entitlement fields when the fetch fails`() = runTest {
+        setupAuthenticated(userId = "owner-a")
+        tokenStorage.updatePremiumStatus(true)
+        tokenStorage.updateSubscriptionTier("INFERNO")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
+        val api = object : FakePortalApiClient() {
+            override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
+                Result.success(createAuthResponse(userId = "owner-b", email = email))
+
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> =
+                Result.failure(PortalApiException("Subscription check failed", statusCode = 503))
+        }
+        val manager = createManager(api)
+
+        val result = manager.login("owner-b@example.com", "password")
+
+        assertTrue(result.isSuccess)
+        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
+        assertEquals(false, tokenStorage.currentUser.value?.isPremium)
+        assertNull(tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `entitlement refresh applies premium and tier from one fetch`() = runTest {
+        setupAuthenticated()
+        tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier("EMBER")
+        var fetches = 0
+        val api = object : FakePortalApiClient() {
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> {
+                fetches++
+                return Result.success(SubscriptionEntitlement(isPremium = true, tier = "FLAME"))
+            }
+        }
+        val manager = createManager(api)
+
+        manager.refreshPremiumStatusFromServer()
+
+        assertEquals(1, fetches)
+        assertEquals(true, tokenStorage.currentUser.value?.isPremium)
+        assertEquals("FLAME", tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `entitlement refresh failure preserves premium and tier together`() = runTest {
+        setupAuthenticated()
+        tokenStorage.updatePremiumStatus(true)
+        tokenStorage.updateSubscriptionTier("INFERNO")
+        val api = object : FakePortalApiClient() {
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> =
+                Result.failure(PortalApiException("Subscription check failed", statusCode = 503))
+        }
+        val manager = createManager(api)
+
+        manager.refreshPremiumStatusFromServer()
+
+        assertEquals(true, tokenStorage.currentUser.value?.isPremium)
+        assertEquals("INFERNO", tokenStorage.getSubscriptionTier())
+    }
+
+    @Test
+    fun `confirmed lapse clears premium and tier together and keeps the paused banner`() = runTest {
+        setupAuthenticated()
+        tokenStorage.updatePremiumStatus(true)
+        tokenStorage.updateSubscriptionTier("INFERNO")
+        val api = object : FakePortalApiClient() {
+            override suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> =
+                Result.success(SubscriptionEntitlement(isPremium = false, tier = null))
+        }
+        val manager = createManager(api)
+        manager.markPausedNotPremium()
+
+        manager.refreshPremiumStatusFromServer()
+
+        assertEquals(false, tokenStorage.currentUser.value?.isPremium)
+        assertNull(tokenStorage.getSubscriptionTier())
+        assertIs<SyncState.NotPremium>(manager.syncState.value)
     }
 
     @Test
