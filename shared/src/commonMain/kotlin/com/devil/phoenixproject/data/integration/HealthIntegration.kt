@@ -263,9 +263,6 @@ expect class HealthIntegration : HealthWorkoutWriter {
     suspend fun hasBodyWeightReadPermission(): Boolean
     suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?>
 
-    /** Write a single set/exercise session (used for Just Lift / non-routine workouts). */
-    suspend fun writeWorkout(session: WorkoutSession): Result<Unit>
-
     /**
      * Write a health workout derived from Phoenix sessions and completed sets.
      * Android stores set-level [HealthWorkoutData.segments]; iOS stores the aggregate workout only.
