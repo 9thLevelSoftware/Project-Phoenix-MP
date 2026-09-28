@@ -102,7 +102,8 @@ class SetReadySessionBodyweightPromptWiringTest {
             "SetReadyScreen.kt must resolve session override before falling back to saved Settings bodyweight.",
         )
         assertTrue(
-            src.contains("resolvedBodyWeightKg * selectedVariant.percentage"),
+            src.contains("BodyweightVolumeCalculator.effectiveWeight(") &&
+                src.contains("bodyWeightKg = resolvedBodyWeightKg,"),
             "Bodyweight effective-load preview must use the resolved session bodyweight value.",
         )
         assertTrue(
