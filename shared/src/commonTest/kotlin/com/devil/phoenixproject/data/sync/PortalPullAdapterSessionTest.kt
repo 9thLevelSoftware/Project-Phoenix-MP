@@ -5,6 +5,15 @@ import kotlin.test.assertEquals
 
 class PortalPullAdapterSessionTest {
 
+    /**
+     * Production pull goes through [PortalPullAdapter.toWorkoutSessionsWithLookup].
+     * A null catalog match keeps exerciseId unset, matching rows with no local exercise.
+     */
+    private fun pullSessions(portalSession: PullWorkoutSessionDto, profileId: String) =
+        kotlinx.coroutines.runBlocking {
+            PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, profileId) { _, _, _ -> null }
+        }
+
     @Test
     fun `single exercise session maps to one WorkoutSession`() {
         val portalSession = PullWorkoutSessionDto(
@@ -37,7 +46,7 @@ class PortalPullAdapterSessionTest {
             ),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
 
         assertEquals(1, sessions.size)
         val session = sessions.first()
@@ -91,7 +100,7 @@ class PortalPullAdapterSessionTest {
             ),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
 
         assertEquals(2, sessions.size)
         assertEquals("Bench Press", sessions[0].exerciseName)
@@ -114,7 +123,7 @@ class PortalPullAdapterSessionTest {
             exercises = emptyList(),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
         assertEquals(0, sessions.size)
     }
 
@@ -133,7 +142,7 @@ class PortalPullAdapterSessionTest {
             ),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
         assertEquals(0, sessions.size)
     }
 
@@ -166,7 +175,7 @@ class PortalPullAdapterSessionTest {
             ),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
         // 600 seconds / 3 exercises = 200 seconds each = 200_000 ms
         assertEquals(200_000L, sessions[0].duration)
     }
@@ -182,7 +191,7 @@ class PortalPullAdapterSessionTest {
             ),
         )
 
-        val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
+        val sessions = pullSessions(portalSession, "default")
         assertEquals(1, sessions.size)
         assertEquals(0f, sessions[0].weightPerCableKg)
         assertEquals(0, sessions[0].totalReps)
