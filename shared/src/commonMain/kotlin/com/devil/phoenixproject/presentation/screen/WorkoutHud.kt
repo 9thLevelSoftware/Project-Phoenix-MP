@@ -56,12 +56,15 @@ import projectphoenix.shared.generated.resources.*
  * Slots:
  * - Top Bar: Connection Status (Left), Phase/Mode (Center), Stop Button (Right)
  * - Center: Horizontal Pager (Metrics | Demo | Stats)
- * - Bottom Bar: Weight/Reps controls & Navigation
+ * - Bottom Bar: Selected per-cable weight and rack context
+ *
+ * Exercise navigation is not offered here. Issue #125 keeps next-exercise
+ * controls off while the machine is engaged, and WorkoutTab only composes this
+ * HUD for [WorkoutState.Active].
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WorkoutHud(
-    activeState: WorkoutState.Active,
     metric: WorkoutMetric?,
     workoutParameters: WorkoutParameters,
     repCount: RepCount,
@@ -75,8 +78,6 @@ fun WorkoutHud(
     enableVideoPlayback: Boolean,
     onStopWorkout: () -> Unit,
     formatWeight: (Float, WeightUnit) -> String,
-    onUpdateParameters: (WorkoutParameters) -> Unit,
-    onStartNextExercise: () -> Unit,
     currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     loadBaselineA: Float = 0f, // Load baseline for cable A (base tension to subtract)
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
@@ -135,11 +136,6 @@ fun WorkoutHud(
                 workoutParameters = workoutParameters,
                 formatWeight = formatWeight,
                 weightUnit = weightUnit,
-                onUpdateParameters = onUpdateParameters,
-                onNextExercise = onStartNextExercise,
-                // Issue #125: Never show Next button during Active state - exercise navigation
-                // should only be allowed when the machine is not engaged.
-                showNextButton = false,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 rackLoadAdjustment = rackLoadAdjustment,
             )
@@ -377,9 +373,6 @@ private fun HudBottomBar(
     workoutParameters: WorkoutParameters,
     formatWeight: (Float, WeightUnit) -> String,
     weightUnit: WeightUnit,
-    onUpdateParameters: (WorkoutParameters) -> Unit,
-    onNextExercise: () -> Unit,
-    showNextButton: Boolean,
     isCurrentExerciseBodyweight: Boolean,
     rackLoadAdjustment: RackLoadAdjustment,
 ) {
@@ -433,16 +426,6 @@ private fun HudBottomBar(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            }
-
-            // Next Exercise Button (if applicable)
-            if (showNextButton) {
-                FloatingActionButton(
-                    onClick = onNextExercise,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    Icon(Icons.Default.SkipNext, contentDescription = stringResource(Res.string.cd_next_exercise))
                 }
             }
         }

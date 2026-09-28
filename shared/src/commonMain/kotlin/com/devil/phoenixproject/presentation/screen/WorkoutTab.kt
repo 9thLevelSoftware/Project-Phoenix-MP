@@ -319,7 +319,6 @@ fun WorkoutTab(
     if (workoutState is WorkoutState.Active && connectionState is ConnectionState.Connected) {
         Box(modifier = modifier) {
             WorkoutHud(
-                activeState = workoutState,
                 metric = currentMetric,
                 workoutParameters = workoutParameters,
                 repCount = repCount,
@@ -333,8 +332,6 @@ fun WorkoutTab(
                 enableVideoPlayback = enableVideoPlayback,
                 onStopWorkout = onStopWorkout,
                 formatWeight = formatWeight,
-                onUpdateParameters = onUpdateParameters,
-                onStartNextExercise = onStartNextExercise,
                 currentHeuristicKgMax = currentHeuristicKgMax,
                 loadBaselineA = loadBaselineA,
                 loadBaselineB = loadBaselineB,
