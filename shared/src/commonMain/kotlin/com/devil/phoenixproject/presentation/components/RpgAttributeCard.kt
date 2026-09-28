@@ -26,11 +26,11 @@ import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.rpg_no_data_yet
 
 /**
- * RPG Attribute Card -- shows character class header, five attribute bars (0-100),
- * and a Portal deep-link button. Displayed on BadgesScreen.
+ * RPG Attribute Card -- shows character class header and five attribute bars (0-100).
+ * Displayed on BadgesScreen.
  */
 @Composable
-fun RpgAttributeCard(profile: RpgProfile, onPortalLink: () -> Unit, modifier: Modifier = Modifier) {
+fun RpgAttributeCard(profile: RpgProfile, modifier: Modifier = Modifier) {
     // M13: Show a friendly empty state for zero-workout users instead of a card
     // with all-zero attribute bars, which is confusing and uninformative.
     if (profile == RpgProfile.EMPTY) {
@@ -108,20 +108,6 @@ fun RpgAttributeCard(profile: RpgProfile, onPortalLink: () -> Unit, modifier: Mo
                     value = value,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Portal deep link
-            TextButton(
-                onClick = onPortalLink,
-                contentPadding = PaddingValues(0.dp),
-            ) {
-                Text(
-                    text = "View full skill tree on Phoenix Portal",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
             }
         }
     }
