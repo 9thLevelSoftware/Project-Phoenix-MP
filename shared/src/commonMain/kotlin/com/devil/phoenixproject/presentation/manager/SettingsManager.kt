@@ -9,14 +9,9 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
-import com.devil.phoenixproject.domain.model.LedPreferences
-import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
-import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.UserPreferences
-import com.devil.phoenixproject.domain.model.VbtPreferences
-import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.util.BackupDestination
@@ -44,8 +39,6 @@ class SettingsManager(
 ) {
     private val coreUpdates = Mutex()
     private val workoutUpdates = Mutex()
-    private val ledUpdates = Mutex()
-    private val vbtAndSafetyUpdates = Mutex()
 
     private fun overlayProfile(
         global: UserPreferences,
@@ -228,141 +221,7 @@ class SettingsManager(
         }
     }
 
-    private fun updateLed(transform: (LedPreferences) -> LedPreferences) = updateSection(
-        mutex = ledUpdates,
-        read = { it.preferences.led.value },
-        write = userProfileRepository::updateLed,
-    ) { _, value -> transform(value) }
-
-    private fun updateVbt(
-        transform: (ActiveProfileContext.Ready, VbtPreferences) -> VbtPreferences?,
-    ) = updateSection(
-        mutex = vbtAndSafetyUpdates,
-        read = { it.preferences.vbt.value },
-        write = userProfileRepository::updateVbt,
-        transform = transform,
-    )
-
-    private fun updateSafety(
-        transform: (ActiveProfileContext.Ready, ProfileLocalSafetyPreferences) -> ProfileLocalSafetyPreferences,
-    ) = updateSection(
-        mutex = vbtAndSafetyUpdates,
-        read = { it.localSafety },
-        write = userProfileRepository::updateLocalSafety,
-        transform = transform,
-    )
-
-    fun setWeightUnit(unit: WeightUnit) = updateCore { it.copy(weightUnit = unit) }
-    fun setWeightIncrement(increment: Float) = updateCore { it.copy(weightIncrement = increment) }
     fun setBodyWeightKg(weightKg: Float) = updateCore { it.copy(bodyWeightKg = weightKg) }
-
-    fun setStopAtTop(enabled: Boolean) = updateWorkout { it.copy(stopAtTop = enabled) }
-    fun setBeepsEnabled(enabled: Boolean) = updateWorkout { it.copy(beepsEnabled = enabled) }
-    fun setStallDetectionEnabled(enabled: Boolean) = updateWorkout { it.copy(stallDetectionEnabled = enabled) }
-    fun setAudioRepCountEnabled(enabled: Boolean) = updateWorkout { it.copy(audioRepCountEnabled = enabled) }
-    fun setRepCountTiming(timing: RepCountTiming) = updateWorkout { it.copy(repCountTiming = timing) }
-    fun setSummaryCountdownSeconds(seconds: Int) {
-        Logger.d("setSummaryCountdownSeconds: Setting value to $seconds")
-        updateWorkout { it.copy(summaryCountdownSeconds = seconds) }
-    }
-    fun setAutoStartCountdownSeconds(seconds: Int) = updateWorkout { it.copy(autoStartCountdownSeconds = seconds) }
-    fun setGamificationEnabled(enabled: Boolean) = updateWorkout { it.copy(gamificationEnabled = enabled) }
-    fun setAutoStartRoutine(enabled: Boolean) = updateWorkout { it.copy(autoStartRoutine = enabled) }
-    fun setCountdownBeepsEnabled(enabled: Boolean) = updateWorkout { it.copy(countdownBeepsEnabled = enabled) }
-    fun setRepSoundEnabled(enabled: Boolean) = updateWorkout { it.copy(repSoundEnabled = enabled) }
-    fun setMotionStartEnabled(enabled: Boolean) = updateWorkout { it.copy(motionStartEnabled = enabled) }
-    fun setWeightSuggestionsEnabled(enabled: Boolean) = updateWorkout { it.copy(weightSuggestionsEnabled = enabled) }
-    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) = updateWorkout { it.copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
-    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) = updateWorkout { it.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120)) }
-    fun setVoiceStopEnabled(enabled: Boolean) = updateWorkout { it.copy(voiceStopEnabled = enabled) }
-
-    fun setColorScheme(schemeIndex: Int) = updateLed { it.copy(colorScheme = schemeIndex) }
-    fun setDiscoModeUnlocked(unlocked: Boolean) = updateLed { it.copy(discoModeUnlocked = unlocked) }
-
-    fun setVbtEnabled(enabled: Boolean) = updateVbt { _, current -> current.copy(enabled = enabled) }
-    fun setVelocityLossThreshold(percent: Int) = updateVbt { _, current ->
-        current.copy(velocityLossThresholdPercent = percent.coerceIn(10, 50))
-    }
-    fun setAutoEndOnVelocityLoss(enabled: Boolean) = updateVbt { _, current ->
-        current.copy(autoEndOnVelocityLoss = enabled)
-    }
-    fun setDefaultScalingBasis(basis: ScalingBasis) = updateVbt { _, current ->
-        current.copy(defaultScalingBasis = basis)
-    }
-    fun setVerbalEncouragementEnabled(enabled: Boolean) = updateVbt { _, current ->
-        if (enabled) {
-            current.copy(verbalEncouragementEnabled = true)
-        } else {
-            current.copy(
-                verbalEncouragementEnabled = false,
-                vulgarModeEnabled = false,
-                dominatrixModeActive = false,
-            )
-        }
-    }
-    fun setVulgarModeEnabled(enabled: Boolean) = updateVbt { context, current ->
-        when {
-            enabled && !context.localSafety.adultsOnlyPrompted -> null
-            !enabled -> current.copy(vulgarModeEnabled = false, dominatrixModeActive = false)
-            else -> current.copy(vulgarModeEnabled = true)
-        }
-    }
-    fun setVulgarTier(tier: VulgarTier) = updateVbt { _, current -> current.copy(vulgarTier = tier) }
-    fun setDominatrixModeUnlocked(unlocked: Boolean) = updateVbt { _, current ->
-        current.copy(dominatrixModeUnlocked = unlocked)
-    }
-    fun setDominatrixModeActive(active: Boolean) = updateVbt { context, current ->
-        if (
-            active &&
-            (!current.dominatrixModeUnlocked || !current.vulgarModeEnabled || !context.localSafety.adultsOnlyConfirmed)
-        ) {
-            null
-        } else {
-            current.copy(dominatrixModeActive = active)
-        }
-    }
-
-    fun setSafeWord(word: String?) = updateSafety { _, current -> current.copy(safeWord = word) }
-    fun setSafeWordCalibrated(calibrated: Boolean) = updateSafety { _, current ->
-        current.copy(safeWordCalibrated = calibrated)
-    }
-    fun setAdultsOnlyConfirmed(confirmed: Boolean) = updateSafety { _, current ->
-        current.copy(adultsOnlyConfirmed = confirmed, adultsOnlyPrompted = true)
-    }
-    fun isAdultsOnlyPrompted(): Boolean = ready().localSafety.adultsOnlyPrompted
-    fun setAdultsOnlyPrompted(prompted: Boolean) = updateSafety { _, current ->
-        current.copy(adultsOnlyPrompted = prompted)
-    }
-
-    fun confirmAdultsAndEnableVulgar() {
-        val expectedId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
-            ?.profile?.id ?: return
-        scope.launch {
-            try {
-                vbtAndSafetyUpdates.withLock {
-                    val before = readyFor(expectedId)
-                    userProfileRepository.updateLocalSafety(
-                        expectedId,
-                        before.localSafety.copy(
-                            adultsOnlyConfirmed = true,
-                            adultsOnlyPrompted = true,
-                        ),
-                    )
-                    val afterSafety = readyFor(expectedId)
-                    userProfileRepository.updateVbt(
-                        expectedId,
-                        afterSafety.preferences.vbt.value.copy(vulgarModeEnabled = true),
-                    )
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: ProfileContextUnavailableException) {
-                Logger.w(error) { "Adult consent update stopped while switching" }
-            } catch (error: StaleProfileContextException) {
-                Logger.w(error) { "Adult consent update stopped after profile switch" }
-            }
-        }
-    }
 
     fun getSingleExerciseDefaultsDocument(exerciseId: String): SingleExerciseDefaultsDocument? = ready().preferences.workout.value.singleExerciseDefaults[exerciseId]
 
@@ -400,10 +259,6 @@ class SettingsManager(
 
     fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {
         scope.launch { globalPreferences.setBleCompatibilityMode(setting) }
-    }
-
-    fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
-        scope.launch { globalPreferences.setVelocityOneRepMaxBackfillDone(done) }
     }
 
     fun kgToDisplay(kg: Float, unit: WeightUnit): Float = when (unit) {

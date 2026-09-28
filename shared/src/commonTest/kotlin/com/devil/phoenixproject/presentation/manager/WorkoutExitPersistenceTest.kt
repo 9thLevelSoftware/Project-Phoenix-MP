@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
@@ -994,7 +995,11 @@ class WorkoutExitPersistenceTest {
     fun `a weight PR still marks the completed set when gamification is off`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            harness.settingsManager.setGamificationEnabled(false)
+            val ready = assertIs<ActiveProfileContext.Ready>(harness.fakeUserProfileRepo.activeProfileContext.value)
+            harness.fakeUserProfileRepo.updateWorkout(
+                ready.profile.id,
+                ready.preferences.workout.value.copy(gamificationEnabled = false),
+            )
             advanceUntilIdle()
             assertFalse(
                 harness.settingsManager.gamificationEnabled.value,
