@@ -510,16 +510,6 @@ data class ProgressionEvent(
     val timestamp: Long,
     val profileId: String = "default",
 ) {
-    /**
-     * Calculate the suggested increment.
-     */
-    fun increment(): Float = suggestedWeightKg - previousWeightKg
-
-    /**
-     * Check if this suggestion is still pending.
-     */
-    fun isPending(): Boolean = userResponse == null
-
     companion object {
         fun create(
             id: String = generateUUID(),

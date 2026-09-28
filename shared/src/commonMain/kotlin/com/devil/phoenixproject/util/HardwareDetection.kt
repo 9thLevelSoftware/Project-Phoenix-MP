@@ -42,11 +42,6 @@ object HardwareDetection {
         else -> PhoenixModel.Unknown
     }
 
-    /**
-     * Device display info, deliberately without any capability claim.
-     */
-    fun getDeviceDisplayInfo(deviceName: String): String = "Trainer ($deviceName)"
-
     // getCapabilities()/HardwareCapabilities were deleted here: they returned a flat
     // maxResistanceKg = 200f for every device, had no callers, and became a second and
     // contradictory limit source once CommandLimits owned the per-cable ceiling.
