@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.documentfile.provider.DocumentFile
 import co.touchlab.kermit.Logger
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,6 +43,8 @@ class AndroidBackupDestinationResolver(
                 log.w { "DocumentFile check failed: exists=${docFile?.exists()}, canWrite=${docFile?.canWrite()}" }
             }
             accessible
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.e(e) { "isAccessible failed for ${destination.displayName}" }
             false
@@ -78,6 +81,8 @@ class AndroidBackupDestinationResolver(
 
             log.d { "Wrote $fileName to ${destination.displayName} (${newFile.uri})" }
             Result.success(newFile.uri.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.e(e) { "writeFile failed for $fileName to ${destination.displayName}" }
             Result.failure(e)

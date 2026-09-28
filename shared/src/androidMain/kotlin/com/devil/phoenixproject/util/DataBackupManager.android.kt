@@ -73,9 +73,9 @@ actual val canOpenBackupFolder: Boolean get() = canOpenBackupFolderFor(Build.VER
  * Uses MediaStore for Android 10+ and direct file access for older versions.
  *
  * When the user has selected a custom backup destination via [PreferencesManager],
- * exports are routed through [BackupDestinationResolver]. If the custom destination
- * is inaccessible or write fails, the manager falls back to the default location
- * to guarantee data is never lost.
+ * exports and session backups are routed through [BackupDestinationResolver]. If the
+ * custom destination is inaccessible or write fails, the manager falls back to the
+ * default location to guarantee data is never lost.
  */
 class AndroidDataBackupManager(
     private val context: Context,
@@ -121,49 +121,32 @@ class AndroidDataBackupManager(
     }
 
     /**
-     * On Android Q+, write session backups to MediaStore Downloads so they survive
-     * app uninstall. On pre-Q, the base class writes to the app-specific Documents dir.
+     * Route session backups through [tryCustomDestination], the same resolver path
+     * full export uses. That checks the persisted URI permission and writes via
+     * [BackupDestinationResolver], including a null output stream as failure.
+     * Falls back to the default location when the custom destination is inaccessible.
      *
-     * When a custom backup destination is configured, writes there first.
-     * Falls back to default location if the custom destination is inaccessible.
+     * On Android Q+, the default location is MediaStore Downloads so backups survive
+     * uninstall. On pre-Q, the base class writes to the app-specific Documents dir.
      */
     override suspend fun writeSessionBackupFile(filePath: String, content: String) {
-        // Check for custom backup destination (synchronous read of current preference value)
         val destination = preferencesManager.preferencesFlow.value.backupDestination
         if (destination is BackupDestination.Custom) {
+            val tempFile = File(context.cacheDir, "session_backup_temp.json")
             try {
                 val fileName = File(filePath).name
-                // Write content to a temp file first, then use DocumentFile to copy
-                val tempFile = File(context.cacheDir, "session_backup_temp.json")
                 tempFile.writeText(content, Charsets.UTF_8)
-
-                val treeUri = android.net.Uri.parse(destination.uri)
-                val treeDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
-                if (treeDoc != null && treeDoc.exists() && treeDoc.canWrite()) {
-                    // Remove existing file with same name
-                    treeDoc.findFile(fileName)?.delete()
-                    val newFile = treeDoc.createFile("application/json", fileName)
-                    if (newFile != null) {
-                        // F061: only treat the custom write as done when the stream
-                        // actually opened. A null stream means nothing was written;
-                        // don't delete the temp file and report success — fall
-                        // through to the default location instead.
-                        val outputStream = context.contentResolver.openOutputStream(newFile.uri)
-                        if (outputStream != null) {
-                            outputStream.use { stream ->
-                                tempFile.inputStream().use { it.copyTo(stream) }
-                            }
-                            tempFile.delete()
-                            Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
-                            return
-                        }
-                        Logger.w { "openOutputStream returned null for custom destination; falling back to default" }
-                    }
+                val customResult = tryCustomDestination(destination, fileName, tempFile.absolutePath)
+                if (customResult != null) {
+                    Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
+                    return
                 }
-                tempFile.delete()
-                Logger.w { "Custom backup destination not writable, falling back to default" }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            } finally {
+                tempFile.delete()
             }
         }
 
@@ -285,6 +268,8 @@ class AndroidDataBackupManager(
                 Logger.w(result.exceptionOrNull()) { "Falling back to default backup location after custom destination write failure" }
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.w(e) { "Falling back to default backup location after custom destination error" }
             null
