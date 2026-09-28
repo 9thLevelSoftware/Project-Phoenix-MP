@@ -41,6 +41,9 @@ jobs:
       - name: Validate release-asset replacement helper
         run: python3 .github/scripts/test_replace_release_asset.py
 
+      - name: Validate Play version-code preflight
+        run: python3 .github/scripts/test_resolve_play_version_code.py
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
