@@ -373,37 +373,6 @@ open class PortalApiClient(
         Result.failure(classified.toException())
     }
 
-    suspend fun getUser(): Result<GoTrueUser> {
-        return try {
-            val token = tokenStorage.getToken() ?: return Result.failure(
-                PortalApiException("Not authenticated", null, 401),
-            )
-            val response = httpClient.get("${supabaseConfig.authUrl}/user") {
-                header("apikey", supabaseConfig.anonKey)
-                bearerAuth(token)
-            }
-            if (response.status.isSuccess()) {
-                Result.success(response.body<GoTrueUser>())
-            } else {
-                val error = try {
-                    response.body<GoTrueErrorResponse>()
-                } catch (_: Exception) {
-                    GoTrueErrorResponse(
-                        error = "unknown",
-                        errorDescription = "HTTP ${response.status.value}",
-                    )
-                }
-                Result.failure(
-                    PortalApiException(error.resolvedMessage, null, response.status.value),
-                )
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val classified = classifyError(e, "Get user")
-            Result.failure(classified.toException())
-        }
-    }
-
     suspend fun signOut(): Result<Unit> = try {
         val token = tokenStorage.getToken()
         if (token != null) {

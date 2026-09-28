@@ -23,13 +23,22 @@ import kotlin.test.assertTrue
  *     wire cableCount → per-cable; unknown counts fall back to one cable.
  *   - Else fallback: weightPerCableKg × totalReps (already per-cable).
  *
- * Pull path (PortalPullAdapter.toWorkoutSessions):
+ * Pull path (PortalPullAdapter.toWorkoutSessionsWithLookup):
  *   WorkoutSession.weightPerCableKg = max(PullSetDto.weightKg)    (NO ÷2, already per-cable)
  *
  * These assertions keep the mobile side honest so the portal's ×2 display multiplier
  * produces correct "total weight lifted" numbers.
  */
 class PortalMappingsWeightTest {
+
+    /**
+     * Production pull goes through [PortalPullAdapter.toWorkoutSessionsWithLookup].
+     * A null catalog match keeps exerciseId unset, matching rows with no local exercise.
+     */
+    private fun pullSessions(portalSession: PullWorkoutSessionDto, profileId: String) =
+        kotlinx.coroutines.runBlocking {
+            PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, profileId) { _, _, _ -> null }
+        }
 
     private fun sessionWithReps(
         weightPerCableKg: Float = 0f,
@@ -259,7 +268,7 @@ class PortalMappingsWeightTest {
             ),
         )
 
-        val local = PortalPullAdapter.toWorkoutSessions(serverPayload, profileId = "default")
+        val local = pullSessions(serverPayload, profileId = "default")
 
         assertEquals(1, local.size, "one exercise → one WorkoutSession row")
         assertEquals(
@@ -291,7 +300,7 @@ class PortalMappingsWeightTest {
             ),
         )
 
-        val local = PortalPullAdapter.toWorkoutSessions(payload, profileId = "default")
+        val local = pullSessions(payload, profileId = "default")
 
         assertEquals(60f, local[0].weightPerCableKg, "heaviest set per-cable drives the session weight")
         assertEquals(60f, local[0].heaviestLiftKg, "heaviestLiftKg tracks the same value")
@@ -325,7 +334,7 @@ class PortalMappingsWeightTest {
                 ),
             ),
         )
-        val pulled = PortalPullAdapter.toWorkoutSessions(pullPayload, profileId = "default")
+        val pulled = pullSessions(pullPayload, profileId = "default")
 
         assertEquals(
             50f,
@@ -440,22 +449,22 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pulledDoubleCableCountYieldsFullTotalVolume() {
-        val local = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(2, 40f, 10), "default")
+        val local = pullSessions(pullSessionWithCableCount(2, 40f, 10), "default")
         assertEquals(2, local[0].cableCount)
         assertEquals(40f * 2 * 10, local[0].effectiveTotalVolumeKg(), "Double-cable volume must not be halved on a second device")
     }
 
     @Test
     fun pulledSingleAndUnknownCableCountAreNeverDoubled() {
-        val single = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(1, 40f, 10), "default")[0]
+        val single = pullSessions(pullSessionWithCableCount(1, 40f, 10), "default")[0]
         assertEquals(1, single.cableCount)
         assertEquals(400f, single.effectiveTotalVolumeKg())
 
-        val unknown = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(null, 40f, 10), "default")[0]
+        val unknown = pullSessions(pullSessionWithCableCount(null, 40f, 10), "default")[0]
         assertNull(unknown.cableCount, "Null means unknown; never treat it as 2")
         assertEquals(400f, unknown.effectiveTotalVolumeKg(), "Unknown keeps the old single-cable default")
 
-        val bogus = PortalPullAdapter.toWorkoutSessions(pullSessionWithCableCount(3, 40f, 10), "default")[0]
+        val bogus = pullSessions(pullSessionWithCableCount(3, 40f, 10), "default")[0]
         assertNull(bogus.cableCount, "Out-of-range server value must not reach the local DB")
     }
 
@@ -477,7 +486,7 @@ class PortalMappingsWeightTest {
                 "user-1",
             )[0].exercises[0]
             // Simulate the portal storing and echoing the wire value back.
-            val pulled = PortalPullAdapter.toWorkoutSessions(
+            val pulled = pullSessions(
                 pullSessionWithCableCount(pushed.cableCount, pushed.sets[0].weightKg, pushed.sets[0].actualReps),
                 "default",
             )[0]

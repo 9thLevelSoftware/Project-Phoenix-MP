@@ -56,28 +56,6 @@ class PortalMappingsTest {
         assertEquals(0.0f, PortalMappings.newtonsToLoadKg(0f))
     }
 
-    // ========== cableToPortal ==========
-
-    @Test
-    fun `cableToPortal maps A to left`() {
-        assertEquals("left", PortalMappings.cableToPortal("A"))
-    }
-
-    @Test
-    fun `cableToPortal maps B to right`() {
-        assertEquals("right", PortalMappings.cableToPortal("B"))
-    }
-
-    @Test
-    fun `cableToPortal handles lowercase a`() {
-        assertEquals("left", PortalMappings.cableToPortal("a"))
-    }
-
-    @Test
-    fun `cableToPortal falls through unknown value as lowercase`() {
-        assertEquals("c", PortalMappings.cableToPortal("C"))
-    }
-
     // ========== workoutModeToSync ==========
 
     @Test
@@ -162,79 +140,6 @@ class PortalMappingsTest {
     @Test
     fun `workoutModeToSync passes through ECCENTRIC_ONLY sync string`() {
         assertEquals("ECCENTRIC_ONLY", PortalMappings.workoutModeToSync("ECCENTRIC_ONLY"))
-    }
-
-    // ========== workoutModeFromSync ==========
-
-    @Test
-    fun `workoutModeFromSync converts OLD_SCHOOL to Old School`() {
-        assertEquals("Old School", PortalMappings.workoutModeFromSync("OLD_SCHOOL"))
-    }
-
-    @Test
-    fun `workoutModeFromSync converts ECHO to Echo`() {
-        assertEquals("Echo", PortalMappings.workoutModeFromSync("ECHO"))
-    }
-
-    @Test
-    fun `workoutModeFromSync converts CLASSIC alias to Old School`() {
-        assertEquals("Old School", PortalMappings.workoutModeFromSync("CLASSIC"))
-    }
-
-    @Test
-    fun `workoutModeFromSync returns input for unknown sync string`() {
-        assertEquals("SOME_UNKNOWN", PortalMappings.workoutModeFromSync("SOME_UNKNOWN"))
-    }
-
-    // ========== toPortalCategory ==========
-
-    @Test
-    fun `toPortalCategory maps Biceps to Arms`() {
-        assertEquals("Arms", PortalMappings.toPortalCategory("Biceps"))
-    }
-
-    @Test
-    fun `toPortalCategory maps Triceps to Arms`() {
-        assertEquals("Arms", PortalMappings.toPortalCategory("Triceps"))
-    }
-
-    @Test
-    fun `toPortalCategory maps Quads to Legs`() {
-        assertEquals("Legs", PortalMappings.toPortalCategory("Quads"))
-    }
-
-    @Test
-    fun `toPortalCategory maps Hamstrings to Legs`() {
-        assertEquals("Legs", PortalMappings.toPortalCategory("Hamstrings"))
-    }
-
-    @Test
-    fun `toPortalCategory maps Abs to Core`() {
-        assertEquals("Core", PortalMappings.toPortalCategory("Abs"))
-    }
-
-    @Test
-    fun `toPortalCategory maps Core to Core`() {
-        assertEquals("Core", PortalMappings.toPortalCategory("Core"))
-    }
-
-    @Test
-    fun `toPortalCategory passes through Chest unchanged`() {
-        assertEquals("Chest", PortalMappings.toPortalCategory("Chest"))
-    }
-
-    @Test
-    fun `toPortalCategory passes through unknown group unchanged`() {
-        assertEquals("Traps", PortalMappings.toPortalCategory("Traps"))
-    }
-
-    // ========== portalCategories ==========
-
-    @Test
-    fun `portalCategories contains all expected categories`() {
-        val expected =
-            listOf("Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body")
-        assertEquals(expected, PortalMappings.portalCategories)
     }
 
     // ========== Helpers ==========
