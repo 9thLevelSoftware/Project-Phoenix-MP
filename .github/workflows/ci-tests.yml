@@ -2,12 +2,12 @@ name: CI Tests
 
 on:
   push:
-    branches: [main, mvp, beta*, feature/*]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
   pull_request:
-    branches: [main, beta*]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
