@@ -49,27 +49,31 @@ Those are the same values as `phoenix_window_background` (`values/colors.xml` an
 
 ## Shared framework
 
-The Xcode project links the debug framework. From the repo root, with Supabase checks skipped for a local build that does not need credentials:
+The Xcode project links one configuration-neutral bundle,
+`shared/build/bin/iosArm64/xcodeFramework/shared.framework`. From the repo root,
+with Supabase checks skipped for a local build that does not need credentials:
 
 ```bash
 ./gradlew :shared:linkDebugFrameworkIosArm64 \
   :shared:generateComposeResClass \
   :shared:iosArm64ProcessResources \
   -Pskip.supabase.check=true
+iosApp/install-xcode-framework.sh debug
 ```
 
-Release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) use the release framework in one Gradle invocation:
+Release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) build the release framework, then copy it to that same path:
 
 ```bash
 ./gradlew :shared:linkReleaseFrameworkIosArm64 \
   :shared:generateComposeResClass \
   :shared:iosArm64ProcessResources \
   --no-parallel -Pskip.supabase.check=true
+iosApp/install-xcode-framework.sh release
 ```
 
 Outputs the Xcode project expects:
 
-- `shared/build/bin/iosArm64/debugFramework/shared.framework` (local debug builds)
+- `shared/build/bin/iosArm64/xcodeFramework/shared.framework` (debug or release copy from the install script)
 - `shared/build/processedResources/iosArm64/main/composeResources` (copied into the app bundle by an Xcode build phase)
 
 ## Sound files
@@ -95,4 +99,4 @@ Startup logs `Loaded sound: beep.caf` for files it finds, and `Sound file not fo
 - [x] `LaunchScreenBackground.colorset` — `#F8FAFC` light / `#0F172A` dark
 - [x] `Info.plist` `UILaunchScreen` references both launch assets
 - [ ] `./convert_sounds.sh` — only after `shared/src/androidMain/res/raw/*.ogg` changes
-- [ ] Debug framework build — the Gradle command above, before opening the project in Xcode
+- [ ] Debug framework build — the Gradle command and `iosApp/install-xcode-framework.sh debug` above, before opening the project in Xcode

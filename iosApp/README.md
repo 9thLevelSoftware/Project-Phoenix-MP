@@ -10,10 +10,11 @@ iOS application for controlling compatible smart fitness machines via BLE.
 
 ## Building the Shared Framework
 
-Before opening in Xcode, build the shared Kotlin Multiplatform framework and its
-Compose resources. These are the same three Gradle tasks the release workflows
-run (`.github/workflows/ios-testflight.yml`), using the debug framework that the
-Xcode project links:
+Before opening in Xcode, build the shared Kotlin Multiplatform framework and
+install it on the path the Xcode project links. Debug and Release both use
+`shared/build/bin/iosArm64/xcodeFramework/shared.framework`. Gradle still writes
+the configuration-specific bundle under `debugFramework` or `releaseFramework`;
+`iosApp/install-xcode-framework.sh` copies the one you just built.
 
 ```bash
 # From the project root directory
@@ -21,13 +22,14 @@ Xcode project links:
   :shared:generateComposeResClass \
   :shared:iosArm64ProcessResources \
   -Pskip.supabase.check=true
+iosApp/install-xcode-framework.sh debug
 ```
 
 The Xcode project picks up:
-- the framework from `shared/build/bin/iosArm64/debugFramework/shared.framework`
-- the Compose resources from `shared/build/processedResources/iosArm64/main/composeResources` (copied by a build phase)
+- the framework from `shared/build/bin/iosArm64/xcodeFramework/shared.framework`
+- the Compose resources from `shared/build/processedResources/iosArm64/main/composeResources` (copied by a build phase; device SDK only)
 
-(CI runs `:shared:linkReleaseFrameworkIosArm64` instead of the debug task for release builds.)
+Release workflows (`.github/workflows/ios-testflight.yml`, `ios-release-ipa.yml`, `ios-testflight-internal.yml`) run `:shared:linkReleaseFrameworkIosArm64` and then `iosApp/install-xcode-framework.sh release`.
 
 Then open the project:
 

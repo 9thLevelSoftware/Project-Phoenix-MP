@@ -29,7 +29,7 @@
 /* Begin PBXFileReference section */
 		7BD2BAB62F8C1299004FCE77 /* SupabaseBase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/SupabaseBase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* PhoenixApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PhoenixApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/debugFramework/shared.framework; sourceTree = "<group>"; };
+		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/xcodeFramework/shared.framework; sourceTree = "<group>"; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -107,7 +107,6 @@
 				DFE6BD812EEE200000886589 /* Copy Compose Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
 				E7A1C0DE2F10000100886589 /* Copy Privacy Manifest */,
-				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
 			);
 			buildRules = (
 			);
@@ -176,7 +175,6 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/../../shared/build/processedResources/iosArm64/main/composeResources",
-				"$(SRCROOT)/../../shared/build/processedResources/iosSimulatorArm64/main/composeResources",
 			);
 			name = "Copy Compose Resources";
 			outputPaths = (
@@ -184,23 +182,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/${KOTLIN_TARGET}/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/.\" \"$DEST/\"\nelse\n    echo \"error: Processed Compose resources not found at $SOURCE\" >&2\n    exit 1\nfi\n";
-		};
-		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework/shared.framework/shared",
-			);
-			name = "Generate shared.framework dSYM";
-			outputPaths = (
-				"$(DWARF_DSYM_FOLDER_PATH)/shared.framework.dSYM",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphoneos*)\n        ;;\n    *)\n        echo \"error: PhoenixApp links the iosArm64 device framework; unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/iosArm64/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/.\" \"$DEST/\"\nelse\n    echo \"error: Processed Compose resources not found at $SOURCE\" >&2\n    exit 1\nfi\n";
 		};
 		E7A1C0DE2F10000100886589 /* Copy Privacy Manifest */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -366,7 +348,7 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/xcodeFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PhoenixApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -404,7 +386,7 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/xcodeFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PhoenixApp/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
