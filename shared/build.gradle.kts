@@ -144,6 +144,7 @@ kotlin {
         getByName("androidHostTest") {
             dependencies {
                 implementation(libs.junit)
+                implementation(libs.mockk)
                 implementation(libs.truth)
                 implementation(libs.sqldelight.sqlite.driver)
                 implementation(libs.koin.test.junit4)

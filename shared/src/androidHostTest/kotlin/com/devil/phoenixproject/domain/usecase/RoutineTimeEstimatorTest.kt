@@ -1,13 +1,11 @@
-package com.devil.phoenixproject
+package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WarmupSet
-import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -336,7 +334,7 @@ class RoutineTimeEstimatorTest {
 
     @Test
     fun `formattedDuration formats minutes correctly`() {
-        val estimate = com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate(
+        val estimate = RoutineTimeEstimate(
             totalSeconds = 42 * 60,
             lowerBoundSeconds = 42 * 60,
             upperBoundSeconds = 42 * 60,
@@ -349,7 +347,7 @@ class RoutineTimeEstimatorTest {
 
     @Test
     fun `formattedDuration formats hours correctly`() {
-        val estimate = com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate(
+        val estimate = RoutineTimeEstimate(
             totalSeconds = 90 * 60,
             lowerBoundSeconds = 90 * 60,
             upperBoundSeconds = 90 * 60,
@@ -362,7 +360,7 @@ class RoutineTimeEstimatorTest {
 
     @Test
     fun `formattedRange shows range for AMRAP`() {
-        val estimate = com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate(
+        val estimate = RoutineTimeEstimate(
             totalSeconds = 42 * 60,
             lowerBoundSeconds = 35 * 60,
             upperBoundSeconds = 50 * 60,
@@ -376,7 +374,7 @@ class RoutineTimeEstimatorTest {
 
     @Test
     fun `formattedRange equals formattedDuration for fixed-rep`() {
-        val estimate = com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate(
+        val estimate = RoutineTimeEstimate(
             totalSeconds = 42 * 60,
             lowerBoundSeconds = 42 * 60,
             upperBoundSeconds = 42 * 60,
