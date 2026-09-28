@@ -16,14 +16,18 @@ import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
+import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val presentationModule = module {
     // ViewModels
     factory { ConnectionLogsViewModel() }
     factory { DiagnosticsViewModel(get()) }
-    factory { CycleEditorViewModel(get(), get()) }
-    factory { GamificationViewModel(get(), get()) }
+    // AndroidX ViewModels. viewModel { } + koinViewModel() keeps the instance in the
+    // nav back stack's ViewModelStore across configuration changes and runs onCleared()
+    // when that entry leaves the back stack.
+    viewModel { CycleEditorViewModel(get(), get()) }
+    viewModel { GamificationViewModel(get(), get()) }
     factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { RoutineCsvViewModel(get(), get(), get()) }
     factory { ExternalActivitiesViewModel(get(), get()) }

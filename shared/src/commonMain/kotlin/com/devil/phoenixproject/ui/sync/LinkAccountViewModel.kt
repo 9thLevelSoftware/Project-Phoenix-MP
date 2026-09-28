@@ -32,28 +32,13 @@ sealed class LinkAccountUiState {
 }
 
 /**
- * ViewModel for account linking/authentication operations.
+ * Account linking and authentication state for LinkAccountScreen.
  *
- * ## Lifecycle Management
- * This ViewModel uses a [SupervisorJob]-backed coroutine scope for proper lifecycle management.
- * Callers MUST invoke [clear] when the ViewModel is no longer needed to cancel pending coroutines.
+ * Owns a [SupervisorJob]-backed coroutine scope. Callers must invoke [clear] when the
+ * instance is no longer needed so pending coroutines are cancelled. LinkAccountScreen
+ * does that from a `DisposableEffect` when the screen leaves composition.
  *
- * ### Platform-Specific Usage
- *
- * **Android**: Wrap in an AndroidX ViewModel and call `clear()` from `onCleared()`:
- * ```kotlin
- * class AndroidLinkAccountViewModel(syncManager: SyncManager) : ViewModel() {
- *     private val delegate = LinkAccountViewModel(syncManager)
- *     val uiState = delegate.uiState
- *     // ... delegate other members
- *     override fun onCleared() { delegate.clear() }
- * }
- * ```
- *
- * **iOS (SwiftUI)**: Call `clear()` from `onDisappear` or view's `deinit`:
- * ```swift
- * .onDisappear { viewModel.clear() }
- * ```
+ * Koin registers this type as a `factory`. The screen resolves it with `koinInject()`.
  */
 class LinkAccountViewModel(
     private val syncManager: SyncManager,

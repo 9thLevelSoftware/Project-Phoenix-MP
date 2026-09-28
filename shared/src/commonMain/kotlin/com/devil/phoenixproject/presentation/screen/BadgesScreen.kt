@@ -47,7 +47,7 @@ import com.devil.phoenixproject.ui.theme.Slate50
 import com.devil.phoenixproject.ui.theme.Slate900
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 
@@ -56,7 +56,7 @@ import projectphoenix.shared.generated.resources.Res
 fun BadgesScreen(
     onBack: () -> Unit,
     mainViewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel,
-    viewModel: GamificationViewModel = koinInject(),
+    viewModel: GamificationViewModel = koinViewModel(),
 ) {
     val badges by viewModel.filteredBadges.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
