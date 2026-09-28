@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -41,7 +40,6 @@ import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
@@ -111,9 +109,7 @@ internal suspend fun loadExerciseDetailOneRepMax(
 @Composable
 fun ExerciseDetailScreen(
     exerciseId: String,
-    navController: NavController,
     viewModel: MainViewModel,
-    themeMode: ThemeMode,
     assessmentProfileId: String?,
     onNavigateToStrengthAssessment: (String) -> Unit,
 ) {
@@ -309,7 +305,6 @@ fun ExerciseDetailScreen(
                             VolumeChartCard(
                                 sessions = chronologicalSessions,
                                 weightUnit = weightUnit,
-                                formatWeight = viewModel::formatWeight,
                             )
                         }
                     }
@@ -339,7 +334,6 @@ fun ExerciseDetailScreen(
                             SessionHistoryRow(
                                 session = session,
                                 weightUnit = weightUnit,
-                                formatWeight = viewModel::formatWeight,
                                 isBodyweight = exerciseIsBodyweight,
                             )
                         }
@@ -638,7 +632,7 @@ private fun WeightTrendChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
 }
 
 @Composable
-private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
+private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUnit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -659,7 +653,6 @@ private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUn
             VolumeTrendChart(
                 workoutSessions = sessions,
                 weightUnit = weightUnit,
-                formatWeight = formatWeight,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -812,7 +805,6 @@ private fun TableCell(text: String, modifier: Modifier = Modifier) {
 private fun SessionHistoryRow(
     session: WorkoutSession,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
     isBodyweight: Boolean,
 ) {
     var isExpanded by remember { mutableStateOf(false) }

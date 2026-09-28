@@ -54,7 +54,6 @@ import projectphoenix.shared.generated.resources.Res
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BadgesScreen(
-    onBack: () -> Unit,
     mainViewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel,
     viewModel: GamificationViewModel = koinInject(),
 ) {
