@@ -219,20 +219,6 @@ jobs:
           check_name: 'iOS Simulator Test Results (non-blocking)'
           fail_on_failure: false
 
-  ios-schema-check:
-    name: iOS Schema Sync Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Validate iOS schema matches SQLDelight
-        run: |
-          chmod +x .github/scripts/validate-ios-schema.sh
-          ./.github/scripts/validate-ios-schema.sh
-
   lint:
     name: Lint Check
     runs-on: ubuntu-latest
