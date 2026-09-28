@@ -5,12 +5,8 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * Design-system ratchet: counts banned styling patterns in the shared presentation
- * source tree and asserts they do NOT increase above the recorded baseline.
- *
- * Baselines measured 2026-07-04 on branch ux-audit/phase-0-tokens.
- * Phase 2 sweep tasks will lower these numbers; each merge that lowers a baseline
- * should also update the number and the comment below.
+ * Design-system ratchet: counts ad-hoc styling in the shared presentation
+ * source tree and fails if a count rises above its ceiling.
  *
  * Placement: androidHostTest — uses java.io.File which is JVM-only, consistent with
  * ThemeModeUiContractGuardTest in the same package.
@@ -59,32 +55,23 @@ class DesignSystemRatchetTest {
 
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
-        // Baseline 2026-07-06: 34 (down from 35 after task-4A.5 replaced the last
-        // unaliased mid-value in SetReadyScreen (14dp → MaterialTheme.shapes.small)).
-        // All 34 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
-        // unmapped mid-values (SettingsTab 40dp, SmartInsightsTab 7dp).
+        // Ceiling stops new ad-hoc RoundedCornerShape(N.dp) values from creeping in.
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
-            count <= 34,
-            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 34. " +
+            count <= 27,
+            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 27. " +
                 "Use MaterialTheme.shapes or a named shape token instead.",
         )
     }
 
     @Test
     fun hardcodedBasicColors_doNotIncrease() {
-        // Baseline 2026-07-06: 33 (down from 37 after task-5A.4 replaced:
-        //   - BadgesScreen Color.White badge icon tints (BadgeCard x2, BadgeDetailDialog x1)
-        //     with luminance-based Slate50/Slate900 tokens (analytics-history-18);
-        //   - StreakWidget fire icon Color.White with the same luminance rule
-        //     (pre-existing WCAG fail on light tiers, 5A.4 review finding).
-        //   StreakWidget's fire-tier hexes -> Flame constants were Color(0xFFXX),
-        //   not basic-color literals, so they never counted here.)
+        // Ceiling stops new ad-hoc Color.White/Black/Red/Green/Gray/LightGray literals from creeping in.
         val count = countMatches(Regex("""\bColor\.(White|Black|Red|Green|Gray|LightGray)\b"""))
         assertTrue(
-            count <= 33,
+            count <= 26,
             "Hardcoded Color.(White|Black|Red|Green|Gray|LightGray) usages increased: " +
-                "found $count, baseline ≤ 33. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
+                "found $count, baseline ≤ 26. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
         )
     }
 }
