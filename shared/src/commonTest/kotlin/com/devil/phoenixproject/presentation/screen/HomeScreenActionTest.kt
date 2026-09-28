@@ -2,26 +2,31 @@ package com.devil.phoenixproject.presentation.screen
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class HomeScreenActionTest {
     @Test
-    fun assessOneRepMaxShortcutIsTemporarilyDisabledAndShowsComingSoon() {
-        var navigateCount = 0
-        var comingSoonCount = 0
+    fun homeShortcutsAreSingleExerciseRoutinesAndCycles() {
+        var singleExerciseCount = 0
+        var routinesCount = 0
+        var cyclesCount = 0
 
-        val action = buildHomeShortcutActions(
-            onSingleExercise = { navigateCount++ },
-            onRoutines = { navigateCount++ },
-            onCycles = { navigateCount++ },
-            onAssessOneRepMaxComingSoon = { comingSoonCount++ },
-        ).single { it.label == "Assess 1RM" }
+        val actions = buildHomeShortcutActions(
+            onSingleExercise = { singleExerciseCount++ },
+            onRoutines = { routinesCount++ },
+            onCycles = { cyclesCount++ },
+        )
 
-        assertFalse(action.enabled)
+        assertEquals(listOf("Single Exercise", "Routines", "Cycles"), actions.map { it.label })
+        assertTrue(actions.none { it.label == "Assess 1RM" })
+        assertTrue(actions.all { it.enabled })
 
-        action.onClick()
+        actions.single { it.label == "Single Exercise" }.onClick()
+        actions.single { it.label == "Routines" }.onClick()
+        actions.single { it.label == "Cycles" }.onClick()
 
-        assertEquals(0, navigateCount)
-        assertEquals(1, comingSoonCount)
+        assertEquals(1, singleExerciseCount)
+        assertEquals(1, routinesCount)
+        assertEquals(1, cyclesCount)
     }
 }
