@@ -31,6 +31,7 @@ import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.presentation.components.compactEquipmentLabel
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -233,7 +234,7 @@ private fun buildSubtitle(exercise: Exercise): String {
     }
 
     if (exercise.equipment.isNotBlank() && exercise.equipment.lowercase() != "null") {
-        val equipment = formatEquipmentCompact(exercise.equipment)
+        val equipment = compactEquipmentLabel(exercise.equipment)
         if (equipment.isNotBlank()) {
             parts.add(equipment)
         }
@@ -241,6 +242,3 @@ private fun buildSubtitle(exercise: Exercise): String {
 
     return parts.joinToString(" • ")
 }
-
-private fun formatEquipmentCompact(rawEquipment: String): String =
-    com.devil.phoenixproject.presentation.components.compactEquipmentLabel(rawEquipment)
