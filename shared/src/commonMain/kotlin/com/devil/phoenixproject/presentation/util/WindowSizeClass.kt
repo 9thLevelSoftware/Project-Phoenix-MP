@@ -37,13 +37,7 @@ data class WindowSizeClass(
     val heightSizeClass: WindowHeightSizeClass,
     val widthDp: Dp,
     val heightDp: Dp,
-) {
-    val isTablet: Boolean
-        get() = widthSizeClass != WindowWidthSizeClass.Compact
-
-    val isExpandedTablet: Boolean
-        get() = widthSizeClass == WindowWidthSizeClass.Expanded
-}
+)
 
 /**
  * CompositionLocal for accessing WindowSizeClass throughout the app.

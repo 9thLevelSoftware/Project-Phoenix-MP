@@ -237,7 +237,11 @@ class ActiveSessionEngineIntegrationTest {
         assertFalse(prefs.autoBackupEnabled, "autoBackupEnabled should default to false")
 
         // Set only autoStartRoutine — other features should remain at defaults
-        harness.settingsManager.setAutoStartRoutine(true)
+        val ready = assertIs<ActiveProfileContext.Ready>(harness.fakeUserProfileRepo.activeProfileContext.value)
+        harness.fakeUserProfileRepo.updateWorkout(
+            ready.profile.id,
+            ready.preferences.workout.value.copy(autoStartRoutine = true),
+        )
         advanceUntilIdle()
 
         prefs = harness.settingsManager.userPreferences.value

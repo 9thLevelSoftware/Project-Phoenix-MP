@@ -66,23 +66,54 @@ class RoutineOverviewLocalizationGuardTest {
 
     @Test
     fun overviewEccentricLoadSliderUsesResourceLabelAndLocalizedPercentText() {
-        val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt")
+        // The three verbatim copies were unified into EccentricLoadSlider.
+        // Localization assertions target the shared component; each caller only delegates.
+        val componentSource = read(
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EccentricLoadSlider.kt",
+        )
+        val callers = listOf(
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RestTimerCard.kt",
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SetReadyScreen.kt",
+        ).map { read(it) }
 
         assertTrue(
-            source.contains("stringResource(Res.string.rest_eccentric_load)"),
-            "Overview Eccentric Load label must use the Compose resource system.",
+            componentSource.contains("stringResource(Res.string.rest_eccentric_load)"),
+            "EccentricLoadSlider label must use the Compose resource system.",
         )
         assertTrue(
-            source.contains("percentLabel(percent)"),
-            "Overview Eccentric Load value must use the locale-aware percent formatter.",
+            componentSource.contains("percentLabel(percent)"),
+            "EccentricLoadSlider value must use the locale-aware percent formatter.",
+        )
+        assertTrue(
+            componentSource.contains("valueRange = 0f..150f"),
+            "EccentricLoadSlider must keep the 0–150% range.",
+        )
+        assertTrue(
+            componentSource.contains("steps = 29"),
+            "EccentricLoadSlider must keep 5% steps.",
         )
         assertFalse(
-            source.contains("text = \"ECCENTRIC LOAD\""),
-            "Overview Eccentric Load label must not be hard-coded English.",
+            componentSource.contains("text = \"ECCENTRIC LOAD\""),
+            "EccentricLoadSlider label must not be hard-coded English.",
         )
         assertFalse(
-            source.contains("text = \"\$percent%\""),
-            "Overview Eccentric Load value must not use the raw <int>% rendering.",
+            componentSource.contains("text = \"\$percent%\""),
+            "EccentricLoadSlider value must not use the raw <int>% rendering.",
         )
+        callers.forEach { source ->
+            assertTrue(
+                source.contains("EccentricLoadSlider("),
+                "Rest, Overview, and Set Ready must delegate to EccentricLoadSlider.",
+            )
+            assertFalse(
+                source.contains("text = \"ECCENTRIC LOAD\""),
+                "Call sites must not keep a hard-coded Eccentric Load label.",
+            )
+            assertFalse(
+                source.contains("text = \"\$percent%\""),
+                "Call sites must not keep the raw <int>% eccentric value.",
+            )
+        }
     }
 }

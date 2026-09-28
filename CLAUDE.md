@@ -66,7 +66,7 @@ shared/src/
 - Device-name filters (case-insensitive, `KableBleConnectionManager.kt`): the main scan accepts `Vee_`, `VIT` or `Phoenix`; scan-and-connect and the scan dedupe checks accept only `Vee_`/`VIT`.
 
 ### Database Schema
-SQLDelight schema at `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` (~48 tables) with migrations `migrations/1.sqm` … `N.sqm`. Core tables include `WorkoutSession`, `MetricSample`, `PersonalRecord`, `Exercise`, `Routine`/`RoutineExercise`. See "Schema changes" below before touching any of it.
+SQLDelight schema at `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` (count the `CREATE TABLE` statements in that file) with migrations `migrations/1.sqm` … `N.sqm`. Core tables include `WorkoutSession`, `MetricSample`, `PersonalRecord`, `Exercise`, `Routine`/`RoutineExercise`. See "Schema changes" below before touching any of it.
 
 ### Domain Models
 Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`:
@@ -106,7 +106,7 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 4. It creates the GitHub release `v<version>`, then calls `android-release-apk.yml`, `ios-release-ipa.yml`, `android-playstore.yml` and `ios-testflight.yml` (each can be skipped by an input).
 5. Required repo secrets, by group: release (`RELEASE_PAT`); Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`); Android signing (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); Play (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Apple signing (`BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `PROVISION_PROFILE_BASE64`, `PROVISIONING_PROFILE_NAME`, `TEAM_ID`); App Store Connect (`APPSTORE_API_KEY`, `APPSTORE_API_KEY_ID`, `APPSTORE_ISSUER_ID`, `APP_APPLE_ID`, `TESTFLIGHT_GROUP_NAME`).
 
-### Pending release gates (reliability work, #832; not yet released as of v1.0.2)
+### Pending release gates (reliability work, #832; mobile tag v1.0.3 shipped 2026-09-25)
 `release-all` does not enforce these. Complete them, then delete this subsection, before dispatching the next release:
 1. Deploy the portal first: the additive migration `20260920120000_sync_reliability_contract.sql`, both mobile sync Edge Functions and their portal callers, released together. Then verify the deployed contract with controlled accounts: component-safe writes, permanent workout deletion, exact acknowledgements, ownership transfer and event replay, and cycle rejection/nullable-field behaviour.
 2. On macOS, build the release iOS framework and app and run the native startup/database tests with the production driver. Confirm foreign keys are enforced after migration and reopening.

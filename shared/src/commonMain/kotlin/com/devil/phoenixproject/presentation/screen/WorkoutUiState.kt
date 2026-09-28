@@ -7,9 +7,9 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
-import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -103,18 +103,7 @@ data class WorkoutUiState(
     val restTransitionPlan: RestTransitionPlan? = null,
     // Issue #850: newest-first IDs behind the Just Lift tagging picker's Recent chip
     val recentJustLiftExerciseIds: List<String> = emptyList(),
-) {
-    /** True when currently executing a variable warm-up set (for HUD label) */
-    val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0
-
-    /** Label for warm-up set display, e.g., "Warm-up 2/3" (null when not in warm-up) */
-    val warmupSetLabel: String? get() =
-        if (isInVariableWarmup) {
-            "Warm-up ${currentWarmupSetIndex + 1}/$totalWarmupSets"
-        } else {
-            null
-        }
-}
+)
 
 /**
  * Action callbacks for WorkoutTab.

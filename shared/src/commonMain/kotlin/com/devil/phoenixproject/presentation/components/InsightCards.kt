@@ -566,7 +566,6 @@ fun WorkoutModeDistributionCard(workoutSessions: List<WorkoutSession>, modifier:
 fun TotalVolumeCard(
     workoutSessions: List<WorkoutSession>,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -592,7 +591,6 @@ fun TotalVolumeCard(
                 VolumeTrendChart(
                     workoutSessions = workoutSessions,
                     weightUnit = weightUnit,
-                    formatWeight = formatWeight,
                     modifier = Modifier.height(280.dp),
                 )
             } else {

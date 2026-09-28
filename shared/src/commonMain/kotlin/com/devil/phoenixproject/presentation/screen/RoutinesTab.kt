@@ -78,14 +78,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineModifierType
-import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.routineCopyName
@@ -98,7 +95,6 @@ import com.devil.phoenixproject.presentation.theme.routineCardContainerColor
 import com.devil.phoenixproject.presentation.theme.routineCardDefaultElevation
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
@@ -139,17 +135,9 @@ import projectphoenix.shared.generated.resources.start_workout
 /**
  * Routines tab showing list of saved routines with create/edit/delete functionality.
  */
-@Suppress("UNUSED_PARAMETER")
 @Composable
 fun RoutinesTab(
     routines: List<Routine>,
-    exerciseRepository: ExerciseRepository,
-    personalRecordRepository: PersonalRecordRepository,
-    formatWeight: (Float, WeightUnit) -> String,
-    weightUnit: WeightUnit,
-    enableVideoPlayback: Boolean,
-    kgToDisplay: (Float, WeightUnit) -> Float,
-    displayToKg: (Float, WeightUnit) -> Float,
     onStartWorkout: (Routine) -> Unit,
     onStartWorkoutWithModifier: (Routine, AppliedRoutineModifier) -> Unit = { _, _ -> },
     onDeleteRoutine: (String) -> Unit,
@@ -171,7 +159,6 @@ fun RoutinesTab(
     // Issue #772: routine CSV. Null hides the entry points.
     onExportRoutineCsv: ((Routine) -> Unit)? = null,
     onImportRoutinesCsv: (() -> Unit)? = null,
-    themeMode: ThemeMode,
     modifier: Modifier = Modifier,
 ) {
     // showRoutineBuilder and routineToEdit states removed

@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.math.abs
 
@@ -22,22 +21,6 @@ object WorkoutCommandValidator {
     private const val MAX_PACKET_REPS = MAX_FINITE_REP_BYTE
     private const val MAX_ECHO_ECCENTRIC_PERCENT = 150
     private const val MAX_ECHO_REP_BYTE = MAX_FINITE_REP_BYTE
-
-    fun validateLegacyWorkoutCommand(
-        programMode: ProgramMode,
-        weightPerCableKg: Float,
-        targetReps: Int,
-        maxWeightPerCableKg: Float,
-    ): Result<Unit> {
-        validateFiniteWeight(weightPerCableKg).onFailure { return Result.failure(it) }
-        validateWeightRange(weightPerCableKg, allowZero = false, maxWeightPerCableKg)
-            .onFailure { return Result.failure(it) }
-        validateRepByte("targetReps", targetReps, allowZero = false).onFailure { return Result.failure(it) }
-        if (programMode == ProgramMode.Echo) {
-            return failure("Legacy workout command must not be used for Echo mode")
-        }
-        return Result.success(Unit)
-    }
 
     fun validateProgramParams(params: WorkoutParameters, maxWeightPerCableKg: Float): Result<Unit> {
         if (params.isEchoMode) {

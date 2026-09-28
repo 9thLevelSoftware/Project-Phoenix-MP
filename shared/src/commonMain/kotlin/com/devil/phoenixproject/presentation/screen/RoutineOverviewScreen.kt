@@ -76,14 +76,13 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
-import com.devil.phoenixproject.presentation.components.ExpressiveSlider
-import com.devil.phoenixproject.presentation.components.SliderWithButtons
+import com.devil.phoenixproject.presentation.components.EccentricLoadSlider
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
+import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
@@ -95,7 +94,6 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
-import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
@@ -107,7 +105,6 @@ import projectphoenix.shared.generated.resources.exit_routine_message
 import projectphoenix.shared.generated.resources.exit_routine_title
 import projectphoenix.shared.generated.resources.cd_completed
 import projectphoenix.shared.generated.resources.pager_page_of
-import projectphoenix.shared.generated.resources.rest_eccentric_load
 import projectphoenix.shared.generated.resources.start_exercise
 import projectphoenix.shared.generated.resources.target_reps
 
@@ -680,7 +677,7 @@ private fun ExerciseOverviewCard(
                                     onLevelChange = onEchoLevelChange,
                                 )
 
-                                OverviewEccentricLoadSlider(
+                                EccentricLoadSlider(
                                     percent = eccentricLoadPercent,
                                     onPercentChange = onEccentricLoadChange,
                                 )
@@ -811,41 +808,5 @@ private fun ExerciseOverviewCard(
                 }
             }
         }
-    }
-}
-
-/**
- * Eccentric Load slider for Overview matching RestTimerCard style (0-150%)
- */
-@Composable
-private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(Res.string.rest_eccentric_load),
-                style = labelSmallAllCaps,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = percentLabel(percent),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        ExpressiveSlider(
-            value = percent.toFloat(),
-            onValueChange = { onPercentChange(it.toInt()) },
-            valueRange = 0f..150f,
-            steps = 29, // 5% increments: 0, 5, 10, ... 150
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }

@@ -55,7 +55,6 @@ fun SetSummaryCard(
     workoutMode: String,
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
-    formatWeight: (Float, WeightUnit) -> String,
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
     summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Manual, no auto-continue)

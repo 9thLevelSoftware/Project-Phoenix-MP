@@ -55,7 +55,7 @@ import projectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
 import projectphoenix.shared.generated.resources.equipment_rack_none_selected
 
 /**
- * Collapsible equipment rack summary row with optional per-item behavior overrides.
+ * Collapsible equipment rack summary row with per-item behavior overrides.
  */
 @Composable
 fun EquipmentRackSelectionCard(
@@ -68,7 +68,6 @@ fun EquipmentRackSelectionCard(
     onBehaviorOverrideChange: (Map<String, RackItemBehavior>) -> Unit = {},
     modifier: Modifier = Modifier,
     onManageRack: (() -> Unit)? = null,
-    showBehaviorOverrides: Boolean = false,
 ) {
     val enabledItems = remember(rackItems) {
         rackItems
@@ -196,7 +195,7 @@ fun EquipmentRackSelectionCard(
                                 modifier = Modifier.fillMaxWidth(),
                             )
 
-                            if (selected && showBehaviorOverrides) {
+                            if (selected) {
                                 Spacer(Modifier.height(4.dp))
                                 RackItemBehaviorPicker(
                                     currentBehavior = effectiveBehavior,

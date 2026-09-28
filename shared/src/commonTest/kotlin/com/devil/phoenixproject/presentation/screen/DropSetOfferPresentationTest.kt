@@ -51,15 +51,6 @@ class DropSetOfferPresentationTest {
     }
 
     @Test
-    fun newOfferIdClearsPreviousSelection() {
-        val previous = DropSetOfferSelection("offer-a", DropPercentage.TEN)
-        val next = selectionForDropSetOffer(previous, "offer-b")
-        assertEquals("offer-b", next.offerId)
-        assertNull(next.percentage)
-        assertEquals(previous, selectionForDropSetOffer(previous, "offer-a"))
-    }
-
-    @Test
     fun declinedAndNormalPlansAreNotPresented() {
         assertNull(dropSetOfferUiState(unresolvedPlan().normalAdvance))
         assertNull(

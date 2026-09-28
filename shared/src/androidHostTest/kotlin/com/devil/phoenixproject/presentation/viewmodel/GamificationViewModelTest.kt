@@ -1,10 +1,7 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.local.BadgeDefinitions
-import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
-import com.devil.phoenixproject.domain.model.BadgeRequirement
-import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
@@ -55,24 +52,5 @@ class GamificationViewModelTest {
                     BadgeCategory.DEDICATION
             },
         )
-    }
-
-    @Test
-    fun `updateAndCheckBadges returns newly awarded badges`() = runTest {
-        val badge = Badge(
-            id = "test_badge",
-            name = "Test",
-            description = "Test",
-            category = BadgeCategory.DEDICATION,
-            iconResource = "icon",
-            tier = BadgeTier.BRONZE,
-            requirement = BadgeRequirement.TotalWorkouts(1),
-        )
-        repository.pendingBadges.add(badge)
-
-        val awarded = viewModel.updateAndCheckBadges()
-
-        assertEquals(1, awarded.size)
-        assertEquals("test_badge", awarded.first().id)
     }
 }

@@ -26,12 +26,11 @@ enum class DateRangeOption(val label: String, val daysBack: Int?) {
     LAST_30_DAYS("Last 30 Days", 30),
     LAST_90_DAYS("Last 90 Days", 90),
     THIS_YEAR("This Year", 365),
-    CUSTOM("Custom Range", null),
 }
 
 /**
  * Dialog for selecting a date range for export filtering.
- * Provides quick presets and custom range options.
+ * Provides preset ranges.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,9 +48,6 @@ fun DateRangePickerDialog(
         when (selectedOption) {
             DateRangeOption.ALL_TIME -> null to null
 
-            DateRangeOption.CUSTOM -> null to null
-
-            // Custom handled separately
             else -> {
                 val daysBack = selectedOption.daysBack ?: 0
                 val start = currentTime - (daysBack.toLong() * 24 * 60 * 60 * 1000)
@@ -96,16 +92,13 @@ fun DateRangePickerDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Date range options (excluding CUSTOM for now - simpler MVP)
-                DateRangeOption.entries
-                    .filter { it != DateRangeOption.CUSTOM }
-                    .forEach { option ->
-                        DateRangeOptionRow(
-                            option = option,
-                            isSelected = selectedOption == option,
-                            onClick = { selectedOption = option },
-                        )
-                    }
+                DateRangeOption.entries.forEach { option ->
+                    DateRangeOptionRow(
+                        option = option,
+                        isSelected = selectedOption == option,
+                        onClick = { selectedOption = option },
+                    )
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 

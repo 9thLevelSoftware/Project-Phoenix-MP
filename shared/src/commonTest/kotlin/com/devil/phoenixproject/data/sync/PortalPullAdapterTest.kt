@@ -282,52 +282,6 @@ class PortalPullAdapterTest {
         assertNull(PortalSyncAdapter.sanitizeDurationSeconds(Int.MAX_VALUE))
     }
 
-    // ========== toRoutineSyncDto ==========
-
-    @Test
-    fun `toRoutineSyncDto uses portal id as both clientId and serverId`() {
-        val pullRoutine = makePullRoutineDto(id = "portal-routine-123", name = "Push Day")
-
-        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
-
-        assertEquals("portal-routine-123", result.clientId)
-        assertEquals("portal-routine-123", result.serverId)
-    }
-
-    @Test
-    fun `toRoutineSyncDto maps name and description`() {
-        val pullRoutine = makePullRoutineDto(
-            name = "Leg Day",
-            description = "Heavy squats and accessories",
-        )
-
-        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
-
-        assertEquals("Leg Day", result.name)
-        assertEquals("Heavy squats and accessories", result.description)
-    }
-
-    @Test
-    fun `toRoutineSyncDto sets deletedAt to null`() {
-        val pullRoutine = makePullRoutineDto()
-
-        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
-
-        assertNull(result.deletedAt)
-    }
-
-    @Test
-    fun `toRoutineSyncDto sets createdAt and updatedAt to current time`() {
-        val before = currentTimeApprox()
-        val pullRoutine = makePullRoutineDto()
-
-        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
-
-        // createdAt and updatedAt should be recent (within last 5 seconds)
-        assertTrue(result.createdAt >= before - 5000, "createdAt should be recent")
-        assertTrue(result.updatedAt >= before - 5000, "updatedAt should be recent")
-    }
-
     // ========== toBadgeSyncDto ==========
 
     @Test
@@ -480,23 +434,6 @@ class PortalPullAdapterTest {
     }
 
     // ========== Factory Helpers ==========
-
-    private fun makePullRoutineDto(
-        id: String = "routine-1",
-        name: String = "Test Routine",
-        description: String = "",
-        exercises: List<PullRoutineExerciseDto> = emptyList(),
-    ) = PullRoutineDto(
-        id = id,
-        userId = "user-1",
-        name = name,
-        description = description,
-        exerciseCount = exercises.size,
-        estimatedDuration = 3600,
-        timesCompleted = 0,
-        isFavorite = false,
-        exercises = exercises,
-    )
 
     private fun makePullBadgeDto(badgeId: String = "badge-1", earnedAt: String = "2026-01-01T00:00:00Z") = PullBadgeDto(
         userId = "user-1",

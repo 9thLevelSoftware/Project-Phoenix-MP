@@ -1042,15 +1042,6 @@ class RoutineFlowManager(
         )
     }
 
-    fun loadRoutineById(routineId: String) {
-        val routine = coordinator._routines.value.find { it.id == routineId }
-        if (routine != null) {
-            lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
-            clearCycleContext()
-            loadRoutine(routine)
-        }
-    }
-
     /**
      * Enter routine overview mode.
      */
@@ -1759,32 +1750,6 @@ class RoutineFlowManager(
         }
     }
 }
-
-/**
- * Check if the given exercise is a bodyweight exercise.
- *
- * Bodyweight = no cable accessories (HANDLES, BAR, ROPE, SHORT_BAR, BELT, STRAPS)
- * in the exercise's equipment list. Non-cable equipment like BENCH is allowed.
- *
- * Top-level function accessible to both RoutineFlowManager and DWSM/ActiveSessionEngine.
- *
- * @deprecated Use `exercise.exercise.isBodyweight` instead for direct property access.
- *   Retained for backward compatibility with existing ActiveSessionEngine callers.
- */
-@Deprecated(
-    message = "Use exercise.exercise.isBodyweight property instead",
-    replaceWith = ReplaceWith("exercise?.exercise?.isBodyweight ?: false"),
-)
-internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean = exercise?.let {
-    // #635: delegate to the property so the explicit stored flag is honored;
-    // never re-derive from the equipment string here.
-    val isBodyweight = it.exercise.isBodyweight
-    Logger.d {
-        "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', " +
-            "override=${it.exercise.isBodyweightOverride}, result=$isBodyweight"
-    }
-    isBodyweight
-} ?: false
 
 /**
  * Check if current workout is in single exercise mode.

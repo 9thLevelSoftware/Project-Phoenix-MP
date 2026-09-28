@@ -74,96 +74,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release view "${{ inputs.release_tag }}" --repo "${{ github.repository }}"
 
+      # This workflow may build a historical tag, whose checkout predates the helper.
+      # Fetch it from the immutable workflow revision rather than the build checkout.
       - name: Resolve monotonic version code from Google Play
         id: version
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           PACKAGE_NAME: com.devil.phoenixproject
           VERSION_CODE_OVERRIDE: ${{ inputs.versionCodeOverride }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          cleanup() {
-            if [ -n "${EDIT_ID:-}" ]; then
-              curl --silent --show-error --fail \
-                -X DELETE \
-                -H "Authorization: Bearer $ACCESS_TOKEN" \
-                "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits/$EDIT_ID" \
-                >/dev/null || echo "Warning: failed to delete temporary Play edit $EDIT_ID" >&2
-            fi
-          }
-
-          trap cleanup EXIT
-
-          EDIT_RESPONSE="$(curl --silent --show-error --fail \
-            -X POST \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits")"
-          EDIT_ID="$(printf '%s' "$EDIT_RESPONSE" | jq -r '.id // empty')"
-
-          if [ -z "$EDIT_ID" ]; then
-            echo "Failed to create a temporary Google Play edit." >&2
-            printf '%s\n' "$EDIT_RESPONSE" >&2
-            exit 1
-          fi
-
-          # Google Play intermittently returns 5xx while reading track state.
-          # curl retries transient HTTP failures with bounded exponential backoff.
-          TRACKS_RESPONSE="$(curl --silent --show-error --fail \
-            --connect-timeout 10 \
-            --max-time 20 \
-            --retry 4 \
-            --retry-max-time 45 \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME/edits/$EDIT_ID/tracks")"
-          PLAY_MAX_VERSION_CODE="$(printf '%s' "$TRACKS_RESPONSE" | jq -r '[.tracks[]?.releases[]?.versionCodes[]? | tonumber] | max // empty')"
-
-          if [ -n "$PLAY_MAX_VERSION_CODE" ]; then
-            PLAY_MAX_OUTPUT="$PLAY_MAX_VERSION_CODE"
-          else
-            PLAY_MAX_OUTPUT="none"
-            PLAY_MAX_VERSION_CODE=0
-          fi
-
-          OVERRIDE="$(printf '%s' "${VERSION_CODE_OVERRIDE:-}" | xargs)"
-          if [ -n "$OVERRIDE" ]; then
-            if ! [[ "$OVERRIDE" =~ ^[0-9]+$ ]]; then
-              echo "Invalid workflow input versionCodeOverride='$OVERRIDE'. Expected a positive integer <= 2100000000." >&2
-              exit 1
-            fi
-
-            SELECTED_VERSION_CODE="$OVERRIDE"
-            VERSION_CODE_SOURCE="manual_override"
-          else
-            if [ "$PLAY_MAX_OUTPUT" = "none" ]; then
-              echo "No existing Play version codes were found. Provide workflow_dispatch input versionCodeOverride to seed the next release." >&2
-              exit 1
-            fi
-
-            SELECTED_VERSION_CODE=$((PLAY_MAX_VERSION_CODE + 1))
-            VERSION_CODE_SOURCE="play_max_plus_one"
-          fi
-
-          if [ "$SELECTED_VERSION_CODE" -lt 1 ] || [ "$SELECTED_VERSION_CODE" -gt 2100000000 ]; then
-            echo "Selected version code $SELECTED_VERSION_CODE is outside the allowed range 1..2100000000." >&2
-            exit 1
-          fi
-
-          if [ "$PLAY_MAX_OUTPUT" != "none" ] && [ "$SELECTED_VERSION_CODE" -le "$PLAY_MAX_VERSION_CODE" ]; then
-            echo "Selected version code $SELECTED_VERSION_CODE must be greater than current Play max $PLAY_MAX_VERSION_CODE." >&2
-            exit 1
-          fi
-
-          echo "play_max_version_code=$PLAY_MAX_OUTPUT" >> "$GITHUB_OUTPUT"
-          echo "selected_version_code=$SELECTED_VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "version_code_source=$VERSION_CODE_SOURCE" >> "$GITHUB_OUTPUT"
-
-          echo "::notice title=Google Play version preflight::play_max_version_code=$PLAY_MAX_OUTPUT selected_version_code=$SELECTED_VERSION_CODE source=$VERSION_CODE_SOURCE"
-          echo "Play max version code: $PLAY_MAX_OUTPUT"
-          echo "Selected version code: $SELECTED_VERSION_CODE"
-          echo "Version code source: $VERSION_CODE_SOURCE"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/resolve-play-version-code.sh" \
+            --output "$RUNNER_TEMP/resolve-play-version-code.sh"
+          bash "$RUNNER_TEMP/resolve-play-version-code.sh"
 
       - name: Write Supabase credentials to local.properties
         run: |

@@ -233,11 +233,6 @@ class FakeSyncRepository : SyncRepository {
     var updatedSessionTimestamps: MutableMap<String, Long> = mutableMapOf()
     var updateSessionTimestampCalls: MutableList<String> = mutableListOf()
 
-    override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
-        updateSessionTimestampCalls += sessionId
-        updatedSessionTimestamps[sessionId] = timestamp
-    }
-
     /**
      * Rows edited (or inserted) after the push gathered its payload, keyed by id with
      * the edit time. Mirrors updateSessionTimestampsByIds' guard: such a row keeps its
@@ -402,17 +397,6 @@ class FakeSyncRepository : SyncRepository {
         entityTypes: Set<String>,
     ) {
         recordOwnershipRecoveryExclusionsCalls += createdAtOrBefore to entityTypes
-    }
-
-    var hardDeletedRoutineIds: List<String> = emptyList()
-    var hardDeletedCycleIds: List<String> = emptyList()
-
-    override suspend fun hardDeleteRoutinesByIds(ids: List<String>) {
-        hardDeletedRoutineIds = ids
-    }
-
-    override suspend fun hardDeleteCyclesByIds(ids: List<String>) {
-        hardDeletedCycleIds = ids
     }
 
     // === Stubs for new sync interface methods (added for cycle/PR/phase/assessment sync) ===

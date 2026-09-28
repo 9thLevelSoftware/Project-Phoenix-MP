@@ -2,12 +2,14 @@ package com.devil.phoenixproject.data.sync
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * Unit tests for [highestKnownTier] — the pure precedence helper that
- * [PortalApiClient.getActiveSubscriptionTier] uses to collapse the subscriptions
- * REST response into a single tier string.
+ * Unit tests for [highestKnownTier] and [subscriptionEntitlement].
+ * [PortalApiClient.fetchSubscriptionEntitlement] uses them to collapse one
+ * subscriptions REST response into a premium flag and a single tier string.
  *
  * Precedence contract (per Phoenix Portal subscription matrix):
  *   INFERNO > FLAME > EMBER
@@ -15,6 +17,7 @@ import kotlin.test.assertNull
  * Unknown tier strings must be ignored so the addition of a future tier
  * ("CINDER", "BLAZE", ...) cannot accidentally grant Inferno-only features
  * (e.g., 50 Hz telemetry sync) to a user who does not actually own Inferno.
+ * Premium follows the same known-tier set: it is true exactly when a tier is chosen.
  */
 class SubscriptionTierPrecedenceTest {
 
@@ -99,12 +102,31 @@ class SubscriptionTierPrecedenceTest {
 
     @Test
     fun isCaseSensitive() {
-        // Supabase stores tiers in uppercase per PortalApiClient.checkPremiumStatus().
-        // If the server ever returns mixed case, we want the mismatch to surface as
-        // "no active tier" rather than silently granting entitlement on a typo.
+        // Supabase stores tiers in uppercase. If the server ever returns mixed case,
+        // the mismatch must surface as "no active tier" rather than granting entitlement.
         assertNull(
             highestKnownTier(listOf(sub("inferno"))),
             "Lowercase 'inferno' must NOT match — fail closed on tier casing mismatch",
         )
+    }
+
+    @Test
+    fun entitlementPremiumMatchesTheChosenTier() {
+        assertEquals(
+            SubscriptionEntitlement(isPremium = false, tier = null),
+            subscriptionEntitlement(emptyList()),
+        )
+        assertEquals(
+            SubscriptionEntitlement(isPremium = true, tier = "INFERNO"),
+            subscriptionEntitlement(listOf(sub("EMBER"), sub("INFERNO"))),
+        )
+        assertEquals(
+            SubscriptionEntitlement(isPremium = false, tier = null),
+            subscriptionEntitlement(listOf(sub("CINDER"), sub("inferno"))),
+        )
+        val paid = subscriptionEntitlement(listOf(sub("FLAME")))
+        assertTrue(paid.isPremium)
+        assertEquals("FLAME", paid.tier)
+        assertFalse(subscriptionEntitlement(listOf(sub("BLAZE"))).isPremium)
     }
 }

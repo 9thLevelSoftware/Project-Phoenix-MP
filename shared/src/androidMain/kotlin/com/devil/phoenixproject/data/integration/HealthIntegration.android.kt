@@ -15,7 +15,6 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -53,10 +52,6 @@ internal val optionalHealthPermissions = setOf(
 internal val bodyWeightReadHealthPermissions = setOf(
     HealthPermission.getReadPermission(WeightRecord::class),
 )
-
-internal val workoutWriteHealthPermissions = requiredHealthPermissions
-
-internal val workoutExportRequestedHealthPermissions = workoutWriteHealthPermissions + optionalHealthPermissions
 
 // The full prompt surface still asks for body-weight read alongside workout
 // write so users can opt into the body-weight import in a single flow.
@@ -161,12 +156,6 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             log.e(e) { "Failed to read latest Health Connect scale body weight" }
             Result.failure(e)
         }
-    }
-
-    actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
-        val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(session, completedSets = emptyList())
-            ?: return Result.failure(IllegalArgumentException("Workout session has no completed reps to write"))
-        return writeHealthWorkout(data)
     }
 
     @SuppressLint("RestrictedApi")

@@ -50,8 +50,7 @@ class KmpUtilsTest {
     }
 
     @Test
-    fun formatFloat_extensionAndDouble_handleNonFinite() {
+    fun formatFloat_extension_handlesNonFinite() {
         assertEquals("0.0", Float.NaN.format(1))
-        assertEquals("0.0", Double.NaN.format(1))
     }
 }

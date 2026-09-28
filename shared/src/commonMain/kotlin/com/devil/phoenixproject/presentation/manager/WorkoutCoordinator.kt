@@ -499,7 +499,6 @@ class WorkoutCoordinator(
 
     // RPE tracking for current set (Phase 2: Training Cycles)
     internal val _currentSetRpe = MutableStateFlow<Int?>(null)
-    val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()
 
     // Issue #424: Runtime-only suggestion for the next Set Ready screen.
     internal val _weightAdjustmentRecommendation = MutableStateFlow<WeightAdjustmentRecommendation?>(null)

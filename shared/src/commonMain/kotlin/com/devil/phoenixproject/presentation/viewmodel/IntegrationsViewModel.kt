@@ -75,11 +75,9 @@ data class IntegrationsUiState(
     val externalExerciseTemplateCountByProvider: Map<IntegrationProvider, Int> = emptyMap(),
     val activeProgram: ExternalProgram? = null,
     val entitlementStateByProvider: Map<IntegrationProvider, IntegrationEntitlementState> = emptyMap(),
-    val syncProgressByProvider: Map<IntegrationProvider, IntegrationSyncProgress> = emptyMap(),
     val operationLoading: Set<String> = emptySet(),
     val isExporting: Boolean = false,
     val isImporting: Boolean = false,
-    val isSyncing: Boolean = false,
     val importPreview: CsvImportPreview? = null,
     val csvContent: String? = null,
     val errorMessage: String? = null,
@@ -547,7 +545,6 @@ class IntegrationsViewModel(
         val next = if (loading) current + key else current - key
         _uiState.value = _uiState.value.copy(
             operationLoading = next,
-            isSyncing = next.isNotEmpty(),
             errorMessage = null,
         )
     }
@@ -557,7 +554,6 @@ class IntegrationsViewModel(
         result.entitlementState?.let { currentEntitlements[result.provider] = it }
         _uiState.value = _uiState.value.copy(
             entitlementStateByProvider = currentEntitlements,
-            syncProgressByProvider = _uiState.value.syncProgressByProvider + (result.provider to result.progress),
         )
     }
 

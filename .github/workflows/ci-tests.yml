@@ -2,12 +2,12 @@ name: CI Tests
 
 on:
   push:
-    branches: [main, mvp, beta*, feature/*]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
   pull_request:
-    branches: [main, beta*]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -40,6 +40,9 @@ jobs:
 
       - name: Validate release-asset replacement helper
         run: python3 .github/scripts/test_replace_release_asset.py
+
+      - name: Validate Play version-code preflight
+        run: python3 .github/scripts/test_resolve_play_version_code.py
 
   unit-tests:
     name: Unit Tests
@@ -210,19 +213,28 @@ jobs:
           check_name: 'iOS Simulator Test Results (non-blocking)'
           fail_on_failure: false
 
+  # Branch protection requires a check named "iOS Schema Sync Check". The column-order
+  # parity it used to run in validate-ios-schema.sh now lives in validateSchemaManifest.
   ios-schema-check:
     name: iOS Schema Sync Check
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Validate iOS schema matches SQLDelight
-        run: |
-          chmod +x .github/scripts/validate-ios-schema.sh
-          ./.github/scripts/validate-ios-schema.sh
+      - name: Set up Java 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Validate schema manifest and iOS column order
+        run: ./gradlew :shared:validateSchemaManifest -Pskip.supabase.check=true
 
   lint:
     name: Lint Check

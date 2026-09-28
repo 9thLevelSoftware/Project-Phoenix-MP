@@ -545,7 +545,6 @@ fun ExerciseEditBottomSheet(
                     formatWeight = formatWeight,
                     onSelectionChange = viewModel::onDefaultRackItemIdsChange,
                     onBehaviorOverrideChange = viewModel::onRackBehaviorOverridesChange,
-                    showBehaviorOverrides = true,
                 )
 
                 // Weight Configuration Section (PR Percentage Scaling - Issue #57)

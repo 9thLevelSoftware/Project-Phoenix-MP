@@ -181,20 +181,6 @@ internal class RoutineResumeActionAuthority(
         }
         return loaded && isCurrent()
     }
-
-    fun mayCommitInMemory(handleStillCurrent: Boolean): Boolean = isCurrent() && handleStillCurrent
-
-    fun validateCurrentContext(
-        contextIsValid: Boolean,
-        onCurrentInvalid: () -> Unit,
-    ): Boolean {
-        if (!isCurrent()) return false
-        if (!contextIsValid) {
-            onCurrentInvalid()
-            return false
-        }
-        return true
-    }
 }
 
 internal class RoutineResumeOperationGate {
@@ -543,8 +529,9 @@ class MainViewModel(
     // Velocity-based 1RM (issue #517): computed via GamificationManager's post-save hook.
     private val computeVelocityOneRepMaxUseCase: ComputeVelocityOneRepMaxUseCase,
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
-    // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
-    val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    // Used by the post-save velocity-1RM badge check and the default ApplyRoutineModifierUseCase.
+    // ExerciseDetailScreen resolves 1RM through ResolveCurrentOneRepMaxUseCase, not this repository.
+    private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     // Issue #882: placed after velocityOneRepMaxRepository so the default can delegate
     // baseline lookup to the canonical ResolveRoutineScalingBaselineUseCase.
     private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
@@ -573,19 +560,12 @@ class MainViewModel(
     // === Phase 1a: HistoryManager (extracted from this class) ===
     val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
 
-    // Active profile id, exposed publicly so profile-scoped reads (e.g. velocity-1RM on
-    // ExerciseDetailScreen) query the correct profile instead of a hardcoded "default".
+    // Active profile id for profile-scoped reads on SingleExerciseScreen, RoutineEditorScreen,
+    // and SetReadyScreen. ExerciseDetailScreen uses the assessment profile id instead.
     val activeProfileId: StateFlow<String> =
         userProfileRepository.activeProfile
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
-
-    // Name of the same profile, so a profile-scoped destructive action can say whose data
-    // it deletes ("Delete all workouts for <profile>").
-    val activeProfileName: StateFlow<String> =
-        userProfileRepository.activeProfile
-            .map { it?.name?.takeIf(String::isNotBlank) ?: "Default" }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
 
     /**
      * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever
@@ -669,7 +649,7 @@ class MainViewModel(
             )
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
-    val gamificationManager: GamificationManager = GamificationManager(
+    private val gamificationManager: GamificationManager = GamificationManager(
         gamificationRepository,
         personalRecordRepository,
         exerciseRepository,
@@ -779,13 +759,6 @@ class MainViewModel(
     fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
 
     /**
-     * F-040: the session id of a completion whose commit failed, or null. The
-     * screen that shows it offers Retry and then drains it, so the offer is
-     * made exactly once even though the failure can outlive the screen.
-     */
-    val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
-
-    /**
      * The offer as a distinct value per publication, so a Retry that fails again is
      * shown again. The Retry snackbar keys on this.
      */
@@ -813,7 +786,6 @@ class MainViewModel(
     val currentSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentSetIndex
     val skippedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.skippedExercises
     val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.completedExercises
-    val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
     val selectedBodyweightVariants: StateFlow<Map<String, BodyweightVariantOption>> get() = workoutSessionManager.selectedBodyweightVariants
     val sessionBodyweightState: StateFlow<SessionBodyweightState> get() = workoutSessionManager.sessionBodyweightState
@@ -831,7 +803,6 @@ class MainViewModel(
 
     val connectionState: StateFlow<ConnectionState> get() = bleConnectionManager.connectionState
     val scannedDevices: StateFlow<List<ScannedDevice>> get() = bleConnectionManager.scannedDevices
-    val isAutoConnecting: StateFlow<Boolean> get() = bleConnectionManager.isAutoConnecting
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
     val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
@@ -912,9 +883,7 @@ class MainViewModel(
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
 
-    val completedWorkouts: StateFlow<Int?> get() = historyManager.completedWorkouts
     val workoutStreak: StateFlow<Int?> get() = historyManager.workoutStreak
-    val progressPercentage: StateFlow<Int?> get() = historyManager.progressPercentage
     fun deleteWorkout(sessionId: String) = historyManager.deleteWorkout(sessionId)
 
     /**
@@ -1039,8 +1008,6 @@ class MainViewModel(
     fun resumeWorkout() = workoutSessionManager.resumeWorkout()
     fun skipCountdown() = workoutSessionManager.skipCountdown()
     fun resetForNewWorkout() = workoutSessionManager.resetForNewWorkout()
-    fun recaptureLoadBaseline() = workoutSessionManager.recaptureLoadBaseline()
-    fun resetLoadBaseline() = workoutSessionManager.resetLoadBaseline()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
     fun skipRest() = workoutSessionManager.skipRest()
     fun skipRest(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.SkipRest(identity))
@@ -1148,11 +1115,8 @@ class MainViewModel(
     fun deleteGroup(groupId: String) = workoutSessionManager.deleteGroup(groupId)
     fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) = workoutSessionManager.moveRoutinesToGroup(routineIds, groupId)
 
-    fun loadRoutine(routine: Routine) = workoutSessionManager.loadRoutine(routine)
-
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded (including PR weight resolution) */
     suspend fun loadRoutineAsync(routine: Routine) = workoutSessionManager.loadRoutineAsync(routine)
-    fun loadRoutineById(routineId: String) = workoutSessionManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = workoutSessionManager.enterRoutineOverview(routine)
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = workoutSessionManager.enterRoutineOverview(routine, modifier)
     fun selectExerciseInOverview(index: Int) = workoutSessionManager.selectExerciseInOverview(index)
@@ -1287,9 +1251,7 @@ class MainViewModel(
     fun disableHandleDetection() = workoutSessionManager.disableHandleDetection()
     fun prepareForJustLift() = workoutSessionManager.prepareForJustLift()
     suspend fun getJustLiftDefaults(): JustLiftDefaults = workoutSessionManager.getJustLiftDefaults()
-    fun saveJustLiftDefaults(defaults: JustLiftDefaults) = workoutSessionManager.saveJustLiftDefaults(defaults)
     suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = workoutSessionManager.getSingleExerciseDefaults(exerciseId)
-    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) = workoutSessionManager.saveSingleExerciseDefaults(defaults)
 
     // ===== Training Cycle Delegation =====
 
