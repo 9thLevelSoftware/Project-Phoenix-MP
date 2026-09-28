@@ -45,7 +45,6 @@ fun CycleReviewScreen(
     cycleName: String,
     days: List<CycleDay>,
     routines: List<Routine>,
-    onBack: () -> Unit,
     onSave: () -> Unit,
     viewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel? = null,
 ) {

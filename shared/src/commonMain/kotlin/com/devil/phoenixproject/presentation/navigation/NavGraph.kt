@@ -68,7 +68,6 @@ internal fun resolveAssessmentProfileDestination(
 private fun AssessmentDestination(
     routeProfileId: String,
     exerciseId: String?,
-    themeMode: ThemeMode,
     metricsFlow: StateFlow<WorkoutMetric?>,
     onNavigateBack: () -> Unit,
 ) {
@@ -91,7 +90,6 @@ private fun AssessmentDestination(
                 viewModel = assessmentViewModel,
                 profileId = destinationState.profileId,
                 exerciseId = exerciseId,
-                themeMode = themeMode,
                 onNavigateBack = onNavigateBack,
                 metricsFlow = metricsFlow,
             )
@@ -177,7 +175,6 @@ fun NavGraph(
                 JustLiftScreen(
                     navController = navController,
                     viewModel = viewModel,
-                    themeMode = themeMode,
                 )
             }
 
@@ -307,7 +304,6 @@ fun NavGraph(
                 TrainingCyclesScreen(
                     navController = navController,
                     viewModel = viewModel,
-                    themeMode = themeMode,
                 )
             }
 
@@ -322,7 +318,6 @@ fun NavGraph(
                 val assessmentProfileId = readyAssessmentProfileId()
                 AnalyticsScreen(
                     viewModel = viewModel,
-                    themeMode = themeMode,
                     assessmentProfileId = assessmentProfileId,
                     onNavigateToStrengthAssessment = { profileId ->
                         navController.navigate(
@@ -435,9 +430,7 @@ fun NavGraph(
                 val assessmentProfileId = readyAssessmentProfileId()
                 ExerciseDetailScreen(
                     exerciseId = exerciseId,
-                    navController = navController,
                     viewModel = viewModel,
-                    themeMode = themeMode,
                     assessmentProfileId = assessmentProfileId,
                     onNavigateToStrengthAssessment = { profileId ->
                         navController.navigate(
@@ -560,7 +553,6 @@ fun NavGraph(
                 },
             ) {
                 ConnectionLogsScreen(
-                    onNavigateBack = { navController.popBackStack() },
                     mainViewModel = viewModel,
                 )
             }
@@ -627,7 +619,6 @@ fun NavGraph(
                 },
             ) {
                 BadgesScreen(
-                    onBack = { navController.popBackStack() },
                     mainViewModel = viewModel,
                 )
             }
@@ -724,7 +715,6 @@ fun NavGraph(
                             cycleName = cycle!!.name,
                             days = cycle!!.days,
                             routines = routines,
-                            onBack = { navController.popBackStack() },
                             onSave = {
                                 // Cycle is already saved, just navigate back to TrainingCycles
                                 navController.navigate(NavigationRoutes.TrainingCycles.route) {
@@ -771,7 +761,6 @@ fun NavGraph(
                 AssessmentDestination(
                     routeProfileId = profileId,
                     exerciseId = null,
-                    themeMode = themeMode,
                     onNavigateBack = { navController.popBackStack() },
                     metricsFlow = viewModel.currentMetric,
                 )
@@ -816,7 +805,6 @@ fun NavGraph(
                 AssessmentDestination(
                     routeProfileId = profileId,
                     exerciseId = exerciseId,
-                    themeMode = themeMode,
                     onNavigateBack = { navController.popBackStack() },
                     metricsFlow = viewModel.currentMetric,
                 )

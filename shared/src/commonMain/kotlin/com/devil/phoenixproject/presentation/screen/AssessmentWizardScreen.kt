@@ -37,7 +37,6 @@ import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
@@ -55,7 +54,6 @@ import projectphoenix.shared.generated.resources.Res
  *
  * @param viewModel AssessmentViewModel managing wizard state
  * @param exerciseId Optional pre-selected exercise ID (from exercise detail navigation)
- * @param themeMode Current theme mode
  * @param onNavigateBack Callback to navigate back when assessment is complete or cancelled
  */
 /**
@@ -68,7 +66,6 @@ fun AssessmentWizardScreen(
     viewModel: AssessmentViewModel,
     profileId: String,
     exerciseId: String? = null,
-    themeMode: ThemeMode,
     onNavigateBack: () -> Unit,
     metricsFlow: StateFlow<WorkoutMetric?>? = null,
 ) {
