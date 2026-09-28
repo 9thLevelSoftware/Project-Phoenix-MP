@@ -23,11 +23,43 @@ class IosComposeResourceContractTest {
     }
 
     @Test
-    fun xcodeStagesResourcesForSimulatorAndDeviceTargets() {
+    fun xcodeStagesIosArm64ResourcesForDeviceSdk() {
         val shellScript = resourceStagingScript()
+        val fixture = Files.createTempDirectory("ios-compose-resources")
+        try {
+            writeResource(fixture, "iosArm64", "device-copy")
+            writeResource(fixture, "iosSimulatorArm64", "simulator-copy")
 
-        assertStagingCopiesNestedResources(shellScript, sdkName = "iphonesimulator")
-        assertStagingCopiesNestedResources(shellScript, sdkName = "iphoneos")
+            val result = runScript(shellScript, sdkName = "iphoneos", fixtureRoot = fixture)
+
+            assertEquals(0, result.exitCode, result.output)
+            val destination = stagedStrings(fixture)
+            assertTrue(destination.exists(), "staging should copy nested resource content")
+            assertEquals("device-copy", destination.readText())
+        } finally {
+            fixture.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun xcodeResourceStagingRejectsSimulatorSdk() {
+        val shellScript = resourceStagingScript()
+        val fixture = Files.createTempDirectory("ios-compose-resources-simulator")
+        try {
+            writeResource(fixture, "iosSimulatorArm64", "simulator-copy")
+            writeResource(fixture, "iosArm64", "device-copy")
+
+            val result = runScript(shellScript, sdkName = "iphonesimulator", fixtureRoot = fixture)
+
+            assertTrue(result.exitCode != 0, "the app does not stage simulator resources")
+            assertTrue(
+                result.output.contains("unsupported SDK_NAME"),
+                "failure should name the unsupported SDK",
+            )
+            assertTrue(!stagedStrings(fixture).exists(), "simulator SDK must not copy resources")
+        } finally {
+            fixture.deleteRecursively()
+        }
     }
 
     @Test
@@ -37,7 +69,7 @@ class IosComposeResourceContractTest {
         try {
             val result = runScript(
                 shellScript = shellScript,
-                sdkName = "iphonesimulator",
+                sdkName = "iphoneos",
                 fixtureRoot = fixture,
             )
 
@@ -51,28 +83,16 @@ class IosComposeResourceContractTest {
         }
     }
 
-    private fun assertStagingCopiesNestedResources(shellScript: String, sdkName: String) {
-        val fixture = Files.createTempDirectory("ios-compose-resources")
-        try {
-            val target = if (sdkName == "iphonesimulator") "iosSimulatorArm64" else "iosArm64"
-            val source = fixture.resolve("shared/build/processedResources/$target/main/composeResources")
-            source.resolve("nested/strings.xml").also {
-                it.parent.createDirectories()
-                it.writeText("fixture-$target")
-            }
-
-            val result = runScript(shellScript, sdkName, fixture)
-
-            assertEquals(0, result.exitCode, result.output)
-            val destination = fixture.resolve(
-                "build/Products/Phoenix.app/compose-resources/composeResources/nested/strings.xml",
-            )
-            assertTrue(destination.exists(), "staging should copy nested resource content")
-            assertEquals("fixture-$target", destination.readText())
-        } finally {
-            fixture.deleteRecursively()
+    private fun writeResource(fixture: Path, target: String, contents: String) {
+        val source = fixture.resolve("shared/build/processedResources/$target/main/composeResources")
+        source.resolve("nested/strings.xml").also {
+            it.parent.createDirectories()
+            it.writeText(contents)
         }
     }
+
+    private fun stagedStrings(fixture: Path): Path =
+        fixture.resolve("build/Products/Phoenix.app/compose-resources/composeResources/nested/strings.xml")
 
     private fun resourceStagingScript(): String {
         val project = requireNotNull(

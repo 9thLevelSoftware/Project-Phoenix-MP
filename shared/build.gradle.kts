@@ -37,9 +37,12 @@ kotlin {
         withHostTest {}
     }
 
-    // iOS: iosArm64 is the distribution XCFramework. iosSimulatorArm64 is
-    // test-only so DriverFactory runtime contracts can run on a Mac without
-    // changing the shipped device framework.
+    // iosArm64 is the device framework the app links. Gradle writes it to
+    // debugFramework/ or releaseFramework/; iosApp/install-xcode-framework.sh
+    // copies the chosen bundle to xcodeFramework/, the only path in the Xcode
+    // project. iosSimulatorArm64 is test-only and is not installed for the app.
+    // xcf.add keeps :shared:assembleXCFramework; the app does not link it.
+    // isStatic = true, so the framework binary is an archive and has no dSYM.
     val xcf = XCFramework()
     iosArm64 {
         binaries.framework {

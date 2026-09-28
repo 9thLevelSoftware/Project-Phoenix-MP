@@ -171,6 +171,7 @@ jobs:
             done < <(find shared/build -type d -name composeResources \
               -not -path "*/releaseFramework/*" \
               -not -path "*/debugFramework/*" \
+              -not -path "*/xcodeFramework/*" \
               -not -path "*/compose-resources/*" 2>/dev/null)
 
             if [ "$FOUND" = true ]; then
@@ -183,22 +184,12 @@ jobs:
             fi
           fi
 
-      - name: Create XCFramework
+      - name: Install shared.framework for Xcode
         run: |
-          FRAMEWORK="shared/build/bin/iosArm64/releaseFramework/shared.framework"
-          if [ ! -d "$FRAMEWORK" ]; then
-            echo "ERROR: Framework not found at $FRAMEWORK"
-            ls -la shared/build/bin/iosArm64/ 2>/dev/null || echo "Directory does not exist"
-            exit 1
-          fi
-          xcodebuild -create-xcframework \
-            -framework "$FRAMEWORK" \
-            -output shared/build/XCFrameworks/release/shared.xcframework
-
-      - name: Link framework to Xcode path
-        run: |
-          mkdir -p shared/build/bin/iosArm64/debugFramework
-          ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
+          # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
+          # Copy the release bundle there. The Xcode project does not link an
+          # XCFramework, and it does not read debugFramework at archive time.
+          iosApp/install-xcode-framework.sh release
 
       - name: Install certificate and profile
         env:
