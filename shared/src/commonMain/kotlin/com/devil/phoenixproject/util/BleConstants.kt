@@ -51,9 +51,7 @@ object BleConstants {
 
     // Command IDs (machine protocol)
     object Commands {
-        const val STOP_COMMAND: Byte = 0x50 // Stop/halt
         const val RESET_COMMAND: Byte = 0x0A // Reset/init - accepted by the device as a recovery stop
-        const val REGULAR_COMMAND: Byte = 0x4F // 25-byte packet (79 decimal)
         const val ECHO_COMMAND: Byte = 0x4E // 32-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet
         const val DEFAULT_ROM_REP_COUNT: Byte = 3
@@ -73,10 +71,6 @@ object BleConstants {
      *
      * Activation packets keep 0x48-0x4F as the mode profile's eccentric-up
      * ramp bytes. The active force fields live in the trailing block at 0x50-0x5F.
-     *
-     * The legacy OVERLAP experiment wrote softMax/increment at 0x48/0x4C. Those
-     * aliases remain for explicit regression tests only; production packets should
-     * preserve the profile tail and use 0x58/0x5C for selected force/progression.
      */
     object ActivationPacket {
         const val SIZE = 96
@@ -87,37 +81,11 @@ object BleConstants {
         const val OFFSET_ECC_UP_MAX_MMS = 0x4A
         const val OFFSET_ECC_UP_RAMP = 0x4C
 
-        // Legacy OVERLAP aliases retained for explicit regression tests only.
-        const val OFFSET_SOFT_MAX = 0x48
-        const val OFFSET_INCREMENT = 0x4C
-
         // Force config block
         const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets
         const val OFFSET_FORCE_MAX = 0x54 // adjustedWeight + 10.0f (force ceiling)
         const val OFFSET_TARGET_WEIGHT = 0x58 // adjustedWeight (actual operating weight)
         const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
-    }
-
-    // Data protocol constants
-    @Suppress("unused") // Protocol reference documentation
-    object DataProtocol {
-        // Scaling factors for cable data
-        const val POSITION_SCALE = 10.0 // divide raw by 10 for mm
-        const val VELOCITY_SCALE = 10.0 // divide raw by 10 for mm/s
-        const val FORCE_SCALE = 100.0 // divide raw by 100 for percentage
-
-        // Valid ranges
-        const val POSITION_MIN = -1000.0
-        const val POSITION_MAX = 1000.0
-        const val VELOCITY_MIN = -1000.0
-        const val VELOCITY_MAX = 1000.0
-        const val FORCE_MIN = 0.0
-        const val FORCE_MAX = 100.0
-
-        // Data sizes
-        const val CABLE_DATA_SIZE = 6 // 3 x Int16
-        const val SAMPLE_DATA_SIZE = 28 // 2 cables + timestamp + status
-        const val REPS_DATA_SIZE = 24
     }
 
     // Connection timeouts

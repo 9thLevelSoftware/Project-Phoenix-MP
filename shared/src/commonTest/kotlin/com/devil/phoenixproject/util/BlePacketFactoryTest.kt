@@ -23,16 +23,8 @@ class BlePacketFactoryTest {
      */
     private fun programParams(
         params: WorkoutParameters,
-        variant: BlePacketFactory.ForceConfigVariant = BlePacketFactory.defaultForceConfigVariant,
         maxWeightPerCableKg: Float = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
-    ) = BlePacketFactory.createProgramParams(params, variant, maxWeightPerCableKg)
-
-    private fun workoutCommand(
-        programMode: ProgramMode,
-        weightPerCableKg: Float,
-        targetReps: Int,
-        maxWeightPerCableKg: Float = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
-    ) = BlePacketFactory.createWorkoutCommand(programMode, weightPerCableKg, targetReps, maxWeightPerCableKg)
+    ) = BlePacketFactory.createProgramParams(params, maxWeightPerCableKg)
 
     // ========== Helpers ==========
 
@@ -52,84 +44,14 @@ class BlePacketFactoryTest {
         return value.toShort()
     }
 
-    // ========== Init Command Tests ==========
-
-    @Test
-    fun `createInitCommand returns 4-byte init packet`() {
-        val packet = BlePacketFactory.createInitCommand()
-
-        assertEquals(4, packet.size)
-        assertEquals(0x0A.toByte(), packet[0])
-        assertEquals(0x00.toByte(), packet[1])
-        assertEquals(0x00.toByte(), packet[2])
-        assertEquals(0x00.toByte(), packet[3])
-    }
-
-    @Test
-    fun `createInitPreset returns 34-byte preset packet`() {
-        val packet = BlePacketFactory.createInitPreset()
-
-        assertEquals(34, packet.size)
-        assertEquals(0x11.toByte(), packet[0])
-    }
-
     // ========== Control Command Tests ==========
-
-    @Test
-    fun `createStartCommand returns 4-byte start packet`() {
-        val packet = BlePacketFactory.createStartCommand()
-
-        assertEquals(4, packet.size)
-        assertEquals(0x03.toByte(), packet[0])
-        assertEquals(0x00.toByte(), packet[1])
-        assertEquals(0x00.toByte(), packet[2])
-        assertEquals(0x00.toByte(), packet[3])
-    }
-
-    @Test
-    fun `createStopCommand returns 4-byte stop packet`() {
-        val packet = BlePacketFactory.createStopCommand()
-
-        assertEquals(4, packet.size)
-        assertEquals(0x05.toByte(), packet[0])
-    }
 
     @Test
     fun `createResetCommand returns 4-byte reset packet`() {
         val packet = BlePacketFactory.createResetCommand()
 
         assertEquals(4, packet.size)
-        assertEquals(0x0A.toByte(), packet[0])
-        assertContentEquals(BlePacketFactory.createInitCommand(), packet)
-    }
-
-    // ========== Legacy Workout Command Tests ==========
-
-    @Test
-    fun `createWorkoutCommand returns 25-byte packet with mode and weight`() {
-        val packet = workoutCommand(
-            programMode = ProgramMode.OldSchool,
-            weightPerCableKg = 20f,
-            targetReps = 10,
-        )
-
-        assertEquals(25, packet.size)
-        assertEquals(BleConstants.Commands.REGULAR_COMMAND, packet[0])
-        assertEquals(ProgramMode.OldSchool.modeValue.toByte(), packet[1])
-        assertEquals(10.toByte(), packet[4])
-    }
-
-    @Test
-    fun `createWorkoutCommand encodes weight in little-endian format`() {
-        val packet = workoutCommand(
-            programMode = ProgramMode.Pump,
-            weightPerCableKg = 25.5f,
-            targetReps = 12,
-        )
-
-        val weightScaled = (25.5f * 100).toInt()
-        assertEquals((weightScaled and 0xFF).toByte(), packet[2])
-        assertEquals(((weightScaled shr 8) and 0xFF).toByte(), packet[3])
+        assertContentEquals(byteArrayOf(0x0A, 0x00, 0x00, 0x00), packet)
     }
 
     // ========== Program Parameters Tests ==========
@@ -142,10 +64,7 @@ class BlePacketFactoryTest {
             weightPerCableKg = 20f,
         )
 
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
         assertEquals(96, packet.size)
     }
@@ -158,10 +77,7 @@ class BlePacketFactoryTest {
             weightPerCableKg = 20f,
         )
 
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
         assertEquals(0x04.toByte(), packet[0])
         assertEquals(0x00.toByte(), packet[1])
@@ -257,48 +173,6 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `legacy OVERLAP variant writes softMax at offset 0x48`() {
-        val weight = 50f
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = weight,
-        )
-
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
-
-        // Legacy OVERLAP behavior writes softMax over the profile tail.
-        assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
-    }
-
-    @Test
-    fun `legacy OVERLAP variant writes increment at offset 0x4C`() {
-        val progression = 2.5f
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = 20f,
-            progressionRegressionKg = progression,
-        )
-
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
-
-        // Legacy OVERLAP behavior writes increment over the profile tail.
-        assertEquals(progression, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_INCREMENT))
-        // Verify LE encoding: 2.5f = 0x40200000 -> LE bytes [0x00, 0x00, 0x20, 0x40]
-        assertEquals(0x00.toByte(), packet[0x4C])
-        assertEquals(0x00.toByte(), packet[0x4D])
-        assertEquals(0x20.toByte(), packet[0x4E])
-        assertEquals(0x40.toByte(), packet[0x4F])
-    }
-
-    @Test
     fun `createProgramParams writes target weight at offset 0x58`() {
         val weight = 35f
         val progression = 1.5f
@@ -334,44 +208,6 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `legacy OVERLAP AMRAP writes selected per-cable softMax at 0x48`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = 30f,
-            isAMRAP = true,
-        )
-
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
-
-        assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
-        // Target weight at 0x58 must be the actual weight, not softMax
-        assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
-    }
-
-    @Test
-    fun `legacy OVERLAP Just Lift writes selected per-cable softMax at 0x48`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = 25f,
-            isJustLift = true,
-        )
-
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
-
-        assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
-        // Target weight must be at 0x58, not softMax
-        assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
-    }
-
-    @Test
     fun `Issue 267 Just Lift packet preserves target and activation tail contract`() {
         val targetWeight = 42.5f
         val progression = 2.0f
@@ -384,11 +220,7 @@ class BlePacketFactoryTest {
             isJustLift = true,
         )
 
-        // Test with OVERLAP variant (legacy firmware layout where force config overlaps profile)
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
         // Just Lift must carry the selected operating target at 0x58.
         assertEquals(targetWeight, readFloatLE(packet, 0x58))
@@ -399,9 +231,10 @@ class BlePacketFactoryTest {
         assertEquals(targetWeight, readFloatLE(packet, 0x58))
         assertEquals(progression, readFloatLE(packet, 0x5C))
 
-        // For Just Lift OVERLAP variant, tail bytes 0x48..0x4F are firmware force config.
-        assertEquals(targetWeight, readFloatLE(packet, 0x48))
-        assertEquals(progression, readFloatLE(packet, 0x4C))
+        // Profile tail stays the Pump eccentric-up ramp, not the selected force.
+        assertEquals((-100).toShort(), readShortLE(packet, 0x48))
+        assertEquals((-50).toShort(), readShortLE(packet, 0x4A))
+        assertEquals(1.0f, readFloatLE(packet, 0x4C))
         // After Issue #538, Just Lift uses the selected profile (Pump here, not OldSchool).
         // Eccentric down ramp at 0x40-0x44 comes from the Pump profile.
         assertEquals((-700).toShort(), readShortLE(packet, 0x40))
@@ -410,7 +243,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createProgramParams zero progression writes zero increment`() {
+    fun `createProgramParams zero progression writes zero at offset 0x5C`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -420,7 +253,6 @@ class BlePacketFactoryTest {
 
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_INCREMENT))
         assertEquals(0.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_PROGRESSION))
     }
 
@@ -433,14 +265,12 @@ class BlePacketFactoryTest {
             progressionRegressionKg = 3f,
         )
 
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
-        // Legacy OVERLAP force config (0x48-0x4F)
-        assertEquals(40.0f, readFloatLE(packet, 0x48)) // softMax = weightPerCableKg
-        assertEquals(3.0f, readFloatLE(packet, 0x4C)) // increment = progression
+        // OldSchool eccentric-up ramp stays in the profile tail.
+        assertEquals((-260).toShort(), readShortLE(packet, 0x48))
+        assertEquals((-110).toShort(), readShortLE(packet, 0x4A))
+        assertEquals(0.0f, readFloatLE(packet, 0x4C))
 
         // Protocol force config (0x50-0x5F)
         assertEquals(0.0f, readFloatLE(packet, 0x50)) // forceMin
@@ -459,10 +289,7 @@ class BlePacketFactoryTest {
                 progressionRegressionKg = progression,
             )
 
-            val packet = programParams(
-                params,
-                variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-            )
+            val packet = programParams(params)
 
             assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight for progression=$progression")
             assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax for progression=$progression")
@@ -471,7 +298,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createProgramParams non-overlap keeps profile tail bytes unchanged`() {
+    fun `createProgramParams keeps profile tail bytes unchanged`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Pump,
             reps = 10,
@@ -479,10 +306,7 @@ class BlePacketFactoryTest {
             progressionRegressionKg = 3f,
         )
 
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
-        )
+        val packet = programParams(params)
 
         val expectedTail = byteArrayOf(
             0x9C.toByte(),
@@ -495,35 +319,6 @@ class BlePacketFactoryTest {
             0x3F.toByte(),
         )
         assertContentEquals(expectedTail, packet.copyOfRange(0x48, 0x50))
-    }
-
-    @Test
-    fun `createProgramParams variant selection yields expected overlap and non-overlap layouts`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.Pump,
-            reps = 10,
-            weightPerCableKg = 40f,
-            progressionRegressionKg = 3f,
-        )
-
-        val nonOverlapPacket = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
-        )
-        val overlapPacket = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
-
-        assertEquals(40.0f, readFloatLE(overlapPacket, 0x48))
-        assertEquals(3.0f, readFloatLE(overlapPacket, 0x4C))
-
-        assertEquals(40.0f, readFloatLE(nonOverlapPacket, 0x58))
-        assertEquals(3.0f, readFloatLE(nonOverlapPacket, 0x5C))
-        assertEquals(40.0f, readFloatLE(overlapPacket, 0x58))
-        assertEquals(3.0f, readFloatLE(overlapPacket, 0x5C))
-
-        assertTrue(nonOverlapPacket.copyOfRange(0x48, 0x50).contentEquals(overlapPacket.copyOfRange(0x48, 0x50)).not())
     }
 
     // ========== Echo Mode Tests ==========
@@ -585,28 +380,6 @@ class BlePacketFactoryTest {
         )
 
         assertEquals(0xFF.toByte(), packet[0x05])
-    }
-
-    @Test
-    fun `createEchoCommand delegates to createEchoControl`() {
-        val packet = BlePacketFactory.createEchoCommand(
-            level = EchoLevel.HARDER.levelValue,
-            eccentricLoad = 75,
-        )
-
-        assertEquals(32, packet.size)
-        assertEquals(0x4E.toByte(), packet[0])
-    }
-
-    @Test
-    fun `createEchoCommand falls back to issue 553 Echo level`() {
-        val packet = BlePacketFactory.createEchoCommand(
-            level = 99,
-            eccentricLoad = 100,
-        )
-
-        assertEquals(1.25f, readFloatLE(packet, 0x10), "fallback HARDER duration")
-        assertEquals(40.0f, readFloatLE(packet, 0x14), "fallback HARDER velocity")
     }
 
     @Test
@@ -1196,20 +969,16 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `EccentricOnly preserves profile tail even when OVERLAP variant is requested`() {
-        // Regression guard: createProgramParams must override the caller-provided
-        // variant for EccentricOnly so the eccentric-up ramp at 0x48-0x4F survives.
-        // If this ever regresses the firmware stops applying weight during the
-        // eccentric phase (reps still count, but the cables go slack).
+    fun `EccentricOnly preserves eccentric-up ramp beside the target weight`() {
+        // The eccentric-up ramp at 0x48-0x4F must survive next to the force block.
+        // If those bytes are overwritten the firmware stops applying weight during
+        // the eccentric phase (reps still count, but the cables go slack).
         val params = WorkoutParameters(
             programMode = ProgramMode.EccentricOnly,
             reps = 6,
             weightPerCableKg = 60f,
         )
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
         assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
         assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
@@ -1220,9 +989,8 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `JustLift with EccentricOnly programMode uses NON_OVERLAP to preserve profile`() {
+    fun `JustLift with EccentricOnly programMode preserves the eccentric-up ramp`() {
         // After Issue #538, Just Lift no longer forces OldSchool profile.
-        // EccentricOnly triggers NON_OVERLAP, preserving eccentric-up ramp at 0x48-0x4F.
         // EccentricOnly is never offered in the Just Lift UI, but the packet factory
         // should still produce correct bytes if called this way.
         val params = WorkoutParameters(
@@ -1231,12 +999,8 @@ class BlePacketFactoryTest {
             weightPerCableKg = 40f,
             isJustLift = true,
         )
-        val packet = programParams(
-            params,
-            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
-        )
+        val packet = programParams(params)
 
-        // EccentricOnly profile preserved at 0x48-0x4F (NON_OVERLAP wins over requested OVERLAP)
         assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
         assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
         assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
@@ -1244,7 +1008,6 @@ class BlePacketFactoryTest {
         // Just Lift still uses reps=0xFF
         assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
 
-        // Force config at NON_OVERLAP offsets
         assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
