@@ -174,19 +174,6 @@ data class RoutineExercise(
     // Helper to get echo level for specific set (with fallback to exercise-level echoLevel)
     fun getEchoLevelForSet(setIndex: Int): EchoLevel = setEchoLevels.getOrNull(setIndex) ?: echoLevel
 
-    // Helper to ensure rest times array matches number of sets
-    fun withNormalizedRestTimes(): RoutineExercise {
-        val numSets = setReps.size
-        val normalizedRest = if (setRestSeconds.isEmpty()) {
-            List(numSets) { 60 } // Default to 60s for all sets
-        } else if (setRestSeconds.size < numSets) {
-            setRestSeconds + List(numSets - setRestSeconds.size) { 60 } // Pad with 60s
-        } else {
-            setRestSeconds.take(numSets) // Trim to match sets
-        }
-        return copy(setRestSeconds = normalizedRest)
-    }
-
     /**
      * Resolve weight given current PR value.
      * If usePercentOfPR is true and a valid PR is provided, calculates weight as a percentage.

@@ -48,21 +48,6 @@ class ApplyEquipmentRackLoadUseCase {
         )
     }
 
-    fun calculateBodyweightEffectiveLoadKg(
-        bodyWeightKg: Float,
-        percentage: Float,
-        selectedItems: List<RackItem>,
-        behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
-    ): Float {
-        if (bodyWeightKg <= 0f || percentage <= 0f) return 0f
-        val uniqueItems = selectedItems.distinctBy { it.id }
-        return (
-            bodyWeightKg * percentage +
-                uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE, behaviorOverrides) -
-                uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT, behaviorOverrides)
-            ).coerceAtLeast(0f)
-    }
-
     /**
      * Resolve effective behavior: override if present, otherwise global.
      */
