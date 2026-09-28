@@ -232,15 +232,19 @@ sqldelight {
 // ============================================================
 // Schema Manifest Validator
 //
-// Fails the build if any column in PhoenixDatabase.sq lacks provenance
-// (i.e., is not covered by a migration ALTER TABLE, a migration CREATE TABLE,
-// a SchemaManifest SchemaHealOperation, a SchemaManifest SchemaTableOperation,
-// or grandfathered as a v1 original table).
+// Fails the build when either of these drifts:
+// 1. A column in PhoenixDatabase.sq lacks provenance (migration ALTER TABLE,
+//    migration CREATE TABLE, SchemaHealOperation, SchemaTableOperation, or a
+//    grandfathered v1 table).
+// 2. A SchemaManifest CREATE TABLE does not list the same column names in the
+//    same order as PhoenixDatabase.sq. iOS schema heal creates missing tables
+//    from that manifest DDL, so order is part of the contract.
 // ============================================================
 
 tasks.register("validateSchemaManifest") {
     group = "verification"
-    description = "Fails build if any column in PhoenixDatabase.sq lacks provenance"
+    description =
+        "Fails the build if a PhoenixDatabase.sq column lacks provenance or its SchemaManifest name/order drifts"
 
     val sqFile = file("src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq")
     val manifestFile = file("src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt")
@@ -251,6 +255,215 @@ tasks.register("validateSchemaManifest") {
     inputs.dir(migrationsDir)
 
     doLast {
+        val sqCreateTablePattern = Regex(
+            """CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)\s*\((.*?)\);""",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        val manifestCreateTablePattern = Regex(
+            "CREATE TABLE IF NOT EXISTS\\s+(\\w+)\\s*\\((.*?)\\)\\s*\"\"\"",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        val sqlIdentifier = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
+
+        fun stripSqlLineComments(text: String): String =
+            text.lineSequence().joinToString("\n") { line ->
+                val comment = line.indexOf("--")
+                if (comment >= 0) line.substring(0, comment) else line
+            }
+
+        /** Split on commas that are not inside (), '', or "". */
+        fun splitTopLevelSql(body: String): List<String> {
+            val parts = mutableListOf<String>()
+            val current = StringBuilder()
+            var depth = 0
+            var quote: Char? = null
+            var i = 0
+            while (i < body.length) {
+                val char = body[i]
+                if (quote != null) {
+                    current.append(char)
+                    if (char == quote) {
+                        if (quote == '\'' && i + 1 < body.length && body[i + 1] == '\'') {
+                            current.append(body[i + 1])
+                            i++
+                        } else {
+                            quote = null
+                        }
+                    }
+                } else {
+                    when (char) {
+                        '\'', '"' -> {
+                            quote = char
+                            current.append(char)
+                        }
+                        '(' -> {
+                            depth++
+                            current.append(char)
+                        }
+                        ')' -> {
+                            depth--
+                            current.append(char)
+                        }
+                        ',' -> {
+                            if (depth == 0) {
+                                val part = current.toString().trim()
+                                if (part.isNotEmpty()) parts.add(part)
+                                current.clear()
+                            } else {
+                                current.append(char)
+                            }
+                        }
+                        else -> current.append(char)
+                    }
+                }
+                i++
+            }
+            val tail = current.toString().trim()
+            if (tail.isNotEmpty()) parts.add(tail)
+            return parts
+        }
+
+        fun sqlKeyword(token: String): String =
+            token.trim('`', '"').substringBefore('(').uppercase()
+
+        /**
+         * Table-level constraints only. The keyword must be the whole first token, so a
+         * column such as uniqueExercisesUsed is not treated as UNIQUE.
+         */
+        fun isSqlTableConstraint(part: String): Boolean {
+            val tokens = part.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            if (tokens.isEmpty()) return false
+            val first = sqlKeyword(tokens[0])
+            val second = if (tokens.size > 1) sqlKeyword(tokens[1]) else ""
+            return when (first) {
+                "FOREIGN" -> second == "KEY"
+                "PRIMARY" -> second == "KEY"
+                "UNIQUE", "CHECK", "CONSTRAINT" -> true
+                else -> false
+            }
+        }
+
+        fun extractSqlColumnNames(body: String): List<String> {
+            val columns = mutableListOf<String>()
+            for (part in splitTopLevelSql(body)) {
+                val stripped = part.trim()
+                if (stripped.isEmpty() || isSqlTableConstraint(stripped)) continue
+                columns.add(stripped.split(Regex("\\s+")).first().trim('`', '"'))
+            }
+            return columns
+        }
+
+        fun parseCreateTableColumns(
+            text: String,
+            pattern: Regex,
+            stripCommentsBeforeMatch: Boolean,
+        ): Pair<Map<String, List<String>>, List<String>> {
+            val errors = mutableListOf<String>()
+            val source = if (stripCommentsBeforeMatch) stripSqlLineComments(text) else text
+            val tables = linkedMapOf<String, List<String>>()
+            var matches = 0
+            for (match in pattern.findAll(source)) {
+                matches++
+                val table = match.groupValues[1]
+                val rawBody = match.groupValues[2]
+                if (rawBody.contains("CREATE TABLE")) {
+                    errors.add(
+                        "Parser could not isolate CREATE TABLE $table; the match spanned another CREATE TABLE",
+                    )
+                }
+                val body = if (stripCommentsBeforeMatch) rawBody else stripSqlLineComments(rawBody)
+                if (table in tables) {
+                    errors.add("Duplicate CREATE TABLE '$table'")
+                }
+                tables[table] = extractSqlColumnNames(body)
+            }
+            if (matches == 0) {
+                errors.add("Parser found no CREATE TABLE statements")
+            }
+            return tables to errors
+        }
+
+        class SchemaOrderParity(
+            val tableCount: Int,
+            val columnCount: Int,
+            val errors: List<String>,
+        )
+
+        /**
+         * Name-and-order parity between PhoenixDatabase.sq and the manifest DDL that
+         * iOS heal executes. Equivalent to the retired validate-ios-schema.sh check,
+         * except constraint keywords are whole tokens (so uniqueExercisesUsed counts).
+         */
+        fun schemaColumnOrderErrors(sqText: String, manifestText: String): SchemaOrderParity {
+            val errors = mutableListOf<String>()
+            val (sqlTables, sqlParseErrors) = parseCreateTableColumns(
+                sqText,
+                sqCreateTablePattern,
+                stripCommentsBeforeMatch = true,
+            )
+            val (manifestTables, manifestParseErrors) = parseCreateTableColumns(
+                manifestText,
+                manifestCreateTablePattern,
+                stripCommentsBeforeMatch = false,
+            )
+            errors += sqlParseErrors.map { "SQLDelight: $it" }
+            errors += manifestParseErrors.map { "SchemaManifest: $it" }
+
+            (sqlTables.keys - manifestTables.keys).sorted().forEach { table ->
+                errors.add("Table '$table' exists in SQLDelight but is missing from SchemaManifest")
+            }
+            (manifestTables.keys - sqlTables.keys).sorted().forEach { table ->
+                errors.add("Table '$table' exists in SchemaManifest but not in SQLDelight")
+            }
+
+            for (table in sqlTables.keys.sorted()) {
+                val manifestColumns = manifestTables[table] ?: continue
+                val sqlColumns = sqlTables.getValue(table)
+                for ((source, columns) in listOf("SQLDelight" to sqlColumns, "SchemaManifest" to manifestColumns)) {
+                    columns.filterNot { sqlIdentifier.matches(it) }.forEach { token ->
+                        errors.add("Table '$table' has an unparsable $source column token '$token'")
+                    }
+                }
+
+                val missingColumns = sqlColumns.filter { it !in manifestColumns }
+                val extraColumns = manifestColumns.filter { it !in sqlColumns }
+                if (missingColumns.isNotEmpty()) {
+                    errors.add(
+                        "Table '$table' is missing manifest columns: ${missingColumns.joinToString(", ")}",
+                    )
+                }
+                if (extraColumns.isNotEmpty()) {
+                    errors.add(
+                        "Table '$table' has extra manifest columns: ${extraColumns.joinToString(", ")}",
+                    )
+                }
+                if (missingColumns.isEmpty() && extraColumns.isEmpty() && sqlColumns != manifestColumns) {
+                    val mismatches = mutableListOf<String>()
+                    val compared = minOf(sqlColumns.size, manifestColumns.size)
+                    for (index in 0 until compared) {
+                        if (sqlColumns[index] != manifestColumns[index]) {
+                            mismatches.add(
+                                "${index + 1}: expected ${sqlColumns[index]}, found ${manifestColumns[index]}",
+                            )
+                        }
+                    }
+                    if (sqlColumns.size != manifestColumns.size) {
+                        mismatches.add("length: expected ${sqlColumns.size}, found ${manifestColumns.size}")
+                    }
+                    errors.add(
+                        "Table '$table' column order differs between SQLDelight and SchemaManifest: " +
+                            mismatches.joinToString("; "),
+                    )
+                }
+            }
+
+            return SchemaOrderParity(
+                tableCount = sqlTables.size,
+                columnCount = sqlTables.values.sumOf { it.size },
+                errors = errors,
+            )
+        }
+
         // V1 tables are grandfathered -- their original columns existed before
         // any migration system. Only flag columns on non-v1 tables that lack provenance.
         val v1Tables = setOf(
@@ -409,15 +622,36 @@ tasks.register("validateSchemaManifest") {
             }
         }
 
+        val failures = mutableListOf<String>()
         if (uncovered.isNotEmpty()) {
-            throw GradleException(
+            failures.add(
                 "Schema manifest validation FAILED: ${uncovered.size} column(s) lack provenance:\n" +
                     uncovered.sorted().joinToString("\n") { "  - $it" } +
                     "\n\nFix: add a SchemaHealOperation, SchemaTableOperation, or migration for each.",
             )
         }
 
+        val orderParity = schemaColumnOrderErrors(sqText, manifestText)
+        if (orderParity.errors.isNotEmpty()) {
+            failures.add(
+                "Schema manifest name/order parity FAILED: ${orderParity.errors.size} mismatch(es):\n" +
+                    orderParity.errors.joinToString("\n") { "  - $it" } +
+                    "\n\nSchemaManifest CREATE TABLE statements must list the same columns in the same " +
+                    "order as PhoenixDatabase.sq. iOS schema heal creates missing tables from that " +
+                    "manifest DDL, so a different order breaks SQLDelight on fresh installs. " +
+                    "Update SchemaManifest.kt to match PhoenixDatabase.sq.",
+            )
+        }
+
+        if (failures.isNotEmpty()) {
+            throw GradleException(failures.joinToString("\n\n"))
+        }
+
         println("Schema manifest validated: $totalColumns columns across ${sqColumns.size} tables, all covered.")
+        println(
+            "Schema column order validated: ${orderParity.columnCount} columns across " +
+                "${orderParity.tableCount} tables match SchemaManifest.",
+        )
     }
 }
 
