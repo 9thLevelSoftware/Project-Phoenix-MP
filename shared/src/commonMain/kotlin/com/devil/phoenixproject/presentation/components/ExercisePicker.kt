@@ -72,20 +72,12 @@ import projectphoenix.shared.generated.resources.search_exercises
 import projectphoenix.shared.generated.resources.select_exercise
 
 /**
- * Map display equipment names back to database values for filtering
+ * Map display equipment names back to database values for filtering.
+ * Delegates to the shared [EquipmentVocabulary] so the filter chips, the list
+ * subtitle, and the custom-exercise Equipment dropdown cannot drift apart.
  */
-internal fun getEquipmentDatabaseValues(displayName: String): List<String> = when (displayName) {
-    "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
-    "Short Bar" -> listOf("SHORT_BAR")
-    "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
-    "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
-    "Bench" -> listOf("BENCH")
-    "Rope" -> listOf("ROPE")
-    "Belt" -> listOf("BELT")
-    "Cable" -> listOf("CABLE")
-    "Bodyweight" -> listOf("BODYWEIGHT")
-    else -> emptyList()
-}
+internal fun getEquipmentDatabaseValues(displayName: String): List<String> =
+    EquipmentVocabulary.DISPLAY_NAME_TOKENS[displayName].orEmpty()
 
 /**
  * Exercise Picker Dialog - Streamlined exercise selection component

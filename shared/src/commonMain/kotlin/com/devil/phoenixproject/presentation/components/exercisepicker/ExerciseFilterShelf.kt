@@ -39,20 +39,26 @@ import projectphoenix.shared.generated.resources.Res
  * that at least one row the app can produce actually carries — otherwise it is a dead
  * filter like the one reported in #883. Current producers: the bundled catalogue
  * (BARBELL/CABLE/BODYWEIGHT/...), the issue #883 supplemental belt seed (BELT), and custom
- * exercises (HANDLES for cable rows, BODYWEIGHT otherwise — CreateExerciseDialog).
+ * exercises — CreateExerciseDialog now writes the full accessory vocabulary through
+ * CustomExerciseEquipment (HANDLES / SHORT_BAR / BAR / ROPE / BELT / STRAPS for cable rows,
+ * BODYWEIGHT otherwise).
  *
- * The #883 chip audit retired "Short Bar", "Rope", "Ankle Strap", and "Bench": no seed row,
- * custom-exercise path, or wger refresh can ever carry SHORT_BAR / ROPE / ANKLE_STRAP /
- * STRAPS / BENCH, so those chips only ever showed an empty list. Their token aliases remain
- * in `getEquipmentDatabaseValues` and `formatEquipmentCompact` so legacy custom rows restored
- * from old backups still render and filter by name search. "Belt" stays and is now backed by
- * the supplemental seed; "Bodyweight" stays (isBodyweight flag branch); "Handles" stays
- * because every custom cable exercise carries the HANDLES token.
+ * Issue #970 restored "Short Bar", "Rope", and "Ankle Strap": the custom-exercise dialog can
+ * now produce SHORT_BAR / ROPE / STRAPS, so those filters are live again. "Bench" stays
+ * retired (issue #883): no seed row, custom-exercise path, or wger refresh carries BENCH.
+ * Token aliases live once in `EquipmentVocabulary` (shared by `getEquipmentDatabaseValues`,
+ * the `compactEquipmentLabel` subtitle, and the custom-exercise dropdown) so legacy custom
+ * rows restored from old backups still render and filter by name search.
+ * "Belt" stays and is backed by the supplemental seed; "Bodyweight" stays (isBodyweight flag
+ * branch); "Handles" stays because custom cable exercises default to the HANDLES token.
  */
 internal val EQUIPMENT_FILTER_CHIPS: List<String> = listOf(
     "Long Bar",
+    "Short Bar",
     "Handles",
+    "Rope",
     "Belt",
+    "Ankle Strap",
     "Cable",
     "Bodyweight",
 )

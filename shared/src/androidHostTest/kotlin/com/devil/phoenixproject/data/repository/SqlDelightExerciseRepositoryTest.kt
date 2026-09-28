@@ -7,10 +7,12 @@ import com.devil.phoenixproject.data.local.SupplementalCatalogSeed
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
+import com.devil.phoenixproject.domain.model.liveUnifiedAccessoryDisplayMultiplier
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -89,6 +91,40 @@ class SqlDelightExerciseRepositoryTest {
             val customs = awaitItem()
             assertEquals(1, customs.size)
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `createCustomExercise stores the selected accessory token without cable metadata`() = runTest {
+        // Issue #970: the equipment dropdown writes one accessory token (SHORT_BAR here,
+        // BAR pinned too since Long Bar must store BAR); custom rows must read back with no
+        // cable intent and fail closed to per-cable display.
+        for (token in listOf("SHORT_BAR", "BAR")) {
+            val result = repository.createCustomExercise(
+                com.devil.phoenixproject.domain.model.Exercise(
+                    name = "Custom $token",
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = token,
+                ),
+            )
+
+            val created = result.getOrNull()
+            assertNotNull(created?.id)
+            assertEquals(token, created.equipment)
+            assertNull(created.cableIntent)
+
+            val readBack = repository.getExerciseById(created.id!!)
+            assertNotNull(readBack)
+            assertEquals(token, readBack.equipment, "stored equipment must read back verbatim")
+            assertNull(readBack.cableIntent, "custom rows must not gain cable intent metadata")
+            assertNull(readBack.isBodyweightOverride, "custom rows classify from equipment (derived)")
+            assertFalse(readBack.isBodyweight, "a cable accessory token must not classify as bodyweight")
+            assertEquals(
+                1,
+                readBack.liveUnifiedAccessoryDisplayMultiplier(),
+                "custom rows must fail closed to per-cable display",
+            )
         }
     }
 

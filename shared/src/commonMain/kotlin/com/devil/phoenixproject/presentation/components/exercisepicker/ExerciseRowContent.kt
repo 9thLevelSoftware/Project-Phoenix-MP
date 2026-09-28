@@ -31,6 +31,7 @@ import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.presentation.components.compactEquipmentLabel
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -233,37 +234,11 @@ private fun buildSubtitle(exercise: Exercise): String {
     }
 
     if (exercise.equipment.isNotBlank() && exercise.equipment.lowercase() != "null") {
-        val equipment = formatEquipmentCompact(exercise.equipment)
+        val equipment = compactEquipmentLabel(exercise.equipment)
         if (equipment.isNotBlank()) {
             parts.add(equipment)
         }
     }
 
     return parts.joinToString(" • ")
-}
-
-private fun formatEquipmentCompact(rawEquipment: String): String {
-    val equipmentMap = mapOf(
-        "BAR" to "Long Bar",
-        "LONG_BAR" to "Long Bar",
-        "BARBELL" to "Long Bar",
-        "SHORT_BAR" to "Short Bar",
-        "BENCH" to "Bench",
-        "HANDLES" to "Handles",
-        "SINGLE_HANDLE" to "Handles",
-        "BOTH_HANDLES" to "Handles",
-        "STRAPS" to "Ankle Strap",
-        "ANKLE_STRAP" to "Ankle Strap",
-        "BELT" to "Belt",
-        "ROPE" to "Rope",
-        "BODYWEIGHT" to "Bodyweight",
-    )
-
-    return rawEquipment
-        .split(",")
-        .map { it.trim().uppercase() }
-        .filter { it !in listOf("BLACK_CABLES", "RED_CABLES", "GREY_CABLES", "CABLES", "CABLE", "NULL", "", "PUMP_HANDLES", "DUMBBELLS") }
-        .mapNotNull { equipmentMap[it] }
-        .distinct()
-        .joinToString(", ")
 }
