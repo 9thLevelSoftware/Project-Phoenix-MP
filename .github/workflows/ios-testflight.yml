@@ -199,7 +199,20 @@ jobs:
           # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
           # Copy the release bundle there. The Xcode project does not link an
           # XCFramework, and it does not read debugFramework at archive time.
-          iosApp/install-xcode-framework.sh release
+          #
+          # Release All (Existing) runs this workflow from main against an older
+          # tag's checkout. Tags before xcodeFramework (v1.0.3 and earlier) have no
+          # install script and link debugFramework, so give them a real copy there.
+          if grep -q 'iosArm64/xcodeFramework' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj; then
+            iosApp/install-xcode-framework.sh release
+          else
+            echo "Checkout predates xcodeFramework; installing the release bundle at debugFramework"
+            LEGACY_DEST=shared/build/bin/iosArm64/debugFramework/shared.framework
+            rm -rf "$LEGACY_DEST"
+            mkdir -p "$LEGACY_DEST"
+            cp -R shared/build/bin/iosArm64/releaseFramework/shared.framework/. "$LEGACY_DEST"/
+            test -s "$LEGACY_DEST/shared"
+          fi
 
       - name: Install certificate and profile
         env:
