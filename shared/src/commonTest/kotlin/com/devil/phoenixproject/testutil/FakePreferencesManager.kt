@@ -1,8 +1,6 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.preferences.JustLiftDefaults
 import com.devil.phoenixproject.data.preferences.PreferencesManager
-import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -22,16 +20,12 @@ class FakePreferencesManager : PreferencesManager {
     private val _preferencesFlow = MutableStateFlow(UserPreferences())
     override val preferencesFlow: StateFlow<UserPreferences> = _preferencesFlow.asStateFlow()
 
-    private val exerciseDefaults = mutableMapOf<String, SingleExerciseDefaults>()
-    private var justLiftDefaults = JustLiftDefaults()
     // Issue #611 (PR-followup #613): backing field for the 18+ modal one-shot flag.
     private var _adultsOnlyPrompted: Boolean = false
     private var exerciseCatalogSource: String = ""
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
-        exerciseDefaults.clear()
-        justLiftDefaults = JustLiftDefaults()
         _adultsOnlyPrompted = false
         exerciseCatalogSource = ""
     }
@@ -76,28 +70,6 @@ class FakePreferencesManager : PreferencesManager {
 
     suspend fun setAudioRepCountEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
-    }
-
-    @Deprecated("Legacy migration read only")
-    override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? = exerciseDefaults[exerciseId]
-
-    suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
-        exerciseDefaults[defaults.exerciseId] = defaults
-    }
-
-    suspend fun clearAllSingleExerciseDefaults() {
-        exerciseDefaults.clear()
-    }
-
-    @Deprecated("Legacy migration read only")
-    override suspend fun getJustLiftDefaults(): JustLiftDefaults = justLiftDefaults
-
-    suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
-        justLiftDefaults = defaults
-    }
-
-    suspend fun clearJustLiftDefaults() {
-        justLiftDefaults = JustLiftDefaults()
     }
 
     suspend fun setSummaryCountdownSeconds(seconds: Int) {
