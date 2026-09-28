@@ -20,6 +20,36 @@ class SafeWordListenerIosAudioTapGuardTest {
         )
 
     @Test
+    fun iosSafeWordListener_playAndRecordDefaultsOutputToSpeaker() {
+        val source = safeWordListenerSource.readText()
+        val configureIndex = source.indexOf("private fun configureAudioSession()")
+        assertTrue(configureIndex >= 0, "iOS safe-word listener must configure the shared audio session.")
+        val nextFun = source.indexOf("\n    private fun ", configureIndex + 1)
+        val body = if (nextFun > configureIndex) {
+            source.substring(configureIndex, nextFun)
+        } else {
+            source.substring(configureIndex)
+        }
+
+        assertTrue(
+            body.contains("AVAudioSessionCategoryPlayAndRecord"),
+            "Safe-word capture must stay on PlayAndRecord so the microphone tap keeps working.",
+        )
+        assertTrue(
+            body.contains("AVAudioSessionCategoryOptionMixWithOthers"),
+            "Safe-word capture must keep MixWithOthers so background audio is not interrupted.",
+        )
+        assertTrue(
+            body.contains("AVAudioSessionCategoryOptionDefaultToSpeaker"),
+            "PlayAndRecord defaults to the receiver; DefaultToSpeaker routes workout cues to the speaker.",
+        )
+        assertTrue(
+            body.contains("AVAudioSessionCategoryOptionMixWithOthers or"),
+            "DefaultToSpeaker must be combined with MixWithOthers on the same setCategory call.",
+        )
+    }
+
+    @Test
     fun iosSafeWordListener_requestsRecordPermissionBeforeInstallingAudioTap() {
         val source = safeWordListenerSource.readText()
         val requestPermissionIndex = source.indexOf("requestRecordPermission")
