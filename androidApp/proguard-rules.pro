@@ -49,6 +49,10 @@
 # okhttp-android 5.3.2 consumer rules are -dontwarn only. The app does not
 # load OkHttp by reflection.
 -dontwarn okhttp3.**
+# classifyError (PortalApiClient.kt) routes sync retries by exception simpleName
+# ("Connection", "IOException", ...). Keep OkHttp's IOException names so an
+# obfuscated ConnectionShutdownException still classifies as NETWORK.
+-keepnames class okhttp3.** extends java.io.IOException
 
 # ==================== SQLDelight ====================
 -keep class com.devil.phoenixproject.database.** { *; }
