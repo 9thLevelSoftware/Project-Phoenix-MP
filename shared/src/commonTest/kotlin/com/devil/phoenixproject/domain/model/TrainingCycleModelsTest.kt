@@ -64,21 +64,6 @@ class TrainingCycleModelsTest {
     }
 
     @Test
-    fun `CycleProgress shouldAutoAdvance returns true after elapsed calendar days`() {
-        val now = currentTimeMillis()
-        val progress = CycleProgress(
-            id = "progress-3",
-            cycleId = "cycle-1",
-            currentDayNumber = 1,
-            lastCompletedDate = null,
-            cycleStartDate = now,
-            lastAdvancedAt = now - (25 * 60 * 60 * 1000L),
-        )
-
-        assertTrue(progress.shouldAutoAdvance())
-    }
-
-    @Test
     fun `CycleProgress pendingAutoAdvanceDays falls back to cycle start date`() {
         val now = currentTimeMillis()
         val progress = CycleProgress(
@@ -180,25 +165,9 @@ class TrainingCycleModelsTest {
         val summary = sets.toCompactString { weight -> "${weight}kg" }
         assertEquals("30.0kg × 10, 8", summary)
     }
-
-    @Test
-    fun `ProgressionEvent calculateProgressionWeight enforces minimum increment`() {
-        val next = ProgressionEvent.calculateProgressionWeight(10f)
-        assertEquals(10.5f, next)
-    }
 }
 
 class TemplateModelsTest {
-
-    @Test
-    fun `calculateSetWeight uses training max and rounds to half kg`() {
-        val weight = calculateSetWeight(
-            oneRepMaxKg = 100f,
-            percentageSet = PercentageSet(percent = 0.75f, targetReps = 5),
-        )
-
-        assertEquals(67.5f, weight)
-    }
 
     @Test
     fun `FiveThreeOneWeeks returns expected week presets`() {

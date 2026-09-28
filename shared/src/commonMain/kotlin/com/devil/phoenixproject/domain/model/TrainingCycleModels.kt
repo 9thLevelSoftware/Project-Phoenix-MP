@@ -228,11 +228,6 @@ data class CycleProgress(
     }
 
     /**
-     * Check if at least one calendar day has passed since last advance.
-     */
-    fun shouldAutoAdvance(): Boolean = pendingAutoAdvanceDays() > 0
-
-    /**
      * Advance to the next day in the cycle.
      * @param totalDays Total number of days in the cycle
      * @param markMissed If true, mark current day as missed before advancing
@@ -453,103 +448,6 @@ data class CompletedSet(
             routineExerciseId = routineExerciseId,
             attemptNumber = attemptNumber,
         )
-    }
-}
-
-/**
- * Reasons for suggesting a weight progression.
- */
-enum class ProgressionReason {
-    /** User hit target reps for consecutive sessions */
-    REPS_ACHIEVED,
-
-    /** User logged RPE below target */
-    LOW_RPE,
-
-    /** User missed target reps for 2+ consecutive sessions (deload) */
-    MISSED_REPS,
-
-    /** User logged RPE >= 9 consistently (deload) */
-    HIGH_RPE,
-
-    /** Plateau detected via trend analysis (deload) */
-    PLATEAU_DETECTED,
-
-    ;
-
-    /** True if this reason suggests a weight decrease rather than increase */
-    val isDeload: Boolean
-        get() = this in setOf(MISSED_REPS, HIGH_RPE, PLATEAU_DETECTED)
-}
-
-/**
- * User's response to a progression suggestion.
- */
-enum class ProgressionResponse {
-    /** User accepted the suggested weight */
-    ACCEPTED,
-
-    /** User modified the suggested weight */
-    MODIFIED,
-
-    /** User rejected the suggestion (kept old weight) */
-    REJECTED,
-}
-
-/**
- * Tracks a weight progression suggestion and user response.
- */
-data class ProgressionEvent(
-    val id: String,
-    val exerciseId: String,
-    val suggestedWeightKg: Float,
-    val previousWeightKg: Float,
-    val reason: ProgressionReason,
-    val userResponse: ProgressionResponse?,
-    val actualWeightKg: Float?,
-    val timestamp: Long,
-    val profileId: String = "default",
-) {
-    /**
-     * Calculate the suggested increment.
-     */
-    fun increment(): Float = suggestedWeightKg - previousWeightKg
-
-    /**
-     * Check if this suggestion is still pending.
-     */
-    fun isPending(): Boolean = userResponse == null
-
-    companion object {
-        fun create(
-            id: String = generateUUID(),
-            exerciseId: String,
-            previousWeightKg: Float,
-            reason: ProgressionReason,
-            profileId: String = "default",
-        ): ProgressionEvent {
-            val suggestedWeight = calculateProgressionWeight(previousWeightKg)
-            return ProgressionEvent(
-                id = id,
-                exerciseId = exerciseId,
-                suggestedWeightKg = suggestedWeight,
-                previousWeightKg = previousWeightKg,
-                reason = reason,
-                userResponse = null,
-                actualWeightKg = null,
-                timestamp = currentTimeMillis(),
-                profileId = profileId,
-            )
-        }
-
-        /**
-         * Calculate progression weight: 2.5% increase, rounded to 0.5kg, minimum 0.5kg increment.
-         */
-        fun calculateProgressionWeight(currentWeight: Float): Float {
-            val rawIncrease = currentWeight * 0.025f
-            val increment = maxOf(0.5f, (rawIncrease * 2).toInt() / 2f)
-            return currentWeight + increment
-        }
     }
 }
 

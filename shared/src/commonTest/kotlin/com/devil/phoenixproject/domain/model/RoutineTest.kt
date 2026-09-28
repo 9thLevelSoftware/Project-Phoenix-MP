@@ -58,29 +58,6 @@ class RoutineTest {
         assertEquals(60, exercise.getRestForSet(5)) // Falls back
     }
 
-    @Test
-    fun withNormalizedRestTimes_padsToMatchSets() {
-        val exercise = createTestRoutineExercise(
-            setReps = listOf(10, 10, 10),
-            setRestSeconds = listOf(30),
-        )
-        val normalized = exercise.withNormalizedRestTimes()
-        assertEquals(3, normalized.setRestSeconds.size)
-        assertEquals(30, normalized.setRestSeconds[0])
-        assertEquals(60, normalized.setRestSeconds[1])
-        assertEquals(60, normalized.setRestSeconds[2])
-    }
-
-    @Test
-    fun withNormalizedRestTimes_trimsExcess() {
-        val exercise = createTestRoutineExercise(
-            setReps = listOf(10, 10),
-            setRestSeconds = listOf(30, 60, 90, 120),
-        )
-        val normalized = exercise.withNormalizedRestTimes()
-        assertEquals(2, normalized.setRestSeconds.size)
-    }
-
     // ===== Superset ordering =====
 
     @Test

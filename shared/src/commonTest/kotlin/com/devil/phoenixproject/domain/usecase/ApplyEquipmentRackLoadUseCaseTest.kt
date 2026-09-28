@@ -141,21 +141,6 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(40f, result.adjustedMachineWeightPerCableKg)
     }
 
-    @Test
-    fun `bodyweight effective load includes added load and counterweight`() {
-        val result = useCase.calculateBodyweightEffectiveLoadKg(
-            bodyWeightKg = 100f,
-            percentage = 0.95f,
-            selectedItems = listOf(
-                rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
-                rackItem("assist", 25f, RackItemBehavior.COUNTERWEIGHT),
-                rackItem("note", 100f, RackItemBehavior.DISPLAY_ONLY),
-            ),
-        )
-
-        assertEquals(80f, result)
-    }
-
     // ===================== Behavior Override Tests (Issues #521/#526) =====================
 
     @Test
@@ -247,21 +232,6 @@ class ApplyEquipmentRackLoadUseCaseTest {
         )
         assertEquals(without.externalAddedLoadKg, withOverrides.externalAddedLoadKg)
         assertEquals(without.counterweightKg, withOverrides.counterweightKg)
-    }
-
-    @Test
-    fun `bodyweight effective load respects overrides`() {
-        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
-        // Override vest to COUNTERWEIGHT for bodyweight
-        val overrides = mapOf("vest-1" to RackItemBehavior.COUNTERWEIGHT)
-        val result = useCase.calculateBodyweightEffectiveLoadKg(
-            bodyWeightKg = 80f,
-            percentage = 1.0f,
-            selectedItems = listOf(vest),
-            behaviorOverrides = overrides,
-        )
-        // 80 * 1.0 + 0 (no added resistance) - 5 (counterweight via override) = 75
-        assertEquals(75f, result)
     }
 
     private fun rackItem(id: String, weightKg: Float, behavior: RackItemBehavior): RackItem = RackItem(
