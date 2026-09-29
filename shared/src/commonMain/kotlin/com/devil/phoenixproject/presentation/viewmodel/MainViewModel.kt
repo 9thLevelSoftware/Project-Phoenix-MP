@@ -12,7 +12,6 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.AutoStopUiState
-import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
@@ -21,7 +20,6 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
-import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -514,8 +512,6 @@ class MainViewModel(
     private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
     private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
     private val syncTriggerManager: SyncTriggerManager? = null,
-    private val repMetricRepository: RepMetricRepository,
-    private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
@@ -687,8 +683,6 @@ class MainViewModel(
         activeWorkoutRuntimeRepository = activeWorkoutRuntimeRepository,
         dropSetEligibilityPolicy = dropSetEligibilityPolicy,
         syncTriggerManager = syncTriggerManager,
-        repMetricRepository = repMetricRepository,
-        biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,

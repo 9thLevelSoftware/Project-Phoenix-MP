@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
@@ -83,8 +82,6 @@ internal data class RoutineRecoveryPreparation(
 /**
  * Manages routine CRUD, exercise/set navigation, and superset navigation.
  *
- * Extracted from DefaultWorkoutSessionManager during Phase 2 (Manager Decomposition) Plan 03.
- *
  * Communication:
  * - Reads/writes all state through [coordinator] (WorkoutCoordinator)
  * - NEVER holds references to ActiveSessionEngine or DWSM
@@ -98,8 +95,6 @@ class RoutineFlowManager(
     private val exerciseRepository: ExerciseRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase,
-    private val completedSetRepository: CompletedSetRepository,
-    private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,

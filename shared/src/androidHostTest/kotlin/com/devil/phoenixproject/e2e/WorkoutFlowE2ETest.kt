@@ -16,7 +16,6 @@ import com.devil.phoenixproject.e2e.robot.workoutRobot
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.testutil.FakeActiveWorkoutRuntimeRepository
-import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.fakeMachineSafetyCoordinator
@@ -26,7 +25,6 @@ import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
-import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
@@ -61,7 +59,6 @@ class WorkoutFlowE2ETest {
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var fakeCompletedSetRepository: FakeCompletedSetRepository
-    private lateinit var fakeRepMetricRepository: FakeRepMetricRepository
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var robot: WorkoutRobot
@@ -79,7 +76,6 @@ class WorkoutFlowE2ETest {
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
-        fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeBaselineRepository, FakeVelocityOneRepMaxRepository())
         fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
@@ -101,8 +97,6 @@ class WorkoutFlowE2ETest {
             completedSetRepository = fakeCompletedSetRepository,
             activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
             dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
-            repMetricRepository = fakeRepMetricRepository,
-            biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
             equipmentRackRepository = profileEquipmentRackRepository,

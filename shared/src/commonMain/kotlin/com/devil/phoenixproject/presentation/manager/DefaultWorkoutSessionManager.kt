@@ -10,7 +10,6 @@ import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
-import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
@@ -18,7 +17,6 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
-import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -230,7 +228,6 @@ data class CycleDayCompletionEvent(
  * - [ActiveSessionEngine]: Workout lifecycle, BLE commands, auto-stop, rest timer, session persistence
  *
  * This class wires the sub-managers together and provides the public API consumed by MainViewModel.
- * After Phase 2 decomposition, this is a thin delegation layer (~300 lines).
  */
 class DefaultWorkoutSessionManager(
     private val bleRepository: BleRepository,
@@ -254,8 +251,6 @@ class DefaultWorkoutSessionManager(
     private val transitionIdGenerator: () -> String = KmpUtils::randomUUID,
     private val offerIdGenerator: () -> String = KmpUtils::randomUUID,
     private val syncTriggerManager: SyncTriggerManager?,
-    private val repMetricRepository: RepMetricRepository,
-    private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase,
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
@@ -323,8 +318,6 @@ class DefaultWorkoutSessionManager(
         exerciseRepository = exerciseRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         applyRoutineModifierUseCase = applyRoutineModifierUseCase,
-        completedSetRepository = completedSetRepository,
-        settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
@@ -369,7 +362,6 @@ class DefaultWorkoutSessionManager(
         bleRepository = bleRepository,
         workoutRepository = workoutRepository,
         exerciseRepository = exerciseRepository,
-        personalRecordRepository = personalRecordRepository,
         repCounter = repCounter,
         preferencesManager = preferencesManager,
         gamificationManager = gamificationManager,
@@ -381,8 +373,6 @@ class DefaultWorkoutSessionManager(
         transitionIdGenerator = transitionIdGenerator,
         offerIdGenerator = offerIdGenerator,
         syncTriggerManager = syncTriggerManager,
-        repMetricRepository = repMetricRepository,
-        biomechanicsRepository = biomechanicsRepository,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,

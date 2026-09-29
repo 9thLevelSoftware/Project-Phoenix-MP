@@ -399,8 +399,6 @@ internal class DWSMTestHarness(
         transitionIdGenerator = transitionIdGenerator,
         offerIdGenerator = offerIdGenerator,
         syncTriggerManager = null,
-        repMetricRepository = fakeRepMetricRepo,
-        biomechanicsRepository = fakeBiomechanicsRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
         applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
