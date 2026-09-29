@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -111,48 +112,7 @@ actual fun CompactNumberPicker(
                         )
 
                         // Set text color for all Android versions
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            setTextColor(textColor.toArgb())
-                        } else {
-                            // API 28 and below: Style text children
-                            post {
-                                try {
-                                    val count = childCount
-                                    for (i in 0 until count) {
-                                        val child = getChildAt(i)
-                                        when (child) {
-                                            is android.widget.EditText -> {
-                                                child.setTextColor(textColor.toArgb())
-                                                child.setBackgroundColor(
-                                                    android.graphics.Color.TRANSPARENT,
-                                                )
-                                            }
-
-                                            is android.widget.TextView -> {
-                                                child.setTextColor(textColor.toArgb())
-                                                child.setBackgroundColor(
-                                                    android.graphics.Color.TRANSPARENT,
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // Try to access and modify the Paint object
-                                    try {
-                                        val paintField = NumberPicker::class.java.getDeclaredField(
-                                            "mSelectorWheelPaint",
-                                        )
-                                        paintField.isAccessible = true
-                                        val paint = paintField.get(this) as? android.graphics.Paint
-                                        paint?.color = textColor.toArgb()
-                                    } catch (_: Exception) {
-                                        // Paint field not found - expected on some Android versions
-                                    }
-                                } catch (_: Exception) {
-                                    // Reflection failed - fall back to default styling
-                                }
-                            }
-                        }
+                        applyNumberPickerTextColor(textColor)
                     }
                 },
                 update = { picker ->
@@ -168,48 +128,7 @@ actual fun CompactNumberPicker(
                     )
 
                     // Update text color on every recomposition
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        picker.setTextColor(textColor.toArgb())
-                    } else {
-                        // API 28 and below: Apply text color to ALL text children
-                        picker.post {
-                            try {
-                                val count = picker.childCount
-                                for (i in 0 until count) {
-                                    val child = picker.getChildAt(i)
-                                    when (child) {
-                                        is android.widget.EditText -> {
-                                            child.setTextColor(textColor.toArgb())
-                                            child.setBackgroundColor(
-                                                android.graphics.Color.TRANSPARENT,
-                                            )
-                                        }
-
-                                        is android.widget.TextView -> {
-                                            child.setTextColor(textColor.toArgb())
-                                            child.setBackgroundColor(
-                                                android.graphics.Color.TRANSPARENT,
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Try to access and modify the Paint object
-                                try {
-                                    val paintField = NumberPicker::class.java.getDeclaredField(
-                                        "mSelectorWheelPaint",
-                                    )
-                                    paintField.isAccessible = true
-                                    val paint = paintField.get(picker) as? android.graphics.Paint
-                                    paint?.color = textColor.toArgb()
-                                } catch (_: Exception) {
-                                    // Paint field not found - expected on some Android versions
-                                }
-                            } catch (_: Exception) {
-                                // Reflection failed - fall back to default styling
-                            }
-                        }
-                    }
+                    picker.applyNumberPickerTextColor(textColor)
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -261,6 +180,58 @@ actual fun CompactNumberPicker(
         step = 1.0f,
         compactWheel = false,
     )
+}
+
+/**
+ * Paints the wheel with [textColor] whenever the view is created or recomposed.
+ *
+ * API 29+ uses [NumberPicker.setTextColor]. API 26–28 still need a posted child walk
+ * plus the selector-wheel paint, because [NumberPicker.setTextColor] is not available.
+ * Both the AndroidView factory and update blocks share this path.
+ */
+private fun NumberPicker.applyNumberPickerTextColor(textColor: Color) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        setTextColor(textColor.toArgb())
+    } else {
+        // API 28 and below: style text children and the selector paint.
+        post {
+            try {
+                val count = childCount
+                for (i in 0 until count) {
+                    val child = getChildAt(i)
+                    when (child) {
+                        is android.widget.EditText -> {
+                            child.setTextColor(textColor.toArgb())
+                            child.setBackgroundColor(
+                                android.graphics.Color.TRANSPARENT,
+                            )
+                        }
+
+                        is android.widget.TextView -> {
+                            child.setTextColor(textColor.toArgb())
+                            child.setBackgroundColor(
+                                android.graphics.Color.TRANSPARENT,
+                            )
+                        }
+                    }
+                }
+
+                // Try to access and modify the Paint object
+                try {
+                    val paintField = NumberPicker::class.java.getDeclaredField(
+                        "mSelectorWheelPaint",
+                    )
+                    paintField.isAccessible = true
+                    val paint = paintField.get(this) as? android.graphics.Paint
+                    paint?.color = textColor.toArgb()
+                } catch (_: Exception) {
+                    // Paint field not found - expected on some Android versions
+                }
+            } catch (_: Exception) {
+                // Reflection failed - fall back to default styling
+            }
+        }
+    }
 }
 
 /**
