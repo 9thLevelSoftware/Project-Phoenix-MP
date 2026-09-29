@@ -231,13 +231,16 @@ class Issue687WorkoutStartGateUiTest {
 
     @Test
     fun `daily routines gates only direct resume while shared resume callers keep defaults`() {
-        val daily = source("presentation/screen/DailyRoutinesScreen.kt")
+        val host = source("presentation/screen/RoutineResumeDialogHost.kt")
         val dialog = source("presentation/components/ResumeRoutineDialog.kt")
+        val home = source("presentation/screen/HomeScreen.kt")
+        val cycles = source("presentation/screen/TrainingCyclesScreen.kt")
 
         assertContainsAll(
-            daily,
+            host,
             "viewModel.machineTeardownState.collectAsState()",
-            "val inMemoryHandle = handle as? RoutineResumeHandle.InMemory",
+            "handle as? RoutineResumeHandle.InMemory",
+            "entryPoint == RoutineResumeEntryPoint.DAILY_ROUTINES",
             "captured.activeRoutineSnapshot.exercises",
             ".getOrNull(captured.exerciseIndex)",
             "?.exercise?.isBodyweight != true",
@@ -247,14 +250,15 @@ class Issue687WorkoutStartGateUiTest {
             "confirmLabel =",
         )
 
-        val supportingContentStart = daily.indexOf(
+        val supportingContentStart = host.indexOf(
             "supportingContent = if (inMemoryHandle != null) {",
         )
-        val supportingContentEnd = daily.indexOf("\n            )", supportingContentStart)
+        val supportingContentEnd = host.indexOf("} else {", supportingContentStart)
         assertTrue(supportingContentStart >= 0, "Daily direct-Resume support gate is missing")
         assertTrue(supportingContentEnd > supportingContentStart, "Daily Resume dialog boundary is missing")
-        val supportingContentBlock = daily
-            .substring(supportingContentStart, supportingContentEnd)
+        val blockEnd = host.indexOf("}", host.indexOf("null", supportingContentEnd)) + 1
+        val supportingContentBlock = host
+            .substring(supportingContentStart, blockEnd)
             .replace(Regex("\\s+"), " ")
         assertContainsAll(
             supportingContentBlock,
@@ -264,6 +268,10 @@ class Issue687WorkoutStartGateUiTest {
             "viewModel.reconnectWorkoutTeardown()",
             "} else { null }",
         )
+        assertFalse(home.contains("WorkoutStartGateNotice("))
+        assertFalse(home.contains("toStartGatePresentation("))
+        assertFalse(cycles.contains("WorkoutStartGateNotice("))
+        assertFalse(cycles.contains("toStartGatePresentation("))
         assertContainsAll(
             dialog,
             "confirmEnabled: Boolean = true",
