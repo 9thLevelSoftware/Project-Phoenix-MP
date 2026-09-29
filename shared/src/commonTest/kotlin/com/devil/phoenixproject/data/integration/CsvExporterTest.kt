@@ -21,7 +21,7 @@ class CsvExporterTest {
 
     @Test
     fun singleSession_correctColumnsAndWeightMultiplier() {
-        // weightPerCableKg = 10 → total = 20 kg
+        // Null cable count is a legacy dual-cable session: 10 kg/cable → 20 kg total.
         val session = WorkoutSession(
             id = "session-1",
             timestamp = 1_700_000_000_000L, // some fixed epoch ms
@@ -33,6 +33,7 @@ class CsvExporterTest {
             warmupReps = 0,
             workingReps = 10,
             exerciseName = "Bench Press",
+            cableCount = null,
         )
 
         val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.KG)
@@ -43,7 +44,7 @@ class CsvExporterTest {
 
         val fields = lines[1].split(",")
         // Column 5 (index 5) = Weight
-        assertEquals("20", fields[5], "Weight should be perCable * 2 = 20")
+        assertEquals("20", fields[5], "Null cable count keeps the legacy dual-cable total of 20")
         // Column 6 = Reps
         assertEquals("10", fields[6])
         // Column 3 = Exercise Name
@@ -53,13 +54,46 @@ class CsvExporterTest {
     }
 
     @Test
+    fun singleCableSession_exportsPerCableWeight() {
+        val session = WorkoutSession(
+            id = "s-single",
+            timestamp = 1_700_000_000_000L,
+            weightPerCableKg = 10f,
+            totalReps = 8,
+            exerciseName = "Reverse Lunge",
+            cableCount = 1,
+        )
+
+        val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.KG)
+        val fields = csv.lines()[1].split(",")
+        assertEquals("10", fields[5], "Single-cable weight must not be doubled")
+    }
+
+    @Test
+    fun recordedDualCableSession_exportsDoubledWeight() {
+        val session = WorkoutSession(
+            id = "s-dual",
+            timestamp = 1_700_000_000_000L,
+            weightPerCableKg = 10f,
+            totalReps = 8,
+            exerciseName = "Bench Press",
+            cableCount = 2,
+        )
+
+        val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.KG)
+        val fields = csv.lines()[1].split(",")
+        assertEquals("20", fields[5], "Recorded dual-cable weight is per-cable × 2")
+    }
+
+    @Test
     fun weightConversion_toLbs() {
-        // 10 kg per cable → 20 kg total → 20 * 2.20462 = 44.0924 lbs → "44.09"
+        // Null cable count: 10 kg per cable → 20 kg total → 20 * 2.20462 = 44.0924 lbs → "44.09"
         val session = WorkoutSession(
             id = "s1",
             timestamp = 1_700_000_000_000L,
             weightPerCableKg = 10f,
             exerciseName = "Squat",
+            cableCount = null,
         )
 
         val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.LB)
@@ -102,9 +136,25 @@ class CsvExporterTest {
     // -------------------------------------------------------------------------
 
     @Test
-    fun formatWeight_kg_multipliesBy2() {
-        // 5 kg per cable → 10 kg total
-        assertEquals("10", CsvExporter.formatWeight(5f, WeightUnit.KG))
+    fun formatWeight_kg_nullCableCount_multipliesBy2() {
+        // 5 kg per cable, legacy null cable count → 10 kg total
+        assertEquals("10", CsvExporter.formatWeight(5f, WeightUnit.KG, cableCount = null))
+    }
+
+    @Test
+    fun formatWeight_singleCable_doesNotDouble() {
+        assertEquals("10", CsvExporter.formatWeight(10f, WeightUnit.KG, cableCount = 1))
+    }
+
+    @Test
+    fun formatWeight_recordedDualCable_doubles() {
+        assertEquals("20", CsvExporter.formatWeight(10f, WeightUnit.KG, cableCount = 2))
+    }
+
+    @Test
+    fun formatWeight_singleCableLbs_convertsWithoutDoubling() {
+        // 10 kg × 1 cable × 2.20462 = 22.0462 → truncated to "22.04"
+        assertEquals("22.04", CsvExporter.formatWeight(10f, WeightUnit.LB, cableCount = 1))
     }
 
     @Test
