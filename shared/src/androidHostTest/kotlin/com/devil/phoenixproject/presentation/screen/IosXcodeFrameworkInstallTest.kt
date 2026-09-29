@@ -39,6 +39,14 @@ class IosXcodeFrameworkInstallTest {
         assertTrue(!project.contains("dSYM"), "static shared.framework has no dSYM phase")
         assertTrue(!project.contains("iphonesimulator"), "the app does not build the simulator framework")
         assertTrue(!project.contains("iosSimulatorArm64"), "Copy Compose Resources is device-only")
+        assertTrue(project.contains("shared.framework in Frameworks"), "the link phase must keep shared.framework")
+        assertTrue(project.contains("libsqlite3.tbd in Frameworks"), "the link phase must keep libsqlite3.tbd")
+        assertTrue(!project.contains("Embed Frameworks"), "static shared.framework is linked, not copied into the app")
+        assertTrue(!project.contains("PBXCopyFilesBuildPhase"), "there is no embed-frameworks copy phase")
+        assertTrue(
+            !project.contains("FRAMEWORKS_FOLDER_PATH"),
+            "the privacy manifest is copied only to the app bundle root",
+        )
     }
 
     @Test

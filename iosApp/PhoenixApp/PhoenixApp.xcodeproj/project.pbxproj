@@ -8,23 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		DFE6BD572EEDF53700886589 /* shared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD562EEDF53700886589 /* shared.framework */; };
-		DFE6BD582EEDF53700886589 /* shared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD562EEDF53700886589 /* shared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		DFE6BD592EEDF53700886589 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				DFE6BD582EEDF53700886589 /* shared.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7BD2BAB62F8C1299004FCE77 /* SupabaseBase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/SupabaseBase.xcconfig; sourceTree = "<group>"; };
@@ -105,7 +90,6 @@
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
 				DFE6BD812EEE200000886589 /* Copy Compose Resources */,
-				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
 				E7A1C0DE2F10000100886589 /* Copy Privacy Manifest */,
 			);
 			buildRules = (
@@ -198,7 +182,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nMANIFEST=\"${SRCROOT}/PhoenixApp/PrivacyInfo.xcprivacy\"\nif [ ! -f \"${MANIFEST}\" ]; then\n    echo \"error: PrivacyInfo.xcprivacy not found at ${MANIFEST}\" >&2\n    exit 1\nfi\n\n# shared is a static framework, so its required-reason calls are linked into\n# the app executable. The manifest must sit at the app bundle root.\nAPP_DEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PrivacyInfo.xcprivacy\"\nmkdir -p \"$(dirname \"${APP_DEST}\")\"\ncp \"${MANIFEST}\" \"${APP_DEST}\"\n\n# The same framework is still embedded. When App Store Connect attributes the\n# calls to that binary, it looks for the manifest at the framework bundle root.\nFRAMEWORK_DIR=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/shared.framework\"\nif [ -d \"${FRAMEWORK_DIR}\" ]; then\n    cp \"${MANIFEST}\" \"${FRAMEWORK_DIR}/PrivacyInfo.xcprivacy\"\nelse\n    echo \"warning: embedded shared.framework not found at ${FRAMEWORK_DIR}; app-bundle manifest was still copied\"\nfi\n";
+			shellScript = "set -e\nMANIFEST=\"${SRCROOT}/PhoenixApp/PrivacyInfo.xcprivacy\"\nif [ ! -f \"${MANIFEST}\" ]; then\n    echo \"error: PrivacyInfo.xcprivacy not found at ${MANIFEST}\" >&2\n    exit 1\nfi\n\n# shared is a static framework, so its required-reason calls are linked into\n# the app executable. The manifest must sit at the app bundle root.\nAPP_DEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PrivacyInfo.xcprivacy\"\nmkdir -p \"$(dirname \"${APP_DEST}\")\"\ncp \"${MANIFEST}\" \"${APP_DEST}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
