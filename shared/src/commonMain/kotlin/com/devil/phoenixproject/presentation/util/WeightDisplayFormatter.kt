@@ -17,22 +17,20 @@ object WeightDisplayFormatter {
     /**
      * Convert per-cable kg to the user's selected display unit.
      *
-     * [cableCount] is accepted for backward source compatibility with existing
-     * call sites but intentionally ignored. Ordinary load display is per-cable.
+     * Ordinary load display is per-cable. Cable count is not an input;
+     * two-cable totals go through [toTwoCableTotalDisplayWeight].
      */
-    @Suppress("UNUSED_PARAMETER")
-    fun toDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): Float =
+    fun toDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): Float =
         toPerCableDisplayWeight(weightPerCableKg, unit)
 
     /**
      * Format per-cable kg in the user's selected display unit.
      *
-     * [cableCount] is accepted for backward source compatibility with existing
-     * call sites but intentionally ignored. Ordinary load display is per-cable.
+     * Ordinary load display is per-cable. Cable count is not an input;
+     * two-cable totals go through [formatTwoCableTotalWeight].
      */
-    @Suppress("UNUSED_PARAMETER")
-    fun formatDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): String =
-        formatNumeric(toPerCableDisplayWeight(weightPerCableKg, unit))
+    fun formatDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): String =
+        formatPerCableWeight(weightPerCableKg, unit)
 
     fun toPerCableDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): Float = when (unit) {
         WeightUnit.KG -> weightPerCableKg

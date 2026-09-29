@@ -30,7 +30,6 @@ class WeightDisplayIntegrationTest {
         val perCableKg = 55.5f
         val ordinaryFormatted = WeightDisplayFormatter.formatDisplayWeight(
             weightPerCableKg = perCableKg,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
         assertEquals("55.5", ordinaryFormatted, "Ordinary dual-cable display stays per-cable")
@@ -44,7 +43,7 @@ class WeightDisplayIntegrationTest {
         val fractionalPerCable = 27.5f
         assertEquals(
             "27.5",
-            WeightDisplayFormatter.formatDisplayWeight(fractionalPerCable, cableCount = 2, unit = WeightUnit.KG),
+            WeightDisplayFormatter.formatDisplayWeight(fractionalPerCable, unit = WeightUnit.KG),
         )
         assertEquals(
             "55",
@@ -88,7 +87,6 @@ class WeightDisplayIntegrationTest {
 
         val ordinaryFormatted = WeightDisplayFormatter.formatDisplayWeight(
             weightPerCableKg = adjustedPerCable,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
         assertEquals("55", ordinaryFormatted, "Bulk adjust changes per-cable load")

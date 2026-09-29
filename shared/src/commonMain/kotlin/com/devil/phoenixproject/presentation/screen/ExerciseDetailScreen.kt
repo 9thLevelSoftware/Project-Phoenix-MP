@@ -744,7 +744,6 @@ private fun ExerciseHistoryTable(
                         TableCell(
                             WeightDisplayFormatter.formatDisplayWeight(
                                 session.displayHeaviestKgPerCable(isBodyweight),
-                                null,
                                 weightUnit,
                             ),
                             Modifier.weight(1f),
@@ -833,7 +832,7 @@ private fun SessionHistoryRow(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(isBodyweight), null, weightUnit)} × ${session.workingReps} reps",
+                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(isBodyweight), weightUnit)} × ${session.workingReps} reps",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

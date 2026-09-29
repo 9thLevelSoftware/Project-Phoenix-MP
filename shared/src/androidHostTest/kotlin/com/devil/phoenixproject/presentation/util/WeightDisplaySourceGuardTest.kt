@@ -251,6 +251,56 @@ class WeightDisplaySourceGuardTest {
     }
 
     @Test
+    fun ordinaryDisplay_doesNotAcceptCableCount() {
+        val formatter = readSourceFile("com/devil/phoenixproject/presentation/util/WeightDisplayFormatter.kt")
+            ?: error("WeightDisplayFormatter.kt not found")
+        assertFalse(
+            formatter.contains("fun toDisplayWeight(weightPerCableKg: Float, cableCount"),
+            "Ordinary toDisplayWeight must not take cableCount",
+        )
+        assertFalse(
+            formatter.contains("fun formatDisplayWeight(weightPerCableKg: Float, cableCount"),
+            "Ordinary formatDisplayWeight must not take cableCount",
+        )
+        assertFalse(formatter.contains("@Suppress(\"UNUSED_PARAMETER\")"))
+        assertTrue(formatter.contains("fun toDisplayWeight(weightPerCableKg: Float, unit: WeightUnit)"))
+        assertTrue(formatter.contains("fun formatDisplayWeight(weightPerCableKg: Float, unit: WeightUnit)"))
+
+        val callSites = listOf(
+            "com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt",
+            "com/devil/phoenixproject/presentation/screen/HistoryTab.kt",
+            "com/devil/phoenixproject/presentation/screen/HomeScreen.kt",
+            "com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt",
+            "com/devil/phoenixproject/presentation/screen/AnalyticsScreen.kt",
+            "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt",
+            "com/devil/phoenixproject/presentation/components/InsightCards.kt",
+        )
+        val cableArg = Regex("""(?:formatDisplayWeight|toDisplayWeight)\([^)]*cableCount""")
+        val violations = callSites.mapNotNull { path ->
+            val source = readSourceFile(path) ?: return@mapNotNull "$path missing"
+            if (cableArg.containsMatchIn(source)) path else null
+        }
+        assertTrue(
+            violations.isEmpty(),
+            "GUARD VIOLATION: Ordinary load text must not take cableCount. Violations: $violations",
+        )
+    }
+
+    @Test
+    fun insightCards_convertPoundsThroughUnitConverter() {
+        val source = readSourceFile("com/devil/phoenixproject/presentation/components/InsightCards.kt")
+            ?: error("InsightCards.kt not found")
+        assertFalse(
+            source.contains("2.20462"),
+            "GUARD VIOLATION: InsightCards must not multiply by a raw lb factor",
+        )
+        assertTrue(
+            source.contains("UnitConverter.kgToLb"),
+            "InsightCards pound conversion should go through UnitConverter.kgToLb",
+        )
+    }
+
+    @Test
     fun setSummary_primaryWeightLabelsStayPerCable() {
         val path = "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt"
         val source = readSourceFile(path)

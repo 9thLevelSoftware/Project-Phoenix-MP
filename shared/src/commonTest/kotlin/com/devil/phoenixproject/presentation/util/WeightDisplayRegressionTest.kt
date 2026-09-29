@@ -16,10 +16,9 @@ class WeightDisplayRegressionTest {
     }
 
     @Test
-    fun dualCable_kg_displaysSelectedPerCableWeight() {
+    fun kg_displaysSelectedPerCableWeight() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 80f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -27,10 +26,9 @@ class WeightDisplayRegressionTest {
     }
 
     @Test
-    fun dualCable_lb_convertsSelectedPerCableWeightOnly() {
+    fun lb_convertsSelectedPerCableWeightOnly() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 80f,
-            cableCount = 2,
             unit = WeightUnit.LB,
         )
 
@@ -38,38 +36,28 @@ class WeightDisplayRegressionTest {
     }
 
     @Test
-    fun singleCable_kg_displaysSelectedPerCableWeight() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 80f,
-            cableCount = 1,
-            unit = WeightUnit.KG,
+    fun ordinaryDisplay_matchesPerCableHelper() {
+        assertEquals(
+            WeightDisplayFormatter.toPerCableDisplayWeight(80f, WeightUnit.KG),
+            WeightDisplayFormatter.toDisplayWeight(80f, WeightUnit.KG),
+            "Cable count is not an ordinary-display input",
         )
-
-        assertEquals(80f, result)
-    }
-
-    @Test
-    fun nullCableCount_kg_displaysStoredPerCableWeight() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 80f,
-            cableCount = null,
-            unit = WeightUnit.KG,
+        assertEquals(
+            WeightDisplayFormatter.formatPerCableWeight(80f, WeightUnit.KG),
+            WeightDisplayFormatter.formatDisplayWeight(80f, WeightUnit.KG),
         )
-
-        assertEquals(80f, result)
     }
 
     @Test
     fun zeroWeight_staysZero() {
-        assertEquals(0f, WeightDisplayFormatter.toDisplayWeight(0f, cableCount = 2, unit = WeightUnit.KG))
-        assertEquals("0", WeightDisplayFormatter.formatDisplayWeight(0f, cableCount = 2, unit = WeightUnit.KG))
+        assertEquals(0f, WeightDisplayFormatter.toDisplayWeight(0f, unit = WeightUnit.KG))
+        assertEquals("0", WeightDisplayFormatter.formatDisplayWeight(0f, unit = WeightUnit.KG))
     }
 
     @Test
-    fun maxWeight_dualCable_staysPerCable() {
+    fun maxWeight_staysPerCable() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = MAX_WEIGHT_KG,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -77,10 +65,9 @@ class WeightDisplayRegressionTest {
     }
 
     @Test
-    fun prWeight_withCableCount_staysPerCable() {
+    fun prWeight_staysPerCable() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 100f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -88,10 +75,9 @@ class WeightDisplayRegressionTest {
     }
 
     @Test
-    fun fractionalWeight_dualCable_staysPerCable() {
+    fun fractionalWeight_staysPerCable() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = MIN_WEIGHT_KG,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -100,23 +86,16 @@ class WeightDisplayRegressionTest {
 
     @Test
     fun formatAndToDisplay_areConsistentForPerCableDisplay() {
-        val numericResult = WeightDisplayFormatter.toDisplayWeight(80f, 2, WeightUnit.KG)
-        val stringResult = WeightDisplayFormatter.formatDisplayWeight(80f, 2, WeightUnit.KG)
+        val numericResult = WeightDisplayFormatter.toDisplayWeight(80f, WeightUnit.KG)
+        val stringResult = WeightDisplayFormatter.formatDisplayWeight(80f, WeightUnit.KG)
 
         assertEquals("80", stringResult)
         assertEquals(numericResult.toInt().toString(), stringResult)
     }
 
     @Test
-    fun unusualCableCounts_doNotChangeOrdinaryDisplay() {
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, 0, WeightUnit.KG))
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, -1, WeightUnit.KG))
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, 3, WeightUnit.KG))
-    }
-
-    @Test
     fun explicitTwoCableTotal_isSeparateFromOrdinaryDisplay() {
-        val ordinary = WeightDisplayFormatter.toDisplayWeight(50f, 2, WeightUnit.KG)
+        val ordinary = WeightDisplayFormatter.toDisplayWeight(50f, WeightUnit.KG)
         val total = WeightDisplayFormatter.toTwoCableTotalDisplayWeight(50f, WeightUnit.KG)
 
         assertEquals(50f, ordinary)
@@ -134,7 +113,6 @@ class WeightDisplayRegressionTest {
     fun negativeWeight_passesThroughWithoutCableMultiplication() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = -50f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 

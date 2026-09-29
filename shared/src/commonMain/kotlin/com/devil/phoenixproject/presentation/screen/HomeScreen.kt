@@ -710,7 +710,6 @@ private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: Weight
         Column(modifier = Modifier.weight(1f)) {
             val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
                 session.weightPerCableKg,
-                null,
                 weightUnit,
             )
             val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"

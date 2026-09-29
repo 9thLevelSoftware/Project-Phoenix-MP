@@ -43,6 +43,7 @@ import com.devil.phoenixproject.presentation.components.charts.RadarChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.roundToInt
 
 /**
@@ -158,7 +159,7 @@ fun ThisWeekSummaryCard(
 
     // Format volume for display
     val displayVolume = if (weightUnit == WeightUnit.LB) {
-        thisWeek.totalVolume * 2.20462f
+        UnitConverter.kgToLb(thisWeek.totalVolume)
     } else {
         thisWeek.totalVolume
     }
@@ -459,7 +460,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
                 val label = "S${index + 1}"
                 val volume = session.effectiveTotalVolumeKg()
                 // Convert to lbs if needed
-                val adjustedVolume = if (weightUnit == WeightUnit.LB) volume * 2.20462f else volume
+                val adjustedVolume = if (weightUnit == WeightUnit.LB) UnitConverter.kgToLb(volume) else volume
                 label to adjustedVolume
             }
 
@@ -467,7 +468,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
                 val label = "S${index + 1}"
                 val maxWeight = session.effectiveHeaviestKgPerCable()
                 // Convert to lbs if needed
-                val adjustedWeight = if (weightUnit == WeightUnit.LB) maxWeight * 2.20462f else maxWeight
+                val adjustedWeight = if (weightUnit == WeightUnit.LB) UnitConverter.kgToLb(maxWeight) else maxWeight
                 label to adjustedWeight
             }
 
@@ -769,7 +770,7 @@ fun LifetimeStatsCard(
     // Format actual volume for display
     val actualVolumeDisplay = remember(stats.totalVolumeKg, weightUnit) {
         val displayVolume = if (weightUnit == WeightUnit.LB) {
-            stats.totalVolumeKg * 2.20462f
+            UnitConverter.kgToLb(stats.totalVolumeKg)
         } else {
             stats.totalVolumeKg
         }

@@ -102,8 +102,8 @@ fun SetSummaryCard(
     // so it only needs unit conversion.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, null, weightUnit)
-    val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, null, weightUnit)
+    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, weightUnit)
+    val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit)
 
     // Debug logging for weight display investigation
     co.touchlab.kermit.Logger.i {
@@ -114,10 +114,10 @@ fun SetSummaryCard(
 
     // Peak/Avg forces - take max of both cables for display
     // Force values are per-cable measurements; primary display stays per-cable.
-    val peakConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB), null, weightUnit)
-    val peakEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB), null, weightUnit)
-    val avgConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), null, weightUnit)
-    val avgEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), null, weightUnit)
+    val peakConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB), weightUnit)
+    val peakEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB), weightUnit)
+    val avgConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), weightUnit)
+    val avgEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), weightUnit)
 
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
 
@@ -250,10 +250,10 @@ fun SetSummaryCard(
                     warmupReps = summary.warmupReps,
                     workingReps = summary.workingReps,
                     burnoutReps = summary.burnoutReps,
-                    warmupAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.warmupAvgWeightKg, null, weightUnit),
-                    workingAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.workingAvgWeightKg, null, weightUnit),
-                    burnoutAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.burnoutAvgWeightKg, null, weightUnit),
-                    peakWeight = WeightDisplayFormatter.toDisplayWeight(summary.peakWeightKg, null, weightUnit),
+                    warmupAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.warmupAvgWeightKg, weightUnit),
+                    workingAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.workingAvgWeightKg, weightUnit),
+                    burnoutAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.burnoutAvgWeightKg, weightUnit),
+                    peakWeight = WeightDisplayFormatter.toDisplayWeight(summary.peakWeightKg, weightUnit),
                     unitLabel = unitLabel,
                 )
             }

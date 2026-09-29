@@ -399,7 +399,6 @@ fun WorkoutHistoryCard(
                     } else {
                         WeightDisplayFormatter.formatDisplayWeight(
                             session.effectiveHeaviestKgPerCable(),
-                            null,
                             weightUnit,
                         ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
                     },
@@ -519,7 +518,6 @@ fun WorkoutHistoryCard(
                     // CompletedSet breakdown (set-level tracking)
                     CompletedSetsSection(
                         sessionId = session.id,
-                        cableCount = null,
                         weightUnit = weightUnit,
                     )
 
@@ -602,7 +600,6 @@ fun WorkoutHistoryCard(
 @Composable
 private fun CompletedSetsSection(
     sessionId: String,
-    cableCount: Int?,
     weightUnit: WeightUnit,
 ) {
     val completedSetRepository: CompletedSetRepository = koinInject()
@@ -669,7 +666,6 @@ private fun CompletedSetsSection(
                     // actualWeightKg is per-cable; ordinary display stays per-cable.
                     val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
                         set.actualWeightKg,
-                        cableCount,
                         weightUnit,
                     )
                     val unitLabel = weightUnit.name.lowercase()
@@ -939,7 +935,6 @@ fun GroupedRoutineCard(
                         } else {
                             WeightDisplayFormatter.formatDisplayWeight(
                                 exerciseGroup.highestWeightPerCableKg,
-                                null,
                                 weightUnit,
                             ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
                         },
@@ -1083,7 +1078,6 @@ fun GroupedRoutineCard(
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
                             sessionId = session.id,
-                            cableCount = null,
                             weightUnit = weightUnit,
                         )
 

@@ -14,10 +14,9 @@ class WeightDisplayFormatterTest {
     }
 
     @Test
-    fun toDisplayWeight_twoCableMetadata_kg_staysPerCable() {
+    fun toDisplayWeight_kg_staysPerCable() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 50f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -25,32 +24,35 @@ class WeightDisplayFormatterTest {
     }
 
     @Test
-    fun toDisplayWeight_twoCableMetadata_lb_convertsPerCableOnly() {
+    fun toDisplayWeight_lb_convertsPerCableOnly() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 50f,
-            cableCount = 2,
             unit = WeightUnit.LB,
         )
 
         assertTrue(
             abs(result - (50f * KG_TO_LB)) < FLOAT_TOLERANCE,
-            "Two-cable metadata must not double ordinary lb display",
+            "Ordinary lb display converts the per-cable load only",
         )
     }
 
     @Test
-    fun toDisplayWeight_ignoresInvalidCableMetadata() {
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = 0, unit = WeightUnit.KG))
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = -1, unit = WeightUnit.KG))
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = 3, unit = WeightUnit.KG))
-        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = null, unit = WeightUnit.KG))
+    fun ordinaryDisplay_matchesPerCableHelper() {
+        assertEquals(
+            WeightDisplayFormatter.toPerCableDisplayWeight(80f, WeightUnit.KG),
+            WeightDisplayFormatter.toDisplayWeight(80f, WeightUnit.KG),
+            "Ordinary load text is the per-cable value; cable count is not an input",
+        )
+        assertEquals(
+            WeightDisplayFormatter.formatPerCableWeight(50.25f, WeightUnit.KG),
+            WeightDisplayFormatter.formatDisplayWeight(50.25f, WeightUnit.KG),
+        )
     }
 
     @Test
     fun formatDisplayWeight_integerResult_noDecimals() {
         val result = WeightDisplayFormatter.formatDisplayWeight(
             weightPerCableKg = 50f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
@@ -61,7 +63,6 @@ class WeightDisplayFormatterTest {
     fun formatDisplayWeight_decimalResult_oneDecimal() {
         val result = WeightDisplayFormatter.formatDisplayWeight(
             weightPerCableKg = 50.25f,
-            cableCount = 2,
             unit = WeightUnit.KG,
         )
 
