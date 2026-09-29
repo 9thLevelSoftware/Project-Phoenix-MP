@@ -390,9 +390,6 @@ actual fun CompactNumberPicker(
                 val centerIndex = centeredVisibleIndex.coerceIn(values.indices)
                 if (centerIndex in values.indices) {
                     val scrollValue = values[centerIndex]
-                    Logger.i {
-                        "PICKER_DEBUG[iOS]: user-drag settle centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}"
-                    }
                     if (abs(scrollValue - currentValue) > 0.001f) {
                         lastScrollSetValue = scrollValue
                         currentOnValueChange(scrollValue)
