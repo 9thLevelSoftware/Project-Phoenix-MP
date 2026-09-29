@@ -5050,6 +5050,203 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    // ===== GitHub #972: clearing a Just Lift exercise label =====
+    // The label write itself (SQL NULL, generation bump) is proven in
+    // SqlDelightWorkoutRepositoryTest; this fake does not model
+    // local_sync_generation, so the bump is not asserted here.
+
+    @Test
+    fun `clearing a labeled Just Lift session keeps the lift and drops only the label`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-clear-session",
+            timestamp = 4_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        val completedSetId = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().id
+
+        harness.dwsm.clearJustLiftSessionExercise(session.id)
+        advanceUntilIdle()
+
+        val cleared = harness.fakeWorkoutRepo.getSession(session.id)
+        assertNull(cleared?.exerciseId, "the label column is cleared")
+        assertNull(cleared?.exerciseName, "the label column is cleared")
+        assertEquals(5, cleared?.totalReps, "the lift itself is kept")
+        assertEquals(5, cleared?.workingReps, "the lift itself is kept")
+        val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(session.id)
+        assertEquals(1, completedSets.size, "the completed set is kept")
+        assertEquals(completedSetId, completedSets.single().id)
+        assertEquals(5, completedSets.single().actualReps)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `clearing a labeled Just Lift PR set clears the flag without touching PR rows`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-clear-pr-session",
+            timestamp = 5_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        assertTrue(
+            harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr,
+            "Precondition: the first tag breaks a PR and marks the set",
+        )
+        val updatesBeforeClear = harness.fakePRRepo.updateCalls.size
+
+        harness.dwsm.clearJustLiftSessionExercise(session.id)
+        advanceUntilIdle()
+
+        assertFalse(
+            harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr,
+            "the derived PR flag goes with the label",
+        )
+        assertNotNull(
+            harness.fakePRRepo.getWeightPR(TestFixtures.squat.id!!, "OldSchool", "default"),
+            "the achieved PR row is genuine history and is kept",
+        )
+        assertEquals(
+            updatesBeforeClear,
+            harness.fakePRRepo.updateCalls.size,
+            "clearing a label must not run PR evaluation",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `clearing the label of the summary session clears the in-memory summary tags`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-clear-summary",
+            timestamp = 6_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 5,
+            sessionId = session.id,
+        )
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        assertEquals(
+            TestFixtures.squat.id,
+            (harness.dwsm.coordinator.workoutState.value as WorkoutState.SetSummary).taggedExerciseId,
+        )
+
+        harness.dwsm.clearJustLiftSessionExercise(session.id)
+        advanceUntilIdle()
+
+        val summary = assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value)
+        assertNull(summary.taggedExerciseId, "the live summary forgets the cleared label")
+        assertNull(summary.taggedExerciseName, "the live summary forgets the cleared label")
+        harness.cleanup()
+    }
+
+    @Test
+    fun `clearing a routine session or a missing id writes nothing`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeWorkoutRepo.addSession(
+            WorkoutSession(id = "routine-set-clear", timestamp = 1_000L, mode = "OldSchool", isJustLift = false),
+        )
+
+        harness.dwsm.clearJustLiftSessionExercise("missing-session")
+        harness.dwsm.clearJustLiftSessionExercise("routine-set-clear")
+        advanceUntilIdle()
+
+        assertEquals(
+            emptyList(),
+            harness.fakeWorkoutRepo.clearSessionExerciseTagCalls,
+            "only labeled Just Lift sessions are written",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `clearing an already unlabeled Just Lift session writes nothing and emits no feedback`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-already-unlabeled",
+            timestamp = 7_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        val feedback = mutableListOf<String>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.dwsm.coordinator._userFeedbackEvents.collect { feedback += it }
+        }
+
+        harness.dwsm.clearJustLiftSessionExercise(session.id)
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), harness.fakeWorkoutRepo.clearSessionExerciseTagCalls)
+        assertEquals(emptyList(), feedback, "nothing changed, so nothing is announced")
+        assertEquals(emptyList(), harness.recentJustLiftExerciseStore.read("default"))
+        collector.cancel()
+        harness.cleanup()
+    }
+
+    @Test
+    fun `clearing a Just Lift label does not record a recent exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-clear-recent",
+            timestamp = 8_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+            profileId = "lifter",
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+        assertEquals(listOf(TestFixtures.deadlift.id), harness.recentJustLiftExerciseStore.read("lifter"))
+
+        harness.dwsm.clearJustLiftSessionExercise(session.id)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(TestFixtures.deadlift.id),
+            harness.recentJustLiftExerciseStore.read("lifter"),
+            "clearing a label is not an exercise choice and must not feed the recent chips",
+        )
+        harness.cleanup()
+    }
+
     @Test
     fun `workout service snapshot follows workout phases and stops when idle`() = runTest {
         val harness = DWSMTestHarness(this)

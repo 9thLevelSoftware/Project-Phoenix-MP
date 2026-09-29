@@ -600,6 +600,11 @@
     <string name="tag_exercise_hint">Etiqueta este levantamiento para registrarlo</string>
     <string name="tag_exercise_action">Etiquetar ejercicio</string>
     <string name="exercise_tagged">Ejercicio etiquetado</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Borrar</string>
+    <string name="clear_exercise_label_title">¿Quitar esta etiqueta de ejercicio?</string>
+    <string name="clear_exercise_label_message">El levantamiento permanece en tu historial. Se mostrará como Just Lift hasta que lo etiquetes de nuevo.</string>
+    <string name="clear_exercise_label_confirm">Quitar etiqueta</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Iniciar recuperación activa…</string>
     <string name="routine_modifier_heavy_deload">Iniciar descarga pesada…</string>

@@ -600,6 +600,11 @@
     <string name="tag_exercise_hint">Associez ce mouvement pour le suivre</string>
     <string name="tag_exercise_action">Associer l'exercice</string>
     <string name="exercise_tagged">Exercice associé</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Effacer</string>
+    <string name="clear_exercise_label_title">Retirer le libellé de cet exercice ?</string>
+    <string name="clear_exercise_label_message">La série reste dans l'historique. Elle s'affichera comme Just Lift jusqu'à ce que vous la réassociez.</string>
+    <string name="clear_exercise_label_confirm">Retirer le libellé</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Démarrer récupération active…</string>
     <string name="routine_modifier_heavy_deload">Démarrer deload lourd…</string>

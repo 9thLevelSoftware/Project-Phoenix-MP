@@ -701,6 +701,15 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         }
     }
 
+    override suspend fun clearSessionExerciseTag(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.clearSessionExerciseTag(
+                updatedAt = currentTimeMillis(),
+                id = sessionId,
+            )
+        }
+    }
+
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {

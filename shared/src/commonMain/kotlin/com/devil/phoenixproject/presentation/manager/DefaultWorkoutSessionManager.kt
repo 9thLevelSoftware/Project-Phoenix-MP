@@ -698,6 +698,61 @@ class DefaultWorkoutSessionManager(
         coordinator._userFeedbackEvents.emit("Tagged ${exercise.name}")
     }
 
+    /**
+     * #972: remove the exercise label from a completed Just Lift session.
+     *
+     * Contract (integration-model §3.3): the lift, its completed set, and any
+     * personal-record rows are kept — only the label columns become SQL NULL.
+     * Unlike [tagJustLiftSessionExercise] this never marks the workout component
+     * dirty: the single `local_sync_generation` bump inside
+     * `clearSessionExerciseTag` is the whole dirty mark, so a clear bumps the
+     * generation by exactly 1.
+     */
+    suspend fun clearJustLiftSessionExercise(sessionId: String) {
+        val session = workoutRepository.getSession(sessionId)
+        if (session == null) {
+            Logger.w { "Cannot clear Just Lift label for session $sessionId because the saved session was not found" }
+            return
+        }
+        if (!session.isJustLift) {
+            Logger.w { "Ignoring Just Lift label clear request for non-Just Lift session $sessionId" }
+            return
+        }
+
+        val hasLabel = !session.exerciseId.isNullOrBlank() || !session.exerciseName.isNullOrBlank()
+        if (!hasLabel) {
+            // Already unlabeled: no write, no generation bump, no feedback.
+            return
+        }
+
+        workoutRepository.clearSessionExerciseTag(sessionId)
+
+        // The completed set row and any PersonalRecord rows are kept. Only the
+        // derived is_pr flag goes: it pointed at the cleared label's exercise.
+        try {
+            completedSetRepository.getCompletedSets(sessionId)
+                .filter { it.isPr }
+                .forEach { completedSetRepository.clearPr(it.id) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Failed to clear the PR flag while clearing the label of Just Lift session $sessionId" }
+        }
+
+        val currentState = coordinator._workoutState.value
+        if (currentState is WorkoutState.SetSummary && currentState.sessionId == sessionId) {
+            coordinator._workoutState.value = currentState.copy(
+                taggedExerciseId = null,
+                taggedExerciseName = null,
+            )
+        }
+
+        // No recentJustLiftExerciseStore.record: a cleared label is not an exercise choice.
+
+        syncTriggerManager?.onWorkoutCompleted()
+        coordinator._userFeedbackEvents.emit("Removed exercise label")
+    }
+
     /** True when a stored COMBINED weight or volume PR was set by [session] itself. */
     private suspend fun isSessionOwnPr(session: WorkoutSession, exerciseId: String): Boolean =
         listOfNotNull(

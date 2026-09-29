@@ -45,6 +45,13 @@ interface WorkoutRepository {
         repBiomechanics: List<BiomechanicsRepResult>,
     )
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
+
+    /**
+     * #972: remove a Just Lift exercise label. Writes SQL NULL to exerciseId/exerciseName
+     * (never a blank string) and bumps local_sync_generation once so the correction syncs.
+     * The workout row, its completed sets, and personal-record rows are kept.
+     */
+    suspend fun clearSessionExerciseTag(sessionId: String)
     /** User-facing deletion. Records a durable tombstone before hard-deleting local data. */
     suspend fun deleteSession(sessionId: String)
     suspend fun deleteAllSessions(profileId: String)

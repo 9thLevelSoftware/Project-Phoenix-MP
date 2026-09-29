@@ -210,8 +210,10 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         val existing = queries.selectCompletedSetsBySession(session.id, ::mapToCompletedSet).executeAsList()
             .firstOrNull()
         if (existing != null) {
+            // #972: never rewrite set_type here — an existing completed set keeps
+            // its original set type (e.g. AMRAP) across a relabel. The caller's
+            // isAmrap only decides the set type on first insert.
             queries.updateCompletedSetForTaggedJustLift(
-                set_type = setType.name,
                 actual_reps = actualReps.toLong(),
                 actual_weight_kg = session.weightPerCableKg.toDouble(),
                 logged_rpe = session.rpe?.toLong(),
@@ -220,7 +222,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             )
             queries.markWorkoutComponentDirty(session.id)
             return@withContext existing.copy(
-                setType = setType,
                 actualReps = actualReps,
                 actualWeightKg = session.weightPerCableKg,
                 loggedRpe = session.rpe,

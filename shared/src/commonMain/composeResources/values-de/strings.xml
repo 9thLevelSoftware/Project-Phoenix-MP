@@ -600,6 +600,11 @@
     <string name="tag_exercise_hint">Ordne diesen Lift zu, um ihn zu verfolgen</string>
     <string name="tag_exercise_action">Übung zuordnen</string>
     <string name="exercise_tagged">Übung zugeordnet</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Entfernen</string>
+    <string name="clear_exercise_label_title">Diese Übungsmarkierung entfernen?</string>
+    <string name="clear_exercise_label_message">Der Satz bleibt im Verlauf. Er heißt Just Lift, bis du ihn erneut zuordnest.</string>
+    <string name="clear_exercise_label_confirm">Markierung entfernen</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Aktive Erholung starten…</string>
     <string name="routine_modifier_heavy_deload">Schweren Deload starten…</string>

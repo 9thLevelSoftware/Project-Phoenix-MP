@@ -630,6 +630,70 @@ class SqlDelightWorkoutRepositoryTest {
         }
     }
 
+    // ========== ISSUE #972: CLEARING A JUST LIFT EXERCISE LABEL ==========
+
+    @Test
+    fun `clearSessionExerciseTag writes SQL NULL and bumps the sync generation once`() = runTest {
+        repository.saveSession(
+            createTestSession(id = "clear-label-1").copy(
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                isJustLift = true,
+                totalReps = 24,
+                workingReps = 24,
+            ),
+        )
+        val before = database.phoenixDatabaseQueries.selectSessionById("clear-label-1").executeAsOne()
+        assertEquals("bench", before.exerciseId)
+
+        repository.clearSessionExerciseTag("clear-label-1")
+
+        val after = database.phoenixDatabaseQueries.selectSessionById("clear-label-1").executeAsOne()
+        assertNull(after.exerciseId, "the label is SQL NULL, never a blank string")
+        assertNull(after.exerciseName, "the label is SQL NULL, never a blank string")
+        assertEquals(
+            before.local_sync_generation + 1,
+            after.local_sync_generation,
+            "a clear bumps the generation exactly once (no markWorkoutComponentDirty on this path)",
+        )
+        assertNotNull(after.updatedAt, "the correction is stamped for selectSessionsModifiedSince")
+        assertEquals(before.totalReps, after.totalReps, "the lift is kept")
+        assertEquals(before.workingReps, after.workingReps, "the lift is kept")
+        assertEquals(before.mode, after.mode)
+        assertNull(after.deletedAt, "a clear is not a deletion")
+    }
+
+    @Test
+    fun `clearSessionExerciseTag bumps the generation for a portalOrigin row`() = runTest {
+        repository.saveSession(
+            createTestSession(id = "clear-label-portal").copy(
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                isJustLift = true,
+            ),
+        )
+        // A row first materialized from a portal pull is server-owned
+        // (portalOrigin = 1) and already synced clean.
+        database.phoenixDatabaseQueries.restoreSessionSyncMarkers(
+            portalOrigin = 1L,
+            updatedAt = 1_000L,
+            acknowledged = 1L,
+            id = "clear-label-portal",
+        )
+        val before = database.phoenixDatabaseQueries.selectSessionById("clear-label-portal").executeAsOne()
+        assertEquals(1L, before.portalOrigin)
+
+        repository.clearSessionExerciseTag("clear-label-portal")
+
+        val after = database.phoenixDatabaseQueries.selectSessionById("clear-label-portal").executeAsOne()
+        assertNull(after.exerciseId)
+        assertEquals(
+            before.local_sync_generation + 1,
+            after.local_sync_generation,
+            "the clear bumps unconditionally, matching updateSessionExerciseTag (no portalOrigin CASE)",
+        )
+    }
+
     // ========== Helper Methods ==========
 
     private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(

@@ -566,6 +566,9 @@ fun AnalyticsScreen(
                         onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
                             viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
                         },
+                        onClearJustLiftSessionExercise = { sessionId ->
+                            viewModel.clearJustLiftSessionExercise(sessionId)
+                        },
                         recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                         modifier = Modifier.fillMaxSize(),
                     )

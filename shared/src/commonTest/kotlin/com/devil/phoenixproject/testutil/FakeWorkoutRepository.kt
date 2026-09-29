@@ -231,6 +231,20 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
     }
 
+    /** #972: each [clearSessionExerciseTag] write, in order. Empty means no write happened. */
+    val clearSessionExerciseTagCalls = mutableListOf<String>()
+
+    override suspend fun clearSessionExerciseTag(sessionId: String) {
+        clearSessionExerciseTagCalls += sessionId
+        sessions[sessionId]?.let { session ->
+            sessions[sessionId] = session.copy(
+                exerciseId = null,
+                exerciseName = null,
+            )
+            updateSessionsFlow()
+        }
+    }
+
     override suspend fun deleteSession(sessionId: String) {
         sessions.remove(sessionId)
         metrics.remove(sessionId)
