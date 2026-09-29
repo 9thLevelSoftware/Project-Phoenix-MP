@@ -245,8 +245,8 @@ fun RoutineEditorScreen(
 
     // isDirty: true only after snapshot is taken and any content field diverges from it.
     // Superset.exercises is always emptyList() in state (populated transiently in getItems()
-    // only for display), so the Superset comparison is safe. Superset.isCollapsed is also
-    // always false in state; collapse UI uses state.collapsedSupersets instead.
+    // only for display), so the Superset comparison is safe. Collapse UI uses
+    // state.collapsedSupersets.
     val isDirty = hasSnapshot && (
         state.routineName != snapshotName ||
             state.exercises != snapshotExercises ||

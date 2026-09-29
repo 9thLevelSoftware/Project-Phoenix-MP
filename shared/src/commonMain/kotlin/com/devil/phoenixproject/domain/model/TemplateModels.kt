@@ -112,14 +112,12 @@ data class CycleDayTemplate(val dayNumber: Int, val name: String, val routine: R
 }
 
 /**
- * Complete cycle template with all days and progression rules.
+ * Complete cycle template with all days.
  */
 data class CycleTemplate(
     val id: String,
     val name: String,
     val description: String,
     val days: List<CycleDayTemplate>,
-    val progressionRule: ProgressionRule?,
     val requiresOneRepMax: Boolean = false,
-    val mainLifts: List<String> = emptyList(),
 )

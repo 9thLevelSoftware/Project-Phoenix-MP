@@ -69,7 +69,6 @@ object SmartSuggestionsEngine {
             }
 
         return WeeklyVolumeReport(
-            weekStartTimestamp = weekStart,
             volumes = volumes,
         )
     }

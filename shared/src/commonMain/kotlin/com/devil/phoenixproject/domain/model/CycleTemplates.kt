@@ -103,7 +103,6 @@ object CycleTemplates {
                 CycleDayTemplate.rest(6),
                 CycleDayTemplate.rest(7),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -185,7 +184,6 @@ object CycleTemplates {
                 CycleDayTemplate.training(6, "Legs B", legsB),
                 CycleDayTemplate.rest(7),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -243,7 +241,6 @@ object CycleTemplates {
                 CycleDayTemplate.training(4, "Upper B", upperB),
                 CycleDayTemplate.training(5, "Lower B", lowerB),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -305,9 +302,7 @@ object CycleTemplates {
                 CycleDayTemplate.rest(6),
                 CycleDayTemplate.rest(7),
             ),
-            progressionRule = ProgressionRule.fiveThreeOne(),
             requiresOneRepMax = true,
-            mainLifts = listOf("Bench Press", "Squat", "Shoulder Press", "Conventional Deadlift"),
         )
     }
 

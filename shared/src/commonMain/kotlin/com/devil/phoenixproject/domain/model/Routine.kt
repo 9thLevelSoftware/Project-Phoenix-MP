@@ -275,13 +275,8 @@ data class Superset(
     val restBetweenSeconds: Int = 10,
     val orderIndex: Int = 0,
     val exercises: List<RoutineExercise> = emptyList(),
-    val isCollapsed: Boolean = false, // UI state only, not persisted
 ) {
-    val isEmpty: Boolean get() = exercises.isEmpty()
     val exerciseCount: Int get() = exercises.size
-
-    /** Total number of sets (minimum sets among all exercises) */
-    val sets: Int get() = exercises.minOfOrNull { it.sets } ?: 0
 }
 
 /**
