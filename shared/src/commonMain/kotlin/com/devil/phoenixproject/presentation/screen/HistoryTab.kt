@@ -69,6 +69,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
+import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
@@ -103,9 +104,6 @@ import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_tag
 import projectphoenix.shared.generated.resources.cd_delete_routine
 import projectphoenix.shared.generated.resources.cd_delete_workout
-import projectphoenix.shared.generated.resources.clear_exercise_label_confirm
-import projectphoenix.shared.generated.resources.clear_exercise_label_message
-import projectphoenix.shared.generated.resources.clear_exercise_label_title
 import projectphoenix.shared.generated.resources.delete_all_sets
 import projectphoenix.shared.generated.resources.delete_routine_session_message
 import projectphoenix.shared.generated.resources.delete_routine_session_title
@@ -343,7 +341,9 @@ fun WorkoutHistoryCard(
             // collapsed — that discoverability is the point of this change. The
             // controls are real buttons (not bare text) so a tap opens the picker or
             // the clear confirm instead of toggling the card's expand state. Unlabeled
-            // Just Lift segments keep today's Tag affordance.
+            // Just Lift segments keep today's Tag affordance. Shared with
+            // GroupedRoutineCard via JustLiftLabelControls so the two cards can't
+            // drift apart.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -357,42 +357,12 @@ fun WorkoutHistoryCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (canEditJustLiftLabel) {
-                    if (isLabeled) {
-                        TextButton(
-                            onClick = { showExerciseTagPicker = true },
-                            modifier = Modifier.height(40.dp),
-                        ) {
-                            Text(
-                                stringResource(Res.string.action_change),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                        TextButton(
-                            onClick = { showClearLabelConfirm = true },
-                            modifier = Modifier.height(40.dp),
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error,
-                            ),
-                        ) {
-                            Text(
-                                stringResource(Res.string.action_clear_label),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    } else {
-                        FilledTonalButton(
-                            onClick = { showExerciseTagPicker = true },
-                            modifier = Modifier.height(40.dp),
-                        ) {
-                            Text(
-                                stringResource(Res.string.action_tag),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
+                    JustLiftLabelControls(
+                        isLabeled = isLabeled,
+                        compact = false,
+                        onChange = { showExerciseTagPicker = true },
+                        onClear = { showClearLabelConfirm = true },
+                    )
                 }
             }
 
@@ -655,10 +625,7 @@ fun WorkoutHistoryCard(
     }
 
     if (showClearLabelConfirm) {
-        DestructiveConfirmDialog(
-            title = stringResource(Res.string.clear_exercise_label_title),
-            message = stringResource(Res.string.clear_exercise_label_message),
-            confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+        ClearExerciseLabelDialog(
             onConfirm = {
                 showClearLabelConfirm = false
                 scope.launch { onClearJustLiftSessionExercise(session.id) }
@@ -1114,42 +1081,14 @@ fun GroupedRoutineCard(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             if (canEditJustLiftLabel) {
-                                if (isLabeled) {
-                                    TextButton(
-                                        onClick = { taggingSessionId = session.id },
-                                        modifier = Modifier.height(36.dp),
-                                    ) {
-                                        Text(
-                                            stringResource(Res.string.action_change),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                    TextButton(
-                                        onClick = { clearingSessionId = session.id },
-                                        modifier = Modifier.height(36.dp),
-                                        colors = ButtonDefaults.textButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.error,
-                                        ),
-                                    ) {
-                                        Text(
-                                            stringResource(Res.string.action_clear_label),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                } else {
-                                    FilledTonalButton(
-                                        onClick = { taggingSessionId = session.id },
-                                        modifier = Modifier.height(36.dp),
-                                    ) {
-                                        Text(
-                                            stringResource(Res.string.action_tag),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                }
+                                // Compact tier: same controls as the single-session
+                                // card header, sized down for the dense row.
+                                JustLiftLabelControls(
+                                    isLabeled = isLabeled,
+                                    compact = true,
+                                    onChange = { taggingSessionId = session.id },
+                                    onClear = { clearingSessionId = session.id },
+                                )
                             }
                         }
                         Spacer(modifier = Modifier.height(Spacing.small))
@@ -1304,17 +1243,11 @@ fun GroupedRoutineCard(
         )
     }
 
-    if (clearingSessionId != null) {
-        DestructiveConfirmDialog(
-            title = stringResource(Res.string.clear_exercise_label_title),
-            message = stringResource(Res.string.clear_exercise_label_message),
-            confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+    clearingSessionId?.let { sessionId ->
+        ClearExerciseLabelDialog(
             onConfirm = {
-                val sessionId = clearingSessionId
                 clearingSessionId = null
-                if (sessionId != null) {
-                    scope.launch { onClearJustLiftSessionExercise(sessionId) }
-                }
+                scope.launch { onClearJustLiftSessionExercise(sessionId) }
             },
             onDismiss = { clearingSessionId = null },
         )
@@ -1460,6 +1393,64 @@ private fun BiomechanicsSection(session: WorkoutSession) {
             repResults = repBiomechanics,
             isLoading = isLoadingBiomechanics,
         )
+    }
+}
+
+/**
+ * #972: the Change/Clear (or Tag) label controls, shared by the single-session
+ * history card header and each grouped routine session row so the two card
+ * variants can't drift apart. Only the size tier differs: `compact` is the
+ * dense per-session row (36.dp / labelMedium), the default is the card header
+ * (40.dp / labelLarge).
+ */
+@Composable
+private fun JustLiftLabelControls(
+    isLabeled: Boolean,
+    compact: Boolean,
+    onChange: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val controlHeight = if (compact) 36.dp else 40.dp
+    val labelStyle = if (compact) {
+        MaterialTheme.typography.labelMedium
+    } else {
+        MaterialTheme.typography.labelLarge
+    }
+    if (isLabeled) {
+        TextButton(
+            onClick = onChange,
+            modifier = Modifier.height(controlHeight),
+        ) {
+            Text(
+                stringResource(Res.string.action_change),
+                style = labelStyle,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        TextButton(
+            onClick = onClear,
+            modifier = Modifier.height(controlHeight),
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
+        ) {
+            Text(
+                stringResource(Res.string.action_clear_label),
+                style = labelStyle,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    } else {
+        FilledTonalButton(
+            onClick = onChange,
+            modifier = Modifier.height(controlHeight),
+        ) {
+            Text(
+                stringResource(Res.string.action_tag),
+                style = labelStyle,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 

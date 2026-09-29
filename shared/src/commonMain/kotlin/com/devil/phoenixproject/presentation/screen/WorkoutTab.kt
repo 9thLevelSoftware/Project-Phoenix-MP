@@ -75,7 +75,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
-import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
@@ -115,9 +115,6 @@ import projectphoenix.shared.generated.resources.cd_start_new_workout
 import projectphoenix.shared.generated.resources.cd_stop_workout
 import projectphoenix.shared.generated.resources.cd_workout_completed
 import projectphoenix.shared.generated.resources.cd_workout_error
-import projectphoenix.shared.generated.resources.clear_exercise_label_confirm
-import projectphoenix.shared.generated.resources.clear_exercise_label_message
-import projectphoenix.shared.generated.resources.clear_exercise_label_title
 import projectphoenix.shared.generated.resources.reconnect
 import projectphoenix.shared.generated.resources.save_set
 import projectphoenix.shared.generated.resources.tag_lift_message
@@ -456,14 +453,12 @@ fun WorkoutTab(
                             )
                         }
 
-                        // #972: one destructive confirm shared with the History card. The
-                        // manager clears the label (SQL NULL) and the in-memory summary name,
-                        // so this section returns to the untagged prompt.
+                        // #972: one destructive confirm shared with the History card —
+                        // ClearExerciseLabelDialog owns the copy and confirm contract.
+                        // The manager clears the label (SQL NULL) and the in-memory
+                        // summary name, so this section returns to the untagged prompt.
                         if (showClearLabelConfirm && summarySessionId != null) {
-                            DestructiveConfirmDialog(
-                                title = stringResource(Res.string.clear_exercise_label_title),
-                                message = stringResource(Res.string.clear_exercise_label_message),
-                                confirmText = stringResource(Res.string.clear_exercise_label_confirm),
+                            ClearExerciseLabelDialog(
                                 onConfirm = {
                                     showClearLabelConfirm = false
                                     scope.launch {
