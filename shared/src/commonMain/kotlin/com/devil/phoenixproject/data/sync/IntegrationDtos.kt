@@ -16,7 +16,6 @@ data class IntegrationSyncRequest(
     val apiKey: String? = null,
     val entityTypes: List<String>? = null,
     val cursor: String? = null,
-    val forceFullRefresh: Boolean? = null,
     val includeRawData: Boolean? = null,
 )
 
@@ -39,7 +38,6 @@ data class IntegrationSyncResponse(
     val hasMore: Boolean = false,
     val partial: Boolean = false,
     val deletedExternalIds: List<String> = emptyList(),
-    val updatedExternalIds: List<String> = emptyList(),
     val providerSyncCursor: String? = null,
     val errors: List<IntegrationEntityErrorDto> = emptyList(),
     val error: String? = null,

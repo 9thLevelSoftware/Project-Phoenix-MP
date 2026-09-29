@@ -2644,8 +2644,8 @@ class SqlDelightSyncRepository(
                 decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary), previousPortalUserId)
             }
 
-            // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures
-            // is left empty by SyncManager), so there is nothing to enumerate here.
+            // Exercise signatures are not on the portal push payload, so there is
+            // nothing to enumerate here.
         }
     }
 
