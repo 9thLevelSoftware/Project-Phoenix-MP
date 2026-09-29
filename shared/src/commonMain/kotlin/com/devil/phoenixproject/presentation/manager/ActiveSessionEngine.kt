@@ -8400,32 +8400,10 @@ class ActiveSessionEngine(
                     }
                 }
 
-                // Issue #390: Diagnostic logging for weight tracing from routine → BLE
-                val routineExercise = currentExercise
-                if (routineExercise != null) {
-                    Logger.w("Issue390") {
-                        "WEIGHT TRACE: exercise='${routineExercise.exercise.name}', " +
-                            "equipment='${routineExercise.exercise.equipment}', " +
-                            "cableIntent=${routineExercise.exercise.cableIntent}, " +
-                            "displayMultiplier=${routineExercise.exercise.displayMultiplier}, " +
-                            "routineExercise.weightPerCableKg=${routineExercise.weightPerCableKg}kg, " +
-                            "routineExercise.progressionKg=${routineExercise.progressionKg}kg, " +
-                            "routineExercise.setWeightsPerCableKg=${routineExercise.setWeightsPerCableKg}, " +
-                            "routineExercise.usePercentOfPR=${routineExercise.usePercentOfPR}, " +
-                            "routineExercise.weightPercentOfPR=${routineExercise.weightPercentOfPR}%, " +
-                            "setIndex=${coordinator._currentSetIndex.value}"
-                    }
-                }
-                Logger.w("Issue390") {
-                    "BLE PARAMS PRE-LIMIT: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
-                        "progressionRegressionKg=${bleParams.progressionRegressionKg}kg, " +
-                        "reps=${bleParams.reps}, isAMRAP=${bleParams.isAMRAP}, " +
-                        "isJustLift=${bleParams.isJustLift}, mode=${bleParams.programMode}"
-                }
-
                 // Issue #390: Defensive guard — if weight is suspiciously low for a non-JustLift
                 // routine exercise, log a critical warning. This catches cases where unresolved
                 // PR% weights or stale defaults produce near-zero BLE packet values.
+                val routineExercise = currentExercise
                 if (!bleParams.isJustLift && routineExercise != null &&
                     bleParams.weightPerCableKg < 2f && routineExercise.weightPerCableKg > 5f
                 ) {
@@ -8704,33 +8682,6 @@ class ActiveSessionEngine(
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
                     val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
                     Logger.d { "Config preview: $preview ..." }
-                    if (!effectiveParams.isEchoMode && command.size >= 0x60) {
-                        val activationTailDump = command
-                            .copyOfRange(0x48, 0x60)
-                            .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
-                        Logger.w {
-                            "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
-                        }
-                        val eccentricUpDump = command
-                            .copyOfRange(0x48, 0x50)
-                            .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
-
-                        // Issue #390: Decode the key float values from packet bytes for readability
-                        fun readFloatLE(buf: ByteArray, off: Int): Float {
-                            val bits = (buf[off].toInt() and 0xFF) or
-                                ((buf[off + 1].toInt() and 0xFF) shl 8) or
-                                ((buf[off + 2].toInt() and 0xFF) shl 16) or
-                                ((buf[off + 3].toInt() and 0xFF) shl 24)
-                            return Float.fromBits(bits)
-                        }
-                        Logger.w("Issue390") {
-                            "PACKET DECODED: eccUpRamp@0x48..0x4F=$eccentricUpDump, " +
-                                "forceMin@0x50=${readFloatLE(command, 0x50)}kg, " +
-                                "forceMax@0x54=${readFloatLE(command, 0x54)}kg, " +
-                                "targetWeight@0x58=${readFloatLE(command, 0x58)}kg, " +
-                                "progression@0x5C=${readFloatLE(command, 0x5C)}kg"
-                        }
-                    }
                     currentCoroutineContext().ensureActive()
                     bleRepository.startActiveWorkoutPolling()
                     activationAllowed = true
