@@ -47,6 +47,6 @@ class AppHostStartupSurfaceGuardTest {
     fun thePendingSurfaceIsTheSplash() {
         val app = File(projectRoot, "shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt").readText()
         val body = app.substringAfter("fun StartupPendingSurface()").take(200)
-        assertTrue(body.contains("SplashScreen(visible = true)"), "StartupPendingSurface must show the splash")
+        assertTrue(body.contains("SplashScreen()"), "StartupPendingSurface must show the splash")
     }
 }

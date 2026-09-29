@@ -84,8 +84,6 @@ data class WorkoutUiState(
     // Phase 35C: Variable warm-up set state for HUD display
     // -1 = not in warm-up phase, 0+ = current warm-up set index
     val currentWarmupSetIndex: Int = -1,
-    // Total number of variable warm-up sets (0 if none)
-    val totalWarmupSets: Int = 0,
     // Issue #113: Just Lift visual rest countdown (null = not resting, 0 = done)
     val justLiftRestCountdown: Int? = null,
     // Issue #190: Exercise timer pause state for timed exercise controls
@@ -113,15 +111,6 @@ data class WorkoutUiState(
 interface WorkoutActions {
     /** Start BLE scanning for Phoenix machines */
     fun onScan()
-
-    /** Cancel ongoing scan or connection attempt */
-    fun onCancelScan()
-
-    /** Disconnect from current machine */
-    fun onDisconnect()
-
-    /** Start the workout (may trigger connection first) */
-    fun onStartWorkout()
 
     fun onRetryWorkoutTeardown()
 
@@ -206,9 +195,6 @@ interface WorkoutActions {
  */
 fun workoutActions(
     onScan: () -> Unit,
-    onCancelScan: () -> Unit,
-    onDisconnect: () -> Unit,
-    onStartWorkout: () -> Unit,
     onRetryWorkoutTeardown: () -> Unit = {},
     onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
@@ -238,9 +224,6 @@ fun workoutActions(
     onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
-    override fun onCancelScan() = onCancelScan()
-    override fun onDisconnect() = onDisconnect()
-    override fun onStartWorkout() = onStartWorkout()
     override fun onRetryWorkoutTeardown() = onRetryWorkoutTeardown()
     override fun onReconnectWorkoutTeardown() = onReconnectWorkoutTeardown()
     override fun onStopWorkout() = onStopWorkout()

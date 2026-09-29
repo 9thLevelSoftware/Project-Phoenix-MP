@@ -7427,7 +7427,6 @@ class ActiveSessionEngine(
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
-        coordinator._totalWarmupSets.value = 0
         coordinator._selectedBodyweightVariants.value = emptyMap()
         coordinator.bodyweightCompletionVariantOverride = null
         coordinator.clearActiveRackSelection()
@@ -12917,11 +12916,9 @@ class ActiveSessionEngine(
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
                     coordinator._currentWarmupSetIndex.value = 0
-                    coordinator._totalWarmupSets.value = nextExercise.warmupSets.size
                     Logger.d { "Phase 35C: Entering warm-up phase for ${nextExercise.exercise.displayName}: ${nextExercise.warmupSets.size} warm-up sets" }
                 } else {
                     coordinator._currentWarmupSetIndex.value = -1
-                    coordinator._totalWarmupSets.value = 0
                 }
                 resetAutoStopState()
                 startWorkoutOrSetReady(lease, autoplay)
