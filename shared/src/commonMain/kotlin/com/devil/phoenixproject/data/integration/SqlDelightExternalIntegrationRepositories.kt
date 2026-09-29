@@ -287,10 +287,6 @@ class SqlDelightExternalProgramRepository(db: PhoenixDatabase) : ExternalProgram
         }
     }
 
-    override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? = withContext(Dispatchers.IO) {
-        queries.getExternalProgramBySyncKey(provider.key, externalId, profileId).executeAsOneOrNull()?.toDomain()
-    }
-
     override suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> = withContext(Dispatchers.IO) {
         if (externalIds.isEmpty()) {
             emptyList()
@@ -434,29 +430,6 @@ class SqlDelightExternalMeasurementRepository(db: PhoenixDatabase) : ExternalMea
 
 class SqlDelightExternalExerciseTemplateRepository(db: PhoenixDatabase) : ExternalExerciseTemplateRepository {
     private val queries = db.phoenixDatabaseQueries
-
-    private fun com.devil.phoenixproject.database.ExternalExerciseTemplate.toDomain(): ExternalExerciseTemplate = ExternalExerciseTemplate(
-        id = id,
-        externalId = externalId,
-        provider = providerFromKey(provider),
-        title = title,
-        exerciseType = exerciseType,
-        primaryMuscleGroups = primaryMuscleGroups.decodeList(),
-        secondaryMuscleGroups = secondaryMuscleGroups.decodeList(),
-        isCustom = isCustom != 0L,
-        rawData = rawData,
-        updatedAt = updatedAt,
-        profileId = profileId,
-    )
-
-    override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> {
-        val query = if (provider == null) {
-            queries.getExternalExerciseTemplates(profileId)
-        } else {
-            queries.getExternalExerciseTemplatesByProvider(profileId, provider.key)
-        }
-        return query.asFlow().mapToList(Dispatchers.IO).map { rows -> rows.map { it.toDomain() } }
-    }
 
     override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> = queries.countExternalExerciseTemplatesByProvider(profileId)
         .asFlow()

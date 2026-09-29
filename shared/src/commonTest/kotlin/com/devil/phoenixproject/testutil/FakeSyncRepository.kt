@@ -15,7 +15,6 @@ import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.AssessmentResult
 import com.devil.phoenixproject.database.PhaseStatistics
@@ -40,7 +39,6 @@ class FakeSyncRepository : SyncRepository {
     var workoutPhaseStatisticsByComponentId: Map<String, List<PhaseStatistics>> = emptyMap()
     var workoutSessionNotesByPortalId: Map<String, SessionNotesEntry> = emptyMap()
     val acknowledgedWorkoutParentIdCalls: MutableList<Set<String>> = mutableListOf()
-    var prsToReturn: List<PersonalRecordSyncDto> = emptyList()
     var fullPRsToReturn: List<PersonalRecord> = emptyList()
     var phaseBackfillResultToReturn: PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
     var lastPhaseBackfillFromTimestamp: Long? = null
@@ -49,11 +47,8 @@ class FakeSyncRepository : SyncRepository {
     var routinesToReturn: List<Routine> = emptyList()
     var gamificationStatsToReturn: GamificationStatsSyncDto? = null
 
-    // Legacy push methods (not used by SyncManager portal flow)
-    var sessionsToReturn: List<WorkoutSessionSyncDto> = emptyList()
-    var legacyRoutinesToReturn: List<RoutineSyncDto> = emptyList()
+    // Legacy custom-exercise push (not used by the portal session flow)
     var customExercisesToReturn: List<CustomExerciseSyncDto> = emptyList()
-    var badgesToReturn: List<EarnedBadgeSyncDto> = emptyList()
 
     // === Captured merge calls ===
 
@@ -74,15 +69,7 @@ class FakeSyncRepository : SyncRepository {
 
     // === Push Operations ===
 
-    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = sessionsToReturn
-
-    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = prsToReturn
-
-    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = legacyRoutinesToReturn
-
     override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> = customExercisesToReturn
-
-    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> = badgesToReturn
 
     override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? = gamificationStatsToReturn
 
@@ -309,7 +296,7 @@ class FakeSyncRepository : SyncRepository {
     var personalRecordIds: List<String> = emptyList()
     var cyclesToReturn: List<CycleWithContext> = emptyList()
 
-    override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
+    override suspend fun getKnownPortalSessionIds(profileId: String): List<String> = sessionIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
     override suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String): List<String> =
         routineIdsNeedingDurationBackfill

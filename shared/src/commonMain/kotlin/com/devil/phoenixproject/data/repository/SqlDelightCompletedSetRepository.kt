@@ -100,23 +100,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         }
     }
 
-    override suspend fun savePlannedSets(sets: List<PlannedSet>) {
-        withContext(Dispatchers.IO) {
-            sets.forEach { set ->
-                queries.insertPlannedSet(
-                    id = set.id,
-                    routine_exercise_id = set.routineExerciseId,
-                    set_number = set.setNumber.toLong(),
-                    set_type = set.setType.name,
-                    target_reps = set.targetReps?.toLong(),
-                    target_weight_kg = set.targetWeightKg?.toDouble(),
-                    target_rpe = set.targetRpe?.toLong(),
-                    rest_seconds = set.restSeconds?.toLong(),
-                )
-            }
-        }
-    }
-
     override suspend fun updatePlannedSet(set: PlannedSet) {
         withContext(Dispatchers.IO) {
             queries.updatePlannedSet(
@@ -134,12 +117,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
     override suspend fun deletePlannedSet(setId: String) {
         withContext(Dispatchers.IO) {
             queries.deletePlannedSet(id = setId)
-        }
-    }
-
-    override suspend fun deletePlannedSetsForExercise(routineExerciseId: String) {
-        withContext(Dispatchers.IO) {
-            queries.deletePlannedSetsByRoutineExercise(routine_exercise_id = routineExerciseId)
         }
     }
 
@@ -306,16 +283,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             db.transaction {
                 val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
                 queries.clearCompletedSetPr(id = setId)
-                sessionId?.let(queries::markWorkoutComponentDirty)
-            }
-        }
-    }
-
-    override suspend fun deleteCompletedSet(setId: String) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
-                queries.deleteCompletedSet(id = setId)
                 sessionId?.let(queries::markWorkoutComponentDirty)
             }
         }

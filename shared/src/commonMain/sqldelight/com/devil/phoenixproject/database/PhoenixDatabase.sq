@@ -4515,10 +4515,6 @@ WHERE profileId = ? AND provider = ? AND isCurrent = 1 AND deletedAt IS NULL
 ORDER BY updatedAt DESC
 LIMIT 1;
 
-getExternalProgramBySyncKey:
-SELECT * FROM ExternalProgram
-WHERE provider = ? AND externalId = ? AND profileId = ?;
-
 getExternalProgramsBySyncKeys:
 SELECT * FROM ExternalProgram
 WHERE provider = ? AND profileId = ? AND externalId IN ?;

@@ -68,11 +68,6 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
 
     override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> = _activeCycleFlow
 
-    override suspend fun getCycleWithProgress(cycleId: String): Pair<TrainingCycle, CycleProgress?>? {
-        val cycle = cycles[cycleId] ?: return null
-        return cycle to cycleProgress[cycleId]
-    }
-
     override suspend fun saveCycle(cycle: TrainingCycle) {
         cycles[cycle.id] = cycle
         cycleDays[cycle.id] = cycle.days.toMutableList()
@@ -95,7 +90,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         activeCycleId = cycleId
         // Reset progress on activation so deactivate/reactivate starts fresh
         if (cycleProgress.containsKey(cycleId)) {
-            resetProgress(cycleId)
+            resetStoredProgress(cycleId)
         } else {
             initializeProgress(cycleId)
         }
@@ -125,22 +120,6 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
             if (index >= 0) {
                 days[index] = day
             }
-        }
-    }
-
-    override suspend fun deleteCycleDay(dayId: String) {
-        cycleDays.values.forEach { days ->
-            days.removeAll { it.id == dayId }
-        }
-    }
-
-    override suspend fun reorderCycleDays(cycleId: String, dayIds: List<String>) {
-        cycleDays[cycleId]?.let { days ->
-            val reordered = dayIds.mapIndexedNotNull { index, dayId ->
-                days.find { it.id == dayId }?.copy(dayNumber = index + 1)
-            }
-            days.clear()
-            days.addAll(reordered)
         }
     }
 
@@ -177,7 +156,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         return newProgress.currentDayNumber
     }
 
-    override suspend fun resetProgress(cycleId: String) {
+    private fun resetStoredProgress(cycleId: String) {
         cycleProgress[cycleId]?.let { progress ->
             cycleProgress[cycleId] = progress.copy(
                 currentDayNumber = 1,

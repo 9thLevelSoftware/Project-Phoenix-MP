@@ -85,10 +85,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
             .apply { if (!contains(set.id)) add(set.id) }
     }
 
-    override suspend fun savePlannedSets(sets: List<PlannedSet>) {
-        sets.forEach { savePlannedSet(it) }
-    }
-
     override suspend fun updatePlannedSet(set: PlannedSet) {
         plannedSets[set.id] = set
         plannedSetsByExercise.getOrPut(set.routineExerciseId) { mutableListOf() }
@@ -98,10 +94,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     override suspend fun deletePlannedSet(setId: String) {
         val set = plannedSets.remove(setId) ?: return
         plannedSetsByExercise[set.routineExerciseId]?.remove(setId)
-    }
-
-    override suspend fun deletePlannedSetsForExercise(routineExerciseId: String) {
-        plannedSetsByExercise.remove(routineExerciseId)?.forEach { plannedSets.remove(it) }
     }
 
     // ==================== Completed Sets ====================
@@ -222,12 +214,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     override suspend fun clearPr(setId: String) {
         val current = completedSets[setId] ?: return
         completedSets[setId] = current.copy(isPr = false)
-        updateCompletedFlow(current.sessionId)
-    }
-
-    override suspend fun deleteCompletedSet(setId: String) {
-        val current = completedSets.remove(setId) ?: return
-        completedSetsBySession[current.sessionId]?.remove(setId)
         updateCompletedFlow(current.sessionId)
     }
 
