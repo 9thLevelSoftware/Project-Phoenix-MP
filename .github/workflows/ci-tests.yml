@@ -50,6 +50,9 @@ jobs:
       - name: Validate Play version-code preflight
         run: python3 .github/scripts/test_resolve_play_version_code.py
 
+      - name: Validate iOS app icons
+        run: python3 scripts/test_ios_app_icons.py
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
