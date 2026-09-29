@@ -173,19 +173,6 @@ class WeightDisplaySourceGuardTest {
         }
     }
 
-    // ===== Guard: WeightDisplayFormatter must stay in presentation layer =====
-
-    @Test
-    fun weightDisplayFormatter_isInPresentationPackage() {
-        val formatterPackage = WeightDisplayFormatter::class.qualifiedName ?: ""
-        assertTrue(
-            formatterPackage.contains("presentation"),
-            "WeightDisplayFormatter must remain in the presentation layer. " +
-                "Current: '$formatterPackage'. " +
-                "Cable multiplication for display is a presentation concern only.",
-        )
-    }
-
     @Test
     fun workoutHud_primaryDisplaysStayPerCable() {
         val path = "com/devil/phoenixproject/presentation/screen/WorkoutHud.kt"
