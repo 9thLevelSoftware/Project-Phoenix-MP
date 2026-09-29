@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 /**
  * Interface for CSV export functionality.
  * Platform-specific implementations handle file I/O and sharing.
+ * Phoenix history and personal-record CSV bodies come from [PhoenixCsvCodec].
  */
 interface CsvExporter {
     /**

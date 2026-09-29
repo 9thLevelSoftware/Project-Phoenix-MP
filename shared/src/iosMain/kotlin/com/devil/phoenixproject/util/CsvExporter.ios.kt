@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -17,33 +16,13 @@ class IosCsvExporter : CsvExporter {
 
     private val fileManager = NSFileManager.defaultManager
 
-    /**
-     * Calculate estimated 1RM using the canonical hybrid (OneRepMaxCalculator.estimate).
-     */
-    private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
-
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        val csv = buildString {
-            appendLine("Exercise,Phase,Weight (${weightUnit.name}),Reps,1RM,Date")
-            personalRecords.forEach { pr ->
-                val exerciseName = exerciseNames[pr.exerciseId] ?: pr.exerciseId
-                val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
-                val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                val formattedOneRM = formatWeight(oneRM, weightUnit)
-                val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(date)}")
-            }
-        }
-
-        val filePath = writeToTempFile("personal_records.csv", csv)
-        Result.success(filePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("personal_records.csv") {
+        PhoenixCsvCodec.encodePersonalRecords(personalRecords, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun exportWorkoutHistory(
@@ -51,37 +30,8 @@ class IosCsvExporter : CsvExporter {
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        val csv = buildString {
-            appendLine("Date,Time,Exercise,Mode,Weight (${weightUnit.name}),Progression,Reps,Duration (s)")
-            workoutSessions.forEach { session ->
-                val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
-                val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
-                val time = KmpUtils.formatTimestamp(session.timestamp, "HH:mm")
-                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
-                val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
-                val effectiveWeight = if (isEchoMode) {
-                    session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
-                } else {
-                    session.weightPerCableKg
-                }
-                val formattedWeight = formatWeight(effectiveWeight, weightUnit)
-                val durationSeconds = session.duration / 1000
-                val progression = when {
-                    session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
-                    session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
-                    else -> "0"
-                }
-                appendLine(
-                    "${escapeCsv(date)},${escapeCsv(time)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${escapeCsv(formattedWeight)},${escapeCsv(progression)},${session.reps},$durationSeconds",
-                )
-            }
-        }
-
-        val filePath = writeToTempFile("workout_history.csv", csv)
-        Result.success(filePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("workout_history.csv") {
+        PhoenixCsvCodec.encodeWorkoutHistory(workoutSessions, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun exportPRProgression(
@@ -89,41 +39,8 @@ class IosCsvExporter : CsvExporter {
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        // Group PRs by exercise and sort by date
-        val grouped = personalRecords.groupBy { it.exerciseId }
-
-        val csv = buildString {
-            appendLine("Exercise,Phase,Date,Weight (${weightUnit.name}),Reps,1RM,Improvement")
-
-            grouped.forEach { (exerciseId, prs) ->
-                val exerciseName = exerciseNames[exerciseId] ?: exerciseId
-                val sortedPrs = prs.sortedBy { it.timestamp }
-                var previousOneRM = 0f
-
-                sortedPrs.forEach { pr ->
-                    val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                    val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
-                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                    val formattedOneRM = formatWeight(oneRM, weightUnit)
-                    val improvement = if (previousOneRM > 0) {
-                        val diff = oneRM - previousOneRM
-                        val diffFormatted = formatWeight(diff, weightUnit)
-                        if (diff > 0) "+$diffFormatted" else diffFormatted
-                    } else {
-                        "-"
-                    }
-                    previousOneRM = oneRM
-
-                    appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(improvement)}")
-                }
-            }
-        }
-
-        val filePath = writeToTempFile("pr_progression.csv", csv)
-        Result.success(filePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("pr_progression.csv") {
+        PhoenixCsvCodec.encodePrProgression(personalRecords, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun shareCSV(fileUri: String, fileName: String) {
@@ -131,6 +48,12 @@ class IosCsvExporter : CsvExporter {
             items = listOf(NSURL.fileURLWithPath(fileUri)),
             onShown = {},
         )
+    }
+
+    private fun writeCsv(fileName: String, csv: () -> String): Result<String> = try {
+        Result.success(writeToTempFile(fileName, csv()))
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     /**
@@ -157,6 +80,4 @@ class IosCsvExporter : CsvExporter {
 
         return filePath
     }
-
-    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 }

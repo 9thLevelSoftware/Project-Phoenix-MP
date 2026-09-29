@@ -4,16 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.io.File
-import java.io.FileWriter
-import java.util.Locale
-import kotlin.time.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 /**
  * Android implementation of CsvExporter.
@@ -33,31 +27,8 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        val timestamp = System.currentTimeMillis()
-        val fileName = "personal_records_$timestamp.csv"
-        val file = File(exportDir, fileName)
-
-        FileWriter(file).use { writer ->
-            // Header
-            writer.appendLine("Exercise,Phase,Weight,Reps,Date,Mode,1RM")
-
-            // Data rows
-            personalRecords.sortedByDescending { it.timestamp }.forEach { pr ->
-                val exerciseName = exerciseNames[pr.exerciseId] ?: "Unknown"
-                val weight = formatWeight(pr.weightPerCableKg, weightUnit)
-                val date = formatDate(pr.timestamp)
-                val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-
-                writer.appendLine(
-                    "${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(weight)},${pr.reps},${escapeCsv(date)},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)}",
-                )
-            }
-        }
-
-        Result.success(file.absolutePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("personal_records_${System.currentTimeMillis()}.csv") {
+        PhoenixCsvCodec.encodePersonalRecords(personalRecords, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun exportWorkoutHistory(
@@ -65,50 +36,8 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        val timestamp = System.currentTimeMillis()
-        val fileName = "workout_history_$timestamp.csv"
-        val file = File(exportDir, fileName)
-
-        FileWriter(file).use { writer ->
-            // Header
-            writer.appendLine(
-                "Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load",
-            )
-
-            // Data rows
-            workoutSessions.sortedByDescending { it.timestamp }.forEach { session ->
-                val exerciseName = session.exerciseName
-                    ?: exerciseNames[session.exerciseId]
-                    ?: "Unknown"
-                val date = formatDate(session.timestamp)
-                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
-                val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
-                val effectiveWeight = if (isEchoMode) {
-                    session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
-                } else {
-                    session.weightPerCableKg
-                }
-                val weight = formatWeight(effectiveWeight, weightUnit)
-                val justLift = if (session.isJustLift) "Yes" else "No"
-
-                val progression = when {
-                    session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
-                    session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
-                    else -> "0"
-                }
-
-                writer.appendLine(
-                    "${escapeCsv(date)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${session.reps}," +
-                        "${session.warmupReps},${session.workingReps},${session.totalReps}," +
-                        "${escapeCsv(weight)},${escapeCsv(progression)},${session.duration},${escapeCsv(justLift)},${session.eccentricLoad}",
-                )
-            }
-        }
-
-        Result.success(file.absolutePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("workout_history_${System.currentTimeMillis()}.csv") {
+        PhoenixCsvCodec.encodeWorkoutHistory(workoutSessions, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun exportPRProgression(
@@ -116,46 +45,8 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
         formatWeight: (Float, WeightUnit) -> String,
-    ): Result<String> = try {
-        val timestamp = System.currentTimeMillis()
-        val fileName = "pr_progression_$timestamp.csv"
-        val file = File(exportDir, fileName)
-
-        // Group by exercise, then sort by date
-        val grouped = personalRecords.groupBy { it.exerciseId }
-            .mapValues { entry -> entry.value.sortedBy { it.timestamp } }
-
-        FileWriter(file).use { writer ->
-            // Header
-            writer.appendLine("Exercise,Phase,Date,Weight,Reps,Mode,1RM,Progress From Previous")
-
-            grouped.forEach { (exerciseId, records) ->
-                val exerciseName = exerciseNames[exerciseId] ?: "Unknown"
-                var previousWeight: Float? = null
-
-                records.forEach { pr ->
-                    val weight = formatWeight(pr.weightPerCableKg, weightUnit)
-                    val date = formatDate(pr.timestamp)
-                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                    val progress = previousWeight?.let { prevWeight ->
-                        val diff = pr.weightPerCableKg - prevWeight
-                        if (diff > 0) "+${formatWeight(diff, weightUnit)}" else formatWeight(diff, weightUnit)
-                    } ?: "-"
-
-                    writer.appendLine(
-                        "${escapeCsv(
-                            exerciseName,
-                        )},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(weight)},${pr.reps},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)},${escapeCsv(progress)}",
-                    )
-
-                    previousWeight = pr.weightPerCableKg
-                }
-            }
-        }
-
-        Result.success(file.absolutePath)
-    } catch (e: Exception) {
-        Result.failure(e)
+    ): Result<String> = writeCsv("pr_progression_${System.currentTimeMillis()}.csv") {
+        PhoenixCsvCodec.encodePrProgression(personalRecords, exerciseNames, weightUnit, formatWeight)
     }
 
     override fun shareCSV(fileUri: String, fileName: String) {
@@ -189,16 +80,11 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         }
     }
 
-    private fun formatDate(timestamp: Long): String {
-        val instant = Instant.fromEpochMilliseconds(timestamp)
-        val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-        val monthNum = localDateTime.month.ordinal + 1
-        return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
+    private fun writeCsv(fileName: String, csv: () -> String): Result<String> = try {
+        val file = File(exportDir, fileName)
+        file.writeText(csv(), Charsets.UTF_8)
+        Result.success(file.absolutePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
-
-    // Textual cells (including caller-formatted weights/progress): RFC 4180 quoting plus
-    // the formula-injection guard. Raw numeric values remain unquoted.
-    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
-
-    private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 }
