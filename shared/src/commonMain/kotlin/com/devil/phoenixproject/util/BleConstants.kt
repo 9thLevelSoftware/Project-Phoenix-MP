@@ -93,9 +93,6 @@ object BleConstants {
     const val GATT_OPERATION_TIMEOUT_MS = 5000L
     const val SCAN_TIMEOUT_MS = 30000L
 
-    // BLE operation delays
-    const val BLE_QUEUE_DRAIN_DELAY_MS = 250L
-
     // -------------------------------------------------------------------------
     // UUID vals (parsed from string constants for Kable usage)
     // -------------------------------------------------------------------------
@@ -172,13 +169,9 @@ object BleConstants {
         const val VELOCITY_SMOOTHING_ALPHA = 0.3
 
         // Sample validation
-        const val POSITION_SPIKE_THRESHOLD = 50000 // BLE error filter
         const val MIN_POSITION = -1000 // Valid position range
         const val MAX_POSITION = 1000 // Valid position range
         const val POSITION_JUMP_THRESHOLD = 20.0f // Max allowed position change between samples (mm)
-
-        // Load validation — total two-cable limit for the Trainer+ (220 kg combined)
-        const val MAX_TOTAL_WEIGHT_KG = 220.0f
 
         // Handle state hysteresis - Issue #176: Dynamic baseline threshold for overhead pulley setups
         const val GRAB_DELTA_THRESHOLD = 10.0 // Position change (mm) to detect grab
