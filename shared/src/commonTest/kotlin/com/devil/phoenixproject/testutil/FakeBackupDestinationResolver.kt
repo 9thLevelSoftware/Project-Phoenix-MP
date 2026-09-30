@@ -20,9 +20,6 @@ class FakeBackupDestinationResolver : BackupDestinationResolver {
     /** Captures all [writeFile] invocations as (destination, fileName, tempFilePath). */
     val writtenFiles = mutableListOf<Triple<BackupDestination.Custom, String, String>>()
 
-    /** Controls what [listFiles] returns. */
-    var listFilesResult: List<String> = emptyList()
-
     override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = isAccessibleResult
 
     override suspend fun writeFile(
@@ -33,6 +30,4 @@ class FakeBackupDestinationResolver : BackupDestinationResolver {
         writtenFiles.add(Triple(destination, fileName, tempFilePath))
         return writeFileResult
     }
-
-    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> = listFilesResult
 }
