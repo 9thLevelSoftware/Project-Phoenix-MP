@@ -6707,8 +6707,8 @@ class ActiveSessionEngine(
         consumeDangerZoneCountdownOverride(lease)?.let { startTime ->
             coordinator.autoStopStartTime = startTime
         }
-        val inDangerZone = repCounter.isInDangerZone(metric.positionA, metric.positionB, WorkoutCoordinator.MIN_RANGE_THRESHOLD)
         val repRanges = repCounter.getRepRanges()
+        val inDangerZone = repRanges.isInDangerZone(metric.positionA, metric.positionB, WorkoutCoordinator.MIN_RANGE_THRESHOLD)
 
         var cableAppearsReleased = false
 

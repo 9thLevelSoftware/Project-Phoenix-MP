@@ -661,11 +661,13 @@ class RepCounterFromMachineTest {
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0, posA = 1000f, posB = 1000f)
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 1, posA = 100f, posB = 100f)
 
+        val ranges = repCounter.getRepRanges()
+
         // Position at 105 is within 5% of min (threshold = 100 + 900*0.05 = 145)
-        assertTrue(repCounter.isInDangerZone(posA = 105f, posB = 105f))
+        assertTrue(ranges.isInDangerZone(posA = 105f, posB = 105f))
 
         // Position at 200 is above danger zone
-        assertFalse(repCounter.isInDangerZone(posA = 200f, posB = 200f))
+        assertFalse(ranges.isInDangerZone(posA = 200f, posB = 200f))
     }
 
     // ========== resetCountsOnly Tests ==========

@@ -838,35 +838,6 @@ class RepCounterFromMachine {
         return rangeA > minRangeThreshold || rangeB > minRangeThreshold
     }
 
-    fun isInDangerZone(posA: Float, posB: Float, minRangeThreshold: Float = 50f): Boolean {
-        val minA = minRepPosA
-        val maxA = maxRepPosA
-        val minB = minRepPosB
-        val maxB = maxRepPosB
-
-        // Check if position A is in danger zone (within 5% of minimum)
-        // The rangeA > minRangeThreshold check already ensures only active cables are checked -
-        // inactive cables at ~0 won't build meaningful range (see updatePositionRangesContinuously)
-        if (minA != null && maxA != null) {
-            val rangeA = maxA - minA
-            if (rangeA > minRangeThreshold) {
-                val thresholdA = minA + (rangeA * 0.05f)
-                if (posA <= thresholdA) return true
-            }
-        }
-
-        // Check if position B is in danger zone (within 5% of minimum)
-        if (minB != null && maxB != null) {
-            val rangeB = maxB - minB
-            if (rangeB > minRangeThreshold) {
-                val thresholdB = minB + (rangeB * 0.05f)
-                if (posB <= thresholdB) return true
-            }
-        }
-
-        return false
-    }
-
     private fun logDebug(message: String) {
         log.d { message }
     }
