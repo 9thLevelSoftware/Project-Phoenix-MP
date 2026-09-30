@@ -142,4 +142,4 @@ A:
 
 ## Need Help?
 
-If you run into issues, please open an issue on our [GitHub repository](../../issues).
+If you run into issues, please open an issue on our [GitHub repository](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues).
