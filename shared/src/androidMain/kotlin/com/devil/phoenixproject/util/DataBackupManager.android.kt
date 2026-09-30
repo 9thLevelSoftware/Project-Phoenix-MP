@@ -3,21 +3,24 @@ package com.devil.phoenixproject.util
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
-import kotlinx.coroutines.Dispatchers
+import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -121,6 +124,60 @@ class AndroidDataBackupManager(
     }
 
     /**
+     * Insert a JSON file into MediaStore Downloads and write [write] to it.
+     *
+     * Session backups (`Download/PhoenixBackups`) and full exports
+     * (`Download/ProjectPhoenix`) share this path. Callers keep their own folder
+     * and failure text. A null output stream means nothing was written: the empty
+     * row is deleted and the call throws [streamFailureMessage] (F060 fail-closed).
+     *
+     * @return the inserted content URI
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun insertDownloadsJson(
+        fileName: String,
+        relativePath: String,
+        insertFailureMessage: String,
+        streamFailureMessage: String,
+        write: (OutputStream) -> Unit,
+    ): Uri {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/json")
+            put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+        }
+        val resolver = context.contentResolver
+        val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            ?: throw Exception(insertFailureMessage)
+        val outputStream = resolver.openOutputStream(destUri)
+        if (outputStream == null) {
+            runCatching { resolver.delete(destUri, null, null) }
+            throw Exception(streamFailureMessage)
+        }
+        outputStream.use(write)
+        return destUri
+    }
+
+    /**
+     * Session auto-backups in `Download/PhoenixBackups` named `phoenix-*.json`.
+     *
+     * MediaStore stores [MediaStore.Downloads.RELATIVE_PATH] with a trailing
+     * slash, so this query uses `Download/PhoenixBackups/` rather than the
+     * insert path. Shared by [listBackupFileSizes] and [pruneOldBackups].
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun querySessionBackupCollection(
+        projection: Array<String>,
+        sortOrder: String?,
+    ) = context.contentResolver.query(
+        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
+        arrayOf("Download/PhoenixBackups/", "phoenix-%.json"),
+        sortOrder,
+    )
+
+    /**
      * Route session backups through [tryCustomDestination], the same resolver path
      * full export uses. That checks the persisted URI permission and writes via
      * [BackupDestinationResolver], including a null output stream as failure.
@@ -152,25 +209,13 @@ class AndroidDataBackupManager(
 
         // Default behavior
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val fileName = File(filePath).name
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/PhoenixBackups")
-            }
-            val resolver = context.contentResolver
-            val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                ?: throw Exception("Failed to create backup file in Downloads")
-            // F060: a null output stream means the backup was never written; remove
-            // the empty MediaStore row and fail instead of leaving an empty file
-            // and reporting success.
-            val outputStream = resolver.openOutputStream(destUri)
-            if (outputStream == null) {
-                runCatching { resolver.delete(destUri, null, null) }
-                throw Exception("Failed to open output stream for backup file in Downloads")
-            }
-            outputStream.use {
-                it.write(content.toByteArray(Charsets.UTF_8))
+            insertDownloadsJson(
+                fileName = File(filePath).name,
+                relativePath = "Download/PhoenixBackups",
+                insertFailureMessage = "Failed to create backup file in Downloads",
+                streamFailureMessage = "Failed to open output stream for backup file in Downloads",
+            ) { stream ->
+                stream.write(content.toByteArray(Charsets.UTF_8))
             }
         } else {
             // Pre-Q: write to the app-specific path already set by getSessionBackupDirectory
@@ -180,13 +225,9 @@ class AndroidDataBackupManager(
 
     override fun listBackupFileSizes(): List<Long> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val sizes = mutableListOf<Long>()
-        val resolver = context.contentResolver
-        resolver.query(
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Downloads.SIZE),
-            "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-            arrayOf("Download/PhoenixBackups/", "phoenix-%.json"),
-            null,
+        querySessionBackupCollection(
+            projection = arrayOf(MediaStore.Downloads.SIZE),
+            sortOrder = null,
         )?.use { cursor ->
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
             while (cursor.moveToNext()) {
@@ -205,13 +246,10 @@ class AndroidDataBackupManager(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
             // Query all session backups sorted by date_added ascending (oldest first)
-            val toDelete = mutableListOf<android.net.Uri>()
-            resolver.query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Downloads._ID),
-                "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-                arrayOf("Download/PhoenixBackups/", "phoenix-%.json"),
-                "${MediaStore.Downloads.DATE_ADDED} ASC",
+            val toDelete = mutableListOf<Uri>()
+            querySessionBackupCollection(
+                projection = arrayOf(MediaStore.Downloads._ID),
+                sortOrder = "${MediaStore.Downloads.DATE_ADDED} ASC",
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
                 val excess = cursor.count - keepCount
@@ -329,29 +367,16 @@ class AndroidDataBackupManager(
 
         return try {
             val destPath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
-                }
-
-                val resolver = context.contentResolver
-                val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    ?: throw Exception("Failed to create file in Downloads")
-
-                // F060: fail (and clean up the empty row) when the stream can't be
-                // opened, instead of returning the URI as if the export succeeded.
-                val outputStream = resolver.openOutputStream(destUri)
-                if (outputStream == null) {
-                    runCatching { resolver.delete(destUri, null, null) }
-                    throw Exception("Failed to open output stream for export file in Downloads")
-                }
-                outputStream.use { stream ->
+                val destUri = insertDownloadsJson(
+                    fileName = fileName,
+                    relativePath = "Download/ProjectPhoenix",
+                    insertFailureMessage = "Failed to create file in Downloads",
+                    streamFailureMessage = "Failed to open output stream for export file in Downloads",
+                ) { stream ->
                     file.inputStream().use { inputStream ->
                         inputStream.copyTo(stream)
                     }
                 }
-
                 destUri.toString()
             } else {
                 @Suppress("DEPRECATION")
