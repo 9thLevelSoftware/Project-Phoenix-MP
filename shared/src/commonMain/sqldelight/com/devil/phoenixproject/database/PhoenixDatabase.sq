@@ -2286,9 +2286,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 updateCycleDay:
 UPDATE CycleDay SET day_number = ?, name = ?, routine_id = ?, is_rest_day = ?, echo_level = ?, eccentric_load_percent = ?, weight_progression_percent = ?, rep_modifier = ?, rest_time_override_seconds = ? WHERE id = ?;
 
-deleteCycleDay:
-DELETE FROM CycleDay WHERE id = ?;
-
 deleteCycleDaysByCycle:
 DELETE FROM CycleDay WHERE cycle_id = ?;
 
@@ -2468,9 +2465,6 @@ SET actual_reps = ?,
     logged_rpe = ?,
     completed_at = ?
 WHERE id = ?;
-
-deleteCompletedSet:
-DELETE FROM CompletedSet WHERE id = ?;
 
 deleteCompletedSetsBySession:
 DELETE FROM CompletedSet WHERE session_id = ?;
@@ -4613,16 +4607,6 @@ WHERE externalProgramId IN (
 );
 
 -- ExternalExerciseTemplate queries
-getExternalExerciseTemplates:
-SELECT * FROM ExternalExerciseTemplate
-WHERE profileId = ?
-ORDER BY title COLLATE NOCASE;
-
-getExternalExerciseTemplatesByProvider:
-SELECT * FROM ExternalExerciseTemplate
-WHERE profileId = ? AND provider = ?
-ORDER BY title COLLATE NOCASE;
-
 upsertExternalExerciseTemplate:
 INSERT OR REPLACE INTO ExternalExerciseTemplate(
     id, externalId, provider, title, exerciseType, primaryMuscleGroups,
@@ -4759,9 +4743,6 @@ GROUP BY
         ELSE routineSessionId
     END
 ORDER BY MAX(timestamp) DESC;
-
-selectAllSessionIdsByProfile:
-SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 
 selectAllRoutineIdsByProfile:
 SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
