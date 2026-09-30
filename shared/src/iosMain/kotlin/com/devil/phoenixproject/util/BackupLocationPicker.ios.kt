@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,12 +70,6 @@ actual class BackupLocationPicker {
         LaunchedEffect(Unit) {
             dispatch_async(dispatch_get_main_queue()) {
                 presentDirectoryPicker(delegate)
-            }
-        }
-
-        DisposableEffect(Unit) {
-            onDispose {
-                delegate.cleanup()
             }
         }
     }
@@ -179,10 +172,6 @@ private class DirectoryPickerDelegate(
     override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
         log.d { "Directory picker was cancelled" }
         onCancelled()
-    }
-
-    fun cleanup() {
-        // No explicit cleanup needed; method provided for DisposableEffect symmetry
     }
 }
 

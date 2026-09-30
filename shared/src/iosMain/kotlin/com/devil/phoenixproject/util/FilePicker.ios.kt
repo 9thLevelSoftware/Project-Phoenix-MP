@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -12,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import platform.Foundation.*
 import platform.UIKit.*
+import platform.UniformTypeIdentifiers.UTType
+import platform.UniformTypeIdentifiers.UTTypeCommaSeparatedText
 import platform.UniformTypeIdentifiers.UTTypeJSON
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
@@ -31,9 +32,18 @@ actual class FilePicker {
 
     @Composable
     actual fun LaunchFilePicker(onFilePicked: (String?) -> Unit) {
+        LaunchImportPicker(UTTypeJSON, onFilePicked)
+    }
+
+    @Composable
+    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        LaunchImportPicker(UTTypeCommaSeparatedText, onFilePicked)
+    }
+
+    @Composable
+    private fun LaunchImportPicker(contentType: UTType, onFilePicked: (String?) -> Unit) {
         val scope = rememberCoroutineScope()
 
-        // Create delegate that handles picker callbacks
         val delegate = remember {
             DocumentPickerDelegate(
                 onDocumentPicked = { url ->
@@ -66,59 +76,7 @@ actual class FilePicker {
 
         LaunchedEffect(Unit) {
             dispatch_async(dispatch_get_main_queue()) {
-                presentImportPicker(delegate)
-            }
-        }
-
-        // Cleanup delegate reference when composable leaves composition
-        DisposableEffect(Unit) {
-            onDispose {
-                delegate.cleanup()
-            }
-        }
-    }
-
-    @Composable
-    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
-        val scope = rememberCoroutineScope()
-
-        val delegate = remember {
-            DocumentPickerDelegate(
-                onDocumentPicked = { url ->
-                    scope.launch(Dispatchers.Main) {
-                        if (url != null) {
-                            val accessing = url.startAccessingSecurityScopedResource()
-                            try {
-                                val tempPath = copyToTempDirectory(url)
-                                onFilePicked(tempPath)
-                            } finally {
-                                if (accessing) {
-                                    url.stopAccessingSecurityScopedResource()
-                                }
-                            }
-                        } else {
-                            onFilePicked(null)
-                        }
-                    }
-                },
-                onCancelled = {
-                    scope.launch(Dispatchers.Main) {
-                        onFilePicked(null)
-                    }
-                },
-                log = log,
-            )
-        }
-
-        LaunchedEffect(Unit) {
-            dispatch_async(dispatch_get_main_queue()) {
-                presentCsvImportPicker(delegate)
-            }
-        }
-
-        DisposableEffect(Unit) {
-            onDispose {
-                delegate.cleanup()
+                presentImportPicker(contentType, delegate)
             }
         }
     }
@@ -160,12 +118,6 @@ actual class FilePicker {
                 presentExportPicker(tempFilePath, delegate)
             }
         }
-
-        DisposableEffect(Unit) {
-            onDispose {
-                delegate.cleanup()
-            }
-        }
     }
 
     /** The export picker takes the document type from the file's `.csv` extension. */
@@ -175,46 +127,18 @@ actual class FilePicker {
     }
 
     /**
-     * Present document picker for importing a JSON file.
+     * Present document picker for importing a file of [contentType].
      */
-    private fun presentImportPicker(delegate: DocumentPickerDelegate) {
+    private fun presentImportPicker(contentType: UTType, delegate: DocumentPickerDelegate) {
         val rootViewController = getRootViewController() ?: run {
             log.e { "Could not get root view controller" }
             delegate.onCancelled()
             return
         }
 
-        // Create picker for opening JSON files
         val picker = UIDocumentPickerViewController(
-            forOpeningContentTypes = listOf(UTTypeJSON),
+            forOpeningContentTypes = listOf(contentType),
             asCopy = true, // Copy to app sandbox for security
-        )
-
-        picker.delegate = delegate
-        picker.allowsMultipleSelection = false
-
-        rootViewController.presentViewController(
-            picker,
-            animated = true,
-            completion = null,
-        )
-    }
-
-    /**
-     * Present document picker for importing a CSV file.
-     */
-    private fun presentCsvImportPicker(delegate: DocumentPickerDelegate) {
-        val rootViewController = getRootViewController() ?: run {
-            log.e { "Could not get root view controller" }
-            delegate.onCancelled()
-            return
-        }
-
-        val picker = UIDocumentPickerViewController(
-            forOpeningContentTypes = listOf(
-                platform.UniformTypeIdentifiers.UTTypeCommaSeparatedText,
-            ),
-            asCopy = true,
         )
 
         picker.delegate = delegate
@@ -359,13 +283,6 @@ private class DocumentPickerDelegate(
     override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
         log.d { "Document picker was cancelled" }
         onCancelled()
-    }
-
-    /**
-     * Cleanup any resources held by the delegate.
-     */
-    fun cleanup() {
-        // No explicit cleanup needed, but method provided for future use
     }
 }
 
