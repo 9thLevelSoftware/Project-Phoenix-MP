@@ -910,7 +910,6 @@ object PortalSyncAdapter {
                 weightAdjustment = day.weightProgressionPercent ?: 0f,
                 repModifier = day.repModifier ?: 0,
                 restOverride = day.restTimeOverrideSeconds,
-                restType = null,
                 notes = day.name,
                 echoLevelPresent = true,
                 echoLevel = day.echoLevel?.name,
@@ -937,7 +936,6 @@ object PortalSyncAdapter {
             updatedAt = epochToIso8601(cycle.updatedAt ?: cycle.createdAt),
             progressionSettingsPresent = true,
             progressionSettings = progressionJson,
-            deloadSettings = null,
             progressStatePresent = true,
             progressState = progress?.let {
                 PortalCycleProgressStateSyncDto(

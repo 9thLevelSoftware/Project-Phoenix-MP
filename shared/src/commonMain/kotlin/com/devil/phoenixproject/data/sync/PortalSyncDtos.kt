@@ -141,9 +141,9 @@ data class PortalExerciseDto(
      * computed on-device from BLE mean concentric velocity (see
      * VelocityOneRepMaxEstimator). This is a SEPARATE metric from the rep-based
      * [estimatedOneRepMaxKg] (Brzycki/Epley hybrid) and must never overwrite it.
-     * It is the latest passing estimate for this exercise/profile at push time
-     * (a rolling current value, not as-of-session). Null when the exercise has
-     * no exerciseId or no passing velocity estimate. Portal store-verbatim of
+     * The adapter attaches the latest passing estimate whose computedAt is at or
+     * before this session's timestamp (as-of-session). Null when the exercise has
+     * no exerciseId or no passing estimate at or before the session. Portal store-verbatim of
      * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
@@ -333,7 +333,6 @@ data class PortalTrainingCycleSyncDto(
     /** Absent/false preserves legacy progression settings; true plus null clears them. */
     val progressionSettingsPresent: Boolean? = null,
     val progressionSettings: String? = null, // JSON
-    val deloadSettings: String? = null, // JSON
     /**
      * Absent/false preserves legacy remote progress. True plus a value replaces it;
      * true with an omitted/null [progressState] explicitly clears it.
@@ -363,8 +362,8 @@ data class PortalCycleProgressStateSyncDto(
 
 /**
  * Maps to portal's `cycle_days` table.
- * Mobile CycleDay uses is_rest_day + echo/eccentric modifiers;
- * portal uses day_type + weight_adjustment + rest_type.
+ * Mobile CycleDay uses is_rest_day plus echo and eccentric modifiers;
+ * this DTO carries dayType, weightAdjustment, and those modifiers.
  */
 @Serializable
 data class PortalCycleDaySyncDto(
@@ -376,7 +375,6 @@ data class PortalCycleDaySyncDto(
     val weightAdjustment: Float = 0f,
     val repModifier: Int = 0,
     val restOverride: Int? = null,
-    val restType: String? = null,
     val notes: String? = null,
     /** Presence flags distinguish a complete snapshot clear from legacy omission. */
     val echoLevelPresent: Boolean? = null,
@@ -445,38 +443,25 @@ data class PortalPhaseStatisticsDto(
     val eccentricWattMax: Float = 0f,
 )
 
-// ─── Exercise Signatures (GAP 8) ───────────────────────────────────
-
-/**
- * Maps to portal's `exercise_signatures` table.
- * Movement pattern signatures for exercise auto-detection and comparison.
- */
-@Serializable
-data class PortalExerciseSignatureDto(
-    val id: String,
-    val exerciseId: String,
-    val romMm: Float = 0f,
-    val durationMs: Long = 0,
-    val symmetryRatio: Float = 0.5f,
-    val velocityProfile: String = "LINEAR", // EXPLOSIVE_START, LINEAR, DECELERATING
-    val cableConfig: String = "DUAL_SYMMETRIC",
-    val sampleCount: Int = 1,
-    val confidence: Float = 0f,
-    val updatedAt: String? = null, // ISO 8601
-)
-
 // ─── VBT Assessment Results (GAP 9) ────────────────────────────────
 
 /**
  * Maps to portal's `vbt_assessments` table.
- * VBT-derived 1RM estimates (more accurate than Brzycki formula).
+ *
+ * [estimatedOneRepMaxKg] is the AssessmentResult value from the assessment
+ * wizard: [com.devil.phoenixproject.domain.assessment.AssessmentEngine] ordinary
+ * least-squares extrapolation of the recorded load-velocity points (total kg
+ * across both cables), or the heaviest recorded load when that fit is rejected.
+ * A manual replacement stays on [userOverrideKg]. This is separate from the
+ * Brzycki/Epley hybrid and from [PortalExerciseDto.velocityEstimatedOneRepMaxKg].
  */
 @Serializable
 data class PortalAssessmentResultDto(
     val id: String,
     val exerciseId: String,
     val estimatedOneRepMaxKg: Float,
-    val loadVelocityData: String, // JSON array of {loadKg, meanVelocityMs}
+    /** JSON array of `{loadKg, velocityMs}` as written by the assessment wizard. */
+    val loadVelocityData: String,
     val assessmentSessionId: String? = null,
     val userOverrideKg: Float? = null,
     val createdAt: String, // ISO 8601
@@ -641,19 +626,7 @@ data class ProfilePreferenceSectionRejectionDto(
 @Serializable
 data class PortalSyncPushResponse(
     val syncTime: String, // ISO 8601 from Edge Function
-    val sessionsInserted: Int = 0,
-    val exercisesInserted: Int = 0,
-    val setsInserted: Int = 0,
-    val repSummariesInserted: Int = 0,
-    val telemetryInserted: Int = 0,
-    val routinesUpserted: Int = 0,
-    val cyclesUpserted: Int = 0,
-    val badgesUpserted: Int = 0,
-    val exerciseProgressInserted: Int = 0,
     val personalRecordsInserted: Int = 0,
-    val phaseStatisticsInserted: Int = 0,
-    val exerciseSignaturesUpserted: Int = 0,
-    val assessmentsInserted: Int = 0,
     val externalActivitiesUpserted: Int = 0,
     /**
      * DEPRECATED: prefer `externalActivityKeys` which now carries per-ack
@@ -822,7 +795,6 @@ data class PortalSyncPayload(
     val gamificationStats: PortalGamificationStatsSyncDto? = null,
     // Phase 3: Extended metrics
     val phaseStatistics: List<PortalPhaseStatisticsDto> = emptyList(),
-    val exerciseSignatures: List<PortalExerciseSignatureDto> = emptyList(),
     val assessments: List<PortalAssessmentResultDto> = emptyList(),
     val customExercises: List<CustomExerciseSyncDto> = emptyList(),
     // Profile data separation: active profile tagging + full profile snapshot
@@ -1152,7 +1124,6 @@ data class PullTrainingCycleDto(
     val lastUsedAt: String? = null,
     val progressionSettingsPresent: Boolean? = null,
     val progressionSettings: String? = null,
-    val deloadSettings: String? = null,
     val progressStatePresent: Boolean? = null,
     val progressState: PortalCycleProgressStateSyncDto? = null,
     val days: List<PullCycleDayDto> = emptyList(),
@@ -1200,7 +1171,6 @@ data class PullCycleDayDto(
     val weightAdjustment: Float = 0f,
     val repModifier: Int = 0,
     val restOverride: Int? = null,
-    val restType: String? = null,
     val notes: String? = null,
     val echoLevelPresent: Boolean? = null,
     val echoLevel: String? = null,

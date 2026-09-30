@@ -96,7 +96,6 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
 
     fun push(payload: PortalSyncPayload): PortalSyncPushResponse {
         val rejections = mutableListOf<SyncRejectionDto>()
-        var inserted = 0
         val accepted = mutableListOf<String>()
         for (dto in payload.sessions) {
             val incoming = dto.updatedAt?.let { parseIso(it) } ?: serverNow()
@@ -115,7 +114,6 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
             }
             accepted += dto.id
             if (existing == null) {
-                inserted++
                 sessions[dto.id] = StoredSession(
                     id = dto.id,
                     name = dto.name,
@@ -143,13 +141,6 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
         }
         return PortalSyncPushResponse(
             syncTime = toIso(serverNow()),
-            sessionsInserted = inserted,
-            exercisesInserted = payload.sessions.sumOf { it.exercises.size },
-            setsInserted = payload.sessions.sumOf { s -> s.exercises.sumOf { it.sets.size } },
-            repSummariesInserted = 0,
-            routinesUpserted = 0,
-            badgesUpserted = 0,
-            exerciseProgressInserted = 0,
             personalRecordsInserted = 0,
             rejections = SyncRejectionsDto(sessions = rejections),
             // upsert_workout_session_lww: every accepted row is acknowledged.

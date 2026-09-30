@@ -30,13 +30,6 @@ open class FakePortalApiClient :
     var pushResult: Result<PortalSyncPushResponse> = Result.success(
         PortalSyncPushResponse(
             syncTime = "2026-03-02T12:00:00Z",
-            sessionsInserted = 0,
-            exercisesInserted = 0,
-            setsInserted = 0,
-            repSummariesInserted = 0,
-            routinesUpserted = 0,
-            badgesUpserted = 0,
-            exerciseProgressInserted = 0,
             personalRecordsInserted = 0,
         ),
     )
