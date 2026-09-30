@@ -150,7 +150,6 @@ private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatM
  */
 sealed class CycleCreationState {
     object Idle : CycleCreationState()
-    data class TemplateSelected(val template: CycleTemplate) : CycleCreationState()
 
     /** Editable preview of the template's structure before creation (Phase 3, #620). */
     data class Previewing(val template: CycleTemplate) : CycleCreationState()

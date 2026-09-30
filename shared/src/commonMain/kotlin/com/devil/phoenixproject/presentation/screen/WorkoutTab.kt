@@ -63,7 +63,6 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -94,7 +93,6 @@ import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -127,15 +125,13 @@ import projectphoenix.shared.generated.resources.workout_teardown_finishing
  * @param state Consolidated UI state
  * @param actions Callback interface for UI events
  * @param exerciseRepository Repository for loading exercise details/images
- * @param hapticEvents Optional flow retained for call-site compatibility. Playback is global in EnhancedMainScreen.
  */
-@Suppress("SENSELESS_COMPARISON", "UNUSED_PARAMETER") // Smart-cast helpers; hapticEvents is played globally
+@Suppress("SENSELESS_COMPARISON") // Smart-cast helpers
 @Composable
 fun WorkoutTab(
     state: WorkoutUiState,
     actions: WorkoutActions,
     exerciseRepository: ExerciseRepository,
-    hapticEvents: SharedFlow<HapticEvent>? = null,
     modifier: Modifier = Modifier,
 ) {
     val connectionState = state.connectionState
