@@ -27,7 +27,6 @@ sealed class LinkAccountUiState {
      */
     data class Loading(val provider: OAuthProvider? = null) : LinkAccountUiState()
 
-    data class Success(val user: PortalUser) : LinkAccountUiState()
     data class Error(val message: String) : LinkAccountUiState()
 }
 
@@ -64,8 +63,9 @@ class LinkAccountViewModel(
                 _uiState.value = LinkAccountUiState.Loading(provider = null)
 
                 syncManager.login(email, password)
-                    .onSuccess { user ->
-                        _uiState.value = LinkAccountUiState.Success(user)
+                    .onSuccess {
+                        // Logged-in UI reads SyncManager.isAuthenticated / currentUser.
+                        _uiState.value = LinkAccountUiState.Initial
                     }
                     .onFailure { error ->
                         _uiState.value = LinkAccountUiState.Error(
@@ -76,9 +76,6 @@ class LinkAccountViewModel(
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
             } catch (e: Exception) {
-                // F055: an unexpected throw (not a Result.failure) must not leave
-                // the screen stuck in Loading or surface as an unhandled coroutine
-                // exception — show a retryable error instead.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: "Login failed")
             }
         }
@@ -132,7 +129,6 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // F055: surface unexpected OAuth failures instead of leaving Loading.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: fallbackErrorMessage)
             }
         }
@@ -152,7 +148,7 @@ class LinkAccountViewModel(
      * The premium refresh is best-effort: a network failure here must NOT
      * leave the UI stuck at Loading or invalidate the sign-in itself —
      * the GoTrue session was already persisted. Wrap in `runCatching` and
-     * always advance to Success/Error.
+     * always advance to Initial or Error.
      */
     private suspend fun finishOAuthLink() {
         syncManager.resetSyncStateToIdle()
@@ -162,35 +158,10 @@ class LinkAccountViewModel(
                     "OAuth premium refresh failed (sign-in still succeeded): ${e.message}"
                 }
             }
-        val user = syncManager.currentUser.value
-        _uiState.value = if (user != null) {
-            LinkAccountUiState.Success(user)
+        _uiState.value = if (syncManager.currentUser.value != null) {
+            LinkAccountUiState.Initial
         } else {
             LinkAccountUiState.Error("Signed in but user session is missing")
-        }
-    }
-
-    fun signup(email: String, password: String, displayName: String) {
-        scope.launch {
-            try {
-                _uiState.value = LinkAccountUiState.Loading(provider = null)
-
-                syncManager.signup(email, password, displayName)
-                    .onSuccess { user ->
-                        _uiState.value = LinkAccountUiState.Success(user)
-                    }
-                    .onFailure { error ->
-                        _uiState.value = LinkAccountUiState.Error(
-                            error.message ?: "Signup failed",
-                        )
-                    }
-            } catch (e: CancellationException) {
-                // Coroutine cancelled during clear() - preserve original cancellation
-                throw e
-            } catch (e: Exception) {
-                // F055: surface unexpected signup failures instead of leaving Loading.
-                _uiState.value = LinkAccountUiState.Error(e.message ?: "Signup failed")
-            }
         }
     }
 
@@ -203,7 +174,6 @@ class LinkAccountViewModel(
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
             } catch (e: Exception) {
-                // F055: surface unexpected logout failures instead of swallowing them.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: "Logout failed")
             }
         }
@@ -217,7 +187,6 @@ class LinkAccountViewModel(
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
             } catch (e: Exception) {
-                // F055: surface unexpected sync failures instead of an unhandled throw.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
             }
         }
@@ -235,7 +204,6 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // F055: surface unexpected resync failures instead of an unhandled throw.
                 _uiState.value = LinkAccountUiState.Error(e.message ?: "Resync failed")
             }
         }
@@ -251,12 +219,7 @@ class LinkAccountViewModel(
                 _uiState.value = LinkAccountUiState.Loading(provider = null)
                 syncManager.resolveAccountMismatch(choice).fold(
                     onSuccess = {
-                        val user = syncManager.currentUser.value
-                        _uiState.value = if (user != null) {
-                            LinkAccountUiState.Success(user)
-                        } else {
-                            LinkAccountUiState.Initial
-                        }
+                        _uiState.value = LinkAccountUiState.Initial
                     },
                     onFailure = { e ->
                         _uiState.value = LinkAccountUiState.Error(
