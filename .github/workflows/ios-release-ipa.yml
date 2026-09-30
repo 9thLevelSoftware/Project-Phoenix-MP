@@ -142,9 +142,6 @@ jobs:
             :shared:iosArm64ProcessResources \
             --no-parallel -Pskip.supabase.check=true
 
-          echo "=== Compose resource directories ==="
-          find shared/build -type d -name "composeResources" 2>/dev/null | head -10
-
       - name: Install shared.framework for Xcode
         run: |
           # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
