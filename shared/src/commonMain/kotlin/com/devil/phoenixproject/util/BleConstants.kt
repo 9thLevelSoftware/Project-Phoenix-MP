@@ -46,15 +46,12 @@ object BleConstants {
         UNKNOWN_AUTH_CHAR_UUID_STRING, // Subscribed for parity with observed device behavior
     )
 
-    // Device name pattern for filtering - matches "Phoenix*" devices
-    const val DEVICE_NAME_PREFIX = "Vee"
-
     // Command IDs (machine protocol)
     object Commands {
         const val RESET_COMMAND: Byte = 0x0A // Reset/init - accepted by the device as a recovery stop
         const val ECHO_COMMAND: Byte = 0x4E // 32-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet
-        const val DEFAULT_ROM_REP_COUNT: Byte = 3
+        const val DEFAULT_ROM_REP_COUNT: Byte = 3 // activation RepCounts.baseline and .adaptive
     }
 
     /**

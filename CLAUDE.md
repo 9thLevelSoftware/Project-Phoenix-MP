@@ -79,7 +79,7 @@ Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`
 
 ### Constants
 `util/Constants.kt` contains:
-- Weight limits, **per cable**: `MIN_WEIGHT_KG = 0`, `MAX_WEIGHT_KG = 100` (safe default max), `MAX_WEIGHT_PER_CABLE_KG = 110` (Trainer+ hardware ceiling)
+- Weight limits, **per cable**: `MIN_WEIGHT_KG = 0`, `MAX_WEIGHT_PER_CABLE_KG = 110` (Trainer+ hardware ceiling). Live command ceilings are in `CommandLimits.kt` (V-Form 100 kg/cable, Trainer+ 110 kg/cable).
 - Weight increment options: `[0.5, 1, 2.5, 5]` kg (`WEIGHT_INCREMENT_OPTIONS_KG`, default 0.5) and `[0.1, 0.5, 1, 2.5, 5]` lb
 - `APP_VERSION` and one-rep max formulas (`OneRepMaxCalculator`: Brzycki, Epley, hybrid `estimate()`)
 

@@ -87,8 +87,10 @@ object BlePacketFactory {
                 (params.reps + params.warmupReps).coerceAtMost(0xFE).toByte()
             }
 
-        frame[5] = 0x03
-        frame[6] = 0x03
+        // RepCounts.baseline (0x05) and RepCounts.adaptive (0x06). Both are the
+        // firmware default ROM window; the total-rep byte stays at 0x04.
+        frame[5] = BleConstants.Commands.DEFAULT_ROM_REP_COUNT
+        frame[6] = BleConstants.Commands.DEFAULT_ROM_REP_COUNT
         frame[7] = 0x00
 
         putFloatLE(frame, 0x08, 5.0f)
