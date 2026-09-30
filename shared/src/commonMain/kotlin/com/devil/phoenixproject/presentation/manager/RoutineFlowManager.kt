@@ -1621,8 +1621,6 @@ class RoutineFlowManager(
         return coordinator._currentExerciseIndex.value < routine.exercises.size - 1
     }
 
-    fun getRoutineExerciseNames(): List<String> = coordinator._loadedRoutine.value?.exercises?.map { it.exercise.name } ?: emptyList()
-
     /**
      * Navigate to previous set/exercise in set-ready.
      */
@@ -1720,8 +1718,6 @@ class RoutineFlowManager(
     }
 
     // ===== Shared Helpers =====
-    // These are used by both RoutineFlowManager and DWSM (ActiveSessionEngine in future).
-    // Placed here as companion/internal functions accessible to both.
 
     /**
      * Fully reset auto-stop state for a new workout/set.

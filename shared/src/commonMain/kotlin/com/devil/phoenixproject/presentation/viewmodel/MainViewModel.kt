@@ -952,7 +952,6 @@ class MainViewModel(
 
     val prCelebrationEvent: SharedFlow<PRCelebrationEvent> get() = gamificationManager.prCelebrationEvent
     val badgeEarnedEvents: SharedFlow<List<Badge>> get() = gamificationManager.badgeEarnedEvents
-    fun emitBadgeSound() = gamificationManager.emitBadgeSound()
     fun emitPRSound() = gamificationManager.emitPRSound()
 
     // ===== Workout Lifecycle Delegation =====
@@ -1230,20 +1229,14 @@ class MainViewModel(
     fun goToPreviousExercise() = workoutSessionManager.goToPreviousExercise()
     fun canGoBack(): Boolean = workoutSessionManager.canGoBack()
     fun canSkipForward(): Boolean = workoutSessionManager.canSkipForward()
-    fun getRoutineExerciseNames(): List<String> = workoutSessionManager.getRoutineExerciseNames()
 
     // ===== Weight Adjustment Delegation =====
 
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) = workoutSessionManager.adjustWeight(newWeightKg, sendToMachine)
-    fun incrementWeight(amount: Float = 0.5f) = workoutSessionManager.incrementWeight(amount)
-    fun decrementWeight(amount: Float = 0.5f) = workoutSessionManager.decrementWeight(amount)
-    fun setWeightPreset(presetWeightKg: Float) = workoutSessionManager.setWeightPreset(presetWeightKg)
-    suspend fun getLastWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getLastWeightForExercise(exerciseId)
 
     // ===== Just Lift / Handle Detection Delegation =====
 
     fun enableHandleDetection() = workoutSessionManager.enableHandleDetection()
-    fun disableHandleDetection() = workoutSessionManager.disableHandleDetection()
     fun prepareForJustLift() = workoutSessionManager.prepareForJustLift()
     suspend fun getJustLiftDefaults(): JustLiftDefaults = workoutSessionManager.getJustLiftDefaults()
     suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = workoutSessionManager.getSingleExerciseDefaults(exerciseId)
@@ -1252,7 +1245,6 @@ class MainViewModel(
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
     suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
-    fun clearCycleContext() = workoutSessionManager.clearCycleContext()
 
     // ===== Top Bar State (stays here - pure UI scaffolding) =====
 
