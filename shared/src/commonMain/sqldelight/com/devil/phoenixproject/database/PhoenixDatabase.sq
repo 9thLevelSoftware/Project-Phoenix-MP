@@ -431,26 +431,6 @@ CREATE TABLE RepBiomechanics (
 CREATE INDEX idx_rep_biomechanics_session ON RepBiomechanics(sessionId);
 CREATE UNIQUE INDEX idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber);
 
--- ==================== EXERCISE SIGNATURES ====================
--- Movement signatures for exercise auto-detection
-
-CREATE TABLE ExerciseSignature (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    exerciseId TEXT NOT NULL,
-    romMm REAL NOT NULL,
-    durationMs INTEGER NOT NULL,
-    symmetryRatio REAL NOT NULL,
-    velocityProfile TEXT NOT NULL,
-    cableConfig TEXT NOT NULL,
-    sampleCount INTEGER NOT NULL DEFAULT 1,
-    confidence REAL NOT NULL DEFAULT 0.0,
-    createdAt INTEGER NOT NULL,
-    updatedAt INTEGER NOT NULL,
-    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_exercise_signature_exercise ON ExerciseSignature(exerciseId);
-
 -- ==================== ASSESSMENT RESULTS ====================
 -- VBT strength assessment results
 
@@ -667,7 +647,6 @@ AND (
     OR EXISTS (SELECT 1 FROM WorkoutSession WHERE WorkoutSession.exerciseId = e.id)
     OR EXISTS (SELECT 1 FROM RoutineExercise WHERE RoutineExercise.exerciseId = e.id)
     OR EXISTS (SELECT 1 FROM PersonalRecord WHERE PersonalRecord.exerciseId = e.id)
-    OR EXISTS (SELECT 1 FROM ExerciseSignature WHERE ExerciseSignature.exerciseId = e.id)
     OR EXISTS (SELECT 1 FROM AssessmentResult WHERE AssessmentResult.exerciseId = e.id)
     OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate WHERE VelocityOneRepMaxEstimate.exerciseId = e.id)
     OR EXISTS (SELECT 1 FROM ExerciseMvt WHERE ExerciseMvt.exerciseId = e.id)
@@ -692,9 +671,6 @@ SELECT * FROM PersonalRecord WHERE exerciseId = :exerciseId;
 
 reassignPersonalRecordExerciseId:
 UPDATE PersonalRecord SET exerciseId = :newId WHERE exerciseId = :oldId;
-
-reassignExerciseSignatureExerciseId:
-UPDATE ExerciseSignature SET exerciseId = :newId WHERE exerciseId = :oldId;
 
 reassignAssessmentResultExerciseId:
 UPDATE AssessmentResult SET exerciseId = :newId WHERE exerciseId = :oldId;

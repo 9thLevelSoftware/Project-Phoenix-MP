@@ -1258,10 +1258,54 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 56 drops ExerciseSignature and its account-switch exclusion rows`() {
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 56)
+            assertEquals(true, getTables(driver).contains("ExerciseSignature"), scenario)
+            driver.execute(
+                null,
+                """
+                INSERT INTO ExerciseSignature (
+                    exerciseId, romMm, durationMs, symmetryRatio, velocityProfile, cableConfig, createdAt, updatedAt
+                ) VALUES ('legacy-ex', 1.0, 1, 1.0, '[]', 'DOUBLE', 1, 1)
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                INSERT INTO SyncExcludedEntity (portal_user_id, entity_type, entity_id) VALUES
+                    ('user-a', 'EXERCISE_SIGNATURE', 'sig-1'),
+                    ('user-a', 'REACHED_EXERCISE_SIGNATURE', 'sig-1'),
+                    ('user-a', 'WORKOUT', 'keep-me')
+                """.trimIndent(),
+                0,
+            )
+
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 56)
+                assertEquals(listOf(true, true), results.map { it.success }, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 56, 57)
+            }
+
+            assertEquals(false, getTables(driver).contains("ExerciseSignature"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_exercise_signature_exercise"), scenario)
+            assertEquals("0", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM SyncExcludedEntity WHERE entity_type LIKE '%EXERCISE_SIGNATURE'"), scenario)
+            assertEquals("keep-me", queryScalar(driver, "SELECT entity_id FROM SyncExcludedEntity WHERE entity_type = 'WORKOUT'"), scenario)
+
+            reconcileFullSchema(driver)
+            assertEquals(false, getTables(driver).contains("ExerciseSignature"), scenario)
+            assertEquals(true, getTables(driver).contains("AssessmentResult"), scenario)
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 56L
+        private const val EXPECTED_SCHEMA_VERSION = 57L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each

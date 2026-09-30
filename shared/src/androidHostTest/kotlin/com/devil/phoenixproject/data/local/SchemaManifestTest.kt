@@ -1049,6 +1049,9 @@ class SchemaManifestTest {
         // No failures should occur (all prerequisite tables exist)
         assertFalse(report.hasFailures, "Unexpected failures: ${report.failures.map { "${it.target}: ${it.detail}" }}")
 
+        // Migration 56: a leftover signature table is dropped and not recreated.
+        assertFalse(tableExists(driver, "ExerciseSignature"))
+
         // Bootstrap tables should be created (they didn't exist before)
         assertTrue(report.created > 0, "Expected at least some CREATED results")
 

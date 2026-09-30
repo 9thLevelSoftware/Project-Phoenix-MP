@@ -51,7 +51,6 @@ class LegacyCatalogueRemapper(database: PhoenixDatabase) {
                 queries.reassignRoutineExerciseId(newId = newId, oldId = oldId)
                 resolvePersonalRecordCollisions(oldId = oldId, newId = newId)
                 queries.reassignPersonalRecordExerciseId(newId = newId, oldId = oldId)
-                queries.reassignExerciseSignatureExerciseId(newId = newId, oldId = oldId)
                 queries.reassignAssessmentResultExerciseId(newId = newId, oldId = oldId)
                 queries.reassignVelocityOneRepMaxExerciseId(newId = newId, oldId = oldId)
                 mergeExerciseMvtCollisions(oldId = oldId, newId = newId)

@@ -1,0 +1,7 @@
+-- Migration 56: drop the unused ExerciseSignature shell.
+-- Nothing inserts a signature row. Catalogue remap no longer probes the table,
+-- and account-switch no longer records an EXERCISE_SIGNATURE exclusion.
+-- AssessmentResult (also created in 14.sqm) stays.
+
+DELETE FROM SyncExcludedEntity WHERE entity_type IN ('EXERCISE_SIGNATURE', 'REACHED_EXERCISE_SIGNATURE');
+DROP TABLE IF EXISTS ExerciseSignature;

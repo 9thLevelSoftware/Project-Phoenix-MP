@@ -383,6 +383,8 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 internal val manifestDroppedTables: List<String> = listOf(
     // Migration 43: streamed demo URLs must not be re-created by schema heal.
     "ExerciseVideo",
+    // Migration 56: unused movement-signature shell. Heal must not recreate it.
+    "ExerciseSignature",
 )
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
@@ -703,28 +705,6 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 avgLoadB REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
-            )
-        """.trimIndent(),
-    ),
-
-    // ExerciseSignature -- migration 14 (movement signatures for auto-detection)
-    // Full shape: no later migrations add columns
-    SchemaTableOperation(
-        table = "ExerciseSignature",
-        createSql = """
-            CREATE TABLE IF NOT EXISTS ExerciseSignature (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exerciseId TEXT NOT NULL,
-                romMm REAL NOT NULL,
-                durationMs INTEGER NOT NULL,
-                symmetryRatio REAL NOT NULL,
-                velocityProfile TEXT NOT NULL,
-                cableConfig TEXT NOT NULL,
-                sampleCount INTEGER NOT NULL DEFAULT 1,
-                confidence REAL NOT NULL DEFAULT 0.0,
-                createdAt INTEGER NOT NULL,
-                updatedAt INTEGER NOT NULL,
-                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
             )
         """.trimIndent(),
     ),
@@ -1982,9 +1962,6 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── RepBiomechanics ─────────────────────────────────────────────────
     SchemaIndexOperation("idx_rep_biomechanics_session", "CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId)"),
     SchemaIndexOperation("idx_rep_biomechanics_session_rep", "CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber)"),
-
-    // ── ExerciseSignature ───────────────────────────────────────────────
-    SchemaIndexOperation("idx_exercise_signature_exercise", "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)"),
 
     // ── AssessmentResult ────────────────────────────────────────────────
     SchemaIndexOperation("idx_assessment_result_exercise", "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)"),
