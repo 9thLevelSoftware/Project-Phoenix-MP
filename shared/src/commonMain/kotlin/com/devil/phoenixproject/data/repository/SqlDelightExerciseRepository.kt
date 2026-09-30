@@ -168,40 +168,17 @@ class SqlDelightExerciseRepository(
             return@withContext Result.failure(IllegalArgumentException("Custom exercise name must not be blank"))
         }
         try {
-            // Generate a unique ID for custom exercises
-            val customId = "custom_${currentTimeMillis()}"
-
-            queries.insertExercise(
-                id = customId,
-                name = exercise.name,
-                displayName = null, // Custom exercises use name directly
-                description = null, // Custom exercises start without description
-                created = currentTimeMillis(),
-                muscleGroup = exercise.muscleGroup,
-                muscleGroups = exercise.muscleGroups,
-                muscles = null,
-                equipment = exercise.equipment,
-                movement = null,
-                sidedness = null,
-                grip = null,
-                gripWidth = null,
-                minRepRange = null,
-                popularity = 0.0,
-                archived = 0L,
-                isFavorite = if (exercise.isFavorite) 1L else 0L,
-                isCustom = 1L, // Always mark as custom
-                timesPerformed = 0L,
-                lastPerformed = null,
-                aliases = null,
-                defaultCableConfig = "DOUBLE", // Legacy field - no longer used
-                one_rep_max_kg = null,
-                mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
-                // Custom exercises carry no explicit flag; classification derives from
-                // their equipment token. CreateExerciseDialog writes one accessory token
-                // via CustomExerciseEquipment (HANDLES / SHORT_BAR / BAR / ROPE / BELT /
-                // STRAPS) for cable rows and BODYWEIGHT otherwise (issue #970).
-                isBodyweight = null,
-            )
+            val customId = queries.transactionWithResult {
+                // `custom_<ms>` ids collide when two customs are created in the same
+                // millisecond; step past taken ids. AccountSwitch parses the numeric suffix.
+                var stamp = currentTimeMillis()
+                while (queries.selectExerciseById("custom_$stamp").executeAsOneOrNull() != null) {
+                    stamp++
+                }
+                val id = "custom_$stamp"
+                insertCustomExerciseRow(id, exercise)
+                id
+            }
 
             Logger.d { "Created custom exercise: ${exercise.name} with ID: $customId" }
 
@@ -211,6 +188,40 @@ class SqlDelightExerciseRepository(
             Logger.e(e) { "Failed to create custom exercise: ${exercise.name}" }
             Result.failure(e)
         }
+    }
+
+    private fun insertCustomExerciseRow(customId: String, exercise: Exercise) {
+        queries.insertExercise(
+            id = customId,
+            name = exercise.name,
+            displayName = null, // Custom exercises use name directly
+            description = null, // Custom exercises start without description
+            created = currentTimeMillis(),
+            muscleGroup = exercise.muscleGroup,
+            muscleGroups = exercise.muscleGroups,
+            muscles = null,
+            equipment = exercise.equipment,
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0L,
+            isFavorite = if (exercise.isFavorite) 1L else 0L,
+            isCustom = 1L, // Always mark as custom
+            timesPerformed = 0L,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE", // Legacy field - no longer used
+            one_rep_max_kg = null,
+            mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
+            // Custom exercises carry no explicit flag; classification derives from
+            // their equipment token. CreateExerciseDialog writes one accessory token
+            // via CustomExerciseEquipment (HANDLES / SHORT_BAR / BAR / ROPE / BELT /
+            // STRAPS) for cable rows and BODYWEIGHT otherwise (issue #970).
+            isBodyweight = null,
+        )
     }
 
     override suspend fun updateCustomExercise(exercise: Exercise): Result<Exercise> {

@@ -95,6 +95,39 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `createCustomExercise steps past a custom id already taken for this millisecond`() = runTest {
+        // Ids are `custom_<ms>`. Two creates in one millisecond used to collide on the
+        // primary key and fail the second insert. Occupy the next few seconds of ids so
+        // every create below lands on a taken millisecond.
+        val start = com.devil.phoenixproject.domain.model.currentTimeMillis()
+        val taken = (0L until 5_000L).map { "custom_${start + it}" }.toSet()
+        database.transaction {
+            taken.forEach { id ->
+                insertExercise(id = id, name = id, muscleGroup = "Chest", equipment = "HANDLES", isCustom = 1L)
+            }
+        }
+
+        val ids = (1..3).map { n ->
+            val result = repository.createCustomExercise(
+                com.devil.phoenixproject.domain.model.Exercise(
+                    name = "Burst $n",
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = "HANDLES",
+                ),
+            )
+            val id = result.getOrNull()?.id
+            assertNotNull(id, "create #$n must succeed: ${result.exceptionOrNull()}")
+            assertFalse(id in taken, "create #$n reused taken id $id")
+            assertNotNull(id.removePrefix("custom_").toLongOrNull(), "id keeps the custom_<ms> shape: $id")
+            id
+        }
+
+        assertEquals(ids.size, ids.toSet().size, "custom exercise ids must be unique: $ids")
+        assertEquals("Burst 1", repository.getExerciseById(ids[0])?.name)
+    }
+
+    @Test
     fun `createCustomExercise stores the selected accessory token without cable metadata`() = runTest {
         // Issue #970: the equipment dropdown writes one accessory token (SHORT_BAR here,
         // BAR pinned too since Long Bar must store BAR); custom rows must read back with no
