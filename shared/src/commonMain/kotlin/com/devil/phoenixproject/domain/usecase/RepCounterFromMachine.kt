@@ -42,7 +42,6 @@ class RepCounterFromMachine {
 
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
-    private var pendingRepProgress = 0f // 0.0 at TOP, 1.0 at BOTTOM (legacy, kept for compatibility)
 
     // Issue #163: Phase tracking for animated rep counter
     private var activePhase: RepPhase = RepPhase.IDLE
@@ -113,7 +112,6 @@ class RepCounterFromMachine {
         shouldStop = false
         carryoverChecked = false
         hasPendingRep = false
-        pendingRepProgress = 0f
         // Issue #163: Reset phase tracking
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
@@ -155,7 +153,6 @@ class RepCounterFromMachine {
         shouldStop = false
         carryoverChecked = false
         hasPendingRep = false
-        pendingRepProgress = 0f
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
@@ -437,7 +434,6 @@ class RepCounterFromMachine {
             // Only show pending for WORKING reps (after warmup complete)
             if (warmupReps >= warmupTarget && !hasPendingRep) {
                 hasPendingRep = true
-                pendingRepProgress = 0f
                 logDebug("📈 TOP - WORKING_PENDING: showing grey rep ${workingReps + 1}")
 
                 onRepEvent?.invoke(
@@ -458,7 +454,6 @@ class RepCounterFromMachine {
                 ) {
                     workingReps = maxOf(workingReps, workingTarget)
                     hasPendingRep = false
-                    pendingRepProgress = 1f
                     activePhase = RepPhase.IDLE
                     phaseProgress = 0f
 
@@ -486,7 +481,6 @@ class RepCounterFromMachine {
             // Clear pending state when we reach bottom
             if (hasPendingRep) {
                 hasPendingRep = false
-                pendingRepProgress = 1f
                 logDebug("📉 BOTTOM - pending cleared, waiting for machine confirm")
             }
         }
@@ -699,7 +693,6 @@ class RepCounterFromMachine {
             totalReps = total,
             isWarmupComplete = warmupReps >= warmupTarget,
             hasPendingRep = hasPendingRep,
-            pendingRepProgress = pendingRepProgress,
             // Issue #163: Include phase tracking for animated counter
             activeRepPhase = activePhase,
             phaseProgress = phaseProgress,

@@ -564,12 +564,9 @@ class SyncManagerProfilePreferencesTest {
             ),
             profilePreferenceMetadataDeferredLogLine(key),
             profilePreferenceDuplicateResultLogLine(key),
-            profilePreferenceInvalidCanonicalLogLine(
-                ProfilePreferenceCanonicalDecodeResult.Invalid(
-                    localProfileId = sentinel,
-                    section = sentinel,
-                    reason = sentinel,
-                ),
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.INVALID_CANONICAL,
+                1,
             ),
             profilePreferenceChunkFailureLogLine(
                 PortalApiException(sentinel, statusCode = 503),
@@ -585,7 +582,7 @@ class SyncManagerProfilePreferencesTest {
                 "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
                 "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=PROFILE_METADATA_NOT_SENT",
                 "PROFILE_PREFERENCE_DUPLICATE_RESULT section=CORE",
-                "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
+                "PROFILE_PREFERENCE_PULL category=INVALID_CANONICAL count=1",
                 "PROFILE_PREFERENCE_CHUNK_FAILED status=503",
                 "PROFILE_PREFERENCE_LOCAL_FAILURE stage=RESPONSE_MAPPING",
             ),
@@ -654,13 +651,7 @@ class SyncManagerProfilePreferencesTest {
         val sentinel = "SECRET_PULL_DIAGNOSTIC_SENTINEL"
         val lines = ProfilePreferencePullDiagnosticCategory.entries.map { category ->
             profilePreferencePullCountLogLine(category, 7)
-        } + profilePreferenceInvalidCanonicalLogLine(
-            ProfilePreferenceCanonicalDecodeResult.Invalid(
-                localProfileId = sentinel,
-                section = sentinel,
-                reason = sentinel,
-            ),
-        )
+        }
 
         assertEquals(
             listOf(
@@ -669,7 +660,6 @@ class SyncManagerProfilePreferencesTest {
                 "PROFILE_PREFERENCE_PULL category=LATER_PAGE_IGNORED count=7",
                 "PROFILE_PREFERENCE_PULL category=UNKNOWN_PROFILE count=7",
                 "PROFILE_PREFERENCE_PULL category=REPOSITORY_INVALID count=7",
-                "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
             ),
             lines,
         )

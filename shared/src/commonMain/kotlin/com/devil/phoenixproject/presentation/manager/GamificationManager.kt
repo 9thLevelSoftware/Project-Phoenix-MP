@@ -228,8 +228,6 @@ class GamificationManager(
                                         weightPerCableKg = celebrationWeight,
                                         reps = workingReps,
                                         workoutMode = workoutMode,
-                                        brokenPRTypes = celebrationPRTypes,
-                                        cableCount = cableCount,
                                         phaseLabel = phaseLabel,
                                     ),
                                 )

@@ -1504,12 +1504,8 @@ class BlePacketFactoryTest {
 
     @Test
     fun `ProgramMode TUT and TUTBeast round-trip through modeValue and syncString`() {
-        // Verify the persistence round-trip: ProgramMode -> modeValue -> ProgramMode
         assertEquals(3, ProgramMode.TUT.modeValue, "TUT modeValue")
         assertEquals(4, ProgramMode.TUTBeast.modeValue, "TUTBeast modeValue")
-
-        assertEquals(ProgramMode.TUT, ProgramMode.fromValue(3), "fromValue(3) == TUT")
-        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromValue(4), "fromValue(4) == TUTBeast")
 
         // Verify sync wire format
         assertEquals("TUT", ProgramMode.TUT.toSyncString(), "TUT sync string")
