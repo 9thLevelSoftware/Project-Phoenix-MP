@@ -11,11 +11,10 @@ object Constants {
     // Users must re-accept when this version increases
     const val EULA_VERSION = 1
 
-    // Weight limits (in kg) - per cable, not total
-    // V-Form Trainer: 100kg max per cable (200kg total)
-    // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
+    // Weight limits (in kg) - per cable, not total.
+    // V-Form Trainer: 100 kg per cable (200 kg total).
+    // Trainer+: 110 kg per cable (220 kg total). Live command ceilings are CommandLimits.
     const val MIN_WEIGHT_KG = 0f
-    const val MAX_WEIGHT_KG = 100f
 
     // Trainer+ hardware ceiling — used by UI sliders to enforce absolute maximum
     const val MAX_WEIGHT_PER_CABLE_KG = 110f
