@@ -112,7 +112,7 @@ cmp-foundation = { module = "org.jetbrains.compose.foundation:foundation", versi
 cmp-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "cmp-material3" }
 cmp-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "cmp-material-icons" }
 cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
-cmp-ui-tooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "compose-multiplatform" }
+cmp-ui-tooling-preview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "compose-multiplatform" }
 cmp-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
 
 # Koin (Multiplatform DI)

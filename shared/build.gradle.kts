@@ -169,8 +169,8 @@ kotlin {
                 // Ktor OkHttp engine for Android
                 implementation(libs.ktor.client.okhttp)
 
-                // Compose Preview Tooling (for @Preview in shared module)
-                implementation(libs.cmp.ui.tooling)
+                // Preview annotations for @Preview in shared Android sources.
+                implementation(libs.cmp.ui.tooling.preview)
 
                 // Activity Compose (for file picker Activity Result APIs)
                 implementation(libs.androidx.activity.compose)
