@@ -97,16 +97,6 @@ private class IosSoundManager {
         loadEncouragementMildSounds()
         loadEncouragementStrongSounds()
         loadEncouragementDominatrixSounds()
-        // Issue #611 §9.4: One-time boot log asserting the 4 verbal-encouragement pool sizes
-        // match the PR #612 contract. Required by the implementation Gate 11-equivalent.
-        // Unlock SFX is the event-keyed `players` map entry for DOMINATRIX_MODE_UNLOCKED.
-        log.i {
-            "VBT: encouragement pool sizes — " +
-                "neutral=${encouragementNeutralSoundPlayers.size} " +
-                "mild=${encouragementMildSoundPlayers.size} " +
-                "strong=${encouragementStrongSoundPlayers.size} " +
-                "dominatrix=${encouragementDominatrixSoundPlayers.size}"
-        }
         installLifecycleObservers()
     }
 
