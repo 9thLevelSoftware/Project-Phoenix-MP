@@ -112,8 +112,6 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
             .associateBy { it.externalProgramId }
     }
 
-    override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? = programs.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
-
     override suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> {
         val externalIdSet = externalIds.toSet()
         return programs.filter {
@@ -223,10 +221,6 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
 
     private fun publishTemplates() {
         templatesFlow.value = templates.toList()
-    }
-
-    override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> = templatesFlow.map { rows ->
-        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
     }
 
     override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> = templatesFlow.map { rows ->

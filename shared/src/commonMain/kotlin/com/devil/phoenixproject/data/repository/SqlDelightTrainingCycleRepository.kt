@@ -489,14 +489,6 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             }
         }
 
-    override suspend fun getCycleWithProgress(cycleId: String): Pair<TrainingCycle, CycleProgress?>? {
-        return withContext(Dispatchers.IO) {
-            val cycle = getCycleById(cycleId) ?: return@withContext null
-            val progress = getCycleProgress(cycleId)
-            Pair(cycle, progress)
-        }
-    }
-
     override suspend fun saveCycle(cycle: TrainingCycle) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -767,42 +759,6 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
         }
     }
 
-    override suspend fun deleteCycleDay(dayId: String) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                val day = queries.selectCycleDayById(dayId).executeAsOneOrNull() ?: return@transaction
-                val cycle = queries.selectTrainingCycleById(day.cycle_id).executeAsOne()
-                queries.deleteCycleDay(dayId)
-                markCycleEdited(day.cycle_id, cycle.profile_id)
-            }
-        }
-    }
-
-    override suspend fun reorderCycleDays(cycleId: String, dayIds: List<String>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                val dayMap = queries.selectCycleDaysByCycle(cycleId).executeAsList().associateBy { it.id }
-                dayIds.forEachIndexed { index, dayId ->
-                    val day = dayMap[dayId] ?: return@forEachIndexed
-                    queries.updateCycleDay(
-                        day_number = (index + 1).toLong(),
-                        name = day.name,
-                        routine_id = day.routine_id,
-                        is_rest_day = day.is_rest_day,
-                        echo_level = day.echo_level,
-                        eccentric_load_percent = day.eccentric_load_percent,
-                        weight_progression_percent = day.weight_progression_percent,
-                        rep_modifier = day.rep_modifier,
-                        rest_time_override_seconds = day.rest_time_override_seconds,
-                        id = day.id,
-                    )
-                }
-                val cycle = queries.selectTrainingCycleById(cycleId).executeAsOne()
-                markCycleEdited(cycleId, cycle.profile_id)
-            }
-        }
-    }
-
     // ==================== Cycle Progress ====================
 
     override suspend fun getCycleProgress(cycleId: String): CycleProgress? = withContext(Dispatchers.IO) {
@@ -876,17 +832,6 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             }
 
             updated.currentDayNumber
-        }
-    }
-
-    override suspend fun resetProgress(cycleId: String) {
-        withContext(Dispatchers.IO) {
-            val now = currentTimeMillis()
-
-            db.transaction {
-                queries.resetCycleProgress(cycle_start_date = now, cycle_id = cycleId)
-                markStoredCycleEdited(cycleId)
-            }
         }
     }
 

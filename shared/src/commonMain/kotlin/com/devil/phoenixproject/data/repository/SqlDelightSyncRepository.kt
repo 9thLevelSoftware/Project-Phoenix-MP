@@ -15,7 +15,6 @@ import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
 import com.devil.phoenixproject.data.sync.customExerciseIdTimestamp
@@ -136,65 +135,6 @@ class SqlDelightSyncRepository(
 
     // === Push Operations ===
 
-    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectSessionsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            WorkoutSessionSyncDto(
-                clientId = row.id,
-                serverId = row.serverId,
-                timestamp = row.timestamp,
-                mode = row.mode,
-                targetReps = row.targetReps.toInt(),
-                weightPerCableKg = row.weightPerCableKg.toFloat(),
-                duration = row.duration, // Long ms — no toInt() conversion needed
-                totalReps = row.totalReps.toInt(),
-                exerciseId = row.exerciseId,
-                exerciseName = row.exerciseName,
-                deletedAt = row.deletedAt,
-                createdAt = row.timestamp, // Use timestamp as createdAt
-                updatedAt = row.updatedAt ?: row.timestamp,
-            )
-        }
-    }
-
-    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            PersonalRecordSyncDto(
-                // The Portal contract uses the immutable PR UUID. Retain the
-                // legacy row-id fallback only for pre-UUID local records.
-                clientId = row.uuid ?: row.id.toString(),
-                serverId = row.serverId,
-                exerciseId = row.exerciseId,
-                exerciseName = row.exerciseName,
-                weight = row.weight.toFloat(),
-                reps = row.reps.toInt(),
-                oneRepMax = row.oneRepMax.toFloat(),
-                achievedAt = row.achievedAt,
-                workoutMode = row.workoutMode,
-                prType = row.prType,
-                phase = row.phase,
-                volume = row.volume.toFloat(),
-                cableCount = row.cable_count?.toInt(),
-                deletedAt = row.deletedAt,
-                createdAt = row.achievedAt,
-                updatedAt = row.updatedAt ?: row.achievedAt,
-            )
-        }
-    }
-
-    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            RoutineSyncDto(
-                clientId = row.id,
-                serverId = row.serverId,
-                name = row.name,
-                description = row.description,
-                deletedAt = row.deletedAt,
-                createdAt = row.createdAt,
-                updatedAt = row.updatedAt ?: row.createdAt,
-            )
-        }
-    }
-
     override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> = withContext(Dispatchers.IO) {
         queries.selectCustomExercisesModifiedSince(timestamp).executeAsList().map { row ->
             CustomExerciseSyncDto(
@@ -208,20 +148,6 @@ class SqlDelightSyncRepository(
                 deletedAt = row.deletedAt,
                 createdAt = row.created,
                 updatedAt = row.updatedAt ?: row.created,
-            )
-        }
-    }
-
-    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectBadgesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            EarnedBadgeSyncDto(
-                clientId = row.id.toString(),
-                serverId = row.serverId,
-                badgeId = row.badgeId,
-                earnedAt = row.earnedAt,
-                deletedAt = row.deletedAt,
-                createdAt = row.earnedAt,
-                updatedAt = row.updatedAt ?: row.earnedAt,
             )
         }
     }
@@ -2454,15 +2380,6 @@ class SqlDelightSyncRepository(
 
     // === Parity Sync Operations ===
 
-    override suspend fun getAllSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
-        queries.selectAllSessionIdsByProfile(profileId).executeAsList()
-    }
-
-    /**
-     * PR 10 step 7 (R-19): distinct UUID-valid portal session ids (grouped
-     * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
-     * newest-first so the parity cap drops the oldest.
-     */
     override suspend fun seedLegacySyncedGenerationsOnce(
         accountId: String,
         legacyLastSync: Long,
@@ -2491,6 +2408,11 @@ class SqlDelightSyncRepository(
         queries.selectLivePortalSessionIdsByProfile(profileId).executeAsList().toHashSet()
     }
 
+    /**
+     * PR 10 step 7 (R-19): distinct UUID-valid portal session ids (grouped
+     * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
+     * newest-first so the parity cap drops the oldest.
+     */
     override suspend fun getKnownPortalSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectKnownPortalSessionIdsByProfile(profileId)
             .executeAsList()

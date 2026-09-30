@@ -82,11 +82,6 @@ interface TrainingCycleRepository {
     fun getActiveCycle(profileId: String): Flow<TrainingCycle?>
 
     /**
-     * Get a training cycle with its progress information.
-     */
-    suspend fun getCycleWithProgress(cycleId: String): Pair<TrainingCycle, CycleProgress?>?
-
-    /**
      * Save a new training cycle (including its days).
      */
     suspend fun saveCycle(cycle: TrainingCycle)
@@ -133,16 +128,6 @@ interface TrainingCycleRepository {
      */
     suspend fun updateCycleDay(day: CycleDay)
 
-    /**
-     * Delete a cycle day.
-     */
-    suspend fun deleteCycleDay(dayId: String)
-
-    /**
-     * Reorder days in a cycle (updates day numbers).
-     */
-    suspend fun reorderCycleDays(cycleId: String, dayIds: List<String>)
-
     // ==================== Cycle Progress ====================
 
     /**
@@ -161,11 +146,6 @@ interface TrainingCycleRepository {
      * @return The new current day number
      */
     suspend fun advanceToNextDay(cycleId: String): Int
-
-    /**
-     * Reset progress to day 1.
-     */
-    suspend fun resetProgress(cycleId: String)
 
     /**
      * Jump to a specific day in the cycle.

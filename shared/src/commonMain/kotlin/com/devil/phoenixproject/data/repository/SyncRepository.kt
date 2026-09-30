@@ -9,7 +9,6 @@ import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -78,29 +77,9 @@ interface SyncRepository {
     // === Push Operations (get local changes) ===
 
     /**
-     * Get workout sessions modified since the given timestamp, scoped to profile
-     */
-    suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSessionSyncDto>
-
-    /**
-     * Get personal records modified since the given timestamp, scoped to profile
-     */
-    suspend fun getPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecordSyncDto>
-
-    /**
-     * Get routines modified since the given timestamp, scoped to profile
-     */
-    suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<RoutineSyncDto>
-
-    /**
      * Get custom exercises modified since the given timestamp
      */
     suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto>
-
-    /**
-     * Get earned badges modified since the given timestamp, scoped to profile
-     */
-    suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto>
 
     /**
      * Get current gamification stats for sync, scoped to profile
@@ -287,23 +266,16 @@ interface SyncRepository {
     // === Parity Sync Operations (get local entity IDs for comparison) ===
 
     /**
-     * Get all session IDs for the given profile.
-     * Used for parity-based sync to determine which sessions already exist locally.
-     */
-    suspend fun getAllSessionIds(profileId: String = "default"): List<String>
-
-    /**
      * PR 10 step 7 (R-19): the profile's known *portal* session ids — distinct
      * `routineSessionId`s for grouped rows, the row id for standalone rows, plus
      * tombstone portal ids from soft-deleted rows — newest-first so the parity cap
      * drops the oldest. UUID-valid ids only (local template-derived ids cannot
      * converge through the portal's UUID contract).
      *
-     * Default falls back to [getAllSessionIds] so unrelated test fakes keep compiling;
-     * production overrides this with the real portal-id projection.
+     * Production reads `selectKnownPortalSessionIdsByProfile`. Test fakes override
+     * this with the ids they want parity to see.
      */
-    suspend fun getKnownPortalSessionIds(profileId: String = "default"): List<String> =
-        getAllSessionIds(profileId)
+    suspend fun getKnownPortalSessionIds(profileId: String = "default"): List<String>
 
     /**
      * One-shot upgrade seeding, once per portal account ([accountId] namespaces the ledger

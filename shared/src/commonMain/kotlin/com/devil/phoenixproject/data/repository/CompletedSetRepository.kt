@@ -25,11 +25,6 @@ interface CompletedSetRepository {
     suspend fun savePlannedSet(set: PlannedSet)
 
     /**
-     * Save multiple planned sets at once.
-     */
-    suspend fun savePlannedSets(sets: List<PlannedSet>)
-
-    /**
      * Update a planned set.
      */
     suspend fun updatePlannedSet(set: PlannedSet)
@@ -38,11 +33,6 @@ interface CompletedSetRepository {
      * Delete a planned set.
      */
     suspend fun deletePlannedSet(setId: String)
-
-    /**
-     * Delete all planned sets for a routine exercise.
-     */
-    suspend fun deletePlannedSetsForExercise(routineExerciseId: String)
 
     // ==================== Completed Sets ====================
 
@@ -114,11 +104,6 @@ interface CompletedSetRepository {
      * exercise, whose PR was never evaluated for the new exercise).
      */
     suspend fun clearPr(setId: String)
-
-    /**
-     * Delete a completed set.
-     */
-    suspend fun deleteCompletedSet(setId: String)
 
     /**
      * Delete all completed sets for a session.
