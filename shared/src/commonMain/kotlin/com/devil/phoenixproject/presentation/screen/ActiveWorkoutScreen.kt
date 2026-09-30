@@ -106,7 +106,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Issue #152: Collect skipped/completed sets for ExerciseNavigator dot state
     val skippedExercises by viewModel.skippedExercises.collectAsState()
     val completedExercises by viewModel.completedExercises.collectAsState()
-    val hapticEvents = viewModel.hapticEvents
     val connectionState by viewModel.connectionState.collectAsState()
     // Load baseline for base tension subtraction (~4kg per cable)
     val loadBaselineA by viewModel.loadBaselineA.collectAsState()
@@ -523,7 +522,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 state = workoutUiState,
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
-                hapticEvents = hapticEvents,
                 modifier = Modifier.weight(1f),
             )
         }
