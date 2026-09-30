@@ -15,8 +15,9 @@ import kotlinx.datetime.toLocalDateTime
  * `Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes`
  *
  * Weight convention: [WorkoutSession.weightPerCableKg] is PER-CABLE. This exporter
- * multiplies by [WEIGHT_MULTIPLIER] (2) to produce the total weight before any
- * unit conversion, matching the portal's display convention.
+ * multiplies by the session's recorded [WorkoutSession.cableCount] to produce the
+ * total weight before any unit conversion. Older dual-cable sessions stored a null
+ * cable count and still use [WEIGHT_MULTIPLIER] (2).
  *
  * Each session row represents one "set" in Strong terms. Sessions sharing the same
  * [WorkoutSession.routineSessionId] are grouped under the same workout name and
@@ -113,7 +114,7 @@ object CsvExporter {
         val durationSeconds = session.duration / 1000L
         val duration = formatDuration(durationSeconds)
         val exerciseName = session.exerciseName ?: ""
-        val weight = formatWeight(session.weightPerCableKg, weightUnit)
+        val weight = formatWeight(session.weightPerCableKg, weightUnit, session.cableCount)
         val reps = if (session.totalReps > 0) session.totalReps else session.reps
 
         return buildString {
@@ -168,12 +169,19 @@ object CsvExporter {
     }
 
     /**
-     * Format per-cable weight to total weight string (multiplied by [WEIGHT_MULTIPLIER]).
+     * Format per-cable weight to total weight string.
+     *
+     * Multiplies by the session's recorded [cableCount]. A null count is an older
+     * dual-cable session and still uses [WEIGHT_MULTIPLIER] (2).
      * Converts to lbs when [weightUnit] is [WeightUnit.LB].
      * Returns a plain decimal string with up to 2 decimal places, trimming trailing zeros.
      */
-    internal fun formatWeight(perCableKg: Float, weightUnit: WeightUnit): String {
-        val totalKg = perCableKg * WEIGHT_MULTIPLIER
+    internal fun formatWeight(
+        perCableKg: Float,
+        weightUnit: WeightUnit,
+        cableCount: Int? = null,
+    ): String {
+        val totalKg = perCableKg * (cableCount ?: WEIGHT_MULTIPLIER)
         val value = if (weightUnit == WeightUnit.LB) totalKg * KG_TO_LB else totalKg
         // Format with up to 2 decimal places, strip trailing zeros after decimal
         val rounded = (value * 100).toLong() / 100.0
