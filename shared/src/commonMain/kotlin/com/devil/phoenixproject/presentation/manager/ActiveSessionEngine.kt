@@ -6826,20 +6826,6 @@ class ActiveSessionEngine(
         }
     }
 
-    fun incrementWeight(amount: Float = 0.5f) {
-        val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
-        adjustWeight(currentWeight + amount)
-    }
-
-    fun decrementWeight(amount: Float = 0.5f) {
-        val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
-        adjustWeight(currentWeight - amount)
-    }
-
-    fun setWeightPreset(presetWeightKg: Float) {
-        adjustWeight(presetWeightKg)
-    }
-
     suspend fun getLastWeightForExercise(exerciseId: String): Float? {
         val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
         // F-034: one indexed row instead of loading the profile's whole history.
@@ -6857,11 +6843,6 @@ class ActiveSessionEngine(
         coordinator.handleDetectionEnabledTimestamp = now
         Logger.d("ActiveSessionEngine: Enabling handle detection for auto-start")
         bleRepository.enableHandleDetection(true)
-    }
-
-    fun disableHandleDetection() {
-        Logger.d("ActiveSessionEngine: Disabling handle detection")
-        bleRepository.enableHandleDetection(false)
     }
 
     fun prepareForJustLift() {
@@ -7252,8 +7233,6 @@ class ActiveSessionEngine(
 
         return matchedLiftIds.containsAll(FiveThreeOneRoutineDetector.MAIN_LIFT_IDS)
     }
-
-    // ===== Form Check =====
 
     // ===== Core Workout Lifecycle =====
 

@@ -385,11 +385,6 @@ class GamificationManager(
         consecutiveQualitySets = 0
     }
 
-    fun emitBadgeSound() {
-        if (!gamificationEnabled.value) return
-        scope.launch { hapticEvents.emit(HapticEvent.BADGE_EARNED) }
-    }
-
     fun emitPRSound() {
         if (!gamificationEnabled.value) return
         scope.launch { hapticEvents.emit(HapticEvent.PERSONAL_RECORD) }

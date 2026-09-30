@@ -941,7 +941,6 @@ class DefaultWorkoutSessionManager(
     fun goToPreviousExercise() = routineFlowManager.goToPreviousExercise()
     fun canGoBack(): Boolean = routineFlowManager.canGoBack()
     fun canSkipForward(): Boolean = routineFlowManager.canSkipForward()
-    fun getRoutineExerciseNames(): List<String> = routineFlowManager.getRoutineExerciseNames()
     fun logRpeForCurrentSet(rpe: Int) = routineFlowManager.logRpeForCurrentSet(rpe)
     fun setReadyPrev() = routineFlowManager.setReadyPrev()
     fun setReadySkip() = routineFlowManager.setReadySkip()
@@ -1037,15 +1036,11 @@ class DefaultWorkoutSessionManager(
     // ===== Weight Adjustment — delegated to ActiveSessionEngine =====
 
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) = activeSessionEngine.adjustWeight(newWeightKg, sendToMachine)
-    fun incrementWeight(amount: Float = 0.5f) = activeSessionEngine.incrementWeight(amount)
-    fun decrementWeight(amount: Float = 0.5f) = activeSessionEngine.decrementWeight(amount)
-    fun setWeightPreset(presetWeightKg: Float) = activeSessionEngine.setWeightPreset(presetWeightKg)
     suspend fun getLastWeightForExercise(exerciseId: String): Float? = activeSessionEngine.getLastWeightForExercise(exerciseId)
 
     // ===== Just Lift — delegated to ActiveSessionEngine =====
 
     fun enableHandleDetection() = activeSessionEngine.enableHandleDetection()
-    fun disableHandleDetection() = activeSessionEngine.disableHandleDetection()
     fun prepareForJustLift() = activeSessionEngine.prepareForJustLift()
     suspend fun getJustLiftDefaults(): JustLiftDefaults = activeSessionEngine.getJustLiftDefaults()
     suspend fun getSingleExerciseDefaults(exerciseId: String) = activeSessionEngine.getSingleExerciseDefaults(exerciseId)
