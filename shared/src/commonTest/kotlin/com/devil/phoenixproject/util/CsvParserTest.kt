@@ -77,7 +77,7 @@ class CsvParserTest {
             2026-03-11,Squat,Echo,8,3,5,8,100.0 kg,0,60,No,125
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
 
         assertEquals(0, errors.size, "Expected no errors but got: $errors")
         assertEquals(2, sessions.size)
@@ -114,7 +114,7 @@ class CsvParserTest {
             2026-03-10,'-Bar Row,OldSchool,10,0,10,10,80.0,-1.0,45,No,100
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
 
         assertEquals(0, errors.size, "Expected no errors but got: $errors")
         assertEquals("-Bar Row", sessions.single().exerciseName)
@@ -128,7 +128,7 @@ class CsvParserTest {
             2026-03-10,"Bench Press, Flat",OldSchool,10,0,10,10,80.0,0,45,No,100
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
 
         assertEquals(0, errors.size)
         assertEquals(1, sessions.size)
@@ -142,13 +142,13 @@ class CsvParserTest {
             2026-03-10,Curl,OldSchool,0,0,0,5,30.0,0,30,Yes,100
         """.trimIndent()
 
-        val (sessions, _) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, _) = PhoenixCsvCodec.parseWorkoutHistory(csv)
         assertEquals(true, sessions[0].isJustLift)
     }
 
     @Test
     fun parseWorkoutHistory_emptyCsv() {
-        val (sessions, errors) = CsvParser.parseWorkoutHistory("")
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory("")
         assertEquals(0, sessions.size)
         assertEquals(1, errors.size)
         assertTrue(errors[0].contains("empty"))
@@ -161,7 +161,7 @@ class CsvParserTest {
             1,2,3
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
         assertEquals(0, sessions.size)
         assertEquals(1, errors.size)
         assertTrue(errors[0].contains("Unrecognized"))
@@ -174,7 +174,7 @@ class CsvParserTest {
             not-a-date,Bench,OldSchool,10,0,10,10,80.0,0,45,No,100
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
         assertEquals(0, sessions.size)
         assertEquals(1, errors.size)
         assertTrue(errors[0].contains("Row 2"))
@@ -188,7 +188,7 @@ class CsvParserTest {
             2026-03-10,Bench Press,OldSchool,80.0,10
         """.trimIndent()
 
-        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+        val (sessions, errors) = PhoenixCsvCodec.parseWorkoutHistory(csv)
         assertEquals(0, errors.size)
         assertEquals(1, sessions.size)
         assertEquals("Bench Press", sessions[0].exerciseName)

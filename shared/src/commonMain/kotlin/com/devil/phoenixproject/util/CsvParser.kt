@@ -1,23 +1,11 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.domain.model.WorkoutSession
-
 /**
- * Low-level CSV helpers plus the history import entry point.
- *
- * Workout-history and personal-record bytes are produced and parsed by [PhoenixCsvCodec].
- * [parseWorkoutHistory] delegates there so existing importers keep this call site.
- * [parseCsvRow] and [parseWeight] stay here because Strong/Hevy import and routine CSV use them.
+ * Low-level CSV helpers. Phoenix workout history and personal-record bytes live in
+ * [PhoenixCsvCodec]; Strong/Hevy import and routine CSV still use [parseCsvRow] and
+ * [parseWeight].
  */
 object CsvParser {
-
-    /**
-     * Parse a Phoenix workout-history CSV into [WorkoutSession] rows.
-     *
-     * `Duration (s)` is whole seconds and is stored as milliseconds.
-     * See [PhoenixCsvCodec] for the header and the legacy iOS column layout.
-     */
-    fun parseWorkoutHistory(csvContent: String): Pair<List<WorkoutSession>, List<String>> = PhoenixCsvCodec.parseWorkoutHistory(csvContent)
 
     /**
      * Parse a weight string that may contain unit suffixes or +/- prefix.
