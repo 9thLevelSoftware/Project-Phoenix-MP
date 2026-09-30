@@ -15,9 +15,6 @@ plugins {
 
     // SQLDelight
     alias(libs.plugins.sqldelight) apply false
-
-    // Code formatting
-    alias(libs.plugins.spotless)
 }
 
 allprojects {
@@ -31,41 +28,6 @@ allprojects {
                 .using(project(":third_party:kable-core-android-patched"))
                 .because("Phoenix #333: debug Android variant must use the same patched Kable write path")
         }
-    }
-}
-
-spotless {
-    kotlin {
-        target("shared/src/**/*.kt", "androidApp/src/**/*.kt")
-        targetExclude("**/build/**", "**/generated/**")
-        ktlint().editorConfigOverride(
-            mapOf(
-                "max_line_length" to "off",
-                "ktlint_code_style" to "android_studio",
-                "ktlint_standard_no-wildcard-imports" to "disabled",
-                "ktlint_standard_package-name" to "disabled",
-                "ktlint_standard_function-naming" to "disabled",
-                "ktlint_standard_multiline-expression-wrapping" to "disabled",
-                "ktlint_standard_string-template-indent" to "disabled",
-                "ktlint_standard_filename" to "disabled",
-                "ktlint_standard_backing-property-naming" to "disabled",
-                "ktlint_standard_kdoc" to "disabled",
-                "ktlint_standard_value-parameter-comment" to "disabled",
-                "ktlint_standard_property-naming" to "disabled",
-                "ktlint_standard_class-naming" to "disabled",
-                "ktlint_standard_comment-wrapping" to "disabled",
-            ),
-        )
-    }
-    kotlinGradle {
-        target("*.gradle.kts", "shared/*.gradle.kts", "androidApp/*.gradle.kts")
-        targetExclude("**/build/**")
-        ktlint().editorConfigOverride(
-            mapOf(
-                "max_line_length" to "140",
-                "ktlint_code_style" to "android_studio",
-            ),
-        )
     }
 }
 
