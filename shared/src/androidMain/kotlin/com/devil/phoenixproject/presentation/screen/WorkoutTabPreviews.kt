@@ -662,9 +662,6 @@ private val previewIdleAutoStop = AutoStopUiState(isActive = false, secondsRemai
 
 private fun previewWorkoutActions(): WorkoutActions = workoutActions(
     onScan = {},
-    onCancelScan = {},
-    onDisconnect = {},
-    onStartWorkout = {},
     onStopWorkout = {},
     onSkipRest = {},
     onSkipCountdown = {},

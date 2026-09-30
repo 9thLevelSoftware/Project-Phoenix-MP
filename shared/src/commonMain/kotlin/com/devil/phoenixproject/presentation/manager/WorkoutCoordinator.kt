@@ -509,10 +509,6 @@ class WorkoutCoordinator(
     internal val _currentWarmupSetIndex = MutableStateFlow(-1)
     val currentWarmupSetIndex: StateFlow<Int> = _currentWarmupSetIndex.asStateFlow()
 
-    // Total number of variable warm-up sets for the current exercise (0 if none)
-    internal val _totalWarmupSets = MutableStateFlow(0)
-    val totalWarmupSets: StateFlow<Int> = _totalWarmupSets.asStateFlow()
-
     // ===== Session Tracking =====
 
     internal var currentSessionId: String? = null

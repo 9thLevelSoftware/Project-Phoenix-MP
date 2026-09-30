@@ -325,7 +325,7 @@ private fun MigrationRetryScreen(message: String, onRetry: () -> Unit) {
 @Composable
 fun StartupPendingSurface() {
     PhoenixTheme {
-        SplashScreen(visible = true)
+        SplashScreen()
     }
 }
 
@@ -388,7 +388,7 @@ fun AppContent(
             when (startupSurface(eulaAccepted, launchSplashCompleted, migrationState)) {
                 StartupSurface.EULA -> EulaScreen(onAccept = eulaViewModel::acceptEula)
 
-                StartupSurface.SPLASH -> SplashScreen(visible = true)
+                StartupSurface.SPLASH -> SplashScreen()
 
                 StartupSurface.MIGRATION_RETRY -> MigrationRetryScreen(
                     message = (migrationState as RequiredMigrationState.Failed).message,

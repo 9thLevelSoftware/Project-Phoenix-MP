@@ -977,7 +977,6 @@ class DWSMRoutineFlowTest {
             harness.dwsm.coordinator.currentWarmupSetIndex.value,
             "Restarting the current exercise from the navigator must reinitialize its warm-up sets.",
         )
-        assertEquals(1, harness.dwsm.coordinator.totalWarmupSets.value)
         harness.cleanup()
     }
 

@@ -1023,7 +1023,6 @@ class MainViewModel(
 
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
-    val totalWarmupSets: StateFlow<Int> get() = workoutSessionManager.coordinator.totalWarmupSets
     val weightAdjustmentRecommendation get() = workoutSessionManager.coordinator.weightAdjustmentRecommendation
     fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)

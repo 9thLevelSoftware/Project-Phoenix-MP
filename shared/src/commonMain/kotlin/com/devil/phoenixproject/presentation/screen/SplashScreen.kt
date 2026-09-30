@@ -1,9 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -52,7 +49,7 @@ private val DeepNavy = Color(0xFF1E293B)
  * - "Project Phoenix" text fade-in
  */
 @Composable
-fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
+fun SplashScreen(modifier: Modifier = Modifier) {
     // home-shell-18: SplashScreen renders outside EnhancedMainScreen's CompositionLocalProvider,
     // so LocalPlatformAccessibilitySettings would return the default (reduceMotion=false).
     // Use rememberPlatformAccessibilitySettings() directly to query the platform setting.
@@ -63,20 +60,14 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
     var showText by remember { mutableStateOf(false) }
     var showEmbers by remember { mutableStateOf(false) }
 
-    // Trigger animations when visible
-    LaunchedEffect(visible) {
-        if (visible) {
-            delay(100)
-            showLogo = true
-            delay(400)
-            showEmbers = true
-            delay(300)
-            showText = true
-        } else {
-            showLogo = false
-            showText = false
-            showEmbers = false
-        }
+    // Entrance sequence. Callers drop the splash by stopping composition.
+    LaunchedEffect(Unit) {
+        delay(100)
+        showLogo = true
+        delay(400)
+        showEmbers = true
+        delay(300)
+        showText = true
     }
 
     // Infinite transition for continuous animations
@@ -142,122 +133,116 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
         label = "textOffset",
     )
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(300)),
-        exit = fadeOut(animationSpec = tween(400)),
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        DarkSlate,
+                        DeepNavy,
+                        DarkSlate,
+                    ),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
     ) {
+        // Ember particles layer (behind logo)
+        if (showEmbers) {
+            EmberParticles(
+                modifier = Modifier.fillMaxSize(),
+                particleCount = 25,
+            )
+        }
+
+        // Fire glow behind logo
         Box(
-            modifier = modifier
-                .fillMaxSize()
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .aspectRatio(1f)
+                .scale(logoScale * logoBreath * 1.3f)
+                .alpha(glowIntensity * 0.5f * logoAlpha)
+                .blur(40.dp)
                 .background(
-                    Brush.verticalGradient(
+                    Brush.radialGradient(
                         colors = listOf(
-                            DarkSlate,
-                            DeepNavy,
-                            DarkSlate,
+                            FireOrange.copy(alpha = fireFlicker * 0.8f),
+                            FireYellow.copy(alpha = 0.4f),
+                            Color.Transparent,
                         ),
                     ),
                 ),
-            contentAlignment = Alignment.Center,
+        )
+
+        // Secondary inner glow
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .aspectRatio(1f)
+                .scale(logoScale * logoBreath * 1.1f)
+                .alpha(glowIntensity * 0.7f * logoAlpha)
+                .blur(25.dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            FireYellow.copy(alpha = 0.9f),
+                            FireOrange.copy(alpha = 0.5f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+
+        // Main content column
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            // Ember particles layer (behind logo)
-            if (showEmbers) {
-                EmberParticles(
-                    modifier = Modifier.fillMaxSize(),
-                    particleCount = 25,
-                )
-            }
-
-            // Fire glow behind logo
-            Box(
+            // Phoenix logo with animations
+            Image(
+                painter = painterResource(Res.drawable.phoenix_logo),
+                contentDescription = stringResource(Res.string.cd_phoenix_logo),
                 modifier = Modifier
-                    .fillMaxWidth(0.7f)
+                    .fillMaxWidth(0.55f)
                     .aspectRatio(1f)
-                    .scale(logoScale * logoBreath * 1.3f)
-                    .alpha(glowIntensity * 0.5f * logoAlpha)
-                    .blur(40.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                FireOrange.copy(alpha = fireFlicker * 0.8f),
-                                FireYellow.copy(alpha = 0.4f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
+                    .scale(logoScale * logoBreath)
+                    .alpha(logoAlpha),
+                contentScale = ContentScale.Fit,
             )
 
-            // Secondary inner glow
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.5f)
-                    .aspectRatio(1f)
-                    .scale(logoScale * logoBreath * 1.1f)
-                    .alpha(glowIntensity * 0.7f * logoAlpha)
-                    .blur(25.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                FireYellow.copy(alpha = 0.9f),
-                                FireOrange.copy(alpha = 0.5f),
-                                Color.Transparent,
-                            ),
-                        ),
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // "Project Phoenix" text
+            Text(
+                text = "PROJECT PHOENIX",
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    letterSpacing = 6.sp,
+                    color = FireOrange,
+                    shadow = Shadow(
+                        color = FireYellow.copy(alpha = 0.6f),
+                        offset = Offset(0f, 0f),
+                        blurRadius = 12f,
                     ),
+                ),
+                modifier = Modifier
+                    .alpha(textAlpha)
+                    .offset(y = textOffset.dp),
             )
 
-            // Main content column
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                // Phoenix logo with animations
-                Image(
-                    painter = painterResource(Res.drawable.phoenix_logo),
-                    contentDescription = stringResource(Res.string.cd_phoenix_logo),
-                    modifier = Modifier
-                        .fillMaxWidth(0.55f)
-                        .aspectRatio(1f)
-                        .scale(logoScale * logoBreath)
-                        .alpha(logoAlpha),
-                    contentScale = ContentScale.Fit,
-                )
+            Spacer(modifier = Modifier.height(8.dp))
 
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // "Project Phoenix" text
-                Text(
-                    text = "PROJECT PHOENIX",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        letterSpacing = 6.sp,
-                        color = FireOrange,
-                        shadow = Shadow(
-                            color = FireYellow.copy(alpha = 0.6f),
-                            offset = Offset(0f, 0f),
-                            blurRadius = 12f,
-                        ),
-                    ),
-                    modifier = Modifier
-                        .alpha(textAlpha)
-                        .offset(y = textOffset.dp),
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Tagline
-                Text(
-                    text = "Rise from the ashes",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Light,
-                        letterSpacing = 2.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                    ),
-                    modifier = Modifier
-                        .alpha(textAlpha * 0.8f)
-                        .offset(y = textOffset.dp),
-                )
-            }
+            // Tagline
+            Text(
+                text = "Rise from the ashes",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = 2.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                ),
+                modifier = Modifier
+                    .alpha(textAlpha * 0.8f)
+                    .offset(y = textOffset.dp),
+            )
         }
     }
 }

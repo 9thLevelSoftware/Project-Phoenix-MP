@@ -880,7 +880,6 @@ class RoutineFlowManager(
             coordinator._workoutState.value = WorkoutState.Idle
             publishRackSelection(rackSelection)
             coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-            coordinator._totalWarmupSets.value = if (hasVariableWarmups) firstExercise.warmupSets.size else 0
             coordinator._userAdjustedWeightDuringRest = false
             coordinator._workoutParameters.value = params.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
@@ -1090,7 +1089,6 @@ class RoutineFlowManager(
                 selectedExerciseIndex = 0,
             )
             coordinator._currentWarmupSetIndex.value = if (warmupExercise != null) 0 else -1
-            coordinator._totalWarmupSets.value = warmupExercise?.warmupSets?.size ?: 0
         }
         warmupExercise?.let { exercise ->
             Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
@@ -1168,7 +1166,6 @@ class RoutineFlowManager(
             coordinator._routineFlowState.value = readyState
             if (initializeWarmups) {
                 coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-                coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
             }
             coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
@@ -1243,7 +1240,6 @@ class RoutineFlowManager(
             coordinator._routineFlowState.value = readyState
             if (initializeWarmups) {
                 coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-                coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
             }
             coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
                 coordinator._workoutParameters.value,

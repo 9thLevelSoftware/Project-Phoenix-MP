@@ -122,7 +122,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val isRestPaused by viewModel.isRestPaused.collectAsState()
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
-    val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
     // Issue #113: Just Lift visual rest countdown
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
     val recentJustLiftExerciseIds by viewModel.recentJustLiftExerciseIds.collectAsState()
@@ -411,7 +410,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, latestRepQuality,
         latestBiomechanicsResult,
         motionStartHoldProgress, isRestPaused,
-        currentWarmupSetIndex, totalWarmupSets,
+        currentWarmupSetIndex,
         justLiftRestCountdown, isExerciseTimerPaused,
         userPreferences.vbtEnabled,
         userPreferences.velocityLossThresholdPercent,
@@ -451,7 +450,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             motionStartHoldProgress = motionStartHoldProgress,
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
-            totalWarmupSets = totalWarmupSets,
             justLiftRestCountdown = justLiftRestCountdown,
             isExerciseTimerPaused = isExerciseTimerPaused,
             vbtEnabled = userPreferences.vbtEnabled,
@@ -470,14 +468,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val workoutActions = remember(viewModel) {
         workoutActions(
             onScan = { viewModel.startScanning() },
-            onCancelScan = { viewModel.cancelScanOrConnection() },
-            onDisconnect = { viewModel.disconnect() },
-            onStartWorkout = {
-                viewModel.ensureConnection(
-                    onConnected = { viewModel.startWorkout() },
-                    onFailed = { /* Error shown via StateFlow */ },
-                )
-            },
             onRetryWorkoutTeardown = { viewModel.retryWorkoutTeardown() },
             onReconnectWorkoutTeardown = { viewModel.reconnectWorkoutTeardown() },
             onStopWorkout = { showExitConfirmation = true },
