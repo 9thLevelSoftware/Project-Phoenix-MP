@@ -73,6 +73,7 @@ import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -110,6 +111,7 @@ import projectphoenix.shared.generated.resources.drop_set_min_weight_error
 import projectphoenix.shared.generated.resources.drop_set_min_weight_supporting
 import projectphoenix.shared.generated.resources.drop_set_offer_toggle
 import projectphoenix.shared.generated.resources.drop_set_title
+import projectphoenix.shared.generated.resources.echo_level
 import projectphoenix.shared.generated.resources.label_duration
 import projectphoenix.shared.generated.resources.label_reps
 import projectphoenix.shared.generated.resources.percent_label
@@ -1342,7 +1344,7 @@ fun EchoLevelSelector(
                 .padding(Spacing.medium),
         ) {
             Text(
-                "Echo Level",
+                stringResource(Res.string.echo_level),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1359,7 +1361,7 @@ fun EchoLevelSelector(
                         onClick = { onLevelChange(echoLevel) },
                         selected = level == echoLevel,
                     ) {
-                        Text(echoLevel.displayName, maxLines = 1)
+                        Text(echoLevelLabel(echoLevel), maxLines = 1)
                     }
                 }
             }
