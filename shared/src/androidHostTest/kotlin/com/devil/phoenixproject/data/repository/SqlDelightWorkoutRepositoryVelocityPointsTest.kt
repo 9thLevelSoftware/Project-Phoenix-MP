@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -11,36 +12,6 @@ import kotlinx.coroutines.test.runTest
 class SqlDelightWorkoutRepositoryVelocityPointsTest {
 
     private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
-
-    private fun seedExercise(db: PhoenixDatabase, id: String) {
-        db.phoenixDatabaseQueries.insertExercise(
-            id = id,
-            name = id,
-            displayName = null,
-            description = null,
-            created = 0L,
-            muscleGroup = "Chest",
-            muscleGroups = "Chest",
-            muscles = null,
-            equipment = "BAR",
-            movement = null,
-            sidedness = null,
-            grip = null,
-            gripWidth = null,
-            minRepRange = null,
-            popularity = 0.0,
-            archived = 0L,
-            isFavorite = 0L,
-            isCustom = 0L,
-            timesPerformed = 0L,
-            lastPerformed = null,
-            aliases = null,
-            defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
-            mvtOverrideMs = null,
-            isBodyweight = null,
-        )
-    }
 
     private var sessionCounter = 0
 
@@ -112,7 +83,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     @Test
     fun `returns one point per qualifying session using working avg weight`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex1")
+        db.seedExercise("ex1", equipment = "BAR")
         val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 
@@ -148,7 +119,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     @Test
     fun `excludes null-MCV and zero-rep sessions within the window`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex1")
+        db.seedExercise("ex1", equipment = "BAR")
         val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 
@@ -196,7 +167,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     @Test
     fun `getExerciseIdsWithVelocityData returns distinct mcv-bearing exercises`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "exA"); seedExercise(db, id = "exB")
+        db.seedExercise("exA", equipment = "BAR"); db.seedExercise("exB", equipment = "BAR")
         val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 

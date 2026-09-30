@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.TestDataBackupManager
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.createTestSchema
 import com.devil.phoenixproject.testutil.seedExercise
@@ -2862,7 +2863,7 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = source.manager.exportToJson()
         val target = profileFixture()
-        // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        // Catalogue exercise: export ships customExercises only, so this id is not in the backup. The target seed is required for the routine-exercise foreign key.
         target.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
 
         val importResult = target.manager.importFromJson(backupJson)
@@ -2905,7 +2906,7 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = sourceManager.exportToJson()
         val targetDatabase = createTestDatabase()
-        // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        // Catalogue exercise: export ships customExercises only, so this id is not in the backup. The target seed is required for the routine-exercise foreign key.
         targetDatabase.seedExercise("exercise-scaling-backup", "Bench Press")
         val targetManager = TestDataBackupManager(targetDatabase)
 
@@ -3187,18 +3188,6 @@ class DataBackupManagerRoutineNameTest {
         const val PROFILE_A = "profile-a"
         const val PROFILE_B = "profile-b"
         const val PROFILE_C = "profile-c"
-
-        fun createTestUserProfileRepository(
-            database: PhoenixDatabase,
-            preferences: ProfilePreferencesRepository,
-        ): UserProfileRepository = SqlDelightUserProfileRepository(
-            database = database,
-            profilePreferencesRepository = preferences,
-            profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
-            gamificationRepository = SqlDelightGamificationRepository(database),
-        ).also {
-            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
-        }
     }
 
     @Test
@@ -3321,98 +3310,6 @@ class DataBackupManagerRoutineNameTest {
             "2026-09-19T11:00:00Z",
             targetQueries.selectTrainingCycleById("cycle-mismatch").executeAsOne().server_updated_at,
         )
-    }
-
-    private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.PhoenixDatabase,
-        val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
-        val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
-            database,
-            profilePreferencesRepository,
-        ),
-        private val stagingAreaFactory: (() -> BackupImportStagingArea)? = null,
-        // These tests exercise sample export/restore, so they opt in to raw telemetry.
-        override val includeRawTelemetryInBackups: Boolean = true,
-    ) : BaseDataBackupManager(
-        database,
-        profilePreferencesRepository,
-        userProfileRepository,
-    ) {
-
-        var lastWriterPath: String? = null
-            private set
-
-        override fun createBackupWriter(): BackupJsonWriter {
-            val tempFile = File.createTempFile("backup-test-", ".json")
-            lastWriterPath = tempFile.absolutePath
-            return BackupJsonWriter(tempFile.absolutePath)
-        }
-
-        suspend fun exportToCachePublic(): String = exportToCache()
-
-        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
-            val source = StringBackupStreamSource(value)
-            source.open()
-            return try {
-                importFromStream(source)
-            } finally {
-                source.close()
-            }
-        }
-
-        suspend fun importFromSourceStreaming(source: BackupStreamSource): Result<ImportResult> {
-            source.open()
-            return try {
-                importFromStream(source)
-            } finally {
-                source.close()
-            }
-        }
-
-        override fun createImportStagingArea(): BackupImportStagingArea =
-            stagingAreaFactory?.invoke() ?: super.createImportStagingArea()
-
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-
-        override suspend fun importFromFile(filePath: String): Result<ImportResult> {
-            error("Not needed for tests")
-        }
-
-        override suspend fun shareBackup() = Unit
-
-        override fun getSessionBackupDirectory(): String {
-            val dir = File(System.getProperty("java.io.tmpdir"), "PhoenixBackupsTest")
-            if (!dir.exists()) dir.mkdirs()
-            return dir.absolutePath
-        }
-
-        override fun listBackupFileSizes(): List<Long> {
-            val dir = File(getSessionBackupDirectory())
-            return dir.listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".json") }
-                ?.map { it.length() }
-                ?: emptyList()
-        }
-
-        override fun openBackupFolder() = Unit
-        override fun pruneOldBackups(keepCount: Int) = Unit
-    }
-
-    private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
-        private var index = 0
-
-        override fun open() {
-            index = 0
-        }
-        override fun close() = Unit
-        override fun read(): Int = if (index < value.length) value[index++].code else -1
-        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
-            if (index >= value.length) return -1
-            val count = minOf(length, value.length - index)
-            value.toCharArray(index, index + count).copyInto(buffer, offset)
-            index += count
-            return count
-        }
     }
 
     private class RepeatedJsonTokenSource(

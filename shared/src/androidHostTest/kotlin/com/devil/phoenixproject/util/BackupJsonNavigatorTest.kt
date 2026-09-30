@@ -24,11 +24,11 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.TestDataBackupManager
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
-import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -433,65 +433,6 @@ class StreamingImportRoundTripTest {
 
         override fun read(): Int = reader?.read() ?: -1
         override fun read(buffer: CharArray, offset: Int, length: Int): Int = reader?.read(buffer, offset, length) ?: -1
-    }
-
-    private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.PhoenixDatabase,
-        val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
-        val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
-            database,
-            profilePreferencesRepository,
-        ),
-        // These round-trip tests exercise sample restore, so they opt in to raw telemetry.
-        override val includeRawTelemetryInBackups: Boolean = true,
-    ) : BaseDataBackupManager(
-        database,
-        profilePreferencesRepository,
-        userProfileRepository,
-    ) {
-
-        override fun createBackupWriter(): BackupJsonWriter {
-            val tempFile = File.createTempFile("backup-roundtrip-", ".json")
-            return BackupJsonWriter(tempFile.absolutePath)
-        }
-
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-
-        override suspend fun importFromFile(filePath: String): Result<ImportResult> {
-            error("Not needed for tests")
-        }
-
-        override suspend fun shareBackup() = Unit
-
-        override fun getSessionBackupDirectory(): String {
-            val dir = File(System.getProperty("java.io.tmpdir"), "PhoenixBackupsRoundTrip")
-            if (!dir.exists()) dir.mkdirs()
-            return dir.absolutePath
-        }
-
-        override fun listBackupFileSizes(): List<Long> {
-            val dir = File(getSessionBackupDirectory())
-            return dir.listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".json") }
-                ?.map { it.length() }
-                ?: emptyList()
-        }
-
-        override fun openBackupFolder() = Unit
-        override fun pruneOldBackups(keepCount: Int) = Unit
-
-        /** Public wrapper exposing the protected [importFromStream] for testing. */
-        suspend fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> = importFromStream(source)
-
-        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
-            val source = StringBackupStreamSource(value)
-            source.open()
-            return try {
-                importFromStreamPublic(source)
-            } finally {
-                source.close()
-            }
-        }
     }
 
     @Test
@@ -1148,18 +1089,6 @@ class StreamingImportRoundTripTest {
     private companion object {
         const val PROFILE_A = "profile-a"
         const val PROFILE_B = "profile-b"
-
-        fun createTestUserProfileRepository(
-            database: PhoenixDatabase,
-            preferences: ProfilePreferencesRepository,
-        ): UserProfileRepository = SqlDelightUserProfileRepository(
-            database = database,
-            profilePreferencesRepository = preferences,
-            profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
-            gamificationRepository = SqlDelightGamificationRepository(database),
-        ).also {
-            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
-        }
     }
 
     @Test

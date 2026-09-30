@@ -3,11 +3,8 @@ package com.devil.phoenixproject.util
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.preferences.InMemoryPendingProfileDeletionStore
-import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
-import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
-import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
-import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
 import com.devil.phoenixproject.data.sync.GoTrueUser
@@ -20,9 +17,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.TestDataBackupManager
 import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.testutil.createTestSchema
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import java.io.File
@@ -618,7 +615,13 @@ class DataBackupCompletenessTest {
         val database = PhoenixDatabase(driver)
         val queries = database.phoenixDatabaseQueries
         private val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
-        val manager = TestManager(database, includeRawTelemetry, portalTokenStorage, preferencesManager, pendingProfileDeletionStore)
+        val manager = TestDataBackupManager(
+            database,
+            includeRawTelemetryInBackups = includeRawTelemetry,
+            portalTokenStorage = portalTokenStorage,
+            preferencesManager = preferencesManager,
+            pendingProfileDeletionStore = pendingProfileDeletionStore,
+        )
 
         fun seedProfiles() {
             queries.insertUserProfileIgnore("default", "Default", 0L, 1L, 1L)
@@ -675,41 +678,6 @@ class DataBackupCompletenessTest {
                 profileId = profileId,
             )
         }
-    }
-
-    private class TestManager(
-        database: PhoenixDatabase,
-        override val includeRawTelemetryInBackups: Boolean,
-        portalTokenStorage: PortalTokenStorage?,
-        preferencesManager: FakePreferencesManager?,
-        pendingProfileDeletionStore: InMemoryPendingProfileDeletionStore? = null,
-    ) : BaseDataBackupManager(
-        database,
-        SqlDelightProfilePreferencesRepository(database),
-        SqlDelightUserProfileRepository(
-            database = database,
-            profilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
-            profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
-            gamificationRepository = SqlDelightGamificationRepository(database),
-        ),
-        portalTokenStorage,
-        preferencesManager,
-        pendingProfileDeletionStore,
-    ) {
-        private val dir = kotlin.io.path.createTempDirectory("pr22-backups").toFile()
-
-        suspend fun exportToCachePublic(): String = exportToCache()
-
-        override fun createBackupWriter(): BackupJsonWriter =
-            BackupJsonWriter(File.createTempFile("pr22-export-", ".json", dir).absolutePath)
-
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
-        override suspend fun importFromFile(filePath: String): Result<ImportResult> = error("unused")
-        override suspend fun shareBackup() = Unit
-        override fun getSessionBackupDirectory(): String = dir.absolutePath
-        override fun listBackupFileSizes(): List<Long> = emptyList()
-        override fun openBackupFolder() = Unit
-        override fun pruneOldBackups(keepCount: Int) = Unit
     }
 
     private companion object {

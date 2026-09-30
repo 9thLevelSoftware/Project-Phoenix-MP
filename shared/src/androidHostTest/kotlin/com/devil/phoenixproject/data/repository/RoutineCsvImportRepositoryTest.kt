@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
@@ -34,20 +35,10 @@ class RoutineCsvImportRepositoryTest {
         database = createTestDatabase()
         repository = SqlDelightWorkoutRepository(database, exercises)
         listOf(bench, row).forEach { exercise ->
-            seedExercise(exercise.id!!, exercise.name)
+            database.seedExercise(exercise.id!!, exercise.name, equipment = "BAR")
             exercises.addExercise(exercise)
         }
         database.phoenixDatabaseQueries.insertProfile("p1", "Lifter", 0L, 1L, 1L)
-    }
-
-    private fun seedExercise(id: String, name: String) {
-        database.phoenixDatabaseQueries.insertExercise(
-            id = id, name = name, displayName = null, description = null, created = 0L,
-            muscleGroup = "Chest", muscleGroups = "Chest", muscles = null, equipment = "BAR", movement = null,
-            sidedness = null, grip = null, gripWidth = null, minRepRange = null, popularity = 0.0, archived = 0L,
-            isFavorite = 0L, isCustom = 0L, timesPerformed = 0L, lastPerformed = null, aliases = null,
-            defaultCableConfig = "DOUBLE", one_rep_max_kg = null, mvtOverrideMs = null, isBodyweight = null,
-        )
     }
 
     private suspend fun planFor(text: String, mode: RoutineCsvImportMode) = RoutineCsvImportPlanner().plan(

@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,36 +14,6 @@ import kotlinx.coroutines.test.runTest
 class SqlDelightVelocityOneRepMaxRepositoryTest {
 
     private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
-
-    private fun seedExercise(db: PhoenixDatabase, id: String) {
-        db.phoenixDatabaseQueries.insertExercise(
-            id = id,
-            name = id,
-            displayName = null,
-            description = null,
-            created = 0L,
-            muscleGroup = "Chest",
-            muscleGroups = "Chest",
-            muscles = null,
-            equipment = "BAR",
-            movement = null,
-            sidedness = null,
-            grip = null,
-            gripWidth = null,
-            minRepRange = null,
-            popularity = 0.0,
-            archived = 0L,
-            isFavorite = 0L,
-            isCustom = 0L,
-            timesPerformed = 0L,
-            lastPerformed = null,
-            aliases = null,
-            defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
-            mvtOverrideMs = null,
-            isBodyweight = null,
-        )
-    }
 
     private fun result(estimate: Float, passed: Boolean) =
         VelocityOneRepMaxResult(
@@ -56,7 +27,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     @Test
     fun `insert then latest passing returns most recent passing row`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex1")
+        db.seedExercise("ex1", equipment = "BAR")
         val repo = SqlDelightVelocityOneRepMaxRepository(db)
 
         repo.insert(result(100f, passed = true), exerciseId = "ex1", computedAt = 1_000L, profileId = "default")
@@ -71,7 +42,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     @Test
     fun `latest passing skips a newer failing row`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex3")
+        db.seedExercise("ex3", equipment = "BAR")
         val repo = SqlDelightVelocityOneRepMaxRepository(db)
 
         repo.insert(result(100f, passed = true), exerciseId = "ex3", computedAt = 1_000L, profileId = "default")
@@ -85,7 +56,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     @Test
     fun `latest passing is null when only failing rows exist`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex2")
+        db.seedExercise("ex2", equipment = "BAR")
         val repo = SqlDelightVelocityOneRepMaxRepository(db)
         repo.insert(result(90f, passed = false), exerciseId = "ex2", computedAt = 1_000L, profileId = "default")
         assertNull(repo.getLatestPassing("ex2", "default"))
@@ -94,7 +65,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     @Test
     fun `getAllPassing returns only passing rows for the profile ordered by exercise then time`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "exA"); seedExercise(db, id = "exB")
+        db.seedExercise("exA", equipment = "BAR"); db.seedExercise("exB", equipment = "BAR")
         val repo = SqlDelightVelocityOneRepMaxRepository(db)
         repo.insert(result(100f, passed = true), "exA", computedAt = 1L, profileId = "default")
         repo.insert(result(110f, passed = true), "exA", computedAt = 2L, profileId = "default")
@@ -112,7 +83,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     @Test
     fun `hasEstimates reflects presence of rows`() = runTest {
         val db = createInMemoryTestDatabase()
-        seedExercise(db, id = "ex1")
+        db.seedExercise("ex1", equipment = "BAR")
         val repo = SqlDelightVelocityOneRepMaxRepository(db)
         assertFalse(repo.hasEstimates("ex1", "default"))
         repo.insert(result(100f, passed = true), "ex1", computedAt = 1L, profileId = "default")
