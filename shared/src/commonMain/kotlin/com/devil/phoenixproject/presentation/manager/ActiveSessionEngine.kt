@@ -17,7 +17,6 @@ import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.AutoStopUiState
-import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
@@ -26,9 +25,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
-import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
-import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -527,8 +524,6 @@ internal const val SUMMARY_COMMIT_WAIT_MS = 5_000L
  * BLE commands, rest timer, session persistence, weight adjustment, Just Lift,
  * and training cycles.
  *
- * Extracted from DefaultWorkoutSessionManager during Phase 2 (Manager Decomposition) Plan 04.
- *
  * Communication:
  * - Reads/writes all state through [coordinator] (WorkoutCoordinator)
  * - NEVER holds references to RoutineFlowManager
@@ -541,7 +536,6 @@ class ActiveSessionEngine(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
-    private val personalRecordRepository: PersonalRecordRepository,
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationManager: GamificationManager,
@@ -553,8 +547,6 @@ class ActiveSessionEngine(
     private val transitionIdGenerator: () -> String,
     private val offerIdGenerator: () -> String,
     private val syncTriggerManager: SyncTriggerManager?,
-    private val repMetricRepository: RepMetricRepository,
-    private val biomechanicsRepository: BiomechanicsRepository,
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,

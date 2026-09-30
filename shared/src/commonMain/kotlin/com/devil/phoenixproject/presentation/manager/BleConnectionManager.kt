@@ -59,8 +59,6 @@ class BleConnectionManager(
     private val _connectionError = MutableStateFlow<String?>(null)
     val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
 
-    private var _pendingConnectionCallback: (() -> Unit)? = null
-
     private val _connectionLostDuringWorkout = MutableStateFlow(false)
     val connectionLostDuringWorkout: StateFlow<Boolean> = _connectionLostDuringWorkout.asStateFlow()
 
@@ -248,7 +246,6 @@ class BleConnectionManager(
             connectionState.value is ConnectionState.Scanning
         if (staleAttemptInProgress) {
             Logger.d { "ensureConnection: Restarting in-progress connection with new callbacks" }
-            _pendingConnectionCallback = null
         }
 
         // Start new connection
@@ -264,7 +261,6 @@ class BleConnectionManager(
                     bleRepository.cancelConnection()
                 }
                 _connectionError.value = null
-                _pendingConnectionCallback = onConnected
 
                 // Simple scan-and-connect matching parent repo behavior
                 Logger.d { "ensureConnection: Starting scanAndConnect..." }
@@ -291,14 +287,12 @@ class BleConnectionManager(
                         } else {
                             Logger.w { "ensureConnection: Connection didn't complete" }
                             _connectionError.value = "Connection timeout"
-                            _pendingConnectionCallback = null
                             onFailed()
                         }
                     }
                 } else {
                     Logger.w { "ensureConnection: scanAndConnect failed: ${result.exceptionOrNull()?.message}" }
                     _connectionError.value = result.exceptionOrNull()?.message ?: "Connection failed"
-                    _pendingConnectionCallback = null
                     onFailed()
                 }
             } catch (e: CancellationException) {
@@ -307,7 +301,6 @@ class BleConnectionManager(
             } catch (e: Exception) {
                 Logger.e { "ensureConnection error: ${e.message}" }
                 bleRepository.cancelConnection()
-                _pendingConnectionCallback = null
                 _connectionError.value = "Error: ${e.message}"
                 onFailed()
             }
@@ -323,7 +316,6 @@ class BleConnectionManager(
             try {
                 connectionJob?.cancelAndJoin()
                 connectionJob = null
-                _pendingConnectionCallback = null
                 _connectionError.value = null
                 bleRepository.stopScanning()
                 bleRepository.cancelConnection()
@@ -351,7 +343,6 @@ class BleConnectionManager(
         Logger.d { "cancelConnection: Cancelling connection attempt" }
         connectionJob?.cancel()
         connectionJob = null
-        _pendingConnectionCallback = null
         scope.launch {
             bleRepository.stopScanning()
             bleRepository.cancelConnection()

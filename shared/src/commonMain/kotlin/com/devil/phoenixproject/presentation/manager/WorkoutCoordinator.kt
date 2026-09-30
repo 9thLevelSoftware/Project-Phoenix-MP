@@ -103,8 +103,6 @@ internal data class VbtRuntimeSettings(
  * Sub-managers (RoutineFlowManager, ActiveSessionEngine) will read/write state
  * through this coordinator's `internal` fields. The ViewModel layer reads state
  * through the public `StateFlow` getters.
- *
- * Created during Phase 2 (Manager Decomposition) Plan 01.
  */
 class WorkoutCoordinator(
     internal val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
