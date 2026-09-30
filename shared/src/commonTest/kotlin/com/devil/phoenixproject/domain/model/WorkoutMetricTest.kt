@@ -334,7 +334,8 @@ class RepCountTest {
         assertEquals(0, repCount.totalReps)
         assertFalse(repCount.isWarmupComplete)
         assertFalse(repCount.hasPendingRep)
-        assertEquals(0f, repCount.pendingRepProgress)
+        assertEquals(RepPhase.IDLE, repCount.activeRepPhase)
+        assertEquals(0f, repCount.phaseProgress)
     }
 }
 
@@ -432,47 +433,50 @@ class HapticEventTest {
 class PRCelebrationEventTest {
 
     @Test
-    fun `isWeightPR returns true for weight PRs`() {
+    fun `dialog fields default phase label to Combined`() {
         val event = PRCelebrationEvent(
             exerciseName = "Bench Press",
             weightPerCableKg = 50f,
             reps = 5,
-            workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_WEIGHT),
+            workoutMode = "Old School",
         )
 
-        assertTrue(event.isWeightPR)
-        assertFalse(event.isVolumePR)
-        assertFalse(event.isBothPRs)
+        assertEquals("Bench Press", event.exerciseName)
+        assertEquals(50f, event.weightPerCableKg)
+        assertEquals(5, event.reps)
+        assertEquals("Old School", event.workoutMode)
+        assertEquals("Combined", event.phaseLabel)
     }
 
     @Test
-    fun `isVolumePR returns true for volume PRs`() {
-        val event = PRCelebrationEvent(
+    fun `phaseLabel preserves the phase the dialog renders`() {
+        val concentric = PRCelebrationEvent(
             exerciseName = "Squat",
             weightPerCableKg = 40f,
             reps = 10,
-            workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_VOLUME),
+            workoutMode = "Old School",
+            phaseLabel = "Concentric",
         )
-
-        assertFalse(event.isWeightPR)
-        assertTrue(event.isVolumePR)
-        assertFalse(event.isBothPRs)
-    }
-
-    @Test
-    fun `isBothPRs returns true when both types broken`() {
-        val event = PRCelebrationEvent(
+        val eccentric = PRCelebrationEvent(
             exerciseName = "Deadlift",
             weightPerCableKg = 60f,
             reps = 5,
-            workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_WEIGHT, PRType.MAX_VOLUME),
+            workoutMode = "Old School",
+            phaseLabel = "Eccentric",
+        )
+        val bothPhases = PRCelebrationEvent(
+            exerciseName = "Row",
+            weightPerCableKg = 30f,
+            reps = 8,
+            workoutMode = "Pump",
+            phaseLabel = "Concentric + Eccentric",
         )
 
-        assertTrue(event.isWeightPR)
-        assertTrue(event.isVolumePR)
-        assertTrue(event.isBothPRs)
+        assertEquals("Concentric", concentric.phaseLabel)
+        assertEquals("Eccentric", eccentric.phaseLabel)
+        assertEquals("Concentric + Eccentric", bothPhases.phaseLabel)
+        assertEquals(40f, concentric.weightPerCableKg)
+        assertEquals(10, concentric.reps)
+        assertEquals("Pump", bothPhases.workoutMode)
     }
 }

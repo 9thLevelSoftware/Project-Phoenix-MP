@@ -153,22 +153,6 @@ class WorkoutStateTest {
         assertEquals("Echo", ProgramMode.Echo.displayName)
     }
 
-    @Test
-    fun `ProgramMode fromValue returns correct modes`() {
-        assertEquals(ProgramMode.OldSchool, ProgramMode.fromValue(0))
-        assertEquals(ProgramMode.Pump, ProgramMode.fromValue(2))
-        assertEquals(ProgramMode.TUT, ProgramMode.fromValue(3))
-        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromValue(4))
-        assertEquals(ProgramMode.EccentricOnly, ProgramMode.fromValue(6))
-        assertEquals(ProgramMode.Echo, ProgramMode.fromValue(10))
-    }
-
-    @Test
-    fun `ProgramMode fromValue returns OldSchool for unknown values`() {
-        assertEquals(ProgramMode.OldSchool, ProgramMode.fromValue(999))
-        assertEquals(ProgramMode.OldSchool, ProgramMode.fromValue(-1))
-    }
-
     // ========== EchoLevel Tests ==========
 
     @Test

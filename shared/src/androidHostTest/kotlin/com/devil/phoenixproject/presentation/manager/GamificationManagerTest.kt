@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
-import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -94,7 +93,10 @@ class GamificationManagerTest {
 
             val prEvent = prEvents.single()
             assertEquals("Bench Press", prEvent.exerciseName)
-            assertEquals(setOf(PRType.MAX_WEIGHT, PRType.MAX_VOLUME), prEvent.brokenPRTypes.toSet())
+            assertEquals(24f, prEvent.weightPerCableKg)
+            assertEquals(8, prEvent.reps)
+            assertEquals("Old School", prEvent.workoutMode)
+            assertEquals("Combined", prEvent.phaseLabel)
 
             val awardedBadges = badgeEvents.single()
             assertEquals(1, awardedBadges.size)

@@ -243,11 +243,6 @@ internal fun profilePreferenceDuplicateResultLogLine(
     key: ProfilePreferenceSectionKey,
 ): String = "PROFILE_PREFERENCE_DUPLICATE_RESULT section=${key.section.name}"
 
-internal fun profilePreferenceInvalidCanonicalLogLine(
-    invalid: ProfilePreferenceCanonicalDecodeResult.Invalid,
-): String = "PROFILE_PREFERENCE_INVALID_CANONICAL " +
-    "reason=${safeProfilePreferenceReason(invalid.reason)}"
-
 internal enum class ProfilePreferencePullDiagnosticCategory {
     INVALID_CANONICAL,
     DUPLICATE_KEY,

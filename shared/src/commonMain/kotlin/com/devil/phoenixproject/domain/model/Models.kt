@@ -217,17 +217,6 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     }
 
     companion object {
-        @Suppress("unused")
-        fun fromValue(value: Int): ProgramMode = when (value) {
-            0 -> OldSchool
-            2 -> Pump
-            3 -> TUT
-            4 -> TUTBeast
-            6 -> EccentricOnly
-            10 -> Echo
-            else -> OldSchool
-        }
-
         /**
          * Parse SCREAMING_SNAKE wire format from portal sync.
          * Returns null if the string doesn't match any known mode.
@@ -426,7 +415,6 @@ data class RepCount(
     val totalReps: Int = workingReps, // Exclude warm-up reps from total count
     val isWarmupComplete: Boolean = false,
     val hasPendingRep: Boolean = false, // True when at TOP (concentric peak), waiting for eccentric
-    val pendingRepProgress: Float = 0f, // 0.0 at TOP, 1.0 at BOTTOM (fill progress)
     // Animation fields for Issue #163 animated rep counter
     val activeRepPhase: RepPhase = RepPhase.IDLE,
     val phaseProgress: Float = 0f, // 0.0 at start of phase, 1.0 at end (for animation)
@@ -720,11 +708,5 @@ data class PRCelebrationEvent(
     val weightPerCableKg: Float,
     val reps: Int,
     val workoutMode: String,
-    val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT),
-    val cableCount: Int? = null,
     val phaseLabel: String = "Combined",
-) {
-    val isWeightPR: Boolean get() = PRType.MAX_WEIGHT in brokenPRTypes
-    val isVolumePR: Boolean get() = PRType.MAX_VOLUME in brokenPRTypes
-    val isBothPRs: Boolean get() = brokenPRTypes.size == 2
-}
+)

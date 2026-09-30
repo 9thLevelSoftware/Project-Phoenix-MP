@@ -301,15 +301,3 @@ sealed class RoutineItem {
         override val orderIndex: Int get() = superset.orderIndex
     }
 }
-
-/**
- * Extension to check if a routine contains any supersets
- */
-fun Routine.hasSupersets(): Boolean = supersets.isNotEmpty()
-
-/**
- * Get exercises in a specific superset
- */
-fun Routine.getExercisesInSuperset(supersetId: String): List<RoutineExercise> = exercises
-    .filter { it.supersetId == supersetId }
-    .sortedBy { it.orderInSuperset }
