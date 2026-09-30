@@ -97,17 +97,6 @@ data class ExternalExerciseTemplate(
     val profileId: String = "default",
 )
 
-data class ExternalExerciseTemplateMapping(
-    val id: String = generateUUID(),
-    val provider: IntegrationProvider,
-    val externalTemplateId: String,
-    val localExerciseId: String,
-    val profileId: String = "default",
-    val createdAt: Long = currentTimeMillis(),
-    val updatedAt: Long = currentTimeMillis(),
-    val rawData: String? = null,
-)
-
 data class ExternalBodyMeasurement(
     val id: String = generateUUID(),
     val externalId: String,

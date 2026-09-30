@@ -12,9 +12,6 @@ data class ExerciseConfig(
     // Weight (used by all cable modes except Echo)
     val weightPerCableKg: Float = 0f,
 
-    // OldSchool-specific
-    val autoProgression: Boolean = true,
-
     // Eccentric-specific (EccentricOnly and Echo modes)
     val eccentricLoadPercent: Int = 100, // 100-150%
 
@@ -44,14 +41,4 @@ data class ExerciseConfig(
             )
         }
     }
-
-    /**
-     * Helper to get display name for the selected mode.
-     */
-    val modeDisplayName: String get() = mode.displayName
-
-    /**
-     * Check if this config is for Echo mode.
-     */
-    val isEchoMode: Boolean get() = mode == ProgramMode.Echo
 }

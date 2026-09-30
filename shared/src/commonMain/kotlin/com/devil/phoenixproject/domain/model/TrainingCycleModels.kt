@@ -36,7 +36,6 @@ data class TrainingCycle(
     val days: List<CycleDay>,
     val createdAt: Long,
     val isActive: Boolean,
-    val progressionRule: ProgressionRule? = null,
     val weekNumber: Int = 1,
     val profileId: String = "default",
     val templateId: String? = null,
@@ -50,7 +49,6 @@ data class TrainingCycle(
             description: String? = null,
             days: List<CycleDay> = emptyList(),
             isActive: Boolean = false,
-            progressionRule: ProgressionRule? = null,
             weekNumber: Int = 1,
             profileId: String = "default",
             templateId: String? = null,
@@ -61,7 +59,6 @@ data class TrainingCycle(
             days = days,
             createdAt = currentTimeMillis(),
             isActive = isActive,
-            progressionRule = progressionRule,
             weekNumber = weekNumber,
             profileId = profileId,
             templateId = templateId,
@@ -488,50 +485,3 @@ fun List<CompletedSet>.totalVolume(): Float = sumOf { it.volume().toDouble() }.t
  * Filter to only working sets (exclude warmups).
  */
 fun List<CompletedSet>.workingSets(): List<CompletedSet> = filter { it.setType != SetType.WARMUP }
-
-/**
- * Types of progression strategies for training cycles.
- */
-enum class ProgressionType {
-    /** Increase weight by percentage (e.g., +2.5%) */
-    PERCENTAGE,
-
-    /** Increase weight by fixed amount (e.g., +2.5kg) */
-    FIXED_WEIGHT,
-
-    /** No automatic progression suggestions */
-    MANUAL,
-}
-
-/**
- * Defines how weight progression works for a training cycle.
- */
-data class ProgressionRule(
-    val type: ProgressionType,
-    val incrementPercent: Float? = null,
-    val incrementKgUpper: Float? = null,
-    val incrementKgLower: Float? = null,
-    val triggerCondition: String? = null,
-    val cycleWeeks: Int? = null,
-) {
-    companion object {
-        /** Standard percentage-based progression (+2.5% when all sets completed) */
-        fun percentage(percent: Float = 2.5f) = ProgressionRule(
-            type = ProgressionType.PERCENTAGE,
-            incrementPercent = percent,
-            triggerCondition = "all_sets_completed",
-        )
-
-        /** 5/3/1 style fixed weight progression */
-        fun fiveThreeOne() = ProgressionRule(
-            type = ProgressionType.FIXED_WEIGHT,
-            incrementKgUpper = 2.5f,
-            incrementKgLower = 5.0f,
-            triggerCondition = "cycle_complete",
-            cycleWeeks = 4,
-        )
-
-        /** No automatic progression */
-        fun manual() = ProgressionRule(type = ProgressionType.MANUAL)
-    }
-}

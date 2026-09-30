@@ -78,7 +78,6 @@ class TemplateConverterTest {
                 ),
                 CycleDayTemplate.rest(dayNumber = 2),
             ),
-            progressionRule = null,
         )
 
         val result = converter.convert(template)
@@ -129,7 +128,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val configs = mapOf(
@@ -202,7 +200,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val lift = converter.convert(template, weekNumber = 1)
@@ -310,8 +307,9 @@ class TemplateConverterTest {
         val result = converter.convert(template)
         // Filter to the percentage-based instances: Shoulder Press also appears as a
         // plain accessory on Squat Day and must not be counted here.
+        val fiveThreeOneLifts = setOf("Bench Press", "Squat", "Shoulder Press", "Conventional Deadlift")
         val mainLifts = result.routines.flatMap { it.exercises }
-            .filter { it.exercise.name in template.mainLifts && it.setWeightsPercentOfPR.isNotEmpty() }
+            .filter { it.exercise.name in fiveThreeOneLifts && it.setWeightsPercentOfPR.isNotEmpty() }
 
         assertEquals(4, mainLifts.size, "All 4 main lifts must resolve")
         assertEquals(template.id, result.cycle.templateId)
@@ -381,7 +379,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val exercise = converter.convert(template).routines.first().exercises.first()
@@ -420,7 +417,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val configs = mapOf(
@@ -486,7 +482,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val exercise = converter.convert(template).routines.first().exercises.first()
@@ -528,7 +523,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val exercise = converter.convert(template).routines.first().exercises.first()
@@ -571,7 +565,6 @@ class TemplateConverterTest {
                     ),
                 ),
             ),
-            progressionRule = null,
         )
 
         val result = converter.convert(template)

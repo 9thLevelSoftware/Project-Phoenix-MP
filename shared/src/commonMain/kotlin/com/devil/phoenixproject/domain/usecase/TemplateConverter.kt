@@ -296,7 +296,6 @@ class TemplateConverter(
             name = template.name,
             description = template.description,
             days = cycleDays,
-            progressionRule = template.progressionRule,
             weekNumber = weekNumber,
             profileId = profileId,
             templateId = template.id,

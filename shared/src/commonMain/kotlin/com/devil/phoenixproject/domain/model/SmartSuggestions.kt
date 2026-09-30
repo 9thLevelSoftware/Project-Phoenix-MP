@@ -28,7 +28,7 @@ val SessionSummary.cableMultiplier: Int get() = if (cableCount == 2) 2 else 1
 
 data class MuscleGroupVolume(val muscleGroup: String, val sets: Int, val reps: Int, val totalKg: Float)
 
-data class WeeklyVolumeReport(val weekStartTimestamp: Long, val volumes: List<MuscleGroupVolume>)
+data class WeeklyVolumeReport(val volumes: List<MuscleGroupVolume>)
 
 // SUGG-02: Balance analysis
 
