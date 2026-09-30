@@ -12,36 +12,25 @@ class AndroidWorkoutServiceController(
     private val log = Logger.withTag("AndroidWorkoutServiceController")
     private val serviceClassName = "${appContext.packageName}.service.WorkoutForegroundService"
 
-    @Volatile
-    private var isRunning = false
-
     override fun showOrUpdate(snapshot: WorkoutServiceSnapshot) {
-        val intent = buildIntent(snapshot)
         try {
-            if (isRunning) {
-                appContext.startService(intent)
-            } else {
-                ContextCompat.startForegroundService(appContext, intent)
-                isRunning = true
-            }
+            ContextCompat.startForegroundService(appContext, buildIntent(snapshot))
         } catch (e: Exception) {
             log.e(e) { "Failed to sync workout foreground service" }
         }
     }
 
     override fun stop() {
-        if (!isRunning) return
-
         try {
-            appContext.startService(
-                Intent()
-                    .setClassName(appContext, serviceClassName)
-                    .setAction(WorkoutServiceProtocol.ACTION_STOP),
+            // Idle snapshots and cleanup call stop() when the service was never
+            // started, and again after WorkoutForegroundService has already
+            // stopSelf()'d. stopService leaves a missing service alone and
+            // removes the foreground notification when the service is up.
+            appContext.stopService(
+                Intent().setClassName(appContext, serviceClassName),
             )
         } catch (e: Exception) {
             log.e(e) { "Failed to stop workout foreground service" }
-        } finally {
-            isRunning = false
         }
     }
 
