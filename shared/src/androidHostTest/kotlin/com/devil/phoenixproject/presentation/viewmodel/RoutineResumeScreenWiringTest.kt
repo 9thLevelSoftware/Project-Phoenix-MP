@@ -9,45 +9,79 @@ import kotlin.test.assertTrue
 
 class RoutineResumeScreenWiringTest {
     @Test
-    fun `all resume entry screens use the shared authority runner without direct BLE or mutable-id loading`() {
+    fun `all resume entry screens delegate to the shared dialog host without direct BLE or mutable-id loading`() {
         val screenRoot = findWorkspaceRoot().resolve(
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen",
         )
-        val screens = listOf(
-            Triple("DailyRoutinesScreen.kt", "DAILY_ROUTINES", false),
-            Triple("HomeScreen.kt", "HOME_CYCLE", true),
-            Triple("TrainingCyclesScreen.kt", "TRAINING_CYCLES", true),
+        val host = screenRoot.resolve("RoutineResumeDialogHost.kt").readText()
+        assertTrue("runRoutineResumeUiOperation(" in host)
+        assertTrue("RoutineResumeActionAuthority(" in host)
+        assertTrue("isRoutineResumeProfileCurrent(" in host)
+        assertTrue("activeProfileContext.collectAsState()" in host)
+        assertTrue("LaunchedEffect(activeProfileContext)" in host)
+        assertTrue("authority.tokenIsCurrent()" in host)
+        assertTrue("authority.contextIsCurrent()" in host)
+        assertTrue("classifyRoutineResumeCompletion(" in host)
+        assertTrue("runFreshCycleUiOperation(" in host)
+        assertTrue(
+            "resumeOperationGate.currentToken == selectionToken" in host,
+            "Daily discovery must stay on the token check",
+        )
+        assertTrue(
+            "authority.isCurrent()" in host,
+            "Cycle discovery must stay on the profile-aware authority check",
         )
 
-        screens.forEach { (fileName, expectedEntryPoint, isCycleEntry) ->
+        val forbidden = listOf(
+            "viewModel.resumeRoutine(",
+            "viewModel.discardRoutineResume(",
+            "viewModel.ensureConnection(",
+            "viewModel.loadRoutineFromCycleAsync(",
+            "viewModel.loadRoutineAsync(",
+            "routineResumeUiDecision(",
+            "routineResumeDiscardUiDecision(",
+        )
+        forbidden.forEach { call ->
+            assertFalse(call in host, "RoutineResumeDialogHost must not call $call directly")
+        }
+
+        val screens = listOf(
+            Triple("DailyRoutinesScreen.kt", "DAILY_ROUTINES", "launchDailyRoutine("),
+            Triple("HomeScreen.kt", "HOME_CYCLE", "launchCycleRoutine("),
+            Triple("TrainingCyclesScreen.kt", "TRAINING_CYCLES", "launchCycleRoutine("),
+        )
+        screens.forEach { (fileName, expectedEntryPoint, launchCall) ->
             val source = screenRoot.resolve(fileName).readText()
-            assertTrue("runRoutineResumeUiOperation(" in source, fileName)
-            assertTrue("RoutineResumeActionAuthority(" in source, fileName)
-            assertTrue("isRoutineResumeProfileCurrent(" in source, fileName)
-            assertTrue("activeProfileContext.collectAsState()" in source, fileName)
-            assertTrue("LaunchedEffect(activeProfileContext)" in source, fileName)
-            assertTrue("authority.tokenIsCurrent()" in source, fileName)
-            assertTrue("authority.contextIsCurrent()" in source, fileName)
-            assertTrue("classifyRoutineResumeCompletion(" in source, fileName)
+            assertTrue("RoutineResumeDialogHost(" in source, fileName)
+            assertTrue("rememberRoutineResumeLauncher()" in source, fileName)
+            assertTrue(launchCall in source, "$fileName must start resume via $launchCall")
             assertTrue(
                 "entryPoint = RoutineResumeEntryPoint.$expectedEntryPoint" in source,
-                "$fileName must bind the shared runner to $expectedEntryPoint",
+                "$fileName must bind the shared host to $expectedEntryPoint",
             )
-            if (isCycleEntry) {
-                assertTrue("runFreshCycleUiOperation(" in source, fileName)
-            }
-            listOf(
-                "viewModel.resumeRoutine(",
-                "viewModel.discardRoutineResume(",
-                "viewModel.ensureConnection(",
-                "viewModel.loadRoutineFromCycleAsync(",
-                "viewModel.loadRoutineAsync(",
-                "routineResumeUiDecision(",
-                "routineResumeDiscardUiDecision(",
-            ).forEach { forbidden ->
-                assertFalse(forbidden in source, "$fileName must not call $forbidden directly")
+            assertFalse("runRoutineResumeUiOperation(" in source, fileName)
+            assertFalse("pendingResumeHandle" in source, fileName)
+            assertFalse("ResumeRoutineDialog(" in source, fileName)
+            assertFalse("runFreshCycleUiOperation(" in source, fileName)
+            forbidden.forEach { call ->
+                assertFalse(call in source, "$fileName must not call $call directly")
             }
         }
+
+        val daily = screenRoot.resolve("DailyRoutinesScreen.kt").readText()
+        val home = screenRoot.resolve("HomeScreen.kt").readText()
+        val cycles = screenRoot.resolve("TrainingCyclesScreen.kt").readText()
+        assertTrue("onNavigateOverview" in daily)
+        assertTrue("NavigationRoutes.RoutineOverview.route" in daily)
+        assertFalse("launchCycleRoutine(" in daily)
+        assertFalse("onNavigateOverview" in home)
+        assertFalse("onConnectionFailed" in home)
+        assertFalse("launchDailyRoutine(" in home)
+        assertTrue("onConnectionFailed" in cycles)
+        assertTrue("onWorkoutLoadFailed" in cycles)
+        assertTrue("CONNECTION_FAILED_MESSAGE" in cycles)
+        assertTrue("WORKOUT_LOAD_FAILED_MESSAGE" in cycles)
+        assertFalse("launchDailyRoutine(" in cycles)
     }
 
     private fun findWorkspaceRoot(): Path {

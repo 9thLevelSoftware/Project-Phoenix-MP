@@ -6,33 +6,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
-import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
-import com.devil.phoenixproject.domain.model.Routine
-import com.devil.phoenixproject.domain.model.RoutineGroup
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
-import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.RoutineCsvExportBlockedDialog
 import com.devil.phoenixproject.presentation.components.RoutineCsvImportDialog
-import com.devil.phoenixproject.presentation.components.StartGateLabel
-import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
-import com.devil.phoenixproject.presentation.components.toStartGatePresentation
-import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
-import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvExportUiState
 import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvViewModel
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeOperationGate
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeRetryAction
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOperation
-import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
-import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
-import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.BoundedUriContent
 import com.devil.phoenixproject.util.readUriContentUpTo
@@ -56,7 +38,6 @@ fun DailyRoutinesScreen(
 ) {
     val routines by viewModel.routines.collectAsState()
     val routineGroups by viewModel.routineGroups.collectAsState()
-    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -64,109 +45,8 @@ fun DailyRoutinesScreen(
     val profileRepository: UserProfileRepository = koinInject()
     val profiles by profileRepository.allProfiles.collectAsState()
     val activeProfile by profileRepository.activeProfile.collectAsState()
-    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
-
-    // Resume/Restart dialog state (Issue #101)
-    var pendingResumeHandle by remember { mutableStateOf<RoutineResumeHandle?>(null) }
-    var resumeOperationInFlight by remember { mutableStateOf(false) }
-    var discardRetryPending by remember { mutableStateOf(false) }
-    var manualLoadRetry by remember { mutableStateOf<RoutineResumeUiOperation.RetryManualLoad?>(null) }
-    val resumeOperationGate = remember { RoutineResumeOperationGate() }
+    val routineResume = rememberRoutineResumeLauncher()
     val scope = rememberCoroutineScope()
-
-    fun clearResumeDialog() {
-        pendingResumeHandle = null
-        resumeOperationInFlight = false
-        discardRetryPending = false
-        manualLoadRetry = null
-    }
-
-    LaunchedEffect(activeProfileContext) {
-        val ready = activeProfileContext as? ActiveProfileContext.Ready ?: return@LaunchedEffect
-        val handle = pendingResumeHandle ?: return@LaunchedEffect
-        if (ready.profile.id != handle.selectedProfileId) {
-            resumeOperationGate.supersede()
-            clearResumeDialog()
-        }
-    }
-
-    fun enterFreshRoutine(routine: Routine) {
-        clearResumeDialog()
-        viewModel.enterRoutineOverview(routine)
-        navController.navigate(NavigationRoutes.RoutineOverview.route)
-    }
-
-    fun launchResumeOperation(operation: RoutineResumeUiOperation) {
-        resumeOperationInFlight = true
-        resumeOperationGate.launch(scope) { actionToken ->
-            val authority = RoutineResumeActionAuthority(
-                entryPoint = RoutineResumeEntryPoint.DAILY_ROUTINES,
-                actionToken = actionToken,
-                currentToken = { resumeOperationGate.currentToken },
-                contextIsCurrent = {
-                    viewModel.isRoutineResumeProfileCurrent(operation.handle.selectedProfileId)
-                },
-            )
-            val outcome = runRoutineResumeUiOperation(
-                operation = operation,
-                authority = authority,
-                port = viewModel.routineResumeUiPort(),
-            )
-            val currentOutcome = when (
-                val disposition = classifyRoutineResumeCompletion(
-                    tokenCurrent = authority.tokenIsCurrent(),
-                    contextCurrent = authority.contextIsCurrent(),
-                    outcome = outcome,
-                )
-            ) {
-                RoutineResumeCompletionDisposition.IgnoreStaleToken -> return@launch
-
-                RoutineResumeCompletionDisposition.UnlockRetainedDialog -> {
-                    resumeOperationInFlight = false
-                    return@launch
-                }
-
-                is RoutineResumeCompletionDisposition.Apply -> disposition.outcome
-            }
-            when (currentOutcome) {
-                RoutineResumeUiOutcome.NavigateActiveWorkout -> {
-                    clearResumeDialog()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                }
-
-                RoutineResumeUiOutcome.StartAndNavigateActiveWorkout -> {
-                    viewModel.startWorkout()
-                    clearResumeDialog()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                }
-
-                is RoutineResumeUiOutcome.EnterSetReady -> {
-                    viewModel.enterSetReady(currentOutcome.exerciseIndex, currentOutcome.setIndex)
-                    clearResumeDialog()
-                    navController.navigate(NavigationRoutes.SetReady.route)
-                }
-
-                is RoutineResumeUiOutcome.EnterDailyOverview -> enterFreshRoutine(currentOutcome.routine)
-
-                is RoutineResumeUiOutcome.RetainDialog -> {
-                    resumeOperationInFlight = false
-                    discardRetryPending = currentOutcome.retryAction == RoutineResumeRetryAction.DISCARD
-                }
-
-                RoutineResumeUiOutcome.DismissDialog -> clearResumeDialog()
-
-                RoutineResumeUiOutcome.ConnectionFailed,
-                -> resumeOperationInFlight = false
-
-                is RoutineResumeUiOutcome.LoadFailed -> {
-                    manualLoadRetry = currentOutcome.retryOperation
-                    resumeOperationInFlight = false
-                }
-
-                RoutineResumeUiOutcome.StaleNoOp -> Unit
-            }
-        }
-    }
 
     // Issue #130: Block routine editing during active workout
     var showWorkoutActiveDialog by remember { mutableStateOf(false) }
@@ -192,37 +72,7 @@ fun DailyRoutinesScreen(
         // Reuse RoutinesTab content
         RoutinesTab(
             routines = routines,
-            onStartWorkout = { routine ->
-                pendingResumeHandle = null
-                resumeOperationInFlight = true
-                discardRetryPending = false
-                manualLoadRetry = null
-                resumeOperationGate.launch(scope) { selectionToken ->
-                    when (
-                        val discovery = viewModel.discoverRoutineResume(
-                            routine = routine,
-                            launchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES,
-                        )
-                    ) {
-                        is RoutineResumeDiscovery.Candidate -> if (resumeOperationGate.currentToken == selectionToken) {
-                            pendingResumeHandle = discovery.handle
-                            resumeOperationInFlight = false
-                        }
-
-                        RoutineResumeDiscovery.Missing -> if (resumeOperationGate.currentToken == selectionToken) {
-                            enterFreshRoutine(routine)
-                        }
-
-                        RoutineResumeDiscovery.RetryableFailure -> if (resumeOperationGate.currentToken == selectionToken) {
-                            resumeOperationInFlight = false
-                        }
-
-                        RoutineResumeDiscovery.Superseded -> if (resumeOperationGate.currentToken == selectionToken) {
-                            clearResumeDialog()
-                        }
-                    }
-                }
-            },
+            onStartWorkout = { routine -> routineResume.launchDailyRoutine(routine) },
             onStartWorkoutWithModifier = { routine, modifier ->
                 viewModel.enterRoutineOverview(routine, modifier)
                 navController.navigate(NavigationRoutes.RoutineOverview.route)
@@ -321,57 +171,21 @@ fun DailyRoutinesScreen(
             )
         }
 
-        // Resume/Restart Dialog (Issue #101)
-        pendingResumeHandle?.let { handle ->
-            val info = handle.progressInfo
-            val inMemoryHandle = handle as? RoutineResumeHandle.InMemory
-            val startGate = machineTeardownState.toStartGatePresentation(
-                requiresMachine = inMemoryHandle?.let { captured ->
-                    captured.activeRoutineSnapshot.exercises
-                        .getOrNull(captured.exerciseIndex)
-                        ?.exercise?.isBodyweight != true
-                } ?: false,
-            )
-            ResumeRoutineDialog(
-                progressInfo = info,
-                onResume = {
-                    if (resumeOperationInFlight || discardRetryPending) return@ResumeRoutineDialog
-                    launchResumeOperation(manualLoadRetry ?: RoutineResumeUiOperation.Resume(handle))
-                },
-                onRestart = {
-                    if (resumeOperationInFlight) return@ResumeRoutineDialog
-                    manualLoadRetry = null
-                    launchResumeOperation(RoutineResumeUiOperation.Restart(handle))
-                },
-                onDismiss = {
-                    if (!resumeOperationInFlight) {
-                        resumeOperationGate.supersede()
-                        clearResumeDialog()
-                    }
-                },
-                confirmEnabled = !resumeOperationInFlight &&
-                    !discardRetryPending &&
-                    (inMemoryHandle == null || startGate.startEnabled),
-                confirmLabel = if (inMemoryHandle != null &&
-                    startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT
-                ) {
-                    stringResource(Res.string.workout_teardown_finishing)
-                } else {
-                    null
-                },
-                supportingContent = if (inMemoryHandle != null) {
-                    {
-                        WorkoutStartGateNotice(
-                            state = machineTeardownState,
-                            onRetry = { viewModel.retryWorkoutTeardown() },
-                            onReconnect = { viewModel.reconnectWorkoutTeardown() },
-                        )
-                    }
-                } else {
-                    null
-                },
-            )
-        }
+        // Daily routines resume into the overview, the active workout, or set-ready.
+        RoutineResumeDialogHost(
+            launcher = routineResume,
+            viewModel = viewModel,
+            entryPoint = RoutineResumeEntryPoint.DAILY_ROUTINES,
+            onNavigateActiveWorkout = {
+                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+            },
+            onNavigateSetReady = {
+                navController.navigate(NavigationRoutes.SetReady.route)
+            },
+            onNavigateOverview = {
+                navController.navigate(NavigationRoutes.RoutineOverview.route)
+            },
+        )
 
         // Issue #130: Workout Active Dialog - blocks routine editing during workout
         if (showWorkoutActiveDialog) {
