@@ -60,7 +60,7 @@ class IndexQueryPlanTest {
         // The outer walk over archived catalogue rows is bounded by the catalogue; every
         // per-row probe into a user-data table must be an index search, never a scan.
         val probed = listOf(
-            "WorkoutSession", "RoutineExercise", "PersonalRecord", "ExerciseSignature", "AssessmentResult",
+            "WorkoutSession", "RoutineExercise", "PersonalRecord", "AssessmentResult",
             "VelocityOneRepMaxEstimate", "ExerciseMvt", "ProgressionEvent", "ProfileExerciseBaseline",
         )
         for (table in probed) {

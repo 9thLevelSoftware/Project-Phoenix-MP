@@ -2565,9 +2565,6 @@ class SqlDelightSyncRepository(
                 // No parseable id time is treated as already synced (conservative).
                 decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary), previousPortalUserId)
             }
-
-            // Exercise signatures are not on the portal push payload, so there is
-            // nothing to enumerate here.
         }
     }
 

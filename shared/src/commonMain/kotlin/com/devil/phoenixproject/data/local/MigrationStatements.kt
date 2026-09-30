@@ -1277,5 +1277,11 @@ WHERE gs.rowid = (
         "CREATE INDEX IF NOT EXISTS idx_routine_exercise_exercise ON RoutineExercise(exerciseId)",
     )
 
+    // Migration 56: drop the unused ExerciseSignature shell. Mirrors 56.sqm exactly.
+    56 -> listOf(
+        "DELETE FROM SyncExcludedEntity WHERE entity_type IN ('EXERCISE_SIGNATURE', 'REACHED_EXERCISE_SIGNATURE')",
+        "DROP TABLE IF EXISTS ExerciseSignature",
+    )
+
     else -> emptyList()
 }
