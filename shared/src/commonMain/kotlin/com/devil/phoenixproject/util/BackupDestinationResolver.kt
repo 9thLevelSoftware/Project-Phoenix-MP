@@ -37,11 +37,4 @@ interface BackupDestinationResolver {
         fileName: String,
         tempFilePath: String,
     ): Result<String>
-
-    /**
-     * List JSON backup file names present in [destination].
-     *
-     * Only `.json` files are returned; other file types are filtered out.
-     */
-    suspend fun listFiles(destination: BackupDestination.Custom): List<String>
 }

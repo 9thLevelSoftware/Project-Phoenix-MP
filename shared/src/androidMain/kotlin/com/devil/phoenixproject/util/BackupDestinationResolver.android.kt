@@ -88,19 +88,4 @@ class AndroidBackupDestinationResolver(
             Result.failure(e)
         }
     }
-
-    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> = withContext(Dispatchers.IO) {
-        try {
-            val treeUri = android.net.Uri.parse(destination.uri)
-            val treeDoc = DocumentFile.fromTreeUri(context, treeUri)
-                ?: return@withContext emptyList()
-
-            treeDoc.listFiles()
-                .filter { it.isFile && (it.name?.endsWith(".json") == true) }
-                .mapNotNull { it.name }
-        } catch (e: Exception) {
-            log.e(e) { "listFiles failed for ${destination.displayName}" }
-            emptyList()
-        }
-    }
 }

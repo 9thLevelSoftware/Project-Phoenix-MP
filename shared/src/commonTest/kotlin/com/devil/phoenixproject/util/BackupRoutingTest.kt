@@ -126,16 +126,6 @@ class BackupRoutingTest {
     }
 
     @Test
-    fun listFiles_returnsConfiguredResult() = runTest {
-        resolver.listFilesResult = listOf("backup-2024-01.json", "backup-2024-02.json")
-        val destination = BackupDestination.Custom(uri = "content://test", displayName = "Test")
-        val files = resolver.listFiles(destination)
-        assertEquals(2, files.size)
-        assertEquals("backup-2024-01.json", files[0])
-        assertEquals("backup-2024-02.json", files[1])
-    }
-
-    @Test
     fun multiple_writes_accumulateInCapture() = runTest {
         val destination = BackupDestination.Custom(uri = "content://test", displayName = "Test")
         resolver.writeFile(destination, "file1.json", "/tmp/1.json")
@@ -173,15 +163,5 @@ class BackupRoutingTest {
         assertTrue(updated is BackupDestination.Custom, "Destination should be Custom after set")
         assertEquals(custom.uri, updated.uri)
         assertEquals(custom.displayName, updated.displayName)
-    }
-
-    // ===== listFiles edge cases =====
-
-    @Test
-    fun listFiles_returnsEmptyByDefault() = runTest {
-        // FakeBackupDestinationResolver defaults to emptyList for listFilesResult
-        val destination = BackupDestination.Custom(uri = "content://inaccessible", displayName = "Gone")
-        val files = resolver.listFiles(destination)
-        assertTrue(files.isEmpty(), "Default listFiles result should be empty")
     }
 }

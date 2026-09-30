@@ -231,29 +231,4 @@ class IosBackupDestinationResolver(
             }
         }
     }
-
-    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> = withContext(Dispatchers.IO) {
-        val url = resolveBookmark(destination) ?: return@withContext emptyList()
-
-        val accessing = url.startAccessingSecurityScopedResource()
-        try {
-            val dirPath = url.path ?: return@withContext emptyList()
-            val fileManager = NSFileManager.defaultManager
-            val contents = fileManager.contentsOfDirectoryAtPath(dirPath, error = null)
-                ?: return@withContext emptyList()
-
-            contents
-                .mapNotNull { it as? String }
-                .filter { it.endsWith(".json") }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.e(e) { "listFiles failed for ${destination.displayName}" }
-            emptyList()
-        } finally {
-            if (accessing) {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-    }
 }
