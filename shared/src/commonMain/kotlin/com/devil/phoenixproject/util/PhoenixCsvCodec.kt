@@ -24,8 +24,9 @@ import kotlinx.datetime.toInstant
  *
  * `Duration (s)` is whole seconds. [WorkoutSession.duration] is milliseconds, so encode
  * divides by 1000 (dropping any sub-second remainder) and parse multiplies by 1000.
- * Android builds from before this codec wrote raw milliseconds into that column; those
- * files import 1000× too long. Exports written by this codec round-trip in seconds.
+ * Android builds from before this codec wrote raw milliseconds into that column under a
+ * header with no Time column. Only that legacy layout lacks Time, so a history header
+ * without Time reads Duration as milliseconds unchanged.
  *
  * A legacy iOS history row (`Date,Time,Exercise,Mode,Weight (UNIT),Progression,Reps,Duration (s)`)
  * still parses. Its single `Reps` cell is [WorkoutSession.reps] (the target). Warmup, working,
@@ -136,11 +137,14 @@ object PhoenixCsvCodec {
             )
         }
 
+        // Legacy Android exports (no Time column) wrote milliseconds into Duration (s).
+        val durationIsMillis = !columnMap.containsKey("time")
+
         val sessions = mutableListOf<WorkoutSession>()
         val errors = mutableListOf<String>()
         for (i in 1 until lines.size) {
             try {
-                val session = mapHistoryRow(CsvParser.parseCsvRow(lines[i]), columnMap)
+                val session = mapHistoryRow(CsvParser.parseCsvRow(lines[i]), columnMap, durationIsMillis)
                 if (session != null) {
                     sessions.add(session)
                 } else {
@@ -248,7 +252,11 @@ object PhoenixCsvCodec {
         }
     }
 
-    private fun mapHistoryRow(fields: List<String>, columnMap: Map<String, Int>): WorkoutSession? {
+    private fun mapHistoryRow(
+        fields: List<String>,
+        columnMap: Map<String, Int>,
+        durationIsMillis: Boolean,
+    ): WorkoutSession? {
         fun field(key: String): String? {
             val idx = columnMap[key] ?: return null
             return if (idx < fields.size) fields[idx].trim() else null
@@ -268,7 +276,9 @@ object PhoenixCsvCodec {
             reps = field("target_reps")?.toIntOrNull() ?: 0,
             weightPerCableKg = CsvParser.parseWeight(field("weight")),
             progressionKg = CsvParser.parseWeight(field("progression")),
-            duration = csvSecondsToDurationMs(field("duration")?.toLongOrNull() ?: 0L),
+            duration = (field("duration")?.toLongOrNull() ?: 0L).let { raw ->
+                if (durationIsMillis) raw.coerceAtLeast(0L) else csvSecondsToDurationMs(raw)
+            },
             totalReps = field("total_reps")?.toIntOrNull() ?: 0,
             warmupReps = field("warmup_reps")?.toIntOrNull() ?: 0,
             workingReps = field("working_reps")?.toIntOrNull() ?: 0,

@@ -83,6 +83,18 @@ class PhoenixCsvCodecTest {
     }
 
     @Test
+    fun legacyAndroidHistoryWithoutTimeColumnKeepsMillisecondDuration() {
+        // Android builds before this codec wrote WorkoutSession.duration (ms) raw into
+        // Duration (s) and had no Time column. 45000 there is 45 seconds, not 12.5 hours.
+        val legacyAndroid = """
+            Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load
+            2026-03-10,Bench Press,OldSchool,10,0,10,10,80.0 kg,+2.5 kg,45000,No,100
+        """.trimIndent()
+
+        assertEquals(45_000L, parseSingleSession(legacyAndroid).duration)
+    }
+
+    @Test
     fun durationColumnTruncatesSubSecondRemainder() {
         val session = WorkoutSession(
             timestamp = localMinute(2026, 3, 10, 14, 30),

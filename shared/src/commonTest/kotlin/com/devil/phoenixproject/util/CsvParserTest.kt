@@ -91,8 +91,8 @@ class CsvParserTest {
         assertEquals(10, bench.totalReps)
         assertEquals(80.0f, bench.weightPerCableKg)
         assertEquals(2.5f, bench.progressionKg)
-        // "45" in Duration (s) is 45 seconds, stored as milliseconds.
-        assertEquals(45_000L, bench.duration)
+        // Legacy Android layout (no Time column) wrote milliseconds into Duration (s).
+        assertEquals(45L, bench.duration)
         assertEquals(false, bench.isJustLift)
         assertEquals(100, bench.eccentricLoad)
 
@@ -102,7 +102,7 @@ class CsvParserTest {
         assertEquals(8, squat.reps)
         assertEquals(3, squat.warmupReps)
         assertEquals(5, squat.workingReps)
-        assertEquals(60_000L, squat.duration)
+        assertEquals(60L, squat.duration)
         assertEquals(125, squat.eccentricLoad)
     }
 
