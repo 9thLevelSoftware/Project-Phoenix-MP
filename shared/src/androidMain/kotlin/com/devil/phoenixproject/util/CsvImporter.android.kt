@@ -31,7 +31,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                     errors = listOf("Could not open file: $uri"),
                 )
 
-                val (sessions, parseErrors) = CsvParser.parseWorkoutHistory(csvContent)
+                val (sessions, parseErrors) = PhoenixCsvCodec.parseWorkoutHistory(csvContent)
 
                 if (sessions.isEmpty() && parseErrors.isNotEmpty()) {
                     return@withContext CsvImportResult(

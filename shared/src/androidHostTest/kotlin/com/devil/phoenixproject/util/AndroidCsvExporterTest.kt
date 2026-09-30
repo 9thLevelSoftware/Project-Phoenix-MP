@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AndroidCsvExporterTest {
@@ -62,11 +63,14 @@ class AndroidCsvExporterTest {
             ).getOrThrow().let(::File).readText()
 
             val escapedWeight = "\"12,5 kg\n\"\"display\"\"\""
+            assertEquals(PhoenixCsvCodec.HISTORY_HEADER, history.lineSequence().first())
+            assertEquals(PhoenixCsvCodec.PERSONAL_RECORD_HEADER, personalRecords.lineSequence().first())
+            assertEquals(PhoenixCsvCodec.PR_PROGRESSION_HEADER, progression.lineSequence().first())
             assertTrue(history.contains("\"Bench, \"\"Press\"\"\nvariant\""))
             assertTrue(history.contains("\"Mode, \"\"quoted\"\"\nvariant\""))
             assertTrue(history.contains(escapedWeight))
             assertTrue(history.contains(",7,"), "reps remain numeric")
-            assertTrue(history.contains(",12000,No,"), "duration and Just Lift columns remain separate")
+            assertTrue(history.contains(",12,No,"), "duration is whole seconds and stays distinct from Just Lift")
             assertTrue(personalRecords.contains(escapedWeight))
             assertTrue(personalRecords.contains(",7,"), "PR reps remain numeric")
             assertTrue(progression.contains(escapedWeight))

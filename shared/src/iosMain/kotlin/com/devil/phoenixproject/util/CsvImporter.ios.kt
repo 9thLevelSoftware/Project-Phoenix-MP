@@ -36,7 +36,7 @@ class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImpo
                     errors = listOf("Could not open file: $uri"),
                 )
 
-                val (sessions, parseErrors) = CsvParser.parseWorkoutHistory(csvContent)
+                val (sessions, parseErrors) = PhoenixCsvCodec.parseWorkoutHistory(csvContent)
 
                 if (sessions.isEmpty() && parseErrors.isNotEmpty()) {
                     return@withContext CsvImportResult(

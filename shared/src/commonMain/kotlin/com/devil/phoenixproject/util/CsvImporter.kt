@@ -35,8 +35,9 @@ interface CsvImporter {
     /**
      * Import workout sessions from a CSV file at the given URI/path.
      *
-     * The CSV must contain the header row produced by [CsvExporter.exportWorkoutHistory]:
-     * `Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load`
+     * The CSV is the Phoenix history file from [PhoenixCsvCodec]:
+     * `Date,Time,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load`.
+     * `Duration (s)` is whole seconds. A legacy iOS file with a single Reps column is also accepted.
      *
      * Conflict strategy: rows whose parsed session ID (or matching timestamp+exercise)
      * already exist in the database are **skipped** -- existing data is never overwritten.
