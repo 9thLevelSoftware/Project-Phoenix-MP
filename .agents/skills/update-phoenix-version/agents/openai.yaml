@@ -1,4 +1,4 @@
 interface:
   display_name: "Update Phoenix Version"
   short_description: "Bump Phoenix app versions in sync"
-  default_prompt: "Use $update-phoenix-version to read the current Android versionName (checked-in 1.0.3) and default versionCode (checked-in 8), then bump that version. Keep Constants.APP_VERSION and both iOS MARKETING_VERSION values aligned with the new versionName. Do not apply an older example version."
+  default_prompt: "Use $update-phoenix-version to read the current Android versionName (checked-in 1.0.4) and default versionCode (checked-in 8), then bump that version. Keep Constants.APP_VERSION and both iOS MARKETING_VERSION values aligned with the new versionName. Do not apply an older example version."

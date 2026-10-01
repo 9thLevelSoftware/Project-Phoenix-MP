@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help=(
             "Marketing/app version in numeric x.y.z form (sample shape 1.2.3). "
-            "Read the current versionName (checked-in 1.0.3) and pass the bumped value."
+            "Read the current versionName (checked-in 1.0.4) and pass the bumped value."
         ),
     )
     parser.add_argument(
