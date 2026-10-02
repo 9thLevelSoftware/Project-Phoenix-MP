@@ -2278,4 +2278,145 @@ class DWSMRoutineFlowTest {
         )
         harness.cleanup()
     }
+
+    // ===== H. Issue #1018: session-only Add Exercise from the terminal set summary =====
+
+    /**
+     * T1: append-at-end standalone on a linear routine. getNextStep from the old last set
+     * returns the appended exercise's flat index with set 0.
+     */
+    @Test
+    fun sessionAppend_linearRoutine_getNextStepFromOldLastSetReturnsAppendedExercise() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 2, setsPerExercise = 2)
+            installTerminalSummaryState(harness, routine, exerciseIndex = 1, setIndex = 1)
+
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(extraExercise(harness)), "append must be accepted")
+            val updated = harness.coordinator.loadedRoutine.value
+            assertNotNull(updated)
+            val appendedIndex = updated.exercises.lastIndex
+            assertEquals(2, appendedIndex, "the extra must be appended at the end")
+
+            val nextStep = harness.routineFlowManager.getNextStep(updated, 1, 1)
+            assertEquals(
+                appendedIndex to 0,
+                nextStep,
+                "getNextStep from the old last set must return the appended exercise at set 0",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * T2: a routine whose last getItems() entry is a superset. The appended exercise is a new
+     * standalone AFTER the superset (never inside it), and getNextStep from the last superset
+     * set returns it.
+     */
+    @Test
+    fun sessionAppend_supersetTail_getNextStepReturnsStandaloneAfterSuperset() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = supersetTailRoutine()
+            installTerminalSummaryState(harness, routine, exerciseIndex = 2, setIndex = 2)
+
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(extraExercise(harness)), "append must be accepted")
+            val updated = harness.coordinator.loadedRoutine.value
+            assertNotNull(updated)
+
+            // Display order: the superset is still the last superset item; the extra follows it.
+            val items = updated.getItems()
+            assertTrue(
+                items.last() is com.devil.phoenixproject.domain.model.RoutineItem.Single,
+                "the appended exercise must be the last display item, after the superset",
+            )
+
+            val nextStep = harness.routineFlowManager.getNextStep(updated, 2, 2)
+            assertNotNull(nextStep, "getNextStep from the last superset set must not be null")
+            val appendedIndex = updated.exercises.lastIndex
+            assertEquals(appendedIndex to 0, nextStep, "the successor must be the appended standalone at set 0")
+            assertEquals(
+                null,
+                updated.exercises[appendedIndex].supersetId,
+                "the appended exercise must not join the superset just finished",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /** Routine shaped [standalone, superset(2 members)] — the last display item is the superset. */
+    private fun supersetTailRoutine(): Routine {
+        val supersetId = "ss-tail"
+        return Routine(
+            id = "test-superset-tail",
+            name = "Superset Tail",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "tail-solo",
+                    exercise = TestFixtures.squat,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 40f,
+                ),
+                RoutineExercise(
+                    id = "tail-ss-a",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 1,
+                    setReps = listOf(10, 10, 10),
+                    weightPerCableKg = 25f,
+                    supersetId = supersetId,
+                    orderInSuperset = 0,
+                ),
+                RoutineExercise(
+                    id = "tail-ss-b",
+                    exercise = TestFixtures.bicepCurl,
+                    orderIndex = 2,
+                    setReps = listOf(10, 10, 10),
+                    weightPerCableKg = 15f,
+                    supersetId = supersetId,
+                    orderInSuperset = 1,
+                ),
+            ),
+            supersets = listOf(
+                Superset(
+                    id = supersetId,
+                    routineId = "test-superset-tail",
+                    name = "SS Tail",
+                    restBetweenSeconds = 10,
+                    orderIndex = 1,
+                ),
+            ),
+        )
+    }
+
+    /** Sheet-shaped extra: the session append must normalize id / superset / orderIndex. */
+    private fun extraExercise(harness: DWSMTestHarness): RoutineExercise {
+        val template = harness.coordinator.loadedRoutine.value!!.exercises.last()
+        return template.copy(
+            id = "sheet-returned-id",
+            supersetId = "leaked-superset",
+            orderInSuperset = 3,
+            orderIndex = 0,
+        )
+    }
+
+    /** Directly install a terminal SetSummary at the given routine coordinates. */
+    private fun installTerminalSummaryState(
+        harness: DWSMTestHarness,
+        routine: Routine,
+        exerciseIndex: Int,
+        setIndex: Int,
+    ) {
+        harness.coordinator._loadedRoutine.value = routine
+        harness.coordinator._currentExerciseIndex.value = exerciseIndex
+        harness.coordinator._currentSetIndex.value = setIndex
+        harness.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 0f,
+            avgLoadKgPerCable = 0f,
+            repCount = 8,
+        )
+    }
 }

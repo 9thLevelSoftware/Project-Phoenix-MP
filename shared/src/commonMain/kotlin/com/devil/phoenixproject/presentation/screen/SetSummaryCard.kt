@@ -69,6 +69,15 @@ fun SetSummaryCard(
     // null the section keeps the Change-only treatment.
     onClearExerciseLabel: (() -> Unit)? = null,
     buttonLabel: String = "Done", // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
+    // Issue #1018: optional secondary action above the primary button (terminal routine
+    // summary only). Null keeps today's card byte-for-byte, including history. The label
+    // comes from the caller; blank falls back to the existing translated add_exercise key.
+    onAddExercise: (() -> Unit)? = null,
+    addExerciseLabel: String = "",
+    // Issue #1018: holds the auto-continue countdown while the Add Exercise dialogs are
+    // open. Set by the caller before the picker opens and never cleared on dialog dismiss —
+    // a restarted countdown could complete the routine out from under the user.
+    holdAutoContinue: Boolean = false,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -86,8 +95,10 @@ fun SetSummaryCard(
     // The summaryKey ensures this effect restarts for each unique set completion.
     // Note: LaunchedEffect is automatically cancelled when composable leaves composition,
     // so we don't need explicit isActive checks - delay() will throw CancellationException.
-    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds) {
-        if (autoplayEnabled && summaryCountdownSeconds > 0 && !isHistoryView) {
+    // Issue #1018: keyed on holdAutoContinue and inert while the hold is set, so opening
+    // Add Exercise stops the countdown and a dialog dismiss never restarts it.
+    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds, holdAutoContinue) {
+        if (autoplayEnabled && summaryCountdownSeconds > 0 && !isHistoryView && !holdAutoContinue) {
             autoCountdown = summaryCountdownSeconds
             while (autoCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
@@ -370,6 +381,28 @@ fun SetSummaryCard(
 
         // Done/Continue button - only show in live view
         if (!isHistoryView) {
+            // Issue #1018: secondary Add Exercise action above the primary button (terminal
+            // routine summary only). Null onAddExercise keeps the card unchanged, including
+            // history. Label is caller-supplied; blank falls back to the translated
+            // add_exercise key (no new hardcoded English label).
+            val addExerciseAction = onAddExercise
+            if (addExerciseAction != null) {
+                OutlinedButton(
+                    onClick = addExerciseAction,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Text(
+                        text = addExerciseLabel.ifBlank { stringResource(Res.string.add_exercise) },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             Button(
                 onClick = onContinue,
                 modifier = Modifier
@@ -381,7 +414,7 @@ fun SetSummaryCard(
                 ),
             ) {
                 Text(
-                    text = if (autoplayEnabled && summaryCountdownSeconds > 0 && autoCountdown > 0) {
+                    text = if (autoplayEnabled && summaryCountdownSeconds > 0 && autoCountdown > 0 && !holdAutoContinue) {
                         "$buttonLabel ($autoCountdown)"
                     } else {
                         buttonLabel

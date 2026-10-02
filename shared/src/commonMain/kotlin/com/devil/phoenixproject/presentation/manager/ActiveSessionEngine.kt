@@ -4393,6 +4393,79 @@ class ActiveSessionEngine(
 
     internal suspend fun resolveRestTransitionNavigationForTest(plan: RestTransitionPlan.NormalAdvance): Boolean = resolveNavigationOnce(plan) != null
 
+    /**
+     * Issue #1018: immutable view of the cached transition navigation for tests and the
+     * terminal-summary predicate. `resolveRestTransitionNavigationForTest` returns only a
+     * Boolean and cannot assert a successor rebind.
+     */
+    internal data class CachedTransitionNavigationSnapshot(
+        val transitionId: String,
+        val sourceExecutionId: String,
+        val nextStep: Pair<Int, Int>?,
+    )
+
+    internal fun cachedTransitionNavigationSnapshot(): CachedTransitionNavigationSnapshot? =
+        cachedTransitionNavigation?.let { cached ->
+            CachedTransitionNavigationSnapshot(
+                transitionId = cached.transitionId,
+                sourceExecutionId = cached.sourceExecutionId,
+                nextStep = cached.nextStep,
+            )
+        }
+
+    /**
+     * Issue #1018: rebind the already-cached terminal successor to a session-appended
+     * exercise, in the same guarded mutation as the append. The identity completion path
+     * caches `nextStep = null` before the summary is published, and later advance prefers
+     * that cache — without this rebind, Complete Routine still finishes the workout and
+     * ignores the new exercise.
+     *
+     * Contract (integration-model §3.1):
+     * - Runs under [restTransitionMutex], the lock [resolveNavigationOnce] uses. The
+     *   entry point is synchronous (UI save callback), so the lock is taken with
+     *   `tryLock`; contention refuses the append (returns false) rather than racing.
+     * - No-op success when no cache exists: live `getNextStep` will see the append.
+     * - Refuses when the cached `nextStep` is already non-null, or the cache identity does
+     *   not match the current plan — a non-null successor is never overwritten.
+     * - Replaces ONLY `nextStep` with `(newExerciseIndex, 0)` on the existing cache.
+     *   `transitionId`, `sourceExecutionId`, cycle ids and the durable
+     *   [RestTransitionPlan] are untouched, and no new rest plan is installed.
+     * - Deliberately does NOT call [resolveNavigationOnce] to "refresh": the transition-id
+     *   hit there returns the old cached null and the feature silently breaks.
+     */
+    internal fun rebindTerminalSuccessor(newExerciseIndex: Int): Boolean {
+        if (newExerciseIndex < 0) return false
+        if (!restTransitionMutex.tryLock()) {
+            Logger.d { "SESSION_APPEND: rebindTerminalSuccessor refused - rest transition mutex busy" }
+            return false
+        }
+        try {
+            val cached = cachedTransitionNavigation
+            if (cached == null) {
+                // No cached successor: the live getNextStep lookup sees the appended
+                // exercise, so there is nothing to rebind.
+                return true
+            }
+            if (cached.nextStep != null) {
+                Logger.d { "SESSION_APPEND: rebindTerminalSuccessor refused - cached successor already resolved" }
+                return false
+            }
+            val currentPlan = coordinator._restTransitionPlan.value
+            if (currentPlan == null ||
+                cached.transitionId != currentPlan.transitionId ||
+                cached.sourceExecutionId != currentPlan.sourceExecutionId
+            ) {
+                Logger.d { "SESSION_APPEND: rebindTerminalSuccessor refused - cache does not match the current plan" }
+                return false
+            }
+            cachedTransitionNavigation = cached.copy(nextStep = newExerciseIndex to 0)
+            Logger.d { "SESSION_APPEND: rebound cached terminal successor to exercise index $newExerciseIndex (transition ${cached.transitionId})" }
+            return true
+        } finally {
+            restTransitionMutex.unlock()
+        }
+    }
+
     internal fun activeRuntimeDocumentForTest(): ActiveWorkoutRuntimeDocument? = activeRuntimeDocument
 
     internal fun currentRestoredRuntimeOwnerForTest(): RestoredRuntimeOwnerToken? = restoredRuntimeOwner?.guardOwner

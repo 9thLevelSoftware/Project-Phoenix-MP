@@ -461,6 +461,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             machineTeardownState = machineTeardownState,
             restTransitionPlan = restTransitionPlan,
             recentJustLiftExerciseIds = recentJustLiftExerciseIds,
+            // Issue #1018: terminal routine set summary (session query, not list position).
+            // Recomputed with the keys above; the loadedRoutine collection is what recomposes
+            // the screen after an Add Exercise append.
+            isTerminalRoutineSummary = viewModel.isTerminalRoutineSummary(),
         )
     }
 
@@ -501,6 +505,11 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onConfirmBodyweightSetResult = { reps, variant ->
                 viewModel.confirmBodyweightSetResult(reps, variant)
             },
+            // Issue #1018: session-only Add Exercise from the terminal set summary.
+            onAppendExerciseToActiveSession = { exercise ->
+                viewModel.appendExerciseToActiveSession(exercise)
+            },
+            onCancelSummaryAutoAdvance = { viewModel.cancelSummaryAutoAdvance() },
         )
     }
 
@@ -523,6 +532,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
                 modifier = Modifier.weight(1f),
+                // Issue #1018: editor-pair dependencies for the session-only Add Exercise
+                // flow (no Koin lookup in WorkoutTab).
+                personalRecordRepository = viewModel.personalRecordRepository,
+                userPreferences = userPreferences,
             )
         }
     }

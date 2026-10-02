@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -69,13 +70,17 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
+import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.StartGateLabel
@@ -86,6 +91,7 @@ import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import com.devil.phoenixproject.presentation.manager.actionIdentity
+import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -98,6 +104,8 @@ import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_skip
 import projectphoenix.shared.generated.resources.action_tag
+import projectphoenix.shared.generated.resources.add_exercise
+import projectphoenix.shared.generated.resources.add_to_workout
 import projectphoenix.shared.generated.resources.bodyweight_effective_load
 import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
 import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
@@ -133,6 +141,11 @@ fun WorkoutTab(
     actions: WorkoutActions,
     exerciseRepository: ExerciseRepository,
     modifier: Modifier = Modifier,
+    // Issue #1018: editor-pair dependencies for the session-only Add Exercise flow on the
+    // terminal routine summary. Defaults keep PreviewWorkoutTab compiling unchanged; the
+    // button stays hidden while these are null or the summary is non-terminal.
+    personalRecordRepository: PersonalRecordRepository? = null,
+    userPreferences: UserPreferences? = null,
 ) {
     val connectionState = state.connectionState
     val workoutState = state.workoutState
@@ -359,6 +372,19 @@ fun WorkoutTab(
                     // skip) for this summary, the decision sticks so we never re-prompt (no nag).
                     var showTagPrompt by remember(summarySessionId) { mutableStateOf(false) }
                     var tagPromptResolved by remember(summarySessionId) { mutableStateOf(false) }
+                    // Issue #1018: session-only Add Exercise flow on the terminal routine
+                    // summary. holdAutoContinue is remembered per summary and survives dialog
+                    // dismissal — dismissing the picker/sheet must never restart either
+                    // countdown (a restarted countdown could complete the routine out from
+                    // under the user).
+                    var holdAutoContinue by remember(summarySessionId) { mutableStateOf(false) }
+                    var showAddExercisePicker by remember(summarySessionId) { mutableStateOf(false) }
+                    var addExerciseToConfig by remember(summarySessionId) { mutableStateOf<RoutineExercise?>(null) }
+                    // Entry point: terminal session predicate + the editor pair's dependencies.
+                    // This live card is never history, so no history check is needed here.
+                    val canAddExercise = state.isTerminalRoutineSummary &&
+                        personalRecordRepository != null &&
+                        userPreferences != null
                     val scope = rememberCoroutineScope()
 
                     // Only offer the prompt for an untagged Just Lift set with real reps.
@@ -376,10 +402,13 @@ fun WorkoutTab(
                             val currentExercise = routine.exercises.getOrNull(currentExerciseIndex)
                             val isLastSetOfExercise = currentExercise != null &&
                                 currentSetIndex >= currentExercise.setReps.size - 1
-                            val isLastExercise = currentExerciseIndex >= routine.exercises.size - 1
 
                             when {
-                                isLastSetOfExercise && isLastExercise -> "Complete Routine"
+                                // Issue #1018: terminal is the session query
+                                // (state.isTerminalRoutineSummary = getNextStep == null / cached
+                                // successor == null), not list position — a routine ending in a
+                                // superset is terminal before its last flat-list entry.
+                                isLastSetOfExercise && state.isTerminalRoutineSummary -> "Complete Routine"
                                 isLastSetOfExercise -> "Next Exercise"
                                 else -> "Next Set"
                             }
@@ -425,6 +454,20 @@ fun WorkoutTab(
                                 null
                             },
                             buttonLabel = buttonLabel,
+                            // Issue #1018: Add Exercise above Complete Routine. The tap cancels
+                            // the manager auto-advance and sets the Compose countdown hold
+                            // BEFORE the picker opens.
+                            onAddExercise = if (canAddExercise) {
+                                {
+                                    actions.onCancelSummaryAutoAdvance()
+                                    holdAutoContinue = true
+                                    showAddExercisePicker = true
+                                }
+                            } else {
+                                null
+                            },
+                            addExerciseLabel = stringResource(Res.string.add_exercise),
+                            holdAutoContinue = holdAutoContinue,
                         )
 
                         if (showExerciseTagPicker && summarySessionId != null) {
@@ -509,6 +552,70 @@ fun WorkoutTab(
                                     }
                                 },
                             )
+                        }
+
+                        // Issue #1018: the signed-off add flow reuses the routine editor's
+                        // ExercisePickerDialog + ExerciseEditBottomSheet pair unchanged except
+                        // for the caller-provided "Add to Workout" commit copy. Dismissing
+                        // either dialog leaves the routine and the auto-continue hold in place.
+                        if (showAddExercisePicker && canAddExercise) {
+                            ExercisePickerDialog(
+                                showDialog = true,
+                                onDismiss = { showAddExercisePicker = false },
+                                onExerciseSelected = { selectedExercise ->
+                                    val prefs = userPreferences
+                                    addExerciseToConfig = if (prefs != null) {
+                                        buildDefaultRoutineExerciseForEditor(
+                                            id = generateUUID(),
+                                            selectedExercise = selectedExercise,
+                                            orderIndex = loadedRoutine?.exercises?.size ?: 0,
+                                            supersetId = null,
+                                            userPreferences = prefs,
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    showAddExercisePicker = false
+                                },
+                                exerciseRepository = exerciseRepository,
+                                enableVideoPlayback = false,
+                            )
+                        }
+
+                        addExerciseToConfig?.let { exerciseToAppend ->
+                            val prefs = userPreferences
+                            val prRepo = personalRecordRepository
+                            if (prefs != null && prRepo != null) {
+                                ExerciseEditBottomSheet(
+                                    exercise = exerciseToAppend,
+                                    weightUnit = weightUnit,
+                                    enableVideoPlayback = enableVideoPlayback,
+                                    kgToDisplay = kgToDisplay,
+                                    displayToKg = displayToKg,
+                                    exerciseRepository = exerciseRepository,
+                                    personalRecordRepository = prRepo,
+                                    formatWeight = formatWeight,
+                                    rackItems = rackItems,
+                                    weightStepOverride = prefs.effectiveWeightIncrementKg,
+                                    planningMaxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                                        prefs.lastConnectedModel,
+                                    ),
+                                    onSave = { configuredExercise ->
+                                        // Session-only append + cached-successor rebind inside
+                                        // the manager. Never updateExercises / saveRoutine /
+                                        // updateRoutine — the saved routine template is not
+                                        // written, and no auto-proceed: the summary stays so the
+                                        // Next Exercise label is visible.
+                                        actions.onAppendExerciseToActiveSession(configuredExercise)
+                                        addExerciseToConfig = null
+                                    },
+                                    onDismiss = {
+                                        // Dismiss keeps the routine and the hold in place.
+                                        addExerciseToConfig = null
+                                    },
+                                    buttonText = stringResource(Res.string.add_to_workout),
+                                )
+                            }
                         }
                     }
                 }
