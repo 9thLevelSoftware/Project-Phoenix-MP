@@ -219,6 +219,8 @@
     <string name="routine_name">Routine Name</string>
     <string name="create_new_routine">Create New Routine</string>
     <string name="add_exercise">Add Exercise</string>
+    <!-- Issue #1018: commit label for the session-only add flow on the terminal set summary (not the editor's template-writing "Add to Routine"). -->
+    <string name="add_to_workout">Add to Workout</string>
     <string name="delete_routine">Delete Routine</string>
     <string name="delete_routine_message">Are you sure you want to delete '%1$s'?</string>
     <!-- #772: routine CSV import and export -->

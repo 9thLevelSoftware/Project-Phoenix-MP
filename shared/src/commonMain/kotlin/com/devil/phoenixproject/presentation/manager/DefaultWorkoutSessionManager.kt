@@ -292,6 +292,18 @@ class DefaultWorkoutSessionManager(
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
     private var summaryAutoAdvanceJob: Job? = null
 
+    /**
+     * Issue #1018: holds EVERY summary auto-advance path for the current summary while the
+     * Add Exercise flow is open. Set by [cancelSummaryAutoAdvance] before any dialog opens,
+     * cleared when a fresh summary is emitted (StateFlow never re-emits an equal
+     * `SetSummary`, so the hold sticks for this summary). This covers not only the
+     * manager-level [summaryAutoAdvanceJob] but also the engine's Issue #320 auto-advance
+     * (`ActiveSessionEngine` calls `flowDelegate.proceedFromSummary(completion)` after the
+     * summary delay) — without holding that path, waiting past the old countdown completes
+     * the routine while the picker or sheet is open, violating acceptance criterion 7.
+     */
+    private var summaryAutoAdvanceHeld = false
+
     private data class WorkoutServiceInputs(
         val workoutState: WorkoutState,
         val justLiftRestCountdown: Int?,
@@ -353,6 +365,7 @@ class DefaultWorkoutSessionManager(
             override fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = activeSessionEngine.resolveOccurrenceSetWeight(exercise, setIndex)
             override fun beginRoutineCompletedRuntimeCleanup() = activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
             override fun beginRoutineAbandonmentRuntimeCleanup() = activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
+            override fun rebindTerminalSuccessor(newExerciseIndex: Int): Boolean = activeSessionEngine.rebindTerminalSuccessor(newExerciseIndex)
         }
     }
 
@@ -517,6 +530,9 @@ class DefaultWorkoutSessionManager(
                 coordinator.workoutState.collect { state ->
                     summaryAutoAdvanceJob?.cancel()
                     summaryAutoAdvanceJob = null
+                    // Issue #1018: a fresh summary gets a fresh countdown — the Add Exercise
+                    // hold applies only to the summary it was set on.
+                    summaryAutoAdvanceHeld = false
 
                     if (state !is WorkoutState.SetSummary) return@collect
 
@@ -1153,6 +1169,70 @@ class DefaultWorkoutSessionManager(
         )
     }
 
+    // ===== Issue #1018: session-only "Add Exercise" from the terminal set summary =====
+
+    /**
+     * Append one extra exercise to the active session's in-memory routine and rebind the
+     * cached terminal successor, refusing while a summary proceed is already in flight so a
+     * proceed that has passed the cache read cannot race a late rebind.
+     * Session-only: the saved routine template is never written (see
+     * [RoutineFlowManager.appendExerciseToActiveSession]).
+     */
+    fun appendExerciseToActiveSession(exercise: RoutineExercise): Boolean {
+        if (coordinator.proceedFromSummaryInProgress.value) {
+            Logger.d { "SESSION_APPEND: refused - proceedFromSummary already in progress" }
+            return false
+        }
+        return routineFlowManager.appendExerciseToActiveSession(exercise)
+    }
+
+    /**
+     * Cancel the manager-level summary auto-advance countdown and hold every remaining
+     * auto-advance path for the current summary. Opening the Add Exercise flow calls this
+     * before any dialog opens; dismissing the dialogs must not restart any countdown (the
+     * collector restarts the job only when `workoutState` emits, and a StateFlow never
+     * re-emits an equal `SetSummary`). An explicit user tap (the no-args
+     * [proceedFromSummary]) still proceeds.
+     */
+    fun cancelSummaryAutoAdvance() {
+        summaryAutoAdvanceJob?.cancel()
+        summaryAutoAdvanceJob = null
+        summaryAutoAdvanceHeld = true
+    }
+
+    /**
+     * Issue #1018: true only for a real routine's terminal set summary — the entry point for
+     * Add Exercise and the switch for the Complete Routine label. Terminal is the session
+     * query (`getNextStep == null`, or the cached successor when the current plan's cache
+     * exists), never list position: a routine that ends in a superset whose members are not
+     * the last flat-list entries is terminal earlier than `currentExerciseIndex >= size - 1`.
+     *
+     * False for Just Lift, `temp_single_` routines, non-`SetSummary` states and a
+     * `RoutineFlowState.Complete` flow.
+     */
+    fun isTerminalRoutineSummary(): Boolean {
+        if (coordinator._workoutState.value !is WorkoutState.SetSummary) return false
+        val routine = coordinator._loadedRoutine.value ?: return false
+        if (routine.id.startsWith(TEMP_SINGLE_EXERCISE_PREFIX)) return false
+        if (coordinator._workoutParameters.value.isJustLift) return false
+        if (coordinator._routineFlowState.value is RoutineFlowState.Complete) return false
+        val cache = activeSessionEngine.cachedTransitionNavigationSnapshot()
+        val currentPlan = coordinator._restTransitionPlan.value
+        val cacheMatchesCurrentPlan = cache != null &&
+            currentPlan != null &&
+            cache.transitionId == currentPlan.transitionId &&
+            cache.sourceExecutionId == currentPlan.sourceExecutionId
+        return if (cacheMatchesCurrentPlan) {
+            cache.nextStep == null
+        } else {
+            routineFlowManager.getNextStep(
+                routine,
+                coordinator._currentExerciseIndex.value,
+                coordinator._currentSetIndex.value,
+            ) == null
+        }
+    }
+
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
 
     /**
@@ -1167,6 +1247,13 @@ class DefaultWorkoutSessionManager(
     }
 
     internal fun proceedFromSummary(completion: SetExecutionCompletion) {
+        // Issue #1018: this overload is the engine's summary auto-advance entry
+        // (ActiveSessionEngine's Issue #320 path via WorkoutFlowDelegate). While the Add
+        // Exercise flow holds the summary, no auto-advance may proceed from it.
+        if (summaryAutoAdvanceHeld) {
+            Logger.d { "proceedFromSummary: engine summary auto-advance held (Add Exercise flow)" }
+            return
+        }
         proceedFromSummaryFor(completion.lease, completion)
     }
 

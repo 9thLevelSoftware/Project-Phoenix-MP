@@ -10116,4 +10116,336 @@ class DWSMWorkoutLifecycleTest {
             "Expected $expected ± $tolerance, got $actual",
         )
     }
+
+    // ===== Issue #1018: session-only Add Exercise from the terminal set summary =====
+
+    /**
+     * T4: every refusal path returns false and leaves the in-memory routine untouched.
+     * Covered refusals: non-SetSummary, Just Lift, temp_single_ routine, a non-null
+     * successor (non-terminal summary), and a proceed already in flight.
+     */
+    @Test
+    fun `session append refusals return false and leave the loaded routine unchanged`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = createTestRoutine(exerciseCount = 2, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeWorkoutRepo.addRoutine(routine)
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            val loaded = harness.coordinator.loadedRoutine.value
+            assertNotNull(loaded)
+
+            // Non-SetSummary state refuses.
+            var snapshot = harness.coordinator.loadedRoutine.value
+            assertFalse(harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)), "non-SetSummary must refuse")
+            assertEquals(snapshot, harness.coordinator.loadedRoutine.value)
+
+            // Terminal summary, but a proceed is already in flight.
+            installTerminalSummaryState(harness, loaded, exerciseIndex = 1, setIndex = 1)
+            harness.coordinator.proceedFromSummaryInProgress.value = true
+            snapshot = harness.coordinator.loadedRoutine.value
+            assertFalse(
+                harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)),
+                "a proceed already in progress must refuse the append",
+            )
+            assertEquals(snapshot, harness.coordinator.loadedRoutine.value)
+            harness.coordinator.proceedFromSummaryInProgress.value = false
+
+            // Non-terminal summary (live successor exists).
+            installTerminalSummaryState(harness, loaded, exerciseIndex = 0, setIndex = 0)
+            snapshot = harness.coordinator.loadedRoutine.value
+            assertFalse(
+                harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)),
+                "a non-terminal summary must refuse the append",
+            )
+            assertEquals(snapshot, harness.coordinator.loadedRoutine.value)
+
+            // Just Lift refuses.
+            installTerminalSummaryState(harness, loaded, exerciseIndex = 1, setIndex = 1)
+            harness.coordinator._workoutParameters.value =
+                harness.coordinator._workoutParameters.value.copy(isJustLift = true)
+            snapshot = harness.coordinator.loadedRoutine.value
+            assertFalse(harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)), "Just Lift must refuse")
+            assertEquals(snapshot, harness.coordinator.loadedRoutine.value)
+            harness.coordinator._workoutParameters.value =
+                harness.coordinator._workoutParameters.value.copy(isJustLift = false)
+
+            // temp_single_ routine refuses.
+            installTerminalSummaryState(
+                harness,
+                loaded.copy(id = DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX + "x"),
+                exerciseIndex = 1,
+                setIndex = 1,
+            )
+            snapshot = harness.coordinator.loadedRoutine.value
+            assertFalse(
+                harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)),
+                "temp_single_ routine must refuse",
+            )
+            assertEquals(snapshot, harness.coordinator.loadedRoutine.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * T5: the saved routine template is never written. The repository's stored exercise
+     * list is unchanged while the in-memory session routine gains the extra. Also locks the
+     * sheet-distrust normalization: fresh id, no superset, orderIndex = max + 1.
+     */
+    @Test
+    fun `session append never writes the saved routine template and normalizes the row`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = createTestRoutine(exerciseCount = 2, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeWorkoutRepo.addRoutine(routine)
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            val loaded = harness.coordinator.loadedRoutine.value
+            assertNotNull(loaded)
+            val storedBefore = harness.fakeWorkoutRepo.getRoutineById(routine.id)
+            assertNotNull(storedBefore)
+            val storedIdsBefore = storedBefore.exercises.map { it.id }
+            val routineSessionBefore = harness.coordinator.currentRoutineSessionId
+            installTerminalSummaryState(harness, loaded, exerciseIndex = 1, setIndex = 1)
+
+            val sheetRow = sessionExtra(harness)
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(sheetRow), "append must be accepted")
+            advanceUntilIdle()
+
+            // The repository still holds the original template.
+            val storedAfter = harness.fakeWorkoutRepo.getRoutineById(routine.id)
+            assertNotNull(storedAfter)
+            assertEquals(storedIdsBefore, storedAfter.exercises.map { it.id }, "saved template must be untouched")
+
+            // The in-memory session routine holds exactly one extra, normalized.
+            val updated = harness.coordinator.loadedRoutine.value
+            assertNotNull(updated)
+            assertEquals(3, updated.exercises.size)
+            val appended = updated.exercises.last()
+            assertTrue(appended.id != sheetRow.id, "the sheet id must not be trusted; a fresh id is assigned")
+            assertEquals(null, appended.supersetId, "the appended row must never join a superset")
+            assertEquals(0, appended.orderInSuperset)
+            assertEquals(
+                maxOf(
+                    loaded.exercises.maxOf { it.orderIndex },
+                    loaded.supersets.maxOfOrNull { it.orderIndex } ?: 0,
+                ) + 1,
+                appended.orderIndex,
+                "orderIndex must be max(existing) + 1 so flat index and getItems() agree",
+            )
+            assertEquals(routineSessionBefore, harness.coordinator.currentRoutineSessionId, "routine session context kept")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * T6 (the feature's load-bearing seam): after a terminal NormalAdvance resolution
+     * cached `nextStep = null`, the session append rebinds the cache to the appended
+     * exercise's flat index without touching transition identity, and advancing enters the
+     * new exercise instead of `RoutineFlowState.Complete`.
+     */
+    @Test
+    fun `session append rebinds the cached terminal successor and advance enters the new exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.setActiveSummaryCountdownSeconds(0) // manual summary: no auto-advance, autoplay off
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+
+            // The identity completion path resolved the successor once: terminal set -> cached null.
+            val cachedBefore = harness.activeSessionEngine.cachedTransitionNavigationSnapshot()
+            assertNotNull(cachedBefore, "terminal set must have a resolved transition cache")
+            assertEquals(null, cachedBefore.nextStep, "a true terminal set caches a null successor")
+            assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            assertTrue(harness.dwsm.isTerminalRoutineSummary(), "terminal summary must offer Add Exercise")
+
+            // Session-only append + cache rebind commit together.
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)), "append must be accepted")
+            advanceUntilIdle()
+            val cachedAfter = harness.activeSessionEngine.cachedTransitionNavigationSnapshot()
+            assertNotNull(cachedAfter)
+            assertEquals(
+                1 to 0,
+                cachedAfter.nextStep,
+                "cached successor must be rebound to the appended exercise at set 0",
+            )
+            assertEquals(cachedBefore.transitionId, cachedAfter.transitionId, "transitionId must not change")
+            assertEquals(cachedBefore.sourceExecutionId, cachedAfter.sourceExecutionId, "sourceExecutionId must not change")
+            assertEquals(2, harness.coordinator.loadedRoutine.value!!.exercises.size)
+            assertFalse(harness.dwsm.isTerminalRoutineSummary(), "a summary with a successor must not offer Add Exercise")
+
+            // Advance: consume the rest transition; it must enter the appended exercise.
+            harness.dwsm.proceedFromSummary()
+            runCurrent()
+            advanceTimeBy(2_000)
+            if (harness.coordinator.workoutState.value is WorkoutState.Resting) {
+                harness.dwsm.skipRest()
+            }
+            runCurrent()
+            advanceTimeBy(2_000)
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value, "advance must enter the appended exercise")
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertFalse(
+                harness.coordinator.routineFlowState.value is RoutineFlowState.Complete,
+                "advance must not enter RoutineFlowState.Complete (the false-green trap)",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * T7: without a cache and without a routine identity the live `getNextStep` branch of
+     * `proceedFromSummaryFor` still enters the appended exercise.
+     */
+    @Test
+    fun `session append without cache proceeds through the live successor lookup`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.setActiveSummaryCountdownSeconds(0) // autoplay off: direct SetReady path
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeWorkoutRepo.addRoutine(routine)
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+
+            // No workout execution, no installed plan, no cache: a plain terminal summary.
+            installTerminalSummaryState(harness, harness.coordinator.loadedRoutine.value!!, exerciseIndex = 0, setIndex = 0)
+            assertNull(harness.activeSessionEngine.cachedTransitionNavigationSnapshot(), "this path has no cache")
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)), "append must be accepted")
+            assertEquals(2, harness.coordinator.loadedRoutine.value!!.exercises.size)
+
+            harness.dwsm.proceedFromSummary()
+            advanceUntilIdle()
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value, "live getNextStep must enter the appended exercise")
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertFalse(
+                harness.coordinator.routineFlowState.value is RoutineFlowState.Complete,
+                "proceed must not complete the routine",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /** T8: completed-set index sets are not renumbered by the append. */
+    @Test
+    fun `session append preserves completed-set indices`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = createTestRoutine(exerciseCount = 2, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            val loaded = harness.coordinator.loadedRoutine.value
+            assertNotNull(loaded)
+            installTerminalSummaryState(harness, loaded, exerciseIndex = 1, setIndex = 1)
+            harness.coordinator._completedExercises.value = setOf(0, 1)
+            harness.coordinator._skippedExercises.value = emptySet()
+
+            assertTrue(harness.dwsm.appendExerciseToActiveSession(sessionExtra(harness)), "append must be accepted")
+
+            assertEquals(
+                setOf(0, 1),
+                harness.coordinator._completedExercises.value,
+                "append must not shift completed-set indices",
+            )
+            assertEquals(emptySet<Int>(), harness.coordinator._skippedExercises.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * T9: cancelSummaryAutoAdvance() sticks for the current summary — waiting past the old
+     * countdown does not proceed. (The manager-level job is the iOS auto-advance; on other
+     * platforms it is never armed and this asserts the no-restart contract instead.)
+     */
+    @Test
+    fun `cancelSummaryAutoAdvance prevents the summary auto-advance from proceeding`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.setActiveSummaryCountdownSeconds(5)
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+
+            // Opening Add Exercise cancels the manager auto-advance before any dialog opens.
+            harness.dwsm.cancelSummaryAutoAdvance()
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertIs<WorkoutState.SetSummary>(
+                harness.coordinator.workoutState.value,
+                "the cancelled auto-advance must not proceed from the summary",
+            )
+            assertFalse(harness.coordinator.routineFlowState.value is RoutineFlowState.Complete)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /** Sheet-shaped extra: the session append must normalize id / superset / orderIndex. */
+    private fun sessionExtra(harness: DWSMTestHarness): RoutineExercise {
+        val template = harness.coordinator.loadedRoutine.value!!.exercises.last()
+        return template.copy(
+            id = "sheet-returned-id",
+            supersetId = "leaked-superset",
+            orderInSuperset = 3,
+            orderIndex = 0,
+        )
+    }
+
+    /** Directly install a SetSummary at the given routine coordinates. */
+    private fun installTerminalSummaryState(
+        harness: DWSMTestHarness,
+        routine: Routine,
+        exerciseIndex: Int,
+        setIndex: Int,
+    ) {
+        harness.coordinator._loadedRoutine.value = routine
+        harness.coordinator._currentExerciseIndex.value = exerciseIndex
+        harness.coordinator._currentSetIndex.value = setIndex
+        harness.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 0f,
+            avgLoadKgPerCable = 0f,
+            repCount = 8,
+        )
+    }
 }

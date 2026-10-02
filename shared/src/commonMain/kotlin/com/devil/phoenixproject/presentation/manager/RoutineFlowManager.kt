@@ -156,6 +156,13 @@ class RoutineFlowManager(
 
         /** Capture persisted-runtime cleanup before intentionally abandoning/replacing a routine. */
         fun beginRoutineAbandonmentRuntimeCleanup()
+
+        /**
+         * Issue #1018: rebind the cached terminal successor to the flat exercises index of a
+         * session-appended exercise (ActiveSessionEngine.rebindTerminalSuccessor). Must commit
+         * together with the routine append or not at all.
+         */
+        fun rebindTerminalSuccessor(newExerciseIndex: Int): Boolean
     }
 
     /**
@@ -555,6 +562,96 @@ class RoutineFlowManager(
             currentExIndex = coordinator._currentExerciseIndex.value,
             currentSetIndex = coordinator._currentSetIndex.value,
         ) == null
+    }
+
+    // ===== Issue #1018: session-only "Add Exercise" from the terminal set summary =====
+
+    /**
+     * Append one extra exercise to the **in-memory loaded routine** for the current workout
+     * session only (the signed-off "Add Exercise" flow on the terminal set summary).
+     *
+     * Hard guards — refuses (one `Logger.d`, returns false) unless the user is on a real
+     * routine's `SetSummary`, the routine is not a `temp_single_` / Just Lift session, the
+     * routine flow is not `Complete`, and the current successor is null (live [getNextStep]
+     * on the pre-append routine; the engine-cache half of the terminal check is the rebind
+     * below). `DefaultWorkoutSessionManager` additionally refuses while
+     * `proceedFromSummaryInProgress` is set.
+     *
+     * The row is normalized before write: a fresh `id` via [generateUUID] even if the editor
+     * sheet returned one, `supersetId = null`, `orderInSuperset = 0`, and
+     * `orderIndex = max(existing exercise.orderIndex, existing superset.orderIndex) + 1` so
+     * [getNextStep]'s `exercises.indexOf` agrees with the flat index the rebind stores. It is
+     * appended at the end (never inserted into the superset just finished) and no `Superset`
+     * is created.
+     *
+     * The append and the `cachedTransitionNavigation.nextStep` successor rebind commit
+     * together or not at all: the rebind runs first and, when it refuses (a non-null
+     * successor is already cached), neither the routine nor the cache changes.
+     *
+     * Never calls [saveRoutine] / [updateRoutine] — the saved routine template is not
+     * written. `currentRoutineId` / `currentRoutineSessionId` stay untouched and the loaded
+     * routine keeps its original id, so per-set persistence, totals, sync and auto-backup
+     * pick the extra sets up as ordinary session rows.
+     */
+    fun appendExerciseToActiveSession(exercise: RoutineExercise): Boolean {
+        val workoutState = coordinator._workoutState.value
+        if (workoutState !is WorkoutState.SetSummary) {
+            Logger.d { "SESSION_APPEND: refused - workoutState is $workoutState, expected SetSummary" }
+            return false
+        }
+        val routine = coordinator._loadedRoutine.value
+        if (routine == null) {
+            Logger.d { "SESSION_APPEND: refused - no loaded routine" }
+            return false
+        }
+        if (routine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)) {
+            Logger.d { "SESSION_APPEND: refused - temporary single-exercise routine (${routine.id})" }
+            return false
+        }
+        if (coordinator._workoutParameters.value.isJustLift) {
+            Logger.d { "SESSION_APPEND: refused - Just Lift session" }
+            return false
+        }
+        if (coordinator._routineFlowState.value is RoutineFlowState.Complete) {
+            Logger.d { "SESSION_APPEND: refused - routine flow already Complete" }
+            return false
+        }
+        val currentSuccessor = getNextStep(
+            routine,
+            coordinator._currentExerciseIndex.value,
+            coordinator._currentSetIndex.value,
+        )
+        if (currentSuccessor != null) {
+            Logger.d { "SESSION_APPEND: refused - current summary is not terminal (successor=$currentSuccessor)" }
+            return false
+        }
+
+        val normalized = exercise.copy(
+            id = generateUUID(),
+            supersetId = null,
+            orderInSuperset = 0,
+            orderIndex = maxOf(
+                routine.exercises.maxOfOrNull { it.orderIndex } ?: 0,
+                routine.supersets.maxOfOrNull { it.orderIndex } ?: 0,
+            ) + 1,
+        )
+        val updated = routine.copy(exercises = routine.exercises + normalized)
+
+        // The cache rebind must land before the routine mutation is published, and both
+        // commit together: a refused rebind leaves the cache and the routine untouched.
+        if (!lifecycleDelegate.rebindTerminalSuccessor(updated.exercises.lastIndex)) {
+            Logger.d { "SESSION_APPEND: refused - cached successor rebind rejected" }
+            return false
+        }
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._loadedRoutine.value = updated
+        }
+        Logger.d {
+            "SESSION_APPEND: appended '${normalized.exercise.name}' " +
+                "(flatIndex=${updated.exercises.lastIndex}, orderIndex=${normalized.orderIndex}) " +
+                "for this session only; saved routine untouched"
+        }
+        return true
     }
 
     // ===== Routine CRUD =====

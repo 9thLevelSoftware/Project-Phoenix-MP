@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -101,6 +102,10 @@ data class WorkoutUiState(
     val restTransitionPlan: RestTransitionPlan? = null,
     // Issue #850: newest-first IDs behind the Just Lift tagging picker's Recent chip
     val recentJustLiftExerciseIds: List<String> = emptyList(),
+    // Issue #1018: terminal routine set summary (session query, not list position) —
+    // drives the Complete Routine label and the Add Exercise entry point. Defaults false
+    // so preview states stay non-terminal and the add button stays hidden.
+    val isTerminalRoutineSummary: Boolean = false,
 )
 
 /**
@@ -190,6 +195,17 @@ interface WorkoutActions {
 
     /** Confirm performed reps for a timed bodyweight set. */
     fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption)
+
+    /**
+     * Issue #1018: append one extra exercise to the current session's in-memory routine from
+     * the terminal set summary. Session-only — never writes the saved routine template.
+     * Returns false when the append is refused (non-terminal summary, Just Lift, temp
+     * single-exercise, a proceed already in flight, or a rejected successor rebind).
+     */
+    fun onAppendExerciseToActiveSession(exercise: RoutineExercise): Boolean = false
+
+    /** Issue #1018: hold the manager-level summary auto-advance before the add flow opens. */
+    fun onCancelSummaryAutoAdvance() {}
 }
 
 /**
@@ -226,6 +242,8 @@ fun workoutActions(
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
     onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
+    onAppendExerciseToActiveSession: (RoutineExercise) -> Boolean = { false },
+    onCancelSummaryAutoAdvance: () -> Unit = {},
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
     override fun onRetryWorkoutTeardown() = onRetryWorkoutTeardown()
@@ -256,4 +274,6 @@ fun workoutActions(
     override fun onResumeExerciseTimer() = onResumeExerciseTimer()
     override fun onResetExerciseTimer() = onResetExerciseTimer()
     override fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = onConfirmBodyweightSetResult(reps, variant)
+    override fun onAppendExerciseToActiveSession(exercise: RoutineExercise) = onAppendExerciseToActiveSession(exercise)
+    override fun onCancelSummaryAutoAdvance() = onCancelSummaryAutoAdvance()
 }

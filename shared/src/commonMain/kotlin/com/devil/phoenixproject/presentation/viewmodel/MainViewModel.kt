@@ -1004,6 +1004,14 @@ class MainViewModel(
     fun skipCountdown() = workoutSessionManager.skipCountdown()
     fun resetForNewWorkout() = workoutSessionManager.resetForNewWorkout()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
+
+    // ===== Issue #1018: session-only "Add Exercise" from the terminal set summary =====
+    fun appendExerciseToActiveSession(exercise: RoutineExercise): Boolean =
+        workoutSessionManager.appendExerciseToActiveSession(exercise)
+
+    fun cancelSummaryAutoAdvance() = workoutSessionManager.cancelSummaryAutoAdvance()
+
+    fun isTerminalRoutineSummary(): Boolean = workoutSessionManager.isTerminalRoutineSummary()
     fun skipRest() = workoutSessionManager.skipRest()
     fun skipRest(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.SkipRest(identity))
     fun acceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Accept(identity, percentage))
