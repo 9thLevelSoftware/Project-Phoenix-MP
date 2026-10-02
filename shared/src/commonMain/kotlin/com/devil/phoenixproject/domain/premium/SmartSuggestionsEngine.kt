@@ -37,6 +37,12 @@ object SmartSuggestionsEngine {
     private const val MIN_SESSIONS_FOR_OPTIMAL = 3
     private const val MIN_DISTINCT_DAYS_FOR_OPTIMAL = 2
 
+    /** Rendered label for weekly-volume rows whose stored tag is blank/whitespace-only. */
+    private const val UNKNOWN_MUSCLE_GROUP_LABEL = "Unknown"
+
+    /** Word separator for per-word title-casing of normalized muscle-group keys. */
+    private val WHITESPACE_RUN = Regex("\\s+")
+
     private fun normalizedExerciseKey(session: SessionSummary): String {
         val normalizedName = session.exerciseName.trim().lowercase()
         return if (normalizedName.isNotEmpty()) normalizedName else session.exerciseId
@@ -47,6 +53,15 @@ object SmartSuggestionsEngine {
      * Filters sessions from current 7-day window (nowMs - 7 days to nowMs).
      * totalKg = sum of (weightPerCableKg * cableMultiplier * workingReps) per session.
      *
+     * Muscle-group tags are grouped case-insensitively: the grouping key is
+     * `muscleGroup.trim().lowercase()`, so stored case variants of the same tag
+     * ("Back", "BACK", "back") aggregate into a single row instead of splitting the
+     * table by capitalization. The rendered label is derived deterministically from the
+     * normalized key (per-word title case), not from whichever raw variant was seen
+     * first, so the same muscle group always renders the same way. Blank or
+     * whitespace-only tags aggregate into a single "Unknown" row. Distinct tags such as
+     * "Back" and "Lower Back" keep separate rows - no alias merging.
+     *
      * NOTE: Callers should pass the same effective nowMs used to fetch sessions from storage.
      * In SmartInsightsTab we intentionally use Option A (single 28-day fetch + shared nowMs),
      * then derive the weekly window here to keep query and computation aligned.
@@ -56,10 +71,10 @@ object SmartSuggestionsEngine {
         val weekSessions = sessions.filter { it.timestamp in weekStart..nowMs }
 
         val volumes = weekSessions
-            .groupBy { it.muscleGroup }
-            .map { (group, groupSessions) ->
+            .groupBy { it.muscleGroup.trim().lowercase() }
+            .map { (groupKey, groupSessions) ->
                 MuscleGroupVolume(
-                    muscleGroup = group,
+                    muscleGroup = weeklyVolumeLabel(groupKey),
                     sets = groupSessions.size,
                     reps = groupSessions.sumOf { it.workingReps },
                     totalKg = groupSessions.sumOf {
@@ -71,6 +86,19 @@ object SmartSuggestionsEngine {
         return WeeklyVolumeReport(
             volumes = volumes,
         )
+    }
+
+    /**
+     * Canonical display label for a normalized weekly-volume grouping key
+     * (see [computeWeeklyVolume]). Title-cases each whitespace-separated word
+     * ("back" -> "Back", "full body" -> "Full Body"); a blank key renders as "Unknown".
+     * Pure function of the key, so the label cannot depend on input ordering.
+     */
+    private fun weeklyVolumeLabel(normalizedMuscleGroup: String): String {
+        if (normalizedMuscleGroup.isEmpty()) return UNKNOWN_MUSCLE_GROUP_LABEL
+        return normalizedMuscleGroup
+            .split(WHITESPACE_RUN)
+            .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
     }
 
     /**

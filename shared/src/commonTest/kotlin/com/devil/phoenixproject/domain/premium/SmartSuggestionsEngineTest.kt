@@ -91,6 +91,182 @@ class SmartSuggestionsEngineTest {
     }
 
     // ==========================================================
+    // SUGG-01: Muscle-group tag case-insensitivity (issue #1016)
+    // ==========================================================
+
+    @Test
+    fun volumeAggregatesMixedCaseTagVariants() {
+        // Reporter expectation: "BACK, back, and Back simply fall under 'Back.'"
+        val sessions = listOf(
+            session(muscleGroup = "BACK", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "back", exerciseName = "Pulldown", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "Back", exerciseName = "Pullover", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        val row = report.volumes.first()
+        assertEquals("Back", row.muscleGroup)
+        assertEquals(3, row.sets)
+        assertEquals(24, row.reps) // 8 working reps * 3
+        assertEquals(2400f, row.totalKg) // 50 * 2 * 8 * 3
+    }
+
+    @Test
+    fun volumeCanonicalLabelIsIndependentOfFirstObservedVariant() {
+        // Whichever variant is seen first, the rendered label is the canonical one.
+        val orders = listOf(
+            listOf("BACK", "Back", "back", "bAcK"),
+            listOf("back", "bAcK", "Back", "BACK"),
+            listOf("bAcK", "BACK", "back", "Back"),
+            listOf("Back", "back", "BACK", "bAcK"),
+        )
+        for (order in orders) {
+            val sessions = order.mapIndexed { index, tag ->
+                session(muscleGroup = tag, exerciseName = "ex$index", timestamp = NOW - ONE_DAY_MS * (index + 1))
+            }
+            val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+            assertEquals(1, report.volumes.size, "order=$order")
+            val row = report.volumes.first()
+            assertEquals("Back", row.muscleGroup, "order=$order")
+            assertEquals(4, row.sets, "order=$order")
+            assertEquals(32, row.reps, "order=$order")
+            assertEquals(3200f, row.totalKg, "order=$order")
+        }
+    }
+
+    @Test
+    fun volumeAggregationIsStableAcrossInputPermutations() {
+        val variants = listOf("LEGS", "Legs", "legs", "LeGs", "SHOULDERS", "shoulders", "Shoulders")
+        val permutations = listOf(
+            variants,
+            variants.reversed(),
+            listOf("SHOULDERS", "LEGS", "Shoulders", "legs", "LeGs", "shoulders", "Legs"),
+            listOf("shoulders", "Legs", "LEGS", "Shoulders", "LeGs", "legs", "SHOULDERS"),
+        )
+        val expectedRows = mapOf(
+            "Legs" to listOf(4, 32),
+            "Shoulders" to listOf(3, 24),
+        )
+        for (permutation in permutations) {
+            val sessions = permutation.mapIndexed { index, tag ->
+                session(muscleGroup = tag, exerciseName = "ex$index", timestamp = NOW - ONE_DAY_MS * (index + 1))
+            }
+            val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+            val actual = report.volumes
+                .sortedBy { it.muscleGroup }
+                .map { it.muscleGroup to listOf(it.sets, it.reps) }
+                .toMap()
+            assertEquals(expectedRows, actual, "permutation=$permutation")
+        }
+    }
+
+    @Test
+    fun volumeTrimsSurroundingWhitespaceBeforeGrouping() {
+        val sessions = listOf(
+            session(muscleGroup = "  Chest ", exerciseName = "Bench", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "Chest", exerciseName = "Fly", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "\tCHEST\n", exerciseName = "Dip", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        assertEquals("Chest", report.volumes.first().muscleGroup)
+        assertEquals(3, report.volumes.first().sets)
+    }
+
+    @Test
+    fun volumeMultiWordLabelIsTitleCasedPerWord() {
+        val sessions = listOf(
+            session(muscleGroup = "full body", exerciseName = "Clean", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "FULL BODY", exerciseName = "Snatch", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "LOWER BACK", exerciseName = "Good Morning", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(listOf("Full Body", "Lower Back"), report.volumes.map { it.muscleGroup })
+    }
+
+    @Test
+    fun volumeBlankAndWhitespaceOnlyTagsFormSingleUnknownBucket() {
+        val sessions = listOf(
+            session(muscleGroup = "", exerciseName = "A", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "   ", exerciseName = "B", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "\t", exerciseName = "C", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        val row = report.volumes.first()
+        assertEquals("Unknown", row.muscleGroup)
+        assertEquals(3, row.sets)
+        assertEquals(24, row.reps)
+    }
+
+    @Test
+    fun volumeUnknownNonEmptyTagsRemainSeparateAndCaseFolded() {
+        val sessions = listOf(
+            session(muscleGroup = "Forearms", exerciseName = "Wrist Curl", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "forearms", exerciseName = "Farmer Carry", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "Traps", exerciseName = "Shrug", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(listOf("Forearms", "Traps"), report.volumes.map { it.muscleGroup })
+    }
+
+    @Test
+    fun volumeDistinctMuscleKeysStaySeparate() {
+        // No alias merging: "Back" and "Lower Back" are different muscle groups.
+        val sessions = listOf(
+            session(muscleGroup = "BACK", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "lower back", exerciseName = "Hyperextension", timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "Lower Back", exerciseName = "Good Morning", timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(listOf("Back", "Lower Back"), report.volumes.map { it.muscleGroup })
+    }
+
+    @Test
+    fun volumeAggregationPreservesCableMultiplierArithmetic() {
+        val sessions = listOf(
+            session(muscleGroup = "LEGS", exerciseName = "Squat", cableCount = 2, weightPerCableKg = 10f, workingReps = 5, timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "legs", exerciseName = "Press", cableCount = 1, weightPerCableKg = 10f, workingReps = 5, timestamp = NOW - ONE_DAY_MS * 2),
+            session(muscleGroup = "Legs", exerciseName = "Legacy", cableCount = null, weightPerCableKg = 10f, workingReps = 5, timestamp = NOW - ONE_DAY_MS * 3),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        val row = report.volumes.first()
+        assertEquals("Legs", row.muscleGroup)
+        assertEquals(3, row.sets)
+        assertEquals(15, row.reps)
+        // (10*2*5) + (10*1*5) + (10*1*5) = 200
+        assertEquals(200f, row.totalKg)
+    }
+
+    @Test
+    fun volumeCaseInsensitiveGroupingKeepsInclusiveSevenDayWindow() {
+        val sevenDaysMs = ONE_DAY_MS * 7
+        val sessions = listOf(
+            session(muscleGroup = "BACK", exerciseName = "Row", timestamp = NOW), // upper bound inclusive
+            session(muscleGroup = "back", exerciseName = "Pulldown", timestamp = NOW - sevenDaysMs), // lower bound inclusive
+            session(muscleGroup = "Back", exerciseName = "Older", timestamp = NOW - sevenDaysMs - 1), // excluded
+            session(muscleGroup = "bAcK", exerciseName = "Future", timestamp = NOW + 1), // excluded
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        val row = report.volumes.first()
+        assertEquals("Back", row.muscleGroup)
+        assertEquals(2, row.sets)
+    }
+
+    @Test
+    fun volumeAggregationCountsWorkingRepsNotTotalReps() {
+        val sessions = listOf(
+            session(muscleGroup = "Chest", exerciseName = "Bench", totalReps = 12, workingReps = 8, timestamp = NOW - ONE_DAY_MS),
+            session(muscleGroup = "CHEST", exerciseName = "Fly", totalReps = 20, workingReps = 6, timestamp = NOW - ONE_DAY_MS * 2),
+        )
+        val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
+        assertEquals(1, report.volumes.size)
+        assertEquals(14, report.volumes.first().reps) // 8 + 6 working reps, not 32 total reps
+    }
+
+    // ==========================================================
     // SUGG-02: Balance Analysis
     // ==========================================================
 
