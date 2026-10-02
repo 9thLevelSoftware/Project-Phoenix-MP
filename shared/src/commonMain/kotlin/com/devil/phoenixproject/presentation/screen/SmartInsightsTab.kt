@@ -336,7 +336,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        vol.muscleGroup.replaceFirstChar { it.uppercase() },
+                        vol.muscleGroup,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1.4f),
