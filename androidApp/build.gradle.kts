@@ -197,9 +197,6 @@ android {
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        vectorDrawables {
-            useSupportLibrary = true
-        }
     }
 
     signingConfigs {
