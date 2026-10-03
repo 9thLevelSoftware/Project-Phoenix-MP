@@ -7,9 +7,9 @@ Icons and the launch screen are committed in `PhoenixApp/PhoenixApp/Assets.xcass
 `AppIcon.appiconset` contains one universal iOS icon:
 
 - `AppIcon1024.png` (1024×1024, opaque RGB PNG)
-- The same bytes are at `iosApp/AppIcon1024.png`, which TestFlight passes to the validator as `--source`
+- The same bytes are at `iosApp/AppIcon1024.png`, passed to the validator as `--source`
 
-`ios-testflight.yml` checks them before signing:
+PR CI (`.github/workflows/ci-tests.yml`) and the release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) check them:
 
 ```bash
 python3 scripts/validate_ios_app_icons.py --source iosApp/AppIcon1024.png
