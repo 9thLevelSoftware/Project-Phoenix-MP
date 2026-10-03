@@ -28,7 +28,6 @@ enum class ConnectionStatus {
     CONNECTED,
     DISCONNECTED,
     ERROR,
-    TOKEN_EXPIRED,
 }
 
 /**
