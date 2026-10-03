@@ -11,7 +11,7 @@ private object ApplicationContextHolder {
     var context: Context? = null
 }
 
-fun rememberApplicationContext(context: Context) {
+private fun rememberApplicationContext(context: Context) {
     ApplicationContextHolder.context = context.applicationContext ?: context
 }
 
@@ -29,7 +29,7 @@ fun applyPersistedApplicationNightMode(context: Context) {
     applyApplicationNightMode(context, themeMode)
 }
 
-fun applyApplicationNightMode(context: Context, themeMode: ThemeMode) {
+private fun applyApplicationNightMode(context: Context, themeMode: ThemeMode) {
     rememberApplicationContext(context)
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val appContext = context.applicationContext ?: context
@@ -37,7 +37,7 @@ fun applyApplicationNightMode(context: Context, themeMode: ThemeMode) {
     uiModeManager.setApplicationNightMode(applicationNightModeForTheme(themeMode))
 }
 
-fun applicationNightModeForTheme(themeMode: ThemeMode): Int = when (themeMode) {
+private fun applicationNightModeForTheme(themeMode: ThemeMode): Int = when (themeMode) {
     ThemeMode.LIGHT -> UiModeManager.MODE_NIGHT_NO
     ThemeMode.DARK -> UiModeManager.MODE_NIGHT_YES
     ThemeMode.SYSTEM -> UiModeManager.MODE_NIGHT_AUTO

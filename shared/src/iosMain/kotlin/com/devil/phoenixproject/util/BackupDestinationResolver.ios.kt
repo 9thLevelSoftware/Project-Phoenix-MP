@@ -17,15 +17,12 @@ import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithoutUI
-import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.create
-import platform.Foundation.dataUsingEncoding
 import platform.Foundation.writeToFile
 
 private val log = Logger.withTag("BackupDestinationResolver.iOS")
@@ -54,8 +51,9 @@ class IosBackupDestinationResolver(
     private suspend fun resolveBookmark(destination: BackupDestination.Custom): NSURL? {
         val base64 = destination.bookmarkData
         if (base64.isNullOrBlank()) {
-            // No bookmark — try direct URL as fallback (e.g. app-sandbox paths)
-            return destination.uri.takeIf { it.isNotBlank() }?.let { NSURL.fileURLWithPath(it) }
+            // Stored custom destinations keep a file:// absoluteString. fileURLWithPath
+            // never resolves that string, so a missing bookmark is inaccessible.
+            return null
         }
 
         return try {

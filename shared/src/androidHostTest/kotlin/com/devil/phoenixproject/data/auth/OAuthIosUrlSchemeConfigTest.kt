@@ -1,9 +1,13 @@
-package com.devil.phoenixproject.auth
+package com.devil.phoenixproject.data.auth
 
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Scans the iOS Info.plist for the mobile OAuth callback URL scheme.
+ * Lives in androidHostTest because the scan uses java.io.File.
+ */
 class OAuthIosUrlSchemeConfigTest {
 
     @Test

@@ -197,21 +197,6 @@ android {
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-    }
-
-    signingConfigs {
-        getByName("debug") {
-            val keystorePath = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            if (keystorePath.exists()) {
-                storeFile = keystorePath
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-            }
-        }
     }
 
     buildTypes {
@@ -282,8 +267,7 @@ tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     group = "verification"
     description = "Fails if Android release artifacts are missing packaged workout cue audio resources."
 
-    dependsOn("assembleRelease")
-    mustRunAfter("bundleRelease")
+    mustRunAfter("assembleRelease", "bundleRelease")
 
     rawCueDir.set(rootProject.layout.projectDirectory.dir("shared/src/androidMain/res/raw"))
     releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
@@ -297,8 +281,6 @@ dependencies {
 
     // Core Android
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.activity.compose)
 
     // Koin DI
@@ -317,8 +299,9 @@ dependencies {
 
     // Testing - Unit Tests
     testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.kotlinx.coroutines.test)
+    // mockk and coroutines-test are only referenced from src/testDebug.
+    testDebugImplementation(libs.mockk)
+    testDebugImplementation(libs.kotlinx.coroutines.test)
     // QaBlockingPortalApiClientTest in src/testDebug is the only androidApp user.
     // MapSettings comes from multiplatform-settings-test, not the main settings artifact.
     testDebugImplementation(libs.ktor.client.mock)

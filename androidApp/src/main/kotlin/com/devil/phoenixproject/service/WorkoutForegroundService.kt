@@ -27,8 +27,8 @@ import java.util.Locale
 class WorkoutForegroundService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "phoenix_workout_channel"
-        const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "phoenix_workout_channel"
+        private const val NOTIFICATION_ID = 1
 
         /** Same key [MainActivity] reads from [ThemeViewModel.THEME_PREFS_FILE]. */
         private const val PERSISTED_LANGUAGE_KEY = "language"

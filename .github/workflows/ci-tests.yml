@@ -51,7 +51,10 @@ jobs:
         run: python3 .github/scripts/test_resolve_play_version_code.py
 
       - name: Validate iOS app icons
-        run: python3 scripts/test_ios_app_icons.py
+        run: |
+          python3 scripts/validate_ios_app_icons.py \
+            --source iosApp/AppIcon1024.png
+          python3 scripts/test_ios_app_icons.py
 
   unit-tests:
     name: Unit Tests
@@ -139,7 +142,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: unit-tests
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
@@ -165,7 +167,7 @@ jobs:
       - name: Compile iOS main and test targets
         run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 -Pskip.supabase.check=true
 
-  # Non-blocking until green: first CI run of iosSimulatorArm64Test (incl. iOS commonTest).
+  # Still red: iosSimulatorArm64Test (incl. iOS commonTest) must stay non-blocking until green.
   # Runs on pushes to main and manual dispatch only, never on pull requests.
   ios-simulator-tests:
     name: iOS Simulator Tests (non-blocking)

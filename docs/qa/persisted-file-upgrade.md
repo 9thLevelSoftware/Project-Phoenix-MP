@@ -2,7 +2,7 @@
 
 This runbook verifies PR 709's physical filename migration without treating a synthetic fixture as production evidence. The automated harness is destructive only to one explicitly selected disposable emulator and one exact package name; it never clears data during an upgrade.
 
-The harness default `-ExpectedSchemaVersion` is 56, the current database `user_version` (highest migration file + 1). Pass that parameter only to override it.
+The harness default `-ExpectedSchemaVersion` is 57, the current database `user_version` (highest migration file + 1). Pass that parameter only to override it.
 
 ## Automated v0.9.6 debug-lineage matrix
 

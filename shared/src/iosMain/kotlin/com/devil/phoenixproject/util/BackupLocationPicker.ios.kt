@@ -14,10 +14,8 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.lastPathComponent
-import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UniformTypeIdentifiers.UTTypeFolder
-import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -38,8 +36,8 @@ actual class BackupLocationPicker {
         val scope = rememberCoroutineScope()
 
         val delegate = remember {
-            DirectoryPickerDelegate(
-                onDirectorySelected = { url ->
+            DocumentPickerDelegate(
+                onDocumentPicked = { url ->
                     scope.launch(Dispatchers.Main) {
                         if (url != null) {
                             val accessing = url.startAccessingSecurityScopedResource()
@@ -61,6 +59,8 @@ actual class BackupLocationPicker {
                         onDirectoryPicked(null)
                     }
                 },
+                log = log,
+                kind = DocumentPickerKind.Directory,
             )
         }
 
@@ -114,7 +114,7 @@ actual class BackupLocationPicker {
     /**
      * Present the directory picker from the current root view controller.
      */
-    private fun presentDirectoryPicker(delegate: DirectoryPickerDelegate) {
+    private fun presentDirectoryPicker(delegate: DocumentPickerDelegate) {
         val rootViewController = keyWindowRootViewController() ?: run {
             log.e { "Could not get root view controller" }
             delegate.onCancelled()
@@ -133,29 +133,6 @@ actual class BackupLocationPicker {
             animated = true,
             completion = null,
         )
-    }
-}
-
-/**
- * Delegate that receives callbacks from the directory picker.
- * Mirrors [DocumentPickerDelegate] from FilePicker but simplified for directory-only use.
- */
-@OptIn(ExperimentalForeignApi::class)
-private class DirectoryPickerDelegate(
-    private val onDirectorySelected: (NSURL?) -> Unit,
-    val onCancelled: () -> Unit,
-) : NSObject(),
-    UIDocumentPickerDelegateProtocol {
-
-    override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
-        val url = didPickDocumentsAtURLs.firstOrNull() as? NSURL
-        log.d { "Directory picker: selected ${url?.path}" }
-        onDirectorySelected(url)
-    }
-
-    override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
-        log.d { "Directory picker was cancelled" }
-        onCancelled()
     }
 }
 

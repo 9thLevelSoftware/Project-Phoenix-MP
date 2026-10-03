@@ -27,7 +27,6 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
-import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
 
@@ -78,21 +77,6 @@ class IosDataBackupManager(
                 true,
             )
             return paths.firstOrNull() as? String ?: ""
-        }
-
-    private val backupDirectory: String
-        get() {
-            val dir = "$documentsDirectory/PhoenixBackups"
-            val url = NSURL.fileURLWithPath(dir)
-            if (!fileManager.fileExistsAtPath(dir)) {
-                fileManager.createDirectoryAtURL(
-                    url,
-                    withIntermediateDirectories = true,
-                    attributes = null,
-                    error = null,
-                )
-            }
-            return dir
         }
 
     override fun getSessionBackupDirectory(): String {
@@ -257,7 +241,7 @@ class IosDataBackupManager(
         }
 
         return try {
-            val destPath = "$backupDirectory/$fileName"
+            val destPath = "${getSessionBackupDirectory()}/$fileName"
 
             // Remove existing file if present
             if (fileManager.fileExistsAtPath(destPath)) {

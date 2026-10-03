@@ -47,12 +47,6 @@ object BlePermissions {
         BlePermissionPolicy.requiredPermissions(Build.VERSION.SDK_INT)
 
     /**
-     * Permissions requested alongside the BLE gate but not required to pass it.
-     */
-    fun getOptionalPermissions(): List<String> =
-        BlePermissionPolicy.optionalPermissions(Build.VERSION.SDK_INT)
-
-    /**
      * Required BLE permissions plus optional notification permission.
      */
     fun getPermissionsToRequest(): List<String> =
