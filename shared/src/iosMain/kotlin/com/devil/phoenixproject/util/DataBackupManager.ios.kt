@@ -79,21 +79,6 @@ class IosDataBackupManager(
             return paths.firstOrNull() as? String ?: ""
         }
 
-    private val backupDirectory: String
-        get() {
-            val dir = "$documentsDirectory/PhoenixBackups"
-            val url = NSURL.fileURLWithPath(dir)
-            if (!fileManager.fileExistsAtPath(dir)) {
-                fileManager.createDirectoryAtURL(
-                    url,
-                    withIntermediateDirectories = true,
-                    attributes = null,
-                    error = null,
-                )
-            }
-            return dir
-        }
-
     override fun getSessionBackupDirectory(): String {
         val dir = "$documentsDirectory/PhoenixBackups"
         if (!fileManager.fileExistsAtPath(dir)) {
@@ -256,7 +241,7 @@ class IosDataBackupManager(
         }
 
         return try {
-            val destPath = "$backupDirectory/$fileName"
+            val destPath = "${getSessionBackupDirectory()}/$fileName"
 
             // Remove existing file if present
             if (fileManager.fileExistsAtPath(destPath)) {
