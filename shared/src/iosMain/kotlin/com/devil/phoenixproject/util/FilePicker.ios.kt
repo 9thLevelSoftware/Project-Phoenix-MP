@@ -49,17 +49,9 @@ actual class FilePicker {
                 onDocumentPicked = { url ->
                     scope.launch(Dispatchers.Main) {
                         if (url != null) {
-                            // Start security-scoped access
-                            val accessing = url.startAccessingSecurityScopedResource()
-                            try {
-                                // Copy file to temp directory to ensure we have read access
-                                val tempPath = copyToTempDirectory(url)
-                                onFilePicked(tempPath)
-                            } finally {
-                                if (accessing) {
-                                    url.stopAccessingSecurityScopedResource()
-                                }
-                            }
+                            // asCopy already copied the file into the app sandbox.
+                            val tempPath = copyToTempDirectory(url)
+                            onFilePicked(tempPath)
                         } else {
                             onFilePicked(null)
                         }
@@ -192,7 +184,8 @@ actual class FilePicker {
     }
 
     /**
-     * Copy a security-scoped URL to the temp directory for safe access.
+     * Copy the picker URL into the temp directory.
+     * Import uses asCopy, so the source is already an app-sandbox copy.
      */
     private fun copyToTempDirectory(url: NSURL): String? = try {
         val fileManager = NSFileManager.defaultManager
