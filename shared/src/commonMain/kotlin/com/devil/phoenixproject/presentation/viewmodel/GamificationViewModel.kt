@@ -83,11 +83,6 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
         }
     }
 
-    /** Manually refresh badges for the active profile. */
-    fun loadBadges() {
-        viewModelScope.launch { loadBadgesForProfile(activeProfileId.value) }
-    }
-
     private suspend fun loadBadgesForProfile(profileId: String) {
         _isLoading.value = true
         // Clear stale badges so the UI doesn't show the previous profile's data
