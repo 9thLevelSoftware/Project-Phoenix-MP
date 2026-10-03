@@ -799,11 +799,9 @@ class DWSMEquipmentRackTest {
             releaseSnapshotMutation.complete(Unit)
             advanceUntilIdle()
 
-            val workoutPreferences = harness.fakeUserProfileRepo
-                .observePreferences("default")
-                .first()
-                .workout
-                .value
+            val workoutPreferences = assertIs<ActiveProfileContext.Ready>(
+                harness.fakeUserProfileRepo.activeProfileContext.value,
+            ).preferences.workout.value
             assertTrue(workoutPreferences.stopAtTop)
             assertEquals(
                 listOf("vest"),

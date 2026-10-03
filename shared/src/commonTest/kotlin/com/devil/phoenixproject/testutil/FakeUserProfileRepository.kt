@@ -24,12 +24,9 @@ import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -153,10 +150,6 @@ class FakeUserProfileRepository : UserProfileRepository {
     )
     override val activeProfileContext: StateFlow<ActiveProfileContext> =
         _activeProfileContext.asStateFlow()
-
-    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> = preferenceFlows[profileId]?.asStateFlow() ?: flow {
-        error("Unknown profile preferences: $profileId")
-    }
 
     fun seedReadyProfileForTest(
         profileId: String,
@@ -685,10 +678,6 @@ class FakeUserProfileRepository : UserProfileRepository {
             }
         }
     }
-
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
-
-    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> = flowOf(activeProfile.value?.subscriptionStatus ?: SubscriptionStatus.FREE)
 
     private fun createProfileLocked(
         name: String,
