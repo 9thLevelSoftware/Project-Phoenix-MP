@@ -810,7 +810,7 @@ internal fun shouldShowCableOnlyExerciseControls(exerciseType: ExerciseType): Bo
 internal fun shouldShowStopAtTopToggle(exerciseType: ExerciseType, sets: List<SetConfiguration>): Boolean = shouldShowCableOnlyExerciseControls(exerciseType) && sets.any { it.reps != null }
 
 @Composable
-fun SetModeToggle(
+private fun SetModeToggle(
     setMode: SetMode,
     onModeChange: (SetMode) -> Unit,
 ) {
@@ -846,7 +846,7 @@ fun SetModeToggle(
 }
 
 @Composable
-fun SetsConfiguration(
+private fun SetsConfiguration(
     sets: List<SetConfiguration>,
     setMode: SetMode,
     exerciseType: ExerciseType,
@@ -933,7 +933,7 @@ fun SetsConfiguration(
 }
 
 @Composable
-fun SetRow(
+private fun SetRow(
     setConfig: SetConfiguration,
     setMode: SetMode,
     exerciseType: ExerciseType,
@@ -1261,7 +1261,7 @@ fun ModeSelector(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EccentricLoadSelector(
+private fun EccentricLoadSelector(
     eccentricLoad: EccentricLoad,
     onLoadChange: (EccentricLoad) -> Unit,
 ) {
@@ -1374,7 +1374,7 @@ fun EchoLevelSelector(
  * Issue #57: PR percentage scaling feature
  */
 @Composable
-fun WeightConfigurationCard(
+private fun WeightConfigurationCard(
     usePercentOfPR: Boolean,
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
@@ -1724,7 +1724,7 @@ private fun formatDropSetMinWeightInput(
  * Each warm-up set has a number of reps and a percentage of the working weight.
  */
 @Composable
-fun WarmupSetsConfiguration(
+private fun WarmupSetsConfiguration(
     warmupSets: List<WarmupSet>,
     workingWeight: Float,
     weightSuffix: String,

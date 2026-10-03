@@ -809,7 +809,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
  * Simple workout status card showing current state with live indicator.
  */
 @Composable
-fun ActiveStatusCard(
+private fun ActiveStatusCard(
     workoutState: WorkoutState,
     currentMetric: WorkoutMetric?,
     repCount: RepCount,
@@ -958,7 +958,7 @@ fun ActiveStatusCard(
  * Features animated rings, pulsing glow, and countdown display
  */
 @Composable
-fun AutoStartStopCard(
+private fun AutoStartStopCard(
     workoutState: WorkoutState,
     autoStartCountdown: Int?,
     autoStopState: AutoStopUiState,

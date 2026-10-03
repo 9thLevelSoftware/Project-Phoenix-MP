@@ -50,7 +50,7 @@ private fun formatTimestamp(timestamp: Long): String = KmpUtils.formatTimestamp(
 
 // ProgressTab composable - Deep-dive analytics with Personal Records list
 @Composable
-fun ProgressTab(
+private fun ProgressTab(
     personalRecords: List<PersonalRecord>,
     workoutSessions: List<WorkoutSession>,
     exerciseRepository: ExerciseRepository,
