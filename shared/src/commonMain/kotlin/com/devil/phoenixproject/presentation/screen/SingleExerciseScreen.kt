@@ -40,7 +40,6 @@ import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
-import com.devil.phoenixproject.presentation.components.resolveCustomExerciseDeleteTarget
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -244,9 +243,8 @@ fun SingleExerciseScreen(
                     val deleteExerciseId = exerciseToEdit?.id
                     showCreateDialog = false
                     exerciseToEdit = null
-                    val targetId = resolveCustomExerciseDeleteTarget(deleteExerciseId)
                     coroutineScope.launch {
-                        targetId?.let { exerciseRepository.deleteCustomExercise(it) }
+                        deleteExerciseId?.let { exerciseRepository.deleteCustomExercise(it) }
                     }
                 }
             } else {
