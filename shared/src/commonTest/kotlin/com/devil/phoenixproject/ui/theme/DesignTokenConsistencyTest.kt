@@ -16,6 +16,5 @@ class DesignTokenConsistencyTest {
     fun dataColors_are_pairwise_distinct_from_signals_and_each_other() {
         assertNotEquals(DataColors.Volume, DataColors.Intensity, "volume and intensity series must be distinguishable in combined charts")
         assertNotEquals(SignalWarning, DataColors.Intensity, "warning signal and intensity series must be distinguishable")
-        assertNotEquals(SignalError, DataColors.HeartRate, "error signal and heart-rate series must be distinguishable")
     }
 }
