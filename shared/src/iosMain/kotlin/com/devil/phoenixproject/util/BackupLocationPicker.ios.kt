@@ -14,10 +14,7 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.lastPathComponent
-import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerViewController
-import platform.UIKit.UIViewController
-import platform.UIKit.UIWindowScene
 import platform.UniformTypeIdentifiers.UTTypeFolder
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -118,7 +115,7 @@ actual class BackupLocationPicker {
      * Present the directory picker from the current root view controller.
      */
     private fun presentDirectoryPicker(delegate: DocumentPickerDelegate) {
-        val rootViewController = getRootViewController() ?: run {
+        val rootViewController = keyWindowRootViewController() ?: run {
             log.e { "Could not get root view controller" }
             delegate.onCancelled()
             return
@@ -136,19 +133,6 @@ actual class BackupLocationPicker {
             animated = true,
             completion = null,
         )
-    }
-
-    /**
-     * Get the root UIViewController from the current window scene.
-     * Same pattern as [FilePicker.getRootViewController].
-     */
-    private fun getRootViewController(): UIViewController? {
-        val scenes = UIApplication.sharedApplication.connectedScenes
-        val windowScene = scenes.firstOrNull {
-            it is UIWindowScene
-        } as? UIWindowScene
-
-        return windowScene?.keyWindow?.rootViewController
     }
 }
 

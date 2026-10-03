@@ -123,7 +123,7 @@ actual class FilePicker {
      * Present document picker for importing a file of [contentType].
      */
     private fun presentImportPicker(contentType: UTType, delegate: DocumentPickerDelegate) {
-        val rootViewController = getRootViewController() ?: run {
+        val rootViewController = keyWindowRootViewController() ?: run {
             log.e { "Could not get root view controller" }
             delegate.onCancelled()
             return
@@ -148,7 +148,7 @@ actual class FilePicker {
      * Present document picker for exporting/saving a file.
      */
     private fun presentExportPicker(tempFilePath: String, delegate: DocumentPickerDelegate) {
-        val rootViewController = getRootViewController() ?: run {
+        val rootViewController = keyWindowRootViewController() ?: run {
             log.e { "Could not get root view controller" }
             delegate.onCancelled()
             return
@@ -169,19 +169,6 @@ actual class FilePicker {
             animated = true,
             completion = null,
         )
-    }
-
-    /**
-     * Get the root UIViewController from the current window scene.
-     * Uses the modern connected scenes API (iOS 13+).
-     */
-    private fun getRootViewController(): UIViewController? {
-        val scenes = UIApplication.sharedApplication.connectedScenes
-        val windowScene = scenes.firstOrNull {
-            it is UIWindowScene
-        } as? UIWindowScene
-
-        return windowScene?.keyWindow?.rootViewController
     }
 
     /**
