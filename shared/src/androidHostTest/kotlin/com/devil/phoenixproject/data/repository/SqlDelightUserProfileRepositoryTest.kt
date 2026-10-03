@@ -40,9 +40,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -1290,8 +1288,11 @@ class SqlDelightUserProfileRepositoryTest {
     fun fakeRepositoryMatchesSectionIsolationSwitchingAndMigrationSemantics() = runTest {
         val fake = FakeUserProfileRepository()
         fake.ensureDefaultProfile()
-        assertEquals(0, fake.observePreferences("default").first().legacyMigrationVersion)
         fake.reconcileActiveProfileContext()
+        assertEquals(
+            0,
+            assertIs<ActiveProfileContext.Ready>(fake.activeProfileContext.value).preferences.legacyMigrationVersion,
+        )
         val profileA = fake.createAndActivateProfile("A", 1)
         val rackA = RackPreferences(items = listOf(RackItem(id = "a", name = "A", weightKg = 5f)))
         val workoutA = WorkoutPreferences(stopAtTop = true)
@@ -1312,8 +1313,9 @@ class SqlDelightUserProfileRepositoryTest {
         val profileB = fake.createAndActivateProfile("B", 2)
         job.cancel()
         assertEquals(profileB.id, assertIs<ActiveProfileContext.Switching>(observed[0]).targetProfileId)
-        assertEquals(profileB.id, assertIs<ActiveProfileContext.Ready>(observed[1]).profile.id)
-        assertEquals(1, fake.observePreferences(profileB.id).first().legacyMigrationVersion)
+        val readyB = assertIs<ActiveProfileContext.Ready>(observed[1])
+        assertEquals(profileB.id, readyB.profile.id)
+        assertEquals(1, readyB.preferences.legacyMigrationVersion)
 
         fake.setActiveProfile(profileA.id)
         val readyA = assertIs<ActiveProfileContext.Ready>(fake.activeProfileContext.value)
@@ -1323,10 +1325,6 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals(ledA, readyA.preferences.led.value)
         assertEquals(vbtA, readyA.preferences.vbt.value)
         assertEquals(safetyA, readyA.localSafety)
-
-        assertFailsWith<IllegalStateException> {
-            fake.observePreferences("missing").first()
-        }
     }
 
     @Test
@@ -1373,8 +1371,9 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertEquals("default", assertIs<ActiveProfileContext.Switching>(failureEvents[0]).targetProfileId)
         assertEquals(source.id, assertIs<ActiveProfileContext.Ready>(failureEvents[1]).profile.id)
-        assertEquals(83f, fake.observePreferences(source.id).first().core.value.bodyWeightKg)
-        assertEquals(safety, assertIs<ActiveProfileContext.Ready>(fake.activeProfileContext.value).localSafety)
+        val restored = assertIs<ActiveProfileContext.Ready>(fake.activeProfileContext.value)
+        assertEquals(83f, restored.preferences.core.value.bodyWeightKg)
+        assertEquals(safety, restored.localSafety)
         assertTrue(fake.pendingLocalCleanupProfileIds.isEmpty())
         failureJob.cancel()
 
@@ -1387,20 +1386,14 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
-    fun fakeFailedDeletionPublishesNoIdentityChangesAndKeepsExistingPreferenceCollectorsLive() = runTest {
+    fun fakeFailedDeletionPublishesNoIdentityChangesAndKeepsPreferencesWritable() = runTest {
         val fake = FakeUserProfileRepository()
         fake.ensureDefaultProfile()
         fake.reconcileActiveProfileContext()
         val source = fake.createAndActivateProfile("Source", 1)
         fake.updateCore(source.id, CoreProfilePreferences(bodyWeightKg = 83f))
-        val preferenceEvents = mutableListOf<Float>()
         val activeEvents = mutableListOf<UserProfile?>()
         val allProfileEvents = mutableListOf<List<UserProfile>>()
-        val preferenceJob = launch(UnconfinedTestDispatcher(testScheduler)) {
-            fake.observePreferences(source.id).take(2).collect {
-                preferenceEvents += it.core.value.bodyWeightKg
-            }
-        }
         val activeJob = launch(UnconfinedTestDispatcher(testScheduler)) {
             fake.activeProfile.drop(1).toList(activeEvents)
         }
@@ -1411,11 +1404,13 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertFailsWith<IllegalStateException> { fake.deleteProfile(source.id) }
         fake.updateCore(source.id, CoreProfilePreferences(bodyWeightKg = 84f))
-        preferenceJob.cancel()
         activeJob.cancel()
         allProfilesJob.cancel()
 
-        assertEquals(listOf(83f, 84f), preferenceEvents)
+        assertEquals(
+            84f,
+            assertIs<ActiveProfileContext.Ready>(fake.activeProfileContext.value).preferences.core.value.bodyWeightKg,
+        )
         assertTrue(activeEvents.isEmpty(), "failed transaction leaked active-profile identity")
         assertTrue(allProfileEvents.isEmpty(), "failed transaction leaked profile-list identity")
     }
