@@ -14,5 +14,3 @@ internal fun resolveCustomExerciseSaveAction(draftExercise: Exercise, editingExe
 } else {
     CustomExerciseSaveAction.Create(draftExercise)
 }
-
-internal fun resolveCustomExerciseDeleteTarget(editingExerciseId: String?): String? = editingExerciseId

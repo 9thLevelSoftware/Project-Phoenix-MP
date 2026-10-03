@@ -198,9 +198,8 @@ fun ExercisePickerDialog(
                     val deleteExerciseId = exerciseToEdit?.id
                     showCreateDialog = false
                     exerciseToEdit = null
-                    val targetId = resolveCustomExerciseDeleteTarget(deleteExerciseId)
                     coroutineScope.launch {
-                        targetId?.let { exerciseRepository.deleteCustomExercise(it) }
+                        deleteExerciseId?.let { exerciseRepository.deleteCustomExercise(it) }
                     }
                 }
             } else {

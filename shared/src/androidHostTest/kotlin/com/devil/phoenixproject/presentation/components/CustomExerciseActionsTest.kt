@@ -70,30 +70,4 @@ class CustomExerciseActionsTest {
         assertEquals("Updated Press", customExercises.first().name)
         assertEquals(null, exerciseToEditId)
     }
-
-    @Test
-    fun `captured edit id deletes custom exercise even after edit state cleared`() = runTest {
-        val repository = FakeExerciseRepository()
-        repository.addExercise(
-            Exercise(
-                id = "custom_1",
-                name = "Custom Press",
-                muscleGroup = "Chest",
-                muscleGroups = "Chest",
-                equipment = "",
-                isCustom = true,
-            ),
-        )
-
-        var exerciseToEditId: String? = "custom_1"
-        val capturedEditId = exerciseToEditId
-        exerciseToEditId = null
-
-        val deleteTargetId = resolveCustomExerciseDeleteTarget(capturedEditId)
-        deleteTargetId?.let { repository.deleteCustomExercise(it) }
-
-        val customExercises = repository.getCustomExercises().first()
-        assertEquals(0, customExercises.size)
-        assertEquals(null, exerciseToEditId)
-    }
 }
