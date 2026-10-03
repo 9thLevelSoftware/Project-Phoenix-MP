@@ -73,9 +73,6 @@ class TemplateConverter(
     private val baselineRepository: ProfileExerciseBaselineRepository,
 ) {
     companion object {
-        /** Default percentage of 1RM used for starting weights (70%) */
-        const val DEFAULT_STARTING_WEIGHT_PERCENT = 0.70f
-
         /**
          * Conservative per-cable fallback weight (kg) used when no 1RM/PR data exists
          * anywhere for an exercise. Never 0 — a 0kg command confuses the machine and
