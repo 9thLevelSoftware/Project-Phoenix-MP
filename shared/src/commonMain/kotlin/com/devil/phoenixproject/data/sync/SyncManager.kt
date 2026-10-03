@@ -111,7 +111,7 @@ sealed class SyncState {
         val heldBackSummary: String? = null,
     ) : SyncState()
 
-    data class Error(val message: String, val errorCategory: SyncErrorCategory? = null) : SyncState()
+    data class Error(val message: String) : SyncState()
     object NotAuthenticated : SyncState()
     object NotPremium : SyncState()
 
