@@ -3669,12 +3669,6 @@ UPDATE UserProfile
 SET subscription_status = ?, subscription_expires_at = ?
 WHERE id = ?;
 
-getProfileBySupabaseId:
-SELECT * FROM UserProfile WHERE supabase_user_id = ?;
-
-getActiveProfileSubscriptionStatus:
-SELECT subscription_status FROM UserProfile WHERE isActive = 1;
-
 -- ==================== SYNC QUERIES ====================
 
 -- Get sessions modified since last sync (for push)

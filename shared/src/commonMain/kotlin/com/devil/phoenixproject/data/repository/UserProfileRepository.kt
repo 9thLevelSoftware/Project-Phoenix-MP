@@ -18,11 +18,9 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -136,7 +134,6 @@ interface UserProfileRepository {
     val pendingDeletionProfiles: StateFlow<List<UserProfile>>
         get() = NO_PENDING_DELETION_PROFILES
 
-    fun observePreferences(profileId: String): Flow<UserProfilePreferences>
     suspend fun createProfile(name: String, colorIndex: Int): UserProfile
     /**
      * [blockedByLiveSession] is re-checked AFTER the profile mutation barrier is acquired:
@@ -231,8 +228,6 @@ interface UserProfileRepository {
         status: SubscriptionStatus,
         expiresAt: Long?,
     )
-    suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile?
-    fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus>
 }
 
 private val NO_PENDING_DELETION_PROFILES: StateFlow<List<UserProfile>> =
@@ -282,8 +277,6 @@ class SqlDelightUserProfileRepository(
         ensureDefaultProfileSync()
         _activeProfileContext.value = ActiveProfileContext.Switching(activeProfile.value?.id)
     }
-
-    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> = profilePreferencesRepository.observe(profileId)
 
     override suspend fun createProfile(name: String, colorIndex: Int): UserProfile = withProfileMutation {
         val trimmedName = name.trim()
@@ -898,15 +891,6 @@ class SqlDelightUserProfileRepository(
             refreshProfilesSync()
             republishReadyIdentityIfActive(profileId)
         }
-    }
-
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = queries.getProfileBySupabaseId(supabaseUserId)
-        .executeAsOneOrNull()
-        ?.toUserProfile()
-
-    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> = flow {
-        val result = queries.getActiveProfileSubscriptionStatus().executeAsOneOrNull()
-        emit(SubscriptionStatus.fromString(result?.subscription_status))
     }
 
     private suspend fun <T> withProfileContextTransition(
