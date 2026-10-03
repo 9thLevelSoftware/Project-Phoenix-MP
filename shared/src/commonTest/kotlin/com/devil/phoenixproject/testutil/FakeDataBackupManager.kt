@@ -45,8 +45,6 @@ class FakeDataBackupManager : DataBackupManager {
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = importFromJson("{}")
 
-    override suspend fun getShareableContent(): String = "{}"
-
     override suspend fun shareBackup() = Unit
 
     override suspend fun exportSession(sessionId: String): Result<String> {
