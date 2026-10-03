@@ -100,11 +100,9 @@ class OAuthRedirectActivity : ComponentActivity() {
 
     /**
      * Build the [Intent] used by [routeBackToApp] to foreground the app's
-     * existing task. Exposed at internal visibility so focused unit tests
-     * can assert on the flag combination without needing to spin up an
-     * actual [android.app.Activity].
+     * existing task.
      */
-    internal fun buildReturnToAppIntent(): Intent = Intent(Intent.ACTION_MAIN).apply {
+    private fun buildReturnToAppIntent(): Intent = Intent(Intent.ACTION_MAIN).apply {
         component = ComponentName(this@OAuthRedirectActivity, MainActivity::class.java)
         addCategory(Intent.CATEGORY_LAUNCHER)
         // See kdoc on [routeBackToApp] for why each flag is set.
