@@ -123,11 +123,6 @@ interface DataBackupManager {
     suspend fun importFromFile(filePath: String): Result<ImportResult>
 
     /**
-     * Get shareable content (JSON string) for sharing via platform share sheet
-     */
-    suspend fun getShareableContent(): String
-
-    /**
      * Share backup via platform share sheet (Android Intent, iOS UIActivityViewController)
      */
     suspend fun shareBackup()
@@ -2912,8 +2907,6 @@ abstract class BaseDataBackupManager(
             return Result.failure(e)
         }
     }
-
-    override suspend fun getShareableContent(): String = exportToJson()
 
     // -- Streaming JSON writer --
 
