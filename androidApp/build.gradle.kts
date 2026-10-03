@@ -300,8 +300,9 @@ dependencies {
 
     // Testing - Unit Tests
     testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.kotlinx.coroutines.test)
+    // mockk and coroutines-test are only referenced from src/testDebug.
+    testDebugImplementation(libs.mockk)
+    testDebugImplementation(libs.kotlinx.coroutines.test)
     // QaBlockingPortalApiClientTest in src/testDebug is the only androidApp user.
     // MapSettings comes from multiplatform-settings-test, not the main settings artifact.
     testDebugImplementation(libs.ktor.client.mock)
