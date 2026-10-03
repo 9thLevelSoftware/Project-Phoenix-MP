@@ -93,10 +93,11 @@ private class IosSoundManager {
         loadBadgeSounds()
         loadPRSounds()
         loadRepCountSounds()
-        loadEncouragementNeutralSounds()
-        loadEncouragementMildSounds()
-        loadEncouragementStrongSounds()
-        loadEncouragementDominatrixSounds()
+        // Issue #611: verbal encouragement pools (PR #612 Sounds/ drop-in names).
+        loadEncouragementSounds("encouragement", 15, encouragementNeutralSoundPlayers, "encouragement neutral sounds")
+        loadEncouragementSounds("vulgar_mild", 12, encouragementMildSoundPlayers, "vulgar mild sounds")
+        loadEncouragementSounds("vulgar_strong", 12, encouragementStrongSoundPlayers, "vulgar strong sounds")
+        loadEncouragementSounds("dominatrix", 12, encouragementDominatrixSoundPlayers, "dominatrix sounds")
         installLifecycleObservers()
     }
 
@@ -288,38 +289,18 @@ private class IosSoundManager {
         log.d { "Loaded $loadedCount/25 rep count sounds" }
     }
 
-    // Issue #611: Verbal encouragement audio pools. Bare filenames match PR #612's
+    // Issue #611: numbered verbal-encouragement pool. Bare filenames match PR #612's
     // `Sounds/` drop-in contract (no extension; loadSound() tries .caf/.m4a/.wav/.mp3).
-    private fun loadEncouragementNeutralSounds() {
-        val soundFiles = (1..15).map { i -> "encouragement_${i.toString().padStart(2, '0')}" }
-        soundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { encouragementNeutralSoundPlayers.add(it) }
+    private fun loadEncouragementSounds(
+        prefix: String,
+        count: Int,
+        destination: MutableList<AVAudioPlayer?>,
+        label: String,
+    ) {
+        for (i in 1..count) {
+            loadSound("${prefix}_${i.toString().padStart(2, '0')}")?.let { destination.add(it) }
         }
-        log.d { "Loaded ${encouragementNeutralSoundPlayers.size} encouragement neutral sounds" }
-    }
-
-    private fun loadEncouragementMildSounds() {
-        val soundFiles = (1..12).map { i -> "vulgar_mild_${i.toString().padStart(2, '0')}" }
-        soundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { encouragementMildSoundPlayers.add(it) }
-        }
-        log.d { "Loaded ${encouragementMildSoundPlayers.size} vulgar mild sounds" }
-    }
-
-    private fun loadEncouragementStrongSounds() {
-        val soundFiles = (1..12).map { i -> "vulgar_strong_${i.toString().padStart(2, '0')}" }
-        soundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { encouragementStrongSoundPlayers.add(it) }
-        }
-        log.d { "Loaded ${encouragementStrongSoundPlayers.size} vulgar strong sounds" }
-    }
-
-    private fun loadEncouragementDominatrixSounds() {
-        val soundFiles = (1..12).map { i -> "dominatrix_${i.toString().padStart(2, '0')}" }
-        soundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { encouragementDominatrixSoundPlayers.add(it) }
-        }
-        log.d { "Loaded ${encouragementDominatrixSoundPlayers.size} dominatrix sounds" }
+        log.d { "Loaded ${destination.size} $label" }
     }
 
     private fun loadSound(fileName: String): AVAudioPlayer? {
