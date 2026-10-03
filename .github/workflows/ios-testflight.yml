@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: ios-testflight
-  cancel-in-progress: true  # Cancel older TestFlight builds if a new push comes in
+  cancel-in-progress: true  # Cancel an older in-progress TestFlight dispatch
 
 env:
   BUNDLE_ID: com.devil.phoenixproject.projectphoenix
