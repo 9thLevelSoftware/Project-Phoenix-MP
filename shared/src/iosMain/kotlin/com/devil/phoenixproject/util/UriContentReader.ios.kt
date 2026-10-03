@@ -19,8 +19,7 @@ private val log = Logger.withTag("UriContentReader")
  */
 actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Dispatchers.Default) {
     try {
-        @Suppress("UNCHECKED_CAST")
-        NSString.stringWithContentsOfFile(uriOrPath, NSUTF8StringEncoding, null) as? String
+        readUtf8File(uriOrPath)
     } catch (e: Exception) {
         log.e(e) { "Failed to read file content: $uriOrPath" }
         null
@@ -35,14 +34,15 @@ actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): Bounded
         when {
             size == null -> BoundedUriContent.Unreadable
             size > maxBytes -> BoundedUriContent.TooLarge
-            else -> {
-                @Suppress("UNCHECKED_CAST")
-                val content = NSString.stringWithContentsOfFile(uriOrPath, NSUTF8StringEncoding, null) as? String
-                content?.let { BoundedUriContent.Read(it) } ?: BoundedUriContent.Unreadable
-            }
+            else -> readUtf8File(uriOrPath)?.let { BoundedUriContent.Read(it) } ?: BoundedUriContent.Unreadable
         }
     } catch (e: Exception) {
         log.e(e) { "Failed to read file content: $uriOrPath" }
         BoundedUriContent.Unreadable
     }
 }
+
+/** UTF-8 contents of a picker temp file. Callers keep their own failure results. */
+@Suppress("UNCHECKED_CAST")
+private fun readUtf8File(path: String): String? =
+    NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) as? String
