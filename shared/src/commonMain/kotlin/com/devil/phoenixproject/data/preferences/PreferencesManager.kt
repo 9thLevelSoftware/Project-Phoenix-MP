@@ -48,15 +48,8 @@ data class SingleExerciseDefaults(
     }
         ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
-        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-    }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode =
+        com.devil.phoenixproject.domain.model.ProgramMode.fromModeValue(workoutModeId)
 }
 
 /**
@@ -85,15 +78,8 @@ data class JustLiftDefaults(
     }
         ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
-        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-    }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode =
+        com.devil.phoenixproject.domain.model.ProgramMode.fromModeValue(workoutModeId)
 }
 
 /**
