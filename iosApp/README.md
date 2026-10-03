@@ -142,7 +142,7 @@ Icons, the launch image, and the launch background are already in the Xcode asse
 
 ### App icon
 
-`Assets.xcassets/AppIcon.appiconset` is a single universal 1024×1024 PNG (`AppIcon1024.png`). The same file is also at `iosApp/AppIcon1024.png`. `ios-testflight.yml` validates both before signing:
+`Assets.xcassets/AppIcon.appiconset` is a single universal 1024×1024 PNG (`AppIcon1024.png`). The same file is also at `iosApp/AppIcon1024.png`. PR CI (`.github/workflows/ci-tests.yml`) and the release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) validate both:
 
 ```bash
 python3 scripts/validate_ios_app_icons.py --source iosApp/AppIcon1024.png
