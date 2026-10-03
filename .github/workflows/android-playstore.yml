@@ -34,7 +34,7 @@ permissions:
 
 concurrency:
   group: android-playstore
-  cancel-in-progress: true  # Cancel older Play Store builds if a new push comes in
+  cancel-in-progress: true  # Cancel an older in-progress Play Store dispatch
 
 jobs:
   tests:
