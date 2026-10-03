@@ -60,7 +60,6 @@ import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseP
 import com.devil.phoenixproject.presentation.components.exercisepicker.GroupedExerciseList
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -92,7 +91,6 @@ fun ExercisePickerDialog(
     enableVideoPlayback: Boolean = true,
     modifier: Modifier = Modifier,
     fullScreen: Boolean = false,
-    themeMode: ThemeMode = ThemeMode.DARK,
     enableCustomExercises: Boolean = true,
     enablePreviouslyCompletedFilter: Boolean = false,
     completedExerciseIds: Set<String> = emptySet(),
@@ -210,7 +208,6 @@ fun ExercisePickerDialog(
                 showCreateDialog = false
                 exerciseToEdit = null
             },
-            themeMode = themeMode,
         )
     }
 

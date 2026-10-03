@@ -66,7 +66,6 @@ import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceMutation
 import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceSection
 import com.devil.phoenixproject.presentation.viewmodel.ProfileUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -138,7 +137,6 @@ fun ProfileScreen(
     onPlayDiscoUnlockSound: () -> Unit,
     onPlayDominatrixUnlockSound: () -> Unit,
     enableVideoPlayback: Boolean,
-    themeMode: ThemeMode,
     isInWorkoutSession: () -> Boolean,
     modifier: Modifier = Modifier,
     viewModel: ProfileViewModel = koinViewModel(),
@@ -487,7 +485,6 @@ fun ProfileScreen(
         },
         exerciseRepository = exerciseRepository,
         enableVideoPlayback = enableVideoPlayback,
-        themeMode = themeMode,
         enableCustomExercises = false,
         enablePreviouslyCompletedFilter = true,
         completedExerciseIds = pickerCompletedExerciseIds,

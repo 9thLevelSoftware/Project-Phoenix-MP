@@ -180,7 +180,6 @@ fun NavGraph(
                 navController = navController,
                 viewModel = viewModel,
                 exerciseRepository = exerciseRepository,
-                themeMode = themeMode,
             )
         }
 
@@ -195,7 +194,6 @@ fun NavGraph(
                 navController = navController,
                 viewModel = viewModel,
                 exerciseRepository = exerciseRepository,
-                themeMode = themeMode,
                 initialExerciseId = exerciseId,
             )
         }
@@ -380,7 +378,6 @@ fun NavGraph(
                 onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
                 enableVideoPlayback = userPreferences.enableVideoPlayback,
                 isInWorkoutSession = viewModel::isInWorkoutSessionNow,
-                themeMode = themeMode,
             )
         }
 

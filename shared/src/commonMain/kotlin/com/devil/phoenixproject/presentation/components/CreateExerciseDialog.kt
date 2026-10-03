@@ -20,7 +20,6 @@ import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCategory
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -42,7 +41,6 @@ fun CreateExerciseDialog(
     onSave: (Exercise) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit,
-    themeMode: ThemeMode,
 ) {
     var name by remember { mutableStateOf(existingExercise?.name ?: "") }
     var selectedMuscleGroup by remember {
