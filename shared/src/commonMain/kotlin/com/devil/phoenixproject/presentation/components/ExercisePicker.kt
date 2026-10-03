@@ -578,7 +578,7 @@ fun ExercisePickerContent(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseImageDialog(
+private fun ExerciseImageDialog(
     exerciseName: String,
     images: List<ExerciseImageEntity>,
     onDismiss: () -> Unit,

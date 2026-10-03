@@ -40,7 +40,7 @@ private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
  * Creates an animated gradient that sweeps across placeholder content.
  */
 @Composable
-fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
+private fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val shimmerColors = listOf(
         onSurface.copy(alpha = 0.12f),

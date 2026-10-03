@@ -126,7 +126,7 @@ fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifi
  * Full RPE slider with emoji faces.
  */
 @Composable
-fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+private fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     var sliderValue by remember(selectedRpe) { mutableStateOf(selectedRpe.toFloat()) }
     val currentRpeInfo = rpeScale.find { it.value == sliderValue.roundToInt() } ?: rpeScale[2]
 
@@ -254,7 +254,7 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
  * Get color for RPE value.
  */
 @Composable
-fun getRpeColor(rpe: Int): Color {
+private fun getRpeColor(rpe: Int): Color {
     val colors = AccessibilityTheme.colors
     return when (rpe) {
         6 -> colors.success

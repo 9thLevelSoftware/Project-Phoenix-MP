@@ -159,7 +159,7 @@ fun BadgesScreen(
 }
 
 @Composable
-fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, modifier: Modifier = Modifier) {
+private fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, modifier: Modifier = Modifier) {
     // lens-state-patterns-14: map streak tiers to Color.kt flame constants so the
     // widget stays aligned with other fire-gradient uses in the app.
     val fireColor = when {
