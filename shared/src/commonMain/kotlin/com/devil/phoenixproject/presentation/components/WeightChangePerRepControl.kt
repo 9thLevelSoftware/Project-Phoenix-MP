@@ -96,7 +96,7 @@ fun WeightChangePerRepControl(
     }
 }
 
-fun formatProgressionPerRep(displayValue: Float, weightUnit: WeightUnit): String {
+private fun formatProgressionPerRep(displayValue: Float, weightUnit: WeightUnit): String {
     val sign = when {
         displayValue > 0f -> "+"
         else -> ""

@@ -132,7 +132,7 @@ fun DayStrip(
  * @param onClick Callback when chip is tapped
  */
 @Composable
-fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boolean, onClick: () -> Unit) {
+private fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boolean, onClick: () -> Unit) {
     val chipSize = 48.dp
 
     // gap-1-17: CURRENT chip entrance spring — starts at 0f scale, overshoots to ~1.15f, settles
