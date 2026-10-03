@@ -58,7 +58,6 @@
     <string name="cd_drop_set_retry_disabled">Seleziona una percentuale di drop per riprovare</string>
 
     <!-- ==================== Configuration ==================== -->
-    <string name="config_echo_level">LIVELLO ECHO</string>
     <string name="progression_eccentric_load_increase_by">Aumenta il carico eccentrico di</string>
     <string name="bodyweight_effective_load_includes">Incluso: %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d in più</string>
