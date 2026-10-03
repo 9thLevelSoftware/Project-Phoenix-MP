@@ -18,9 +18,6 @@ enum class SetType {
     /** As Many Reps As Possible - records actual reps achieved */
     AMRAP,
 
-    /** Reduce weight mid-set, continue - multiple sub-sets */
-    DROP_SET,
-
     /** Lighter preparation set - excluded from volume tracking */
     WARMUP,
 }
