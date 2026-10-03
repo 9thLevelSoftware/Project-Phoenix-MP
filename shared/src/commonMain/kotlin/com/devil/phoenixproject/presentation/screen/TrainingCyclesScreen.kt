@@ -113,7 +113,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_edit
 import projectphoenix.shared.generated.resources.action_ok

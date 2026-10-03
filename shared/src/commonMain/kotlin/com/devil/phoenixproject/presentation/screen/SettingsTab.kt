@@ -133,8 +133,6 @@ import projectphoenix.shared.generated.resources.cd_sync_error
 import projectphoenix.shared.generated.resources.cd_test_sounds
 import projectphoenix.shared.generated.resources.diagnostics_title
 import projectphoenix.shared.generated.resources.import_completed
-import projectphoenix.shared.generated.resources.import_records_imported
-import projectphoenix.shared.generated.resources.import_records_skipped
 import projectphoenix.shared.generated.resources.label_please_wait
 import projectphoenix.shared.generated.resources.language_dutch
 import projectphoenix.shared.generated.resources.language_english
