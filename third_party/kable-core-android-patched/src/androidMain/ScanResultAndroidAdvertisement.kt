@@ -6,8 +6,6 @@ import android.bluetooth.BluetoothDevice.BOND_BONDING
 import android.bluetooth.BluetoothDevice.BOND_NONE
 import android.bluetooth.le.ScanRecord
 import android.bluetooth.le.ScanResult
-import android.os.Build.VERSION
-import android.os.Build.VERSION_CODES
 import android.os.ParcelUuid
 import androidx.core.util.isNotEmpty
 import com.juul.kable.PlatformAdvertisement.BondState
@@ -36,12 +34,9 @@ internal class ScanResultAndroidAdvertisement(
     override val peripheralName: String?
         get() = bluetoothDevice.name
 
-    /**
-     * Returns if the peripheral is connectable. Available on Android Oreo (API 26) and newer, on older versions of
-     * Android, returns `null`.
-     */
+    /** Returns if the peripheral is connectable. */
     override val isConnectable: Boolean?
-        get() = if (VERSION.SDK_INT >= VERSION_CODES.O) scanResult.isConnectable else null
+        get() = scanResult.isConnectable
 
     override val address: String
         get() = bluetoothDevice.address
