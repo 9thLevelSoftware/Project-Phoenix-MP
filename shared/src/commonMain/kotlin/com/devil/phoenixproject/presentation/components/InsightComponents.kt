@@ -39,8 +39,7 @@ fun TimeframeBadge(label: String) {
 
 /**
  * Two-line section header used to separate insight sections (Snapshot / Trends /
- * Diagnostics / Actions). Unified from [InsightSectionHeader] (InsightsTab) and
- * [InsightHierarchyHeader] (SmartInsightsTab) which were structurally identical.
+ * Diagnostics / Actions).
  *
  * @param modifier Optional modifier applied to the outer [Column] container; provides a layout
  *   anchor consistent with sibling components (e.g. padding, alignment, test tags).
@@ -64,9 +63,8 @@ fun InsightSectionHeader(title: String, subtitle: String, modifier: Modifier = M
 
 /**
  * Metadata block describing an insight metric: definition, timeframe badge, and a
- * "So what?" action line. When [title] is non-null an additional bold title Text is
- * prepended, unifying [InsightMetadata] (3-arg, InsightsTab) and the 4-arg
- * [InsightContextBlock] (SmartInsightsTab) into a single composable.
+ * "So what?" action line. When [title] is non-null an additional bold title [Text] is
+ * prepended above the definition, [TimeframeBadge], and action line.
  */
 @Composable
 fun InsightContextBlock(
