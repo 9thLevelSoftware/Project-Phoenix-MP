@@ -126,35 +126,31 @@ object BlePacketCapture {
     }
 
     /**
-     * Log a single packet interpreted both ways for real-time monitoring.
+     * Log one captured monitor packet for real-time monitoring.
+     * Both cables come from [parseMonitorPacket]. Bytes 18+ stay hex.
      */
     private fun logDualInterpretation(data: ByteArray, hex: String, index: Int) {
-        if (data.size < 16) {
-            log.d { "CAPTURE[$index] ${data.size}B: $hex (too short for dual parse)" }
-            return
+        log.d { formatDualInterpretation(data, hex, index) }
+    }
+
+    internal fun formatDualInterpretation(data: ByteArray, hex: String, index: Int): String {
+        val packet = parseMonitorPacket(data)
+        if (packet == null) {
+            return "CAPTURE[$index] ${data.size}B: $hex (too short for dual parse)"
         }
 
-        // Hardware-validated packet layout (2026-02-17)
-        val ticksLow = getUInt16LE(data, 0)
-        val ticksHigh = getUInt16LE(data, 2)
-        val ticks = ticksLow.toLong() or (ticksHigh.toLong() shl 16)
-        val pPosA = getInt16LE(data, 4) / 10.0f
-        val skippedA = getInt16LE(data, 6) // Firmware velocity A
-        val pLoadA = getUInt16LE(data, 8) / 100.0f
-        val skippedB = getInt16LE(data, 12) // Firmware velocity B
-
-        // Extra bytes (18+) — unknown, log for investigation
+        // Bytes 18+ are still unknown. Keep their hex for investigation.
         val extraHex = if (data.size > 18) {
             data.copyOfRange(18, data.size).toHex(" ")
         } else {
             "none"
         }
 
-        log.d {
-            "CAPTURE[$index] ${data.size}B | " +
-                "t=$ticks posA=${pPosA}mm velA=$skippedA velB=$skippedB loadA=${pLoadA}kg | " +
-                "extra=[$extraHex]"
-        }
+        return "CAPTURE[$index] ${data.size}B | " +
+            "t=${packet.ticks} " +
+            "posA=${packet.posA}mm velA=${packet.firmwareVelA} loadA=${packet.loadA}kg " +
+            "posB=${packet.posB}mm velB=${packet.firmwareVelB} loadB=${packet.loadB}kg | " +
+            "extra=[$extraHex]"
     }
 
     /** Check if currently capturing. */
