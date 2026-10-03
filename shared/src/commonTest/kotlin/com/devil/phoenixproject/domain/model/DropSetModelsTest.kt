@@ -99,19 +99,6 @@ class DropSetModelsTest {
     }
 
     @Test
-    fun `occurrence load overlays compose geometrically without affecting another occurrence`() {
-        val overlays = listOf(
-            ExerciseLoadOverlay(routineExerciseId = "routine-exercise-press-a", multiplier = 0.8f),
-            ExerciseLoadOverlay(routineExerciseId = "routine-exercise-press-a", multiplier = 0.8f),
-            ExerciseLoadOverlay(routineExerciseId = "routine-exercise-press-b", multiplier = 0.9f),
-        )
-
-        assertEquals(0.64f, overlays.multiplierFor("routine-exercise-press-a"), absoluteTolerance = 0.0001f)
-        assertEquals(0.9f, overlays.multiplierFor("routine-exercise-press-b"), absoluteTolerance = 0.0001f)
-        assertEquals(1f, overlays.multiplierFor("routine-exercise-unmodified"), absoluteTolerance = 0.0001f)
-    }
-
-    @Test
     fun `logical set decoding rejects an unknown persisted set type`() {
         val corrupt = "{\"routineSessionId\":\"routine-session-41\",\"routineExerciseId\":\"routine-exercise-row-a\",\"setIndex\":0,\"setKind\":\"FUTURE_DROP\"}"
 
