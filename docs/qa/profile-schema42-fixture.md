@@ -2,17 +2,18 @@
 
 This recipe materializes the pre-profile database and legacy preference input used to prove the schema-42 to current-schema upgrade. The fixture source is commit `ac84d9bb8e156002833ad526bf324a8f12710da0`; do not substitute a moving branch or shortened SHA. The upgrade candidate is a debug APK from the current checkout. After that install, `PRAGMA user_version` must be 56 (highest migration file + 1).
 
-All commands below are PowerShell commands. Start at the repository root. They use the installed Android SDK (`ANDROID_HOME`, else `ANDROID_SDK_ROOT`, else `%LOCALAPPDATA%\Android\Sdk`) and must not contact Supabase or any other network service.
+All commands below are PowerShell commands. Start at the repository root. They use the installed Android SDK (`ANDROID_HOME`, else `ANDROID_SDK_ROOT`, else `%LOCALAPPDATA%\Android\Sdk`) and must not contact Supabase or any other network service, except the explicit `git fetch` of the pinned fixture commit.
 
 ## Create the schema-42 build
 
-Build the current debug APK first and keep its path. Then create the isolated worktree and make only this version edit in that worktree's `shared/build.gradle.kts`. That commit still assigns SQLDelight `version`; the edit is how that source pins schema 42. Do not copy the assignment into the current tree.
+Build the current debug APK first and keep its path. Fetch the pinned fixture commit from `origin` before creating the worktree. That SHA is not on the current branch, so a checkout of this tree does not contain it until it is fetched. Then create the isolated worktree and make only this version edit in that worktree's `shared/build.gradle.kts`. That commit still assigns SQLDelight `version`; the edit is how that source pins schema 42. Do not copy the assignment into the current tree.
 
 ```powershell
 $repoRoot = (Get-Location).Path
 .\gradlew.bat '-Pskip.supabase.check=true' :androidApp:assembleDebug
 $upgradeApk = (Resolve-Path 'androidApp\build\outputs\apk\debug\androidApp-debug.apk').Path
 git check-ignore -q .worktrees/profile-schema42
+git fetch origin ac84d9bb8e156002833ad526bf324a8f12710da0
 git worktree add .worktrees/profile-schema42 -b codex/schema-42-fixture ac84d9bb8e156002833ad526bf324a8f12710da0
 Set-Location .worktrees/profile-schema42
 ```
