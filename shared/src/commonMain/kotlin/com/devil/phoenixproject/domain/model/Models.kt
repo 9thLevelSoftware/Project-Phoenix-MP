@@ -217,7 +217,10 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     }
 
     companion object {
-        private val modes = listOf(OldSchool, Pump, TUT, TUTBeast, EccentricOnly, Echo)
+        // Lazy: a companion property initializer runs before these objects exist.
+        private val modes by lazy {
+            listOf(OldSchool, Pump, TUT, TUTBeast, EccentricOnly, Echo)
+        }
 
         /**
          * Stored workoutModeId for Just Lift and single-exercise defaults.
