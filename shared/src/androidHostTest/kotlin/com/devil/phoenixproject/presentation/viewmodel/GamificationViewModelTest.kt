@@ -28,10 +28,9 @@ class GamificationViewModelTest {
     }
 
     @Test
-    fun `loadBadges populates badge list`() = runTest {
+    fun `initial load populates badge list`() = runTest {
         repository.setBadgeProgress("workouts_1", current = 1, target = 1)
 
-        viewModel.loadBadges()
         advanceUntilIdle()
 
         assertEquals(BadgeDefinitions.totalBadgeCount, viewModel.badgesWithProgress.value.size)
@@ -40,7 +39,6 @@ class GamificationViewModelTest {
 
     @Test
     fun `selectCategory filters badges`() = runTest {
-        viewModel.loadBadges()
         advanceUntilIdle()
 
         viewModel.selectCategory(BadgeCategory.DEDICATION)
