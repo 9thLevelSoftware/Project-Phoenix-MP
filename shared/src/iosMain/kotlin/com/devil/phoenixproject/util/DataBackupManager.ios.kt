@@ -124,11 +124,6 @@ class IosDataBackupManager(
         return sizes
     }
 
-    /**
-     * iOS does not support opening arbitrary folders in Files.app programmatically.
-     * Present a share sheet for the backup directory so the user can interact with it
-     * via any installed file manager or sharing target.
-     */
     override fun pruneOldBackups(keepCount: Int) {
         val dir = getSessionBackupDirectory()
         val contents = fileManager.contentsOfDirectoryAtPath(dir, error = null) ?: return
@@ -223,6 +218,11 @@ class IosDataBackupManager(
         }
     }
 
+    /**
+     * iOS does not support opening arbitrary folders in Files.app programmatically.
+     * Present a share sheet for the backup directory so the user can interact with it
+     * via any installed file manager or sharing target.
+     */
     override fun openBackupFolder() {
         val dir = getSessionBackupDirectory()
         presentShareSheet(
