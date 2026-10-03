@@ -1483,8 +1483,8 @@ class PhantomBleRepository(
                 val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                 val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
                 _heuristicData.value = HeuristicStatistics(
-                    concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                    eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                    concentric = HeuristicPhaseStatistics(kgAvg = load, kgMax = load + 1.5f),
+                    eccentric = HeuristicPhaseStatistics(kgAvg = load * 0.9f, kgMax = load + 1f),
                     timestamp = Clock.System.now().toEpochMilliseconds(),
                 )
                 if (!terminal.value &&
@@ -1519,8 +1519,8 @@ class PhantomBleRepository(
                             expectedHeuristicGeneration = expectedGeneration,
                         ) {
                             _heuristicData.value = HeuristicStatistics(
-                                concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                                eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                                concentric = HeuristicPhaseStatistics(kgAvg = load, kgMax = load + 1.5f),
+                                eccentric = HeuristicPhaseStatistics(kgAvg = load * 0.9f, kgMax = load + 1f),
                                 timestamp = Clock.System.now().toEpochMilliseconds(),
                             )
                             if (!terminal.value &&
