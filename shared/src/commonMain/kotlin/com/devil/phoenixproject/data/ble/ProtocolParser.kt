@@ -326,9 +326,11 @@ private fun hasOptionalDiagnosticTemperatures(dataSize: Int, offset: Int): Boole
 /**
  * Parse heuristic characteristic data into HeuristicStatistics.
  *
- * Format (48 bytes, Little Endian):
- * - Bytes 0-23: 6 floats for concentric stats (kgAvg, kgMax, velAvg, velMax, wattAvg, wattMax)
- * - Bytes 24-47: 6 floats for eccentric stats (same order)
+ * Wire format is 48 bytes, little endian. Each phase is six floats
+ * (kgAvg, kgMax, velAvg, velMax, wattAvg, wattMax): concentric at bytes
+ * 0-23 and eccentric at 24-47. Only kgAvg and kgMax are stored. Packets
+ * shorter than 48 bytes are rejected so a truncated frame is not treated
+ * as a complete heuristic sample.
  *
  * @param data The raw byte array
  * @param timestamp Timestamp to assign to the statistics
@@ -337,24 +339,14 @@ private fun hasOptionalDiagnosticTemperatures(dataSize: Int, offset: Int): Boole
 fun parseHeuristicPacket(data: ByteArray, timestamp: Long): HeuristicStatistics? {
     if (data.size < 48) return null
 
-    // Parse 6 floats for concentric stats (24 bytes)
     val concentric = HeuristicPhaseStatistics(
         kgAvg = getFloatLE(data, 0),
         kgMax = getFloatLE(data, 4),
-        velAvg = getFloatLE(data, 8),
-        velMax = getFloatLE(data, 12),
-        wattAvg = getFloatLE(data, 16),
-        wattMax = getFloatLE(data, 20),
     )
 
-    // Parse 6 floats for eccentric stats (24 bytes)
     val eccentric = HeuristicPhaseStatistics(
         kgAvg = getFloatLE(data, 24),
         kgMax = getFloatLE(data, 28),
-        velAvg = getFloatLE(data, 32),
-        velMax = getFloatLE(data, 36),
-        wattAvg = getFloatLE(data, 40),
-        wattMax = getFloatLE(data, 44),
     )
 
     return HeuristicStatistics(
