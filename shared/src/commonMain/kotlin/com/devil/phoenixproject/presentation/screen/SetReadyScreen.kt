@@ -472,18 +472,18 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         )
                         // Issue #646: set-type badge — calibration label suppressed at SetReady
                         // (calibration reps run during the active set, not at this screen)
-                        val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = false)
-                        val setTypeText = when (setType) {
-                            is SetTypeLabel.Warmup -> stringResource(Res.string.set_type_warmup, setType.setNumber)
-                            SetTypeLabel.Working -> stringResource(Res.string.set_type_working)
-                            SetTypeLabel.Calibration -> "" // unreachable; showCalibrationLabel=false
-                        }
-                        if (setTypeText.isNotEmpty()) {
-                            Text(
-                                text = setTypeText,
+                        when (val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = false)) {
+                            is SetTypeLabel.Warmup -> Text(
+                                text = stringResource(Res.string.set_type_warmup, setType.setNumber),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
                             )
+                            SetTypeLabel.Working -> Text(
+                                text = stringResource(Res.string.set_type_working),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                            )
+                            SetTypeLabel.Calibration -> Unit
                         }
                     }
                 }

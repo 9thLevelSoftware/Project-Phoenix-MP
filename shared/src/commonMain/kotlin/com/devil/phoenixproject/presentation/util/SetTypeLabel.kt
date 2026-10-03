@@ -10,7 +10,7 @@ import com.devil.phoenixproject.domain.model.RepCount
  *
  * Kept free of `@Composable` and string resources so it stays trivially
  * testable as plain JVM code. Call sites resolve the sealed label to a
- * locale string via [com.devil.phoenixproject.presentation.R] mappings.
+ * locale string via Compose Multiplatform `Res.string` resources.
  *
  * `showCalibrationLabel` is `false` at Set Ready because the firmware
  * calibration buffer runs during the active set, not at Set Ready.

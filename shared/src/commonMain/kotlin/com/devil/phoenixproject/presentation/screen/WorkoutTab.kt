@@ -264,7 +264,7 @@ fun WorkoutTab(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding() // Issue #XXX: Prevent content from going behind soft nav buttons
+                .navigationBarsPadding() // Keep content above the soft navigation buttons
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
