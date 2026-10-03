@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
+import com.devil.phoenixproject.data.ble.getFloatLE
+import com.devil.phoenixproject.data.ble.getInt16LE
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.HandleDetection
 import com.devil.phoenixproject.data.repository.HandleState
@@ -342,9 +344,9 @@ class FakeBleRepository : BleRepository {
         when {
             command.size == BleConstants.ActivationPacket.SIZE && command[0] == 0x04.toByte() -> {
                 val decoded = ProgramCommand(
-                    weightPerCableKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
-                    progressionKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
-                    forceMaxKg = readFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MAX),
+                    weightPerCableKg = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
+                    progressionKg = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+                    forceMaxKg = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MAX),
                     repsByte = command[0x04].toInt() and 0xFF,
                 )
                 val ceiling = CommandLimits.maxWeightPerCableKg(model)
@@ -372,7 +374,7 @@ class FakeBleRepository : BleRepository {
                 val decoded = EchoCommand(
                     warmupRepsByte = command[0x04].toInt() and 0xFF,
                     targetRepsByte = command[0x05].toInt() and 0xFF,
-                    eccentricOverload = readShortLE(command, 0x08),
+                    eccentricOverload = getInt16LE(command, 0x08),
                 )
                 // F-010: the eccentric overload is the Echo frame's load field. 150% is the
                 // machine limit; above it the firmware faults.
@@ -415,15 +417,10 @@ class FakeBleRepository : BleRepository {
         }
     }
 
-    private fun readShortLE(buffer: ByteArray, offset: Int): Int =
-        (buffer[offset].toInt() and 0xFF) or ((buffer[offset + 1].toInt() and 0xFF) shl 8)
-
     private fun readIntLE(buffer: ByteArray, offset: Int): Int = (buffer[offset].toInt() and 0xFF) or
         ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
         ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
         ((buffer[offset + 3].toInt() and 0xFF) shl 24)
-
-    private fun readFloatLE(buffer: ByteArray, offset: Int): Float = Float.fromBits(readIntLE(buffer, offset))
 
     override suspend fun stopWorkout(): Result<Unit> {
         stopWorkoutCallCount++

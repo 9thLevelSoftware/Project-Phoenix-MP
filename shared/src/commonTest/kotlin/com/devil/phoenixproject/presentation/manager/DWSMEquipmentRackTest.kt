@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.ble.getFloatLE
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetConfiguration
@@ -53,7 +54,7 @@ class DWSMEquipmentRackTest {
         advanceUntilIdle()
 
         val command = harness.fakeBleRepo.commandsReceived.single()
-        assertEquals(30f, readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(30f, getFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
         assertEquals(40f, harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg)
         harness.cleanup()
     }
@@ -307,7 +308,7 @@ class DWSMEquipmentRackTest {
         advanceUntilIdle()
 
         val command = harness.fakeBleRepo.commandsReceived.single()
-        assertEquals(40f, readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(40f, getFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
         harness.cleanup()
     }
 
@@ -610,7 +611,7 @@ class DWSMEquipmentRackTest {
             assertEquals(10f, harness.dwsm.coordinator.workoutParameters.value.counterweightKg)
             assertEquals(
                 30f,
-                readFloatLE(
+                getFloatLE(
                     harness.fakeBleRepo.commandsReceived.last(),
                     BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
                 ),
@@ -910,12 +911,4 @@ class DWSMEquipmentRackTest {
         programMode = ProgramMode.OldSchool,
         defaultRackItemIds = defaultRackItemIds,
     )
-
-    private fun readFloatLE(packet: ByteArray, offset: Int): Float {
-        val bits = (packet[offset].toInt() and 0xFF) or
-            ((packet[offset + 1].toInt() and 0xFF) shl 8) or
-            ((packet[offset + 2].toInt() and 0xFF) shl 16) or
-            ((packet[offset + 3].toInt() and 0xFF) shl 24)
-        return Float.fromBits(bits)
-    }
 }

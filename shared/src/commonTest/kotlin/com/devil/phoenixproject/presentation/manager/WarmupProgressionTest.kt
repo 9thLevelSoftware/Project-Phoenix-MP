@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.ble.getFloatLE
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -28,15 +29,6 @@ class WarmupProgressionTest {
     private val workingWeightKg = 40f
     private val warmupPercent = 50
     private val progressionKg = 2f
-
-    /** Read a little-endian float from a byte array at the given offset. */
-    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
-        val bits = (buffer[offset].toInt() and 0xFF) or
-            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
-            ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
-            ((buffer[offset + 3].toInt() and 0xFF) shl 24)
-        return Float.fromBits(bits)
-    }
 
     /** First activation (0x04) packet captured by the fake BLE repo. */
     private fun DWSMTestHarness.firstActivationPacket(): ByteArray = fakeBleRepo.commandsReceived.first { it.firstOrNull() == 0x04.toByte() }
@@ -86,14 +78,14 @@ class WarmupProgressionTest {
         // Confirms the warm-up override actually fired (50% of 40kg = 20kg).
         assertEquals(
             workingWeightKg * warmupPercent / 100f,
-            readFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
+            getFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
             "Warm-up set should send warm-up weight (50% of working)",
         )
 
         // The bug: warm-up must NOT carry the working-set per-rep progression.
         assertEquals(
             0f,
-            readFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            getFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
             "Issue #481: warm-up set must send 0 per-rep progression",
         )
 
@@ -178,14 +170,14 @@ class WarmupProgressionTest {
         // Working weight restored (no warm-up override).
         assertEquals(
             workingWeightKg,
-            readFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
+            getFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT),
             "Working set should send full working weight",
         )
 
         // Regression guard: zeroing warm-up progression must not break working-set progression.
         assertEquals(
             progressionKg,
-            readFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            getFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
             "Issue #481: working set must still send configured per-rep progression",
         )
 
@@ -211,7 +203,7 @@ class WarmupProgressionTest {
         val warmupPacket = harness.firstActivationPacket()
         assertEquals(
             0f,
-            readFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            getFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
             "Warm-up set should still send 0 per-rep progression even when Set Ready overrides the working set.",
         )
 
@@ -225,7 +217,7 @@ class WarmupProgressionTest {
         val workingPacket = harness.firstActivationPacket()
         assertEquals(
             1.25f,
-            readFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            getFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
             "Working set after warm-up should use the upcoming-set Set Ready progression override.",
         )
 

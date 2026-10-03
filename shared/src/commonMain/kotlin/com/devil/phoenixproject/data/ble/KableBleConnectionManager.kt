@@ -1580,20 +1580,12 @@ class KableBleConnectionManager(
         if (command.size < 96 || command[0] != 0x04.toByte()) {
             return ""
         }
-        return ", profileTail[0x48]=${readFloatLE(command, 0x48)}" +
-            ", profileTail[0x4C]=${readFloatLE(command, 0x4C)}" +
-            ", forceMin[0x50]=${readFloatLE(command, 0x50)}" +
-            ", forceMax[0x54]=${readFloatLE(command, 0x54)}" +
-            ", softMax[0x58]=${readFloatLE(command, 0x58)}" +
-            ", increment[0x5C]=${readFloatLE(command, 0x5C)}"
-    }
-
-    private fun readFloatLE(data: ByteArray, offset: Int): Float {
-        val bits = (data[offset].toInt() and 0xFF) or
-            ((data[offset + 1].toInt() and 0xFF) shl 8) or
-            ((data[offset + 2].toInt() and 0xFF) shl 16) or
-            ((data[offset + 3].toInt() and 0xFF) shl 24)
-        return Float.fromBits(bits)
+        return ", profileTail[0x48]=${getFloatLE(command, 0x48)}" +
+            ", profileTail[0x4C]=${getFloatLE(command, 0x4C)}" +
+            ", forceMin[0x50]=${getFloatLE(command, 0x50)}" +
+            ", forceMax[0x54]=${getFloatLE(command, 0x54)}" +
+            ", softMax[0x58]=${getFloatLE(command, 0x58)}" +
+            ", increment[0x5C]=${getFloatLE(command, 0x5C)}"
     }
 
     // -------------------------------------------------------------------------
