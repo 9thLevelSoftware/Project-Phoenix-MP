@@ -9,13 +9,6 @@ import android.os.Build
 import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.flow.StateFlow
 
-@Deprecated(
-    message = "Moved as nested class of `AndroidPeripheral`.",
-    replaceWith = ReplaceWith("AndroidPeripheral.Priority"),
-    level = DeprecationLevel.HIDDEN,
-)
-public typealias Priority = AndroidPeripheral.Priority
-
 public interface AndroidPeripheral : Peripheral {
 
     public enum class Priority { Low, Balanced, High }
