@@ -116,7 +116,6 @@ fun SetSummaryCard(
     // so it only needs unit conversion.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, weightUnit)
     val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit)
 
     // Debug logging for weight display investigation
