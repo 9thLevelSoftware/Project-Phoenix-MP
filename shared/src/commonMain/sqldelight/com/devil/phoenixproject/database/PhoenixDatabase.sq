@@ -3092,14 +3092,6 @@ VALUES (
     :componentSessionId, :deletedAt, :acknowledgedAt, :source
 );
 
-selectPendingWorkoutDeletions:
-SELECT * FROM WorkoutDeletion
-WHERE owner_user_id = :ownerUserId
-  AND profile_id = :profileId
-  AND source = 'LOCAL'
-  AND acknowledged_at IS NULL
-ORDER BY deleted_at, mutation_id;
-
 selectPendingWorkoutDeletionsForOwner:
 SELECT * FROM WorkoutDeletion
 WHERE owner_user_id = :ownerUserId
