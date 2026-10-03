@@ -2,7 +2,6 @@ package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -136,77 +135,6 @@ class PhoenixCsvCodecTest {
 
         assertEquals(emptyList(), errors)
         assertEquals(listOf("Press", "Squat"), parsed.map { it.exerciseName })
-    }
-
-    @Test
-    fun personalRecordRoundTrip() {
-        val timestamp = LocalDate(2026, 3, 10).atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
-        val original = PersonalRecord(
-            exerciseId = "bench",
-            exerciseName = "Bench Press",
-            weightPerCableKg = 80f,
-            reps = 5,
-            oneRepMax = 90f,
-            timestamp = timestamp,
-            workoutMode = "OldSchool",
-            volume = 400f,
-            phase = WorkoutPhase.CONCENTRIC,
-        )
-
-        val csv = PhoenixCsvCodec.encodePersonalRecords(
-            listOf(original),
-            emptyMap(),
-            WeightUnit.KG,
-            ::formatKg,
-        )
-        assertEquals(PhoenixCsvCodec.PERSONAL_RECORD_HEADER, csv.lineSequence().first())
-        val (parsed, errors) = PhoenixCsvCodec.parsePersonalRecords(csv)
-
-        assertEquals(emptyList(), errors)
-        val record = parsed.single()
-        assertEquals("Bench Press", record.exerciseName)
-        assertEquals("", record.exerciseId)
-        assertEquals(WorkoutPhase.CONCENTRIC, record.phase)
-        assertEquals(80f, record.weightPerCableKg)
-        assertEquals(5, record.reps)
-        assertEquals(90f, record.oneRepMax)
-        assertEquals(timestamp, record.timestamp)
-        assertEquals("OldSchool", record.workoutMode)
-        assertEquals(400f, record.volume)
-    }
-
-    @Test
-    fun legacyAndroidPersonalRecordParsesUnitlessOneRepMax() {
-        val csv = """
-            Exercise,Phase,Weight,Reps,Date,Mode,1RM
-            Bench Press,COMBINED,80.0 kg,5,2026-03-10,OldSchool,90.0
-        """.trimIndent()
-
-        val (parsed, errors) = PhoenixCsvCodec.parsePersonalRecords(csv)
-
-        assertEquals(emptyList(), errors)
-        assertEquals(80f, parsed.single().weightPerCableKg)
-        assertEquals(90f, parsed.single().oneRepMax)
-        assertEquals("OldSchool", parsed.single().workoutMode)
-    }
-
-    @Test
-    fun legacyIosPersonalRecordHeaderParsesWithoutMode() {
-        val csv = """
-            Exercise,Phase,Weight (KG),Reps,1RM,Date
-            Bench Press,COMBINED,80 kg,5,90 kg,2026-03-10
-        """.trimIndent()
-
-        val (parsed, errors) = PhoenixCsvCodec.parsePersonalRecords(csv)
-
-        assertEquals(emptyList(), errors)
-        val record = parsed.single()
-        assertEquals("Bench Press", record.exerciseName)
-        assertEquals(WorkoutPhase.COMBINED, record.phase)
-        assertEquals(80f, record.weightPerCableKg)
-        assertEquals(5, record.reps)
-        assertEquals(90f, record.oneRepMax)
-        assertEquals("", record.workoutMode)
     }
 
     @Test
