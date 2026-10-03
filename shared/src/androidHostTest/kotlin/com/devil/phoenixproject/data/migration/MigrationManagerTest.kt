@@ -144,9 +144,9 @@ class MigrationManagerTest {
         assertNotNull(session)
         // Migration uses exact match: legacy_session_${session.id}
         // "legacy_session_some-other-session" != "legacy_session_session-3"
-        // So this ID should NOT be stripped by migration (it doesn't match the fabrication pattern)
-        // However, the sanitizeRoutineSessionId used in backfill still uses prefix match
-        // The migration cleanup only strips exact matches for safety
+        // So this ID is left in place (it doesn't match the fabrication pattern).
+        // Routine-name backfill does not rewrite routineSessionId.
+        // The migration cleanup only strips exact matches.
         assertEquals(
             "legacy_session_some-other-session",
             session.routineSessionId,
