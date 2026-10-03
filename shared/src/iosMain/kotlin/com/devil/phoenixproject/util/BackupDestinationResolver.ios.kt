@@ -54,8 +54,9 @@ class IosBackupDestinationResolver(
     private suspend fun resolveBookmark(destination: BackupDestination.Custom): NSURL? {
         val base64 = destination.bookmarkData
         if (base64.isNullOrBlank()) {
-            // No bookmark — try direct URL as fallback (e.g. app-sandbox paths)
-            return destination.uri.takeIf { it.isNotBlank() }?.let { NSURL.fileURLWithPath(it) }
+            // Stored custom destinations keep a file:// absoluteString. fileURLWithPath
+            // never resolves that string, so a missing bookmark is inaccessible.
+            return null
         }
 
         return try {
