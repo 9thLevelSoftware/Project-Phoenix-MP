@@ -38,6 +38,7 @@ import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
+import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -1694,7 +1695,7 @@ private fun RadarChart(quality: SetQualitySummary) {
     ) {
         // Top label: ROM
         Text(
-            "ROM: ${formatFloat(avgRom, 1)}/30",
+            "ROM: ${KmpUtils.formatFloat(avgRom, 1)}/30",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -1707,7 +1708,7 @@ private fun RadarChart(quality: SetQualitySummary) {
         ) {
             // Left label: Smoothness
             Text(
-                "${formatFloat(avgSmoothness, 1)}/20\nSmooth",
+                "${KmpUtils.formatFloat(avgSmoothness, 1)}/20\nSmooth",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1778,7 +1779,7 @@ private fun RadarChart(quality: SetQualitySummary) {
 
             // Right label: Velocity
             Text(
-                "${formatFloat(avgVelocity, 1)}/25\nVelocity",
+                "${KmpUtils.formatFloat(avgVelocity, 1)}/25\nVelocity",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1788,7 +1789,7 @@ private fun RadarChart(quality: SetQualitySummary) {
 
         // Bottom label: Eccentric
         Text(
-            "Eccentric: ${formatFloat(avgEccentric, 1)}/25",
+            "Eccentric: ${KmpUtils.formatFloat(avgEccentric, 1)}/25",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -1848,28 +1849,4 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
             )
         }
     }
-}
-
-/**
- * KMP-compatible float formatting helper
- * @param value The float value to format
- * @param decimals Number of decimal places
- * @return Formatted string
- */
-internal fun formatFloat(value: Float, decimals: Int): String {
-    val factor = 10f.pow(decimals)
-    val rounded = (value * factor).roundToInt() / factor
-    return if (decimals == 0) {
-        rounded.roundToInt().toString()
-    } else {
-        val intPart = rounded.toInt()
-        val decPart = ((rounded - intPart) * factor).roundToInt()
-        "$intPart.${"$decPart".padStart(decimals, '0')}"
-    }
-}
-
-internal fun Float.pow(n: Int): Float {
-    var result = 1f
-    repeat(n) { result *= this }
-    return result
 }
