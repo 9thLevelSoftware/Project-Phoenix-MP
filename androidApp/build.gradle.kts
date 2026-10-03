@@ -267,8 +267,7 @@ tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     group = "verification"
     description = "Fails if Android release artifacts are missing packaged workout cue audio resources."
 
-    dependsOn("assembleRelease")
-    mustRunAfter("bundleRelease")
+    mustRunAfter("assembleRelease", "bundleRelease")
 
     rawCueDir.set(rootProject.layout.projectDirectory.dir("shared/src/androidMain/res/raw"))
     releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
