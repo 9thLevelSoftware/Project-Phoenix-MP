@@ -14,10 +14,6 @@
     <key>destination</key>
     <string>export</string>
 
-    <!-- Generate app store compatible bitcode -->
-    <key>uploadBitcode</key>
-    <false/>
-
     <!-- Upload symbols for crash reporting -->
     <key>uploadSymbols</key>
     <true/>
