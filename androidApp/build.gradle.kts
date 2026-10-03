@@ -199,18 +199,6 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
 
-    signingConfigs {
-        getByName("debug") {
-            val keystorePath = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            if (keystorePath.exists()) {
-                storeFile = keystorePath
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-            }
-        }
-    }
-
     buildTypes {
         release {
             // Release signing is handled by CI (GitHub Actions) via keystore secrets.
