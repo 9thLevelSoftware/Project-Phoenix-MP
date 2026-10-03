@@ -14,8 +14,6 @@ import platform.Foundation.*
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosCsvExporter : CsvExporter {
 
-    private val fileManager = NSFileManager.defaultManager
-
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
@@ -60,24 +58,10 @@ class IosCsvExporter : CsvExporter {
      * Write CSV content to a temporary file and return the path.
      */
     private fun writeToTempFile(fileName: String, content: String): String {
-        val tempDir = NSTemporaryDirectory()
-        val filePath = "$tempDir$fileName"
-
-        // Remove existing file if present
-        if (fileManager.fileExistsAtPath(filePath)) {
-            fileManager.removeItemAtPath(filePath, null)
+        val filePath = writeUtf8TempFile(fileName, content)
+        if (filePath == null) {
+            throw IllegalStateException("Failed to write CSV to ${NSTemporaryDirectory()}$fileName")
         }
-
-        // Write content using NSString
-        val nsContent = NSString.create(string = content)
-        val success = nsContent.writeToFile(
-            filePath,
-            atomically = true,
-            encoding = NSUTF8StringEncoding,
-            error = null,
-        )
-        if (!success) throw IllegalStateException("Failed to write CSV to $filePath")
-
         return filePath
     }
 }
