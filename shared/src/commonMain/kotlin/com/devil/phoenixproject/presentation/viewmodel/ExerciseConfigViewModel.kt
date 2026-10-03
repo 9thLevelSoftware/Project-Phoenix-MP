@@ -23,7 +23,6 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
-import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

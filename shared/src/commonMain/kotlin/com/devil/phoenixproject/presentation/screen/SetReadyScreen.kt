@@ -68,8 +68,6 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItemBehavior
-import com.devil.phoenixproject.domain.model.RackLoadAdjustment
-import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -96,7 +94,6 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
-import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
