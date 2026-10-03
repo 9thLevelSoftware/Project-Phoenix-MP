@@ -217,6 +217,15 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     }
 
     companion object {
+        private val modes = listOf(OldSchool, Pump, TUT, TUTBeast, EccentricOnly, Echo)
+
+        /**
+         * Stored workoutModeId for Just Lift and single-exercise defaults.
+         * Unknown ids fall back to Old School.
+         */
+        fun fromModeValue(modeValue: Int): ProgramMode =
+            modes.firstOrNull { it.modeValue == modeValue } ?: OldSchool
+
         /**
          * Parse SCREAMING_SNAKE wire format from portal sync.
          * Returns null if the string doesn't match any known mode.
