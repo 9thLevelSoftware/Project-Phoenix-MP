@@ -320,7 +320,6 @@ fun WorkoutTab(
             if (isWorkoutInProgress && isDisconnected) {
                 WorkoutPausedCard(
                     onScan = onScan,
-                    workoutState = workoutState,
                     repCount = repCount,
                 )
             }
@@ -861,7 +860,7 @@ private fun ErrorCard(message: String) {
  * Displays workout progress and prompts user to reconnect
  */
 @Composable
-private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, repCount: RepCount) {
+private fun WorkoutPausedCard(onScan: () -> Unit, repCount: RepCount) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
