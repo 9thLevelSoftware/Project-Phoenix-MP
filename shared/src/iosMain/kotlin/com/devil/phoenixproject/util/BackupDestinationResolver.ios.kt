@@ -17,15 +17,12 @@ import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithoutUI
-import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.create
-import platform.Foundation.dataUsingEncoding
 import platform.Foundation.writeToFile
 
 private val log = Logger.withTag("BackupDestinationResolver.iOS")
