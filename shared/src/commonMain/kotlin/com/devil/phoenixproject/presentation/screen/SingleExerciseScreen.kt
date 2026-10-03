@@ -46,7 +46,6 @@ import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -66,7 +65,6 @@ fun SingleExerciseScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
-    themeMode: ThemeMode,
     initialExerciseId: String? = null,
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
@@ -258,7 +256,6 @@ fun SingleExerciseScreen(
                 showCreateDialog = false
                 exerciseToEdit = null
             },
-            themeMode = themeMode,
         )
     }
 
