@@ -100,25 +100,6 @@ fun WorkoutHud(
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
-    // Track consecutive high-asymmetry reps for alert (ASYM-05)
-    var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }
-    var lastProcessedRepNumber by remember { mutableStateOf(0) }
-
-    // Update consecutive count when new rep data arrives
-    LaunchedEffect(latestBiomechanicsResult?.repNumber) {
-        val result = latestBiomechanicsResult ?: return@LaunchedEffect
-        if (result.repNumber > lastProcessedRepNumber) {
-            lastProcessedRepNumber = result.repNumber
-            if (result.asymmetry.asymmetryPercent > 15f) {
-                consecutiveHighAsymmetryCount++
-            } else {
-                consecutiveHighAsymmetryCount = 0
-            }
-        }
-    }
-
-    val showAsymmetryAlert = consecutiveHighAsymmetryCount >= 3
-
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
     Scaffold(
