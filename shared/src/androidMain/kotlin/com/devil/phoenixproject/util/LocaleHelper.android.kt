@@ -5,6 +5,11 @@ import android.os.LocaleList
 import co.touchlab.kermit.Logger
 import java.util.Locale
 
+/**
+ * API 33+: sets application locales through [android.app.LocaleManager].
+ * API 26-32: updates the activity configuration and recreates the activity.
+ * A blank [languageCode] resets to the system default.
+ */
 actual fun applyAppLocale(languageCode: String) {
     val activity = ActivityHolder.getActivity()
     if (activity == null) {
