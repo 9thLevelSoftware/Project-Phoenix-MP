@@ -14,14 +14,7 @@ data class MonitorPacket(
     val status: Int, // Status flags (0 if not present)
     val firmwareVelA: Int = 0, // Raw firmware velocity A (bytes 6-7, signed)
     val firmwareVelB: Int = 0, // Raw firmware velocity B (bytes 12-13, signed)
-    val extraBytes: ByteArray? = null, // Bytes 18+ for investigation (null if packet <= 18 bytes)
-) {
-    override fun equals(other: Any?): Boolean = other is MonitorPacket && ticks == other.ticks && posA == other.posA &&
-        posB == other.posB && loadA == other.loadA && loadB == other.loadB &&
-        status == other.status && firmwareVelA == other.firmwareVelA &&
-        firmwareVelB == other.firmwareVelB
-    override fun hashCode(): Int = ticks.hashCode()
-}
+)
 
 /**
  * Raw parsed diagnostic data.

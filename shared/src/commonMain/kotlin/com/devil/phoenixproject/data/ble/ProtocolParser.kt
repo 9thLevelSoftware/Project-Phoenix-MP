@@ -194,7 +194,7 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
  * - (12-13): velB (signed int16, firmware velocity for cable B)
  * - (14-15): loadB (uint16, /100.0f for kg)
  * - (16-17): status flags (uint16, optional)
- * - (18-25): unknown (8 bytes, captured for investigation)
+ * - (18-25): unknown (8 bytes, unread)
  *
  * @param data The raw byte array
  * @return MonitorPacket or null if data too short
@@ -222,11 +222,8 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
     val loadA = loadARaw / 100.0f
     val loadB = loadBRaw / 100.0f
 
-    // Status flags (optional)
+    // Status flags (optional). Bytes 18+ are unread.
     val status = if (data.size >= 18) getUInt16LE(data, 16) else 0
-
-    // Capture extra bytes beyond 18 for investigation
-    val extra = if (data.size > 18) data.copyOfRange(18, data.size) else null
 
     return MonitorPacket(
         ticks = ticks,
@@ -237,7 +234,6 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
         status = status,
         firmwareVelA = velARaw,
         firmwareVelB = velBRaw,
-        extraBytes = extra,
     )
 }
 
