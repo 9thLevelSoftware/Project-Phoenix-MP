@@ -199,17 +199,4 @@ class HealthBodyWeightSyncManager(
             append("}")
         }
     }
-
-    private fun String.escapeJson(): String = buildString {
-        this@escapeJson.forEach { char ->
-            when (char) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> append(char)
-            }
-        }
-    }
 }
