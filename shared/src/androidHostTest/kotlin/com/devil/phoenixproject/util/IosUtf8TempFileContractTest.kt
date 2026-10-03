@@ -29,7 +29,7 @@ class IosUtf8TempFileContractTest {
     @Test
     fun filePickerKeepsNullableLoggedFailure() {
         val source = requireSource("src/iosMain/kotlin/com/devil/phoenixproject/util/FilePicker.ios.kt")
-        val body = region(source, "private fun saveToTempFile", "private class DocumentPickerDelegate")
+        val body = region(source, "private fun saveToTempFile", "Remember a FilePicker instance")
         val catchAt = body.indexOf("catch (e: Exception)")
 
         assertTrue(body.contains("writeUtf8TempFile(fileName, content)"), "picker saves through the shared writer")
