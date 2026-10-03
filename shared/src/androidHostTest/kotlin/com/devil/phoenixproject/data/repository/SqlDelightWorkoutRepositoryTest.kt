@@ -81,7 +81,7 @@ class SqlDelightWorkoutRepositoryTest {
         assertNull(repository.getSession("component-a"))
         assertNotNull(repository.getSession("component-b"))
         val deletion = database.phoenixDatabaseQueries
-            .selectPendingWorkoutDeletions("owner-1", "default")
+            .selectPendingWorkoutDeletionsForOwner("owner-1")
             .executeAsOne()
         assertEquals("COMPONENT", deletion.scope)
         assertEquals("portal-parent", deletion.portal_session_id)
@@ -99,7 +99,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.deleteSession("component-only")
 
         val deletion = database.phoenixDatabaseQueries
-            .selectPendingWorkoutDeletions("owner-1", "default")
+            .selectPendingWorkoutDeletionsForOwner("owner-1")
             .executeAsOne()
         assertEquals("WORKOUT", deletion.scope)
         assertEquals("portal-parent", deletion.portal_session_id)
@@ -117,7 +117,7 @@ class SqlDelightWorkoutRepositoryTest {
         assertNull(repository.getSession("assessment-temp"))
         assertTrue(
             database.phoenixDatabaseQueries
-                .selectPendingWorkoutDeletions("owner-1", "default")
+                .selectPendingWorkoutDeletionsForOwner("owner-1")
                 .executeAsList()
                 .isEmpty(),
         )
