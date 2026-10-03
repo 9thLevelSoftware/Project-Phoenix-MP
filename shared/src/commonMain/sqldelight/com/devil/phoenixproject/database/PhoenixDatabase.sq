@@ -733,16 +733,6 @@ DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
--- Issue #591 follow-up: hard-delete every session (including zero-rep
--- ghost rows) that belongs to a given routine session. Used by the
--- History "Delete All Sets" affordance so ghost rows hidden by the
--- `selectHistoryVisibleSessions` filter do not survive the user-level
--- deletion (chatgpt-codex-connector P2). This mirrors deleteSession's
--- local deletion semantics; workout-session tombstone push is not
--- currently implemented.
-deleteSessionsByRoutineSessionId:
-DELETE FROM WorkoutSession WHERE routineSessionId = ?;
-
 -- Tombstone helper for code paths that intentionally keep deleted
 -- workout rows locally. Do not use for user-facing History deletes
 -- unless session tombstones are also pushed to the portal.
@@ -751,9 +741,6 @@ UPDATE WorkoutSession
 SET deletedAt = ?, updatedAt = ?
 WHERE routineSessionId = ?
   AND deletedAt IS NULL;
-
-deleteAllSessions:
-DELETE FROM WorkoutSession;
 
 -- Exercise image queries
 selectImagesByExercise:
