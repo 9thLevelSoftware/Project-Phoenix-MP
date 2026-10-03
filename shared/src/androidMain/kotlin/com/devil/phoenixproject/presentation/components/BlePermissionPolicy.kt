@@ -64,14 +64,10 @@ internal object BlePermissionPolicy {
     }
 
     private fun permissionLabel(permission: String): String = when (permission) {
-        Manifest.permission.BLUETOOTH,
-        Manifest.permission.BLUETOOTH_ADMIN,
         Manifest.permission.BLUETOOTH_SCAN,
         Manifest.permission.BLUETOOTH_CONNECT,
         -> "Bluetooth"
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        -> "Location"
+        Manifest.permission.ACCESS_FINE_LOCATION -> "Location"
         Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
         else -> "Required"
     }
