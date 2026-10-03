@@ -2,7 +2,6 @@ package com.devil.phoenixproject.util
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Tests for BLE Constants - validates protocol values and configuration constants.
@@ -78,22 +77,5 @@ class BleConstantsTest {
     @Test
     fun `SCAN_TIMEOUT_MS is 30 seconds`() {
         assertEquals(30000L, BleConstants.SCAN_TIMEOUT_MS)
-    }
-
-    // ========== Notification Characteristics Tests ==========
-
-    @Test
-    fun `NOTIFY_CHAR_UUID_STRINGS contains expected characteristics`() {
-        val notifyChars = BleConstants.NOTIFY_CHAR_UUID_STRINGS
-
-        assertTrue(notifyChars.contains(BleConstants.MODE_CHAR_UUID_STRING))
-        assertTrue(notifyChars.contains(BleConstants.REPS_CHAR_UUID_STRING))
-        assertTrue(notifyChars.contains(BleConstants.VERSION_CHAR_UUID_STRING))
-        assertTrue(notifyChars.contains(BleConstants.HEURISTIC_CHAR_UUID_STRING))
-    }
-
-    @Test
-    fun `NOTIFY_CHAR_UUID_STRINGS has correct count`() {
-        assertEquals(7, BleConstants.NOTIFY_CHAR_UUID_STRINGS.size)
     }
 }

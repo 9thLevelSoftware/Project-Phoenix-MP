@@ -12,39 +12,19 @@ import kotlin.uuid.Uuid
 @OptIn(ExperimentalUuidApi::class)
 object BleConstants {
     // Service UUIDs (String)
-    const val GATT_SERVICE_UUID_STRING = "00001801-0000-1000-8000-00805f9b34fb"
     const val NUS_SERVICE_UUID_STRING = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 
     // Primary characteristic UUIDs
     const val NUS_RX_CHAR_UUID_STRING = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
     const val SAMPLE_CHAR_UUID_STRING = "90e991a6-c548-44ed-969b-eb541014eae3" // 28 bytes
-    const val MONITOR_CHAR_UUID_STRING = SAMPLE_CHAR_UUID_STRING // Alias for backward compat
     const val CABLE_LEFT_CHAR_UUID_STRING = "bc4344e9-8d63-4c89-8263-951e2d74f744" // 6 bytes
     const val CABLE_RIGHT_CHAR_UUID_STRING = "92ef83d6-8916-4921-8172-a9919bc82566" // 6 bytes
     const val REPS_CHAR_UUID_STRING = "8308f2a6-0875-4a94-a86f-5c5c5e1b068a" // 24 bytes notifiable
-    const val REP_NOTIFY_CHAR_UUID_STRING = REPS_CHAR_UUID_STRING // Alias
     const val MODE_CHAR_UUID_STRING = "67d0dae0-5bfc-4ea2-acc9-ac784dee7f29" // 4 bytes notifiable
     const val VERSION_CHAR_UUID_STRING = "74e994ac-0e80-4c02-9cd0-76cb31d3959b" // Variable
     const val WIFI_STATE_CHAR_UUID_STRING = "a7d06ce0-2e84-485f-9c25-3d4ba6fe7319" // 74 bytes
-    const val UPDATE_STATE_CHAR_UUID_STRING = "383f7276-49af-4335-9072-f01b0f8acad6" // Variable
-    const val BLE_UPDATE_REQUEST_CHAR_UUID_STRING = "ef0e485a-8749-4314-b1be-01e57cd1712e" // 5 bytes notifiable
     const val HEURISTIC_CHAR_UUID_STRING = "c7b73007-b245-4503-a1ed-9e4e97eb9802" // Variable
     const val DIAGNOSTIC_CHAR_UUID_STRING = "5fa538ec-d041-42f6-bbd6-c30d475387b7" // Variable
-    const val PROPERTY_CHAR_UUID_STRING = DIAGNOSTIC_CHAR_UUID_STRING // Alias
-
-    // Unknown/Auth characteristic - observed in the device's notification set
-    // Purpose unclear but may be needed for proper device communication
-    const val UNKNOWN_AUTH_CHAR_UUID_STRING = "36e6c2ee-21c7-404e-aa9b-f74ca4728ad4"
-
-    val NOTIFY_CHAR_UUID_STRINGS = listOf(
-        UPDATE_STATE_CHAR_UUID_STRING,
-        VERSION_CHAR_UUID_STRING,
-        MODE_CHAR_UUID_STRING,
-        REPS_CHAR_UUID_STRING,
-        HEURISTIC_CHAR_UUID_STRING,
-        BLE_UPDATE_REQUEST_CHAR_UUID_STRING,
-        UNKNOWN_AUTH_CHAR_UUID_STRING, // Subscribed for parity with observed device behavior
-    )
 
     // Command IDs (machine protocol)
     object Commands {
@@ -71,7 +51,6 @@ object BleConstants {
      */
     object ActivationPacket {
         const val SIZE = 96
-        const val OFFSET_MODE_PROFILE = 0x30 // 32 bytes (concentric + eccentric phases)
 
         // Profile-tail offsets.
         const val OFFSET_ECC_UP_MIN_MMS = 0x48
@@ -99,7 +78,6 @@ object BleConstants {
 
     // Primary Characteristic UUIDs
     val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING) // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
-    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Phoenix)
     val MONITOR_UUID = Uuid.parse(SAMPLE_CHAR_UUID_STRING)
     val REPS_UUID = Uuid.parse(REPS_CHAR_UUID_STRING)
 
@@ -108,9 +86,6 @@ object BleConstants {
     val HEURISTIC_UUID = Uuid.parse(HEURISTIC_CHAR_UUID_STRING)
     val VERSION_UUID = Uuid.parse(VERSION_CHAR_UUID_STRING)
     val MODE_UUID = Uuid.parse(MODE_CHAR_UUID_STRING)
-    val UPDATE_STATE_UUID = Uuid.parse(UPDATE_STATE_CHAR_UUID_STRING)
-    val BLE_UPDATE_REQUEST_UUID = Uuid.parse(BLE_UPDATE_REQUEST_CHAR_UUID_STRING)
-    val UNKNOWN_AUTH_UUID = Uuid.parse(UNKNOWN_AUTH_CHAR_UUID_STRING)
 
     // Device Information Service (DIS) - standard BLE service for firmware version
     val DIS_SERVICE_UUID = Uuid.parse("0000180a-0000-1000-8000-00805f9b34fb")
