@@ -549,20 +549,16 @@ class MonitorDataProcessorTest {
     }
 
     @Test
-    fun `resetForNewSession resets poll rate diagnostics`() {
+    fun `resetForNewSession resets notification count`() {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // Process samples to build up poll rate stats
+        // Process samples so the notification counter is non-zero before reset
         processor.process(packet())
         fakeTime = 1020L
         processor.process(packet())
         fakeTime = 1040L
         processor.process(packet())
-
-        // Verify stats exist before reset
-        val statsBefore = processor.getPollRateStats()
-        assertTrue(statsBefore.isNotEmpty(), "Stats should be non-empty before reset")
 
         // Reset
         processor.resetForNewSession()

@@ -351,15 +351,4 @@ class MonitorDataProcessor(
         // NOTE: lastGoodPosA/B, lastDeloadEventTime, strictValidationEnabled
         // are NOT reset between sessions (matching current behavior)
     }
-
-    /**
-     * Get diagnostic summary of poll rate statistics.
-     *
-     * @return Formatted string with avg/min/max/count poll intervals
-     */
-    fun getPollRateStats(): String {
-        if (pollIntervalCount == 0L) return "No poll data"
-        val avgInterval = pollIntervalSum / pollIntervalCount
-        return "avg=${avgInterval}ms, min=${minPollInterval}ms, max=${maxPollInterval}ms, count=$pollIntervalCount, notifications=$monitorNotificationCount"
-    }
 }
