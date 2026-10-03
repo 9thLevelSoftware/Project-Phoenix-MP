@@ -949,7 +949,6 @@ fun ActiveStatusCard(
 }
 
 // Auto-start theme colors - resolved from AccessibilityTheme at composable call sites
-// Light variants are computed by blending with white for gradient pairs
 
 /**
  * Compact Auto-Start/Auto-Stop Banner for Just Lift Mode
@@ -1020,12 +1019,6 @@ fun AutoStartStopCard(
         isCountingDown -> countdownOrange
         else -> readyColor
     }
-    // Light variants computed by blending with white for gradient pairs
-    val secondaryColor = primaryColor.copy(
-        red = (primaryColor.red + 1f) / 2f,
-        green = (primaryColor.green + 1f) / 2f,
-        blue = (primaryColor.blue + 1f) / 2f,
-    )
 
     val indicatorSize = if (compact) 40.dp else 56.dp
     val innerIndicatorSize = if (compact) 32.dp else 44.dp
