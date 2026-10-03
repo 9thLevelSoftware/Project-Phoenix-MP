@@ -222,26 +222,7 @@ actual class FilePicker {
      * Save content to a temporary file for export.
      */
     private fun saveToTempFile(fileName: String, content: String): String? = try {
-        val tempDir = NSTemporaryDirectory()
-        val filePath = "$tempDir$fileName"
-
-        val fileManager = NSFileManager.defaultManager
-
-        // Remove existing file if present
-        if (fileManager.fileExistsAtPath(filePath)) {
-            fileManager.removeItemAtPath(filePath, null)
-        }
-
-        // Write content
-        val nsContent = NSString.create(string = content)
-        val success = nsContent.writeToFile(
-            filePath,
-            atomically = true,
-            encoding = NSUTF8StringEncoding,
-            error = null,
-        )
-
-        if (success) filePath else null
+        writeUtf8TempFile(fileName, content)
     } catch (e: Exception) {
         log.e { "Failed to save temp file: ${e.message}" }
         null
