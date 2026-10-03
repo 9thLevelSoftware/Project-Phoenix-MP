@@ -85,15 +85,7 @@ data class JustLiftDefaults(
     /**
      * Convert stored mode ID to ProgramMode
      */
-    fun toProgramMode(): ProgramMode = when (workoutModeId) {
-        0 -> ProgramMode.OldSchool
-        2 -> ProgramMode.Pump
-        3 -> ProgramMode.TUT
-        4 -> ProgramMode.TUTBeast
-        6 -> ProgramMode.EccentricOnly
-        10 -> ProgramMode.Echo
-        else -> ProgramMode.OldSchool
-    }
+    fun toProgramMode(): ProgramMode = ProgramMode.fromModeValue(workoutModeId)
 
     /**
      * Get EccentricLoad from stored percentage

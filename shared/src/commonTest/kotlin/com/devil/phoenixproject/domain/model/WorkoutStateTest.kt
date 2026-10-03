@@ -144,6 +144,21 @@ class WorkoutStateTest {
     }
 
     @Test
+    fun `ProgramMode fromModeValue looks up workoutModeId and falls back to Old School`() {
+        listOf(
+            ProgramMode.OldSchool,
+            ProgramMode.Pump,
+            ProgramMode.TUT,
+            ProgramMode.TUTBeast,
+            ProgramMode.EccentricOnly,
+            ProgramMode.Echo,
+        ).forEach { mode ->
+            assertEquals(mode, ProgramMode.fromModeValue(mode.modeValue))
+        }
+        assertEquals(ProgramMode.OldSchool, ProgramMode.fromModeValue(1))
+    }
+
+    @Test
     fun `ProgramMode has correct display names`() {
         assertEquals("Old School", ProgramMode.OldSchool.displayName)
         assertEquals("Pump", ProgramMode.Pump.displayName)
