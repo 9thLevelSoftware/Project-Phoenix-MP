@@ -14,7 +14,6 @@ import platform.UIKit.*
 import platform.UniformTypeIdentifiers.UTType
 import platform.UniformTypeIdentifiers.UTTypeCommaSeparatedText
 import platform.UniformTypeIdentifiers.UTTypeJSON
-import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -71,6 +70,7 @@ actual class FilePicker {
                     }
                 },
                 log = log,
+                kind = DocumentPickerKind.File,
             )
         }
 
@@ -103,6 +103,7 @@ actual class FilePicker {
                     }
                 },
                 log = log,
+                kind = DocumentPickerKind.File,
             )
         }
 
@@ -245,44 +246,6 @@ actual class FilePicker {
     } catch (e: Exception) {
         log.e { "Failed to save temp file: ${e.message}" }
         null
-    }
-}
-
-/**
- * Delegate class that receives callbacks from UIDocumentPickerViewController.
- * Extends NSObject to be compatible with Objective-C runtime.
- * Implements UIDocumentPickerDelegateProtocol for picker callbacks.
- */
-@OptIn(ExperimentalForeignApi::class)
-private class DocumentPickerDelegate(
-    private val onDocumentPicked: (NSURL?) -> Unit,
-    val onCancelled: () -> Unit,
-    private val log: Logger,
-) : NSObject(),
-    UIDocumentPickerDelegateProtocol {
-
-    /**
-     * Called when user selects one or more documents.
-     * For single selection, urls list contains one element.
-     */
-    override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
-        log.d {
-            "Document picker: didPickDocumentsAtURLs called with ${didPickDocumentsAtURLs.size} URLs"
-        }
-
-        val url = didPickDocumentsAtURLs.firstOrNull() as? NSURL
-        if (url != null) {
-            log.d { "Selected file: ${url.path}" }
-        }
-        onDocumentPicked(url)
-    }
-
-    /**
-     * Called when user cancels the picker.
-     */
-    override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {
-        log.d { "Document picker was cancelled" }
-        onCancelled()
     }
 }
 
