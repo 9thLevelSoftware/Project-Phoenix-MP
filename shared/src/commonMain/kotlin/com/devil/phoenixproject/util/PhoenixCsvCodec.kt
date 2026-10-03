@@ -3,7 +3,6 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.datetime.LocalDate
@@ -157,40 +156,6 @@ object PhoenixCsvCodec {
         return sessions to errors
     }
 
-    /**
-     * Parse a Phoenix personal-record CSV written by [encodePersonalRecords].
-     * Also accepts the older iOS header, which has no Mode column.
-     * Fields the file does not carry (id, exercise id, profile) are left at defaults.
-     */
-    fun parsePersonalRecords(csvContent: String): Pair<List<PersonalRecord>, List<String>> {
-        val lines = csvContent.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return emptyList<PersonalRecord>() to listOf("CSV file is empty")
-
-        val headers = CsvParser.parseCsvRow(lines.first()).map { it.trim().lowercase() }
-        val columnMap = buildPersonalRecordColumnMap(headers)
-        if (columnMap.isEmpty()) {
-            return emptyList<PersonalRecord>() to listOf(
-                "Unrecognized CSV format. Expected headers: $PERSONAL_RECORD_HEADER",
-            )
-        }
-
-        val records = mutableListOf<PersonalRecord>()
-        val errors = mutableListOf<String>()
-        for (i in 1 until lines.size) {
-            try {
-                val record = mapPersonalRecordRow(CsvParser.parseCsvRow(lines[i]), columnMap)
-                if (record != null) {
-                    records.add(record)
-                } else {
-                    errors.add("Row ${i + 1}: Could not parse required fields")
-                }
-            } catch (e: Exception) {
-                errors.add("Row ${i + 1}: ${e.message ?: "Unknown parse error"}")
-            }
-        }
-        return records to errors
-    }
-
     private fun personalRecordRow(
         pr: PersonalRecord,
         exerciseNames: Map<String, String>,
@@ -287,57 +252,6 @@ object PhoenixCsvCodec {
             } ?: false,
             eccentricLoad = field("eccentric_load")?.toIntOrNull() ?: 100,
             exerciseName = exerciseName,
-        )
-    }
-
-    private fun buildPersonalRecordColumnMap(headers: List<String>): Map<String, Int> {
-        val map = mutableMapOf<String, Int>()
-        for ((index, header) in headers.withIndex()) {
-            val normalized = when {
-                header == "exercise" -> "exercise"
-                header == "phase" -> "phase"
-                header.startsWith("weight") -> "weight"
-                header == "reps" -> "reps"
-                header == "date" -> "date"
-                header == "mode" -> "mode"
-                header == "1rm" || header.startsWith("1rm") -> "one_rm"
-                else -> null
-            }
-            if (normalized != null) {
-                map[normalized] = index
-            }
-        }
-        return if (map.containsKey("exercise") && map.containsKey("date")) map else emptyMap()
-    }
-
-    private fun mapPersonalRecordRow(fields: List<String>, columnMap: Map<String, Int>): PersonalRecord? {
-        fun field(key: String): String? {
-            val idx = columnMap[key] ?: return null
-            return if (idx < fields.size) fields[idx].trim() else null
-        }
-
-        val exerciseName = field("exercise")?.let(StrongCsvExporter::unescapeFormulaGuard)?.takeIf { it.isNotBlank() }
-            ?: return null
-        val dateStr = field("date") ?: return null
-        val timestamp = parseDateTimeToEpochMs(dateStr, timeStr = null) ?: throw IllegalArgumentException(
-            "Invalid date format: '$dateStr' (expected yyyy-MM-dd)",
-        )
-        val weight = CsvParser.parseWeight(field("weight"))
-        val reps = field("reps")?.toIntOrNull() ?: 0
-        val phase = field("phase")?.let { raw ->
-            WorkoutPhase.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
-        } ?: WorkoutPhase.COMBINED
-
-        return PersonalRecord(
-            exerciseId = "",
-            exerciseName = exerciseName,
-            weightPerCableKg = weight,
-            reps = reps,
-            oneRepMax = CsvParser.parseWeight(field("one_rm")),
-            timestamp = timestamp,
-            workoutMode = field("mode")?.let(StrongCsvExporter::unescapeFormulaGuard).orEmpty(),
-            volume = weight * reps,
-            phase = phase,
         )
     }
 
