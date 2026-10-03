@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.getFloatLE
+import com.devil.phoenixproject.data.ble.getInt16LE
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -175,26 +177,26 @@ object BlePacketFactory {
             "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
         Logger.d("BlePacket") {
-            "ecc.up.minMmS[0x48]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
-                "ecc.up.maxMmS[0x4A]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
-                "ecc.up.ramp[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
+            "ecc.up.minMmS[0x48]=${getInt16LE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
+                "ecc.up.maxMmS[0x4A]=${getInt16LE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
+                "ecc.up.ramp[0x4C]=${getFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
         }
         Logger.d("BlePacket") {
-            "forceMin[0x50]=${readFloatLE(
+            "forceMin[0x50]=${getFloatLE(
                 frame,
                 BleConstants.ActivationPacket.OFFSET_FORCE_MIN,
             )}kg, " +
-                "forceMax[0x54]=${readFloatLE(
+                "forceMax[0x54]=${getFloatLE(
                     frame,
                     BleConstants.ActivationPacket.OFFSET_FORCE_MAX,
                 )}kg"
         }
         Logger.d("BlePacket") {
-            "targetWeight[0x58]=${readFloatLE(
+            "targetWeight[0x58]=${getFloatLE(
                 frame,
                 BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
             )}kg, " +
-                "progression[0x5C]=${readFloatLE(
+                "progression[0x5C]=${getFloatLE(
                     frame,
                     BleConstants.ActivationPacket.OFFSET_PROGRESSION,
                 )}kg/rep"
@@ -297,22 +299,6 @@ object BlePacketFactory {
         val schemes = ColorSchemes.ALL
         val scheme = schemes.getOrElse(schemeIndex) { schemes[0] }
         return createColorScheme(scheme.brightness, scheme.colors)
-    }
-
-    // ========== Read Helpers (for diagnostic logging) ==========
-
-    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
-        val bits = (buffer[offset].toInt() and 0xFF) or
-            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
-            ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
-            ((buffer[offset + 3].toInt() and 0xFF) shl 24)
-        return Float.fromBits(bits)
-    }
-
-    private fun readShortLE(buffer: ByteArray, offset: Int): Short {
-        val value = (buffer[offset].toInt() and 0xFF) or
-            ((buffer[offset + 1].toInt() and 0xFF) shl 8)
-        return value.toShort()
     }
 
     // ========== Activation Phases (Mode Profiles) ==========

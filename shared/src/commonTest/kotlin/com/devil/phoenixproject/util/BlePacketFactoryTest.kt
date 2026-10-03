@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.ble.getFloatLE
+import com.devil.phoenixproject.data.ble.getInt16LE
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -25,24 +27,6 @@ class BlePacketFactoryTest {
         params: WorkoutParameters,
         maxWeightPerCableKg: Float = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
     ) = BlePacketFactory.createProgramParams(params, maxWeightPerCableKg)
-
-    // ========== Helpers ==========
-
-    /** Read a little-endian float from a byte array at the given offset. */
-    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
-        val bits = (buffer[offset].toInt() and 0xFF) or
-            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
-            ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
-            ((buffer[offset + 3].toInt() and 0xFF) shl 24)
-        return Float.fromBits(bits)
-    }
-
-    /** Read a little-endian signed short from a byte array at the given offset. */
-    private fun readShortLE(buffer: ByteArray, offset: Int): Short {
-        val value = (buffer[offset].toInt() and 0xFF) or
-            ((buffer[offset + 1].toInt() and 0xFF) shl 8)
-        return value.toShort()
-    }
 
     // ========== Control Command Tests ==========
 
@@ -153,7 +137,7 @@ class BlePacketFactoryTest {
 
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MIN))
+        assertEquals(0.0f, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MIN))
     }
 
     @Test
@@ -169,7 +153,7 @@ class BlePacketFactoryTest {
 
         val packet = programParams(params)
 
-        assertEquals(weight + 10.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
+        assertEquals(weight + 10.0f, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
     }
 
     @Test
@@ -186,7 +170,7 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // 0x58 must contain the selected target weight. Progression is carried separately at 0x5C.
-        assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(weight, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
 
     @Test
@@ -203,8 +187,8 @@ class BlePacketFactoryTest {
 
         // Critical: 0x58 must have the actual operating weight.
         // This bug caused the machine to apply weight+10kg instead of the set weight
-        assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
-        assertEquals(15.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
+        assertEquals(weight, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(15.0f, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
     }
 
     @Test
@@ -223,23 +207,23 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Just Lift must carry the selected operating target at 0x58.
-        assertEquals(targetWeight, readFloatLE(packet, 0x58))
+        assertEquals(targetWeight, getFloatLE(packet, 0x58))
 
         // Protocol force/progression block must remain fully populated.
-        assertEquals(0.0f, readFloatLE(packet, 0x50))
-        assertEquals(targetWeight + 10.0f, readFloatLE(packet, 0x54))
-        assertEquals(targetWeight, readFloatLE(packet, 0x58))
-        assertEquals(progression, readFloatLE(packet, 0x5C))
+        assertEquals(0.0f, getFloatLE(packet, 0x50))
+        assertEquals(targetWeight + 10.0f, getFloatLE(packet, 0x54))
+        assertEquals(targetWeight, getFloatLE(packet, 0x58))
+        assertEquals(progression, getFloatLE(packet, 0x5C))
 
         // Profile tail stays the Pump eccentric-up ramp, not the selected force.
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48))
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A))
-        assertEquals(1.0f, readFloatLE(packet, 0x4C))
+        assertEquals(-100, getInt16LE(packet, 0x48))
+        assertEquals(-50, getInt16LE(packet, 0x4A))
+        assertEquals(1.0f, getFloatLE(packet, 0x4C))
         // After Issue #538, Just Lift uses the selected profile (Pump here, not OldSchool).
         // Eccentric down ramp at 0x40-0x44 comes from the Pump profile.
-        assertEquals((-700).toShort(), readShortLE(packet, 0x40))
-        assertEquals((-550).toShort(), readShortLE(packet, 0x42))
-        assertEquals(1.0f, readFloatLE(packet, 0x44))
+        assertEquals(-700, getInt16LE(packet, 0x40))
+        assertEquals(-550, getInt16LE(packet, 0x42))
+        assertEquals(1.0f, getFloatLE(packet, 0x44))
     }
 
     @Test
@@ -253,7 +237,7 @@ class BlePacketFactoryTest {
 
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_PROGRESSION))
+        assertEquals(0.0f, getFloatLE(packet, BleConstants.ActivationPacket.OFFSET_PROGRESSION))
     }
 
     @Test
@@ -268,15 +252,15 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // OldSchool eccentric-up ramp stays in the profile tail.
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48))
-        assertEquals((-110).toShort(), readShortLE(packet, 0x4A))
-        assertEquals(0.0f, readFloatLE(packet, 0x4C))
+        assertEquals(-260, getInt16LE(packet, 0x48))
+        assertEquals(-110, getInt16LE(packet, 0x4A))
+        assertEquals(0.0f, getFloatLE(packet, 0x4C))
 
         // Protocol force config (0x50-0x5F)
-        assertEquals(0.0f, readFloatLE(packet, 0x50)) // forceMin
-        assertEquals(50.0f, readFloatLE(packet, 0x54)) // forceMax = selected weight + 10
-        assertEquals(40.0f, readFloatLE(packet, 0x58)) // targetWeight = selected weight
-        assertEquals(3.0f, readFloatLE(packet, 0x5C)) // progression
+        assertEquals(0.0f, getFloatLE(packet, 0x50)) // forceMin
+        assertEquals(50.0f, getFloatLE(packet, 0x54)) // forceMax = selected weight + 10
+        assertEquals(40.0f, getFloatLE(packet, 0x58)) // targetWeight = selected weight
+        assertEquals(3.0f, getFloatLE(packet, 0x5C)) // progression
     }
 
     @Test
@@ -291,9 +275,9 @@ class BlePacketFactoryTest {
 
             val packet = programParams(params)
 
-            assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight for progression=$progression")
-            assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax for progression=$progression")
-            assertEquals(progression, readFloatLE(packet, 0x5C), "progression for progression=$progression")
+            assertEquals(40.0f, getFloatLE(packet, 0x58), "targetWeight for progression=$progression")
+            assertEquals(50.0f, getFloatLE(packet, 0x54), "forceMax for progression=$progression")
+            assertEquals(progression, getFloatLE(packet, 0x5C), "progression for progression=$progression")
         }
     }
 
@@ -389,8 +373,8 @@ class BlePacketFactoryTest {
         assertEquals(3.toByte(), packet[0x04], "default romRepCount")
         assertEquals(2.toByte(), packet[0x05], "default target reps")
         assertEquals(100, readUShortLE(packet, 0x08), "default eccentricOverload")
-        assertEquals(1.0f, readFloatLE(packet, 0x10), "default HARD duration")
-        assertEquals(50.0f, readFloatLE(packet, 0x14), "default HARD velocity")
+        assertEquals(1.0f, getFloatLE(packet, 0x10), "default HARD duration")
+        assertEquals(50.0f, getFloatLE(packet, 0x14), "default HARD velocity")
     }
 
     // ========== Color Scheme Tests ==========
@@ -529,15 +513,15 @@ class BlePacketFactoryTest {
         assertEquals(0, readUShortLE(packet, 0x06), "spotter (always 0)")
         assertEquals(75, readUShortLE(packet, 0x08), "eccentricOverload")
         assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend (always 50)")
-        assertEquals(0.1f, readFloatLE(packet, 0x0C), "concentricDelayS (always 0.1)")
+        assertEquals(0.1f, getFloatLE(packet, 0x0C), "concentricDelayS (always 0.1)")
 
         // Concentric EchoPhase: HARD = velocity 50, duration = 50/50 = 1.0s
-        assertEquals(1.0f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/50)")
-        assertEquals(50.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARD=50)")
+        assertEquals(1.0f, getFloatLE(packet, 0x10), "concentricDurationSeconds (50/50)")
+        assertEquals(50.0f, getFloatLE(packet, 0x14), "concentricMaxVelocity (HARD=50)")
 
         // Eccentric EchoPhase: fixed on the machine
-        assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds (always 0.0)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (firmware default=-200.0)")
+        assertEquals(0.0f, getFloatLE(packet, 0x18), "eccentricDurationSeconds (always 0.0)")
+        assertEquals(-200.0f, getFloatLE(packet, 0x1C), "eccentricMaxVelocity (firmware default=-200.0)")
     }
 
     @Test
@@ -545,9 +529,9 @@ class BlePacketFactoryTest {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARDER, eccentricPct = 100)
 
         // HARDER = velocity 40, duration = 50/40 = 1.25s
-        assertEquals(1.25f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/40)")
-        assertEquals(40.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARDER=40)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+        assertEquals(1.25f, getFloatLE(packet, 0x10), "concentricDurationSeconds (50/40)")
+        assertEquals(40.0f, getFloatLE(packet, 0x14), "concentricMaxVelocity (HARDER=40)")
+        assertEquals(-200.0f, getFloatLE(packet, 0x1C), "eccentricMaxVelocity")
     }
 
     @Test
@@ -555,9 +539,9 @@ class BlePacketFactoryTest {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARDEST, eccentricPct = 100)
 
         // HARDEST = velocity 30, duration = 50/30 = 1.6666666s
-        assertEquals(50.0f / 30.0f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/30)")
-        assertEquals(30.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARDEST=30)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+        assertEquals(50.0f / 30.0f, getFloatLE(packet, 0x10), "concentricDurationSeconds (50/30)")
+        assertEquals(30.0f, getFloatLE(packet, 0x14), "concentricMaxVelocity (HARDEST=30)")
+        assertEquals(-200.0f, getFloatLE(packet, 0x1C), "eccentricMaxVelocity")
     }
 
     @Test
@@ -565,9 +549,9 @@ class BlePacketFactoryTest {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.EPIC, eccentricPct = 100)
 
         // EPIC = velocity 15, duration = 50/15 = 3.3333333s
-        assertEquals(50.0f / 15.0f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/15)")
-        assertEquals(15.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (EPIC=15)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+        assertEquals(50.0f / 15.0f, getFloatLE(packet, 0x10), "concentricDurationSeconds (50/15)")
+        assertEquals(15.0f, getFloatLE(packet, 0x14), "concentricMaxVelocity (EPIC=15)")
+        assertEquals(-200.0f, getFloatLE(packet, 0x1C), "eccentricMaxVelocity")
     }
 
     @Test
@@ -592,9 +576,9 @@ class BlePacketFactoryTest {
 
             assertEquals(0, readUShortLE(packet, 0x06), "spotter should be 0 for $level")
             assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend should be 50 for $level")
-            assertEquals(0.1f, readFloatLE(packet, 0x0C), "concentricDelayS should be 0.1 for $level")
-            assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds should be 0.0 for $level")
-            assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity should be -200.0 for $level")
+            assertEquals(0.1f, getFloatLE(packet, 0x0C), "concentricDelayS should be 0.1 for $level")
+            assertEquals(0.0f, getFloatLE(packet, 0x18), "eccentricDurationSeconds should be 0.0 for $level")
+            assertEquals(-200.0f, getFloatLE(packet, 0x1C), "eccentricMaxVelocity should be -200.0 for $level")
         }
     }
 
@@ -624,31 +608,31 @@ class BlePacketFactoryTest {
         assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
 
         // seedRange = 5.0f
-        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
+        assertEquals(5.0f, getFloatLE(packet, 0x08), "seedRange")
 
         // top RepBound: threshold=5.0, drift=0.0
-        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
+        assertEquals(5.0f, getFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x10), "top.drift")
 
         // top.inner = L(250, 250), top.outer = L(200, 30)
-        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x1A), "top.outer.mmMax")
 
         // bottom RepBound: threshold=5.0, drift=0.0
-        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
+        assertEquals(5.0f, getFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x20), "bottom.drift")
 
         // bottom.inner = L(250, 250), bottom.outer = L(200, 30) — default
-        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x24), "bottom.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x2A), "bottom.outer.mmMax")
 
         // safety = L(250, 80)
-        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
-        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80, getInt16LE(packet, 0x2E), "safety.mmMax")
     }
 
     @Test
@@ -662,24 +646,24 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Concentric down ramp: C1507d(0, 20, 3.0f)
-        assertEquals(0.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
-        assertEquals(20.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
-        assertEquals(3.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+        assertEquals(0, getInt16LE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(20, getInt16LE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(3.0f, getFloatLE(packet, 0x34), "conc.down.ramp")
 
         // Concentric up ramp: C1507d(75, 600, 50.0f)
-        assertEquals(75.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
-        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+        assertEquals(75, getInt16LE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(600, getInt16LE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "conc.up.ramp")
 
         // Eccentric down ramp: C1507d(-1300, -1200, 100.0f)
-        assertEquals((-1300).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
-        assertEquals((-1200).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
-        assertEquals(100.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+        assertEquals(-1300, getInt16LE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals(-1200, getInt16LE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(100.0f, getFloatLE(packet, 0x44), "ecc.down.ramp")
 
         // Eccentric up ramp: C1507d(-260, -110, 0.0f)
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
-        assertEquals((-110).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+        assertEquals(-260, getInt16LE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals(-110, getInt16LE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(0.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp")
     }
 
     @Test
@@ -694,10 +678,10 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Force config: force-config serialization, softMax=weight, increment=0
-        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
-        assertEquals(60.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
-        assertEquals(50.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
-        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+        assertEquals(0.0f, getFloatLE(packet, 0x50), "forces.min")
+        assertEquals(60.0f, getFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(50.0f, getFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, getFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
     // ========== Pump Mode: Expected Byte Layout Tests ==========
@@ -722,21 +706,21 @@ class BlePacketFactoryTest {
         assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
 
         // seedRange, thresholds, boundaries — all default values
-        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
-        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
-        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
-        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
-        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
-        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
-        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+        assertEquals(5.0f, getFloatLE(packet, 0x08), "seedRange")
+        assertEquals(5.0f, getFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x10), "top.drift")
+        assertEquals(250, getInt16LE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x1A), "top.outer.mmMax")
+        assertEquals(5.0f, getFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x20), "bottom.drift")
+        assertEquals(250, getInt16LE(packet, 0x24), "bottom.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x2A), "bottom.outer.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80, getInt16LE(packet, 0x2E), "safety.mmMax")
     }
 
     @Test
@@ -750,24 +734,24 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Concentric down ramp: C1507d(50, 450, 10.0f)
-        assertEquals(50.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
-        assertEquals(450.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
-        assertEquals(10.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+        assertEquals(50, getInt16LE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(450, getInt16LE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(10.0f, getFloatLE(packet, 0x34), "conc.down.ramp")
 
         // Concentric up ramp: C1507d(500, 600, 50.0f)
-        assertEquals(500.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
-        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+        assertEquals(500, getInt16LE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(600, getInt16LE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "conc.up.ramp")
 
         // Eccentric down ramp: C1507d(-700, -550, 1.0f)
-        assertEquals((-700).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
-        assertEquals((-550).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
-        assertEquals(1.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+        assertEquals(-700, getInt16LE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals(-550, getInt16LE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(1.0f, getFloatLE(packet, 0x44), "ecc.down.ramp")
 
         // Eccentric up ramp: C1507d(-100, -50, 1.0f)
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
-        assertEquals(1.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(1.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp")
     }
 
     @Test
@@ -781,10 +765,10 @@ class BlePacketFactoryTest {
         )
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
-        assertEquals(40.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
-        assertEquals(30.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
-        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+        assertEquals(0.0f, getFloatLE(packet, 0x50), "forces.min")
+        assertEquals(40.0f, getFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(30.0f, getFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, getFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
     // ========== TUT Mode: Expected Byte Layout Tests ==========
@@ -809,21 +793,21 @@ class BlePacketFactoryTest {
         assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
 
         // All default RepConfig values (TUT uses standard repConfig)
-        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
-        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
-        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
-        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
-        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
-        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
-        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+        assertEquals(5.0f, getFloatLE(packet, 0x08), "seedRange")
+        assertEquals(5.0f, getFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x10), "top.drift")
+        assertEquals(250, getInt16LE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x1A), "top.outer.mmMax")
+        assertEquals(5.0f, getFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x20), "bottom.drift")
+        assertEquals(250, getInt16LE(packet, 0x24), "bottom.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x2A), "bottom.outer.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80, getInt16LE(packet, 0x2E), "safety.mmMax")
     }
 
     @Test
@@ -837,24 +821,24 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Concentric down ramp: C1507d(250, 350, 7.0f)
-        assertEquals(250.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
-        assertEquals(350.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
-        assertEquals(7.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+        assertEquals(250, getInt16LE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(350, getInt16LE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(7.0f, getFloatLE(packet, 0x34), "conc.down.ramp")
 
         // Concentric up ramp: C1507d(450, 600, 50.0f)
-        assertEquals(450.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
-        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+        assertEquals(450, getInt16LE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(600, getInt16LE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "conc.up.ramp")
 
         // Eccentric down ramp: C1507d(-900, -700, 70.0f)
-        assertEquals((-900).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
-        assertEquals((-700).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
-        assertEquals(70.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+        assertEquals(-900, getInt16LE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals(-700, getInt16LE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(70.0f, getFloatLE(packet, 0x44), "ecc.down.ramp")
 
         // Eccentric up ramp: C1507d(-100, -50, 14.0f)
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
-        assertEquals(14.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(14.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp")
     }
 
     @Test
@@ -868,10 +852,10 @@ class BlePacketFactoryTest {
         )
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
-        assertEquals(50.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
-        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+        assertEquals(0.0f, getFloatLE(packet, 0x50), "forces.min")
+        assertEquals(50.0f, getFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, getFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
     // ========== Eccentric Only Mode: Expected Byte Layout Tests ==========
@@ -899,25 +883,25 @@ class BlePacketFactoryTest {
         assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
 
         // Standard header fields (same as default)
-        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
-        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
-        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
+        assertEquals(5.0f, getFloatLE(packet, 0x08), "seedRange")
+        assertEquals(5.0f, getFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x10), "top.drift")
+        assertEquals(250, getInt16LE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250, getInt16LE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x1A), "top.outer.mmMax")
 
         // bottom RepBound — ECCENTRIC-SPECIFIC OVERRIDE
-        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
-        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
+        assertEquals(5.0f, getFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, getFloatLE(packet, 0x20), "bottom.drift")
         // Eccentric profile: bottom.inner = L(50, 250) — NOT the default L(250, 250)
-        assertEquals(50.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (ECCENTRIC=50)")
-        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
-        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
-        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
+        assertEquals(50, getInt16LE(packet, 0x24), "bottom.inner.mmPerM (ECCENTRIC=50)")
+        assertEquals(250, getInt16LE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200, getInt16LE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30, getInt16LE(packet, 0x2A), "bottom.outer.mmMax")
 
-        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
-        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+        assertEquals(250, getInt16LE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80, getInt16LE(packet, 0x2E), "safety.mmMax")
     }
 
     @Test
@@ -931,24 +915,24 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Concentric down ramp: C1507d(50, 550, 50.0f)
-        assertEquals(50.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
-        assertEquals(550.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+        assertEquals(50, getInt16LE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(550, getInt16LE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x34), "conc.down.ramp")
 
         // Concentric up ramp: C1507d(650, 750, 10.0f)
-        assertEquals(650.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
-        assertEquals(750.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
-        assertEquals(10.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+        assertEquals(650, getInt16LE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(750, getInt16LE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(10.0f, getFloatLE(packet, 0x3C), "conc.up.ramp")
 
         // Eccentric down ramp: C1507d(-900, -700, 70.0f)
-        assertEquals((-900).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
-        assertEquals((-700).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
-        assertEquals(70.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+        assertEquals(-900, getInt16LE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals(-700, getInt16LE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(70.0f, getFloatLE(packet, 0x44), "ecc.down.ramp")
 
         // Eccentric up ramp: C1507d(-100, -50, 20.0f)
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
-        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(20.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp")
     }
 
     @Test
@@ -962,10 +946,10 @@ class BlePacketFactoryTest {
         )
         val packet = programParams(params)
 
-        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
-        assertEquals(70.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
-        assertEquals(60.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
-        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+        assertEquals(0.0f, getFloatLE(packet, 0x50), "forces.min")
+        assertEquals(70.0f, getFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(60.0f, getFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, getFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
     @Test
@@ -980,12 +964,12 @@ class BlePacketFactoryTest {
         )
         val packet = programParams(params)
 
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
-        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS preserved")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS preserved")
+        assertEquals(20.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
 
         // Force config block at 0x50-0x5F still carries the active weight.
-        assertEquals(60.0f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
+        assertEquals(60.0f, getFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
     @Test
@@ -1001,14 +985,14 @@ class BlePacketFactoryTest {
         )
         val packet = programParams(params)
 
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
-        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS preserved")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS preserved")
+        assertEquals(20.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
 
         // Just Lift still uses reps=0xFF
         assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
 
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
     // ========== Cross-Mode Regression Tests ==========
@@ -1037,13 +1021,13 @@ class BlePacketFactoryTest {
             assertEquals(13.toByte(), packet[0x04], "$name: reps total (10+3)")
             assertEquals(3.toByte(), packet[0x05], "$name: baseline")
             assertEquals(3.toByte(), packet[0x06], "$name: adaptive")
-            assertEquals(5.0f, readFloatLE(packet, 0x08), "$name: seedRange")
+            assertEquals(5.0f, getFloatLE(packet, 0x08), "$name: seedRange")
 
             // All modes except Eccentric use default bottom.inner.mmPerM = 250
-            val expectedBottomInnerMmPerM: Short = if (mode is ProgramMode.EccentricOnly) 50 else 250
+            val expectedBottomInnerMmPerM: Int = if (mode is ProgramMode.EccentricOnly) 50 else 250
             assertEquals(
                 expectedBottomInnerMmPerM,
-                readShortLE(packet, 0x24),
+                getInt16LE(packet, 0x24),
                 "$name: bottom.inner.mmPerM",
             )
         }
@@ -1059,23 +1043,23 @@ class BlePacketFactoryTest {
         )
 
         // Eccentric has mmPerM=50, OldSchool has mmPerM=250 at offset 0x24
-        assertEquals(50.toShort(), readShortLE(eccentricPacket, 0x24), "Eccentric bottom.inner.mmPerM")
-        assertEquals(250.toShort(), readShortLE(oldSchoolPacket, 0x24), "OldSchool bottom.inner.mmPerM")
+        assertEquals(50, getInt16LE(eccentricPacket, 0x24), "Eccentric bottom.inner.mmPerM")
+        assertEquals(250, getInt16LE(oldSchoolPacket, 0x24), "OldSchool bottom.inner.mmPerM")
 
         // All other bottom boundary fields should be identical
         assertEquals(
-            readShortLE(eccentricPacket, 0x26),
-            readShortLE(oldSchoolPacket, 0x26),
+            getInt16LE(eccentricPacket, 0x26),
+            getInt16LE(oldSchoolPacket, 0x26),
             "bottom.inner.mmMax should be same",
         )
         assertEquals(
-            readShortLE(eccentricPacket, 0x28),
-            readShortLE(oldSchoolPacket, 0x28),
+            getInt16LE(eccentricPacket, 0x28),
+            getInt16LE(oldSchoolPacket, 0x28),
             "bottom.outer.mmPerM should be same",
         )
         assertEquals(
-            readShortLE(eccentricPacket, 0x2A),
-            readShortLE(oldSchoolPacket, 0x2A),
+            getInt16LE(eccentricPacket, 0x2A),
+            getInt16LE(oldSchoolPacket, 0x2A),
             "bottom.outer.mmMax should be same",
         )
     }
@@ -1097,10 +1081,10 @@ class BlePacketFactoryTest {
                 WorkoutParameters(mode, reps = 10, weightPerCableKg = weight),
             )
 
-            assertEquals(0.0f, readFloatLE(packet, 0x50), "$mode: forces.min")
-            assertEquals(55.0f, readFloatLE(packet, 0x54), "$mode: forces.max (10+weight)")
-            assertEquals(45.0f, readFloatLE(packet, 0x58), "$mode: softMax (=weight)")
-            assertEquals(0.0f, readFloatLE(packet, 0x5C), "$mode: increment (=0)")
+            assertEquals(0.0f, getFloatLE(packet, 0x50), "$mode: forces.min")
+            assertEquals(55.0f, getFloatLE(packet, 0x54), "$mode: forces.max (10+weight)")
+            assertEquals(45.0f, getFloatLE(packet, 0x58), "$mode: softMax (=weight)")
+            assertEquals(0.0f, getFloatLE(packet, 0x5C), "$mode: increment (=0)")
         }
     }
 
@@ -1117,24 +1101,24 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         // Concentric down ramp: C1507d(150, 250, 7.0f)
-        assertEquals(150.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
-        assertEquals(250.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
-        assertEquals(7.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+        assertEquals(150, getInt16LE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(250, getInt16LE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(7.0f, getFloatLE(packet, 0x34), "conc.down.ramp")
 
         // Concentric up ramp: C1507d(350, 450, 50.0f)
-        assertEquals(350.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
-        assertEquals(450.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+        assertEquals(350, getInt16LE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(450, getInt16LE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "conc.up.ramp")
 
         // Eccentric down ramp: C1507d(-900, -700, 70.0f)
-        assertEquals((-900).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
-        assertEquals((-700).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
-        assertEquals(70.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+        assertEquals(-900, getInt16LE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals(-700, getInt16LE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(70.0f, getFloatLE(packet, 0x44), "ecc.down.ramp")
 
         // Eccentric up ramp: C1507d(-100, -50, 28.0f)
-        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
-        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
-        assertEquals(28.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+        assertEquals(-100, getInt16LE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals(-50, getInt16LE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(28.0f, getFloatLE(packet, 0x4C), "ecc.up.ramp")
     }
 
     @Test
@@ -1144,7 +1128,7 @@ class BlePacketFactoryTest {
         )
 
         // TUT Beast uses default bottom.inner.mmPerM = 250 (NOT the Eccentric 50)
-        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (default)")
+        assertEquals(250, getInt16LE(packet, 0x24), "bottom.inner.mmPerM (default)")
     }
 
     // ========== Issue #538: Just Lift + TUT/Beast Mode Tests ==========
@@ -1235,21 +1219,21 @@ class BlePacketFactoryTest {
         assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
 
         // TUT concentric down ramp: min=250, max=350
-        assertEquals(250.toShort(), readShortLE(packet, 0x30), "TUT conc.down.minMmS")
-        assertEquals(350.toShort(), readShortLE(packet, 0x32), "TUT conc.down.maxMmS")
-        assertEquals(7.0f, readFloatLE(packet, 0x34), "TUT conc.down.ramp")
+        assertEquals(250, getInt16LE(packet, 0x30), "TUT conc.down.minMmS")
+        assertEquals(350, getInt16LE(packet, 0x32), "TUT conc.down.maxMmS")
+        assertEquals(7.0f, getFloatLE(packet, 0x34), "TUT conc.down.ramp")
 
         // TUT concentric up ramp: min=450, max=600
-        assertEquals(450.toShort(), readShortLE(packet, 0x38), "TUT conc.up.minMmS")
-        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "TUT conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "TUT conc.up.ramp")
+        assertEquals(450, getInt16LE(packet, 0x38), "TUT conc.up.minMmS")
+        assertEquals(600, getInt16LE(packet, 0x3A), "TUT conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "TUT conc.up.ramp")
 
         // TUT eccentric up ramp = 14.0 (NOT OldSchool's 0.0)
-        assertEquals(14.0f, readFloatLE(packet, 0x4C), "TUT ecc.up.ramp")
+        assertEquals(14.0f, getFloatLE(packet, 0x4C), "TUT ecc.up.ramp")
 
         // Force block still at correct offsets
-        assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax = weight + 10")
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax = weight")
+        assertEquals(50.0f, getFloatLE(packet, 0x54), "forceMax = weight + 10")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "softMax = weight")
     }
 
     @Test
@@ -1266,21 +1250,21 @@ class BlePacketFactoryTest {
         assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
 
         // Beast concentric down ramp: min=150, max=250
-        assertEquals(150.toShort(), readShortLE(packet, 0x30), "Beast conc.down.minMmS")
-        assertEquals(250.toShort(), readShortLE(packet, 0x32), "Beast conc.down.maxMmS")
-        assertEquals(7.0f, readFloatLE(packet, 0x34), "Beast conc.down.ramp")
+        assertEquals(150, getInt16LE(packet, 0x30), "Beast conc.down.minMmS")
+        assertEquals(250, getInt16LE(packet, 0x32), "Beast conc.down.maxMmS")
+        assertEquals(7.0f, getFloatLE(packet, 0x34), "Beast conc.down.ramp")
 
         // Beast concentric up ramp: min=350, max=450
-        assertEquals(350.toShort(), readShortLE(packet, 0x38), "Beast conc.up.minMmS")
-        assertEquals(450.toShort(), readShortLE(packet, 0x3A), "Beast conc.up.maxMmS")
-        assertEquals(50.0f, readFloatLE(packet, 0x3C), "Beast conc.up.ramp")
+        assertEquals(350, getInt16LE(packet, 0x38), "Beast conc.up.minMmS")
+        assertEquals(450, getInt16LE(packet, 0x3A), "Beast conc.up.maxMmS")
+        assertEquals(50.0f, getFloatLE(packet, 0x3C), "Beast conc.up.ramp")
 
         // Beast eccentric up ramp = 28.0 (NOT OldSchool's 0.0)
-        assertEquals(28.0f, readFloatLE(packet, 0x4C), "Beast ecc.up.ramp")
+        assertEquals(28.0f, getFloatLE(packet, 0x4C), "Beast ecc.up.ramp")
 
         // Force block still at correct offsets
-        assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax = weight + 10")
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax = weight")
+        assertEquals(50.0f, getFloatLE(packet, 0x54), "forceMax = weight + 10")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "softMax = weight")
     }
 
     @Test
@@ -1351,33 +1335,33 @@ class BlePacketFactoryTest {
         assertEquals(0x04.toByte(), packet[0], "Command byte must be ACTIVATION (0x04)")
 
         // Default production layout preserves the OldSchool eccentric-up profile tail.
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "OldSchool ecc.up.minMmS at 0x48")
-        assertEquals((-110).toShort(), readShortLE(packet, 0x4A), "OldSchool ecc.up.maxMmS at 0x4A")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "OldSchool ecc.up.ramp at 0x4C")
+        assertEquals(-260, getInt16LE(packet, 0x48), "OldSchool ecc.up.minMmS at 0x48")
+        assertEquals(-110, getInt16LE(packet, 0x4A), "OldSchool ecc.up.maxMmS at 0x4A")
+        assertEquals(0.0f, getFloatLE(packet, 0x4C), "OldSchool ecc.up.ramp at 0x4C")
 
         // Protocol force config (0x50-0x5F)
         val forceMax = weightPerCableKg + 10.0f
 
-        assertEquals(0.0f, readFloatLE(packet, 0x50), "forceMin at 0x50 must be 0")
+        assertEquals(0.0f, getFloatLE(packet, 0x50), "forceMin at 0x50 must be 0")
         assertEquals(
             forceMax,
-            readFloatLE(packet, 0x54),
+            getFloatLE(packet, 0x54),
             "forceMax at 0x54 must be selected weight + 10",
         )
         assertEquals(
             weightPerCableKg,
-            readFloatLE(packet, 0x58),
+            getFloatLE(packet, 0x58),
             "targetWeight at 0x58 must be selected weight",
         )
         assertEquals(
             progressionKg,
-            readFloatLE(packet, 0x5C),
+            getFloatLE(packet, 0x5C),
             "progression at 0x5C must be progressionKg",
         )
 
         // Verify the weight is NOT near-zero (the actual bug symptom)
         assertTrue(
-            readFloatLE(packet, 0x58) > 10f,
+            getFloatLE(packet, 0x58) > 10f,
             "Issue #390: targetWeight must not be near-zero. " +
                 "Expected 80kg for first set of calf raise.",
         )
@@ -1413,7 +1397,7 @@ class BlePacketFactoryTest {
                 progressionRegressionKg = -3f,
             ),
         )
-        assertEquals(-3f, readFloatLE(packet, 0x5C), "progression at 0x5C")
+        assertEquals(-3f, getFloatLE(packet, 0x5C), "progression at 0x5C")
     }
 
     @Test
@@ -1437,7 +1421,7 @@ class BlePacketFactoryTest {
             params = params,
             maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
         )
-        assertEquals(105f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
+        assertEquals(105f, getFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
     @Test
@@ -1455,11 +1439,11 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         assertEquals(96, packet.size)
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "OldSchool ecc.up.minMmS preserved")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "OldSchool ecc.up.ramp preserved")
-        assertEquals(1.5f, readFloatLE(packet, 0x58), "targetWeight = selected weight")
-        assertEquals(0.5f, readFloatLE(packet, 0x5C), "progression = progressionKg")
-        assertEquals(11.5f, readFloatLE(packet, 0x54), "forceMax = selected weight + 10")
+        assertEquals(-260, getInt16LE(packet, 0x48), "OldSchool ecc.up.minMmS preserved")
+        assertEquals(0.0f, getFloatLE(packet, 0x4C), "OldSchool ecc.up.ramp preserved")
+        assertEquals(1.5f, getFloatLE(packet, 0x58), "targetWeight = selected weight")
+        assertEquals(0.5f, getFloatLE(packet, 0x5C), "progression = progressionKg")
+        assertEquals(11.5f, getFloatLE(packet, 0x54), "forceMax = selected weight + 10")
     }
 
     @Test
@@ -1477,10 +1461,10 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         assertEquals(0xFF.toByte(), packet[0x04], "AMRAP reps marker")
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "AMRAP preserves OldSchool ecc.up.minMmS")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "AMRAP preserves OldSchool ecc.up.ramp")
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "AMRAP targetWeight uses selected weight")
-        assertEquals(0.907f, readFloatLE(packet, 0x5C), "AMRAP progression uses progressionKg")
+        assertEquals(-260, getInt16LE(packet, 0x48), "AMRAP preserves OldSchool ecc.up.minMmS")
+        assertEquals(0.0f, getFloatLE(packet, 0x4C), "AMRAP preserves OldSchool ecc.up.ramp")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "AMRAP targetWeight uses selected weight")
+        assertEquals(0.907f, getFloatLE(packet, 0x5C), "AMRAP progression uses progressionKg")
     }
 
     @Test
@@ -1495,9 +1479,9 @@ class BlePacketFactoryTest {
         val packet = programParams(params)
 
         assertEquals(0xFF.toByte(), packet[0x04], "JustLift reps marker")
-        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "JustLift preserves OldSchool ecc.up.minMmS")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "JustLift preserves OldSchool ecc.up.ramp")
-        assertEquals(40.0f, readFloatLE(packet, 0x58), "JustLift targetWeight uses selected weight")
+        assertEquals(-260, getInt16LE(packet, 0x48), "JustLift preserves OldSchool ecc.up.minMmS")
+        assertEquals(0.0f, getFloatLE(packet, 0x4C), "JustLift preserves OldSchool ecc.up.ramp")
+        assertEquals(40.0f, getFloatLE(packet, 0x58), "JustLift targetWeight uses selected weight")
     }
 
     // ========== Issue #538: TUT/Beast Persistence Round-Trip Tests ==========
