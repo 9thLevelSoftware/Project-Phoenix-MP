@@ -33,7 +33,6 @@ data class ProfileExerciseBaselineUpdate(
 )
 
 data class LegacyBaselineRepairResult(
-    val copiedCount: Int,
     val ambiguous: List<LegacyExerciseBaseline>,
 )
 
@@ -107,13 +106,13 @@ class LegacyBaselineRepair(
     ): LegacyBaselineRepairResult {
         val legacy = baselines.getLegacyBaselines()
         if (profiles.size != 1) {
-            return LegacyBaselineRepairResult(copiedCount = 0, ambiguous = legacy)
+            return LegacyBaselineRepairResult(ambiguous = legacy)
         }
-        val copied = baselines.copyAndConsumeLegacyForSoleProfile(
+        baselines.copyAndConsumeLegacyForSoleProfile(
             profileId = profiles.single().id,
             updatedAt = currentTimeMillis(),
         )
-        return LegacyBaselineRepairResult(copiedCount = copied, ambiguous = emptyList())
+        return LegacyBaselineRepairResult(ambiguous = emptyList())
     }
 
     suspend fun assignAndConsume(
