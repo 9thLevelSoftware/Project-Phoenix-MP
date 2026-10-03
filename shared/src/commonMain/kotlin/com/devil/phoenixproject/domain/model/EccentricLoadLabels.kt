@@ -53,11 +53,6 @@ internal fun formatPercent(value: Number, language: String): String = if (langua
 private fun String.isItalianLanguage(): Boolean = substringBefore('-').substringBefore('_').equals("it", ignoreCase = true)
 
 /**
- * Backwards-compatible formatter for [EccentricLoad] enum values.
- */
-internal fun formatEccentricLoad(load: EccentricLoad, language: String): String = formatPercent(load.percentage, language)
-
-/**
  * Composable wrapper that resolves the active language code via
  * [currentLanguageCode] and delegates to [formatPercent]. No
  * Compose-Multiplatform-specific locale API is required, so this helper

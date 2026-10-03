@@ -99,19 +99,8 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
-    fun formatEccentricLoadDelegatesToGenericPercentFormatter() {
-        EccentricLoad.entries.forEach { load ->
-            assertEquals(
-                formatPercent(load.percentage, "it"),
-                formatEccentricLoad(load, "it"),
-                "enum helper should share the generic formatter for ${load.name}",
-            )
-        }
-    }
-
-    @Test
     fun formatPercentEnglishKeepsAsciiPercentNoSeparator() {
-        val enumLabel = formatEccentricLoad(EccentricLoad.LOAD_110, "en")
+        val enumLabel = formatPercent(EccentricLoad.LOAD_110.percentage, "en")
         val rawLabel = formatPercent(105, "en")
 
         assertEquals("110%", enumLabel)
@@ -122,7 +111,7 @@ class EccentricLoadDisplayNameTest {
 
     @Test
     fun formatPercentItalianInsertsNbspBeforePercentGlyph() {
-        val enumLabel = formatEccentricLoad(EccentricLoad.LOAD_110, "it")
+        val enumLabel = formatPercent(EccentricLoad.LOAD_110.percentage, "it")
         val rawLabel = formatPercent(105, "it")
 
         // Italian typography uses NBSP (U+00A0) between number and "%" so the
@@ -176,8 +165,8 @@ class EccentricLoadDisplayNameTest {
         // en and it outputs differ only in the separator (NBSP vs none) and
         // both end in '%'.
         EccentricLoad.entries.forEach { load ->
-            val en = formatEccentricLoad(load, "en")
-            val it = formatEccentricLoad(load, "it")
+            val en = formatPercent(load.percentage, "en")
+            val it = formatPercent(load.percentage, "it")
             assertEquals("${load.percentage}%", en, "en form of ${load.name}")
             assertEquals("${load.percentage}\u00A0%", it, "it form of ${load.name}")
             assertTrue(en.endsWith("%") && it.endsWith("%"))
