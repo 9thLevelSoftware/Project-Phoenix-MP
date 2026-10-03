@@ -411,11 +411,6 @@ data class CompletedSet(
      */
     fun estimatedOneRepMax(): Float = OneRepMaxCalculator.estimate(actualWeightKg, actualReps)
 
-    /**
-     * Calculate volume (weight × reps).
-     */
-    fun volume(): Float = actualWeightKg * actualReps
-
     companion object {
         fun create(
             id: String = generateUUID(),
@@ -447,41 +442,3 @@ data class CompletedSet(
         )
     }
 }
-
-// Extension functions for collections
-
-/**
- * Get compact string representation of sets.
- * Example: "80kg × 10, 10, 8"
- */
-fun List<CompletedSet>.toCompactString(formatWeight: (Float) -> String): String {
-    if (isEmpty()) return ""
-
-    val byWeight = groupBy { it.actualWeightKg }
-
-    return if (byWeight.size == 1) {
-        val weight = formatWeight(first().actualWeightKg)
-        val reps = sortedBy { it.setNumber }.joinToString(", ") { it.actualReps.toString() }
-        "$weight × $reps"
-    } else {
-        sortedBy { it.setNumber }
-            .joinToString(", ") { "${formatWeight(it.actualWeightKg)} × ${it.actualReps}" }
-    }
-}
-
-/**
- * Get best estimated 1RM from a list of sets.
- */
-fun List<CompletedSet>.bestOneRepMax(): Float? = mapNotNull { set ->
-    if (set.actualReps > 0) set.estimatedOneRepMax() else null
-}.maxOrNull()
-
-/**
- * Calculate total volume from a list of sets.
- */
-fun List<CompletedSet>.totalVolume(): Float = sumOf { it.volume().toDouble() }.toFloat()
-
-/**
- * Filter to only working sets (exclude warmups).
- */
-fun List<CompletedSet>.workingSets(): List<CompletedSet> = filter { it.setType != SetType.WARMUP }
