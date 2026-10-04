@@ -3712,7 +3712,7 @@ ORDER BY timestamp ASC;
 -- row edited after the cursor — including a childless manual/zero-rep session whose tag
 -- was edited, which must not be mistaken for a pulled row.
 -- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
--- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- the migration (saveRepMetrics, commitCompletedSet, ...) bumps local_sync_generation
 -- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
 -- that newer generation.
 seedLegacySyncedGenerations:
