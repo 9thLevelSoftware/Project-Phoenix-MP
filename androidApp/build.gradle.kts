@@ -286,16 +286,18 @@ dependencies {
     // Koin DI
     implementation(libs.koin.android)
 
-    // Coroutines
-    implementation(libs.kotlinx.coroutines.android)
+    // Debug QA sources are the only androidApp coroutine callers.
+    // Release still gets the Android Main dispatcher from :shared.
+    debugImplementation(libs.kotlinx.coroutines.android)
 
     // Logging
     implementation(libs.kermit)
 
-    // Image Loading - Coil 3
+    // Image Loading - Coil 3.
+    // The OkHttp engine is already on the runtime classpath via :shared
+    // (META-INF/services/io.ktor.client.HttpClientEngineContainer).
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor)
-    implementation(libs.ktor.client.okhttp)
 
     // Testing - Unit Tests
     testImplementation(libs.junit)
