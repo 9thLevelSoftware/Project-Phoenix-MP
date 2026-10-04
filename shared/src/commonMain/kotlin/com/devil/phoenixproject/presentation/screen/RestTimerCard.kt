@@ -722,7 +722,7 @@ private fun formatRestTime(seconds: Int): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DropSetOfferCard(
+private fun DropSetOfferCard(
     offer: DropSetOfferUiState,
     weightUnit: WeightUnit,
     formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
