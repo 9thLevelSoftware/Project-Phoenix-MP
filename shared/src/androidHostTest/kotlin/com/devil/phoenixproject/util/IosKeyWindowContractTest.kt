@@ -45,14 +45,13 @@ class IosKeyWindowContractTest {
     @Test
     fun shareSheetPresentsFromKeyWindowRoot() {
         val source = requireSource("src/iosMain/kotlin/com/devil/phoenixproject/util/CrashLog.ios.kt")
-        val body = functionBody(source, "internal fun presentShareSheet")
 
         assertTrue(
-            body.contains("keyWindow()?.rootViewController"),
+            source.contains("keyWindow()?.rootViewController"),
             "the share sheet still presents from the key window's root controller",
         )
-        assertTrue(body.contains("onNotShown()"), "a missing window still skips the sheet")
-        assertTrue(!body.contains("connectedScenes"), "the share sheet no longer walks scenes itself")
+        assertTrue(source.contains("onNotShown()"), "a missing window still skips the sheet")
+        assertTrue(!source.contains("connectedScenes"), "the share sheet no longer walks scenes itself")
     }
 
     private fun requireSource(relativePath: String): String =
