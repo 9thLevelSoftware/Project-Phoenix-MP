@@ -9,7 +9,6 @@ import com.devil.phoenixproject.data.repository.WorkoutSyncSnapshot
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
-import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
@@ -59,7 +58,6 @@ class FakeSyncRepository : SyncRepository {
     var mergedSessions: List<WorkoutSessionSyncDto> = emptyList()
     var mergedPRs: List<PersonalRecordSyncDto> = emptyList()
     var mergedCustomExercises: List<CustomExerciseSyncDto> = emptyList()
-    var updatedIdMappings: IdMappings? = null
 
     // === Call counters ===
 
@@ -178,12 +176,6 @@ class FakeSyncRepository : SyncRepository {
     override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = deletedRoutineIdsToReturn
 
     override suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String): List<String> = deletedCycleIdsToReturn
-
-    // === ID Mapping ===
-
-    override suspend fun updateServerIds(mappings: IdMappings) {
-        updatedIdMappings = mappings
-    }
 
     // === Pull Operations (merge) ===
 

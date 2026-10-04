@@ -2960,7 +2960,6 @@ class SyncManager(
                 reconcileReport = reconcileReport,
             ),
         )
-        // No updateServerIds() -- portal uses client-provided UUIDs
     }
 
     /**

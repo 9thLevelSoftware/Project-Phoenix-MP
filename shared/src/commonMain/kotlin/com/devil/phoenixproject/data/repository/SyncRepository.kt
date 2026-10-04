@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
-import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
@@ -425,13 +424,6 @@ interface SyncRepository {
      * duplicates (see [clearPersonalRecordUpdatedAt]).
      */
     suspend fun clearRoutineUpdatedAt(routineIds: List<String>) {}
-
-    // === ID Mapping (after push) ===
-
-    /**
-     * Update server IDs after successful push
-     */
-    suspend fun updateServerIds(mappings: IdMappings)
 
     // === Pull Operations (merge remote changes) ===
 
