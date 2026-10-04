@@ -21,7 +21,6 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithoutUI
-import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.create
 import platform.Foundation.writeToFile
 
@@ -57,10 +56,7 @@ class IosBackupDestinationResolver(
         }
 
         return try {
-            val bookmarkData = NSData.create(
-                base64EncodedString = base64,
-                options = 0u,
-            ) ?: run {
+            val bookmarkData = decodeBookmarkBase64(base64) ?: run {
                 log.w { "Failed to decode Base64 bookmark for ${destination.displayName}" }
                 return null
             }
@@ -129,7 +125,7 @@ class IosBackupDestinationResolver(
                     }
                     null
                 } else {
-                    val encoded = bookmarkData.base64EncodedStringWithOptions(0u)
+                    val encoded = encodeBookmarkBase64(bookmarkData)
                     if (encoded.isNullOrEmpty()) null else encoded
                 }
             }
