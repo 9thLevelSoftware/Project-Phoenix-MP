@@ -26,11 +26,6 @@ interface GamificationRepository {
     fun getGamificationStats(profileId: String): Flow<GamificationStats>
 
     /**
-     * Get uncelebrated badges (badges user hasn't seen celebration for)
-     */
-    fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>>
-
-    /**
      * Check if a badge has been earned
      */
     suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean
@@ -40,11 +35,6 @@ interface GamificationRepository {
      * @return true if badge was newly awarded, false if already earned
      */
     suspend fun awardBadge(badgeId: String, profileId: String): Boolean
-
-    /**
-     * Mark a badge as celebrated (user has seen the celebration)
-     */
-    suspend fun markBadgeCelebrated(badgeId: String, profileId: String)
 
     /**
      * Mark multiple badges as celebrated in a single transaction

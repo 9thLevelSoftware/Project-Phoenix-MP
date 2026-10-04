@@ -31,20 +31,13 @@ class SqlDelightGamificationRepositoryTest {
     }
 
     @Test
-    fun `awardBadge stores earned badge and markBadgeCelebrated updates it`() = runTest {
+    fun `awardBadge stores earned badge`() = runTest {
         val awarded = repository.awardBadge("workouts_1", profileId)
         assertTrue(awarded)
 
         repository.getEarnedBadges(profileId).test {
             val earned = awaitItem()
             assertEquals(1, earned.size)
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        repository.markBadgeCelebrated("workouts_1", profileId)
-        repository.getUncelebratedBadges(profileId).test {
-            val uncelebrated = awaitItem()
-            assertTrue(uncelebrated.isEmpty())
             cancelAndIgnoreRemainingEvents()
         }
     }

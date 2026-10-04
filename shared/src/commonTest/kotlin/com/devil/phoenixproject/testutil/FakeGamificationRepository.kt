@@ -21,13 +21,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeGamificationRepository : GamificationRepository {
 
     private val earnedBadges = mutableMapOf<String, EarnedBadge>()
-    private val uncelebratedBadgeIds = mutableSetOf<String>()
     private val badgeProgress = mutableMapOf<String, Pair<Int, Int>>()
 
     private val _earnedBadgesFlow = MutableStateFlow<List<EarnedBadge>>(emptyList())
     private val _streakInfoFlow = MutableStateFlow(StreakInfo.EMPTY)
     private val _gamificationStatsFlow = MutableStateFlow(GamificationStats())
-    private val _uncelebratedBadgesFlow = MutableStateFlow<List<EarnedBadge>>(emptyList())
 
     // Badges that will be awarded on next checkAndAwardBadges call
     var pendingBadges = mutableListOf<Badge>()
@@ -51,11 +49,8 @@ class FakeGamificationRepository : GamificationRepository {
         _gamificationStatsFlow.value = stats
     }
 
-    fun addEarnedBadge(badge: EarnedBadge, celebrated: Boolean = true) {
+    fun addEarnedBadge(badge: EarnedBadge) {
         earnedBadges[badge.badgeId] = badge
-        if (!celebrated) {
-            uncelebratedBadgeIds.add(badge.badgeId)
-        }
         updateFlows()
     }
 
@@ -65,7 +60,6 @@ class FakeGamificationRepository : GamificationRepository {
 
     fun reset() {
         earnedBadges.clear()
-        uncelebratedBadgeIds.clear()
         badgeProgress.clear()
         pendingBadges.clear()
         updateStatsCallCount = 0
@@ -78,13 +72,10 @@ class FakeGamificationRepository : GamificationRepository {
         _earnedBadgesFlow.value = emptyList()
         _streakInfoFlow.value = StreakInfo.EMPTY
         _gamificationStatsFlow.value = GamificationStats()
-        _uncelebratedBadgesFlow.value = emptyList()
     }
 
     private fun updateFlows() {
         _earnedBadgesFlow.value = earnedBadges.values.toList()
-        _uncelebratedBadgesFlow.value = earnedBadges.values
-            .filter { uncelebratedBadgeIds.contains(it.badgeId) }
     }
 
     // ========== GamificationRepository interface implementation ==========
@@ -94,8 +85,6 @@ class FakeGamificationRepository : GamificationRepository {
     override fun getStreakInfo(profileId: String): Flow<StreakInfo> = _streakInfoFlow
 
     override fun getGamificationStats(profileId: String): Flow<GamificationStats> = _gamificationStatsFlow
-
-    override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = _uncelebratedBadgesFlow
 
     override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean {
         badgeLookupProfileIds += profileId
@@ -111,24 +100,14 @@ class FakeGamificationRepository : GamificationRepository {
             earnedAt = currentTimeMillis(),
             celebratedAt = null,
         )
-        uncelebratedBadgeIds.add(badgeId)
         updateFlows()
         return true
-    }
-
-    override suspend fun markBadgeCelebrated(badgeId: String, profileId: String) {
-        uncelebratedBadgeIds.remove(badgeId)
-        earnedBadges[badgeId]?.let { badge ->
-            earnedBadges[badgeId] = badge.copy(celebratedAt = currentTimeMillis())
-        }
-        updateFlows()
     }
 
     override suspend fun markBadgesCelebrated(badgeIds: List<String>, profileId: String) {
         if (badgeIds.isEmpty()) return
         val now = currentTimeMillis()
         badgeIds.forEach { badgeId ->
-            uncelebratedBadgeIds.remove(badgeId)
             earnedBadges[badgeId]?.let { badge ->
                 earnedBadges[badgeId] = badge.copy(celebratedAt = now)
             }
@@ -164,7 +143,6 @@ class FakeGamificationRepository : GamificationRepository {
                 earnedAt = currentTimeMillis(),
                 celebratedAt = null,
             )
-            uncelebratedBadgeIds.add(badge.id)
         }
         pendingBadges.clear()
         updateFlows()
