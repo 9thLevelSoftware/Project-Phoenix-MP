@@ -984,10 +984,6 @@ class SqlDelightSyncRepository(
 
     // === Portal Push Operations (full domain objects) ===
 
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
-        queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
-    }
-
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot =
         withContext(Dispatchers.IO) {
             var snapshot = WorkoutSyncSnapshot(emptyList())
