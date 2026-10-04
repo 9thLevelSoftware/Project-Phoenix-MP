@@ -180,7 +180,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
         // Convert stored weight change (KG) to display unit if needed
         // weightChangePerRep is already Int in viewmodel format
         weightChangePerRep = if (loadingContext.preferences.core.value.weightUnit == WeightUnit.LB) {
-            kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
+            kotlin.math.round(
+                viewModel.kgToDisplay(defaults.weightChangePerRep.toFloat(), WeightUnit.LB),
+            ).toInt()
         } else {
             defaults.weightChangePerRep
         }
@@ -274,7 +276,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
         if (!defaultsLoaded) return@LaunchedEffect
 
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
-            weightChangePerRep / 2.20462f
+            viewModel.displayToKg(weightChangePerRep.toFloat(), WeightUnit.LB)
         } else {
             weightChangePerRep.toFloat()
         }
