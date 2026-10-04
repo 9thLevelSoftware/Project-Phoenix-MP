@@ -255,10 +255,7 @@ private class IosSoundManager {
             "you_went_full_throttle",
         )
 
-        badgeSoundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { badgeSoundPlayers.add(it) }
-        }
-        log.d { "Loaded ${badgeSoundPlayers.size} badge celebration sounds" }
+        loadNamedSounds(badgeSoundFiles, badgeSoundPlayers, "badge celebration sounds")
     }
 
     private fun loadPRSounds() {
@@ -268,10 +265,19 @@ private class IosSoundManager {
             "new_personal_record_2",
         )
 
-        prSoundFiles.forEach { fileName ->
-            loadSound(fileName)?.let { prSoundPlayers.add(it) }
+        loadNamedSounds(prSoundFiles, prSoundPlayers, "PR celebration sounds")
+    }
+
+    // Named celebration clips. Missing files are skipped, same as the numbered pools.
+    private fun loadNamedSounds(
+        fileNames: List<String>,
+        destination: MutableList<AVAudioPlayer?>,
+        label: String,
+    ) {
+        fileNames.forEach { fileName ->
+            loadSound(fileName)?.let { destination.add(it) }
         }
-        log.d { "Loaded ${prSoundPlayers.size} PR celebration sounds" }
+        log.d { "Loaded ${destination.size} $label" }
     }
 
     private fun loadRepCountSounds() {
@@ -448,24 +454,6 @@ private class IosSoundManager {
         }
         players.clear()
 
-        badgeSoundPlayers.forEach { player ->
-            try {
-                player?.stop()
-            } catch (e: Exception) {
-                // Ignore cleanup errors
-            }
-        }
-        badgeSoundPlayers.clear()
-
-        prSoundPlayers.forEach { player ->
-            try {
-                player?.stop()
-            } catch (e: Exception) {
-                // Ignore cleanup errors
-            }
-        }
-        prSoundPlayers.clear()
-
         repCountSoundPlayers.forEach { player ->
             try {
                 player?.stop()
@@ -482,8 +470,10 @@ private class IosSoundManager {
         }
         countdownTickPlayer = null
 
-        // Issue #611: Stop + clear the verbal encouragement pools
+        // Stop and clear badge/PR pools with the verbal encouragement pools.
         listOf(
+            badgeSoundPlayers,
+            prSoundPlayers,
             encouragementNeutralSoundPlayers,
             encouragementMildSoundPlayers,
             encouragementStrongSoundPlayers,
