@@ -30,8 +30,12 @@ private const val BODY_MASS_QUERY_LIMIT = 50UL
 /**
  * iOS implementation of HealthIntegration using Apple HealthKit.
  *
- * Write-only integration: pushes Phoenix workout sessions to HealthKit
- * as strength training workouts with optional calorie data.
+ * Writes a completed Phoenix workout as one aggregate traditional
+ * strength-training workout, including optional active energy (calories)
+ * when that write is authorized. [HealthWorkoutData.segments] are not
+ * persisted. Also reads body mass one way into Phoenix: the newest eligible
+ * scale sample from a bounded HealthKit query. Manual entries and sources
+ * that do not look like a scale are skipped.
  *
  * HealthKit authorization uses system dialogs managed by the OS.
  * Unlike Android Health Connect, no Activity Result contract is needed --
@@ -73,8 +77,12 @@ actual class HealthIntegration : HealthWorkoutWriter {
     }
 
     /**
-     * Checks whether HealthKit is available on this device.
-     * Returns false on iPad and devices without HealthKit support.
+     * Returns whether HealthKit data is available on this device.
+     *
+     * Delegates to [HKHealthStore.isHealthDataAvailable] and returns false if
+     * that check throws. HealthKit reports data as available on iPhone and on
+     * iPad running iPadOS 17 or later, and unavailable on earlier iPadOS.
+     * A restricted or otherwise unsupported device also returns false.
      */
     actual override suspend fun isAvailable(): Boolean = try {
         HKHealthStore.isHealthDataAvailable()
@@ -121,6 +129,20 @@ actual class HealthIntegration : HealthWorkoutWriter {
      */
     actual suspend fun hasBodyWeightReadPermission(): Boolean = isAvailable() && bodyMassType != null
 
+    /**
+     * Reads the newest eligible scale body-mass sample from HealthKit.
+     *
+     * Queries body mass newest-end-date first, limited to [BODY_MASS_QUERY_LIMIT]
+     * samples, and returns the first sample [HealthBodyWeightSourceClassifier]
+     * accepts as a scale source. Weight is converted to kilograms. An eligible
+     * reading beyond those newest samples is not returned.
+     *
+     * Returns [Result.success] with null when the body-mass type is missing or
+     * no returned sample is an eligible scale reading. Returns
+     * [Result.failure] when HealthKit is unavailable or the query fails.
+     * HealthKit does not report read authorization, so a denied read surfaces
+     * as a query failure rather than [hasBodyWeightReadPermission] returning false.
+     */
     actual suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
         if (!isAvailable()) {
             return Result.failure(IllegalStateException("HealthKit is not available on this device"))
@@ -172,12 +194,23 @@ actual class HealthIntegration : HealthWorkoutWriter {
     }
 
     /**
-     * Requests HealthKit write authorization for workout and active energy types.
+     * Requests HealthKit authorization to share workouts and optional active
+     * energy, and to read body mass for one-way scale body-weight import.
      *
-     * The completion handler's `success` boolean only indicates whether the
-     * authorization dialog was presented successfully -- it does NOT indicate
-     * the user's choice. We check actual authorization status after the dialog
-     * completes to determine the real result.
+     * Share types are the workout type plus active energy burned when that
+     * quantity type exists. The read type is body mass when that quantity type
+     * exists.
+     *
+     * The completion handler's `success` flag means the authorization request
+     * was processed. It does not mean a dialog was shown, and it does not
+     * reflect the user's choice. When the request is processed, the returned
+     * value is [hasPermissions]: write authorization for the required workout
+     * type only. Active-energy write and body-mass read are omitted from that
+     * result. HealthKit does not expose read authorization status; see
+     * [hasBodyWeightReadPermission].
+     *
+     * Returns false when HealthKit is unavailable, the request is not
+     * processed, or required workout write access is not authorized.
      */
     actual suspend fun requestPermissions(): Boolean {
         if (!isAvailable()) {
@@ -206,7 +239,7 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 return false
             }
 
-            // The dialog was shown; check what the user actually granted
+            // Request processed; the result is required workout-write authorization.
             val granted = hasPermissions()
             log.d { "HealthKit authorization result: permissions granted = $granted" }
             granted
@@ -221,6 +254,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
      *
      * HealthKit does not expose a public per-set strength segment model comparable to
      * Android Health Connect ExerciseSegment, so [HealthWorkoutData.segments] are not persisted on iOS.
+     * Positive [HealthWorkoutData.totalCalories] are stored as active energy only when
+     * that optional write is authorized; a missing calorie permission does not fail the workout write.
      */
     actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         if (!isAvailable()) {
