@@ -647,8 +647,7 @@ private fun ExecutionPage(
 
         // Circular Force Gauge
         if (metric != null && !isCurrentExerciseBodyweight) {
-            // Current Load - default to per-cable resistance, or show total only for
-            // explicit unified-accessory exercises.
+            // Current load is always per-cable resistance.
             // Always use max(loadA, loadB) to show peak force (peak of both cables)
             // For Echo mode: use heuristic kgMax (actual measured force)
             //
@@ -661,7 +660,6 @@ private fun ExecutionPage(
                 // Use max of both loads - works for single and double cable exercises
                 maxOf(metric.loadA, metric.loadB)
             }
-            val displayKg = perCableKg
             val targetDisplayWeight = workoutParameters.weightPerCableKg
             val gaugeMax = (targetDisplayWeight * 1.5f).coerceAtLeast(20f)
 
@@ -670,12 +668,12 @@ private fun ExecutionPage(
             val forceLabel = if (isEchoMode && perCableKg <= 0f) {
                 "—"
             } else {
-                formatWeight(displayKg, weightUnit)
+                formatWeight(perCableKg, weightUnit)
             }
 
             val hudSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
             CircularForceGauge(
-                currentForce = displayKg,
+                currentForce = perCableKg,
                 maxForce = gaugeMax,
                 velocity = (metric.velocityA + metric.velocityB) / 2.0,
                 label = forceLabel,
