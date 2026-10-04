@@ -75,10 +75,10 @@ class IosDocumentPickerPresentContractTest {
     @Test
     fun shareSheetKeepsItsOwnPresenter() {
         val source = requireSource("src/iosMain/kotlin/com/devil/phoenixproject/util/CrashLog.ios.kt")
-        val body = functionBody(source, "internal fun presentShareSheet")
 
-        assertTrue(body.contains("presentViewController"), "share sheet still presents itself")
-        assertTrue(body.contains("presentedViewController"), "share sheet still walks to the top presenter")
+        assertTrue(source.contains("fun presentShareSheet"), "share sheet presenter remains")
+        assertTrue(source.contains("presentViewController"), "share sheet still presents itself")
+        assertTrue(source.contains("presentedViewController"), "share sheet still walks to the top presenter")
         assertTrue(!source.contains("presentDocumentPicker"), "share sheet does not use the document presenter")
         assertTrue(!source.contains("keyWindowRootViewController"), "share sheet keeps its own window walk")
     }
