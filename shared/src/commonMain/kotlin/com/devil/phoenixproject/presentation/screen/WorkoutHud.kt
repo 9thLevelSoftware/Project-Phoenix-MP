@@ -147,8 +147,6 @@ fun WorkoutHud(
                             workoutParameters = workoutParameters,
                             isEchoMode = isEchoMode,
                             echoForceKgMax = currentHeuristicKgMax,
-                            loadBaselineA = loadBaselineA,
-                            loadBaselineB = loadBaselineB,
                             exerciseName = exerciseName,
                             currentSetIndex = currentSetIndex,
                             totalSets = totalSets,
@@ -443,8 +441,6 @@ private fun ExecutionPage(
     workoutParameters: WorkoutParameters,
     isEchoMode: Boolean = false,
     echoForceKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
-    loadBaselineA: Float = 0f, // Load baseline for cable A (base tension to subtract)
-    loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
     exerciseName: String? = null, // Current exercise name (null for Just Lift)
     currentSetIndex: Int = 0, // Current set (0-based)
     totalSets: Int = 0, // Total number of sets for current exercise
