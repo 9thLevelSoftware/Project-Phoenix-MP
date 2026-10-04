@@ -4,12 +4,14 @@ on:
   push:
     branches: [main]
     # paths-ignore cannot re-include a path. Skip docs and markdown, then
-    # put the sealed BackendHandoffContractTest fixtures back in.
+    # put the sealed BackendHandoffContractTest fixtures and QA contract
+    # docs (docs/qa) back in.
     paths:
       - '**'
       - '!**.md'
       - '!docs/**'
       - 'docs/backend-handoff/**'
+      - 'docs/qa/**'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +19,7 @@ on:
       - '!**.md'
       - '!docs/**'
       - 'docs/backend-handoff/**'
+      - 'docs/qa/**'
   workflow_dispatch:
 
 permissions:

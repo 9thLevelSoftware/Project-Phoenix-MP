@@ -264,7 +264,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
 
-    def test_ci_path_filter_still_runs_for_sealed_backend_handoff_docs(self) -> None:
+    def test_ci_path_filter_still_runs_for_sealed_backend_handoff_and_qa_docs(self) -> None:
         text = workflow("ci-tests.yml")
         on_block = text.split("permissions:", 1)[0]
         self.assertNotIn("paths-ignore:", on_block)
@@ -274,6 +274,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             "      - '!**.md'\n"
             "      - '!docs/**'\n"
             "      - 'docs/backend-handoff/**'\n"
+            "      - 'docs/qa/**'\n"
         )
         self.assertEqual(on_block.count(sealed_paths), 2)
 
