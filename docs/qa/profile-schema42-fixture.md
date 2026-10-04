@@ -118,6 +118,8 @@ Shut down the fixture emulator after the snapshot is saved. Restore immutably by
 
 Install the current debug APK with `-r` so Android retains the schema-42 database and injected SharedPreferences. Again, do not uninstall and do not use `pm clear`.
 
+Inspect the upgraded database with host `sqlite3` from the Android SDK (`platform-tools\sqlite3.exe`). Pipe the sandbox files to that host copy with `adb exec-out`: its raw stdout keeps the database bytes intact. The Google Play image created above has no device `sqlite3` binary, so the SQL below runs only in the host process. When `-wal` or `-shm` siblings exist, pipe them into the same directory before the query so uncheckpointed pages stay visible.
+
 ```powershell
 & $adb install -r $upgradeApk
 & $adb shell monkey -p $package -c android.intent.category.LAUNCHER 1
@@ -130,10 +132,42 @@ do {
 } while (-not $migrationReady -and [DateTime]::UtcNow -lt $migrationDeadline)
 if (-not $migrationReady) { throw 'Timed out after 60 seconds waiting for required profile preference migration' }
 & $adb shell am force-stop $package
-$userVersion = (& $adb shell run-as $package sqlite3 databases/phoenix.db 'PRAGMA user_version;').Trim()
+$hostSqlite = Join-Path $sdk 'platform-tools\sqlite3.exe'
+if (-not (Test-Path -LiteralPath $hostSqlite)) { throw "Host sqlite3 not found: $hostSqlite" }
+$inspectDb = Join-Path $evidence 'phoenix-upgraded.db'
+foreach ($localPath in @($inspectDb, "$inspectDb-wal", "$inspectDb-shm")) {
+    if (Test-Path -LiteralPath $localPath) { Remove-Item -LiteralPath $localPath -Force }
+}
+function Receive-SandboxBytes([string] $RelativePath, [string] $Destination) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $adb
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Arguments = "exec-out run-as $package cat $RelativePath"
+    $process = [Diagnostics.Process]::Start($startInfo)
+    $output = [IO.File]::Create($Destination)
+    try {
+        $process.StandardOutput.BaseStream.CopyTo($output)
+    } finally {
+        $output.Dispose()
+    }
+    $errorText = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0 -or (Get-Item -LiteralPath $Destination).Length -le 0) {
+        throw "adb exec-out failed for ${RelativePath}: $errorText"
+    }
+}
+Receive-SandboxBytes 'databases/phoenix.db' $inspectDb
+foreach ($suffix in @('-wal', '-shm')) {
+    $relative = "databases/phoenix.db$suffix"
+    & $adb shell run-as $package ls $relative 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Receive-SandboxBytes $relative "$inspectDb$suffix" }
+}
+$userVersion = (& $hostSqlite -readonly -batch $inspectDb 'PRAGMA user_version;').Trim()
 if ($userVersion -ne '57') { throw "Expected user_version 57 after upgrade, got $userVersion" }
-& $adb shell run-as $package sqlite3 databases/phoenix.db 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'
+& $hostSqlite -readonly -batch $inspectDb 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'
 & $adb shell run-as $package cat shared_prefs/phoenix_preferences.xml
 ```
 
-The post-upgrade database must report `user_version` 57, each existing profile row must have `legacy_migration_version = 1`, and the sentinel values from the tracked XML must appear in the corresponding profile preference sections.
+The host `sqlite3` query must report `user_version` 57, each existing profile row must have `legacy_migration_version = 1`, and the sentinel values from the tracked XML must appear in the corresponding profile preference sections.
