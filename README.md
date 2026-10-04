@@ -98,10 +98,10 @@ Recent highlights:
 - **[v1.0.3](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v1.0.3)** — Echo keeps a proven current-set rep when the wire target changes mid-set, so a stale stall countdown cannot drop the rep or end the set, and Cloud Sync reconciles duplicate push keys instead of hard-blocking, so distinct personal records stay distinct and conflicts stay retryable.
 - **[v1.0.2](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v1.0.2)** — Just Lift reliability fixes, iOS database and build fixes, Set Ready confirmation after mid-routine exercise jumps, and routine set-config layout fixes.
 - **[v1.0.0](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v1.0.0)** — New open exercise catalogue and Phoenix logo, Old School drop-set retries, routine-set repetition, exercise-history quick view, workout-isolation and teardown fixes, and dark-mode fixes.
-- **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — Profile tab, profile-scoped preferences, Exercise Insights, clearer set types, Health Connect mapping, and workout-flow reliability fixes.
-- **[v0.9.5](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.5)** — UI/BLE compatibility and training-cycle reliability.
-- **[v0.9.4](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.4)** — Optional age-gated VBT verbal feedback.
-- **[v0.9.3](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.3)** — Velocity-based 1RM, body-weight prompts, Equipment Rack improvements, and TUT/TUT Beast in Just Lift.
+- **v0.9.6** (no release tag; source [`631e208f49361d028f640f8bd72aafada2018588`](https://github.com/9thLevelSoftware/Project-Phoenix-MP/commit/631e208f49361d028f640f8bd72aafada2018588)) — Profile tab, profile-scoped preferences, Exercise Insights, clearer set types, Health Connect mapping, and workout-flow reliability fixes.
+- **v0.9.5** (no release tag) — UI/BLE compatibility and training-cycle reliability.
+- **v0.9.4** (no release tag) — Optional age-gated VBT verbal feedback.
+- **v0.9.3** (no release tag) — Velocity-based 1RM, body-weight prompts, Equipment Rack improvements, and TUT/TUT Beast in Just Lift.
 - Earlier releases are listed on the [Releases](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases) page.
 
 ---
