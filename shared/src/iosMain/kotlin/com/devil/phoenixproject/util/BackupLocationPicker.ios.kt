@@ -40,14 +40,9 @@ actual class BackupLocationPicker {
                 onDocumentPicked = { url ->
                     scope.launch(Dispatchers.Main) {
                         if (url != null) {
-                            val accessing = url.startAccessingSecurityScopedResource()
-                            try {
+                            url.withSecurityScopedAccess {
                                 val result = createBookmarkedDestination(url)
                                 onDirectoryPicked(result)
-                            } finally {
-                                if (accessing) {
-                                    url.stopAccessingSecurityScopedResource()
-                                }
                             }
                         } else {
                             onDirectoryPicked(null)
