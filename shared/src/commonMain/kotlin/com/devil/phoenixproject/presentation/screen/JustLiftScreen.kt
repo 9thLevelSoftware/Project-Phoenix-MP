@@ -293,9 +293,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
             selectedExerciseId = null, // Issue #97: Clear exercise ID for Just Lift sessions
             justLiftRestSeconds = restSeconds, // Issue #113: Configurable rest timer
         )
-        Logger.i {
-            "WEIGHT_DEBUG[Params]: weightPerCable=$weightPerCable kg → updatedParameters.weightPerCableKg=${updatedParameters.weightPerCableKg} kg"
-        }
         Logger.d { "JustLift: Updating params - eccentricLoad=${eccentricLoad.percentage}%, echoLevel=${newEchoLevel.displayName}" }
         viewModel.updateWorkoutParameters(updatedParameters)
     }
@@ -517,7 +514,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                 value = displayWeight,
                                 onValueChange = { newValue ->
                                     val kg = viewModel.displayToKg(newValue, weightUnit)
-                                    Logger.i { "WEIGHT_DEBUG[JustLift]: Picker value=$newValue ($weightUnit) → displayToKg → $kg kg" }
                                     weightPerCable = kg
                                 },
                                 range = 1f..maxWeight,

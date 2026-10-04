@@ -118,11 +118,6 @@ fun SetSummaryCard(
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
     val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit)
-
-    // Debug logging for weight display investigation
-    co.touchlab.kermit.Logger.i {
-        "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg -> $setWeightDisplay ($weightUnit)"
-    }
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 
