@@ -14,6 +14,7 @@ import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.data.ble.parseRepPacket
+import com.devil.phoenixproject.data.ble.stampReceivedAt
 import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
@@ -301,7 +302,7 @@ class KableBleRepository : BleRepository {
 
     private fun publishDiagnostics(packet: DiagnosticPacket) {
         val timestampedPacket = if (packet.receivedAtMillis == 0L) {
-            packet.copy(receivedAtMillis = currentTimeMillis())
+            packet.stampReceivedAt(currentTimeMillis())
         } else {
             packet
         }

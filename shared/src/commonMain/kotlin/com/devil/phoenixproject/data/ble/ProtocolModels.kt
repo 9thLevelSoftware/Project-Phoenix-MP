@@ -31,6 +31,13 @@ data class DiagnosticPacket(
 )
 
 /**
+ * Copy a parsed diagnostic snapshot with [receivedAtMillis] set.
+ * Call sites keep their own clock and logging policy.
+ */
+fun DiagnosticPacket.stampReceivedAt(receivedAtMillis: Long): DiagnosticPacket =
+    copy(receivedAtMillis = receivedAtMillis)
+
+/**
  * Optional crash details from extended diagnostics payloads.
  */
 data class DiagnosticCrash(

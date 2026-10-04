@@ -544,7 +544,7 @@ class MetricPollingEngine(
     internal fun parseDiagnosticData(bytes: ByteArray) {
         try {
             val packet = parseDiagnosticPacket(bytes) ?: return
-            val timestampedPacket = packet.copy(receivedAtMillis = currentTimeMillis())
+            val timestampedPacket = packet.stampReceivedAt(currentTimeMillis())
             onDiagnosticData(timestampedPacket)
 
             val faultSnapshot = timestampedPacket.faultWords

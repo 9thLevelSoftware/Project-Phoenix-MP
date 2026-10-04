@@ -1601,7 +1601,7 @@ class KableBleConnectionManager(
     internal fun parseDiagnosticData(bytes: ByteArray) {
         try {
             val packet = parseDiagnosticPacket(bytes) ?: return
-            val timestampedPacket = packet.copy(receivedAtMillis = currentTimeMillis())
+            val timestampedPacket = packet.stampReceivedAt(currentTimeMillis())
             onDiagnosticData(timestampedPacket)
             log.i { "DIAGNOSTIC: faults=${timestampedPacket.faultWords} temps=${timestampedPacket.temperatures}" }
             if (timestampedPacket.hasFaults) {
