@@ -55,8 +55,6 @@ function Resolve-AndroidTool {
 
     if ($Name -eq 'adb') {
         $path = Join-Path $sdkRoot 'platform-tools\adb.exe'
-    } elseif ($Name -eq 'sqlite3') {
-        $path = Join-Path $sdkRoot 'platform-tools\sqlite3.exe'
     } else {
         $buildToolsRoot = Join-Path $sdkRoot 'build-tools'
         $latest = Get-ChildItem -LiteralPath $buildToolsRoot -Directory |
@@ -71,6 +69,17 @@ function Resolve-AndroidTool {
 
     if (-not (Test-Path -LiteralPath $path)) { throw "Android tool not found: $path" }
     return (Resolve-Path -LiteralPath $path).Path
+}
+
+function Resolve-SqliteFromPath {
+    # Host inspection of pulled databases uses the SQLite CLI. Android SDK platform-tools
+    # does not ship sqlite3; the shell is a separate install discovered on PATH.
+    $resolved = @(Get-Command -Name 'sqlite3' -CommandType Application -ErrorAction SilentlyContinue) |
+        Select-Object -First 1
+    if ($null -eq $resolved -or [string]::IsNullOrWhiteSpace([string]$resolved.Source)) {
+        throw 'sqlite3 was not found on PATH. Install the SQLite command-line shell and ensure it is available to this session.'
+    }
+    return $resolved.Source
 }
 
 function Invoke-Adb {
@@ -641,7 +650,7 @@ function Invoke-SuccessfulUpgrade {
 $script:Adb = Resolve-AndroidTool 'adb'
 $script:Aapt = Resolve-AndroidTool 'aapt'
 $script:ApkSigner = Resolve-AndroidTool 'apksigner'
-$script:Sqlite = Resolve-AndroidTool 'sqlite3'
+$script:Sqlite = Resolve-SqliteFromPath
 $script:EvidenceRoot = [IO.Path]::GetFullPath($EvidenceDirectory)
 $script:WalMarker = 'committed-wal-survived'
 [void](New-Item -ItemType Directory -Force -Path $script:EvidenceRoot)
