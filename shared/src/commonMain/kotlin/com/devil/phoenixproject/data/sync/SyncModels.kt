@@ -177,11 +177,6 @@ data class GamificationStatsSyncDto(
     val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
-    // Received from mobile-sync-pull (total_time_seconds column on server).
-    // Carried through the DTO chain but not yet persisted locally — the GamificationStats
-    // SQLite table has no total_time_seconds column. Add a migration and wire it into
-    // upsertGamificationStats / getGamificationStatsForSync once the column lands.
-    val totalTimeSeconds: Long = 0L,
     val updatedAt: Long,
 )
 
