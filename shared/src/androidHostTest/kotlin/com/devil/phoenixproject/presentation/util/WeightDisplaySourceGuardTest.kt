@@ -200,8 +200,8 @@ class WeightDisplaySourceGuardTest {
                 "WorkoutHud.kt should format selectedDisplayKg directly for target weight display.",
             )
             assertTrue(
-                source.contains("formatWeight(displayKg, weightUnit)"),
-                "WorkoutHud.kt should format displayKg directly for live force display.",
+                source.contains("formatWeight(perCableKg, weightUnit)"),
+                "WorkoutHud.kt should format perCableKg directly for live force display.",
             )
         } else {
             assertTrue(true, "WorkoutHud.kt not found; guard passes")
