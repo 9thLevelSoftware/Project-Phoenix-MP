@@ -234,21 +234,6 @@ class ExerciseConfigViewModel constructor(
             )
         }
 
-        // Debug logging for AMRAP exercise data loading
-        logDebug("━━━━━ ExerciseConfigViewModel.initialize() ━━━━━")
-        logDebug("Exercise: ${exercise.exercise.name}")
-        logDebug("isAMRAP flag: ${exercise.isAMRAP}")
-        logDebug("perSetRestTime flag: ${exercise.perSetRestTime}")
-        logDebug("setReps: ${exercise.setReps}")
-        logDebug("setWeightsPerCableKg: ${exercise.setWeightsPerCableKg}")
-        logDebug("weightPerCableKg: ${exercise.weightPerCableKg}")
-        logDebug("setRestSeconds: ${exercise.setRestSeconds}")
-        logDebug("Loaded sets:")
-        initialSets.forEach { set ->
-            logDebug("  Set ${set.setNumber}: reps=${set.reps}, weight=${set.weightPerCable}, rest=${set.restSeconds}")
-        }
-        logDebug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
         _sets.value = initialSets
 
         _selectedMode.value = exercise.programMode.toWorkoutMode(exercise.echoLevel)
