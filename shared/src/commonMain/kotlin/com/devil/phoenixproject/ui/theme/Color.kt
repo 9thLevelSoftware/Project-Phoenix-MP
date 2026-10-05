@@ -29,7 +29,7 @@ val AshBlueDark = Color(0xFF6ED2FF) // Electric cyan (dark mode)
 // 2025 Trend: Tinted neutrals instead of pure grey
 val Slate950 = Color(0xFF020617) // Almost black, blue-tinted (OLED friendly)
 val Slate900 = Color(0xFF0F172A) // Deep background
-private val Slate800 = Color(0xFF1E293B) // Card background
+internal val Slate800 = Color(0xFF1E293B) // Card background
 val Slate700 = Color(0xFF334155) // Border/Divider
 val Slate400 = Color(0xFF94A3B8) // Subtext
 val Slate200 = Color(0xFFE2E8F0) // Light mode surfaces
