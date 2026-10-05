@@ -31,12 +31,6 @@ allprojects {
     }
 }
 
-tasks.matching { it.name == "clean" }.configureEach {
-    doLast {
-        delete(rootProject.layout.buildDirectory)
-    }
-}
-
 // Windows workaround: SQLite JDBC's native loader uses java.io.tmpdir which may resolve
 // to C:\Windows (access-denied). Set the system property before the task executes so the
 // classloader-isolated worker inherits it from the daemon JVM.
