@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.auth
 
+import com.devil.phoenixproject.util.keyWindow
 import kotlin.coroutines.resume
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -13,9 +14,7 @@ import platform.Foundation.NSError
 import platform.Foundation.NSURL
 import platform.Security.SecRandomCopyBytes
 import platform.Security.kSecRandomDefault
-import platform.UIKit.UIApplication
 import platform.UIKit.UIWindow
-import platform.UIKit.UIWindowScene
 import platform.darwin.NSObject
 
 /**
@@ -132,12 +131,10 @@ private class PresentationContextProvider :
     // returning UIWindow avoids depending on whether K/N exposes the typealias.
     //
     // Uses the modern `UIApplication.connectedScenes → UIWindowScene.keyWindow`
-    // pattern (see `CsvExporter.ios.kt` for the same pattern in this project)
+    // pattern (see `KeyWindowRootViewController.ios.kt` for the same pattern in this project)
     // instead of the deprecated `UIApplication.windows` API, which has had
     // spotty Kotlin/Native interop support across 2.x versions.
     override fun presentationAnchorForWebAuthenticationSession(session: ASWebAuthenticationSession): UIWindow {
-        val scenes = UIApplication.sharedApplication.connectedScenes
-        val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
-        return windowScene?.keyWindow ?: UIWindow()
+        return keyWindow() ?: UIWindow()
     }
 }

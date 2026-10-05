@@ -13,7 +13,6 @@ import kotlin.native.setUnhandledExceptionHook
 import kotlin.time.Clock
 import platform.Foundation.*
 import platform.UIKit.UIActivityViewController
-import platform.UIKit.UIApplication
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
@@ -110,12 +109,7 @@ actual fun shareCrashReport(report: String, onShown: () -> Unit) {
  */
 internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit, onNotShown: () -> Unit = {}) {
     dispatch_async(dispatch_get_main_queue()) {
-        val scenes = UIApplication.sharedApplication.connectedScenes
-        val windowScene = scenes.firstOrNull {
-            it is platform.UIKit.UIWindowScene
-        } as? platform.UIKit.UIWindowScene
-
-        var presenter: UIViewController = windowScene?.keyWindow?.rootViewController
+        var presenter: UIViewController = keyWindow()?.rootViewController
             ?: run {
                 onNotShown()
                 return@dispatch_async
