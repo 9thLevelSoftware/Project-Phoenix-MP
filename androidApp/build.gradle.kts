@@ -286,9 +286,8 @@ dependencies {
     // Koin DI
     implementation(libs.koin.android)
 
-    // Debug QA sources are the only androidApp coroutine callers.
-    // Release still gets the Android Main dispatcher from :shared.
-    debugImplementation(libs.kotlinx.coroutines.android)
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
 
     // Logging
     implementation(libs.kermit)
