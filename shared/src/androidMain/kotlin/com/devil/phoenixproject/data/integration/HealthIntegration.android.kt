@@ -66,10 +66,11 @@ private const val BODY_WEIGHT_READ_MAX_PAGES = 10
 /**
  * Android implementation of HealthIntegration using Google Health Connect.
  *
- * Permission launching (requestPermissions) is intentionally delegated to
- * [hasPermissions] — the actual permission grant UI must be launched from
- * the Compose/Activity layer via [HealthConnectClient.getOrCreate] and the
- * Health Connect permission contract.
+ * Permission launching ([requestPermissions]) is intentionally delegated to
+ * [hasPermissions]. The permission grant UI is launched from the Compose layer
+ * by [com.devil.phoenixproject.util.HealthPermissionRequester] using the
+ * [androidx.health.connect.client.PermissionController] contract
+ * (`PermissionController.createRequestPermissionResultContract()`).
  */
 actual class HealthIntegration(private val context: Context) : HealthWorkoutWriter {
 
@@ -94,8 +95,9 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
     }
 
     /**
-     * Delegates to [hasPermissions] — the Compose UI layer is responsible for
-     * launching the Health Connect permission request contract when this returns false.
+     * Delegates to [hasPermissions]. When this returns false, the Compose layer
+     * launches the grant UI through [com.devil.phoenixproject.util.HealthPermissionRequester]
+     * and the [androidx.health.connect.client.PermissionController] contract.
      */
     actual suspend fun requestPermissions(): Boolean = hasPermissions()
 
