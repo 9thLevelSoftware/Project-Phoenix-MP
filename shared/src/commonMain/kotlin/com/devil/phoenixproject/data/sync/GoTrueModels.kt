@@ -63,10 +63,7 @@ data class GoTrueErrorResponse(
     @SerialName("error_description") val errorDescription: String? = null,
     @SerialName("error_code") val errorCode: String? = null,
     val msg: String? = null,
-    val code: Int? = null,
 ) {
-    val resolvedCode: String
-        get() = errorCode ?: error ?: code?.toString() ?: "unknown"
     val resolvedMessage: String
         get() = errorDescription ?: msg ?: "Unknown authentication error"
 }
