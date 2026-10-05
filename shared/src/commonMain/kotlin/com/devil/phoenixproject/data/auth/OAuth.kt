@@ -169,16 +169,29 @@ fun generateOAuthPkce(): OAuthPkce {
 /**
  * Platform-specific browser launcher for OAuth authorization flows.
  *
- * Opens [authorizeUrl] in the system browser (Chrome Custom Tabs on Android,
+ * Opens the authorize URL in the system browser (Chrome Custom Tabs on Android,
  * ASWebAuthenticationSession on iOS) and suspends until the browser redirects
- * to a URL whose scheme matches [callbackScheme].
- *
- * @return [Result.success] with the full callback URL (including any query
- *         string carrying the OAuth `code` or error) on successful redirect;
- *         [Result.failure] if the user cancelled or the browser could not be
- *         opened.
+ * back to the app. See [launch] for how `callbackScheme` is applied per platform.
  */
 expect class OAuthLauncher {
+    /**
+     * Opens [authorizeUrl] and suspends until the browser redirects back to the app.
+     *
+     * [callbackScheme] is the custom URL scheme of that redirect. iOS passes it
+     * to `ASWebAuthenticationSession` as `callbackURLScheme`. Android ignores it:
+     * the host app's manifest intent filter on `OAuthRedirectActivity` decides
+     * which redirect URLs are delivered. The parameter stays on this signature
+     * so both platforms share one `launch` contract.
+     *
+     * @param authorizeUrl authorization URL opened in the system browser.
+     * @param callbackScheme custom URL scheme of the OAuth redirect. Used on iOS.
+     *        Ignored on Android, where the manifest intent filter handles routing.
+     *        Kept for iOS parity.
+     * @return [Result.success] with the full callback URL (including any query
+     *         string carrying the OAuth `code` or error) on successful redirect;
+     *         [Result.failure] if the user cancelled or the browser could not be
+     *         opened.
+     */
     suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String>
 }
 
