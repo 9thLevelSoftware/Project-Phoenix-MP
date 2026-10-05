@@ -52,25 +52,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         deletedSessionIds += sessionId
     }
 
-    fun reset() {
-        saved.clear()
-        insertedCompletedSets.clear()
-        beforeInsertCompletedSet = {}
-        beforeMarkAsPr = {}
-        afterInsertCompletedSet = {}
-        plannedSets.clear()
-        completedSets.clear()
-        plannedSetsByExercise.clear()
-        plannedSetReadRequests.clear()
-        beforeAttemptDurabilityRead = {}
-        attemptDurabilityReadCount = 0
-        completedSetsBySession.clear()
-        sessionExerciseIds.clear()
-        sessionRoutineIds.clear()
-        deletedSessionIds.clear()
-        completedSetsFlows.clear()
-    }
-
     // ==================== Planned Sets ====================
 
     override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> {

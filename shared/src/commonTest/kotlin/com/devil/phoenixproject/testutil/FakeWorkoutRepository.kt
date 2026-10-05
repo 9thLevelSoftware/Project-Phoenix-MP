@@ -89,24 +89,6 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateRoutinesFlow()
     }
 
-    fun reset() {
-        sessions.clear()
-        routines.clear()
-        metrics.clear()
-        recentCompletedRequests.clear()
-        saveSessionAttempts.clear()
-        committedMetricSnapshots.clear()
-        beforeSaveSession = {}
-        afterSaveSession = {}
-        completedSetRepository = null
-        repMetricRepository = null
-        biomechanicsRepository = null
-        recentCompletedFailure = null
-        mostRecentCompletedExerciseFailure = null
-        updateSessionsFlow()
-        updateRoutinesFlow()
-    }
-
     private fun updateSessionsFlow() {
         _sessionsFlow.value = sessions.values.sortedByDescending { it.timestamp }
     }

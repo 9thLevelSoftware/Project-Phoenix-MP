@@ -45,22 +45,6 @@ class FakeGamificationRepository : GamificationRepository {
         badgeProgress[badgeId] = current to target
     }
 
-    fun reset() {
-        earnedBadges.clear()
-        badgeProgress.clear()
-        pendingBadges.clear()
-        updateStatsCallCount = 0
-        checkAndAwardBadgesCallCount = 0
-        badgeLookupProfileIds.clear()
-        updateStatsProfileIds.clear()
-        savedRpgProfile = null
-        saveRpgProfileCallCount = 0
-        saveRpgProfileFailure = null
-        _earnedBadgesFlow.value = emptyList()
-        _streakInfoFlow.value = StreakInfo.EMPTY
-        _gamificationStatsFlow.value = GamificationStats()
-    }
-
     private fun updateFlows() {
         _earnedBadgesFlow.value = earnedBadges.values.toList()
     }
