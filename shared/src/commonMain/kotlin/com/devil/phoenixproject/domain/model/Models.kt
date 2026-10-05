@@ -358,8 +358,9 @@ data class WorkoutParameters(
     val selectedExerciseId: String? = null,
     val isAMRAP: Boolean = false, // AMRAP (As Many Reps As Possible) - disables auto-stop
     /**
-     * Per-cable kg of the failed set for the drop-set offer. The rest screen
-     * prefers this over [weightPerCableKg] when that offer is built, and the
+     * Per-cable kg of the most recent saved session for this exercise
+     * (selectLastWeightForExercise), looked up when rest starts. The rest screen
+     * prefers this over [weightPerCableKg] when the drop-set offer is built, and the
      * active-workout runtime snapshot persists it so a restored session keeps
      * the same value.
      */
