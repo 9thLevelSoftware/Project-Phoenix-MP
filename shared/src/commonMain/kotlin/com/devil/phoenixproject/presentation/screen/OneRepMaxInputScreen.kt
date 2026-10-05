@@ -18,6 +18,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.oneRepMaxInputUnitLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -44,8 +45,8 @@ fun OneRepMaxInputScreen(
     exerciseByName: Map<String, Exercise?> = emptyMap(),
     existingOneRepMaxValues: Map<String, Float> = emptyMap(),
     weightUnit: WeightUnit = WeightUnit.KG,
-    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-    displayToKg: (Float, WeightUnit) -> Float = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg },
+    displayToKg: (Float, WeightUnit) -> Float = { display, unit -> if (unit == WeightUnit.LB) display / UnitConverter.KG_TO_LB else display },
     onConfirm: (Map<String, Float>) -> Unit,
     onCancel: () -> Unit,
 ) {
