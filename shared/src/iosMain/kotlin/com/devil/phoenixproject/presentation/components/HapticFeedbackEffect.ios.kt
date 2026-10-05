@@ -332,6 +332,14 @@ private class IosSoundManager {
         return null
     }
 
+    /**
+     * Uniform pick from a non-empty sound pool. Callers keep their own emptiness
+     * checks so an empty mild or strong pool still falls through to neutral, and
+     * an empty dominatrix pool stays silent.
+     */
+    private fun <T> List<T>.randomPoolEntry(): T =
+        this[kotlin.random.Random.nextInt(size)]
+
     fun playSound(event: HapticEvent) {
         // ERROR event has no sound
         if (event is HapticEvent.ERROR) return
@@ -339,7 +347,7 @@ private class IosSoundManager {
         val player = when (event) {
             is HapticEvent.BADGE_EARNED -> {
                 if (badgeSoundPlayers.isNotEmpty()) {
-                    badgeSoundPlayers[kotlin.random.Random.nextInt(badgeSoundPlayers.size)]
+                    badgeSoundPlayers.randomPoolEntry()
                 } else {
                     null
                 }
@@ -347,7 +355,7 @@ private class IosSoundManager {
 
             is HapticEvent.PERSONAL_RECORD -> {
                 if (prSoundPlayers.isNotEmpty()) {
-                    prSoundPlayers[kotlin.random.Random.nextInt(prSoundPlayers.size)]
+                    prSoundPlayers.randomPoolEntry()
                 } else {
                     null
                 }
@@ -370,37 +378,27 @@ private class IosSoundManager {
                 when {
                     // When vulgar mode is off, always use neutral pool
                     !event.vulgarMode -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
-                        encouragementNeutralSoundPlayers[
-                            kotlin.random.Random.nextInt(encouragementNeutralSoundPlayers.size),
-                        ]
+                        encouragementNeutralSoundPlayers.randomPoolEntry()
                     } else {
                         null
                     }
                     event.dominatrixMode && encouragementDominatrixSoundPlayers.isNotEmpty() ->
-                        encouragementDominatrixSoundPlayers[
-                            kotlin.random.Random.nextInt(encouragementDominatrixSoundPlayers.size),
-                        ]
+                        encouragementDominatrixSoundPlayers.randomPoolEntry()
                     event.dominatrixMode -> null // dominatrix pool empty: silent no-op, don't fall through to vulgar
                     event.vulgarTier == VulgarTier.MILD && encouragementMildSoundPlayers.isNotEmpty() ->
-                        encouragementMildSoundPlayers[
-                            kotlin.random.Random.nextInt(encouragementMildSoundPlayers.size),
-                        ]
+                        encouragementMildSoundPlayers.randomPoolEntry()
                     event.vulgarTier == VulgarTier.STRONG && encouragementStrongSoundPlayers.isNotEmpty() ->
-                        encouragementStrongSoundPlayers[
-                            kotlin.random.Random.nextInt(encouragementStrongSoundPlayers.size),
-                        ]
+                        encouragementStrongSoundPlayers.randomPoolEntry()
                     event.vulgarTier == VulgarTier.MIX -> {
                         val combined = encouragementMildSoundPlayers + encouragementStrongSoundPlayers
                         if (combined.isNotEmpty()) {
-                            combined[kotlin.random.Random.nextInt(combined.size)]
+                            combined.randomPoolEntry()
                         } else {
                             null
                         }
                     }
                     else -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
-                        encouragementNeutralSoundPlayers[
-                            kotlin.random.Random.nextInt(encouragementNeutralSoundPlayers.size),
-                        ]
+                        encouragementNeutralSoundPlayers.randomPoolEntry()
                     } else {
                         null
                     }
