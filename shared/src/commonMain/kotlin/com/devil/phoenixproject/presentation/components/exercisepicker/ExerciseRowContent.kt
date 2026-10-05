@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.LocalPlatformContext
@@ -50,6 +51,8 @@ fun ExerciseRowContent(
     onLongPress: (() -> Unit)? = null,
     onLongPressLabel: String? = null,
     onThumbnailClick: (() -> Unit)? = null,
+    /** Row name typography. Defaults to titleMedium; the Tag exercise dialog passes titleSmall (#363). */
+    rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -88,7 +91,7 @@ fun ExerciseRowContent(
                 ) {
                     Text(
                         text = exercise.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = rowNameStyle,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )

@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -359,8 +360,10 @@ fun ExercisePickerDialog(
  * Exercise Picker Content - The main content for exercise selection
  *
  * @param showTitle When false the "Select Exercise" title row is suppressed regardless of
- *   [fullScreen]. Use this instead of [fullScreen] = true when the title is unwanted but the
- *   height should still be capped by the caller (e.g. [MiniExercisePickerDialog]).
+ *   [fullScreen]. Use this with [fullScreen] = true when the caller owns the title in its own
+ *   full-screen shell: [fullScreen] now means the caller hosts this content in a full-screen
+ *   `Dialog`/`Scaffold` (e.g. [MiniExercisePickerDialog]), and [showTitle] = false suppresses
+ *   the inner "Select Exercise" row so only the shell's title shows.
  *   Defaults to true so existing call sites are unaffected.
  */
 @Composable
@@ -399,6 +402,8 @@ fun ExercisePickerContent(
     isLoading: Boolean = false,
     showTitle: Boolean = true,
     fullScreen: Boolean,
+    /** Row name typography. Defaults to [androidx.compose.material3.Typography.titleMedium] everywhere; the Tag exercise dialog passes titleSmall (#363). */
+    rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
     var videoDialogExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -556,6 +561,7 @@ fun ExercisePickerContent(
                 onEditExercise = if (enableCustomExercises) onEditExercise else null,
                 onViewExerciseDetail = onViewExerciseDetail,
                 listState = listState,
+                rowNameStyle = rowNameStyle,
                 modifier = Modifier.weight(1f),
                 emptyContent = {
                     ExerciseListEmptyState(
