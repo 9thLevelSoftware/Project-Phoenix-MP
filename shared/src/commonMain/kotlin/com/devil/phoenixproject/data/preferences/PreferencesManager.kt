@@ -148,7 +148,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
         private const val KEY_BACKUP_INCLUDE_RAW_TELEMETRY = "backup_include_raw_telemetry"
         private const val KEY_BACKUP_DESTINATION = "backup_destination"
-        private const val KEY_LANGUAGE = "language"
+
+        // Shared with Android cold-start locale and workout notification copy.
+        const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"

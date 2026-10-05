@@ -11,6 +11,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.NightSample
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -77,7 +78,7 @@ class MainActivity : ComponentActivity() {
     private fun applyStoredLocaleBeforeComposition() {
         try {
             val prefs = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
-            val langCode = prefs.getString("language", null)
+            val langCode = prefs.getString(SettingsPreferencesManager.KEY_LANGUAGE, null)
             if (!langCode.isNullOrBlank()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val localeManager = getSystemService(android.app.LocaleManager::class.java)

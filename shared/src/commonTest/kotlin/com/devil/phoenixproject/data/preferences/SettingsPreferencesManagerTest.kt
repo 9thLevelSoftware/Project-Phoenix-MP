@@ -13,6 +13,11 @@ import kotlinx.coroutines.test.runTest
 class SettingsPreferencesManagerTest {
 
     @Test
+    fun `language preference key is the shared public name`() {
+        assertEquals("language", SettingsPreferencesManager.KEY_LANGUAGE)
+    }
+
+    @Test
     fun `raw telemetry is out of backups until the user opts in and a restore re-arms one-shot work`() = runTest {
         val settings = MapSettings()
         val manager = SettingsPreferencesManager(settings)
