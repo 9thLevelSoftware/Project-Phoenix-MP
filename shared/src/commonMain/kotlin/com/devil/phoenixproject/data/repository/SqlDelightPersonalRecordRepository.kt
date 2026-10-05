@@ -70,7 +70,7 @@ class SqlDelightPersonalRecordRepository(
         deletedAt = deletedAt,
     )
 
-    override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = queries.selectAllRecords(profileId = profileId, mapper = ::mapToPR)
+    private fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = queries.selectAllRecords(profileId = profileId, mapper = ::mapToPR)
         .asFlow()
         .mapToList(Dispatchers.IO)
 

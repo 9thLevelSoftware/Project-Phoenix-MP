@@ -13,12 +13,6 @@ import kotlinx.coroutines.flow.Flow
  */
 interface PersonalRecordRepository {
     /**
-     * Get all personal records
-     * @return Flow emitting list of all personal records
-     */
-    fun getAllPRs(profileId: String): Flow<List<PersonalRecord>>
-
-    /**
      * Get max-weight personal records grouped by exercise (for analytics).
      *
      * Returns one record per exercise: the heaviest `MAX_WEIGHT`/`COMBINED`
