@@ -138,7 +138,7 @@ $inspectDb = Join-Path $evidence 'phoenix-upgraded.db'
 foreach ($localPath in @($inspectDb, "$inspectDb-wal", "$inspectDb-shm")) {
     if (Test-Path -LiteralPath $localPath) { Remove-Item -LiteralPath $localPath -Force }
 }
-function Receive-SandboxBytes([string] $RelativePath, [string] $Destination) {
+function Receive-SandboxBytes([string] $RelativePath, [string] $Destination, [switch] $AllowEmpty) {
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $adb
     $startInfo.UseShellExecute = $false
@@ -154,15 +154,19 @@ function Receive-SandboxBytes([string] $RelativePath, [string] $Destination) {
     }
     $errorText = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
-    if ($process.ExitCode -ne 0 -or (Get-Item -LiteralPath $Destination).Length -le 0) {
+    if ($process.ExitCode -ne 0) {
         throw "adb exec-out failed for ${RelativePath}: $errorText"
+    }
+    # The main database is never empty; a checkpointed -wal sibling can be.
+    if (-not $AllowEmpty -and (Get-Item -LiteralPath $Destination).Length -le 0) {
+        throw "adb exec-out returned no bytes for ${RelativePath}: $errorText"
     }
 }
 Receive-SandboxBytes 'databases/phoenix.db' $inspectDb
 foreach ($suffix in @('-wal', '-shm')) {
     $relative = "databases/phoenix.db$suffix"
     & $adb shell run-as $package ls $relative 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Receive-SandboxBytes $relative "$inspectDb$suffix" }
+    if ($LASTEXITCODE -eq 0) { Receive-SandboxBytes $relative "$inspectDb$suffix" -AllowEmpty }
 }
 $userVersion = (& $hostSqlite -readonly -batch $inspectDb 'PRAGMA user_version;').Trim()
 if ($userVersion -ne '57') { throw "Expected user_version 57 after upgrade, got $userVersion" }
