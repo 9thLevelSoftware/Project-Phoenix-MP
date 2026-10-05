@@ -36,15 +36,3 @@ tasks.matching { it.name == "clean" }.configureEach {
         delete(rootProject.layout.buildDirectory)
     }
 }
-
-// Windows workaround: SQLite JDBC's native loader uses java.io.tmpdir which may resolve
-// to C:\Windows (access-denied). Set the system property before the task executes so the
-// classloader-isolated worker inherits it from the daemon JVM.
-tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
-    doFirst {
-        val userTemp =
-            System.getenv("TEMP") ?: System.getenv("TMP") ?: System.getProperty("java.io.tmpdir")
-        System.setProperty("java.io.tmpdir", userTemp)
-        System.setProperty("org.sqlite.tmpdir", userTemp)
-    }
-}
