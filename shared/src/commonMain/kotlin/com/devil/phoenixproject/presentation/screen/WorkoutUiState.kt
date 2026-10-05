@@ -44,8 +44,8 @@ import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
  * @property autoplayEnabled Whether to auto-advance after set summary
  * @property canGoBack Whether user can navigate to previous exercise
  * @property canSkipForward Whether user can skip to next exercise
- * @property loadBaselineA Load baseline for cable A (base tension to subtract, ~4kg)
- * @property loadBaselineB Load baseline for cable B (base tension to subtract, ~4kg)
+ * @property loadBaselineA Resting load for cable A, used as an activity threshold (engaged when load exceeds this baseline by more than 1 kg)
+ * @property loadBaselineB Resting load for cable B, used as an activity threshold (engaged when load exceeds this baseline by more than 1 kg)
  * @property timedExerciseRemainingSeconds Countdown timer for timed exercises (null = not timed)
  * @property isCurrentExerciseBodyweight True when current exercise is bodyweight (no cable engagement)
  */
