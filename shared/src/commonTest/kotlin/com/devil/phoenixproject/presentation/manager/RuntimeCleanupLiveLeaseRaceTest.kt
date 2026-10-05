@@ -53,7 +53,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             val sessionAttemptsBeforeEnd = harness.fakeWorkoutRepo.saveSessionAttempts.count {
                 it.id == lease.sessionId
             }
-            val completedSetAttemptsBeforeEnd = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count {
+            val completedSetAttemptsBeforeEnd = harness.fakeCompletedSetRepo.insertedCompletedSets.count {
                 it.sessionId == lease.sessionId
             }
             assertEquals(1, sessionAttemptsBeforeEnd)
@@ -90,7 +90,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             )
             assertEquals(
                 completedSetAttemptsBeforeEnd,
-                harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count { it.sessionId == lease.sessionId },
+                harness.fakeCompletedSetRepo.insertedCompletedSets.count { it.sessionId == lease.sessionId },
             )
         } finally {
             if (!releaseReplace.isCompleted) releaseReplace.complete(Unit)
@@ -124,7 +124,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             val sessionAttemptsBeforeAction = harness.fakeWorkoutRepo.saveSessionAttempts.count {
                 it.id == lease.sessionId
             }
-            val completedSetAttemptsBeforeAction = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count {
+            val completedSetAttemptsBeforeAction = harness.fakeCompletedSetRepo.insertedCompletedSets.count {
                 it.sessionId == lease.sessionId
             }
             assertEquals(1, sessionAttemptsBeforeAction)
@@ -188,7 +188,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             )
             assertEquals(
                 completedSetAttemptsBeforeAction,
-                harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count { it.sessionId == lease.sessionId },
+                harness.fakeCompletedSetRepo.insertedCompletedSets.count { it.sessionId == lease.sessionId },
             )
 
             val loadCallsAfterCleanup = harness.fakeActiveWorkoutRuntimeRepository.loadCalls
@@ -225,7 +225,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             val sessionAttemptsBeforeAction = harness.fakeWorkoutRepo.saveSessionAttempts.count {
                 it.id == lease.sessionId
             }
-            val completedSetAttemptsBeforeAction = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count {
+            val completedSetAttemptsBeforeAction = harness.fakeCompletedSetRepo.insertedCompletedSets.count {
                 it.sessionId == lease.sessionId
             }
 
@@ -280,7 +280,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             )
             assertEquals(
                 completedSetAttemptsBeforeAction,
-                harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count { it.sessionId == lease.sessionId },
+                harness.fakeCompletedSetRepo.insertedCompletedSets.count { it.sessionId == lease.sessionId },
             )
 
             val loadCallsAfterCleanup = harness.fakeActiveWorkoutRuntimeRepository.loadCalls

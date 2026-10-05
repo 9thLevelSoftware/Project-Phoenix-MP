@@ -168,15 +168,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         collapseCompletedSetsToLatestLogicalAttempts(sets, routineSessionBySessionId::get)
     }
 
-    override suspend fun saveCompletedSet(set: CompletedSet) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                queries.insertCompletedSetRow(set)
-                queries.markWorkoutComponentDirty(set.sessionId)
-            }
-        }
-    }
-
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? = withContext(Dispatchers.IO) {
         val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
             .coerceAtLeast(0)
@@ -223,15 +214,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         queries.markWorkoutComponentDirty(session.id)
 
         completedSet
-    }
-
-    override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                sets.forEach { set -> queries.insertCompletedSetRow(set) }
-                sets.mapTo(linkedSetOf()) { it.sessionId }.forEach(queries::markWorkoutComponentDirty)
-            }
-        }
     }
 
     override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = withContext(Dispatchers.IO) {

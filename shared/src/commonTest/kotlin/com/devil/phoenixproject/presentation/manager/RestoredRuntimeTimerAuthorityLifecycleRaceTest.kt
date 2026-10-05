@@ -422,7 +422,7 @@ class RestoredRuntimeTimerAuthorityLifecycleRaceTest {
             restDeadlineEpochMs = restDeadlineEpochMs,
         )
         harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
-        harness.fakeCompletedSetRepo.saveCompletedSet(
+        harness.fakeCompletedSetRepo.insertCompletedSet(
             CompletedSet(
                 id = "durable-$routineSessionId",
                 sessionId = sourceStableSessionId,
