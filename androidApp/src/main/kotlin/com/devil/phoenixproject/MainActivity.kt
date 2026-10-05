@@ -57,7 +57,9 @@ class MainActivity : ComponentActivity() {
             composeNight = applicationNight == NightSample.YES,
         )
         val useDark = resolveUseDarkColors(themeMode, systemDark)
-        val windowColor = if (useDark) WINDOW_BACKGROUND_DARK else WINDOW_BACKGROUND_LIGHT
+        val windowColor = getColor(
+            if (useDark) R.color.phoenix_window_background_dark else R.color.phoenix_window_background_light,
+        )
         window.setBackgroundDrawable(ColorDrawable(windowColor))
         return if (useDark) {
             SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -95,10 +97,5 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Logger.w(tag = "MainActivity") { "Failed to apply locale before composition: ${e.message}" }
         }
-    }
-
-    private companion object {
-        const val WINDOW_BACKGROUND_DARK = 0xFF0F172A.toInt()
-        const val WINDOW_BACKGROUND_LIGHT = 0xFFF8FAFC.toInt()
     }
 }

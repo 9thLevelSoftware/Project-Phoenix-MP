@@ -63,6 +63,34 @@ class Issue677WindowThemeContractTest {
         assertTrue(source.contains("applicationContext.resources.configuration"))
         assertTrue(source.contains("enableEdgeToEdge("))
         assertTrue(source.contains("setBackgroundDrawable"))
+        assertTrue(source.contains("R.color.phoenix_window_background_dark"))
+        assertTrue(source.contains("R.color.phoenix_window_background_light"))
+        assertFalse(source.contains("0xFF0F172A"), "MainActivity must not hardcode the dark window hex.")
+        assertFalse(source.contains("0xFFF8FAFC"), "MainActivity must not hardcode the light window hex.")
+    }
+
+    @Test
+    fun mainActivityWindowColors_areUnqualifiedResources() {
+        val day = read("androidApp/src/main/res/values/colors.xml")
+        val night = read("androidApp/src/main/res/values-night/colors.xml")
+        assertTrue(day.contains("name=\"phoenix_window_background_light\""))
+        assertTrue(day.contains("name=\"phoenix_window_background_dark\""))
+        assertTrue(
+            day.contains("#FFF8FAFC") || day.contains("#F8FAFC"),
+            "Unqualified light window color must stay Slate50.",
+        )
+        assertTrue(
+            day.contains("#FF0F172A") || day.contains("#0F172A"),
+            "Unqualified dark window color must stay Slate900.",
+        )
+        assertFalse(
+            night.contains("phoenix_window_background_light"),
+            "Light window color must stay unqualified so a night configuration cannot swap it.",
+        )
+        assertFalse(
+            night.contains("phoenix_window_background_dark"),
+            "Dark window color must stay unqualified so a night configuration cannot swap it.",
+        )
     }
 
     @Test
