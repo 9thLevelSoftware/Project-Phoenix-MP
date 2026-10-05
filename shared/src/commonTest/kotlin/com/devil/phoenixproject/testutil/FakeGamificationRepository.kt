@@ -41,19 +41,6 @@ class FakeGamificationRepository : GamificationRepository {
     var saveRpgProfileFailure: Throwable? = null
 
     // Test control methods
-    fun setStreakInfo(info: StreakInfo) {
-        _streakInfoFlow.value = info
-    }
-
-    fun setGamificationStats(stats: GamificationStats) {
-        _gamificationStatsFlow.value = stats
-    }
-
-    fun addEarnedBadge(badge: EarnedBadge) {
-        earnedBadges[badge.badgeId] = badge
-        updateFlows()
-    }
-
     fun setBadgeProgress(badgeId: String, current: Int, target: Int) {
         badgeProgress[badgeId] = current to target
     }
@@ -131,7 +118,6 @@ class FakeGamificationRepository : GamificationRepository {
     override suspend fun updateStats(profileId: String) {
         updateStatsCallCount++
         updateStatsProfileIds += profileId
-        // No-op in fake - stats are set directly via setGamificationStats
     }
 
     override suspend fun checkAndAwardBadges(profileId: String): List<Badge> {

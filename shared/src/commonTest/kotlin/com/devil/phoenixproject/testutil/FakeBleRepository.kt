@@ -196,28 +196,12 @@ class FakeBleRepository : BleRepository {
         _reconnectionRequested.emit(request)
     }
 
-    fun setScannedDevices(devices: List<ScannedDevice>) {
-        _scannedDevices.value = devices
-    }
-
-    fun setHandleDetection(detection: HandleDetection) {
-        _handleDetection.value = detection
-    }
-
     fun setHandleState(state: HandleState) {
         _handleState.value = state
     }
 
-    fun setHeuristicData(data: HeuristicStatistics?) {
-        _heuristicData.value = data
-    }
-
     fun setDiagnostics(data: DiagnosticPacket?) {
         _diagnostics.value = data
-    }
-
-    fun setDiscoModeActive(active: Boolean) {
-        _discoModeActive.value = active
     }
 
     fun reset() {

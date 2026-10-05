@@ -44,10 +44,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
 
-    fun setSessionExercise(sessionId: String, exerciseId: String) {
-        sessionExerciseIds[sessionId] = exerciseId
-    }
-
     fun setSessionRoutine(sessionId: String, routineSessionId: String) {
         sessionRoutineIds[sessionId] = routineSessionId
     }
