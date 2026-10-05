@@ -27,6 +27,8 @@ import kotlin.random.Random
 import kotlinx.coroutines.delay
 import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
+import com.devil.phoenixproject.ui.theme.Slate800
+import com.devil.phoenixproject.ui.theme.Slate900
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -36,8 +38,6 @@ private val FireOrange = Color(0xFFFF6B35)
 private val FireYellow = Color(0xFFFFB347)
 private val FireRed = Color(0xFFE63946)
 private val EmberGold = Color(0xFFFFD700)
-private val DarkSlate = Color(0xFF0F172A)
-private val DeepNavy = Color(0xFF1E293B)
 
 /**
  * Animated splash screen with the Project Phoenix logo.
@@ -139,9 +139,9 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        DarkSlate,
-                        DeepNavy,
-                        DarkSlate,
+                        Slate900,
+                        Slate800,
+                        Slate900,
                     ),
                 ),
             ),
