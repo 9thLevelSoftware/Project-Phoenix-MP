@@ -10585,7 +10585,6 @@ class ActiveSessionEngine(
                 val exerciseName = selectedExercise?.name
 
                 val metrics = coordinator.collectedMetrics.snapshot()
-                Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
                 val summary = calculateSetSummaryMetrics(
                     metrics = metrics,
                     repCount = repCount.totalReps,
