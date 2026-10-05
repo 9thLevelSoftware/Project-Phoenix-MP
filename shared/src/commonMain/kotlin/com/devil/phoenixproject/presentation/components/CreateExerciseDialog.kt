@@ -13,8 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -301,6 +304,11 @@ fun CreateExerciseDialog(
                                 .height(56.dp)
                                 .clearAndSetSemantics {
                                     contentDescription = historyContentDescription
+                                    role = Role.Button
+                                    onClick(label = historyContentDescription) {
+                                        onViewHistory()
+                                        true
+                                    }
                                 },
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,

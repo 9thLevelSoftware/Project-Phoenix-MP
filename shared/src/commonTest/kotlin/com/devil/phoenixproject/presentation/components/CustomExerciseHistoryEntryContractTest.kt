@@ -126,6 +126,10 @@ class CustomExerciseHistoryEntryContractTest {
         assertContains(button, "contentColor = MaterialTheme.colorScheme.onSurfaceVariant")
         assertContains(button, "clearAndSetSemantics")
         assertContains(button, "contentDescription = historyContentDescription")
+        // Kilo review #4188271007: clearAndSetSemantics drops the clickable's
+        // activation semantics unless they are re-added (AnimatedActionButton pattern).
+        assertContains(button, "role = Role.Button")
+        assertContains(button, "onClick(label = historyContentDescription)")
 
         assertFalse(button.contains("onSave"), "History must never save the draft: $button")
         assertFalse(button.contains("onDelete"), "History must never delete: $button")
