@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
 // --- CORE BRAND COLORS ---
 // Primary: "Phoenix Flame" - Used for FABs, Main Actions, Active States
 val PhoenixOrangeLight = Color(0xFFE65100) // Deep energetic orange (light mode)
-val PhoenixOrangeDark = Color(0xFFFF9149) // Vibrant orange (dark mode) - was too pink/salmon
+private val PhoenixOrangeDark = Color(0xFFFF9149) // Vibrant orange (dark mode) - was too pink/salmon
 
 // Fire gradient colors for Just Lift button
 val FlameOrange = Color(0xFFFF6B00) // Core flame orange
@@ -19,7 +19,7 @@ val FlameRed = Color(0xFFE64A19) // Outer flame red-orange
 
 // Secondary: "Ember Gold" - Used for Secondary Actions, Toggles
 val EmberYellowLight = Color(0xFF6A5F00) // Olive gold (light mode)
-val EmberYellowDark = Color(0xFFE2C446) // Bright gold (dark mode)
+private val EmberYellowDark = Color(0xFFE2C446) // Bright gold (dark mode)
 
 // Tertiary: "Cooling Ash" - Used for accents to balance the heat
 val AshBlueLight = Color(0xFF006684) // Deep teal (light mode)
@@ -29,7 +29,7 @@ val AshBlueDark = Color(0xFF6ED2FF) // Electric cyan (dark mode)
 // 2025 Trend: Tinted neutrals instead of pure grey
 val Slate950 = Color(0xFF020617) // Almost black, blue-tinted (OLED friendly)
 val Slate900 = Color(0xFF0F172A) // Deep background
-val Slate800 = Color(0xFF1E293B) // Card background
+private val Slate800 = Color(0xFF1E293B) // Card background
 val Slate700 = Color(0xFF334155) // Border/Divider
 val Slate400 = Color(0xFF94A3B8) // Subtext
 val Slate200 = Color(0xFFE2E8F0) // Light mode surfaces
