@@ -88,22 +88,8 @@ interface SyncRepository {
 
     // === Portal Push Operations (full domain objects) ===
 
-    /**
-     * Get full WorkoutSession domain objects modified since timestamp, scoped to profile.
-     * Returns rich objects with routineSessionId, totalVolumeKg, etc. needed by PortalSyncAdapter.
-     */
-    suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSession>
-
     /** Atomically expands every dirty portal parent to all of its live component rows. */
-    suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
-        getWorkoutSessionsModifiedSince(0L, profileId).map { session ->
-            WorkoutComponentSnapshot(
-                session = session,
-                portalSessionId = session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id,
-                localSyncGeneration = 0L,
-            )
-        },
-    )
+    suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot
 
     /** Clears only unchanged component generations belonging to accepted portal parents. */
     suspend fun acknowledgeWorkoutSnapshot(

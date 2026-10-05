@@ -2624,7 +2624,7 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `getWorkoutSessionsModifiedSince maps persisted updatedAt for push LWW`() = runTest {
+    fun `dirty workout snapshot maps persisted updatedAt for push LWW`() = runTest {
         val startedAt = 1_600_000_000_000L
         val lastEdit = 1_700_000_000_000L
         insertHistoricalSession(
@@ -2641,7 +2641,7 @@ class SqlDelightSyncRepositoryTest {
         )
         database.phoenixDatabaseQueries.updateSessionTimestamp(lastEdit, "session-domain-updated-at")
 
-        val sessions = repository.getWorkoutSessionsModifiedSince(0L, "active-profile")
+        val sessions = repository.getDirtyWorkoutSnapshot("active-profile").sessions
         val session = sessions.single { it.id == "session-domain-updated-at" }
         assertEquals(lastEdit, session.updatedAt)
     }

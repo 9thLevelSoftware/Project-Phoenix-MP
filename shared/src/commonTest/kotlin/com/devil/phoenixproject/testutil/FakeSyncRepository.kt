@@ -75,12 +75,6 @@ class FakeSyncRepository : SyncRepository {
 
     // === Portal Push Operations ===
 
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
-        workoutSessionsToReturn.filter { session ->
-            session.id !in pulledSessionIdsWithoutLocalData &&
-                (updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true)
-        }
-
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
         components = workoutSessionsToReturn.map { session ->
             WorkoutComponentSnapshot(
