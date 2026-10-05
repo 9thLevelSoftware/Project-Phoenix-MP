@@ -68,19 +68,6 @@ sealed interface ProfilePreferenceCanonicalDecodeResult {
     ) : ProfilePreferenceCanonicalDecodeResult
 }
 
-// IdMappings is used by SyncRepository / SqlDelightSyncRepository to stamp server-assigned
-// UUIDs back onto locally-created rows after a successful push. It is NOT part of the wire
-// format for the current Edge Functions (which use client-provided UUIDs); it exists to
-// support legacy push flows and the updateServerIds() repository contract.
-@Serializable
-data class IdMappings(
-    val sessions: Map<String, String> = emptyMap(),
-    val records: Map<String, String> = emptyMap(),
-    val routines: Map<String, String> = emptyMap(),
-    val exercises: Map<String, String> = emptyMap(),
-    val badges: Map<String, String> = emptyMap(),
-)
-
 // === Auth DTOs ===
 
 @Serializable

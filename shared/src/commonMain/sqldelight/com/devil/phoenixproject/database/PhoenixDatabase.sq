@@ -3901,19 +3901,11 @@ selectCustomExercisesModifiedSince:
 SELECT * FROM Exercise
 WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL;
 
--- Update exercise server ID
-updateExerciseServerId:
-UPDATE Exercise SET serverId = ? WHERE id = ?;
-
 -- Badges scoped to active profile for sync push
 selectBadgesModifiedSince:
 SELECT * FROM EarnedBadge
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId;
-
--- Update badge server ID
-updateBadgeServerId:
-UPDATE EarnedBadge SET serverId = ? WHERE id = ?;
 
 -- Get gamification stats for sync (profile-scoped)
 selectGamificationStatsForSync:
