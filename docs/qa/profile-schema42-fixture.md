@@ -14,7 +14,7 @@ $repoRoot = (Get-Location).Path
 $upgradeApk = (Resolve-Path 'androidApp\build\outputs\apk\debug\androidApp-debug.apk').Path
 git check-ignore -q .worktrees/profile-schema42
 git fetch origin ac84d9bb8e156002833ad526bf324a8f12710da0
-git worktree add .worktrees/profile-schema42 -b codex/schema-42-fixture ac84d9bb8e156002833ad526bf324a8f12710da0
+git worktree add --detach .worktrees/profile-schema42 ac84d9bb8e156002833ad526bf324a8f12710da0
 Set-Location .worktrees/profile-schema42
 ```
 
@@ -25,7 +25,7 @@ Set-Location .worktrees/profile-schema42
 +            version = 42
 ```
 
-The fixture branch must not contain `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm`.
+The detached fixture worktree must not contain `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm`.
 
 On commit `ac84d9bb8e156002833ad526bf324a8f12710da0` the SQLDelight database is still `VitruvianDatabase`. Build that worktree with its Gradle tasks `:shared:generateCommonMainVitruvianDatabaseInterface` and `:shared:verifyCommonMainVitruvianDatabaseMigration`. Do not substitute the current checkout's `PhoenixDatabase` task names, and do not pass `--offline`.
 
