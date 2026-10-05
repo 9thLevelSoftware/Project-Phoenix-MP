@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.util.BackupDestination
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -263,12 +264,13 @@ class SettingsManager(
 
     fun kgToDisplay(kg: Float, unit: WeightUnit): Float = when (unit) {
         WeightUnit.KG -> kg
-        WeightUnit.LB -> kg * 2.20462f
+        WeightUnit.LB -> UnitConverter.kgToLb(kg)
     }
 
     fun displayToKg(display: Float, unit: WeightUnit): Float = when (unit) {
         WeightUnit.KG -> display
-        WeightUnit.LB -> display / 2.20462f
+        // Divide by KG_TO_LB. lbToKg uses LB_TO_KG (0.453592f), which is not the inverse.
+        WeightUnit.LB -> display / UnitConverter.KG_TO_LB
     }
 
     fun formatWeight(kg: Float, unit: WeightUnit): String {

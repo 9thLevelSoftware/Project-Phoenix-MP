@@ -37,7 +37,7 @@ private val log = Logger.withTag("BackupDestinationResolver.iOS")
  * [BackupDestination.Custom].
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosBackupDestinationResolver(
+internal class IosBackupDestinationResolver(
     private val preferencesManager: PreferencesManager,
 ) : BackupDestinationResolver {
 

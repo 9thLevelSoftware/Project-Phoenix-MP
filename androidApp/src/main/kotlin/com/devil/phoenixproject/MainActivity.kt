@@ -11,6 +11,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.NightSample
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -57,7 +58,9 @@ class MainActivity : ComponentActivity() {
             composeNight = applicationNight == NightSample.YES,
         )
         val useDark = resolveUseDarkColors(themeMode, systemDark)
-        val windowColor = if (useDark) WINDOW_BACKGROUND_DARK else WINDOW_BACKGROUND_LIGHT
+        val windowColor = getColor(
+            if (useDark) R.color.phoenix_window_background_dark else R.color.phoenix_window_background_light,
+        )
         window.setBackgroundDrawable(ColorDrawable(windowColor))
         return if (useDark) {
             SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -77,7 +80,7 @@ class MainActivity : ComponentActivity() {
     private fun applyStoredLocaleBeforeComposition() {
         try {
             val prefs = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
-            val langCode = prefs.getString("language", null)
+            val langCode = prefs.getString(SettingsPreferencesManager.KEY_LANGUAGE, null)
             if (!langCode.isNullOrBlank()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val localeManager = getSystemService(android.app.LocaleManager::class.java)
@@ -95,10 +98,5 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Logger.w(tag = "MainActivity") { "Failed to apply locale before composition: ${e.message}" }
         }
-    }
-
-    private companion object {
-        const val WINDOW_BACKGROUND_DARK = 0xFF0F172A.toInt()
-        const val WINDOW_BACKGROUND_LIGHT = 0xFFF8FAFC.toInt()
     }
 }

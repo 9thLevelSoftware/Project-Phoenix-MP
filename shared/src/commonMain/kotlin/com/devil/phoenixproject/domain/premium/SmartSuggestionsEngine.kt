@@ -24,7 +24,6 @@ object SmartSuggestionsEngine {
 
     private const val SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000L
     private const val FOUR_WEEKS_MS = 28 * 24 * 60 * 60 * 1000L
-    private const val FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000L
     private const val ONE_DAY_MS = 24 * 60 * 60 * 1000L
 
     private const val IMBALANCE_LOW_THRESHOLD = 0.25f

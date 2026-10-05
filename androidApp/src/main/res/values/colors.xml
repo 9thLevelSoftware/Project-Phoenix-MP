@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="phoenix_window_background">#FFF8FAFC</color>
+    <!-- Selected in code from the persisted theme. No values-night override, so uiMode cannot swap them. -->
+    <color name="phoenix_window_background_light">#FFF8FAFC</color>
+    <color name="phoenix_window_background_dark">#FF0F172A</color>
 </resources>

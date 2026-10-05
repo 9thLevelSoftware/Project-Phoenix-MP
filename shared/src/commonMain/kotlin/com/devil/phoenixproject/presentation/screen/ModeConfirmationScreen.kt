@@ -20,6 +20,7 @@ import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -48,7 +49,9 @@ fun ModeConfirmationScreen(
     oneRepMaxValues: Map<String, Float> = emptyMap(),
     prWeightValues: Map<String, Float> = emptyMap(),
     weightUnit: WeightUnit = WeightUnit.KG,
-    kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit ->
+        if (unit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg
+    },
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
@@ -269,7 +272,9 @@ private fun ConfigurableExerciseCard(
     oneRepMaxKg: Float?,
     prWeight: Float? = null,
     weightUnit: WeightUnit = WeightUnit.KG,
-    kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit ->
+        if (unit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg
+    },
     onConfigUpdated: (ExerciseConfig) -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266
 ) {

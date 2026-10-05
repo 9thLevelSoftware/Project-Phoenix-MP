@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
+import com.devil.phoenixproject.util.UnitConverter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -671,8 +672,8 @@ private fun previewWorkoutActions(): WorkoutActions = workoutActions(
     onStartNextExercise = {},
     onJumpToExercise = { _ -> },
     onUpdateParameters = { _ -> },
-    kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-    displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
+    kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg },
+    displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / UnitConverter.KG_TO_LB else display },
     formatWeight = { weight, unit ->
         "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
     },

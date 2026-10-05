@@ -34,7 +34,6 @@ sealed interface MachineSafetyUiState {
     data class Visible(
         val document: MachineSafetyHazardDocument,
         val restoreWasRejected: Boolean = false,
-        val blockedMachineStart: Boolean = true,
     ) : MachineSafetyUiState {
         val identity: MachineSafetyHazardIdentity
             get() = MachineSafetyHazardIdentity(document.trainerAddress, document.generation)

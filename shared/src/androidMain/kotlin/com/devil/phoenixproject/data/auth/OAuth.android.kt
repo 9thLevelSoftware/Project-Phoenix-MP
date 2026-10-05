@@ -34,6 +34,13 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
  * captured by [OAuthRedirectActivity] in the host app and delivered back
  * here via [AndroidOAuthBridge].
  *
+ * [launch]'s `callbackScheme` argument is ignored. Which redirects this
+ * process receives is fixed by the host app's manifest intent filter on
+ * `OAuthRedirectActivity` (`com.devil.phoenixproject` / `auth-callback`),
+ * not by the value passed in. The parameter remains so this actual matches
+ * the shared [OAuthLauncher] signature that iOS uses, where the scheme is
+ * passed to `ASWebAuthenticationSession`.
+ *
  * If the user dismisses the browser without completing the flow (Back / Home
  * / kill the tab), the host activity will resume without a callback ever
  * being delivered. An [Application.ActivityLifecycleCallbacks] listener
@@ -41,6 +48,15 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
  */
 actual class OAuthLauncher(private val context: Context) {
 
+    /**
+     * Opens [authorizeUrl] and waits for [OAuthRedirectActivity] to deliver
+     * the callback URL.
+     *
+     * @param callbackScheme unused. Android routes the OAuth redirect through
+     * the host app's manifest intent filter on `OAuthRedirectActivity`. Kept
+     * so this signature matches the iOS actual, which passes the scheme to
+     * `ASWebAuthenticationSession`.
+     */
     actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> {
         val deferred = AndroidOAuthBridge.beginFlow()
         val application = context.applicationContext as? Application

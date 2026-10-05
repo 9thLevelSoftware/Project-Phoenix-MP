@@ -66,7 +66,4 @@ data class RackLoadAdjustment(
     val displayLoadKg: Float = 0f,
     val adjustedMachineWeightPerCableKg: Float = 0f,
     val loadContributions: List<RackLoadContribution> = emptyList(),
-) {
-    val hasLoadAdjustment: Boolean
-        get() = externalAddedLoadKg > 0f || counterweightKg > 0f
-}
+)

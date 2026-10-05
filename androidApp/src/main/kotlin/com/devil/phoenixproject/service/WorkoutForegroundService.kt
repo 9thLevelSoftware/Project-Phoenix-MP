@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
 import com.devil.phoenixproject.R
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -29,9 +30,6 @@ class WorkoutForegroundService : Service() {
     companion object {
         private const val CHANNEL_ID = "phoenix_workout_channel"
         private const val NOTIFICATION_ID = 1
-
-        /** Same key [MainActivity] reads from [ThemeViewModel.THEME_PREFS_FILE]. */
-        private const val PERSISTED_LANGUAGE_KEY = "language"
 
         private val log = Logger.withTag("WorkoutForegroundService")
     }
@@ -141,14 +139,15 @@ class WorkoutForegroundService : Service() {
      * Context whose string resources follow the in-app locale.
      *
      * API 33+ per-app locales set by [MainActivity] already apply to this service.
-     * API 26-32 only update the activity configuration, so resolve copy against the
-     * same persisted language before reading notification strings.
+     * API 26-32 only update the activity configuration, so resolve copy against
+     * [SettingsPreferencesManager.KEY_LANGUAGE] in [ThemeViewModel.THEME_PREFS_FILE]
+     * before reading notification strings.
      */
     private fun notificationStringsContext(): Context {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return this
         val langCode = runCatching {
             getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
-                .getString(PERSISTED_LANGUAGE_KEY, null)
+                .getString(SettingsPreferencesManager.KEY_LANGUAGE, null)
         }.getOrNull()
         if (langCode.isNullOrBlank()) return this
         val locale = Locale.forLanguageTag(langCode)

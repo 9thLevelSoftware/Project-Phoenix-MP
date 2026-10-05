@@ -44,17 +44,6 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         updateFlows()
     }
 
-    fun reset() {
-        cycles.clear()
-        cycleDays.clear()
-        cycleProgress.clear()
-        cycleProgressions.clear()
-        activeCycleId = null
-        updateCycleProgressAttempts.clear()
-        beforeUpdateCycleProgress = {}
-        updateFlows()
-    }
-
     private fun updateFlows() {
         _cyclesFlow.value = cycles.values.sortedByDescending { it.createdAt }
         _activeCycleFlow.value = activeCycleId?.let { cycles[it] }

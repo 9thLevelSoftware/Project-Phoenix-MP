@@ -15,7 +15,7 @@ import platform.Foundation.NSInputStream
  * by keeping leftover incomplete bytes for the next read.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class FileBackupStreamSource(private val filePath: String) : BackupStreamSource {
+internal class FileBackupStreamSource(private val filePath: String) : BackupStreamSource {
     private var stream: NSInputStream? = null
     private val byteBuffer = ByteArray(8192)
 

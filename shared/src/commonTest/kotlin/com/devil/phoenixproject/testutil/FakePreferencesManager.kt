@@ -2,10 +2,8 @@ package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.domain.model.PhoenixModel
-import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.VulgarTier
-import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,14 +32,6 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = preferences
     }
 
-    suspend fun setWeightUnit(unit: WeightUnit) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(weightUnit = unit)
-    }
-
-    suspend fun setStopAtTop(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(stopAtTop = enabled)
-    }
-
     override suspend fun setEnableVideoPlayback(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(enableVideoPlayback = enabled)
     }
@@ -56,40 +46,8 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(lastConnectedModel = model)
     }
 
-    suspend fun setBeepsEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(beepsEnabled = enabled)
-    }
-
-    suspend fun setColorScheme(scheme: Int) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(colorScheme = scheme)
-    }
-
-    suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(discoModeUnlocked = unlocked)
-    }
-
-    suspend fun setAudioRepCountEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
-    }
-
-    suspend fun setSummaryCountdownSeconds(seconds: Int) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(summaryCountdownSeconds = seconds)
-    }
-
     suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoStartCountdownSeconds = seconds)
-    }
-
-    suspend fun setRepCountTiming(timing: com.devil.phoenixproject.domain.model.RepCountTiming) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(repCountTiming = timing)
-    }
-
-    suspend fun setGamificationEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(gamificationEnabled = enabled)
-    }
-
-    suspend fun setWeightIncrement(increment: Float) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(weightIncrement = increment)
     }
 
     suspend fun setAutoStartRoutine(enabled: Boolean) {
@@ -98,18 +56,6 @@ class FakePreferencesManager : PreferencesManager {
 
     suspend fun setBodyWeightKg(weightKg: Float) {
         _preferencesFlow.value = _preferencesFlow.value.copy(bodyWeightKg = weightKg)
-    }
-
-    suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(countdownBeepsEnabled = enabled)
-    }
-
-    suspend fun setRepSoundEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(repSoundEnabled = enabled)
-    }
-
-    suspend fun setMotionStartEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(motionStartEnabled = enabled)
     }
 
     override suspend fun setAutoBackupEnabled(enabled: Boolean) {
@@ -132,18 +78,6 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(language = language)
     }
 
-    suspend fun setVoiceStopEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(voiceStopEnabled = enabled)
-    }
-
-    suspend fun setSafeWord(word: String?) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(safeWord = word)
-    }
-
-    suspend fun setSafeWordCalibrated(calibrated: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(safeWordCalibrated = calibrated)
-    }
-
     override suspend fun setBackupDestination(destination: BackupDestination) {
         _preferencesFlow.value = _preferencesFlow.value.copy(backupDestination = destination)
     }
@@ -154,24 +88,8 @@ class FakePreferencesManager : PreferencesManager {
         )
     }
 
-    suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(autoEndOnVelocityLoss = enabled)
-    }
-
     suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(weightSuggestionsEnabled = enabled)
-    }
-
-    suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(defaultScalingBasis = basis)
-    }
-
-    suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseUsePercentOfPR = enabled)
-    }
-
-    suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120))
     }
 
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
