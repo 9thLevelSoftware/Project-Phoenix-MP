@@ -1563,11 +1563,7 @@ class KableBleConnectionManager(
         val opcode = command.firstOrNull()?.toInt()?.and(0xFF)
         val opcodeText = opcode?.let { "0x${it.toString(16).padStart(2, '0').uppercase()}" } ?: "n/a"
         val commandIdText = if (command.size >= 4) {
-            val commandId = (command[0].toInt() and 0xFF) or
-                ((command[1].toInt() and 0xFF) shl 8) or
-                ((command[2].toInt() and 0xFF) shl 16) or
-                ((command[3].toInt() and 0xFF) shl 24)
-            ", commandIdLE=$commandId"
+            ", commandIdLE=${getInt32LE(command, 0)}"
         } else {
             ""
         }

@@ -37,8 +37,7 @@ fun getUInt16LE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0
  * @return Signed value in range [-32768, 32767]
  */
 fun getInt16LE(data: ByteArray, offset: Int): Int {
-    val unsigned = (data[offset].toInt() and 0xFF) or
-        ((data[offset + 1].toInt() and 0xFF) shl 8)
+    val unsigned = getUInt16LE(data, offset)
     // Sign-extend from 16-bit to 32-bit
     return if (unsigned >= 0x8000) unsigned - 0x10000 else unsigned
 }
