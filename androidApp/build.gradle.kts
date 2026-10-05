@@ -292,10 +292,11 @@ dependencies {
     // Logging
     implementation(libs.kermit)
 
-    // Image Loading - Coil 3
+    // Image Loading - Coil 3.
+    // The OkHttp engine is already on the runtime classpath via :shared
+    // (META-INF/services/io.ktor.client.HttpClientEngineContainer).
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor)
-    implementation(libs.ktor.client.okhttp)
 
     // Testing - Unit Tests
     testImplementation(libs.junit)
