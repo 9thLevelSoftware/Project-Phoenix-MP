@@ -12,7 +12,6 @@ import kotlinx.coroutines.launch
 import platform.Foundation.NSData
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
-import platform.Foundation.base64EncodedStringWithOptions
 import platform.Foundation.lastPathComponent
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UniformTypeIdentifiers.UTTypeFolder
@@ -85,7 +84,7 @@ actual class BackupLocationPicker {
             error = null,
         )
 
-        val base64Bookmark = bookmarkData?.base64EncodedStringWithOptions(0u)
+        val base64Bookmark = bookmarkData?.let { encodeBookmarkBase64(it) }
 
         if (base64Bookmark == null) {
             log.w { "Failed to create security-scoped bookmark — destination would be inaccessible on next launch" }
