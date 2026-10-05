@@ -110,24 +110,11 @@ actual class BackupLocationPicker {
      * Present the directory picker from the current root view controller.
      */
     private fun presentDirectoryPicker(delegate: DocumentPickerDelegate) {
-        val rootViewController = keyWindowRootViewController() ?: run {
-            log.e { "Could not get root view controller" }
-            delegate.onCancelled()
-            return
-        }
-
         val picker = UIDocumentPickerViewController(
             forOpeningContentTypes = listOf(UTTypeFolder),
         )
-
-        picker.delegate = delegate
         picker.allowsMultipleSelection = false
-
-        rootViewController.presentViewController(
-            picker,
-            animated = true,
-            completion = null,
-        )
+        presentDocumentPicker(picker, delegate, log)
     }
 }
 

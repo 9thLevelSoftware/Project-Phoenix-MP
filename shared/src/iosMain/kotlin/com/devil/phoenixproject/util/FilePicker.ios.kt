@@ -123,37 +123,18 @@ actual class FilePicker {
      * Present document picker for importing a file of [contentType].
      */
     private fun presentImportPicker(contentType: UTType, delegate: DocumentPickerDelegate) {
-        val rootViewController = keyWindowRootViewController() ?: run {
-            log.e { "Could not get root view controller" }
-            delegate.onCancelled()
-            return
-        }
-
         val picker = UIDocumentPickerViewController(
             forOpeningContentTypes = listOf(contentType),
             asCopy = true, // Copy to app sandbox for security
         )
-
-        picker.delegate = delegate
         picker.allowsMultipleSelection = false
-
-        rootViewController.presentViewController(
-            picker,
-            animated = true,
-            completion = null,
-        )
+        presentDocumentPicker(picker, delegate, log)
     }
 
     /**
      * Present document picker for exporting/saving a file.
      */
     private fun presentExportPicker(tempFilePath: String, delegate: DocumentPickerDelegate) {
-        val rootViewController = keyWindowRootViewController() ?: run {
-            log.e { "Could not get root view controller" }
-            delegate.onCancelled()
-            return
-        }
-
         val fileURL = NSURL.fileURLWithPath(tempFilePath)
 
         // Create picker for exporting the file
@@ -162,13 +143,7 @@ actual class FilePicker {
             asCopy = true, // Export as copy, preserving original
         )
 
-        picker.delegate = delegate
-
-        rootViewController.presentViewController(
-            picker,
-            animated = true,
-            completion = null,
-        )
+        presentDocumentPicker(picker, delegate, log)
     }
 
     /**
