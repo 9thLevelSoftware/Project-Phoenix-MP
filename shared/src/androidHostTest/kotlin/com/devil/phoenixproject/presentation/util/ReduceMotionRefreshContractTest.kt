@@ -52,7 +52,7 @@ class ReduceMotionRefreshContractTest {
             source.contains("return remember(config)"),
             "Reduce motion must not be cached only across configuration changes.",
         )
-        val reads = Regex("""readReduceMotion\(""").findAll(source).count()
+        val reads = Regex("""(?<!fun )readReduceMotion\(""").findAll(source).count()
         assertEquals(
             4,
             reads,
