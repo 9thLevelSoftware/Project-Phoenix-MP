@@ -6,7 +6,6 @@ import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
-import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
@@ -228,43 +227,6 @@ class SqlDelightSyncRepository(
         withContext(Dispatchers.IO) {
             routineIds.chunked(900).forEach { chunk ->
                 queries.clearRoutineUpdatedAt(ids = chunk)
-            }
-        }
-    }
-
-    // === ID Mapping ===
-
-    override suspend fun updateServerIds(mappings: IdMappings) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                mappings.sessions.forEach { (clientId, serverId) ->
-                    queries.updateSessionServerId(serverId, clientId)
-                }
-                mappings.records.forEach { (clientId, serverId) ->
-                    val longId = clientId.toLongOrNull()
-                    if (longId == null) {
-                        Logger.w { "Skipping PR server ID update: invalid clientId '$clientId'" }
-                        return@forEach
-                    }
-                    queries.updatePRServerId(serverId, longId)
-                }
-                mappings.routines.forEach { (clientId, serverId) ->
-                    queries.updateRoutineServerId(serverId, clientId)
-                }
-                mappings.exercises.forEach { (clientId, serverId) ->
-                    queries.updateExerciseServerId(serverId, clientId)
-                }
-                mappings.badges.forEach { (clientId, serverId) ->
-                    val longId = clientId.toLongOrNull()
-                    if (longId == null) {
-                        Logger.w { "Skipping badge server ID update: invalid clientId '$clientId'" }
-                        return@forEach
-                    }
-                    queries.updateBadgeServerId(serverId, longId)
-                }
-            }
-            Logger.d {
-                "Updated server IDs: ${mappings.sessions.size} sessions, ${mappings.records.size} PRs, ${mappings.routines.size} routines"
             }
         }
     }
@@ -983,10 +945,6 @@ class SqlDelightSyncRepository(
     }
 
     // === Portal Push Operations (full domain objects) ===
-
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
-        queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
-    }
 
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot =
         withContext(Dispatchers.IO) {

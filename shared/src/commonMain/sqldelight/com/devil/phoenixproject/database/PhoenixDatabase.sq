@@ -1,4 +1,4 @@
--- Phoenix Project Phoenix Database Schema
+-- Phoenix Database Schema
 -- This will be compiled by SQLDelight to generate type-safe Kotlin code
 
 -- Exercise Library
@@ -1025,7 +1025,7 @@ INSERT INTO WorkoutSession (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert session only if ID doesn't already exist (for sync pull deduplication).
--- Includes updatedAt to prevent re-push (selectSessionsModifiedSince picks up updatedAt IS NULL).
+-- Includes updatedAt so a pulled row carries the push watermark instead of NULL.
 insertSessionIgnore:
 INSERT OR IGNORE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
@@ -1144,8 +1144,7 @@ WHERE id = ?;
 -- untagged row shape matches freshly recorded Just Lift rows and the portal
 -- Just Lift title fallback (exerciseName NULL) keeps working. Matches
 -- updateSessionExerciseTag's unconditional generation bump (including
--- portalOrigin = 1 rows) so selectSessionsModifiedSince and
--- selectDirtyWorkoutPortalParentIds both see the correction.
+-- portalOrigin = 1 rows) so selectDirtyWorkoutPortalParentIds sees the correction.
 clearSessionExerciseTag:
 UPDATE WorkoutSession
 SET exerciseId = NULL, exerciseName = NULL, updatedAt = ?,
@@ -3663,17 +3662,10 @@ WHERE id = ?;
 
 -- ==================== SYNC QUERIES ====================
 
--- Get sessions modified since last sync (for push)
-selectSessionsModifiedSince:
-SELECT * FROM WorkoutSession
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
-AND profile_id = :profileId
-ORDER BY timestamp DESC;
-
 -- Group-complete push gather. The portal's replace_session_children DELETEs every
 -- exercise of a workout before re-inserting the payload, so a portal workout must
 -- only ever be pushed with EVERY live row of its routine group. Whenever one row of
--- a group is in the delta above, the push re-gathers the whole group through this
+-- a group is in the push delta, the push re-gathers the whole group through this
 -- query.
 --
 -- Deliberately NOT selectSessionsByRoutineSessionId: that one also filters
@@ -3693,7 +3685,7 @@ ORDER BY timestamp ASC;
 -- holds the whole group instead and leaves it unstamped.
 --
 -- Same three-table "this device has local data" predicate as
--- selectSessionsModifiedSince and the migration 48 backfill
+-- selectRoutineGroupsWithChildlessRows and the migration 48 backfill
 -- (MetricSample / RepMetric / CompletedSet) — keep them in step. Pulled-origin
 -- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
 -- of this query used a separate PulledWorkoutSession marker table that this
@@ -3712,7 +3704,7 @@ ORDER BY timestamp ASC;
 -- row edited after the cursor — including a childless manual/zero-rep session whose tag
 -- was edited, which must not be mistaken for a pulled row.
 -- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
--- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- the migration (saveRepMetrics, commitCompletedSet, ...) bumps local_sync_generation
 -- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
 -- that newer generation.
 seedLegacySyncedGenerations:
@@ -3909,19 +3901,11 @@ selectCustomExercisesModifiedSince:
 SELECT * FROM Exercise
 WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL;
 
--- Update exercise server ID
-updateExerciseServerId:
-UPDATE Exercise SET serverId = ? WHERE id = ?;
-
 -- Badges scoped to active profile for sync push
 selectBadgesModifiedSince:
 SELECT * FROM EarnedBadge
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId;
-
--- Update badge server ID
-updateBadgeServerId:
-UPDATE EarnedBadge SET serverId = ? WHERE id = ?;
 
 -- Get gamification stats for sync (profile-scoped)
 selectGamificationStatsForSync:

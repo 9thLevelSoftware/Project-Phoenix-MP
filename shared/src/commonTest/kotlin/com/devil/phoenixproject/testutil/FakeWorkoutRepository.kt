@@ -208,10 +208,12 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
         val completedSetRepo = completedSetRepository
         if (completedSet != null && completedSetRepo != null) {
-            val alreadySaved = completedSetRepo.getCompletedSets(session.id)
+            val fakeRepo = completedSetRepo as? FakeCompletedSetRepository
+                ?: error("FakeWorkoutRepository.commitCompletedSet inserts into FakeCompletedSetRepository only")
+            val alreadySaved = fakeRepo.getCompletedSets(session.id)
                 .any { it.id == completedSet.id }
             if (!alreadySaved) {
-                completedSetRepo.saveCompletedSet(completedSet)
+                fakeRepo.insertCompletedSet(completedSet)
             }
         }
         repMetricRepository?.let { repo ->

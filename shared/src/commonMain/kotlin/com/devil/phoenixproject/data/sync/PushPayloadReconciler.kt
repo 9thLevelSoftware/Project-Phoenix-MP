@@ -181,12 +181,6 @@ internal class PushPayloadReconcileReport {
     private val conflictItems = mutableListOf<PushPayloadConflict>()
     private val collapseItems = mutableListOf<PushPayloadCollapse>()
 
-    val conflicts: List<PushPayloadConflict> get() = conflictItems
-    val collapsed: List<PushPayloadCollapse> get() = collapseItems
-
-    /** Rows held back from the push (never sent, never stamped, still local). */
-    val hasHeldBack: Boolean get() = conflictItems.isNotEmpty()
-
     fun recordConflict(table: String, identity: String, entries: List<String>) {
         conflictItems += PushPayloadConflict(table, identity, entries)
     }

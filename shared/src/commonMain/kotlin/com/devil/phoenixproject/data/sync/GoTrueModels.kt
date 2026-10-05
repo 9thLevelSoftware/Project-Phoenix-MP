@@ -19,18 +19,8 @@ data class GoTrueAuthResponse(
 @Serializable
 data class GoTrueUser(
     val id: String,
-    val aud: String = "authenticated",
-    val role: String = "authenticated",
     val email: String? = null,
-    val phone: String? = null,
-    @SerialName("email_confirmed_at") val emailConfirmedAt: String? = null,
-    @SerialName("confirmed_at") val confirmedAt: String? = null,
-    @SerialName("last_sign_in_at") val lastSignInAt: String? = null,
-    @SerialName("app_metadata") val appMetadata: JsonObject? = null,
     @SerialName("user_metadata") val userMetadata: JsonObject? = null,
-    @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null,
-    @SerialName("is_anonymous") val isAnonymous: Boolean = false,
 ) {
     /** Extract display_name from user_metadata if present */
     val displayName: String?

@@ -126,7 +126,7 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 - `data/sync/PortalSyncDtos.kt` — Wire-format DTOs (camelCase JSON, matches the Edge Functions), e.g. `PortalWorkoutSessionDto`, `PortalExerciseDto`
 - `data/sync/PortalSyncAdapter.kt` / `PortalPullAdapter.kt` — Map local rows to push DTOs and pulled DTOs back to local rows
 - `data/sync/ProfilePreferenceSyncCodec.kt`, `ProfilePreferenceSyncPlanner.kt`, `ProfilePreferenceSyncRepository.kt` — Per-profile preference sections sync
-- `data/sync/SyncModels.kt` — Internal (non-wire) sync models: repository/merge entity DTOs (`WorkoutSessionSyncDto`, `PersonalRecordSyncDto`, `RoutineSyncDto`, … used by `mergeSessions` etc.), profile-preference internals, `IdMappings`, auth DTOs
+- `data/sync/SyncModels.kt` — Internal (non-wire) sync models: repository/merge entity DTOs (`WorkoutSessionSyncDto`, `PersonalRecordSyncDto`, `RoutineSyncDto`, … used by `mergeSessions` etc.), profile-preference internals, auth DTOs
 - `data/sync/PortalTokenStorage.kt` — Auth token persistence
 
 ### Sync Trigger Patterns
