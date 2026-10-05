@@ -60,7 +60,7 @@ import platform.darwin.dispatch_time
  * - Coexists with music via AVAudioSession .playAndRecord + .mixWithOthers
  * - Processes partial results to detect the safe word with minimal latency
  */
-class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
+internal class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_NS = 500_000_000L // 500ms in nanoseconds

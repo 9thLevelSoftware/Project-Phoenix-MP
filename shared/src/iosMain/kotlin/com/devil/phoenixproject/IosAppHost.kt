@@ -34,7 +34,7 @@ private data class IosStartupDependencies(
 )
 
 @Composable
-fun IosAppHost() {
+internal fun IosAppHost() {
     var retryAttempt by rememberSaveable { mutableIntStateOf(0) }
     var resolution by remember(retryAttempt) {
         mutableStateOf<StartupDependencyResolution<IosAppDependencies>?>(null)
