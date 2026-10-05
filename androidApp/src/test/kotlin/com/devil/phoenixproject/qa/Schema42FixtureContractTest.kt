@@ -31,10 +31,30 @@ class Schema42FixtureContractTest {
         )
         val readinessEnd = readinessStart + readinessBlock.length
         val forceStop = guide.indexOf("& \$adb shell am force-stop \$package", startIndex = readinessEnd)
-        val sqlInspection = guide.indexOf("sqlite3 databases/phoenix.db", startIndex = forceStop)
+        val hostSqlite = guide.indexOf("platform-tools\\sqlite3.exe", startIndex = forceStop)
+        val sqlInspection = guide.indexOf(
+            "exec-out run-as \$package cat \$RelativePath",
+            startIndex = forceStop,
+        )
+        val databaseCopy = guide.indexOf(
+            "Receive-SandboxBytes 'databases/phoenix.db'",
+            startIndex = sqlInspection,
+        )
+        val userVersionQuery = guide.indexOf(
+            "& \$hostSqlite -readonly -batch \$inspectDb 'PRAGMA user_version;'",
+            startIndex = databaseCopy,
+        )
         assertTrue(
-            "Guide must wait for migration before force-stop and SQL inspection",
-            readinessEnd <= forceStop && forceStop < sqlInspection,
+            "Guide must wait for migration before force-stop, then pipe the database through adb exec-out into host sqlite3",
+            readinessEnd <= forceStop &&
+                forceStop < hostSqlite &&
+                hostSqlite < sqlInspection &&
+                sqlInspection < databaseCopy &&
+                databaseCopy < userVersionQuery,
+        )
+        assertFalse(
+            "Post-migration inspection still runs device-side sqlite3 against databases/phoenix.db",
+            guide.substring(forceStop).contains("sqlite3 databases/phoenix.db"),
         )
     }
 
