@@ -66,10 +66,6 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     // ========== PersonalRecordRepository interface implementation ==========
 
-    override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
-        list.filter { it.profileId == profileId }
-    }
-
     override fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
         list.filter {
             it.profileId == profileId &&
