@@ -686,7 +686,7 @@ class MultiProfileSyncIntegrationTest {
     }
 
     /**
-     * A local edit after migration 49 (e.g. saveRepMetrics / saveCompletedSet): bumps the
+     * A local edit after migration 49 (e.g. saveRepMetrics / commitCompletedSet): bumps the
      * generation past the migration's initial 1 / 0 without touching the parent updatedAt.
      * Freshly inserted rows already sit at 1 / 0, the shape the migration leaves them in.
      */

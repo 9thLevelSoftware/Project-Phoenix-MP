@@ -656,7 +656,7 @@ class SqlDelightWorkoutRepositoryTest {
             after.local_sync_generation,
             "a clear bumps the generation exactly once (no markWorkoutComponentDirty on this path)",
         )
-        assertNotNull(after.updatedAt, "the correction is stamped for selectSessionsModifiedSince")
+        assertNotNull(after.updatedAt, "the correction stamps updatedAt")
         assertEquals(before.totalReps, after.totalReps, "the lift is kept")
         assertEquals(before.workingReps, after.workingReps, "the lift is kept")
         assertEquals(before.mode, after.mode)

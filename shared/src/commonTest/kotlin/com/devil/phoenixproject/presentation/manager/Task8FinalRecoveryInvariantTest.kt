@@ -59,7 +59,7 @@ class Task8FinalRecoveryInvariantTest {
                 document.sourceStableSessionId,
                 document.routineSessionId,
             )
-            harness.fakeCompletedSetRepo.saveCompletedSet(
+            harness.fakeCompletedSetRepo.insertCompletedSet(
                 CompletedSet(
                     id = "scattered-normalized-durable-source",
                     sessionId = document.sourceStableSessionId,

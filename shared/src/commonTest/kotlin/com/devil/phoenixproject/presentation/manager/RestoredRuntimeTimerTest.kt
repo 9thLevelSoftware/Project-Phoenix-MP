@@ -809,7 +809,7 @@ class RestoredRuntimeTimerTest {
             planCase = planCase,
         )
         harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
-        harness.fakeCompletedSetRepo.saveCompletedSet(
+        harness.fakeCompletedSetRepo.insertCompletedSet(
             CompletedSet(
                 id = "durable-$routineSessionId",
                 sessionId = sourceStableSessionId,
@@ -845,7 +845,7 @@ class RestoredRuntimeTimerTest {
             document.sourceStableSessionId,
             document.routineSessionId,
         )
-        harness.fakeCompletedSetRepo.saveCompletedSet(
+        harness.fakeCompletedSetRepo.insertCompletedSet(
             CompletedSet(
                 id = "durable-${document.routineSessionId}",
                 sessionId = document.sourceStableSessionId,

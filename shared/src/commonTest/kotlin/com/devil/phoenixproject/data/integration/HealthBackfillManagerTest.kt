@@ -25,7 +25,7 @@ class HealthBackfillManagerTest {
         repeat(1_001) { index ->
             val session = workoutSession(id = "session-$index", timestamp = index * 10_000L)
             workoutRepository.addSession(session)
-            completedSetRepository.saveCompletedSet(
+            completedSetRepository.insertCompletedSet(
                 completedSet(
                     sessionId = session.id,
                     completedAt = session.timestamp + session.duration,
@@ -58,7 +58,7 @@ class HealthBackfillManagerTest {
         val writer = FakeHealthWorkoutWriter()
         val session = workoutSession(id = "already-exported")
         workoutRepository.addSession(session)
-        completedSetRepository.saveCompletedSet(
+        completedSetRepository.insertCompletedSet(
             completedSet(
                 sessionId = session.id,
                 completedAt = session.timestamp + session.duration,
@@ -95,7 +95,7 @@ class HealthBackfillManagerTest {
         val writer = FakeHealthWorkoutWriter(failAll = true)
         val session = workoutSession(id = "failed")
         workoutRepository.addSession(session)
-        completedSetRepository.saveCompletedSet(
+        completedSetRepository.insertCompletedSet(
             completedSet(
                 sessionId = session.id,
                 completedAt = session.timestamp + session.duration,

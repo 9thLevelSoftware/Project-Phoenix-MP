@@ -90,7 +90,7 @@ class WorkoutExitPersistenceTest {
             listOf(1, 2).forEach { attempt ->
                 val sessionId = "historical-attempt-$attempt"
                 harness.fakeCompletedSetRepo.setSessionRoutine(sessionId, routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "historical-set-$attempt",
                         sessionId = sessionId,
@@ -648,7 +648,7 @@ class WorkoutExitPersistenceTest {
             assertEquals(savedSession, harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId })
             assertEquals(
                 1,
-                harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count {
+                harness.fakeCompletedSetRepo.insertedCompletedSets.count {
                     it.sessionId == lease.sessionId && it.id == savedCompletedSet.id
                 },
             )
@@ -668,7 +668,7 @@ class WorkoutExitPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             val rawMetrics = biomechanicsMetrics()
             harness.coordinator.collectedMetrics.seedAll(rawMetrics)
-            harness.fakeCompletedSetRepo.afterSaveCompletedSet = {
+            harness.fakeCompletedSetRepo.afterInsertCompletedSet = {
                 if (failOnce) {
                     failOnce = false
                     error("forced failure after raw metrics write")
@@ -780,7 +780,7 @@ class WorkoutExitPersistenceTest {
             startTrackedCableSet(harness)
             val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.coordinator.setRepMetrics.seed(repMetric())
-            harness.fakeCompletedSetRepo.afterSaveCompletedSet = { completedSet ->
+            harness.fakeCompletedSetRepo.afterInsertCompletedSet = { completedSet ->
                 if (completedSet.sessionId == leaseA.sessionId && failedCompletedSetId == null) {
                     failedCompletedSetId = completedSet.id
                     error("forced failure after CompletedSet insert")
