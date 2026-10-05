@@ -168,7 +168,7 @@ fun VolumeTrendChart(
                 val data = volumeData[index]
                 val unit = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
                 Text(
-                    text = "${data.dateLabel}: ${formatVolumeLabel(data.volume, weightUnit)} $unit",
+                    text = "${data.dateLabel}: ${formatVolumeLabel(data.volume)} $unit",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -192,12 +192,12 @@ fun VolumeTrendChart(
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = formatVolumeLabel(maxVolume, weightUnit),
+                        text = formatVolumeLabel(maxVolume),
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
                     )
                     Text(
-                        text = formatVolumeLabel(maxVolume / 2, weightUnit),
+                        text = formatVolumeLabel(maxVolume / 2),
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
                     )
@@ -434,13 +434,11 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
 }
 
 /**
- * Format volume label for Y-axis
+ * Format volume label for Y-axis.
+ * Values of 1000 and above use a compact "Nk" form; smaller values are whole numbers.
  */
-private fun formatVolumeLabel(volume: Float, weightUnit: WeightUnit): String = when {
-    volume >= 1000 -> "${(volume / 1000).toInt()}k"
-    volume >= 100 -> "${volume.toInt()}"
-    else -> "${volume.toInt()}"
-}
+private fun formatVolumeLabel(volume: Float): String =
+    if (volume >= 1000) "${(volume / 1000).toInt()}k" else "${volume.toInt()}"
 
 @Composable
 private fun EmptyVolumeTrendState(modifier: Modifier = Modifier) {
