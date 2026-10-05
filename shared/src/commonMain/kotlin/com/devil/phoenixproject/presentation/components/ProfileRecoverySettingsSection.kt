@@ -121,7 +121,7 @@ private fun VisibleProfileRecoverySettings(
 }
 
 @Composable
-internal fun ProfileRecoveryCard(
+private fun ProfileRecoveryCard(
     pending: List<PendingProfileRecoveryGroup>,
     profiles: List<UserProfile>,
     cloudPending: List<OwnershipTransferMutation>,
