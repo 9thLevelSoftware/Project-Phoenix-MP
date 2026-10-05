@@ -140,8 +140,10 @@ actual class HealthIntegration : HealthWorkoutWriter {
      * Returns [Result.success] with null when the body-mass type is missing or
      * no returned sample is an eligible scale reading. Returns
      * [Result.failure] when HealthKit is unavailable or the query fails.
-     * HealthKit does not report read authorization, so a denied read surfaces
-     * as a query failure rather than [hasBodyWeightReadPermission] returning false.
+     * HealthKit does not report read authorization: a denied read returns no
+     * other apps' samples (only ones this app saved), so it yields
+     * [Result.success] with null while [hasBodyWeightReadPermission] still
+     * returns true.
      */
     actual suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
         if (!isAvailable()) {
