@@ -13,9 +13,7 @@ enum class ProfileRecoveryKind {
 data class ProfileRecoveryCounts(
     val tableCounts: Map<String, Long>,
     val cloudOriginRowCount: Long = 0,
-) {
-    val totalRows: Long get() = tableCounts.values.sum()
-}
+)
 
 data class PendingProfileRecoveryGroup(
     val recoveryId: String,
