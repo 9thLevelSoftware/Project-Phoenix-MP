@@ -357,7 +357,13 @@ data class WorkoutParameters(
     val warmupReps: Int = 3,
     val selectedExerciseId: String? = null,
     val isAMRAP: Boolean = false, // AMRAP (As Many Reps As Possible) - disables auto-stop
-    val lastUsedWeightKg: Float? = null, // Last used weight for this exercise (for quick preset)
+    /**
+     * Per-cable kg of the failed set for the drop-set offer. The rest screen
+     * prefers this over [weightPerCableKg] when that offer is built, and the
+     * active-workout runtime snapshot persists it so a restored session keeps
+     * the same value.
+     */
+    val lastUsedWeightKg: Float? = null,
     // F-059: nothing reads this any more. The field stays because the active-workout
     // runtime snapshot serialises it with ignoreUnknownKeys = false, so removing it
     // would make every runtime document written by an older build undecodable.
