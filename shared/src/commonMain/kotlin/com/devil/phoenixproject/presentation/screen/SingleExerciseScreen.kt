@@ -250,6 +250,17 @@ fun SingleExerciseScreen(
             } else {
                 null
             },
+            // Issue #362: view history for the custom exercise being edited. Capture the
+            // saved id first, then dismiss the dialog exactly like onDismiss so Back from
+            // history returns to the list. The draft is never saved here.
+            onViewHistory = {
+                val historyId = exerciseToEdit?.id?.takeIf { it.isNotBlank() }
+                showCreateDialog = false
+                exerciseToEdit = null
+                if (historyId != null) {
+                    navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(historyId))
+                }
+            },
             onDismiss = {
                 showCreateDialog = false
                 exerciseToEdit = null

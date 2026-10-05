@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -39,6 +41,7 @@ fun CreateExerciseDialog(
     existingExercise: Exercise? = null,
     onSave: (Exercise) -> Unit,
     onDelete: (() -> Unit)? = null,
+    onViewHistory: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf(existingExercise?.name ?: "") }
@@ -80,6 +83,10 @@ fun CreateExerciseDialog(
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     val backgroundGradient = screenBackgroundBrush()
+
+    // Issue #362: TalkBack label for the History button. Resolved outside the
+    // clearAndSetSemantics block, which is not composable.
+    val historyContentDescription = stringResource(Res.string.cd_exercise_history_detail)
 
     val isEditMode = existingExercise != null
 
@@ -283,6 +290,28 @@ fun CreateExerciseDialog(
                     }
 
                     Spacer(modifier = Modifier.height(Spacing.large))
+
+                    // History (issue #362): edit mode + a host that opted in + a saved id.
+                    // Full-width, above Delete/Save so localized labels never truncate.
+                    if (isEditMode && onViewHistory != null && existingExercise?.id?.isNotBlank() == true) {
+                        OutlinedButton(
+                            onClick = { onViewHistory.invoke() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = historyContentDescription
+                                },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Text(stringResource(Res.string.action_history))
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                    }
 
                     // Buttons
                     Row(
