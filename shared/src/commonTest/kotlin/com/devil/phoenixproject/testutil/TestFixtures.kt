@@ -5,8 +5,6 @@ import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.PRType
-import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -130,30 +128,6 @@ object TestFixtures {
 
     val sampleSession = createWorkoutSession()
 
-    // ========== Personal Records ==========
-
-    fun createPersonalRecord(
-        exerciseId: String = benchPress.id!!,
-        exerciseName: String = benchPress.name,
-        weightPerCableKg: Float = 50f,
-        reps: Int = 5,
-        prType: PRType = PRType.MAX_WEIGHT,
-        timestamp: Long = currentTimeMillis(),
-    ) = PersonalRecord(
-        id = 0,
-        exerciseId = exerciseId,
-        exerciseName = exerciseName,
-        weightPerCableKg = weightPerCableKg,
-        reps = reps,
-        oneRepMax = calculateOneRepMax(weightPerCableKg * 2, reps), // Total weight
-        timestamp = timestamp,
-        workoutMode = "OldSchool",
-        prType = prType,
-        volume = weightPerCableKg * 2 * reps,
-    )
-
-    val samplePR = createPersonalRecord()
-
     // ========== Workout Metrics ==========
 
     fun createWorkoutMetric(
@@ -236,16 +210,4 @@ object TestFixtures {
         address = "AA:BB:CC:DD:EE:02",
         rssi = -60,
     )
-
-    // ========== Helper Functions ==========
-
-    /**
-     * Calculate one-rep max using Brzycki formula.
-     * 1RM = weight × (36 / (37 - reps))
-     */
-    private fun calculateOneRepMax(weight: Float, reps: Int): Float {
-        if (reps <= 0) return weight
-        if (reps >= 37) return weight * 2 // Cap at reasonable value
-        return weight * (36f / (37f - reps))
-    }
 }
