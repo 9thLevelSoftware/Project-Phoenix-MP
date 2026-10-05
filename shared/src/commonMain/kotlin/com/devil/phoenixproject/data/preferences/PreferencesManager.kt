@@ -148,7 +148,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
         private const val KEY_BACKUP_INCLUDE_RAW_TELEMETRY = "backup_include_raw_telemetry"
         private const val KEY_BACKUP_DESTINATION = "backup_destination"
-        private const val KEY_LANGUAGE = "language"
+
+        // Shared with Android cold-start locale and workout notification copy.
+        const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
@@ -257,67 +259,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         _preferencesFlow.update { it.update() }
     }
 
-    // Legacy migration-source writers are intentionally internal and absent from
-    // PreferencesManager. They remain only for migration normalization tests.
-    internal suspend fun setWeightUnit(unit: WeightUnit) {
-        settings.putString(KEY_WEIGHT_UNIT, unit.name)
-        updateAndEmit { copy(weightUnit = unit) }
-    }
-
     // Issue #167: setAutoplayEnabled removed - autoplay now derived from summaryCountdownSeconds
-
-    internal suspend fun setStopAtTop(enabled: Boolean) {
-        settings.putBoolean(KEY_STOP_AT_TOP, enabled)
-        updateAndEmit { copy(stopAtTop = enabled) }
-    }
 
     override suspend fun setEnableVideoPlayback(enabled: Boolean) {
         settings.putBoolean(KEY_VIDEO_PLAYBACK, enabled)
         updateAndEmit { copy(enableVideoPlayback = enabled) }
     }
 
-    internal suspend fun setBeepsEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_BEEPS_ENABLED, enabled)
-        updateAndEmit { copy(beepsEnabled = enabled) }
-    }
-
-    internal suspend fun setColorScheme(scheme: Int) {
-        settings.putInt(KEY_COLOR_SCHEME, scheme)
-        updateAndEmit { copy(colorScheme = scheme) }
-    }
-    internal suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
-        settings.putBoolean(KEY_DISCO_MODE_UNLOCKED, unlocked)
-        updateAndEmit { copy(discoModeUnlocked = unlocked) }
-    }
-
-    internal suspend fun setAudioRepCountEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_AUDIO_REP_COUNT, enabled)
-        updateAndEmit { copy(audioRepCountEnabled = enabled) }
-    }
-
-    internal suspend fun setRepCountTiming(timing: RepCountTiming) {
-        settings.putString(KEY_REP_COUNT_TIMING, timing.name)
-        updateAndEmit { copy(repCountTiming = timing) }
-    }
-
-    internal suspend fun setSummaryCountdownSeconds(seconds: Int) {
-        settings.putInt(KEY_SUMMARY_COUNTDOWN_SECONDS, seconds)
-        updateAndEmit { copy(summaryCountdownSeconds = seconds) }
-    }
-
     internal suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
-    }
-
-    internal suspend fun setGamificationEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)
-        updateAndEmit { copy(gamificationEnabled = enabled) }
-    }
-
-    internal suspend fun setWeightIncrement(increment: Float) {
-        settings.putFloat(KEY_WEIGHT_INCREMENT, increment)
-        updateAndEmit { copy(weightIncrement = increment) }
     }
 
     internal suspend fun setAutoStartRoutine(enabled: Boolean) {
@@ -328,21 +279,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     internal suspend fun setBodyWeightKg(weightKg: Float) {
         settings.putFloat(KEY_BODY_WEIGHT_KG, weightKg)
         updateAndEmit { copy(bodyWeightKg = weightKg) }
-    }
-
-    internal suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, enabled)
-        updateAndEmit { copy(countdownBeepsEnabled = enabled) }
-    }
-
-    internal suspend fun setRepSoundEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_REP_SOUND_ENABLED, enabled)
-        updateAndEmit { copy(repSoundEnabled = enabled) }
-    }
-
-    internal suspend fun setMotionStartEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_MOTION_START, enabled)
-        updateAndEmit { copy(motionStartEnabled = enabled) }
     }
 
     override suspend fun setAutoBackupEnabled(enabled: Boolean) {
@@ -365,55 +301,15 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(language = language) }
     }
 
-    internal suspend fun setVoiceStopEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_VOICE_STOP_ENABLED, enabled)
-        updateAndEmit { copy(voiceStopEnabled = enabled) }
-    }
-
-    internal suspend fun setSafeWord(word: String?) {
-        if (word != null) {
-            settings.putString(KEY_SAFE_WORD, word)
-        } else {
-            settings.remove(KEY_SAFE_WORD)
-        }
-        updateAndEmit { copy(safeWord = word) }
-    }
-
-    internal suspend fun setSafeWordCalibrated(calibrated: Boolean) {
-        settings.putBoolean(KEY_SAFE_WORD_CALIBRATED, calibrated)
-        updateAndEmit { copy(safeWordCalibrated = calibrated) }
-    }
-
     internal suspend fun setVelocityLossThreshold(percent: Int) {
         val clamped = percent.coerceIn(10, 50)
         settings.putInt(KEY_VELOCITY_LOSS_THRESHOLD, clamped)
         updateAndEmit { copy(velocityLossThresholdPercent = clamped) }
     }
 
-    internal suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
-        settings.putBoolean(KEY_AUTO_END_VELOCITY_LOSS, enabled)
-        updateAndEmit { copy(autoEndOnVelocityLoss = enabled) }
-    }
-
     internal suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, enabled)
         updateAndEmit { copy(weightSuggestionsEnabled = enabled) }
-    }
-
-    internal suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
-        settings.putString(KEY_DEFAULT_SCALING_BASIS, basis.name)
-        updateAndEmit { copy(defaultScalingBasis = basis) }
-    }
-
-    internal suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
-        settings.putBoolean(KEY_DEFAULT_ROUTINE_EXERCISE_USE_PERCENT_OF_PR, enabled)
-        updateAndEmit { copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
-    }
-
-    internal suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
-        val clamped = percent.coerceIn(50, 120)
-        settings.putInt(KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR, clamped)
-        updateAndEmit { copy(defaultRoutineExerciseWeightPercentOfPR = clamped) }
     }
 
     override suspend fun resetOneShotWorkAfterRestore() {

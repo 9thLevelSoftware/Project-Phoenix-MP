@@ -65,7 +65,7 @@ private var crashHookInstalled = false
  * - an uncaught Kotlin exception's stack trace is written to Library/crash-last.txt.
  *   The runtime still terminates the process after the hook returns.
  */
-fun installIosDiagnostics() {
+internal fun installIosDiagnostics() {
     Logger.mutableConfig.minSeverity = if (DeviceInfo.isDebugBuild) Severity.Debug else Severity.Warn
     if (crashHookInstalled) return
     crashHookInstalled = true

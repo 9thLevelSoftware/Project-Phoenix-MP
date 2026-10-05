@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import com.devil.phoenixproject.util.UnitConverter
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -143,9 +144,13 @@ class SettingsManagerTest {
         try {
             val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
 
-            assertEquals(22.0462f, manager.kgToDisplay(10f, WeightUnit.LB), 0.0001f)
-            assertEquals(10f, manager.displayToKg(22.0462f, WeightUnit.LB), 0.001f)
+            val tenKgInLb = 10f * UnitConverter.KG_TO_LB
+            assertEquals(tenKgInLb, manager.kgToDisplay(10f, WeightUnit.LB), 0.0001f)
+            // Round trip divides by KG_TO_LB. lbToKg is not the inverse and misses 10f
+            // by ~2e-5, outside this tolerance.
+            assertEquals(10f, manager.displayToKg(tenKgInLb, WeightUnit.LB), 0.000001f)
             assertEquals("10 kg", manager.formatWeight(10f, WeightUnit.KG))
+            // 10 kg * 2.20462 formats to two decimals as 22.05 lb.
             assertEquals("22.05 lb", manager.formatWeight(10f, WeightUnit.LB))
         } finally {
             managerScope.cancel()

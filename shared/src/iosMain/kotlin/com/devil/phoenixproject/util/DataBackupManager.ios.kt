@@ -47,7 +47,7 @@ actual val canOpenBackupFolder: Boolean = true
  * to guarantee data is never lost.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosDataBackupManager(
+internal class IosDataBackupManager(
     database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,

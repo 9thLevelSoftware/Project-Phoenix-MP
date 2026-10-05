@@ -156,8 +156,7 @@ fun RoutineEditorScreen(
     var isNewExercise by remember { mutableStateOf(false) } // true = adding new, false = editing existing
     var editingIndex by remember { mutableStateOf<Int?>(null) } // index when editing existing
 
-    // Menu state for superset and exercise context menus
-    var supersetMenuFor by remember { mutableStateOf<String?>(null) } // superset ID showing menu
+    // Menu state for the exercise context menu
     var exerciseMenuFor by remember { mutableStateOf<String?>(null) } // exercise ID showing menu
 
     // Selection mode state (for superset creation/management)

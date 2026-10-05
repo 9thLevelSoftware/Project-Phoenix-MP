@@ -29,7 +29,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BUNDLE_ID: com.devil.phoenixproject.projectphoenix
   SCHEME: PhoenixApp
   PROJECT_PATH: iosApp/PhoenixApp/PhoenixApp.xcodeproj
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"

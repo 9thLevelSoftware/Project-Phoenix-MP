@@ -28,10 +28,6 @@ class FakeExerciseRepository : ExerciseRepository {
         updateFlow()
     }
 
-    fun addImages(exerciseId: String, imageList: List<ExerciseImageEntity>) {
-        images[exerciseId] = imageList
-    }
-
     fun reset() {
         exercises.clear()
         images.clear()

@@ -11,10 +11,10 @@ There is no `v0.9.6` tag. Build the legacy APK from commit `631e208f49361d028f64
 ```powershell
 git worktree add --detach .worktrees/v096-upgrade-fixture 631e208f49361d028f640f8bd72aafada2018588
 Push-Location .worktrees/v096-upgrade-fixture
-.\gradlew ':androidApp:assembleDebug' '-Pskip.supabase.check=true'
+.\gradlew.bat ':androidApp:assembleDebug' '-Pskip.supabase.check=true'
 Pop-Location
 
-.\gradlew ':androidApp:assembleDebug' '-Pskip.supabase.check=true'
+.\gradlew.bat ':androidApp:assembleDebug' '-Pskip.supabase.check=true'
 
 $legacyApk = '.worktrees/v096-upgrade-fixture/androidApp/build/outputs/apk/debug/androidApp-debug.apk'
 $candidateApk = 'androidApp/build/outputs/apk/debug/androidApp-debug.apk'
