@@ -15,19 +15,19 @@ actual class FilePicker {
 
     @Composable
     actual fun LaunchFilePicker(onFilePicked: (String?) -> Unit) {
-        val launcher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-        ) { uri: Uri? ->
-            onFilePicked(uri?.toString())
-        }
-
-        LaunchedEffect(Unit) {
-            launcher.launch(arrayOf("application/json"))
-        }
+        LaunchDocumentPicker(arrayOf("application/json"), onFilePicked)
     }
 
     @Composable
     actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        LaunchDocumentPicker(
+            arrayOf("text/csv", "text/comma-separated-values", "*/*"),
+            onFilePicked,
+        )
+    }
+
+    @Composable
+    private fun LaunchDocumentPicker(mimeTypes: Array<String>, onFilePicked: (String?) -> Unit) {
         val launcher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
@@ -35,7 +35,7 @@ actual class FilePicker {
         }
 
         LaunchedEffect(Unit) {
-            launcher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*"))
+            launcher.launch(mimeTypes)
         }
     }
 
