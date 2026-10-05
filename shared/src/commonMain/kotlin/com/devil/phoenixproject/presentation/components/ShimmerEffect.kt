@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -40,7 +39,7 @@ private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
  * Creates an animated gradient that sweeps across placeholder content.
  */
 @Composable
-private fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
+private fun shimmerBrush(): Brush {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val shimmerColors = listOf(
         onSurface.copy(alpha = 0.12f),
@@ -51,7 +50,7 @@ private fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translateAnimation = transition.animateFloat(
         initialValue = 0f,
-        targetValue = targetValue,
+        targetValue = 1000f,
         animationSpec = infiniteRepeatable(
             animation = tween(
                 durationMillis = 1000,
@@ -62,16 +61,10 @@ private fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true
         label = "shimmer_translate",
     )
 
-    Brush.linearGradient(
+    return Brush.linearGradient(
         colors = shimmerColors,
         start = Offset.Zero,
         end = Offset(x = translateAnimation.value, y = translateAnimation.value),
-    )
-} else {
-    Brush.linearGradient(
-        colors = listOf(Color.Transparent, Color.Transparent),
-        start = Offset.Zero,
-        end = Offset.Zero,
     )
 }
 
@@ -79,11 +72,11 @@ private fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true
  * Shimmer box placeholder - generic rectangular shimmer element.
  */
 @Composable
-fun ShimmerBox(modifier: Modifier = Modifier, showShimmer: Boolean = true) {
+fun ShimmerBox(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .background(
-                brush = shimmerBrush(showShimmer = showShimmer),
+                brush = shimmerBrush(),
                 shape = MaterialTheme.shapes.extraSmall,
             ),
     )
