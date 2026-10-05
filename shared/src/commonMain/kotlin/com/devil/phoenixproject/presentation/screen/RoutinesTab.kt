@@ -162,8 +162,6 @@ fun RoutinesTab(
 ) {
     // showRoutineBuilder and routineToEdit states removed
 
-    Logger.d { "RoutinesTab: ${routines.size} routines loaded" }
-
     var modifierDialogRoutine by remember { mutableStateOf<Routine?>(null) }
     var modifierDialogType by remember { mutableStateOf<RoutineModifierType?>(null) }
 

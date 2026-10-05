@@ -365,8 +365,6 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
         viewModel.updateTopBarTitle("Training Cycles")
     }
 
-    Logger.d { "TrainingCyclesScreen: ${cycles.size} cycles loaded" }
-
     val backgroundGradient = screenBackgroundBrush()
 
     Box(
