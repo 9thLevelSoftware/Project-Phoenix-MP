@@ -19,10 +19,16 @@ import kotlinx.coroutines.flow.asStateFlow
 open class FakeCompletedSetRepository : CompletedSetRepository {
 
     val saved = mutableListOf<CompletedSet>()
-    val saveCompletedSetAttempts = mutableListOf<CompletedSet>()
-    var beforeSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
+
+    /**
+     * Every raw insert, including those [com.devil.phoenixproject.data.repository.WorkoutRepository.commitCompletedSet]
+     * performs through this fake. Recorded before [beforeInsertCompletedSet], so a hook that
+     * suspends or fails still shows the attempt.
+     */
+    val insertedCompletedSets = mutableListOf<CompletedSet>()
+    var beforeInsertCompletedSet: suspend (CompletedSet) -> Unit = {}
     var beforeMarkAsPr: suspend (String) -> Unit = {}
-    var afterSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
+    var afterInsertCompletedSet: suspend (CompletedSet) -> Unit = {}
 
     private val plannedSets = mutableMapOf<String, PlannedSet>()
     private val completedSets = mutableMapOf<String, CompletedSet>()
@@ -52,10 +58,10 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
 
     fun reset() {
         saved.clear()
-        saveCompletedSetAttempts.clear()
-        beforeSaveCompletedSet = {}
+        insertedCompletedSets.clear()
+        beforeInsertCompletedSet = {}
         beforeMarkAsPr = {}
-        afterSaveCompletedSet = {}
+        afterInsertCompletedSet = {}
         plannedSets.clear()
         completedSets.clear()
         plannedSetsByExercise.clear()
@@ -125,16 +131,21 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
     }
 
-    override suspend fun saveCompletedSet(set: CompletedSet) {
+    /**
+     * Test-only raw insert. Production writes a completed set through
+     * [com.devil.phoenixproject.data.repository.WorkoutRepository.commitCompletedSet],
+     * which reaches this fake the same way.
+     */
+    suspend fun insertCompletedSet(set: CompletedSet) {
         val canonicalSet = set.copy(attemptNumber = set.attemptNumber.coerceAtLeast(1))
-        saveCompletedSetAttempts += canonicalSet
-        beforeSaveCompletedSet(canonicalSet)
+        insertedCompletedSets += canonicalSet
+        beforeInsertCompletedSet(canonicalSet)
         completedSets[canonicalSet.id] = canonicalSet
         completedSetsBySession.getOrPut(canonicalSet.sessionId) { mutableListOf() }
             .apply { if (!contains(canonicalSet.id)) add(canonicalSet.id) }
         updateCompletedFlow(canonicalSet.sessionId)
         saved += canonicalSet
-        afterSaveCompletedSet(canonicalSet)
+        afterInsertCompletedSet(canonicalSet)
     }
 
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
@@ -160,12 +171,8 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
             isPr = false,
             completedAt = session.timestamp + session.duration,
         )
-        saveCompletedSet(completedSet)
+        insertCompletedSet(completedSet)
         return completedSet
-    }
-
-    override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
-        sets.forEach { saveCompletedSet(it) }
     }
 
     override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = completedSets.values

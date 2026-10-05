@@ -158,17 +158,22 @@ Leave this file as it is. `xcodebuild -exportArchive` reads it through `-exportO
 
 ### Step 6: Create App ID (if needed)
 
-If you haven't registered the App ID:
+If you haven't registered the App ID, or the existing identifier does not have HealthKit enabled:
 
 1. Go to [Apple Developer → Identifiers](https://developer.apple.com/account/resources/identifiers/list)
-2. Click **+**
-3. Select **App IDs** → **App**
+2. Click **+** for a new identifier, or open `com.devil.phoenixproject.projectphoenix` to edit it
+3. Select **App IDs** → **App** (when creating)
 4. Bundle ID: `com.devil.phoenixproject.projectphoenix` (Explicit)
 5. Description: "Project Phoenix"
 6. Enable capabilities:
    - **Background Modes** (for BLE)
    - Check "Uses Bluetooth LE accessories"
-7. Register
+   - **HealthKit**. Leave **Clinical Health Records** unchecked.
+7. Register (or save the edited identifier)
+
+Code signing applies `iosApp/PhoenixApp/PhoenixApp/PhoenixApp.entitlements`, which sets `com.apple.developer.healthkit` to true. The App ID and the Step 2 distribution profile must include that entitlement. The app reads body mass from Apple Health and writes completed strength workouts; active energy burned is an optional write. `iosApp/PhoenixApp/PhoenixApp/Info.plist` already supplies `NSHealthShareUsageDescription` and `NSHealthUpdateUsageDescription` for those prompts.
+
+Enabling HealthKit on an App ID that already has a downloaded profile does not update that profile. Repeat Step 2 and replace `PROVISION_PROFILE_BASE64` so the profile includes `com.apple.developer.healthkit`.
 
 ---
 
@@ -197,6 +202,11 @@ After adding the secrets:
 - The bundle ID in the profile must exactly match `com.devil.phoenixproject.projectphoenix`
 - The profile must include your distribution certificate
 - Re-download and re-encode the profile if recently regenerated
+
+### "Provisioning profile doesn't include the com.apple.developer.healthkit entitlement"
+
+- Enable **HealthKit** on the App ID and leave **Clinical Health Records** unchecked (Step 6)
+- Regenerate the App Store profile (Step 2) and update `PROVISION_PROFILE_BASE64`
 
 ### "Code signing is required"
 
@@ -235,6 +245,7 @@ After adding the secrets:
 | `.github/workflows/release-all.yml` | Full release across platforms |
 | `iosApp/ExportOptions.plist` | Archive export settings |
 | `iosApp/PhoenixApp/PhoenixApp.xcodeproj` | Xcode project |
+| `iosApp/PhoenixApp/PhoenixApp/PhoenixApp.entitlements` | HealthKit entitlement (`com.apple.developer.healthkit`) |
 
 ---
 

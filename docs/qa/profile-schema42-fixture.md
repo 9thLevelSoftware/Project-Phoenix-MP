@@ -2,7 +2,7 @@
 
 This recipe materializes the pre-profile database and legacy preference input used to prove the schema-42 to current-schema upgrade. The fixture source is commit `ac84d9bb8e156002833ad526bf324a8f12710da0`; do not substitute a moving branch or shortened SHA. The upgrade candidate is a debug APK from the current checkout. After that install, `PRAGMA user_version` must be 57 (highest migration file + 1).
 
-All commands below are PowerShell commands. Start at the repository root. They use the installed Android SDK (`ANDROID_HOME`, else `ANDROID_SDK_ROOT`, else `%LOCALAPPDATA%\Android\Sdk`) and must not contact Supabase or any other network service, except the explicit `git fetch` of the pinned fixture commit.
+All commands below are PowerShell commands. Start at the repository root. They use the installed Android SDK (`ANDROID_HOME`, else `ANDROID_SDK_ROOT`, else `%LOCALAPPDATA%\Android\Sdk`) and must not contact Supabase. The only network use is the explicit `git fetch` of the pinned fixture commit and Gradle dependency resolution for that commit. Do not pass `--offline`.
 
 ## Create the schema-42 build
 
@@ -27,9 +27,11 @@ Set-Location .worktrees/profile-schema42
 
 The fixture branch must not contain `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm`.
 
+On commit `ac84d9bb8e156002833ad526bf324a8f12710da0` the SQLDelight database is still `VitruvianDatabase`. Build that worktree with its Gradle tasks `:shared:generateCommonMainVitruvianDatabaseInterface` and `:shared:verifyCommonMainVitruvianDatabaseMigration`. Do not substitute the current checkout's `PhoenixDatabase` task names, and do not pass `--offline`.
+
 ```powershell
 if (Test-Path shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm) { throw '42.sqm must be absent' }
-.\gradlew.bat '-Pskip.supabase.check=true' --offline :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest :androidApp:assembleDebug --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest :androidApp:assembleDebug --rerun-tasks --console=plain
 $fixtureApk = (Resolve-Path 'androidApp/build/outputs/apk/debug/androidApp-debug.apk').Path
 ```
 

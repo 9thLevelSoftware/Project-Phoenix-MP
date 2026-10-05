@@ -65,20 +65,10 @@ interface CompletedSetRepository {
     suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet>
 
     /**
-     * Save a completed set.
-     */
-    suspend fun saveCompletedSet(set: CompletedSet)
-
-    /**
      * Ensure a completed-set row exists for a Just Lift session after post-set exercise tagging.
      * Returns the existing row when one is already present so retagging does not duplicate stats.
      */
     suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet?
-
-    /**
-     * Save multiple completed sets at once.
-     */
-    suspend fun saveCompletedSets(sets: List<CompletedSet>)
 
     /** Return the next durable attempt number for this exact logical routine set. */
     suspend fun nextAttemptNumber(key: LogicalSetKey): Int

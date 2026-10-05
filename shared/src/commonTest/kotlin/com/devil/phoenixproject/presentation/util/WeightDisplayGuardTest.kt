@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
  * Structural guard: verifies WeightDisplayFormatter remains in the presentation package.
  *
  * NOTE: Source file scanning guards have been moved to androidHostTest where java.io.File
- * is available. See: androidHostTest/.../WeightDisplayGuardTest.kt
+ * is available. See: shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/util/WeightDisplaySourceGuardTest.kt
  * Those tests scan actual source files for forbidden imports of WeightDisplayFormatter
  * in data/ble, data/sync, and data/integration packages.
  *

@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -61,11 +62,6 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     private fun updateRecordsFlow() {
         _recordsFlow.value = records.values.toList()
-    }
-
-    private fun calculateOneRepMax(weightKg: Float, reps: Int): Float {
-        // Brzycki formula: 1RM = weight * (36 / (37 - reps))
-        return if (reps >= 37) weightKg else weightKg * (36f / (37 - reps))
     }
 
     // ========== PersonalRecordRepository interface implementation ==========
@@ -185,7 +181,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         val normalizedMode = normalizeWorkoutModeKey(workoutMode)
         val weightPRVolume = weightPRWeightPerCableKg * reps
         val newVolumePRVolume = volumePRWeightPerCableKg * reps
-        val newOneRepMax = calculateOneRepMax(weightPRWeightPerCableKg, reps)
+        val newOneRepMax = OneRepMaxCalculator.estimate(weightPRWeightPerCableKg, reps)
 
         // Check weight PR
         val weightKey = recordKey(exerciseId, normalizedMode, PRType.MAX_WEIGHT, WorkoutPhase.COMBINED, profileId)
@@ -294,7 +290,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         val broken = mutableListOf<PhasePRBreak>()
         val normalizedMode = normalizeWorkoutModeKey(workoutMode)
         val volume = weightPerCableKg * reps
-        val oneRepMax = calculateOneRepMax(weightPerCableKg, reps)
+        val oneRepMax = OneRepMaxCalculator.estimate(weightPerCableKg, reps)
 
         val weightKey = recordKey(exerciseId, normalizedMode, PRType.MAX_WEIGHT, phase, profileId)
         val existingWeight = records[weightKey]

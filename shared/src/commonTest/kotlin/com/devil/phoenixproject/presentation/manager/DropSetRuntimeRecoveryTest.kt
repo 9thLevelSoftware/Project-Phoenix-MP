@@ -1022,7 +1022,7 @@ class DropSetRuntimeRecoveryTest {
                 ).normalAdvance,
             )
             harness.fakeCompletedSetRepo.setSessionRoutine("source-stable", key.routineSessionId)
-            harness.fakeCompletedSetRepo.saveCompletedSet(
+            harness.fakeCompletedSetRepo.insertCompletedSet(
                 CompletedSet(
                     id = "completed-source",
                     sessionId = "source-stable",
@@ -1108,7 +1108,7 @@ class DropSetRuntimeRecoveryTest {
                 ).normalAdvance,
             )
             harness.fakeCompletedSetRepo.setSessionRoutine("source-stable", rejectedKey.routineSessionId)
-            harness.fakeCompletedSetRepo.saveCompletedSet(
+            harness.fakeCompletedSetRepo.insertCompletedSet(
                 CompletedSet(
                     id = "durable-rejected-source",
                     sessionId = "source-stable",
@@ -1223,7 +1223,7 @@ class DropSetRuntimeRecoveryTest {
                     ).normalAdvance,
                 )
                 harness.fakeCompletedSetRepo.setSessionRoutine(stableSessionId, routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "durable-strict-source-$caseIndex",
                         sessionId = stableSessionId,
@@ -1306,7 +1306,7 @@ class DropSetRuntimeRecoveryTest {
                     ).normalAdvance,
                 )
                 harness.fakeCompletedSetRepo.setSessionRoutine("source-stable", sourceKey.routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "durable-invalid-attempt-$caseIndex",
                         sessionId = "source-stable",
@@ -1399,7 +1399,7 @@ class DropSetRuntimeRecoveryTest {
                     ).normalAdvance,
                 )
                 harness.fakeCompletedSetRepo.setSessionRoutine(stableSessionId, routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "durable-targetless-$caseIndex",
                         sessionId = stableSessionId,
@@ -1528,7 +1528,7 @@ class DropSetRuntimeRecoveryTest {
                 )
                 harness.fakeCompletedSetRepo.savePlannedSet(plannedSet)
                 harness.fakeCompletedSetRepo.setSessionRoutine(stableSessionId, routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "durable-planned-$caseIndex",
                         sessionId = stableSessionId,
@@ -1652,7 +1652,7 @@ class DropSetRuntimeRecoveryTest {
                     restTransitionPlan = unresolved.copy(candidates = candidates),
                 )
                 harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
-                harness.fakeCompletedSetRepo.saveCompletedSet(
+                harness.fakeCompletedSetRepo.insertCompletedSet(
                     CompletedSet(
                         id = "durable-candidate-$caseIndex",
                         sessionId = sourceStableSessionId,
@@ -2611,7 +2611,7 @@ class DropSetRuntimeRecoveryTest {
                     startCallsBeforeSwitch = harness.fakeBleRepo.programCommands.size
                     teardownCallsBeforeSwitch = harness.fakeBleRepo.stopWorkoutCallCount
                     workoutSavesBeforeSwitch = harness.fakeWorkoutRepo.saveSessionAttempts.size
-                    completedSetSavesBeforeSwitch = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+                    completedSetSavesBeforeSwitch = harness.fakeCompletedSetRepo.insertedCompletedSets.size
                     gamificationBeforeSwitch = harness.fakeGamificationRepo.updateStatsCallCount
                     badgeChecksBeforeSwitch = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
                     harness.fakeUserProfileRepo.setActiveProfileForTest(id = "profile-live-fence")
@@ -2632,7 +2632,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(startCallsBeforeSwitch, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCallsBeforeSwitch, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(workoutSavesBeforeSwitch, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetSavesBeforeSwitch, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetSavesBeforeSwitch, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertEquals(gamificationBeforeSwitch, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecksBeforeSwitch, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(RuntimeCleanupReason.PROFILE_CHANGED, harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
@@ -2701,7 +2701,7 @@ class DropSetRuntimeRecoveryTest {
                 ),
             )
             val workoutSaves = harness.fakeWorkoutRepo.saveSessionAttempts.size
-            val completedSetSaves = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+            val completedSetSaves = harness.fakeCompletedSetRepo.insertedCompletedSets.size
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
@@ -2730,7 +2730,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertIs<RoutineFlowState.NotInRoutine>(harness.coordinator.routineFlowState.value)
             assertEquals(workoutSaves, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
@@ -2773,7 +2773,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<RoutineFlowState.Complete>(harness.coordinator.routineFlowState.value)
             assertEquals(routine.id, harness.coordinator.loadedRoutine.value?.id)
             val workoutSaves = harness.fakeWorkoutRepo.saveSessionAttempts.size
-            val completedSetSaves = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+            val completedSetSaves = harness.fakeCompletedSetRepo.insertedCompletedSets.size
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
@@ -2792,7 +2792,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertIs<RoutineFlowState.NotInRoutine>(harness.coordinator.routineFlowState.value)
             assertEquals(workoutSaves, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
@@ -2834,7 +2834,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(routine.id, harness.coordinator.loadedRoutine.value?.id)
             assertEquals(routine.id, harness.coordinator.currentRoutineId)
             val workoutSaves = harness.fakeWorkoutRepo.saveSessionAttempts.size
-            val completedSetSaves = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+            val completedSetSaves = harness.fakeCompletedSetRepo.insertedCompletedSets.size
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
@@ -2853,7 +2853,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<RoutineFlowState.NotInRoutine>(harness.coordinator.routineFlowState.value)
             assertNull(harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
             assertEquals(workoutSaves, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetSaves, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
@@ -3545,7 +3545,7 @@ class DropSetRuntimeRecoveryTest {
             assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
 
             val sessionAttemptsBefore = harness.fakeWorkoutRepo.saveSessionAttempts.size
-            val completedSetAttemptsBefore = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+            val completedSetAttemptsBefore = harness.fakeCompletedSetRepo.insertedCompletedSets.size
             val gamificationStatsBefore = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecksBefore = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val commandsBefore = harness.fakeBleRepo.commandsReceived.size
@@ -3569,7 +3569,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertIs<RoutineFlowState.NotInRoutine>(harness.coordinator.routineFlowState.value)
             assertEquals(sessionAttemptsBefore, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetAttemptsBefore, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetAttemptsBefore, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertEquals(gamificationStatsBefore, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecksBefore, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
@@ -3612,7 +3612,7 @@ class DropSetRuntimeRecoveryTest {
             )
             assertNotNull(document.restTransitionPlan)
             val sessionAttemptsBefore = harness.fakeWorkoutRepo.saveSessionAttempts.size
-            val completedSetAttemptsBefore = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
+            val completedSetAttemptsBefore = harness.fakeCompletedSetRepo.insertedCompletedSets.size
             assertTrue(sessionAttemptsBefore > 0)
             assertTrue(completedSetAttemptsBefore > 0)
 
@@ -3626,7 +3626,7 @@ class DropSetRuntimeRecoveryTest {
                 ),
             )
             assertEquals(sessionAttemptsBefore, harness.fakeWorkoutRepo.saveSessionAttempts.size)
-            assertEquals(completedSetAttemptsBefore, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
+            assertEquals(completedSetAttemptsBefore, harness.fakeCompletedSetRepo.insertedCompletedSets.size)
             assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
             assertNull(harness.restTransitionPlan.value)
             assertNull(harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
@@ -4173,7 +4173,7 @@ class DropSetRuntimeRecoveryTest {
             restDeadlineEpochMs = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS,
         )
         harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
-        harness.fakeCompletedSetRepo.saveCompletedSet(
+        harness.fakeCompletedSetRepo.insertCompletedSet(
             CompletedSet(
                 id = "durable-$routineSessionId",
                 sessionId = sourceStableSessionId,
@@ -4294,7 +4294,7 @@ class DropSetRuntimeRecoveryTest {
             },
         )
         harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
-        harness.fakeCompletedSetRepo.saveCompletedSet(
+        harness.fakeCompletedSetRepo.insertCompletedSet(
             CompletedSet(
                 id = "durable-$routineSessionId",
                 sessionId = sourceStableSessionId,

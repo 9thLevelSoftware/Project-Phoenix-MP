@@ -195,7 +195,7 @@ class DWSMWorkoutLifecycleTest {
         try {
             harness.setActiveSummaryCountdownSeconds(-1)
             harness.fakeBleRepo.stopWorkoutBlock = { teardownRelease.await() }
-            harness.fakeCompletedSetRepo.beforeSaveCompletedSet = { persistenceRelease.await() }
+            harness.fakeCompletedSetRepo.beforeInsertCompletedSet = { persistenceRelease.await() }
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
             routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
@@ -922,7 +922,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = enabledDropSetHarness(this)
         try {
             harness.setActiveSummaryCountdownSeconds(-1)
-            harness.fakeCompletedSetRepo.beforeSaveCompletedSet = { persistenceRelease.await() }
+            harness.fakeCompletedSetRepo.beforeInsertCompletedSet = { persistenceRelease.await() }
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
             routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }

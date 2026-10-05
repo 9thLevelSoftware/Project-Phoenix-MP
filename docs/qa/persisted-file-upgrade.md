@@ -6,10 +6,10 @@ The harness default `-ExpectedSchemaVersion` is 57, the current database `user_v
 
 ## Automated v0.9.6 debug-lineage matrix
 
-Build the legacy APK from the immutable public release source and the candidate from the current checkout. Both debug APKs use the same application ID suffix and local debug certificate, so `adb install -r` exercises Android's real retained-sandbox upgrade path.
+There is no `v0.9.6` tag. Build the legacy APK from commit `631e208f49361d028f640f8bd72aafada2018588` (the last commit whose `versionName` and `APP_VERSION` are still `0.9.6`) and the candidate from the current checkout. Both debug APKs use the same application ID suffix and local debug certificate, so `adb install -r` exercises Android's real retained-sandbox upgrade path.
 
 ```powershell
-git worktree add --detach .worktrees/v096-upgrade-fixture v0.9.6
+git worktree add --detach .worktrees/v096-upgrade-fixture 631e208f49361d028f640f8bd72aafada2018588
 Push-Location .worktrees/v096-upgrade-fixture
 .\gradlew ':androidApp:assembleDebug' '-Pskip.supabase.check=true'
 Pop-Location
@@ -40,7 +40,7 @@ The negative cases preserve and display evidence:
 
 ## Production-signed Android gate
 
-The GitHub v0.9.6 asset is production-signed, non-debuggable, and uses `com.devil.phoenixproject`. A genuine release upgrade therefore requires a candidate APK with a higher version code and the same production signing certificate. Do not re-sign either APK, substitute the debug result, use `pm clear`, or copy private app files through a weaker mechanism.
+There is no GitHub `v0.9.6` release tag or asset. A genuine release upgrade still requires a production-signed, non-debuggable legacy build that uses `com.devil.phoenixproject`, and a candidate APK with a higher version code and the same production signing certificate. Do not re-sign either APK, substitute the debug result, use `pm clear`, or copy private app files through a weaker mechanism.
 
 On a disposable physical device or release-test emulator with representative data already created through the released app UI:
 

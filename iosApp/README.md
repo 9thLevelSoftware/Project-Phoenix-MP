@@ -74,10 +74,26 @@ The `Info.plist` includes the required BLE permission string:
 ### Bluetooth Integration
 
 BLE is shared code: `KableBleRepository.kt` in `shared/src/commonMain` uses the
-Kable multiplatform library, which runs on CoreBluetooth on iOS. It scans for
-Phoenix devices (names starting with "Vee_" or "VIT"), connects, parses real-time
+Kable multiplatform library, which runs on CoreBluetooth on iOS. Scanning and
+connection live in `KableBleConnectionManager.kt`. The app parses real-time
 workout metrics and handles rep notifications. iOS-specific code lives in
 `shared/src/iosMain/`.
+
+The interactive scan (`startScanning()`) keeps an advertisement when:
+
+- Its name starts with `Vee_`, `VIT`, or `Phoenix` (case-insensitive). A named
+  advertisement that matches none of those prefixes is ignored, even if it also
+  carries a service UUID.
+- It has no name, and it advertises the Nordic UART service
+  (`6e400001-b5a3-f393-e0a9-e50e24dcca9e`), a service UUID whose string starts
+  with `0000fef3`, or non-empty service data for FEF3
+  (`0000fef3-0000-1000-8000-00805f9b34fb`).
+
+`scanAndConnect()` does not use that filter. It connects only to the first
+advertisement whose name starts with `Vee_` or `VIT` (case-insensitive). The
+`Phoenix` prefix and the UUID/FEF3 fallback do not apply there. Once a `Vee_`
+or `VIT` device is in the interactive scan list, advertisements that match only
+by a `Phoenix` name or by UUID/FEF3 are left out of that list.
 
 ## Testing on Device
 

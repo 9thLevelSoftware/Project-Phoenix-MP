@@ -202,7 +202,7 @@ android {
     buildTypes {
         release {
             // Release signing is handled by CI (GitHub Actions) via keystore secrets.
-            // Local release builds use debug signing for testing only.
+            // A local release build is unsigned (not debug-signed).
             // See .github/workflows/ for the production signing pipeline.
             isMinifyEnabled = true
             isShrinkResources = true
