@@ -24,15 +24,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
+ * App-specific `Documents/PhoenixBackups`, or internal `files/PhoenixBackups` when
+ * external storage is unavailable.
+ *
+ * Shared by pre-Q session backups and pre-Q full exports. App-specific external
+ * storage needs no storage permission (the manifest declares none), sits outside
+ * the public Downloads/MediaStore collection, and is removed on uninstall.
+ * Before scoped storage, apps holding READ_EXTERNAL_STORAGE can still read it.
+ */
+internal fun appSpecificPhoenixBackupsDirectory(
+    filesDir: File,
+    externalDocumentsDir: () -> File?,
+): File = File(externalDocumentsDir() ?: filesDir, "PhoenixBackups")
+
+/**
  * Directory for per-session auto-backups written through the file API.
  *
  * - Android 10+ (Q): a cache staging dir; the real write goes to MediaStore Downloads.
- * - Android 9 and older: the app-specific external Documents dir
- *   (`Android/data/<package>/files/Documents/PhoenixBackups`): app-specific external
- *   storage, so no storage permission is needed (the manifest declares none), it is
- *   outside the public Downloads/MediaStore collection, and it is removed on uninstall.
- *   Before scoped storage, apps holding READ_EXTERNAL_STORAGE can still read it.
- *   Falls back to internal storage when external storage is unavailable.
+ * - Android 9 and older: [appSpecificPhoenixBackupsDirectory]. Pre-Q full exports
+ *   use that same directory ([preQFullExportDirectory]).
  */
 internal fun sessionBackupDirectory(
     sdkInt: Int,
@@ -42,7 +52,36 @@ internal fun sessionBackupDirectory(
 ): File = if (sdkInt >= Build.VERSION_CODES.Q) {
     File(cacheDir, "PhoenixBackups")
 } else {
-    File(externalDocumentsDir() ?: filesDir, "PhoenixBackups")
+    appSpecificPhoenixBackupsDirectory(filesDir, externalDocumentsDir)
+}
+
+/**
+ * Directory for a manual full export on Android 9 and older (API 26–28).
+ *
+ * Same layout as [sessionBackupDirectory] below Q — not public Downloads.
+ * Public Downloads needs a storage permission this app does not declare, so that
+ * write fails on API 26–28. Android 10+ does not use this; those exports go
+ * through MediaStore `Download/ProjectPhoenix`.
+ */
+internal fun preQFullExportDirectory(
+    filesDir: File,
+    externalDocumentsDir: () -> File?,
+): File = appSpecificPhoenixBackupsDirectory(filesDir, externalDocumentsDir)
+
+/**
+ * Copy a finished full-export file into [preQFullExportDirectory].
+ * Overwrites an existing file with the same name. Caller deletes [source].
+ */
+internal fun copyFullExportToPreQDocuments(
+    source: File,
+    filesDir: File,
+    externalDocumentsDir: () -> File?,
+): File {
+    val destDir = preQFullExportDirectory(filesDir, externalDocumentsDir)
+    if (!destDir.exists()) destDir.mkdirs()
+    val destFile = File(destDir, source.name)
+    source.copyTo(destFile, overwrite = true)
+    return destFile
 }
 
 /** Android 9 and older keep auto-backups in app storage; say so in the setting. */
@@ -73,7 +112,7 @@ actual val canOpenBackupFolder: Boolean get() = canOpenBackupFolderFor(Build.VER
 
 /**
  * Android implementation of DataBackupManager.
- * Uses MediaStore for Android 10+ and direct file access for older versions.
+ * Uses MediaStore for Android 10+ and app-specific Documents for older versions.
  *
  * When the user has selected a custom backup destination via [PreferencesManager],
  * exports and session backups are routed through [BackupDestinationResolver]. If the
@@ -379,15 +418,12 @@ class AndroidDataBackupManager(
                 }
                 destUri.toString()
             } else {
-                @Suppress("DEPRECATION")
-                val downloadsDir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "ProjectPhoenix",
-                )
-                downloadsDir.mkdirs()
-                val destFile = File(downloadsDir, fileName)
-                file.copyTo(destFile, overwrite = true)
-                destFile.absolutePath
+                // Pre-Q: same app-specific Documents dir as session backups.
+                copyFullExportToPreQDocuments(
+                    source = file,
+                    filesDir = context.filesDir,
+                    externalDocumentsDir = { context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) },
+                ).absolutePath
             }
 
             // Clean up cache file
