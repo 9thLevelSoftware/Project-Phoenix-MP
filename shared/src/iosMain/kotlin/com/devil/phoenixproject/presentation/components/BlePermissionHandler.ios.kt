@@ -22,7 +22,7 @@ import platform.darwin.NSObject
 /**
  * State holder for BLE permission status on iOS.
  */
-sealed class BlePermissionState {
+private sealed class BlePermissionState {
     data object Granted : BlePermissionState()
     data object NotGranted : BlePermissionState()
     data object Denied : BlePermissionState()
@@ -151,7 +151,7 @@ private class BluetoothPermissionManager(
  */
 @OptIn(ExperimentalForeignApi::class)
 @Composable
-fun RequireBlePermissions(
+internal fun RequireBlePermissions(
     content: @Composable () -> Unit,
 ) {
     val log = remember { Logger.withTag("RequireBlePermissions") }

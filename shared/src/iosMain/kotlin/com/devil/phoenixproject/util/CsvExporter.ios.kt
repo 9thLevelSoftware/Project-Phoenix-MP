@@ -12,7 +12,7 @@ import platform.Foundation.*
  * Uses Foundation APIs for file I/O and [presentShareSheet] for sharing.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosCsvExporter : CsvExporter {
+internal class IosCsvExporter : CsvExporter {
 
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,

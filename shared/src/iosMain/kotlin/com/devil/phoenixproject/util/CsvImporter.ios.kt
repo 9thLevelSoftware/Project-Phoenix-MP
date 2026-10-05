@@ -20,7 +20,7 @@ import platform.Foundation.stringWithContentsOfFile
  * Duplicate detection: for each parsed session we check if any existing session
  * has the same timestamp and exercise name. If so, the row is skipped.
  */
-class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImporter {
+internal class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImporter {
 
     override suspend fun importFromCsv(uri: String, profileId: String): CsvImportResult {
         return withContext(Dispatchers.IO) {

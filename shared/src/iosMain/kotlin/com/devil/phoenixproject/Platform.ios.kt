@@ -5,7 +5,7 @@ import platform.UIKit.UIDevice
 /**
  * iOS platform implementation.
  */
-class IOSPlatform : Platform {
+private class IOSPlatform : Platform {
     override val name: String =
         UIDevice.currentDevice.systemName() + " " + UIDevice.currentDevice.systemVersion
 }

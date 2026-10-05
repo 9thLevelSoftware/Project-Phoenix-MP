@@ -43,7 +43,7 @@ private const val BODY_MASS_QUERY_LIMIT = 50UL
  */
 actual class HealthIntegration : HealthWorkoutWriter {
 
-    companion object {
+    private companion object {
         /** Seconds between Unix epoch (1970-01-01) and Apple reference date (2001-01-01). */
         private const val UNIX_TO_APPLE_EPOCH_OFFSET = 978307200.0
     }
