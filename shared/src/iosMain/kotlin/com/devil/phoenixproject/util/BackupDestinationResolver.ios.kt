@@ -111,77 +111,70 @@ class IosBackupDestinationResolver(
      * security-scoped access is held. Failure leaves the previous bookmark in place.
      */
     private suspend fun refreshStaleBookmark(destination: BackupDestination.Custom, url: NSURL) {
-        var accessing = false
         try {
-            accessing = url.startAccessingSecurityScopedResource()
-            val base64 = memScoped {
-                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                val bookmarkData = url.bookmarkDataWithOptions(
-                    options = NSURLBookmarkCreationWithSecurityScope,
-                    includingResourceValuesForKeys = null,
-                    relativeToURL = null,
-                    error = errorPtr.ptr,
-                )
-                if (bookmarkData == null) {
-                    log.w {
-                        "Stale bookmark for ${destination.displayName} could not be recreated: " +
-                            (errorPtr.value?.localizedDescription ?: "unknown error")
+            url.withSecurityScopedAccess {
+                val base64 = memScoped {
+                    val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                    val bookmarkData = url.bookmarkDataWithOptions(
+                        options = NSURLBookmarkCreationWithSecurityScope,
+                        includingResourceValuesForKeys = null,
+                        relativeToURL = null,
+                        error = errorPtr.ptr,
+                    )
+                    if (bookmarkData == null) {
+                        log.w {
+                            "Stale bookmark for ${destination.displayName} could not be recreated: " +
+                                (errorPtr.value?.localizedDescription ?: "unknown error")
+                        }
+                        null
+                    } else {
+                        val encoded = bookmarkData.base64EncodedStringWithOptions(0u)
+                        if (encoded.isNullOrEmpty()) null else encoded
                     }
-                    null
-                } else {
-                    val encoded = bookmarkData.base64EncodedStringWithOptions(0u)
-                    if (encoded.isNullOrEmpty()) null else encoded
                 }
-            }
-            if (base64 == null) {
-                log.w { "Bookmark is stale for ${destination.displayName}; keeping the previous bookmark" }
-                return
-            }
-            if (base64 == destination.bookmarkData) {
-                log.w { "Bookmark is stale for ${destination.displayName}, but recreation matched the stored bookmark" }
-                return
-            }
+                if (base64 == null) {
+                    log.w { "Bookmark is stale for ${destination.displayName}; keeping the previous bookmark" }
+                    return
+                }
+                if (base64 == destination.bookmarkData) {
+                    log.w { "Bookmark is stale for ${destination.displayName}, but recreation matched the stored bookmark" }
+                    return
+                }
 
-            val refreshedUri = url.absoluteString?.takeIf { it.isNotBlank() } ?: destination.uri
-            preferencesManager.setBackupDestination(
-                destination.copy(
-                    uri = refreshedUri,
-                    bookmarkData = base64,
-                ),
-            )
-            log.i { "Refreshed stale security-scoped bookmark for ${destination.displayName}" }
+                val refreshedUri = url.absoluteString?.takeIf { it.isNotBlank() } ?: destination.uri
+                preferencesManager.setBackupDestination(
+                    destination.copy(
+                        uri = refreshedUri,
+                        bookmarkData = base64,
+                    ),
+                )
+                log.i { "Refreshed stale security-scoped bookmark for ${destination.displayName}" }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.w(e) { "Failed to persist refreshed bookmark for ${destination.displayName}" }
-        } finally {
-            if (accessing) {
-                url.stopAccessingSecurityScopedResource()
-            }
         }
     }
 
     override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = withContext(Dispatchers.IO) {
         val url = resolveBookmark(destination) ?: return@withContext false
 
-        val accessing = url.startAccessingSecurityScopedResource()
-        try {
-            val path = url.path ?: return@withContext false
-            val fileManager = NSFileManager.defaultManager
-            val exists = fileManager.fileExistsAtPath(path)
-            val writable = fileManager.isWritableFileAtPath(path)
-            if (!exists || !writable) {
-                log.w { "Directory check failed: exists=$exists, writable=$writable for ${destination.displayName}" }
-            }
-            exists && writable
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.e(e) { "isAccessible failed for ${destination.displayName}" }
-            false
-        } finally {
-            if (accessing) {
-                url.stopAccessingSecurityScopedResource()
+        url.withSecurityScopedAccess {
+            try {
+                val path = url.path ?: return@withContext false
+                val fileManager = NSFileManager.defaultManager
+                val exists = fileManager.fileExistsAtPath(path)
+                val writable = fileManager.isWritableFileAtPath(path)
+                if (!exists || !writable) {
+                    log.w { "Directory check failed: exists=$exists, writable=$writable for ${destination.displayName}" }
+                }
+                exists && writable
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e(e) { "isAccessible failed for ${destination.displayName}" }
+                false
             }
         }
     }
@@ -194,38 +187,35 @@ class IosBackupDestinationResolver(
         val url = resolveBookmark(destination)
             ?: return@withContext Result.failure(Exception("Cannot resolve bookmark for ${destination.displayName}"))
 
-        val accessing = url.startAccessingSecurityScopedResource()
-        try {
-            val dirPath = url.path
-                ?: return@withContext Result.failure(Exception("Resolved URL has no path"))
+        url.withSecurityScopedAccess {
+            try {
+                val dirPath = url.path
+                    ?: return@withContext Result.failure(Exception("Resolved URL has no path"))
 
-            val destPath = "$dirPath/$fileName"
-            val fileManager = NSFileManager.defaultManager
+                val destPath = "$dirPath/$fileName"
+                val fileManager = NSFileManager.defaultManager
 
-            // Remove existing file if present
-            if (fileManager.fileExistsAtPath(destPath)) {
-                fileManager.removeItemAtPath(destPath, error = null)
-            }
+                // Remove existing file if present
+                if (fileManager.fileExistsAtPath(destPath)) {
+                    fileManager.removeItemAtPath(destPath, error = null)
+                }
 
-            // Read temp file content and write to destination
-            val tempData = NSData.create(contentsOfFile = tempFilePath)
-                ?: return@withContext Result.failure(Exception("Cannot read temp file: $tempFilePath"))
+                // Read temp file content and write to destination
+                val tempData = NSData.create(contentsOfFile = tempFilePath)
+                    ?: return@withContext Result.failure(Exception("Cannot read temp file: $tempFilePath"))
 
-            val written = tempData.writeToFile(destPath, atomically = true)
-            if (!written) {
-                return@withContext Result.failure(Exception("NSData.writeToFile failed for $destPath"))
-            }
+                val written = tempData.writeToFile(destPath, atomically = true)
+                if (!written) {
+                    return@withContext Result.failure(Exception("NSData.writeToFile failed for $destPath"))
+                }
 
-            log.d { "Wrote $fileName to ${destination.displayName} ($destPath)" }
-            Result.success(destPath)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.e(e) { "writeFile failed for $fileName to ${destination.displayName}" }
-            Result.failure(e)
-        } finally {
-            if (accessing) {
-                url.stopAccessingSecurityScopedResource()
+                log.d { "Wrote $fileName to ${destination.displayName} ($destPath)" }
+                Result.success(destPath)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e(e) { "writeFile failed for $fileName to ${destination.displayName}" }
+                Result.failure(e)
             }
         }
     }
