@@ -1725,17 +1725,11 @@ SELECT * FROM EarnedBadge WHERE profile_id = :profileId ORDER BY earnedAt DESC;
 selectEarnedBadgeById:
 SELECT * FROM EarnedBadge WHERE badgeId = ? AND profile_id = :profileId;
 
-selectUncelebratedBadges:
-SELECT * FROM EarnedBadge WHERE celebratedAt IS NULL AND profile_id = :profileId ORDER BY earnedAt DESC;
-
 countEarnedBadges:
 SELECT COUNT(*) FROM EarnedBadge WHERE profile_id = :profileId;
 
 insertEarnedBadge:
 INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, profile_id) VALUES (?, ?, :profileId);
-
-markBadgeCelebrated:
-UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId = ? AND profile_id = :profileId;
 
 markBadgesCelebrated:
 UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId IN ? AND profile_id = :profileId;

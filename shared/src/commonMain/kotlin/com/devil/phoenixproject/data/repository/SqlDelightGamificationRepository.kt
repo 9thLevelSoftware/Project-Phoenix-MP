@@ -95,20 +95,6 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
             }
         }
 
-    override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = queries.selectUncelebratedBadges(profileId = profileId)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-        .map { badges ->
-            badges.map { db ->
-                EarnedBadge(
-                    id = db.id,
-                    badgeId = db.badgeId,
-                    earnedAt = db.earnedAt,
-                    celebratedAt = db.celebratedAt,
-                )
-            }
-        }
-
     override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean = withContext(Dispatchers.IO) {
         queries.selectEarnedBadgeById(badgeId, profileId = profileId).executeAsOneOrNull() !=
             null
@@ -126,13 +112,6 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
             queries.insertEarnedBadge(badgeId, now, profileId = profileId)
             Logger.d { "Badge awarded: $badgeId (profile=$profileId)" }
             true
-        }
-    }
-
-    override suspend fun markBadgeCelebrated(badgeId: String, profileId: String) {
-        withContext(Dispatchers.IO) {
-            val now = Clock.System.now().toEpochMilliseconds()
-            queries.markBadgeCelebrated(now, badgeId, profileId = profileId)
         }
     }
 
