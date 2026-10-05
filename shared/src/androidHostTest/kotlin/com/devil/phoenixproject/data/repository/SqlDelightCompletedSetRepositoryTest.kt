@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
@@ -20,11 +21,13 @@ class SqlDelightCompletedSetRepositoryTest {
 
     private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightCompletedSetRepository
+    private lateinit var workoutRepository: SqlDelightWorkoutRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
         repository = SqlDelightCompletedSetRepository(database)
+        workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         insertRoutine("routine-1")
         insertRoutineExercise("exercise-1", "routine-1", "Bench Press")
         insertWorkoutSession("session-1", "bench")
@@ -54,9 +57,9 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `saveCompletedSet updates RPE and PR flags`() = runTest {
+    fun `updateRpe and markAsPr persist on an inserted completed set`() = runTest {
         val completed = completedSet("cset-1", "session-1", setNumber = 1)
-        repository.saveCompletedSet(completed)
+        insertCompletedSet(completed)
 
         repository.updateRpe("cset-1", 8)
         repository.markAsPr("cset-1")
@@ -68,8 +71,8 @@ class SqlDelightCompletedSetRepositoryTest {
 
     @Test
     fun `getCompletedSetsForExercise filters by session exercise`() = runTest {
-        repository.saveCompletedSet(completedSet("cset-1", "session-1", setNumber = 1))
-        repository.saveCompletedSet(completedSet("cset-2", "session-1", setNumber = 2))
+        insertCompletedSet(completedSet("cset-1", "session-1", setNumber = 1))
+        insertCompletedSet(completedSet("cset-2", "session-1", setNumber = 2))
 
         val sets = repository.getCompletedSetsForExercise("bench")
 
@@ -77,27 +80,27 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `saveCompletedSet round-trips setEndReason STALL_FAILURE`() = runTest {
+    fun `commitCompletedSet round-trips setEndReason STALL_FAILURE`() = runTest {
         val completed = completedSet("cset-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE)
-        repository.saveCompletedSet(completed)
+        commitCompletedSet(completed)
 
         val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-stall" }
         assertEquals(SetEndReason.STALL_FAILURE, loaded.setEndReason)
     }
 
     @Test
-    fun `saveCompletedSet round-trips setEndReason TARGET_REPS_REACHED default`() = runTest {
+    fun `commitCompletedSet round-trips setEndReason TARGET_REPS_REACHED default`() = runTest {
         val completed = completedSet("cset-default", "session-1", setNumber = 1)
-        repository.saveCompletedSet(completed)
+        commitCompletedSet(completed)
 
         val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-default" }
         assertEquals(SetEndReason.TARGET_REPS_REACHED, loaded.setEndReason)
     }
 
     @Test
-    fun `saveCompletedSet round-trips all SetEndReason values`() = runTest {
+    fun `commitCompletedSet round-trips all SetEndReason values`() = runTest {
         for ((index, reason) in SetEndReason.entries.withIndex()) {
-            repository.saveCompletedSet(completedSet("cset-$index", "session-1", setNumber = index + 1, setEndReason = reason))
+            commitCompletedSet(completedSet("cset-$index", "session-1", setNumber = index + 1, setEndReason = reason))
         }
 
         val loaded = repository.getCompletedSets("session-1")
@@ -108,13 +111,11 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `saveCompletedSets preserves distinct non-default end reasons`() = runTest {
-        repository.saveCompletedSets(
-            listOf(
-                completedSet("cset-bulk-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE),
-                completedSet("cset-bulk-timer", "session-1", setNumber = 2, setEndReason = SetEndReason.TIMER_EXPIRED),
-            ),
-        )
+    fun `commitCompletedSet preserves distinct non-default end reasons`() = runTest {
+        listOf(
+            completedSet("cset-bulk-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE),
+            completedSet("cset-bulk-timer", "session-1", setNumber = 2, setEndReason = SetEndReason.TIMER_EXPIRED),
+        ).forEach { commitCompletedSet(it) }
 
         val reasonsById = repository.getCompletedSets("session-1").associate { it.id to it.setEndReason }
         assertEquals(SetEndReason.STALL_FAILURE, reasonsById["cset-bulk-stall"])
@@ -122,14 +123,14 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `single and bulk saves round-trip routine occurrence and attempts without changing zero-based set index`() = runTest {
+    fun `commitCompletedSet round-trips routine occurrence and attempts without changing zero-based set index`() = runTest {
         val key = LogicalSetKey(
             routineSessionId = "routine-session-cross-model",
             routineExerciseId = "exercise-1",
             setIndex = 4,
             setKind = SetType.AMRAP,
         )
-        repository.saveCompletedSet(
+        listOf(
             completedSet(
                 id = "cset-single-attempt-2",
                 sessionId = "session-1",
@@ -138,14 +139,10 @@ class SqlDelightCompletedSetRepositoryTest {
                 routineExerciseId = key.routineExerciseId,
                 attemptNumber = 2,
             ),
-        )
-        repository.saveCompletedSets(
-            listOf(
-                completedSet("cset-bulk-attempt-1", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 1),
-                completedSet("cset-bulk-attempt-3", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 3),
-                completedSet("cset-bulk-legacy", "session-1", 7),
-            ),
-        )
+            completedSet("cset-bulk-attempt-1", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 1),
+            completedSet("cset-bulk-attempt-3", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 3),
+            completedSet("cset-bulk-legacy", "session-1", 7),
+        ).forEach { commitCompletedSet(it) }
 
         val byId = repository.getCompletedSets("session-1").associateBy { it.id }
         val attempts = listOf(
@@ -164,8 +161,8 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `ordinary save canonicalizes negative attempt number to one`() = runTest {
-        repository.saveCompletedSet(
+    fun `commitCompletedSet canonicalizes negative attempt number to one`() = runTest {
+        commitCompletedSet(
             completedSet("invalid-ordinary", "session-1", 0, routineExerciseId = "exercise-1", attemptNumber = -4),
         )
 
@@ -174,9 +171,9 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `bulk save canonicalizes zero attempt number to one`() = runTest {
-        repository.saveCompletedSets(
-            listOf(completedSet("invalid-bulk", "session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 0)),
+    fun `commitCompletedSet canonicalizes zero attempt number to one`() = runTest {
+        commitCompletedSet(
+            completedSet("invalid-bulk", "session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 0),
         )
 
         assertEquals(1L, database.phoenixDatabaseQueries.selectCompletedSetById("invalid-bulk").executeAsOne().attempt_number)
@@ -256,17 +253,15 @@ class SqlDelightCompletedSetRepositoryTest {
         insertWorkoutSession("attempt-session-2", "bench", routineSessionId = "routine-session-a")
         insertWorkoutSession("other-routine-session", "bench", routineSessionId = "routine-session-b")
         insertWorkoutSession("deleted-attempt-session", "bench", routineSessionId = "routine-session-a")
-        repository.saveCompletedSets(
-            listOf(
-                completedSet("attempt-1", "attempt-session-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1),
-                completedSet("attempt-2", "attempt-session-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2),
-                completedSet("wrong-occurrence", "attempt-session-1", 0, routineExerciseId = "exercise-other", attemptNumber = 20),
-                completedSet("wrong-set", "attempt-session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 21),
-                completedSet("wrong-kind", "attempt-session-1", 0, setType = SetType.AMRAP, routineExerciseId = "exercise-1", attemptNumber = 22),
-                completedSet("wrong-routine-session", "other-routine-session", 0, routineExerciseId = "exercise-1", attemptNumber = 23),
-                completedSet("soft-deleted", "deleted-attempt-session", 0, routineExerciseId = "exercise-1", attemptNumber = 24),
-            ),
-        )
+        listOf(
+            completedSet("attempt-1", "attempt-session-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1),
+            completedSet("attempt-2", "attempt-session-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2),
+            completedSet("wrong-occurrence", "attempt-session-1", 0, routineExerciseId = "exercise-other", attemptNumber = 20),
+            completedSet("wrong-set", "attempt-session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 21),
+            completedSet("wrong-kind", "attempt-session-1", 0, setType = SetType.AMRAP, routineExerciseId = "exercise-1", attemptNumber = 22),
+            completedSet("wrong-routine-session", "other-routine-session", 0, routineExerciseId = "exercise-1", attemptNumber = 23),
+            completedSet("soft-deleted", "deleted-attempt-session", 0, routineExerciseId = "exercise-1", attemptNumber = 24),
+        ).forEach { insertCompletedSet(it) }
         database.phoenixDatabaseQueries.softDeleteSession(123L, 123L, "deleted-attempt-session")
 
         assertEquals(3, repository.nextAttemptNumber(key))
@@ -277,16 +272,14 @@ class SqlDelightCompletedSetRepositoryTest {
         insertWorkoutSession("attempt-1", "bench", routineSessionId = "run-1")
         insertWorkoutSession("attempt-2", "bench", routineSessionId = "run-1")
         insertWorkoutSession("other-set", "bench", routineSessionId = "run-1")
-        repository.saveCompletedSets(
-            listOf(
-                completedSet("failed", "attempt-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1)
-                    .copy(actualWeightKg = 50f, actualReps = 3, completedAt = 1000L),
-                completedSet("retry", "attempt-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2)
-                    .copy(actualWeightKg = 40f, actualReps = 8, completedAt = 2000L),
-                completedSet("other", "other-set", 1, routineExerciseId = "exercise-1", attemptNumber = 1)
-                    .copy(completedAt = 1500L),
-            ),
-        )
+        listOf(
+            completedSet("failed", "attempt-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1)
+                .copy(actualWeightKg = 50f, actualReps = 3, completedAt = 1000L),
+            completedSet("retry", "attempt-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2)
+                .copy(actualWeightKg = 40f, actualReps = 8, completedAt = 2000L),
+            completedSet("other", "other-set", 1, routineExerciseId = "exercise-1", attemptNumber = 1)
+                .copy(completedAt = 1500L),
+        ).forEach { insertCompletedSet(it) }
 
         val recent = repository.getRecentCompletedSetsForExercise("bench", 20, "default")
 
@@ -299,7 +292,7 @@ class SqlDelightCompletedSetRepositoryTest {
         repeat(6) { attempt ->
             val sessionId = "attempt-session-$attempt"
             insertWorkoutSession(sessionId, "bench", routineSessionId = "run-unbounded")
-            repository.saveCompletedSet(
+            insertCompletedSet(
                 completedSet(
                     "attempt-$attempt",
                     sessionId,
@@ -310,7 +303,7 @@ class SqlDelightCompletedSetRepositoryTest {
             )
         }
         insertWorkoutSession("older-session", "bench", routineSessionId = "run-older")
-        repository.saveCompletedSet(
+        insertCompletedSet(
             completedSet("older", "older-session", 0, routineExerciseId = "exercise-1")
                 .copy(completedAt = 100L),
         )
@@ -326,13 +319,11 @@ class SqlDelightCompletedSetRepositoryTest {
         insertWorkoutSession("durable-session", "bench", routineSessionId = "routine-session-a")
         insertWorkoutSession("other-stable-session", "bench", routineSessionId = "routine-session-a")
         insertWorkoutSession("soft-deleted-durable", "bench", routineSessionId = "routine-session-a")
-        repository.saveCompletedSets(
-            listOf(
-                completedSet("durable", "durable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
-                completedSet("other-stable", "other-stable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
-                completedSet("deleted-durable", "soft-deleted-durable", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
-            ),
-        )
+        listOf(
+            completedSet("durable", "durable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+            completedSet("other-stable", "other-stable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+            completedSet("deleted-durable", "soft-deleted-durable", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+        ).forEach { insertCompletedSet(it) }
         database.phoenixDatabaseQueries.softDeleteSession(123L, 123L, "soft-deleted-durable")
         val key = LogicalSetKey("routine-session-a", "exercise-1", 0, SetType.STANDARD)
 
@@ -376,7 +367,7 @@ class SqlDelightCompletedSetRepositoryTest {
             workingReps = 7,
             isJustLift = 1L,
         )
-        repository.saveCompletedSet(
+        insertCompletedSet(
             completedSet(
                 id = "cset-captured-stall",
                 sessionId = "captured-untagged-just-lift",
@@ -432,7 +423,7 @@ class SqlDelightCompletedSetRepositoryTest {
             workingReps = 7,
             isJustLift = 1L,
         )
-        repository.saveCompletedSet(
+        insertCompletedSet(
             completedSet(
                 id = "cset-amrap",
                 sessionId = "amrap-just-lift",
@@ -462,7 +453,7 @@ class SqlDelightCompletedSetRepositoryTest {
             workingReps = 7,
             isJustLift = 1L,
         )
-        repository.saveCompletedSet(
+        insertCompletedSet(
             completedSet(
                 id = "cset-standard",
                 sessionId = "standard-just-lift",
@@ -517,6 +508,23 @@ class SqlDelightCompletedSetRepositoryTest {
 
         val persisted = repository.getCompletedSets("new-standard-just-lift").single()
         assertEquals(SetType.STANDARD, persisted.setType)
+    }
+
+    private suspend fun commitCompletedSet(set: CompletedSet) {
+        val session = checkNotNull(workoutRepository.getSession(set.sessionId)) {
+            "Workout session ${set.sessionId} must exist before commitCompletedSet"
+        }
+        workoutRepository.commitCompletedSet(
+            session = session,
+            metrics = emptyList(),
+            completedSet = set,
+            repMetrics = emptyList(),
+            repBiomechanics = emptyList(),
+        )
+    }
+
+    private fun insertCompletedSet(set: CompletedSet) {
+        database.phoenixDatabaseQueries.insertCompletedSetRow(set)
     }
 
     private fun plannedSet(

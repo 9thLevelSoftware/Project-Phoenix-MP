@@ -3,8 +3,10 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 
@@ -35,5 +37,56 @@ class FakePersonalRecordRepositoryTest {
 
         assertEquals(60f, repository.getBestWeightPR("bench", "default")?.weightPerCableKg)
         assertEquals(60f, repository.getAllPRsGrouped("default").first().single().weightPerCableKg)
+    }
+
+    @Test
+    fun storedOneRepMaxUsesHybridEstimate() = runTest {
+        val repository = FakePersonalRecordRepository()
+
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 30f,
+            volumePRWeightPerCableKg = 20f,
+            reps = 15,
+            workoutMode = "OldSchool",
+            timestamp = 1L,
+            profileId = "default",
+        )
+
+        val highRepEstimate = OneRepMaxCalculator.estimate(30f, 15)
+        assertEquals(highRepEstimate, repository.getWeightPR("bench", "Old School", "default")?.oneRepMax)
+        assertEquals(highRepEstimate, repository.getVolumePR("bench", "Old School", "default")?.oneRepMax)
+        assertNotEquals(30f * (36f / (37 - 15)), highRepEstimate)
+
+        repository.updatePRsIfBetter(
+            exerciseId = "row",
+            weightPerCableKg = 40f,
+            reps = 8,
+            workoutMode = "Echo",
+            timestamp = 2L,
+            profileId = "default",
+        )
+        assertEquals(
+            OneRepMaxCalculator.estimate(40f, 8),
+            repository.getWeightPR("row", "Echo", "default")?.oneRepMax,
+        )
+
+        repository.updatePhaseSpecificPRs(
+            exerciseId = "squat",
+            workoutMode = "Pump",
+            timestamp = 3L,
+            reps = 12,
+            peakConcentricForceKg = 25f,
+            peakEccentricForceKg = 50f,
+            profileId = "default",
+        )
+        assertEquals(
+            OneRepMaxCalculator.estimate(25f, 12),
+            repository.getBestWeightPR("squat", "Pump", "default", WorkoutPhase.CONCENTRIC)?.oneRepMax,
+        )
+        assertEquals(
+            OneRepMaxCalculator.estimate(50f, 12),
+            repository.getBestWeightPR("squat", "Pump", "default", WorkoutPhase.ECCENTRIC)?.oneRepMax,
+        )
     }
 }

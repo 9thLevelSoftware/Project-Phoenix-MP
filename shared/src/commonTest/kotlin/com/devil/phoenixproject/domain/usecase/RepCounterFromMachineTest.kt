@@ -626,6 +626,10 @@ class RepCounterFromMachineTest {
         val ranges = repCounter.getRepRanges()
         assertEquals(800f, ranges.maxPosA)
         assertEquals(100f, ranges.minPosA)
+        assertEquals(800f, ranges.lastRepTopA)
+        assertEquals(100f, ranges.lastRepBottomA)
+        assertEquals(800f, ranges.lastRepTopB)
+        assertEquals(100f, ranges.lastRepBottomB)
     }
 
     @Test
@@ -916,10 +920,6 @@ class RepRangesTest {
             maxPosA = 1000f,
             minPosB = 100f,
             maxPosB = 1000f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
         )
 
         // 5% of range (900) = 45, threshold = 145
@@ -933,10 +933,6 @@ class RepRangesTest {
             maxPosA = 1000f,
             minPosB = 100f,
             maxPosB = 1000f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
         )
 
         assertFalse(ranges.isInDangerZone(posA = 500f, posB = 500f))
@@ -949,10 +945,6 @@ class RepRangesTest {
             maxPosA = 120f, // Range = 20, less than threshold
             minPosB = 100f,
             maxPosB = 120f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
         )
 
         // Even at min, not in danger zone because range is too small
@@ -968,10 +960,6 @@ class RepRangesTest {
             maxPosA = 230f, // Extended position after reps
             minPosB = 30f,
             maxPosB = 230f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
         )
 
         // Range = 200mm, threshold = 30 + (200 * 0.05) = 40mm

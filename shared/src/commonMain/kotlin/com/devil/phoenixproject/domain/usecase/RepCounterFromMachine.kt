@@ -65,16 +65,11 @@ class RepCounterFromMachine {
     private val bottomPositionsA = mutableListOf<Float>()
     private val bottomPositionsB = mutableListOf<Float>()
 
-    // ROM boundaries in mm
+    // ROM boundaries in mm (sliding-window averages)
     private var maxRepPosA: Float? = null
     private var minRepPosA: Float? = null
     private var maxRepPosB: Float? = null
     private var minRepPosB: Float? = null
-
-    private var maxRepPosARange: Pair<Float, Float>? = null
-    private var minRepPosARange: Pair<Float, Float>? = null
-    private var maxRepPosBRange: Pair<Float, Float>? = null
-    private var minRepPosBRange: Pair<Float, Float>? = null
 
     // Last rep's raw positions (for ghost indicators) - captured before averaging
     private var lastRepTopA: Float? = null
@@ -129,10 +124,6 @@ class RepCounterFromMachine {
         minRepPosA = null
         maxRepPosB = null
         minRepPosB = null
-        maxRepPosARange = null
-        minRepPosARange = null
-        maxRepPosBRange = null
-        minRepPosBRange = null
         // Clear last rep ghost positions
         lastRepTopA = null
         lastRepTopB = null
@@ -185,11 +176,9 @@ class RepCounterFromMachine {
         // Only set initial baseline if positions are valid and not already calibrated
         if (posA > 0f && minRepPosA == null) {
             minRepPosA = posA
-            minRepPosARange = Pair(posA, posA)
         }
         if (posB > 0f && minRepPosB == null) {
             minRepPosB = posB
-            minRepPosBRange = Pair(posB, posB)
         }
     }
 
@@ -205,19 +194,15 @@ class RepCounterFromMachine {
         // Only seed if not already calibrated from actual reps
         if (maxRepPosA == null && topPositionsA.isEmpty()) {
             maxRepPosA = rangeTop
-            maxRepPosARange = Pair(rangeTop, rangeTop)
         }
         if (maxRepPosB == null && topPositionsB.isEmpty()) {
             maxRepPosB = rangeTop
-            maxRepPosBRange = Pair(rangeTop, rangeTop)
         }
         if (minRepPosA == null && bottomPositionsA.isEmpty()) {
             minRepPosA = rangeBottom
-            minRepPosARange = Pair(rangeBottom, rangeBottom)
         }
         if (minRepPosB == null && bottomPositionsB.isEmpty()) {
             minRepPosB = rangeBottom
-            minRepPosBRange = Pair(rangeBottom, rangeBottom)
         }
         logDebug("ROM seeded from machine: top=${rangeTop}mm, bottom=${rangeBottom}mm")
     }
@@ -237,23 +222,19 @@ class RepCounterFromMachine {
         if (posA > 0f) {
             if (minRepPosA == null || posA < minRepPosA!!) {
                 minRepPosA = posA
-                minRepPosARange = Pair(posA, minRepPosARange?.second ?: posA)
             }
             // Track maximum positions (cable extended / top of movement)
             if (maxRepPosA == null || posA > maxRepPosA!!) {
                 maxRepPosA = posA
-                maxRepPosARange = Pair(maxRepPosARange?.first ?: posA, posA)
             }
         }
 
         if (posB > 0f) {
             if (minRepPosB == null || posB < minRepPosB!!) {
                 minRepPosB = posB
-                minRepPosBRange = Pair(posB, minRepPosBRange?.second ?: posB)
             }
             if (maxRepPosB == null || posB > maxRepPosB!!) {
                 maxRepPosB = posB
-                maxRepPosBRange = Pair(maxRepPosBRange?.first ?: posB, posB)
             }
         }
     }
@@ -664,19 +645,15 @@ class RepCounterFromMachine {
     private fun updateRepRanges() {
         if (topPositionsA.isNotEmpty()) {
             maxRepPosA = topPositionsA.average().toFloat()
-            maxRepPosARange = Pair(topPositionsA.minOrNull() ?: 0f, topPositionsA.maxOrNull() ?: 0f)
         }
         if (bottomPositionsA.isNotEmpty()) {
             minRepPosA = bottomPositionsA.average().toFloat()
-            minRepPosARange = Pair(bottomPositionsA.minOrNull() ?: 0f, bottomPositionsA.maxOrNull() ?: 0f)
         }
         if (topPositionsB.isNotEmpty()) {
             maxRepPosB = topPositionsB.average().toFloat()
-            maxRepPosBRange = Pair(topPositionsB.minOrNull() ?: 0f, topPositionsB.maxOrNull() ?: 0f)
         }
         if (bottomPositionsB.isNotEmpty()) {
             minRepPosB = bottomPositionsB.average().toFloat()
-            minRepPosBRange = Pair(bottomPositionsB.minOrNull() ?: 0f, bottomPositionsB.maxOrNull() ?: 0f)
         }
     }
 
@@ -810,10 +787,6 @@ class RepCounterFromMachine {
         maxPosA = maxRepPosA,
         minPosB = minRepPosB,
         maxPosB = maxRepPosB,
-        minRangeA = minRepPosARange,
-        maxRangeA = maxRepPosARange,
-        minRangeB = minRepPosBRange,
-        maxRangeB = maxRepPosBRange,
         // Last rep's raw positions for ghost indicators
         lastRepTopA = lastRepTopA,
         lastRepTopB = lastRepTopB,
@@ -850,10 +823,6 @@ data class RepRanges(
     val maxPosA: Float?,
     val minPosB: Float?,
     val maxPosB: Float?,
-    val minRangeA: Pair<Float, Float>?,
-    val maxRangeA: Pair<Float, Float>?,
-    val minRangeB: Pair<Float, Float>?,
-    val maxRangeB: Pair<Float, Float>?,
     // Last rep's raw positions for ghost indicators
     val lastRepTopA: Float? = null,
     val lastRepTopB: Float? = null,
