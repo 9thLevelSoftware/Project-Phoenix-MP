@@ -221,7 +221,7 @@ actual class HealthIntegration : HealthWorkoutWriter {
         }
 
         return try {
-            val dialogShown = suspendCancellableCoroutine { continuation ->
+            val requestProcessed = suspendCancellableCoroutine { continuation ->
                 healthStore.requestAuthorizationToShareTypes(
                     typesToShare = writeTypes,
                     readTypes = readTypes,
@@ -236,8 +236,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 )
             }
 
-            if (!dialogShown) {
-                log.w { "HealthKit authorization dialog was not shown" }
+            if (!requestProcessed) {
+                log.w { "HealthKit authorization request was not processed" }
                 return false
             }
 
