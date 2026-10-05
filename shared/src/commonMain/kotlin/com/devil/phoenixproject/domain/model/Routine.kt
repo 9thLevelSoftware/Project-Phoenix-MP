@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.domain.model
 
-import kotlin.math.roundToInt
+import com.devil.phoenixproject.util.roundToHalfKg
 import kotlinx.serialization.Serializable
 
 /**
@@ -218,12 +218,6 @@ data class RoutineExercise(
         return List(sets) { index -> setWeightsPerCableKg.getOrNull(index) ?: weightPerCableKg }
     }
 }
-
-/**
- * Round to nearest 0.5kg increment.
- * Phoenix machines use 0.5kg increments, so this ensures valid weight values.
- */
-private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 
 /**
  * Round to nearest given increment.

@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.domain.assessment
 
-import kotlin.math.roundToInt
+import com.devil.phoenixproject.util.roundToHalfKg
 
 /**
  * Core engine for VBT-based strength assessment.
@@ -116,7 +116,7 @@ class AssessmentEngine {
         val rawWeight = currentLoadKg + increment
 
         // Clamp to 0.5kg increments (machine resolution)
-        val snapped = (rawWeight * 2f).roundToInt() / 2f
+        val snapped = rawWeight.roundToHalfKg()
 
         return snapped.coerceAtMost(loadCeiling.maxKg())
     }
