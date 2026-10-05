@@ -112,18 +112,6 @@ class FakeUserProfileRepository : UserProfileRepository {
     var beforeCreateAndActivateProfile: (suspend (String, Int) -> Unit)? = null
     var beforeReconcileActiveProfileContext: (suspend () -> Unit)? = null
 
-    fun resetRootProfileOperationControls() {
-        setActiveProfileRequests.clear()
-        createAndActivateRequests.clear()
-        reconcileActiveProfileContextRequests = 0
-        setActiveProfileFailure = null
-        createAndActivateProfileFailure = null
-        reconcileActiveProfileContextFailure = null
-        beforeSetActiveProfile = null
-        beforeCreateAndActivateProfile = null
-        beforeReconcileActiveProfileContext = null
-    }
-
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
     override val activeProfile: StateFlow<UserProfile?> = _activeProfile.asStateFlow()
 
@@ -137,13 +125,6 @@ class FakeUserProfileRepository : UserProfileRepository {
     val deleteActiveProfilePermanentlyRequests = mutableListOf<String>()
     val finalizePendingProfileDeletionRequests = mutableListOf<String>()
     var finalizePendingProfileDeletionFailure: Throwable? = null
-
-    /** Marks an existing profile pending deletion, as a committed permanent delete would. */
-    suspend fun markPendingDeletionForTest(profileId: String) = mutex.withLock {
-        require(profiles.containsKey(profileId)) { "Unknown profile: $profileId" }
-        pendingDeletionIds += profileId
-        updateIdentityFlows()
-    }
 
     private val _activeProfileContext = MutableStateFlow<ActiveProfileContext>(
         ActiveProfileContext.Switching(null),

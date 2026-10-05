@@ -44,35 +44,12 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
 
-    fun setSessionExercise(sessionId: String, exerciseId: String) {
-        sessionExerciseIds[sessionId] = exerciseId
-    }
-
     fun setSessionRoutine(sessionId: String, routineSessionId: String) {
         sessionRoutineIds[sessionId] = routineSessionId
     }
 
     fun softDeleteSession(sessionId: String) {
         deletedSessionIds += sessionId
-    }
-
-    fun reset() {
-        saved.clear()
-        insertedCompletedSets.clear()
-        beforeInsertCompletedSet = {}
-        beforeMarkAsPr = {}
-        afterInsertCompletedSet = {}
-        plannedSets.clear()
-        completedSets.clear()
-        plannedSetsByExercise.clear()
-        plannedSetReadRequests.clear()
-        beforeAttemptDurabilityRead = {}
-        attemptDurabilityReadCount = 0
-        completedSetsBySession.clear()
-        sessionExerciseIds.clear()
-        sessionRoutineIds.clear()
-        deletedSessionIds.clear()
-        completedSetsFlows.clear()
     }
 
     // ==================== Planned Sets ====================
