@@ -187,26 +187,29 @@ object PortalPullAdapter {
             ?: 0
 
     /**
-     * Issue #591: Aggregate per-set rep summaries into the summary-level
-     * peak/avg force fields stored on `WorkoutSession`.
+     * Fold every rep summary on [sets] into session-level [HydratedMetrics].
      *
-     * The portal stores per-rep telemetry in `PullRepSummaryDto`:
-     *   - `leftForceAvg` / `rightForceAvg` (Newtons) → per-rep averages for
-     *     cable A / cable B during the concentric or eccentric phase.
-     *     Cable A maps to "left", cable B maps to "right"
-     *     (see PortalSyncAdapter.kt:363-364).
-     *   - `meanForceN` / `peakForceN` (Newtons, combined cables) — set-level
-     *     aggregates already supplied by the portal set DTO.
+     * Empty [sets], or sets whose `repSummaries` are all empty, return
+     * [HydratedMetrics.EMPTY]. Otherwise reps from every set are pooled
+     * (not reduced per set and then combined). Null samples are omitted
+     * from each max and mean; they are not treated as zero.
      *
-     * Mobile `peakForceConcentric*` / `avgForceConcentric*` columns store
-     * kg-load (i.e., Newtons / 9.80665). Conversion here so the round trip
-     * push → pull is unit-consistent with locally captured values.
+     * Only `leftForceAvg`, `rightForceAvg`, and `asymmetryPct` are read.
+     * `meanForceN`, `peakForceN`, and `tutMs` are ignored. [PullSetDto] has
+     * no force fields of its own.
      *
-     * Eccentric peak/avg is harder to derive because the portal stores
-     * `tutMs` and not a separate eccentric force aggregate, so this helper
-     * conservatively keeps eccentric peak/avg as null unless a set DTO
-     * provides them directly. The merge policy keeps locally captured eccentric
-     * values authoritative while allowing server-owned rows to be refreshed.
+     * Cable A is `leftForceAvg` and cable B is `rightForceAvg`, both in
+     * Newtons. Concentric peak is the max of the non-null samples on that
+     * cable; concentric average is their mean. Both are converted to kg-load
+     * with [PortalMappings.newtonsToLoadKg] (`newtons / 9.80665`). A cable
+     * with no samples stays null. The peak is the max of per-rep averages,
+     * not a true peak-force capture.
+     *
+     * `avgAsymmetryPercent` is the mean of non-null `asymmetryPct` values.
+     * That value is already a percent, so it is not converted.
+     *
+     * `peakForceEccentricA` / `B` and `avgForceEccentricA` / `B` are always
+     * null. Nothing on the set or rep DTO is copied into them.
      */
     private fun aggregateSetMetrics(sets: List<PullSetDto>): HydratedMetrics {
         if (sets.isEmpty()) return HydratedMetrics.EMPTY
@@ -214,12 +217,10 @@ object PortalPullAdapter {
         val allReps = sets.flatMap { it.repSummaries }
         if (allReps.isEmpty()) return HydratedMetrics.EMPTY
 
-        // Single pass over allReps — avoid re-flatMapping `sets` again at
-        // the call site to compute avgAsymmetryPercent (gemini-code-assist
-        // medium-priority note). Cable A force: max of leftForceAvg across
-        // all reps (peak proxy). Cable B force: max of rightForceAvg across
-        // all reps. Rep averages: average across all reps that supplied a
-        // value.
+        // Cable A peak is the max of leftForceAvg across the pooled reps
+        // (a peak proxy). Cable B peak is the max of rightForceAvg. Averages
+        // use only reps that supplied a value. Asymmetry is reduced here so
+        // the call site does not flatMap `sets` again.
         val leftForces = allReps.mapNotNull { it.leftForceAvg }
         val rightForces = allReps.mapNotNull { it.rightForceAvg }
         val peakLeft = leftForces.maxOrNull()
