@@ -1,13 +1,17 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -17,8 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
@@ -28,7 +32,7 @@ import com.devil.phoenixproject.presentation.components.exercisepicker.selectabl
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.cd_back
 import projectphoenix.shared.generated.resources.tag_exercise_action
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,19 +98,32 @@ fun MiniExercisePickerDialog(
         if (recentActive) orderByRecentExercises(filtered, recentIds) else filtered
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = MaterialTheme.shapes.large,
-        title = {
-            Text(
-                stringResource(Res.string.tag_exercise_action),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        },
-        text = {
-            Box(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(Res.string.tag_exercise_action)) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(Res.string.cd_back),
+                            )
+                        }
+                    },
+                )
+            },
+        ) { paddingValues ->
+            // fillMaxSize is required: the picker list uses Modifier.weight(1f), which
+            // needs bounded height (issue #893 crash otherwise).
+            Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
                 ExercisePickerContent(
                     exercises = exercises,
                     searchQuery = searchQuery,
@@ -160,23 +177,15 @@ fun MiniExercisePickerDialog(
                     exerciseRepository = exerciseRepository,
                     enableVideoPlayback = false,
                     enableCustomExercises = false,
-                    // showTitle = false suppresses ExercisePickerContent's own title row,
-                    // avoiding a double-title when hosted inside an AlertDialog.
-                    // fullScreen = true is used honestly for its height meaning only:
-                    // fillMaxHeight(1f) inside the heightIn(max=520.dp) cap reproduces the
-                    // pre-showTitle rendered height exactly (5A.5 review: 0.9f shrank the
-                    // list by ~one row on compact screens).
+                    // showTitle = false suppresses ExercisePickerContent's own title row;
+                    // the full-screen TopAppBar owns the title here. fullScreen = true lets
+                    // the list take the full height under the top bar.
                     showTitle = false,
                     fullScreen = true,
+                    // Issue #363: slightly smaller row names in this dialog only.
+                    rowNameStyle = MaterialTheme.typography.titleSmall,
                 )
             }
-        },
-        // Lone dismiss action lives in the confirmButton slot so M3 renders it
-        // right-aligned (lens-dialog-uniformity-6 pattern, matches RestTimePickerDialog).
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_cancel))
-            }
-        },
-    )
+        }
+    }
 }

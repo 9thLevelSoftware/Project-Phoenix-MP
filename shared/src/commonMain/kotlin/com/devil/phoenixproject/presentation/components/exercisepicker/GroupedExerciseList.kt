@@ -28,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -51,6 +52,8 @@ fun GroupedExerciseList(
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
+    /** Row name typography forwarded to each exercise row. Defaults to titleMedium (#363). */
+    rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     modifier: Modifier = Modifier,
     emptyContent: @Composable () -> Unit = {},
     /** False lists [exercises] in their given order, with no letter headers or alphabet strip. */
@@ -90,6 +93,7 @@ fun GroupedExerciseList(
             exercise = exercise,
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = enableVideoPlayback,
+            rowNameStyle = rowNameStyle,
             onSelect = { onExerciseSelected(exercise) },
             onToggleFavorite = { onToggleFavorite(exercise) },
             onShowVideo = { images -> onShowVideo(exercise, images) },
@@ -162,6 +166,7 @@ private fun ExerciseItemWithImage(
     exercise: Exercise,
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean,
+    rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowVideo: (List<ExerciseImageEntity>) -> Unit,
@@ -198,6 +203,7 @@ private fun ExerciseItemWithImage(
         exercise = exercise,
         thumbnailUrl = thumbnailUrl,
         isLoadingThumbnail = isLoadingImage,
+        rowNameStyle = rowNameStyle,
         onSelect = onSelect,
         onToggleFavorite = onToggleFavorite,
         onLongPress = onLongPress,

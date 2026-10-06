@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Exercise
@@ -54,6 +55,7 @@ fun SwipeableExerciseRow(
     onThumbnailClick: (() -> Unit)? = null,
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
+    rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -156,6 +158,7 @@ fun SwipeableExerciseRow(
                 exercise = exercise,
                 thumbnailUrl = thumbnailUrl,
                 isLoadingThumbnail = isLoadingThumbnail,
+                rowNameStyle = rowNameStyle,
                 onClick = {
                     if (offsetX.value > 0f) {
                         scope.launch {
