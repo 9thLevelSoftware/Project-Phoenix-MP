@@ -505,23 +505,7 @@ tasks.register("validateSchemaManifest") {
             val table = match.groupValues[1]
             // Skip temp/rebuild tables (used in migrations, not in final schema)
             if (table.contains("_temp") || table.contains("_rebuild") || table.contains("_new") || table.contains("_v")) continue
-            val body = match.groupValues[2]
-            val cols = mutableSetOf<String>()
-            for (line in body.split(",").map { it.trim() }) {
-                if (line.isBlank()) continue
-                if (line.startsWith("--")) continue
-                val upper = line.uppercase()
-                if (upper.startsWith("FOREIGN KEY")) continue
-                if (upper.startsWith("PRIMARY KEY") && !upper.startsWith("PRIMARY KEY(")) continue
-                if (upper.startsWith("UNIQUE(") || upper.startsWith("UNIQUE (")) continue
-                if (upper.startsWith("CHECK(") || upper.startsWith("CHECK (")) continue
-                // Column name is the first word
-                val colName = line.split("\\s+".toRegex()).firstOrNull()?.trim()
-                if (!colName.isNullOrBlank() && colName != "--") {
-                    cols.add(colName)
-                }
-            }
-            sqColumns[table] = cols
+            sqColumns[table] = extractSqlColumnNames(stripSqlLineComments(match.groupValues[2])).toMutableSet()
         }
 
         // ── 2. Parse ALTER TABLE ADD COLUMN from .sqm files ─────────────────
@@ -550,21 +534,7 @@ tasks.register("validateSchemaManifest") {
                 if (table.contains("_temp") || table.contains("_rebuild") || table.contains("_new") || table.contains("_v")) continue
                 // Only track if this is a "real" table that also exists in the .sq
                 if (!sqColumns.containsKey(table)) continue
-                val body = ctMatch.groupValues[2]
-                val cols = mutableSetOf<String>()
-                for (line in body.split(",").map { it.trim() }) {
-                    if (line.isBlank()) continue
-                    if (line.startsWith("--")) continue
-                    val upper = line.uppercase()
-                    if (upper.startsWith("FOREIGN KEY")) continue
-                    if (upper.startsWith("PRIMARY KEY") && !upper.startsWith("PRIMARY KEY(")) continue
-                    if (upper.startsWith("UNIQUE(") || upper.startsWith("UNIQUE (")) continue
-                    if (upper.startsWith("CHECK(") || upper.startsWith("CHECK (")) continue
-                    val colName = line.split("\\s+".toRegex()).firstOrNull()?.trim()
-                    if (!colName.isNullOrBlank() && colName != "--") {
-                        cols.add(colName)
-                    }
-                }
+                val cols = extractSqlColumnNames(stripSqlLineComments(ctMatch.groupValues[2]))
                 migrationCreatedTables.getOrPut(table) { mutableSetOf() }.addAll(cols)
             }
         }
@@ -592,22 +562,8 @@ tasks.register("validateSchemaManifest") {
             // Extract columns from the CREATE TABLE body inside the raw string
             val innerMatch = createTableRegex.find(createBody)
             if (innerMatch != null) {
-                val body = innerMatch.groupValues[2]
-                val cols = mutableSetOf<String>()
-                for (line in body.split(",").map { it.trim() }) {
-                    if (line.isBlank()) continue
-                    if (line.startsWith("--")) continue
-                    val upper = line.uppercase()
-                    if (upper.startsWith("FOREIGN KEY")) continue
-                    if (upper.startsWith("PRIMARY KEY") && !upper.startsWith("PRIMARY KEY(")) continue
-                    if (upper.startsWith("UNIQUE(") || upper.startsWith("UNIQUE (")) continue
-                    if (upper.startsWith("CHECK(") || upper.startsWith("CHECK (")) continue
-                    val colName = line.split("\\s+".toRegex()).firstOrNull()?.trim()
-                    if (!colName.isNullOrBlank() && colName != "--") {
-                        cols.add(colName)
-                    }
-                }
-                manifestTableColumns[table] = cols
+                manifestTableColumns[table] =
+                    extractSqlColumnNames(stripSqlLineComments(innerMatch.groupValues[2])).toMutableSet()
             }
         }
 
