@@ -9,7 +9,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
@@ -28,7 +27,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.devil.phoenixproject.ui.theme.ApplyStatusBarAppearance
+import com.devil.phoenixproject.ui.theme.PhoenixTheme
+import com.devil.phoenixproject.ui.theme.ThemeMode
 
 /**
  * Runtime permissions for the BLE connection gate.
@@ -81,10 +81,16 @@ sealed class BlePermissionState {
  * Composable that wraps content and ensures BLE permissions are granted before showing it.
  * Shows a permission request UI if permissions are not granted.
  *
+ * @param themeMode Persisted app theme, the same value the rest of the app passes to [PhoenixTheme].
+ * @param dynamicColorEnabled Persisted Material You preference.
  * @param content The composable content to show when permissions are granted
  */
 @Composable
-fun RequireBlePermissions(content: @Composable () -> Unit) {
+fun RequireBlePermissions(
+    themeMode: ThemeMode,
+    dynamicColorEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     var permissionState by remember {
         mutableStateOf(
@@ -127,8 +133,7 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
         }
 
         is BlePermissionState.NotGranted -> {
-            // Wrap permission screens in a basic theme
-            PermissionScreenTheme {
+            PermissionScreenTheme(themeMode, dynamicColorEnabled) {
                 BlePermissionRequestScreen(
                     onRequestPermission = {
                         permissionLauncher.launch(BlePermissions.getPermissionsToRequest().toTypedArray())
@@ -168,7 +173,7 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
                 }
             }
 
-            PermissionScreenTheme {
+            PermissionScreenTheme(themeMode, dynamicColorEnabled) {
                 BlePermissionDeniedScreen(
                     canRetry = canRetry,
                     missingPermissions = missingPermissions,
@@ -188,14 +193,19 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
 }
 
 /**
- * Simple theme wrapper for permission screens.
+ * Themes the BLE gate from the persisted [ThemeMode] via [PhoenixTheme].
  */
 @Composable
-private fun PermissionScreenTheme(content: @Composable () -> Unit) {
-    val isDark = isSystemInDarkTheme()
-    ApplyStatusBarAppearance(isDark = isDark)
-    val colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = colorScheme, content = content)
+private fun PermissionScreenTheme(
+    themeMode: ThemeMode,
+    dynamicColorEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    PhoenixTheme(
+        themeMode = themeMode,
+        dynamicColorEnabled = dynamicColorEnabled,
+        content = content,
+    )
 }
 
 /**
