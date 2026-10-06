@@ -19,25 +19,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
-import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
+import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import kotlinx.coroutines.delay
-
-/**
- * Returns the color for a rep quality score using a gradient scale from AccessibilityTheme.
- * Colors change with color-blind mode for WCAG 1.4.1 compliance.
- */
-@Composable
-private fun scoreColor(score: Int): Color {
-    val colors = AccessibilityTheme.colors
-    return when {
-        score >= 95 -> colors.qualityExcellent
-        score >= 80 -> colors.qualityGood
-        score >= 60 -> colors.qualityFair
-        score >= 40 -> colors.qualityBelowAverage
-        else -> colors.qualityPoor
-    }
-}
 
 /**
  * Overlay composable that displays the per-rep quality score on the workout HUD.
@@ -103,7 +87,7 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
                 Text(
                     text = "$displayedScore",
                     style = MaterialTheme.typography.headlineLarge,
-                    color = scoreColor(displayedScore),
+                    color = qualityScoreColor(displayedScore),
                 )
             }
         }
