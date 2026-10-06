@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.repository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.database.Routine as RoutineRow
-import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
 
 /**
  * Issue #1162 — routine UUID identity contract.
@@ -85,17 +84,31 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
     /**
      * All owner-scoped rows denoting the same identity as [incomingId], joined
      * transitively through id/serverId identity edges. Pure read: safe to call
-     * before ownership claims are routed.
+     * before ownership claims are routed. When the owner scope is a single
+     * profile, pass [scopeProfileId] so only that profile's rows (the indexed
+     * `profile_id` lookup) are read instead of the whole table.
      */
-    fun findCandidates(incomingId: String, scopeMatches: (RoutineRow) -> Boolean): List<RoutineRow> {
-        val scopedRows = queries.selectAllRoutinesSync().executeAsList().filter(scopeMatches)
+    fun findCandidates(
+        incomingId: String,
+        scopeProfileId: String? = null,
+        scopeMatches: (RoutineRow) -> Boolean,
+    ): List<RoutineRow> {
+        val scopedRows = (
+            if (scopeProfileId != null) {
+                queries.selectAllRoutinesByProfileIncludingDeleted(scopeProfileId).executeAsList()
+            } else {
+                queries.selectAllRoutinesSync().executeAsList()
+            }
+            ).filter(scopeMatches)
         val found = LinkedHashMap<String, RoutineRow>()
         val frontier = ArrayDeque<String>()
         frontier.add(incomingId)
         val seenKeys = HashSet<String>()
         while (frontier.isNotEmpty()) {
             val key = frontier.removeFirst()
-            if (!seenKeys.add(key)) continue
+            // Canonical collapse: a case-variant spelling of a UUID key reaches the
+            // same rows, so it need not re-enter the frontier.
+            if (!seenKeys.add(RoutineIdentity.canonicalize(key))) continue
             for (row in scopedRows) {
                 if (found.containsKey(row.id)) continue
                 if (RoutineIdentity.matches(row.id, key) || RoutineIdentity.matches(row.serverId, key)) {
@@ -115,8 +128,12 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
      * the new primary key — canonical lowercase is a wire and lookup form only.
      * Must run inside a database transaction.
      */
-    fun resolve(incomingId: String, scopeMatches: (RoutineRow) -> Boolean): RoutineIdentityResolution {
-        val candidates = findCandidates(incomingId, scopeMatches)
+    fun resolve(
+        incomingId: String,
+        scopeProfileId: String? = null,
+        scopeMatches: (RoutineRow) -> Boolean,
+    ): RoutineIdentityResolution {
+        val candidates = findCandidates(incomingId, scopeProfileId, scopeMatches)
         val canonicalId = RoutineIdentity.canonicalize(incomingId)
         if (candidates.isEmpty()) {
             return RoutineIdentityResolution(canonicalId, incomingId, null, emptyList())
@@ -152,9 +169,11 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
 
     /**
      * Merge each alias row into [keeperId] without discarding either row's data:
-     * - exercises/supersets matching by validated UUID equivalence update the
-     *   existing local child row (never deleted just because id text case
-     *   differs); planned sets migrate onto the kept child;
+     * - exercises/supersets matching by validated UUID equivalence are one logical
+     *   child: the kept parent's child row stays exactly as it is (never deleted or
+     *   overwritten just because id text case differs; intentional default settings
+     *   survive), the same-identity duplicate row goes away, and its planned sets
+     *   migrate onto the kept child;
      * - distinct children/supersets are re-parented with their primary keys and
      *   columns preserved;
      * - CycleDay references follow the kept primary key when the reference is a
@@ -203,7 +222,9 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
                         queries.deletePlannedSet(plannedSet.id)
                     }
                 }
-                mergeTwinExerciseColumns(twin, loserExercise)
+                // The kept twin row keeps its own columns — intentional schema-default
+                // settings are never overwritten from the alias row (no child-level
+                // timestamp ranks edits; the kept parent is the LWW recency winner).
                 queries.deleteRoutineExerciseById(loserExercise.id)
             }
 
@@ -239,70 +260,6 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
             Logger.d("RoutineIdentity") {
                 "Issue #1162: coalesced routine alias '${loser.id}' into kept row '$keeperId'"
             }
-        }
-    }
-
-    /**
-     * Fold an alias-row child twin into the kept child row ("update the existing
-     * local child row", never delete it for id text case): wire-carried columns keep
-     * the kept row's values, while local-only programming the kept row never had is
-     * preserved from the alias row instead of being dropped with it. Must run inside
-     * a database transaction.
-     */
-    private fun mergeTwinExerciseColumns(twin: RoutineExerciseRow, loser: RoutineExerciseRow) {
-        queries.updateRoutineExercise(
-            exerciseName = twin.exerciseName,
-            exerciseMuscleGroup = twin.exerciseMuscleGroup,
-            exerciseEquipment = twin.exerciseEquipment,
-            exerciseDefaultCableConfig = twin.exerciseDefaultCableConfig,
-            exerciseId = twin.exerciseId,
-            cableConfig = if (twin.cableConfig == "DOUBLE") loser.cableConfig else twin.cableConfig,
-            orderIndex = twin.orderIndex,
-            setReps = twin.setReps,
-            weightPerCableKg = twin.weightPerCableKg,
-            setWeights = if (twin.setWeights.isEmpty()) loser.setWeights else twin.setWeights,
-            mode = twin.mode,
-            eccentricLoad = twin.eccentricLoad,
-            echoLevel = twin.echoLevel,
-            progressionKg = if (twin.progressionKg == 0.0) loser.progressionKg else twin.progressionKg,
-            restSeconds = twin.restSeconds,
-            duration = twin.duration ?: loser.duration,
-            setRestSeconds = twin.setRestSeconds,
-            perSetRestTime = twin.perSetRestTime,
-            isAMRAP = twin.isAMRAP,
-            supersetId = twin.supersetId ?: loser.supersetId,
-            orderInSuperset = twin.orderInSuperset,
-            usePercentOfPR = twin.usePercentOfPR,
-            weightPercentOfPR = twin.weightPercentOfPR,
-            prTypeForScaling = if (twin.prTypeForScaling == "MAX_WEIGHT") {
-                loser.prTypeForScaling
-            } else {
-                twin.prTypeForScaling
-            },
-            setWeightsPercentOfPR = twin.setWeightsPercentOfPR ?: loser.setWeightsPercentOfPR,
-            stallDetectionEnabled = twin.stallDetectionEnabled,
-            stopAtTop = twin.stopAtTop,
-            repCountTiming = twin.repCountTiming,
-            setEchoLevels = if (twin.setEchoLevels.isEmpty()) loser.setEchoLevels else twin.setEchoLevels,
-            warmupSets = if (twin.warmupSets.isEmpty()) loser.warmupSets else twin.warmupSets,
-            defaultRackItemIds = if (twin.defaultRackItemIds == "[]") {
-                loser.defaultRackItemIds
-            } else {
-                twin.defaultRackItemIds
-            },
-            rackBehaviorOverrides = if (twin.rackBehaviorOverrides == "{}") {
-                loser.rackBehaviorOverrides
-            } else {
-                twin.rackBehaviorOverrides
-            },
-            scalingBasis = twin.scalingBasis ?: loser.scalingBasis,
-            isBodyweight = twin.isBodyweight ?: loser.isBodyweight,
-            dropSetEnabled = if (twin.dropSetEnabled == 0L) loser.dropSetEnabled else twin.dropSetEnabled,
-            dropSetMinWeightKg = twin.dropSetMinWeightKg ?: loser.dropSetMinWeightKg,
-            id = twin.id,
-        )
-        if (twin.duration == null && loser.duration != null) {
-            queries.updateRoutineExerciseDurationSyncKnown(loser.durationSyncKnown, twin.id)
         }
     }
 }

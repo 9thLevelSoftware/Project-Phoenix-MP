@@ -885,7 +885,9 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
      * must be skipped. Must run inside a [db.transaction] block.
      */
     private fun resolveSavedRoutineId(requestedId: String, profileId: String, routineName: String): String? {
-        val resolution = routineIdentityResolver.resolve(requestedId) { it.profile_id == profileId }
+        val resolution = routineIdentityResolver.resolve(requestedId, scopeProfileId = profileId) {
+            it.profile_id == profileId
+        }
         val foreignRow = queries.selectRoutineById(resolution.localId).executeAsOneOrNull()
             ?.takeIf { it.profile_id != profileId }
         if (foreignRow != null) {

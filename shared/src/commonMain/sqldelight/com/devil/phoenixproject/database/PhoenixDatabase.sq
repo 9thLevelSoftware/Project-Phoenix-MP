@@ -1365,6 +1365,12 @@ UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;
 selectAllRoutinesSync:
 SELECT * FROM Routine;
 
+-- Issue #1162 identity resolution fast path: the owner scope of a save or a pull
+-- merge is one profile (index idx_routine_profile). Tombstones are included — a
+-- soft-deleted row is still an identity that must not get a canonical alias row.
+selectAllRoutinesByProfileIncludingDeleted:
+SELECT * FROM Routine WHERE profile_id = :profileId;
+
 selectAllRoutineIds:
 SELECT id FROM Routine;
 

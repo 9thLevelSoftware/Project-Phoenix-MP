@@ -119,7 +119,9 @@ class SqlDelightSyncRepository(
         // Issue #1162: a pulled routine reference resolves to the kept local routine
         // primary key (validated UUID spellings may differ from the stored id text).
         if (portalDay.routineId != null) {
-            return routineIdentityResolver.resolve(portalDay.routineId) { it.profile_id == profileId }.localId
+            return routineIdentityResolver.resolve(portalDay.routineId, scopeProfileId = profileId) {
+                it.profile_id == profileId
+            }.localId
         }
         if (existingCycleProfileId != profileId || existingCycleDeletedAt != null) return null
 
@@ -2630,7 +2632,6 @@ class SqlDelightSyncRepository(
                     profileOwnerMatches(it.profile_id, ownerUserId, syncProfileId)
                 }
                 for (row in localRows) {
-                    if (!profileOwnerMatches(row.profile_id, ownerUserId, syncProfileId)) continue
                     // lastSync == 0 (first pull / forced resync) has no sync base, so an
                     // edit cannot be classified as "unsynced"; skip the report then.
                     if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
@@ -3232,7 +3233,9 @@ class SqlDelightSyncRepository(
         // Issue #1162: one owner-scoped identity resolution before every read and
         // write — exact id, genuine serverId aliases, and validated-UUID-equivalent
         // spellings all denote one local row (whose stored primary key is kept).
-        val identity = routineIdentityResolver.resolve(portalRoutine.id) { it.profile_id == profileId }
+        val identity = routineIdentityResolver.resolve(portalRoutine.id, scopeProfileId = profileId) {
+            it.profile_id == profileId
+        }
         val localId = identity.localId
         // A row with this exact primary key on another profile is never updated
         // (identity resolution is owner-scoped) and cannot be overwritten anyway.

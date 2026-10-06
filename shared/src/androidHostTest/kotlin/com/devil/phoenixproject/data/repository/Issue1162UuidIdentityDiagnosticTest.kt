@@ -332,8 +332,9 @@ class Issue1162UuidIdentityDiagnosticTest {
         assertEquals(3, children.size, "distinct children preserved; the UUID twin merged to one row")
         val keptTwin = children.single { it.id == upperChild.lowercase() }
         assertEquals(
-            5.0, keptTwin.progressionKg,
-            "the alias twin's local-only columns are preserved on the kept child row",
+            0.0, keptTwin.progressionKg,
+            "the kept twin's intentional default settings survive; the alias twin's " +
+                "non-default columns never overwrite them",
         )
         assertTrue(children.any { it.id == secondChild }, "re-parented child keeps its primary key")
         assertTrue(children.any { it.id == thirdChild }, "kept row's distinct child preserved")
