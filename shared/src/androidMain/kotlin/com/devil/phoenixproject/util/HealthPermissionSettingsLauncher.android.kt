@@ -21,19 +21,18 @@ private val healthConnectSettingsAction: String
 
 actual class HealthPermissionSettingsLauncher(private val context: Context) {
     actual fun openSettings() {
-        val intent = buildHealthPermissionIntent(context.packageName)
-        try {
+        val packageName = context.packageName
+        // Order is the fallback chain: app permissions, then Health Connect home, then app details.
+        // Each start is guarded so a missing activity continues instead of aborting the chain.
+        val attempts = listOf(
+            buildHealthPermissionIntent(packageName),
+            Intent(healthConnectSettingsAction),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", packageName, null)
+            },
+        )
+        launchHealthConnectSettingsChain(attempts) { intent ->
             context.startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            healthSettingsLog.w(e) { "Health Connect app-permissions settings unavailable; opening Health Connect home settings" }
-            context.startActivity(Intent(healthConnectSettingsAction))
-        } catch (e: Exception) {
-            healthSettingsLog.w(e) { "Failed to open Health Connect settings; opening app details settings" }
-            context.startActivity(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = android.net.Uri.fromParts("package", context.packageName, null)
-                },
-            )
         }
     }
 
@@ -46,6 +45,38 @@ actual class HealthPermissionSettingsLauncher(private val context: Context) {
             Intent(healthConnectSettingsAction)
         }
     }
+}
+
+/**
+ * Starts the first settings target that resolves.
+ *
+ * [ActivityNotFoundException] and any other start failure continue to the next
+ * fallback. The last attempt is guarded too, so a missing app-details activity
+ * does not escape to the caller.
+ *
+ * @return the index of the attempt that started, or null when every attempt failed.
+ */
+internal fun <T> launchHealthConnectSettingsChain(
+    attempts: List<T>,
+    startActivity: (T) -> Unit,
+): Int? {
+    attempts.forEachIndexed { index, intent ->
+        try {
+            startActivity(intent)
+            return index
+        } catch (e: ActivityNotFoundException) {
+            healthSettingsLog.w(e) { healthConnectSettingsFailureMessage(index) }
+        } catch (e: Exception) {
+            healthSettingsLog.w(e) { healthConnectSettingsFailureMessage(index) }
+        }
+    }
+    return null
+}
+
+internal fun healthConnectSettingsFailureMessage(index: Int): String = when (index) {
+    0 -> "Health Connect app-permissions settings unavailable; opening Health Connect home settings"
+    1 -> "Health Connect home settings unavailable; opening app details settings"
+    else -> "Failed to open Health Connect settings"
 }
 
 @Composable
