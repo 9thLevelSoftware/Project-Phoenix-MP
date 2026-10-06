@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help=(
             "Optional Android default versionCode for androidApp/build.gradle.kts. "
-            "Checked-in default is 8; pass the next code when that default must move."
+            "Checked-in default is 9; pass the next code when that default must move."
         ),
     )
     parser.add_argument(
