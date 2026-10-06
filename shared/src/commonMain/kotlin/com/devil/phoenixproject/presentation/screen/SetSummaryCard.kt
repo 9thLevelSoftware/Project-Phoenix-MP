@@ -769,8 +769,11 @@ private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unit
 // Zone color now provided by velocityZoneColor() from AccessibilityColors.kt
 
 /**
- * Format MCV from mm/s to m/s display string using integer arithmetic (KMP-safe).
- * Same approach as WorkoutHud.kt formatMcv().
+ * Format MCV from mm/s to an m/s display string (two decimal places) using integer arithmetic (KMP-safe).
+ *
+ * Truncates via integer mm/s division: `toInt()` drops any fractional mm/s, then
+ * `(mm/s % 1000) / 10` drops the leftover units of mm/s (thousandths of a meter).
+ * WorkoutHud.formatMcv rounds to the nearest hundredth of a meter instead.
  */
 private fun formatMcvDisplay(mcvMmS: Float): String {
     val mcv = mcvMmS.toInt().coerceAtLeast(0)
