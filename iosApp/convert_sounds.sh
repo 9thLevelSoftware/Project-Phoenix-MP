@@ -75,8 +75,6 @@ for input_path in "${SOUND_FILES[@]}"; do
         if [ -f "$OUTPUT" ]; then
             echo "  ✓ Created: $OUTPUT"
         fi
-    else
-        echo "Warning: Source file not found: $INPUT"
     fi
 done
 
