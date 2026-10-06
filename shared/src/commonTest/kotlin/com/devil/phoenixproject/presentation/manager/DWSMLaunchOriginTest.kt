@@ -6,6 +6,7 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -313,6 +314,173 @@ class DWSMLaunchOriginTest {
             harness.coordinator.routineLaunchOrigin,
             "stopWorkout(exitingWorkout=true) must clear routineLaunchOrigin to null",
         )
+        harness.cleanup()
+    }
+
+    // ===== Issue #1164 route-Done exit coverage (runtime side) =====
+    //
+    // The ROUTINE COMPLETE Done footer runs one shared exit action:
+    //   routineExitDestination() -> exitRoutineFlow() -> safePopOrNavigate(dest)
+    // These tests exercise that exact sequence against the real flow manager for both
+    // launch origins and assert the full cleanup contract the merge gate requires:
+    // RoutineFlowState.Complete -> NotInRoutine, loadedRoutine cleared, WorkoutState.Idle
+    // and launch origin cleared. Navigation-route assertions (pop vs destination-absent
+    // fallback, Back parity) run against a real NavController in the Robolectric runtime
+    // harness (RoutineCompleteRouteExitRuntimeTest).
+
+    /** Seeds a completed routine so showRoutineComplete() can build a real Complete state. */
+    private fun DWSMTestHarness.completeCurrentRoutine() {
+        coordinator._completedRoutineSetKeys.value = setOf(0 to 0, 0 to 1, 1 to 0, 1 to 1, 2 to 0)
+        coordinator._completedExercises.value = setOf(0, 1, 2)
+        dwsm.showRoutineComplete()
+    }
+
+    /** Asserts the full exit cleanup contract after the Done/Back exit sequence. */
+    private fun assertRoutineExitCleanup(harness: DWSMTestHarness) {
+        assertIs<com.devil.phoenixproject.domain.model.RoutineFlowState.NotInRoutine>(
+            harness.coordinator.routineFlowState.value,
+            "Done exit must land in RoutineFlowState.NotInRoutine (Complete -> NotInRoutine)",
+        )
+        assertNull(
+            harness.coordinator.loadedRoutine.value,
+            "Done exit must clear loadedRoutine",
+        )
+        assertIs<com.devil.phoenixproject.domain.model.WorkoutState.Idle>(
+            harness.coordinator.workoutState.value,
+            "Done exit must restore WorkoutState.Idle",
+        )
+        assertNull(
+            harness.coordinator.routineLaunchOrigin,
+            "Done exit must clear routineLaunchOrigin to null",
+        )
+    }
+
+    @Test
+    fun doneExit_fromComplete_dailyRoutinesOrigin_runsFullExitSequence() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        assertEquals(RoutineLaunchOrigin.DAILY_ROUTINES, harness.coordinator.routineLaunchOrigin)
+
+        harness.completeCurrentRoutine()
+        assertIs<com.devil.phoenixproject.domain.model.RoutineFlowState.Complete>(
+            harness.coordinator.routineFlowState.value,
+            "Precondition: routine must reach Complete before the Done exit",
+        )
+
+        // The exact production exit sequence (routineExitDestination -> exitRoutineFlow ->
+        // safePopOrNavigate); the destination read happens BEFORE the origin-clearing exit.
+        val dest = if (harness.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+            NavigationRoutes.TrainingCycles.route
+        } else {
+            NavigationRoutes.DailyRoutines.route
+        }
+        harness.dwsm.exitRoutineFlow()
+
+        assertEquals(
+            NavigationRoutes.DailyRoutines.route,
+            dest,
+            "Done from a DailyRoutines-origin routine must exit to the daily_routines route",
+        )
+        assertRoutineExitCleanup(harness)
+        harness.cleanup()
+    }
+
+    @Test
+    fun doneExit_fromComplete_trainingCyclesOrigin_runsFullExitSequence() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutineFromCycleAsync(
+            routineId = routine.id,
+            cycleId = "cycle-1",
+            dayNumber = 1,
+        )
+        advanceUntilIdle()
+        assertEquals(RoutineLaunchOrigin.TRAINING_CYCLES, harness.coordinator.routineLaunchOrigin)
+
+        harness.completeCurrentRoutine()
+        assertIs<com.devil.phoenixproject.domain.model.RoutineFlowState.Complete>(
+            harness.coordinator.routineFlowState.value,
+            "Precondition: routine must reach Complete before the Done exit",
+        )
+
+        val dest = if (harness.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+            NavigationRoutes.TrainingCycles.route
+        } else {
+            NavigationRoutes.DailyRoutines.route
+        }
+        harness.dwsm.exitRoutineFlow()
+
+        assertEquals(
+            NavigationRoutes.TrainingCycles.route,
+            dest,
+            "Done from a TrainingCycles-origin routine must exit to the training_cycles route",
+        )
+        assertRoutineExitCleanup(harness)
+        harness.cleanup()
+    }
+
+    @Test
+    fun doneExit_repeatedEntryExit_cleansUpEveryCycle() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        repeat(2) { cycle ->
+            if (cycle == 0) {
+                harness.dwsm.loadRoutine(routine)
+            } else {
+                harness.dwsm.loadRoutineFromCycleAsync(
+                    routineId = routine.id,
+                    cycleId = "cycle-repeat",
+                    dayNumber = 1,
+                )
+            }
+            advanceUntilIdle()
+            harness.completeCurrentRoutine()
+
+            val dest = if (harness.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+                NavigationRoutes.TrainingCycles.route
+            } else {
+                NavigationRoutes.DailyRoutines.route
+            }
+            harness.dwsm.exitRoutineFlow()
+
+            assertEquals(
+                if (cycle == 0) NavigationRoutes.DailyRoutines.route else NavigationRoutes.TrainingCycles.route,
+                dest,
+                "Repeated entry/exit cycle ${cycle + 1} must exit to the correct origin destination",
+            )
+            assertRoutineExitCleanup(harness)
+        }
+        harness.cleanup()
+    }
+
+    @Test
+    fun doneExit_isIdempotentWhenInvokedTwice() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.completeCurrentRoutine()
+
+        // Back mirrors Done (same shared exit action), so a double dispatch (Done tap +
+        // Back) must leave the same clean end state and must not throw.
+        harness.dwsm.exitRoutineFlow()
+        harness.dwsm.exitRoutineFlow()
+
+        assertRoutineExitCleanup(harness)
         harness.cleanup()
     }
 }

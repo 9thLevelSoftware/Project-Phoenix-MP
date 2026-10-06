@@ -34,7 +34,12 @@ kotlin {
             enable = true
         }
 
-        withHostTest {}
+        withHostTest {
+            // Issue #1164 runtime harness: Compose UI/Robolectric measurement and
+            // semantics tests need merged Android resources (ui-test-manifest activity,
+            // CMP string resources) on the host-test classpath.
+            isIncludeAndroidResources = true
+        }
     }
 
     // iosArm64 is the device framework the app links. Gradle writes it to
@@ -152,6 +157,13 @@ kotlin {
                 implementation(libs.sqldelight.sqlite.driver)
                 implementation(libs.koin.test.junit4)
                 implementation(libs.multiplatform.settings.test)
+                // Issue #1164 runtime harness: real Compose layout/semantics measurement.
+                implementation(libs.robolectric)
+                implementation(libs.cmp.ui.test)
+                implementation(libs.cmp.ui.test.junit4)
+                implementation(libs.androidx.ui.test.manifest)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.junit)
             }
         }
 
@@ -812,5 +824,18 @@ tasks.configureEach {
             )
         }
         File(manifestPath).copyTo(File(destinationPath), overwrite = true)
+    }
+}
+
+// Issue #1164 runtime harness: forward the evidence directory to host-test JVMs so
+// Compose measurement runs can persist their measurement records alongside the
+// console/test-report output.
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "phoenix.evidence.dir",
+        providers.systemProperty("phoenix.evidence.dir").orElse("").get(),
+    )
+    testLogging {
+        showStandardStreams = true
     }
 }
