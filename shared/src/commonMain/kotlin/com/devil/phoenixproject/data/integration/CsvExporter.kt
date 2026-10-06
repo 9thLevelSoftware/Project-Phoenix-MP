@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.integration
 import com.devil.phoenixproject.data.integration.CsvExporter.WEIGHT_MULTIPLIER
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.util.UnitConverter
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
@@ -26,7 +27,6 @@ import kotlinx.datetime.toLocalDateTime
 object CsvExporter {
 
     private const val WEIGHT_MULTIPLIER = 2
-    private const val KG_TO_LB = 2.20462f
 
     private val STRONG_HEADER =
         "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes"
@@ -182,7 +182,7 @@ object CsvExporter {
         cableCount: Int? = null,
     ): String {
         val totalKg = perCableKg * (cableCount ?: WEIGHT_MULTIPLIER)
-        val value = if (weightUnit == WeightUnit.LB) totalKg * KG_TO_LB else totalKg
+        val value = if (weightUnit == WeightUnit.LB) totalKg * UnitConverter.KG_TO_LB else totalKg
         // Format with up to 2 decimal places, strip trailing zeros after decimal
         val rounded = (value * 100).toLong() / 100.0
         val formatted = rounded.toString()
