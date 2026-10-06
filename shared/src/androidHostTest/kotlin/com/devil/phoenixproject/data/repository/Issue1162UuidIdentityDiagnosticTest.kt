@@ -4,7 +4,10 @@ import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -504,6 +507,360 @@ class Issue1162UuidIdentityDiagnosticTest {
             1,
             queries.selectAllRoutinesSync().executeAsList().size,
             "no canonical-alias row is inserted beside the tombstone",
+        )
+    }
+
+    // ===== Save/update child preservation (merge gate R1) =====
+
+    private fun seedSuperset(database: com.devil.phoenixproject.database.PhoenixDatabase, id: String, routineId: String) {
+        database.phoenixDatabaseQueries.insertSuperset(
+            id = id,
+            routineId = routineId,
+            name = "Pair",
+            colorIndex = 0L,
+            restBetweenSeconds = 60L,
+            orderIndex = 0L,
+        )
+    }
+
+    private fun seedWorkoutSession(database: com.devil.phoenixproject.database.PhoenixDatabase, id: String) {
+        database.phoenixDatabaseQueries.insertSession(
+            id = id,
+            timestamp = 1_700_000_000_100L,
+            mode = "OldSchool",
+            targetReps = 5L,
+            weightPerCableKg = 60.0,
+            progressionKg = 0.0,
+            duration = 0L,
+            totalReps = 5L,
+            warmupReps = 0L,
+            workingReps = 5L,
+            isJustLift = 0L,
+            stopAtTop = 0L,
+            eccentricLoad = 100L,
+            echoLevel = 1L,
+            exerciseId = null,
+            exerciseName = "Deadlift",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0L,
+            deloadWarningCount = 0L,
+            romViolationCount = 0L,
+            spotterActivations = 0L,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = null,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "active-profile",
+            display_multiplier = null,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
+        )
+    }
+
+    private fun seedCompletedLink(
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
+        completedSetId: String,
+        plannedSetId: String,
+        routineExerciseId: String,
+    ) {
+        seedWorkoutSession(database, "session-$completedSetId")
+        database.phoenixDatabaseQueries.insertCompletedSet(
+            id = completedSetId,
+            session_id = "session-$completedSetId",
+            planned_set_id = plannedSetId,
+            routine_exercise_id = routineExerciseId,
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 1L,
+            actual_reps = 5L,
+            actual_weight_kg = 60.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 1_700_000_000_100L,
+            set_end_reason = "COMPLETED",
+        )
+    }
+
+    /** One model child per seeded row, with the UUID-case alias spelling of its id. */
+    private fun aliasModelChild(id: String, name: String = "Deadlift", supersetId: String? = null) = RoutineExercise(
+        id = id.lowercase(),
+        exercise = Exercise(name = name, muscleGroup = "Back", equipment = "Cable"),
+        orderIndex = 0,
+        setReps = listOf(5),
+        weightPerCableKg = 60f,
+        setWeightsPerCableKg = listOf(60f),
+        setRestSeconds = listOf(90),
+        supersetId = supersetId,
+    )
+
+    /**
+     * The save/update child-preservation fixture: routine [upperUuid] with superset
+     * [thirdChild], child [upperChild] (planned set + completed-set link) and child
+     * [secondChild] (planned set). Both planned sets and the completed link must
+     * survive a write whose model carries only UUID-case aliases of the stored ids.
+     */
+    private fun seedChildPreservationFixture(database: com.devil.phoenixproject.database.PhoenixDatabase) {
+        val queries = database.phoenixDatabaseQueries
+        seedRoutine(database, upperUuid, "Push Day")
+        seedSuperset(database, thirdChild, upperUuid)
+        seedRoutineExercise(database, upperChild, upperUuid, progressionKg = 5.0)
+        seedRoutineExercise(database, secondChild, upperUuid)
+        queries.updateRoutineExerciseDurationSyncKnown(2L, upperChild)
+        queries.insertPlannedSet("planned-1", upperChild, 1, "STANDARD", 5, 60.0, null, 90)
+        queries.insertPlannedSet("planned-2", secondChild, 1, "STANDARD", 5, 60.0, null, 90)
+        seedCompletedLink(database, completedSetId = "completed-1", plannedSetId = "planned-1", routineExerciseId = upperChild)
+    }
+
+    private fun assertChildRowsPreserved(
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
+        expectedExerciseName: String,
+    ) {
+        val queries = database.phoenixDatabaseQueries
+        val routineRows = queries.selectAllRoutines("active-profile").executeAsList()
+        assertEquals(1, routineRows.size, "one logical routine after the write")
+        assertEquals(upperUuid, routineRows.single().id, "stored routine primary key preserved")
+
+        val supersets = queries.selectSupersetsByRoutine(upperUuid).executeAsList()
+        assertEquals(listOf(thirdChild), supersets.map { it.id }, "stored superset primary key preserved")
+
+        val children = queries.selectExercisesByRoutine(upperUuid).executeAsList()
+        assertEquals(listOf(upperChild, secondChild), children.map { it.id }, "stored child primary keys preserved")
+        assertEquals(
+            expectedExerciseName,
+            children.single { it.id == upperChild }.exerciseName,
+            "the UUID-case model alias updated the existing child row in place",
+        )
+        assertEquals(
+            thirdChild,
+            children.single { it.id == upperChild }.supersetId,
+            "the model superset alias resolved to the stored superset primary key",
+        )
+        assertEquals(
+            2L,
+            children.single { it.id == upperChild }.durationSyncKnown,
+            "sync-state columns the model never carries survive the in-place update",
+        )
+
+        assertEquals(
+            listOf("planned-1"),
+            queries.selectPlannedSetsByRoutineExercise(upperChild).executeAsList().map { it.id },
+            "planned sets survive the write (no cascade through a delete + re-insert)",
+        )
+        assertEquals(
+            listOf("planned-2"),
+            queries.selectPlannedSetsByRoutineExercise(secondChild).executeAsList().map { it.id },
+            "planned sets of every kept child survive",
+        )
+        assertEquals(
+            "planned-1",
+            queries.selectCompletedSetsBySession("session-completed-1").executeAsOne().planned_set_id,
+            "the completed-set planned link is not NULLed",
+        )
+    }
+
+    /**
+     * Merge gate R1 (save half): saveRoutine with UUID-case model aliases updates the
+     * existing child rows in place. The old delete-and-rebuild fired the child foreign
+     * keys (PlannedSet ON DELETE CASCADE, CompletedSet.planned_set_id ON DELETE SET
+     * NULL) before the same primary keys came back, and a same-PK re-insert cannot
+     * undo either action.
+     */
+    @Test
+    fun saveRoutineKeepsChildRowsPlannedSetsAndCompletedLinksForUuidCaseAliases() = runTest {
+        val database = newDb()
+        val workout = newWorkoutRepository(database)
+        seedChildPreservationFixture(database)
+
+        workout.saveRoutine(
+            Routine(
+                id = upperUuid.lowercase(),
+                name = "Push Day",
+                profileId = "active-profile",
+                supersets = listOf(Superset(id = thirdChild.lowercase(), routineId = upperUuid.lowercase(), name = "Pair")),
+                exercises = listOf(
+                    aliasModelChild(upperChild, name = "Deadlift Renamed", supersetId = thirdChild.lowercase()),
+                    aliasModelChild(secondChild),
+                ),
+            ),
+        )
+
+        assertChildRowsPreserved(database, expectedExerciseName = "Deadlift Renamed")
+    }
+
+    /**
+     * Merge gate R1 (update half): updateRoutine keeps the same child rows, planned
+     * sets and completed-set planned links when the model children are UUID-case
+     * aliases of the stored primary keys.
+     */
+    @Test
+    fun updateRoutineKeepsChildRowsPlannedSetsAndCompletedLinksForUuidCaseAliases() = runTest {
+        val database = newDb()
+        val workout = newWorkoutRepository(database)
+        seedChildPreservationFixture(database)
+
+        workout.updateRoutine(
+            Routine(
+                id = upperUuid.lowercase(),
+                name = "Push Day Renamed",
+                profileId = "active-profile",
+                supersets = listOf(Superset(id = thirdChild.lowercase(), routineId = upperUuid.lowercase(), name = "Pair")),
+                exercises = listOf(
+                    aliasModelChild(upperChild, name = "Deadlift Renamed", supersetId = thirdChild.lowercase()),
+                    aliasModelChild(secondChild),
+                ),
+            ),
+        )
+
+        assertChildRowsPreserved(database, expectedExerciseName = "Deadlift Renamed")
+        assertEquals(
+            "Push Day Renamed",
+            database.phoenixDatabaseQueries.selectRoutineById(upperUuid).executeAsOne().name,
+            "the update landed on the resolved stored primary key",
+        )
+    }
+
+    /**
+     * Merge gate R1 (removal half): only children the model genuinely removed are
+     * deleted — the kept child keeps its row and planned sets while the removed
+     * child's rows go away with it, and a brand-new model child is inserted.
+     */
+    @Test
+    fun saveRoutineDeletesOnlyChildrenTheModelRemoved() = runTest {
+        val database = newDb()
+        val workout = newWorkoutRepository(database)
+        val queries = database.phoenixDatabaseQueries
+        seedChildPreservationFixture(database)
+
+        workout.saveRoutine(
+            Routine(
+                id = upperUuid,
+                name = "Push Day",
+                profileId = "active-profile",
+                supersets = listOf(Superset(id = thirdChild, routineId = upperUuid, name = "Pair")),
+                exercises = listOf(
+                    aliasModelChild(upperChild, supersetId = thirdChild),
+                    aliasModelChild(otherUuid, name = "Cable Row"),
+                ),
+            ),
+        )
+
+        val children = queries.selectExercisesByRoutine(upperUuid).executeAsList()
+        assertEquals(
+            listOf(upperChild, otherUuid.lowercase()).sorted(),
+            children.map { it.id }.sorted(),
+            "the kept child stays on its stored primary key and only the new model child is inserted",
+        )
+        assertNull(
+            queries.selectRoutineExerciseById(secondChild).executeAsOneOrNull(),
+            "the genuinely removed child is deleted",
+        )
+        assertEquals(
+            listOf("planned-1"),
+            queries.selectPlannedSetsByRoutineExercise(upperChild).executeAsList().map { it.id },
+            "the kept child's planned sets survive",
+        )
+        assertTrue(
+            queries.selectPlannedSetsByRoutineExercise(secondChild).executeAsList().isEmpty(),
+            "the removed child's planned sets go away with it",
+        )
+    }
+
+    // ===== Claim/adopt routing (merge gate R3) =====
+
+    /**
+     * Merge gate R3: mergeAllPullData claim/adopt routing. A retained claim on the
+     * canonical identity routes the owner's uppercase-alias row to the claim target
+     * (same-account permitted adoption), while another account's row holding the exact
+     * canonical text — which the owner-filtered identity reads exclude — is never
+     * adopted, merged into or otherwise mutated: parent, children, dependents and
+     * profile all stay as they are.
+     */
+    @Test
+    fun retainedClaimRoutesOwnerAliasWithoutTouchingAnotherAccountsCanonicalRow() = runTest {
+        val database = newDb()
+        val sync = newSyncRepository(database)
+        val queries = database.phoenixDatabaseQueries
+        // Same-account claim target, plus another account's profile.
+        queries.insertProfile("claimed-target", "Claimed", 1L, 1_700_000_000_000, 0L)
+        queries.linkProfileToSupabase("owner-user", 1_700_000_000_000, "claimed-target")
+        queries.insertProfile("other-profile", "Other", 2L, 1_700_000_000_000, 0L)
+        queries.linkProfileToSupabase("other-user", 1_700_000_000_000, "other-profile")
+
+        // The owner's stored row: the uppercase-alias spelling, with a child and a planned set.
+        seedRoutine(database, upperUuid, "Owner alias", updatedAt = 0L)
+        seedRoutineExercise(database, upperChild, upperUuid)
+        queries.insertPlannedSet("owner-planned", upperChild, 1, "STANDARD", 5, 60.0, null, 90)
+        // Another account's row: the exact canonical lowercase text of the same identity.
+        seedRoutine(database, upperUuid.lowercase(), "Foreign canonical", profileId = "other-profile", updatedAt = 0L)
+        seedRoutineExercise(database, secondChild, upperUuid.lowercase())
+        queries.insertPlannedSet("foreign-planned", secondChild, 1, "STANDARD", 5, 60.0, null, 90)
+
+        queries.insertLocalOwnershipClaimIfAbsent(
+            ownerUserId = "owner-user",
+            entityType = OwnershipEntityType.ROUTINE.name,
+            entityId = upperUuid.lowercase(),
+            mutationId = "claim-routine-alias",
+            sourceProfileId = "active-profile",
+            targetProfileId = "claimed-target",
+            transferredAt = 10L,
+        )
+
+        sync.mergeAllPullData(
+            ownerUserId = "owner-user",
+            workoutDeletions = emptyList(),
+            sessions = emptyList(),
+            routines = listOf(PullRoutineDto(id = upperUuid.lowercase(), name = "Owner alias pulled", updatedAt = 20L)),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 1L,
+            profileId = "active-profile",
+        )
+
+        val ownerRow = queries.selectRoutineById(upperUuid).executeAsOne()
+        assertEquals("claimed-target", ownerRow.profile_id, "the retained claim routes the owner's alias row")
+        assertEquals("Owner alias pulled", ownerRow.name, "the pull merge lands on the owner's row")
+
+        val foreignRow = queries.selectRoutineById(upperUuid.lowercase()).executeAsOne()
+        assertEquals("other-profile", foreignRow.profile_id, "another account's row is never adopted")
+        assertEquals("Foreign canonical", foreignRow.name, "another account's parent row is not merged into")
+        assertEquals(
+            listOf(secondChild),
+            queries.selectExercisesByRoutine(upperUuid.lowercase()).executeAsList().map { it.id },
+            "another account's children are unchanged",
+        )
+        assertEquals(
+            listOf("foreign-planned"),
+            queries.selectPlannedSetsByRoutineExercise(secondChild).executeAsList().map { it.id },
+            "another account's dependent rows are unchanged",
+        )
+        assertEquals(
+            "other-user",
+            queries.getProfileById("other-profile").executeAsOne().supabase_user_id,
+            "the foreign profile is unchanged",
         )
     }
 }

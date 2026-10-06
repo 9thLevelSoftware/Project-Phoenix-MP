@@ -2102,10 +2102,16 @@ class SqlDelightSyncRepository(
                     // Issue #1162: resolve routine identity (exact id, genuine serverId
                     // aliases, validated-UUID-equivalent spellings) before claim/adopt/
                     // serverWins routing, so one logical identity routes as one.
-                    val identityKeys = linkedSetOf(portalRoutine.id, RoutineIdentity.canonicalize(portalRoutine.id))
-                    routineIdentityResolver.findCandidates(portalRoutine.id) {
+                    // Merge gate R3: identityKeys are lookup/claim-routing inputs only.
+                    // Adoption never writes unconditional raw keys — a raw key can name
+                    // a row of another profile that the owner-filtered identity reads
+                    // exclude, and the later merge's foreign-row check cannot protect a
+                    // row whose ownership was already overwritten.
+                    val identityCandidates = routineIdentityResolver.findCandidates(portalRoutine.id) {
                         profileOwnerMatches(it.profile_id, ownerUserId, profileId)
-                    }.forEach { row ->
+                    }
+                    val identityKeys = linkedSetOf(portalRoutine.id, RoutineIdentity.canonicalize(portalRoutine.id))
+                    identityCandidates.forEach { row ->
                         identityKeys += row.id
                         row.serverId?.let { serverId -> identityKeys += serverId }
                     }
@@ -2118,8 +2124,20 @@ class SqlDelightSyncRepository(
                     }
                     val targetProfileId = claimedTargetProfileId ?: profileId
                     if (claimedTargetProfileId != null) {
-                        for (identityKey in identityKeys) {
-                            queries.adoptRoutineProfile(profileId = targetProfileId, id = identityKey)
+                        // Adopt only re-read owner-authorized candidate rows: each row is
+                        // re-read at write time and re-checked against the same owner scope
+                        // the identity reads used (and the SQL carries that source-owner
+                        // check too), so a retained claim keeps routing same-account rows
+                        // while another profile's row is never moved.
+                        for (candidate in identityCandidates) {
+                            val current = queries.selectRoutineById(candidate.id).executeAsOneOrNull() ?: continue
+                            if (!profileOwnerMatches(current.profile_id, ownerUserId, profileId)) continue
+                            queries.adoptRoutineProfileOwned(
+                                targetProfileId = targetProfileId,
+                                id = current.id,
+                                ownerUserId = ownerUserId,
+                                permittedUnboundProfileId = profileId,
+                            )
                         }
                     }
                     mergePortalRoutine(

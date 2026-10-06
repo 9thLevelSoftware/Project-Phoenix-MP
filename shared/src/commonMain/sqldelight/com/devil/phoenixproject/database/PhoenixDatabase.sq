@@ -2588,6 +2588,26 @@ UPDATE WorkoutSession SET profile_id = :profileId WHERE id = :id AND profile_id 
 adoptRoutineProfile:
 UPDATE Routine SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
 
+-- Pull-merge claim adoption (Issue #1162 merge gate R3): the pull merge adopts an
+-- existing routine row into the claim target only when the row's current profile is
+-- authorized for the pulling account. A row bound to a different account is never
+-- moved, so an unconditional lookup key can no longer overwrite another account's
+-- ownership. Callers additionally re-read and re-check the row before writing.
+-- adoptRoutineProfile above stays for explicit user-driven moves (moveRoutineToProfile,
+-- backup restore), where no pull/claim owner scope applies.
+adoptRoutineProfileOwned:
+UPDATE Routine
+SET profile_id = :targetProfileId
+WHERE id = :id AND profile_id != :targetProfileId
+  AND EXISTS (
+    SELECT 1 FROM UserProfile sourceProfile
+    WHERE sourceProfile.id = Routine.profile_id
+      AND (
+        sourceProfile.supabase_user_id = :ownerUserId
+        OR (sourceProfile.supabase_user_id IS NULL AND Routine.profile_id = :permittedUnboundProfileId)
+      )
+  );
+
 adoptTrainingCycleProfile:
 UPDATE TrainingCycle SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
 
