@@ -65,22 +65,7 @@ data class JustLiftDefaults(
     val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
     val repCountTimingName: String = "TOP", // RepCountTiming enum name
     val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
-) {
-    fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
-        // Handle legacy 125% -> fall back to 120%
-        val percentage = if (eccentricLoadPercentage == 125) 120 else eccentricLoadPercentage
-        return com.devil.phoenixproject.domain.model.EccentricLoad.entries.find { it.percentage == percentage }
-            ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
-    }
-
-    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
-        it.levelValue == echoLevelValue
-    }
-        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
-
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode =
-        com.devil.phoenixproject.domain.model.ProgramMode.fromModeValue(workoutModeId)
-}
+)
 
 /**
  * Preferences Manager interface
