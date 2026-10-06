@@ -36,6 +36,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import com.devil.phoenixproject.util.KmpUtils
@@ -1425,21 +1426,6 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
 // ===== Rep Quality Section =====
 
 /**
- * Quality color from AccessibilityTheme. Changes with color-blind mode.
- */
-@Composable
-private fun qualityColor(score: Int): Color {
-    val colors = AccessibilityTheme.colors
-    return when {
-        score >= 95 -> colors.qualityExcellent
-        score >= 80 -> colors.qualityGood
-        score >= 60 -> colors.qualityFair
-        score >= 40 -> colors.qualityBelowAverage
-        else -> colors.qualityPoor
-    }
-}
-
-/**
  * Rep Quality stats section with sparkline, swipeable radar chart, trend, and improvement tip.
  * Shown after set completion for Phoenix+ tier users.
  */
@@ -1528,7 +1514,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         "${quality.averageScore}",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = qualityColor(quality.averageScore),
+                        color = qualityScoreColor(quality.averageScore),
                     )
                 }
                 // Best rep
@@ -1542,7 +1528,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         "#${quality.bestRepNumber}: ${quality.bestScore}",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = qualityColor(quality.bestScore),
+                        color = qualityScoreColor(quality.bestScore),
                     )
                 }
                 // Worst rep
@@ -1556,7 +1542,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         "#${quality.worstRepNumber}: ${quality.worstScore}",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = qualityColor(quality.worstScore),
+                        color = qualityScoreColor(quality.worstScore),
                     )
                 }
             }
@@ -1599,7 +1585,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
     if (scores.isEmpty()) return
 
     // Pre-compute colors in @Composable scope for Canvas use
-    val dotColors = scores.map { score -> qualityColor(score) }
+    val dotColors = scores.map { score -> qualityScoreColor(score) }
     val segmentColors = if (scores.size > 1) {
         (0 until scores.size - 1).map { i ->
             val startColor = dotColors[i]

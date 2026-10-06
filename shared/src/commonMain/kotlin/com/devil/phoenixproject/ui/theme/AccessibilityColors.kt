@@ -140,6 +140,26 @@ fun velocityZoneColor(zone: BiomechanicsVelocityZone): Color {
 }
 
 /**
+ * Returns the theme-aware color for a rep quality score.
+ * Consolidates duplicate implementations from RepQualityIndicator and
+ * SetSummaryCard into a single source of truth.
+ *
+ * Thresholds: 95 excellent, 80 good, 60 fair, 40 below average, otherwise poor.
+ * Colors change with color-blind mode for WCAG 1.4.1 compliance.
+ */
+@Composable
+fun qualityScoreColor(score: Int): Color {
+    val colors = AccessibilityTheme.colors
+    return when {
+        score >= 95 -> colors.qualityExcellent
+        score >= 80 -> colors.qualityGood
+        score >= 60 -> colors.qualityFair
+        score >= 40 -> colors.qualityBelowAverage
+        else -> colors.qualityPoor
+    }
+}
+
+/**
  * Returns the translatable human-readable label for a velocity zone.
  * Must be called from a @Composable context.
  */
