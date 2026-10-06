@@ -7,6 +7,7 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSNumber
 import platform.Foundation.NSSortDescriptor
+import platform.Foundation.timeIntervalSince1970
 import platform.HealthKit.HKAuthorizationStatusSharingAuthorized
 import platform.HealthKit.HKDevice
 import platform.HealthKit.HKHealthStore
@@ -42,11 +43,6 @@ private const val BODY_MASS_QUERY_LIMIT = 50UL
  * requestAuthorization can be called from any context.
  */
 actual class HealthIntegration : HealthWorkoutWriter {
-
-    private companion object {
-        /** Seconds between Unix epoch (1970-01-01) and Apple reference date (2001-01-01). */
-        private const val UNIX_TO_APPLE_EPOCH_OFFSET = 978307200.0
-    }
 
     private val healthStore: HKHealthStore by lazy { HKHealthStore() }
 
@@ -273,21 +269,12 @@ actual class HealthIntegration : HealthWorkoutWriter {
         }
 
         return try {
-            // Convert epoch millis to NSDate
-            // NSDate uses "reference date" (2001-01-01), not Unix epoch (1970-01-01)
-            // Offset: 978307200 seconds between the two reference points
             val epochSeconds = data.startTimeMs / 1000.0
-            val startDate = NSDate(
-                timeIntervalSinceReferenceDate =
-                    epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
-            )
+            val startDate = NSDate.dateWithTimeIntervalSince1970(epochSeconds)
 
             val durationMs = (data.endTimeMs - data.startTimeMs).coerceAtLeast(1000L)
             val durationSeconds = (durationMs / 1000L).toDouble()
-            val endDate = NSDate(
-                timeIntervalSinceReferenceDate =
-                    (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
-            )
+            val endDate = NSDate.dateWithTimeIntervalSince1970(epochSeconds + durationSeconds)
 
             // Build optional calorie quantity. Active energy permission is optional; do not block workout sync.
             val canWriteCalories = canWriteActiveEnergy()
@@ -427,7 +414,7 @@ actual class HealthIntegration : HealthWorkoutWriter {
     }
 
     private fun NSDate.toEpochMillis(): Long =
-        ((timeIntervalSinceReferenceDate + UNIX_TO_APPLE_EPOCH_OFFSET) * 1000.0).toLong()
+        (timeIntervalSince1970 * 1000.0).toLong()
 
     private fun Any?.asBoolean(): Boolean? = when (this) {
         is Boolean -> this
