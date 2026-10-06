@@ -7,6 +7,7 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSNumber
 import platform.Foundation.NSSortDescriptor
+import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.timeIntervalSince1970
 import platform.HealthKit.HKAuthorizationStatusSharingAuthorized
 import platform.HealthKit.HKDevice
