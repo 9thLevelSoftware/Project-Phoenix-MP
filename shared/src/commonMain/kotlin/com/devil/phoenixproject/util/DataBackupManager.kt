@@ -195,7 +195,12 @@ abstract class BaseDataBackupManager(
 
     /**
      * Returns the platform-specific directory path for session auto-backups.
-     * - Android: `getExternalFilesDir("PhoenixBackups")` (no permissions required)
+     * - Android 10+: `cacheDir/PhoenixBackups` as a staging path. The backup file
+     *   is written to MediaStore Downloads (`Download/PhoenixBackups`).
+     * - Android 9 and older: app-specific Documents
+     *   (`getExternalFilesDir(DIRECTORY_DOCUMENTS)/PhoenixBackups`), or internal
+     *   `files/PhoenixBackups` when external storage is unavailable. No storage
+     *   permission required.
      * - iOS: app Documents directory (UIFileSharingEnabled = true in Info.plist)
      * The directory is created if it does not exist.
      */
