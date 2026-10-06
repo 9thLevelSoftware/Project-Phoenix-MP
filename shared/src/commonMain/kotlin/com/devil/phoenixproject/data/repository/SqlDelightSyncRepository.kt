@@ -69,6 +69,7 @@ class SqlDelightSyncRepository(
 
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
+    private val routineIdentityResolver = RoutineIdentityResolver(queries)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
@@ -115,7 +116,13 @@ class SqlDelightSyncRepository(
         profileId: String,
     ): String? {
         if (portalDay.dayType == "rest") return null
-        if (portalDay.routineId != null) return portalDay.routineId
+        // Issue #1162: a pulled routine reference resolves to the kept local routine
+        // primary key (validated UUID spellings may differ from the stored id text).
+        if (portalDay.routineId != null) {
+            return routineIdentityResolver.resolve(portalDay.routineId, scopeProfileId = profileId) {
+                it.profile_id == profileId
+            }.localId
+        }
         if (existingCycleProfileId != profileId || existingCycleDeletedAt != null) return null
 
         val localRoutineId = existingDays
@@ -1163,7 +1170,7 @@ class SqlDelightSyncRepository(
         queries.selectDeletedRoutinesSince(timestamp, profileId = profileId).executeAsList().map { row ->
             // Prefer serverId (the ID the server knows) over local clientId
             row.serverId ?: row.id
-        }
+        }.map { RoutineIdentity.canonicalize(it) }.distinct()
     }
 
     override suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
@@ -2092,20 +2099,36 @@ class SqlDelightSyncRepository(
 
                 // 2. Routines — TIMESTAMP LWW (local wins if modified after lastSync)
                 for (portalRoutine in routines) {
-                    val claimedTargetProfileId = claimedPullProfileId(
-                        ownerUserId = ownerUserId,
-                        entityType = OwnershipEntityType.ROUTINE,
-                        entityId = portalRoutine.id,
-                    )
+                    // Issue #1162: resolve routine identity (exact id, genuine serverId
+                    // aliases, validated-UUID-equivalent spellings) before claim/adopt/
+                    // serverWins routing, so one logical identity routes as one.
+                    val identityKeys = linkedSetOf(portalRoutine.id, RoutineIdentity.canonicalize(portalRoutine.id))
+                    routineIdentityResolver.findCandidates(portalRoutine.id) {
+                        profileOwnerMatches(it.profile_id, ownerUserId, profileId)
+                    }.forEach { row ->
+                        identityKeys += row.id
+                        row.serverId?.let { serverId -> identityKeys += serverId }
+                    }
+                    val claimedTargetProfileId = identityKeys.firstNotNullOfOrNull { identityKey ->
+                        claimedPullProfileId(
+                            ownerUserId = ownerUserId,
+                            entityType = OwnershipEntityType.ROUTINE,
+                            entityId = identityKey,
+                        )
+                    }
                     val targetProfileId = claimedTargetProfileId ?: profileId
                     if (claimedTargetProfileId != null) {
-                        queries.adoptRoutineProfile(profileId = targetProfileId, id = portalRoutine.id)
+                        for (identityKey in identityKeys) {
+                            queries.adoptRoutineProfile(profileId = targetProfileId, id = identityKey)
+                        }
                     }
                     mergePortalRoutine(
                         portalRoutine = portalRoutine,
                         lastSync = lastSync,
                         profileId = targetProfileId,
-                        serverWins = portalRoutine.id in serverWinsRoutineIds,
+                        serverWins = serverWinsRoutineIds.any { serverWinsId ->
+                            identityKeys.any { RoutineIdentity.matches(it, serverWinsId) }
+                        },
                     )
                 }
 
@@ -2378,7 +2401,11 @@ class SqlDelightSyncRepository(
     }
 
     override suspend fun getAllRoutineIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        // Issue #1162: serialize known ids in the same validated-UUID canonical
+        // form as the wire (lowercase), collapsing case-split aliases.
         queries.selectAllRoutineIdsByProfile(profileId).executeAsList()
+            .map { RoutineIdentity.canonicalize(it) }
+            .distinct()
     }
 
     override suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String): List<String> = withContext(Dispatchers.IO) {
@@ -2598,13 +2625,13 @@ class SqlDelightSyncRepository(
 
         db.transaction {
             for (serverRoutineId in routineIds.distinct()) {
-                // Match the local id and, for legacy rows, the stored serverId.
-                val localRows = (
-                    listOfNotNull(queries.selectRoutineById(serverRoutineId).executeAsOneOrNull()) +
-                        queries.selectRoutineByServerId(serverRoutineId).executeAsList()
-                    ).distinctBy { it.id }
+                // Match the local id, legacy rows' stored serverId, and any
+                // validated-UUID-equivalent spelling of either (Issue #1162), still
+                // strictly owner-scoped. Each matched row is deleted exactly once.
+                val localRows = routineIdentityResolver.findCandidates(serverRoutineId) {
+                    profileOwnerMatches(it.profile_id, ownerUserId, syncProfileId)
+                }
                 for (row in localRows) {
-                    if (!profileOwnerMatches(row.profile_id, ownerUserId, syncProfileId)) continue
                     // lastSync == 0 (first pull / forced resync) has no sync base, so an
                     // edit cannot be classified as "unsynced"; skip the report then.
                     if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
@@ -3203,7 +3230,25 @@ class SqlDelightSyncRepository(
         profileId: String,
         serverWins: Boolean = false,
     ) {
-        val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
+        // Issue #1162: one owner-scoped identity resolution before every read and
+        // write — exact id, genuine serverId aliases, and validated-UUID-equivalent
+        // spellings all denote one local row (whose stored primary key is kept).
+        val identity = routineIdentityResolver.resolve(portalRoutine.id, scopeProfileId = profileId) {
+            it.profile_id == profileId
+        }
+        val localId = identity.localId
+        // A row with this exact primary key on another profile is never updated
+        // (identity resolution is owner-scoped) and cannot be overwritten anyway.
+        val foreignRow = queries.selectRoutineById(localId).executeAsOneOrNull()
+            ?.takeIf { it.profile_id != profileId }
+        if (foreignRow != null) {
+            Logger.w("SyncRepository") {
+                "Routine '${portalRoutine.name}' ($localId) skipped: primary key belongs to " +
+                    "profile '${foreignRow.profile_id}', not '$profileId'"
+            }
+            return
+        }
+        val existing = identity.keptRow
         if (existing != null) {
             if (existing.deletedAt != null) {
                 Logger.d { "Routine '${portalRoutine.name}' skipped: deleted locally" }
@@ -3211,20 +3256,20 @@ class SqlDelightSyncRepository(
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
             if (!serverWins && localUpdatedAt > lastSync) {
-                hydrateUnknownRoutineDurations(portalRoutine)
+                hydrateUnknownRoutineDurations(portalRoutine, localId)
                 Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
             }
         }
 
         // Read local structure before any write.
-        val localExercises = queries.selectExercisesByRoutine(portalRoutine.id).executeAsList()
-        val localSupersets = queries.selectSupersetsByRoutine(portalRoutine.id).executeAsList()
+        val localExercises = queries.selectExercisesByRoutine(localId).executeAsList()
+        val localSupersets = queries.selectSupersetsByRoutine(localId).executeAsList()
 
         val updatedAt = portalRoutine.updatedAt ?: currentTimeMillis()
         if (existing == null) {
             queries.insertRoutineIgnore(
-                id = portalRoutine.id,
+                id = localId,
                 name = portalRoutine.name,
                 description = portalRoutine.description,
                 createdAt = currentTimeMillis(),
@@ -3239,13 +3284,13 @@ class SqlDelightSyncRepository(
                 name = portalRoutine.name,
                 description = portalRoutine.description,
                 updatedAt = updatedAt,
-                id = portalRoutine.id,
+                id = localId,
             )
         }
 
         if (portalRoutine.exercises.isNotEmpty()) {
             mergePortalExercisesForRoutine(
-                portalRoutine.id,
+                localId,
                 portalRoutine.exercises,
                 localExercises,
                 localSupersets,
@@ -3262,25 +3307,28 @@ class SqlDelightSyncRepository(
     /**
      * A full upgrade pull can meet a locally newer routine. Keep every locally edited
      * field while filling only duration columns that older app versions never stored.
+     * [routineId] is the resolved local routine primary key (Issue #1162); incoming
+     * exercise ids are matched to local child rows by validated UUID equivalence so a
+     * case variant updates the existing child row instead of missing it.
      */
-    private fun hydrateUnknownRoutineDurations(portalRoutine: PullRoutineDto) {
-        val localExercises = queries.selectExercisesByRoutine(portalRoutine.id)
+    private fun hydrateUnknownRoutineDurations(portalRoutine: PullRoutineDto, routineId: String) {
+        val localExercises = queries.selectExercisesByRoutine(routineId)
             .executeAsList()
-            .associateBy { it.id }
+            .associateBy { RoutineIdentity.canonicalize(it.id) }
         portalRoutine.exercises.forEach { exercise ->
             if (!exercise.durationSecondsPresent) return@forEach
+            val local = localExercises[RoutineIdentity.canonicalize(exercise.id)]
             val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
             if (exercise.durationSeconds != null && incomingDuration == null) {
-                val local = localExercises[exercise.id]
                 if (local?.durationSyncKnown == DURATION_SYNC_UNKNOWN) {
                     // The field was present, so backfill is complete, but its value cannot be
                     // accepted. State 2 omits a local null from push instead of clearing the
                     // server and remains eligible for a later corrected portal value.
-                    queries.updateRoutineExerciseDurationSyncKnown(DURATION_SYNC_MALFORMED, exercise.id)
+                    queries.updateRoutineExerciseDurationSyncKnown(DURATION_SYNC_MALFORMED, local.id)
                 }
                 return@forEach
             }
-            val localDuration = localExercises[exercise.id]?.duration
+            val localDuration = local?.duration
             val localDurationIsSupported = localDuration?.let {
                 it in RoutineExercise.MIN_TIMED_DURATION_SECONDS.toLong()..
                     RoutineExercise.MAX_TIMED_DURATION_SECONDS.toLong()
@@ -3292,8 +3340,8 @@ class SqlDelightSyncRepository(
             }
             queries.hydrateRoutineExerciseDurationFromSync(
                 duration = incomingDuration?.toLong(),
-                id = exercise.id,
-                routineId = portalRoutine.id,
+                id = local?.id ?: exercise.id,
+                routineId = routineId,
             )
         }
     }
@@ -3316,8 +3364,11 @@ class SqlDelightSyncRepository(
         serverWins: Boolean,
     ) {
         val legacyCatalogueTranslator by lazy { LegacyCatalogueTranslator(db) }
-        val localExercisesById = localExercises.associateBy { it.id }
-        val localSupersetsById = localSupersets.associateBy { it.id }
+        // Issue #1162: match local children by validated UUID equivalence, so a
+        // case-variant id updates the existing local child row (keeping its primary
+        // key, planned sets and local-only columns) instead of delete + re-insert.
+        val localExercisesById = localExercises.associateBy { RoutineIdentity.canonicalize(it.id) }
+        val localSupersetsById = localSupersets.associateBy { RoutineIdentity.canonicalize(it.id) }
 
         // Create/update Superset rows BEFORE writing exercises (FK constraint).
         val supersetGroups = portalExercises
@@ -3335,12 +3386,15 @@ class SqlDelightSyncRepository(
         )
 
         var supersetOrderIdx = 0
+        // Resolved local superset primary key per incoming superset id (Issue #1162).
+        val resolvedSupersetIdByIncoming = HashMap<String, String>()
         for ((ssId, ssExercises) in supersetGroups) {
             val colorStr = ssExercises.firstOrNull()?.supersetColor?.lowercase()
             val colorIndex = colorStr?.let { colorNameToIndex[it] }
                 ?: colorStr?.toLongOrNull()
                 ?: supersetOrderIdx.toLong()
-            val localSuperset = localSupersetsById[ssId]
+            val localSuperset = localSupersetsById[RoutineIdentity.canonicalize(ssId)]
+            resolvedSupersetIdByIncoming[ssId] = localSuperset?.id ?: ssId
             if (localSuperset != null) {
                 // Name and rest are not on the wire: keep the local values.
                 queries.updateSuperset(
@@ -3348,7 +3402,7 @@ class SqlDelightSyncRepository(
                     colorIndex = colorIndex,
                     restBetweenSeconds = localSuperset.restBetweenSeconds,
                     orderIndex = supersetOrderIdx.toLong(),
-                    id = ssId,
+                    id = localSuperset.id,
                 )
             } else {
                 queries.insertSupersetIgnore(
@@ -3422,7 +3476,8 @@ class SqlDelightSyncRepository(
             // because reconstructed snapshot Exercises derived isBodyweight from it).
             val resolvedEquipment = catalogExercise?.equipment ?: ""
 
-            val local = localExercisesById[exercise.id]
+            val local = localExercisesById[RoutineIdentity.canonicalize(exercise.id)]
+            val resolvedSupersetId = exercise.supersetId?.let { resolvedSupersetIdByIncoming[it] ?: it }
             val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
             val incomingDurationIsSupported = exercise.durationSeconds == null || incomingDuration != null
             val localHasSupportedUnknownDuration = local?.let { row ->
@@ -3498,7 +3553,7 @@ class SqlDelightSyncRepository(
                     setRestSeconds = setRestSeconds,
                     perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                     isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                    supersetId = exercise.supersetId,
+                    supersetId = resolvedSupersetId,
                     orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
                     usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
                     weightPercentOfPR = weightPercentOfPR,
@@ -3515,7 +3570,7 @@ class SqlDelightSyncRepository(
                     isBodyweight = isBodyweight,
                     dropSetEnabled = dropSetEnabled,
                     dropSetMinWeightKg = dropSetMinWeightKg,
-                    id = exercise.id,
+                    id = local.id,
                 )
             } else {
                 queries.insertRoutineExercise(
@@ -3540,7 +3595,7 @@ class SqlDelightSyncRepository(
                     setRestSeconds = setRestSeconds,
                     perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                     isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                    supersetId = exercise.supersetId,
+                    supersetId = resolvedSupersetId,
                     orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
                     usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
                     weightPercentOfPR = weightPercentOfPR,
@@ -3559,13 +3614,18 @@ class SqlDelightSyncRepository(
                     dropSetMinWeightKg = dropSetMinWeightKg,
                 )
             }
-            queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown, exercise.id)
+            queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown, local?.id ?: exercise.id)
         }
 
-        // Drop what the portal no longer has (exercises first; their superset refs are SET NULL anyway).
-        val portalExerciseIds = portalExercises.mapTo(HashSet()) { it.id }
-        localExercises.filter { it.id !in portalExerciseIds }.forEach { queries.deleteRoutineExerciseById(it.id) }
-        localSupersets.filter { it.id !in supersetGroups.keys }.forEach { queries.deleteSuperset(it.id) }
+        // Drop what the portal no longer has (exercises first; their superset refs are SET NULL
+        // anyway). Deletion matching uses the same validated UUID equivalence as the merge, so a
+        // case variant of a kept id never deletes the existing local child row (Issue #1162).
+        val portalExerciseKeys = portalExercises.mapTo(HashSet()) { RoutineIdentity.canonicalize(it.id) }
+        localExercises.filter { RoutineIdentity.canonicalize(it.id) !in portalExerciseKeys }
+            .forEach { queries.deleteRoutineExerciseById(it.id) }
+        val portalSupersetKeys = supersetGroups.keys.mapTo(HashSet()) { RoutineIdentity.canonicalize(it) }
+        localSupersets.filter { RoutineIdentity.canonicalize(it.id) !in portalSupersetKeys }
+            .forEach { queries.deleteSuperset(it.id) }
     }
 
     override suspend fun mergeSessionNotes(
