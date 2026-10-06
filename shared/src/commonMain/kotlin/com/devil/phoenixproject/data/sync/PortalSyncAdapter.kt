@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.RoutineIdentity
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.PRType
@@ -729,6 +730,14 @@ object PortalSyncAdapter {
         sanitizeDurationSeconds(seconds)?.let { JsonPrimitive(it) } ?: if (known) JsonNull else null
 
     /**
+     * Issue #1162: outbound routine identity uses canonical lowercase UUID text for
+     * validated UUIDs; opaque ids (e.g. cycle_routine_* templates) pass through
+     * unchanged.
+     */
+    private fun canonicalRoutineWireId(routineId: String): String =
+        RoutineIdentity.canonicalize(routineId)
+
+    /**
      * Convert a mobile Routine to portal-format DTO.
      */
     fun toPortalRoutine(routine: Routine, userId: String): PortalRoutineSyncDto {
@@ -743,7 +752,7 @@ object PortalSyncAdapter {
         val exercises = routine.exercises.map { ex ->
             PortalRoutineExerciseSyncDto(
                 id = ex.id,
-                routineId = routine.id,
+                routineId = canonicalRoutineWireId(routine.id),
                 exerciseId = ex.exercise.id, // Catalog exercise ID (#404)
                 name = ex.exercise.name,
                 displayName = ex.exercise.displayName, // Disambiguated name (#404)
@@ -810,7 +819,7 @@ object PortalSyncAdapter {
         }
 
         return PortalRoutineSyncDto(
-            id = routine.id,
+            id = canonicalRoutineWireId(routine.id),
             userId = userId,
             name = routine.name,
             description = routine.description,
@@ -906,7 +915,7 @@ object PortalSyncAdapter {
                 cycleId = cycle.id,
                 dayNumber = day.dayNumber,
                 dayType = if (day.isRestDay) "rest" else "workout",
-                routineId = day.routineId,
+                routineId = day.routineId?.let { canonicalRoutineWireId(it) },
                 weightAdjustment = day.weightProgressionPercent ?: 0f,
                 repModifier = day.repModifier ?: 0,
                 restOverride = day.restTimeOverrideSeconds,

@@ -29,6 +29,7 @@ import kotlinx.serialization.json.Json
 class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
 
     private val queries = db.phoenixDatabaseQueries
+    private val routineIdentityResolver = RoutineIdentityResolver(queries)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -861,15 +862,40 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun saveRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
-            // Generate a UUID for the routine if not provided
-            val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
+            // Generate a UUID for the routine if not provided. A generated identity is
+            // written in canonical lowercase UUID text (Issue #1162 wire convention).
+            val requestedId = routine.id.takeIf { it.isNotBlank() }
+                ?: RoutineIdentity.canonicalize(generateUUID())
 
             db.transaction {
+                val routineId = resolveSavedRoutineId(requestedId, routine.profileId, routine.name)
+                    ?: return@transaction
                 writeRoutineRows(routine, routineId)
             }
 
             Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
         }
+    }
+
+    /**
+     * Issue #1162: resolve the saved identity to its existing owner-scoped primary key
+     * (a validated-UUID case variant or genuine `serverId` alias of an existing row
+     * resolves to that row instead of creating a canonical alias). A primary key
+     * already owned by another profile is never written. Returns null when the save
+     * must be skipped. Must run inside a [db.transaction] block.
+     */
+    private fun resolveSavedRoutineId(requestedId: String, profileId: String, routineName: String): String? {
+        val resolution = routineIdentityResolver.resolve(requestedId) { it.profile_id == profileId }
+        val foreignRow = queries.selectRoutineById(resolution.localId).executeAsOneOrNull()
+            ?.takeIf { it.profile_id != profileId }
+        if (foreignRow != null) {
+            Logger.e("WorkoutRepository") {
+                "Skipping save of routine '$routineName': primary key '${resolution.localId}' " +
+                    "belongs to profile '${foreignRow.profile_id}', not '$profileId'"
+            }
+            return null
+        }
+        return resolution.localId
     }
 
     /** The routine row, then its supersets and exercises. Callers run it inside a transaction. */
@@ -901,17 +927,45 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         )
 
         // Delete existing supersets and exercises before re-inserting
+        rebuildRoutineChildren(routine, routineId)
+    }
+
+    /**
+     * Delete-and-rebuild the routine's supersets and exercises, keeping each existing
+     * child's primary key text when the model child is a validated-UUID case variant
+     * of it (Issue #1162), so planned-set parents and completed-set references stay
+     * attached. Callers run it inside a transaction.
+     */
+    private fun rebuildRoutineChildren(routine: Routine, routineId: String) {
         val previousDurations = snapshotRoutineExerciseDurations(routineId)
+        // Issue #1162: stabilize child ids against the existing local rows first. A
+        // model child whose id is only a case variant of an existing child keeps that
+        // row's primary key text through the rebuild, so planned-set parents and
+        // completed-set references stay attached. Supersets first: RoutineExercise
+        // .supersetId references them.
+        val existingSupersetIdByKey = queries.selectSupersetsByRoutine(routineId).executeAsList()
+            .associate { RoutineIdentity.canonicalize(it.id) to it.id }
+        val existingExerciseIdByKey = queries.selectExercisesByRoutine(routineId).executeAsList()
+            .associate { RoutineIdentity.canonicalize(it.id) to it.id }
         queries.deleteSupersetsByRoutine(routineId)
         queries.deleteRoutineExercises(routineId)
 
-        // Supersets first: RoutineExercise.supersetId references them.
+        val supersetIdByModelId = HashMap<String, String>()
         routine.supersets.forEach { superset ->
-            insertSuperset(routineId, superset)
+            val stableId = existingSupersetIdByKey[RoutineIdentity.canonicalize(superset.id)] ?: superset.id
+            supersetIdByModelId[superset.id] = stableId
+            insertSuperset(routineId, superset.copy(id = stableId))
         }
 
         routine.exercises.forEachIndexed { index, exercise ->
-            insertRoutineExercise(routineId, exercise, index, previousDurations)
+            val stableId = existingExerciseIdByKey[RoutineIdentity.canonicalize(exercise.id)] ?: exercise.id
+            val stableSupersetId = exercise.supersetId?.let { supersetIdByModelId[it] ?: it }
+            insertRoutineExercise(
+                routineId,
+                exercise.copy(id = stableId, supersetId = stableSupersetId),
+                index,
+                previousDurations,
+            )
         }
     }
 
@@ -967,8 +1021,9 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         index: Int,
         previousDurations: Map<String, Pair<Long?, Long>>,
     ) {
-        // Generate a UUID for the exercise if not provided
-        val exerciseRowId = exercise.id.takeIf { it.isNotBlank() } ?: generateUUID()
+        // Generate a UUID for the exercise if not provided (canonical lowercase text)
+        val exerciseRowId = exercise.id.takeIf { it.isNotBlank() }
+            ?: RoutineIdentity.canonicalize(generateUUID())
 
         queries.insertRoutineExercise(
             id = exerciseRowId,
@@ -1069,9 +1124,13 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun updateRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
-            val routineId = routine.id.takeIf { it.isNotBlank() } ?: return@withContext
+            val requestedId = routine.id.takeIf { it.isNotBlank() } ?: return@withContext
 
             db.transaction {
+                // Issue #1162: the update lands on the resolved owner-scoped primary key.
+                val routineId = resolveSavedRoutineId(requestedId, routine.profileId, routine.name)
+                    ?: return@transaction
+
                 // Update the routine
                 queries.updateRoutineById(
                     name = routine.name,
@@ -1081,19 +1140,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 )
 
                 // Delete existing supersets and exercises, then re-insert
-                val previousDurations = snapshotRoutineExerciseDurations(routineId)
-                queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineExercises(routineId)
-
-                // Insert all supersets
-                routine.supersets.forEach { superset ->
-                    insertSuperset(routineId, superset)
-                }
-
-                // Insert all exercises
-                routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index, previousDurations)
-                }
+                rebuildRoutineChildren(routine, routineId)
             }
 
             Logger.d {
