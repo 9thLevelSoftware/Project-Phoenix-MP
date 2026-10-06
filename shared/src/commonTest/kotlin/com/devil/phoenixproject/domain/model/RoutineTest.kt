@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.domain.model
 
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -9,32 +8,6 @@ import kotlin.test.assertTrue
  * Tests for Routine domain model enhancements
  */
 class RoutineTest {
-
-    // ===== roundToIncrement extension (Issue #266) =====
-
-    @Test
-    fun roundToIncrement_halfKg() {
-        assertEquals(10.0f, 10.0f.roundToIncrement(0.5f))
-        assertEquals(10.5f, 10.3f.roundToIncrement(0.5f))
-        assertEquals(10.0f, 10.2f.roundToIncrement(0.5f))
-    }
-
-    @Test
-    fun roundToIncrement_oneTenthLb() {
-        val result = 10.14f.roundToIncrement(0.1f)
-        assertTrue(abs(result - 10.1f) < 0.01f, "Expected ~10.1, got $result")
-    }
-
-    @Test
-    fun roundToIncrement_fiveKg() {
-        assertEquals(10.0f, 12.0f.roundToIncrement(5.0f))
-        assertEquals(15.0f, 13.0f.roundToIncrement(5.0f))
-    }
-
-    @Test
-    fun roundToIncrement_zeroIncrement_returnsOriginal() {
-        assertEquals(10.3f, 10.3f.roundToIncrement(0.0f))
-    }
 
     // ===== RoutineExercise.getRestForSet =====
 

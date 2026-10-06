@@ -30,9 +30,3 @@ allprojects {
         }
     }
 }
-
-tasks.matching { it.name == "clean" }.configureEach {
-    doLast {
-        delete(rootProject.layout.buildDirectory)
-    }
-}

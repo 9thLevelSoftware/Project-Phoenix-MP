@@ -42,7 +42,7 @@ import projectphoenix.shared.generated.resources.Res
 /**
  * Visual state for a day chip in the day strip.
  */
-enum class DayState {
+private enum class DayState {
     /** Day was completed - Green with checkmark */
     COMPLETED,
 

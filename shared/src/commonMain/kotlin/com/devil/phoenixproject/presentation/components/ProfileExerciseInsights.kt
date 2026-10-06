@@ -43,7 +43,7 @@ import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 
-data class ProfileRecentHistory(
+internal data class ProfileRecentHistory(
     val sessionsNewestFirst: List<WorkoutSession>,
     val chartPointsOldestFirst: List<VolumePoint>,
 )

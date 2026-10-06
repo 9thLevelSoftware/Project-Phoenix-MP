@@ -147,7 +147,7 @@ private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatM
 /**
  * State machine for cycle creation flow
  */
-sealed class CycleCreationState {
+private sealed class CycleCreationState {
     object Idle : CycleCreationState()
 
     /** Editable preview of the template's structure before creation (Phase 3, #620). */

@@ -2448,7 +2448,9 @@ class SyncManager(
             contentOf = { it.second.canonicalized() },
         )
         val routineDtos = reconciledRoutineRows.kept.map { it.second }
-        val heldBackRoutineIds = reconciledRoutineRows.heldBack.map { it.second.id }.distinct()
+        // Re-arm by LOCAL row id (Issue #1162: the wire id is canonical lowercase and
+        // may differ in case from the stored primary key, which is what must be cleared).
+        val heldBackRoutineIds = reconciledRoutineRows.heldBack.map { it.first.id }.distinct()
         if (heldBackRoutineIds.isNotEmpty()) {
             // Same re-arm rule as held-back PRs: `selectRoutinesModifiedSince`
             // matches `updatedAt IS NULL`, so the rows retry instead of stalling
@@ -2911,8 +2913,14 @@ class SyncManager(
         val unacceptedRoutineIds = collectedRejections.flatMapTo(mutableSetOf()) { rejections ->
             rejections.routines.map { it.id }
         } + skippedDeleted.routines
-        val deliveredRoutineIds = routineDtos.map { it.id }
-            .filter { it in sentRoutineIds && it !in unacceptedRoutineIds }
+        // Deliverability is decided in wire-identity space, but stamping targets the
+        // LOCAL rows, so map the delivered wire ids back to their stored primary keys
+        // (Issue #1162: wire text can differ in case from the stored id).
+        val deliveredRoutineIds = reconciledRoutineRows.kept
+            .map { (row, dto) -> row.id to dto.id }
+            .filter { (_, wireId) -> wireId in sentRoutineIds && wireId !in unacceptedRoutineIds }
+            .map { (rowId, _) -> rowId }
+            .distinct()
         if (deliveredRoutineIds.isNotEmpty()) {
             syncRepository.stampPushedRoutinesWithoutTimestamp(deliveredRoutineIds, gatherStartedAt)
         }

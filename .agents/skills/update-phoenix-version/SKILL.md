@@ -31,10 +31,10 @@ Read the checked-in version, then bump that. `release-all` compares Android `ver
 
 Confirm these in the files before running. They are the live defaults:
 
-- `versionName`, `Constants.APP_VERSION`, and both `MARKETING_VERSION` entries: `1.0.4`
-- default Android `versionCode` (`injectedVersionCode ?: ...`): `8`
+- `versionName`, `Constants.APP_VERSION`, and both `MARKETING_VERSION` entries: `1.0.5`
+- default Android `versionCode` (`injectedVersionCode ?: ...`): `9`
 
-From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.0.4` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `8` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
+From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.0.5` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `9` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
 
 ```powershell
 python .agents/skills/update-phoenix-version/scripts/update_version.py --version <version> --android-code <android-code> --dry-run
@@ -49,19 +49,19 @@ python .agents/skills/update-phoenix-version/scripts/update_version.py --version
 Verify the current tree without modifying files:
 
 ```powershell
-python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.0.4 --android-code 8
+python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.0.5 --android-code 9
 ```
 
 ## Workflow
 
-1. Read the checked-in `versionName` (`1.0.4`) and default `versionCode` (`8`), then choose the bump from those values. Do not reuse an older release as the target.
+1. Read the checked-in `versionName` (`1.0.5`) and default `versionCode` (`9`), then choose the bump from those values. Do not reuse an older release as the target.
 2. Run the helper with `--dry-run`.
 3. Run the helper without `--dry-run` after the replacements look right.
 4. Run `--check` with the same values.
 5. Search for stale app-version literals:
 
 ```powershell
-rg -n "1\.0\.4|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp shared .github docs
+rg -n "1\.0\.5|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp shared .github docs
 ```
 
 Replace the escaped old version with the actual previous version. Ignore test fixtures, historical docs, generated release metadata, and localized Settings label templates unless the user explicitly asks to update those too.

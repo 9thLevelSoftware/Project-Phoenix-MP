@@ -26,7 +26,7 @@ import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 /**
  * Movement phase for the cable - determines indicator coloring
  */
-enum class MovementPhase {
+private enum class MovementPhase {
     CONCENTRIC, // Pulling/lifting against resistance (positive velocity)
     ECCENTRIC, // Lowering/resisting (negative velocity)
     STATIC, // Holding position (near-zero velocity)

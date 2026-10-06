@@ -642,7 +642,6 @@ fun WorkoutTab(
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
-                        lastUsedWeight = workoutParameters.lastUsedWeightKg,
                         formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410
