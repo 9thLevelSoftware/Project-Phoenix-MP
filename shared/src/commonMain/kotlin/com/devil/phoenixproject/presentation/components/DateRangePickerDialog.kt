@@ -19,7 +19,7 @@ import projectphoenix.shared.generated.resources.Res
 /**
  * Date range options for export filtering
  */
-enum class DateRangeOption(val label: String, val daysBack: Int?) {
+private enum class DateRangeOption(val label: String, val daysBack: Int?) {
     ALL_TIME("All Time", null),
     LAST_7_DAYS("Last 7 Days", 7),
     LAST_30_DAYS("Last 30 Days", 30),

@@ -112,7 +112,7 @@ import projectphoenix.shared.generated.resources.rename_superset
 import projectphoenix.shared.generated.resources.routine_name
 
 // State holder for the editor
-data class RoutineEditorState(
+private data class RoutineEditorState(
     val routineName: String = "",
     val routine: Routine? = null,
     val collapsedSupersets: Set<String> = emptySet(), // Collapsed superset IDs

@@ -54,7 +54,7 @@ import kotlinx.datetime.toLocalDateTime
 /**
  * Time period for volume chart grouping
  */
-enum class VolumePeriod(val label: String) {
+private enum class VolumePeriod(val label: String) {
     WEEK("Week"),
     MONTH("Month"),
     YEAR("Year"),

@@ -29,7 +29,7 @@ import projectphoenix.shared.generated.resources.Res
 /**
  * RPE (Rate of Perceived Exertion) data.
  */
-data class RpeInfo(
+private data class RpeInfo(
     val value: Int,
     val emoji: String,
     val label: String,
@@ -40,7 +40,7 @@ data class RpeInfo(
 /**
  * RPE scale from 6-10 with emoji representations.
  */
-val rpeScale = listOf(
+private val rpeScale = listOf(
     RpeInfo(6, "😊", "Easy", "4+ RiR"),
     RpeInfo(7, "🙂", "Moderate", "3 RiR"),
     RpeInfo(8, "😐", "Challenging", "2 RiR"),
