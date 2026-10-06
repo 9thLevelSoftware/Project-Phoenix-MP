@@ -59,7 +59,7 @@ fun getInt32LE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0x
  * Read unsigned 32-bit integer in LITTLE-ENDIAN format.
  * Returned as Long because Kotlin Int cannot represent the full UInt range.
  */
-fun getUInt32LE(data: ByteArray, offset: Int): Long = (data[offset].toLong() and 0xFFL) or
+private fun getUInt32LE(data: ByteArray, offset: Int): Long = (data[offset].toLong() and 0xFFL) or
     ((data[offset + 1].toLong() and 0xFFL) shl 8) or
     ((data[offset + 2].toLong() and 0xFFL) shl 16) or
     ((data[offset + 3].toLong() and 0xFFL) shl 24)
