@@ -1,11 +1,12 @@
 package com.devil.phoenixproject
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import co.touchlab.kermit.Logger
@@ -79,8 +80,16 @@ fun AndroidAppHost() {
             PersistedFileStartupFailureScreen(current) { retryAttempt++ }
         }
 
-        is StartupDependencyResolution.Ready -> RequireBlePermissions {
-            AndroidAppContent(current.dependencies)
+        is StartupDependencyResolution.Ready -> {
+            val dependencies = current.dependencies
+            val themeMode by dependencies.themeViewModel.themeMode.collectAsState()
+            val dynamicColorEnabled by dependencies.themeViewModel.dynamicColorEnabled.collectAsState()
+            RequireBlePermissions(
+                themeMode = themeMode,
+                dynamicColorEnabled = dynamicColorEnabled,
+            ) {
+                AndroidAppContent(dependencies)
+            }
         }
     }
 }

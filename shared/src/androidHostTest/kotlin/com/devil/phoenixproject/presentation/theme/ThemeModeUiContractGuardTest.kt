@@ -76,6 +76,28 @@ class ThemeModeUiContractGuardTest {
     }
 
     @Test
+    fun blePermissionGate_usesPersistedThemeModeThroughPhoenixTheme() {
+        val handler = read(
+            "shared/src/androidMain/kotlin/com/devil/phoenixproject/presentation/components/BlePermissionHandler.android.kt",
+        )
+        val host = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt")
+
+        assertTrue(
+            handler.contains("PhoenixTheme(") && handler.contains("themeMode = themeMode"),
+            "The BLE permission gate must theme through PhoenixTheme and the persisted ThemeMode.",
+        )
+        assertFalse(
+            handler.contains("isSystemInDarkTheme()"),
+            "The BLE permission gate must not ignore ThemeMode with a system-only dark flag.",
+        )
+        assertTrue(
+            host.contains("dependencies.themeViewModel.themeMode.collectAsState()") &&
+                host.contains("themeMode = themeMode"),
+            "AndroidAppHost must feed the BLE gate from the same ThemeViewModel state as the rest of the app.",
+        )
+    }
+
+    @Test
     fun androidSystemDark_usesResolverAndApplicationConfiguration() {
         val source = read(
             "shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt",
