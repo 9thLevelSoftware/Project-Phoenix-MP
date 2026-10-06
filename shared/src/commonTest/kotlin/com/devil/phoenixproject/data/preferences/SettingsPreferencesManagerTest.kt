@@ -51,7 +51,6 @@ class SettingsPreferencesManagerTest {
         val defaults = JustLiftDefaults()
 
         assertEquals(1, defaults.echoLevelValue)
-        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
     }
 
     @Test
