@@ -3942,10 +3942,6 @@ LIMIT 1;
 selectSessionByServerId:
 SELECT * FROM WorkoutSession WHERE serverId = ?;
 
--- Find routine by server ID
-selectRoutineByServerId:
-SELECT * FROM Routine WHERE serverId = ?;
-
 -- Mark session updatedAt on save
 updateSessionTimestamp:
 UPDATE WorkoutSession SET updatedAt = ? WHERE id = ?;
