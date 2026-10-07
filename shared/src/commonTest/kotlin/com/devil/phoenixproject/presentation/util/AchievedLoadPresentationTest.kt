@@ -192,7 +192,7 @@ class AchievedLoadPresentationTest {
     }
 
     @Test
-    fun `set summary renders the seed as achieved value only for fixed load, never for echo`() {
+    fun `set summary renders the seed as achieved value only for fixed load and never for echo`() {
         val echoPrimary = AchievedLoadPresentation.setSummaryPrimary(echoSummary(measuredPeakKgPerCable = 80f), WeightUnit.LB)
         assertNotEquals(
             WeightDisplayFormatter.toDisplayWeight(5f, WeightUnit.LB).toInt().toString(),

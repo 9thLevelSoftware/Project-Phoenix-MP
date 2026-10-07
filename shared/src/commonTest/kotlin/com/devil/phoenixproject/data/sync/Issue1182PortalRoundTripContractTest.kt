@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.data.repository.SqlDelightSyncRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.SyncRepository
@@ -17,7 +18,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 
 /**
  * Issue #1182 portal round-trip contract (merge-gate R5d).
@@ -38,6 +39,10 @@ import kotlinx.coroutines.runBlocking
  * the session-level config. Those returned rep summaries are what hydrate the row's force
  * columns, which is the provenance that tells the resolver a measured Echo load really was
  * measured. The configured seed is never a fallback: a missing load stays missing across sync.
+ *
+ * NOTE: helpers are `suspend` and the tests use `runTest`, not `runBlocking` - this file lives
+ * in commonTest and `runBlocking` does not exist in the common source set (it broke the iOS
+ * compile).
  */
 class Issue1182PortalRoundTripContractTest {
 
@@ -115,7 +120,7 @@ class Issue1182PortalRoundTripContractTest {
      * Pushes the session through the real wire encoding into a portal that models
      * `replace_session_children`, then pulls it back through the real wire decoding.
      */
-    private fun roundTrip(
+    private suspend fun roundTrip(
         session: WorkoutSession,
         server: FakePortalServer = FakePortalServer(),
         withRepSummaries: Boolean = true,
@@ -143,9 +148,8 @@ class Issue1182PortalRoundTripContractTest {
         )
 
         val pullDto = assertNotNull(pulled.sessions.singleOrNull(), "exactly one session comes back from the portal")
-        val local = runBlocking {
-            PortalPullAdapter.toWorkoutSessionsWithLookup(pullDto, profileId = "default") { _, _, _ -> null }
-        }.single()
+        val local = PortalPullAdapter.toWorkoutSessionsWithLookup(pullDto, profileId = "default") { _, _, _ -> null }
+            .single()
         return local to server
     }
 
@@ -153,44 +157,38 @@ class Issue1182PortalRoundTripContractTest {
      * Persists a pulled row through the REAL pull merge (`SyncRepository.mergeAllPullData`,
      * the path `SyncManager` uses) and reads it back - the merge/read-back leg.
      */
-    private fun mergedAndReadBack(pulled: WorkoutSession, database: com.devil.phoenixproject.database.PhoenixDatabase = createTestDatabase()): WorkoutSession {
+    private suspend fun mergedAndReadBack(
+        pulled: WorkoutSession,
+        database: PhoenixDatabase = createTestDatabase(),
+    ): WorkoutSession {
         mergePulled(database, listOf(pulled))
         return assertNotNull(readBack(database, pulled.id), "the merged row must read back")
     }
 
-    private fun mergePulled(
-        database: com.devil.phoenixproject.database.PhoenixDatabase,
-        sessions: List<WorkoutSession>,
-    ) {
+    private suspend fun mergePulled(database: PhoenixDatabase, sessions: List<WorkoutSession>) {
         val syncRepository: SyncRepository = SqlDelightSyncRepository(
             database,
             FakeUserProfileRepository().apply { setActiveProfileForTest() },
         )
-        runBlocking {
-            syncRepository.mergeAllPullData(
-                sessions = sessions,
-                routines = emptyList(),
-                cycles = emptyList(),
-                badges = emptyList(),
-                gamificationStats = null,
-                personalRecords = emptyList(),
-                lastSync = 0L,
-                profileId = "default",
-            )
-        }
+        syncRepository.mergeAllPullData(
+            sessions = sessions,
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
     }
 
-    private fun readBack(
-        database: com.devil.phoenixproject.database.PhoenixDatabase,
-        sessionId: String,
-    ): WorkoutSession? = runBlocking {
+    private suspend fun readBack(database: PhoenixDatabase, sessionId: String): WorkoutSession? =
         SqlDelightWorkoutRepository(database, FakeExerciseRepository()).getSession(sessionId)
-    }
 
     // ===== achieved load =====
 
     @Test
-    fun `achieved echo load survives push serialize pull merge and read back`() {
+    fun `achieved echo load survives push serialize pull merge and read back`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
         val readBack = mergedAndReadBack(pulled)
 
@@ -203,7 +201,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `the configured seed is never rendered as the achieved load after a round trip`() {
+    fun `the configured seed is never rendered as the achieved load after a round trip`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
         val readBack = mergedAndReadBack(pulled)
 
@@ -213,7 +211,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `the round trip keeps the echoed mode so the row is not silently treated as fixed load`() {
+    fun `the round trip keeps the echoed mode so the row is not silently treated as fixed load`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
 
         assertEquals("Echo", pulled.mode, "the Echo mode survives the wire - otherwise the row would report a fixed load")
@@ -221,7 +219,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `returned telemetry is what proves the measured load and it round trips`() {
+    fun `returned telemetry is what proves the measured load and it round trips`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
 
         assertTrue(
@@ -240,7 +238,7 @@ class Issue1182PortalRoundTripContractTest {
      * reports "Load unavailable" instead of guessing. It must never fall back to the seed.
      */
     @Test
-    fun `without returned telemetry the round trip reports unavailable and never the seed`() {
+    fun `without returned telemetry the round trip reports unavailable and never the seed`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession(), withRepSummaries = false)
         val readBack = mergedAndReadBack(pulled)
 
@@ -254,7 +252,7 @@ class Issue1182PortalRoundTripContractTest {
     // ===== unavailable sentinel =====
 
     @Test
-    fun `the unavailable sentinel survives the round trip and is never replaced by the seed`() {
+    fun `the unavailable sentinel survives the round trip and is never replaced by the seed`() = runTest {
         val (pulled, _) = roundTrip(unmeasuredEchoSession())
         val readBack = mergedAndReadBack(pulled)
 
@@ -267,7 +265,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `the rep based estimate is suppressed when the load is unavailable`() {
+    fun `the rep based estimate is suppressed when the load is unavailable`() = runTest {
         val build = pushResultFor(unmeasuredEchoSession())
         val exercise = build.sessions.single().exercises.single()
 
@@ -279,7 +277,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `the rep based estimate derives from the achieved load not the configured seed`() {
+    fun `the rep based estimate derives from the achieved load not the configured seed`() = runTest {
         val build = pushResultFor(achievedEchoSession())
         val exercise = build.sessions.single().exercises.single()
 
@@ -297,7 +295,7 @@ class Issue1182PortalRoundTripContractTest {
     // ===== identity / replacement semantics =====
 
     @Test
-    fun `re-push keeps child identity stable and replaces children exactly once`() {
+    fun `re-push keeps child identity stable and replaces children exactly once`() = runTest {
         val session = achievedEchoSession(id = "echo-stable", routineSessionId = "echo-stable")
         val server = FakePortalServer()
         val build = pushResultFor(session)
@@ -318,7 +316,7 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `a pulled row keeps the same local id so a re-pull cannot duplicate the session`() {
+    fun `a pulled row keeps the same local id so a re-pull cannot duplicate the session`() = runTest {
         val (firstPull, server) = roundTrip(achievedEchoSession(id = "echo-dedupe", routineSessionId = "echo-dedupe"))
         val database = createTestDatabase()
 
@@ -326,9 +324,7 @@ class Issue1182PortalRoundTripContractTest {
         mergePulled(database, listOf(firstPull))
         mergePulled(database, listOf(firstPull))
 
-        val rows = runBlocking {
-            SqlDelightWorkoutRepository(database, FakeExerciseRepository()).getAllSessions("default").first()
-        }
+        val rows = SqlDelightWorkoutRepository(database, FakeExerciseRepository()).getAllSessions("default").first()
         assertEquals(1, rows.size, "a re-pull must merge onto the same session row, not add another")
         assertEquals(firstPull.id, rows.single().id, "the local row id stays the portal component id")
         assertTrue(server.session("echo-dedupe") != null, "the portal still owns exactly one such session")
