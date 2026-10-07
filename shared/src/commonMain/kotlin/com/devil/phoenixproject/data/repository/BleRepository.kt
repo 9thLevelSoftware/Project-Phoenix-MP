@@ -29,7 +29,7 @@ data class AutoStopUiState(val isActive: Boolean = false, val secondsRemaining: 
  * 4-state machine (matches parent repo):
  * - WaitingForRest: Initial state, requires handles at rest before arming
  * - Released: Handles at rest, armed for grab detection
- * - Grabbed: Handles grabbed with velocity - workout active
+ * - Grabbed: A handle past the position and velocity thresholds, sustained for the dwell
  * - Moving: Handles in motion
  */
 enum class HandleState {
@@ -39,7 +39,7 @@ enum class HandleState {
     /** Handles at rest - armed for grab detection */
     Released,
 
-    /** Handles grabbed - force > 3kg sustained */
+    /** Grab confirmed: position and velocity above threshold, sustained for the dwell */
     Grabbed,
 
     /** Handles in motion */
