@@ -15,10 +15,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.ExerciseConfig
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
+import com.devil.phoenixproject.presentation.util.programModeShortLabel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
@@ -325,7 +325,7 @@ private fun ConfigurableExerciseCard(
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Text(
-                        text = getModeAbbreviation(config.mode),
+                        text = programModeShortLabel(config.mode),
                         modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -376,16 +376,4 @@ private fun ConfigurableExerciseCard(
             weightStepKg = weightStepKg,
         )
     }
-}
-
-/**
- * Get short abbreviation for ProgramMode for badge display.
- */
-private fun getModeAbbreviation(mode: ProgramMode): String = when (mode) {
-    ProgramMode.OldSchool -> "OLD"
-    ProgramMode.TUT -> "TUT"
-    ProgramMode.Pump -> "PUMP"
-    ProgramMode.EccentricOnly -> "ECC"
-    ProgramMode.TUTBeast -> "BEAST"
-    ProgramMode.Echo -> "ECHO"
 }
