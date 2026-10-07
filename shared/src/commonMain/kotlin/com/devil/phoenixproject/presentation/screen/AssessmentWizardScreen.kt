@@ -420,7 +420,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 @Composable
 private fun ProgressiveLoadingContent(
     step: AssessmentStep.ProgressiveLoading,
-    onRecordSet: (Float, Int, Float, Float) -> Unit,
+    onRecordSet: (Float, Float) -> Unit,
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
     hasBleMetrics: Boolean,
@@ -709,7 +709,7 @@ private fun ManualInputSection(
     velocityInput: String,
     onWeightChange: (String) -> Unit,
     onVelocityChange: (String) -> Unit,
-    onRecordSet: (Float, Int, Float, Float) -> Unit,
+    onRecordSet: (Float, Float) -> Unit,
 ) {
     Text(
         text = "Log This Set",
@@ -750,7 +750,7 @@ private fun ManualInputSection(
     Button(
         onClick = {
             if (weight != null && velocity != null) {
-                onRecordSet(weight, 3, velocity, velocity)
+                onRecordSet(weight, velocity)
             }
         },
         enabled = canLog,
