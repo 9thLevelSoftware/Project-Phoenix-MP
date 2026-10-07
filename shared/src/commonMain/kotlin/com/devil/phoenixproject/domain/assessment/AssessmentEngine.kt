@@ -69,7 +69,6 @@ class AssessmentEngine {
             estimatedOneRepMaxKg = estimatedLoad.toFloat(),
             loadVelocityPoints = points,
             r2 = r2,
-            velocityAt1RM = config.oneRmVelocityMs,
         )
     }
 
