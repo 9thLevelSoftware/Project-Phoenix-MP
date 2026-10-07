@@ -33,8 +33,8 @@ import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.presentation.components.RpeIndicator
+import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
@@ -121,18 +121,13 @@ fun SetSummaryCard(
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     // Issue #1182: an Echo set's primary load is the ACHIEVED measured peak ("Peak load"),
-    // never the configured seed. A fixed-load set keeps its configured "Set Weight". When an
-    // Echo set has no accepted measurement we show "Load unavailable" (not the seed, not 0).
-    val achievedEchoLoadKg = if (summary.isEchoMode) EchoAchievedLoadResolver.fromSummary(summary) else null
-    val setWeightLabel = if (summary.isEchoMode) "Peak load" else "Set Weight"
-    val setWeightValueText: String = if (summary.isEchoMode) {
-        achievedEchoLoadKg
-            ?.let { WeightDisplayFormatter.toDisplayWeight(it, weightUnit).roundToInt().toString() }
-            ?: "Load unavailable"
-    } else {
-        WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit).roundToInt().toString()
-    }
-    val setWeightUnitText: String = if (summary.isEchoMode && achievedEchoLoadKg == null) "" else "($unitLabel/cable)"
+    // never the configured seed. A fixed-load set keeps its configured "Set Weight"; an Echo
+    // set with no accepted measurement shows "Load unavailable" (not the seed, not 0).
+    // The exact rendered label/value/unit live in AchievedLoadPresentation so they stay testable.
+    val primary = AchievedLoadPresentation.setSummaryPrimary(summary, weightUnit)
+    val setWeightLabel = primary.label
+    val setWeightValueText: String = primary.valueText
+    val setWeightUnitText: String = primary.unitText
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 

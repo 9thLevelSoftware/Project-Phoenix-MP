@@ -35,7 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
+import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.util.KmpUtils
@@ -173,9 +173,8 @@ private fun SessionRow(
     showDuration: Boolean,
 ) {
     // Issue #1182: Echo shows the achieved load (measured peak), not the configured seed.
-    val loadText = EchoAchievedLoadResolver.primaryLoadKg(session)
-        ?.let { formatWeight(it, weightUnit) }
-        ?: "Load unavailable"
+    // The exact rendered string lives in AchievedLoadPresentation so it stays testable.
+    val loadText = AchievedLoadPresentation.sessionLoadText(session, weightUnit, formatWeight)
     Row(
         modifier = Modifier
             .fillMaxWidth()

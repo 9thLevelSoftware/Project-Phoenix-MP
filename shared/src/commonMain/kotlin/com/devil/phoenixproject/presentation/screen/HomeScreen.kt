@@ -50,7 +50,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
+import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
@@ -558,14 +558,8 @@ private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: Weight
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             // Issue #1182: Echo shows the achieved load (measured peak), not the configured seed.
-            val achievedLoadKg = EchoAchievedLoadResolver.primaryLoadKg(session)
-            val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-            val loadLine = if (achievedLoadKg != null) {
-                val displayWeight = WeightDisplayFormatter.formatDisplayWeight(achievedLoadKg, weightUnit)
-                "${session.workingReps} reps • $displayWeight $unitLabel"
-            } else {
-                "${session.workingReps} reps • Load unavailable"
-            }
+            // The exact rendered line lives in AchievedLoadPresentation so it stays testable.
+            val loadLine = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit)
             Text(
                 session.exerciseName ?: "Workout Session",
                 style = MaterialTheme.typography.labelLarge,

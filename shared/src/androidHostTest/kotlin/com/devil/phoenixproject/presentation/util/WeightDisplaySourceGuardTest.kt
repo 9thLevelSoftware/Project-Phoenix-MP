@@ -291,22 +291,63 @@ class WeightDisplaySourceGuardTest {
     fun setSummary_primaryWeightLabelsStayPerCable() {
         val path = "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt"
         val source = readSourceFile(path)
+        // A literal '$' is built via [dollar] so these strings stay source literals rather
+        // than Kotlin string templates.
+        val dollar = '$'
         if (source != null) {
             assertFalse(
-                source.contains("unit = \"(\$unitLabel total)\""),
+                source.contains("unit = \"(${dollar}unitLabel total)\""),
                 "GUARD VIOLATION: Set Summary set weight is per-cable and must not be labeled total.",
             )
             assertFalse(
-                source.contains("\"\$unitLabel total\""),
+                source.contains("\"${dollar}unitLabel total\""),
                 "GUARD VIOLATION: Echo phase weights are per-cable and must not be labeled total.",
-            )
-            assertTrue(
-                source.contains("\"(\$unitLabel/cable)\""),
-                "Set Summary set weight should be labeled per-cable.",
             )
         } else {
             assertTrue(true, "SetSummaryCard.kt not found; guard passes")
         }
+
+        // The per-cable label now lives with the extracted presentation code (issue #1182),
+        // so the literal is asserted where it is actually rendered from.
+        val presentation = readSourceFile("com/devil/phoenixproject/presentation/util/AchievedLoadPresentation.kt")
+            ?: error("AchievedLoadPresentation.kt not found")
+        assertTrue(
+            presentation.contains("\"(${dollar}unitLabel/cable)\""),
+            "AchievedLoadPresentation should render the set weight labeled per-cable.",
+        )
+        assertTrue(
+            presentation.contains("(${dollar}unitLabel total)").not(),
+            "GUARD VIOLATION: AchievedLoadPresentation must not label a per-cable load as total.",
+        )
+    }
+
+    /**
+     * Issue #1182 (merge-gate R5c): the four reporting surfaces must render through
+     * [AchievedLoadPresentation], which is the code covered by AchievedLoadPresentationTest.
+     * Without this binding a surface could drift back to inline formatting and the
+     * presentation tests would stop describing what the user sees.
+     */
+    @Test
+    fun reportingSurfaces_renderThroughAchievedLoadPresentation() {
+        val expectations = mapOf(
+            "com/devil/phoenixproject/presentation/components/ExerciseQuickHistoryCard.kt" to
+                "AchievedLoadPresentation.sessionLoadText(",
+            "com/devil/phoenixproject/presentation/screen/HomeScreen.kt" to
+                "AchievedLoadPresentation.homeRecentActivityLine(",
+            "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt" to
+                "AchievedLoadPresentation.setSummaryPrimary(",
+            "com/devil/phoenixproject/presentation/screen/HistoryTab.kt" to
+                "AchievedLoadPresentation.historySetText(",
+        )
+        val violations = expectations.mapNotNull { (path, requiredCall) ->
+            val source = readSourceFile(path)
+                ?: return@mapNotNull "$path missing"
+            if (!source.contains(requiredCall)) "$path does not call $requiredCall" else null
+        }
+        assertTrue(
+            violations.isEmpty(),
+            "GUARD VIOLATION: reporting surfaces must render through AchievedLoadPresentation. $violations",
+        )
     }
 
     // ===== Guard: CSV export has its own multiplication =====

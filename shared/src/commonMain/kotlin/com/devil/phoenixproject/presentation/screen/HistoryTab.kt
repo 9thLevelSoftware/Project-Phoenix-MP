@@ -67,7 +67,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
-import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
+import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
@@ -724,13 +724,10 @@ private fun CompletedSetsSection(
                     // Issue #1182: Echo set rows show the ACHIEVED load (measured peak per
                     // cable) resolved via the associated session, never the configured
                     // placeholder. A set with no measurement shows "Load unavailable".
-                    val resolvedLoadKg = EchoAchievedLoadResolver.completedSetLoadKg(set, session)
-                    val unitLabel = weightUnit.name.lowercase()
-                    val weightText = resolvedLoadKg
-                        ?.let { "${WeightDisplayFormatter.formatDisplayWeight(it, weightUnit)} $unitLabel" }
-                        ?: "Load unavailable"
+                    // The exact rendered row lives in AchievedLoadPresentation.
+                    val setRowText = AchievedLoadPresentation.historySetText(set, session, weightUnit)
                     Text(
-                        "${set.actualReps} x $weightText",
+                        setRowText,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,

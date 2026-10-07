@@ -1,10 +1,12 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.sync.KnownEntityIds
+import com.devil.phoenixproject.data.sync.PortalRepSummaryDto
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PortalSyncPullResponse
 import com.devil.phoenixproject.data.sync.PortalSyncPushResponse
 import com.devil.phoenixproject.data.sync.PullExerciseDto
+import com.devil.phoenixproject.data.sync.PullRepSummaryDto
 import com.devil.phoenixproject.data.sync.PullSetDto
 import com.devil.phoenixproject.data.sync.PullWorkoutSessionDto
 import com.devil.phoenixproject.data.sync.SyncRejectionDto
@@ -29,7 +31,18 @@ import com.devil.phoenixproject.data.sync.SyncRejectionsDto
  */
 class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
 
-    data class StoredSet(val id: String, val weightKg: Float, val actualReps: Int)
+    data class StoredSet(
+        val id: String,
+        val weightKg: Float,
+        val actualReps: Int,
+        /**
+         * Scalar rep summaries. The real portal stores these per set and returns them on
+         * pull (`_repSummaries`), and the mobile push ALWAYS sends them - `includeTelemetry`
+         * gates only the 50 Hz force curves. Dropping them here would hide the fact that
+         * pulled force telemetry is what proves a measured Echo load is a measurement.
+         */
+        val repSummaries: List<PullRepSummaryDto> = emptyList(),
+    )
 
     data class StoredExercise(
         val id: String,
@@ -47,6 +60,19 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
         var setCount: Int,
         var routineSessionId: String?,
         var exercises: List<StoredExercise>,
+        /**
+         * Session-level config the real portal stores and returns on pull
+         * (`mobile-sync-pull/index.ts` projects workout_mode, eccentric_load, echo_level,
+         * warmup_reps, working_reps and heaviest_lift_kg). Without these a round-tripped
+         * Echo session would come back as OldSchool and the round trip would look clean
+         * for the wrong reason.
+         */
+        var workoutMode: String? = null,
+        var eccentricLoad: Int? = null,
+        var echoLevel: Int? = null,
+        var warmupReps: Int? = null,
+        var workingReps: Int? = null,
+        var heaviestLiftKg: Float? = null,
     )
 
     val sessions: MutableMap<String, StoredSession> = linkedMapOf()
@@ -109,7 +135,14 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                 StoredExercise(
                     id = ex.id,
                     name = ex.name,
-                    sets = ex.sets.map { set -> StoredSet(set.id, set.weightKg, set.actualReps) },
+                    sets = ex.sets.map { set ->
+                        StoredSet(
+                            id = set.id,
+                            weightKg = set.weightKg,
+                            actualReps = set.actualReps,
+                            repSummaries = set.repSummaries.map { it.toPullRepSummary() },
+                        )
+                    },
                 )
             }
             accepted += dto.id
@@ -125,6 +158,12 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                     setCount = dto.setCount,
                     routineSessionId = dto.routineSessionId,
                     exercises = children,
+                    workoutMode = dto.workoutMode,
+                    eccentricLoad = dto.eccentricLoad,
+                    echoLevel = dto.echoLevel,
+                    warmupReps = dto.warmupReps,
+                    workingReps = dto.workingReps,
+                    heaviestLiftKg = dto.heaviestLiftKg,
                 )
             } else {
                 existing.name = dto.name
@@ -133,6 +172,12 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                 existing.exerciseCount = dto.exerciseCount
                 existing.setCount = dto.setCount
                 existing.routineSessionId = dto.routineSessionId
+                existing.workoutMode = dto.workoutMode
+                existing.eccentricLoad = dto.eccentricLoad
+                existing.echoLevel = dto.echoLevel
+                existing.warmupReps = dto.warmupReps
+                existing.workingReps = dto.workingReps
+                existing.heaviestLiftKg = dto.heaviestLiftKg
                 // replace_session_children: the old exercises and their sets are gone.
                 existing.exercises = children
                 // The trigger overwrites whatever the client sent.
@@ -167,6 +212,12 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                     routineSessionId = stored.routineSessionId,
                     notes = stored.notes,
                     updatedAt = toIso(stored.updatedAt),
+                    // Session-level config, exactly as mobile-sync-pull/index.ts projects it.
+                    workoutMode = stored.workoutMode,
+                    eccentricLoad = stored.eccentricLoad,
+                    echoLevel = stored.echoLevel,
+                    warmupReps = stored.warmupReps,
+                    workingReps = stored.workingReps,
                     exercises = stored.exercises.mapIndexed { index, ex ->
                         PullExerciseDto(
                             id = ex.id,
@@ -180,6 +231,7 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                                     setNumber = 1,
                                     actualReps = set.actualReps,
                                     weightKg = set.weightKg,
+                                    repSummaries = set.repSummaries,
                                 )
                             },
                         )
@@ -197,6 +249,27 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
 
     private fun toIso(epochMs: Long): String = kotlin.time.Instant.fromEpochMilliseconds(epochMs).toString()
 }
+
+/**
+ * The push and pull rep-summary DTOs are field-identical; the portal stores the pushed row
+ * and projects it back verbatim (`mobile-sync-pull/index.ts` `_repSummaries`).
+ */
+private fun PortalRepSummaryDto.toPullRepSummary(): PullRepSummaryDto = PullRepSummaryDto(
+    id = id,
+    setId = setId,
+    repNumber = repNumber,
+    meanVelocityMps = meanVelocityMps,
+    peakVelocityMps = peakVelocityMps,
+    meanForceN = meanForceN,
+    peakForceN = peakForceN,
+    powerWatts = powerWatts,
+    romMm = romMm,
+    tutMs = tutMs,
+    leftForceAvg = leftForceAvg,
+    rightForceAvg = rightForceAvg,
+    asymmetryPct = asymmetryPct,
+    vbtZone = vbtZone,
+)
 
 /** [FakePortalApiClient] wired to a [FakePortalServer] instead of canned results. */
 class PortalServerApiClient(val server: FakePortalServer) : FakePortalApiClient() {
