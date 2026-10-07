@@ -38,7 +38,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
  * Bluetooth prompt, but denying it must not block the gate. Workout
  * notifications are posted best-effort.
  */
-object BlePermissions {
+private object BlePermissions {
     /**
      * Permissions that must be granted before the app can scan and connect.
      * Does not include POST_NOTIFICATIONS.
