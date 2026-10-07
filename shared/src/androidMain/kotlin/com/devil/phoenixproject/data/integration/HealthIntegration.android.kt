@@ -257,7 +257,9 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             endTime = Instant.ofEpochMilli(endTimeMs.coerceAtLeast(startTimeMs + 1000L)),
             segmentType = segmentType,
             repetitions = reps.coerceAtLeast(0),
-            weight = Mass.kilograms(weightKg.toDouble().coerceAtLeast(0.0)),
+            // Issue #1182 (R3): null weight OMITS the field. Health Connect must never see a
+            // measured-zero claim or the configured Echo seed for a set with no measurement.
+            weight = weightKg?.let { Mass.kilograms(it.toDouble().coerceAtLeast(0.0)) },
             // Issue #639: Health Connect expects the user-visible 1-based set
             // number ("Set 1, Set 2, …") while the rest of Phoenix's internal
             // pipeline (CompletedSet.setNumber, WorkoutCoordinator._currentSetIndex)

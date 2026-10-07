@@ -36,6 +36,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.presentation.components.charts.ComboChart
 import com.devil.phoenixproject.presentation.components.charts.GaugeChart
 import com.devil.phoenixproject.presentation.components.charts.MuscleGroupCircleChart
@@ -456,7 +457,12 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
         if (sortedSessions.isEmpty()) {
             Pair(emptyList<Pair<String, Float>>(), emptyList<Pair<String, Float>>())
         } else {
-            val columns = sortedSessions.mapIndexed { index, session ->
+            // Issue #1182: an Echo session with no accepted working telemetry has no load or
+            // volume to chart - never plot the configured seed or a zero as a lifted load.
+            val chartSessions = sortedSessions.filter { session ->
+                !EchoAchievedLoadResolver.isEcho(session) || EchoAchievedLoadResolver.fromSession(session) != null
+            }
+            val columns = chartSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
                 val volume = session.effectiveTotalVolumeKg()
                 // Convert to lbs if needed
@@ -464,7 +470,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
                 label to adjustedVolume
             }
 
-            val lines = sortedSessions.mapIndexed { index, session ->
+            val lines = chartSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
                 val maxWeight = session.effectiveHeaviestKgPerCable()
                 // Convert to lbs if needed

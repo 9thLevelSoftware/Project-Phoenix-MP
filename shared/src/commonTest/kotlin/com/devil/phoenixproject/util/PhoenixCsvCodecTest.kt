@@ -107,17 +107,63 @@ class PhoenixCsvCodecTest {
     }
 
     @Test
-    fun echoHistoryExportsPeakLoad() {
+    fun echoHistoryExportsAchievedMeasuredPeakNotConfiguredSeed() {
+        // Issue #1182: Echo exports the ACHIEVED measured peak per cable (heaviestLiftKg),
+        // not the phase peak (peakWeightKg) and never the configured seed (weightPerCableKg).
         val session = WorkoutSession(
             timestamp = localMinute(2026, 3, 10, 14, 30),
             mode = "Echo",
             weightPerCableKg = 10f,
-            peakWeightKg = 40f,
+            heaviestLiftKg = 40f,
+            peakWeightKg = 55f,
             exerciseName = "Row",
         )
         val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
 
         assertEquals("40 kg", cell(csv, "Weight"))
+    }
+
+    @Test
+    fun echoHistoryWithoutMeasurementExportsUnavailableNotZeroOrConfiguredSeed() {
+        // No accepted telemetry: the measured column carries the 0 sentinel (post-#1182) or
+        // the legacy placeholder equal to the configured seed, so the resolver reports
+        // unavailable and the weight cell reads "Load unavailable" - never "0 kg lifted" and
+        // never the configured 10 kg (merge-gate R3).
+        val sentinelRow = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 0f,
+            exerciseName = "Row",
+        )
+        val legacyPlaceholderRow = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 10f,
+            exerciseName = "Row",
+        )
+        for (session in listOf(sentinelRow, legacyPlaceholderRow)) {
+            val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
+
+            assertEquals("Load unavailable", cell(csv, "Weight"))
+        }
+    }
+
+    @Test
+    fun echoHistoryKeepsMeasuredLoadEqualToConfiguredWhenTelemetryEvidenceExists() {
+        // Merge-gate R1: a real measurement equal to the configured metadata is preserved.
+        val session = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 10f,
+            peakForceEccentricA = 12.5f,
+            exerciseName = "Row",
+        )
+        val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
+
+        assertEquals("10 kg", cell(csv, "Weight"))
     }
 
     @Test

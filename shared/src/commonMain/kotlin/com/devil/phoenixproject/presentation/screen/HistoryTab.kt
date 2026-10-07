@@ -67,6 +67,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
+import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
@@ -543,7 +544,7 @@ fun WorkoutHistoryCard(
 
                     // CompletedSet breakdown (set-level tracking)
                     CompletedSetsSection(
-                        sessionId = session.id,
+                        session = session,
                         weightUnit = weightUnit,
                     )
 
@@ -656,17 +657,17 @@ fun WorkoutHistoryCard(
  */
 @Composable
 private fun CompletedSetsSection(
-    sessionId: String,
+    session: WorkoutSession,
     weightUnit: WeightUnit,
 ) {
     val completedSetRepository: CompletedSetRepository = koinInject()
     var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
 
-    LaunchedEffect(sessionId) {
+    LaunchedEffect(session.id) {
         try {
-            completedSets = completedSetRepository.getCompletedSets(sessionId)
+            completedSets = completedSetRepository.getCompletedSets(session.id)
         } catch (e: Exception) {
-            co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load completed sets for session $sessionId: ${e.message}" }
+            co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load completed sets for session ${session.id}: ${e.message}" }
             completedSets = emptyList()
         }
     }
@@ -720,14 +721,13 @@ private fun CompletedSetsSection(
 
                 // Reps x Weight + RPE
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // actualWeightKg is per-cable; ordinary display stays per-cable.
-                    val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
-                        set.actualWeightKg,
-                        weightUnit,
-                    )
-                    val unitLabel = weightUnit.name.lowercase()
+                    // Issue #1182: Echo set rows show the ACHIEVED load (measured peak per
+                    // cable) resolved via the associated session, never the configured
+                    // placeholder. A set with no measurement shows "Load unavailable".
+                    // The exact rendered row lives in AchievedLoadPresentation.
+                    val setRowText = AchievedLoadPresentation.historySetText(set, session, weightUnit)
                     Text(
-                        "${set.actualReps} x $displayWeight $unitLabel",
+                        setRowText,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1151,7 +1151,7 @@ fun GroupedRoutineCard(
 
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
-                            sessionId = session.id,
+                            session = session,
                             weightUnit = weightUnit,
                         )
 

@@ -88,6 +88,7 @@ import com.devil.phoenixproject.domain.usecase.DropSetCandidateRequest
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityRequest
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -5547,22 +5548,40 @@ class ActiveSessionEngine(
         //
         // The mark's own sample counts as the first working sample (`>=`), which is the
         // same convention the seeded rep-1 window uses for its lower bound (R-6).
-        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
-            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        val strictWorkingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }
         } else {
             metrics
         }
+        val workingMetrics = if (strictWorkingMetrics.isNotEmpty()) strictWorkingMetrics else metrics
 
-        val heaviestLiftKgPerCable = if (isSingleCable) {
+        fun peakLoadPerCable(window: List<WorkoutMetric>): Float = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
+            window.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            workingMetrics.maxOf { it.totalLoad / 2f }
+            window.maxOf { it.totalLoad / 2f }
         }
 
+        val heaviestLiftKgPerCable = peakLoadPerCable(workingMetrics)
+        // Issue #1182 (R1/R2): Echo achieved load needs ACCEPTED-WORKING-SAMPLE provenance,
+        // not the compatibility fallback above. When the working window is empty (warmup-only
+        // telemetry, or no samples at/after the warmup mark) there is NO measurement, full
+        // stop - the fallback window must never advertise a warmup transient as achieved
+        // working load. Likewise a real measurement is preserved even when it equals the
+        // configured metadata; numerical equality is not provenance. Non-finite or non-positive
+        // peaks (invalid/zero-load telemetry) are not measurements either.
+        val measuredWorkingPeakKgPerCable: Float? = if (strictWorkingMetrics.isEmpty()) {
+            null
+        } else {
+            peakLoadPerCable(strictWorkingMetrics).takeIf { it.isFinite() && it > 0f }
+        }
+
+        // Echo volume follows the same provenance as its achieved load: a set with no accepted
+        // working sample has no measured load, so it logs no volume rather than the fallback
+        // heaviest (a warmup transient or the configured seed) behind "Load unavailable".
         val volumeWeightKgPerCable = if (isEchoMode) {
-            heaviestLiftKgPerCable
+            measuredWorkingPeakKgPerCable ?: 0f
         } else {
             configuredWeightKgPerCable
         }
@@ -5745,6 +5764,7 @@ class ActiveSessionEngine(
             displayMultiplier = displayMultiplierHint ?: cableCount,
             heaviestLiftKgPerCable = heaviestLiftKgPerCable,
             configuredWeightKgPerCable = configuredWeightKgPerCable,
+            measuredWorkingPeakKgPerCable = measuredWorkingPeakKgPerCable,
             peakForceConcentricA = peakConcentricA,
             peakForceConcentricB = peakConcentricB,
             peakForceEccentricA = peakEccentricA,
@@ -5764,6 +5784,22 @@ class ActiveSessionEngine(
             peakWeightKg = peakWeightKg,
         )
     }
+
+    /**
+     * Issue #1182: the shared persistence rule for the session's MEASURED column. Echo sets
+     * record the achieved load — the accepted working-window measured peak per cable — with
+     * the existing non-null 0 sentinel when unmeasured; never the summary's compatibility
+     * fallback heaviest (warmup transient, or the configured seed for an empty window), which
+     * is not a measurement and must never be read back as achieved load. Non-Echo keeps the
+     * summary heaviest unchanged. Used by both terminal persistence sites (exit snapshot and
+     * manual stop) so the rule cannot drift between them.
+     */
+    private fun WorkoutState.SetSummary.recordedHeaviestKg(isEchoMode: Boolean): Float =
+        if (isEchoMode) {
+            EchoAchievedLoadResolver.fromSummary(this) ?: 0f
+        } else {
+            heaviestLiftKgPerCable
+        }
 
     /**
      * Apply bodyweight volume overrides to a set summary.
@@ -9186,6 +9222,23 @@ class ActiveSessionEngine(
         } else {
             recordedWeightPerCableKg
         }
+        // Issue #1182: an Echo set records the load the user ACHIEVED (measured peak per
+        // cable), not the configured/command weight. This lands ONLY on
+        // CompletedSet.actualWeightKg: WorkoutSession.weightPerCableKg (command metadata) and
+        // the MAX_VOLUME PR (volumeWeightKg) keep the configured figure, and non-Echo and
+        // bodyweight sets are unchanged. With no accepted measurement this is the existing
+        // non-null 0 sentinel -> "Load unavailable", never the configured seed.
+        val completedSetWeightKg = when {
+            lease.isBodyweight -> savedWeightKg
+            params.isEchoMode -> EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+            else -> recordedWeightPerCableKg
+        }
+        // Issue #1182: the session's MEASURED column records the same achieved Echo peak
+        // (non-null 0 sentinel when unmeasured), never the summary's compatibility fallback.
+        // The fallback heaviest (warmup transient, or the configured seed for an empty
+        // window) is not a measurement and must never be read back as achieved load.
+        // Shared rule with the manual-stop path: [recordedHeaviestKg].
+        val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9214,7 +9267,7 @@ class ActiveSessionEngine(
             avgForceConcentricB = summary.avgForceConcentricB,
             avgForceEccentricA = summary.avgForceEccentricA,
             avgForceEccentricB = summary.avgForceEccentricB,
-            heaviestLiftKg = summary.heaviestLiftKgPerCable,
+            heaviestLiftKg = recordedHeaviestKgPerCable,
             totalVolumeKg = summary.totalVolumeKg,
             cableCount = summary.cableCount,
             displayMultiplier = summary.displayMultiplier,
@@ -9248,7 +9301,7 @@ class ActiveSessionEngine(
                 setNumber = context.completionFacts.routineIdentity?.logicalSetKey?.setIndex ?: setIndex,
                 setType = context.completionFacts.plannedSetType,
                 actualReps = repCount.workingReps,
-                actualWeightKg = savedWeightKg,
+                actualWeightKg = completedSetWeightKg,
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
@@ -10628,6 +10681,10 @@ class ActiveSessionEngine(
                 // Capture the biomechanics summary before building the session:
                 // biomechanicsEngine.reset() is not called on this path before this point.
                 val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
+                // Issue #1182: Echo records the achieved peak (measured column + set row),
+                // with the non-null 0 sentinel when unmeasured; non-Echo is unchanged.
+                // Shared rule with the exit-snapshot path: [recordedHeaviestKg].
+                val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
                 val session = WorkoutSession(
                     timestamp = timing.startMs,
                     mode = params.programMode.displayName,
@@ -10651,7 +10708,7 @@ class ActiveSessionEngine(
                     avgForceConcentricB = summary.avgForceConcentricB,
                     avgForceEccentricA = summary.avgForceEccentricA,
                     avgForceEccentricB = summary.avgForceEccentricB,
-                    heaviestLiftKg = summary.heaviestLiftKgPerCable,
+                    heaviestLiftKg = recordedHeaviestKgPerCable,
                     totalVolumeKg = summary.totalVolumeKg,
                     cableCount = summary.cableCount,
                     displayMultiplier = summary.displayMultiplier,
@@ -10682,7 +10739,13 @@ class ActiveSessionEngine(
                         setNumber = setIndex,
                         setType = legacyLogicalSetKey?.setKind ?: if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
                         actualReps = repCount.workingReps,
-                        actualWeightKg = recordedWeightPerCableKg,
+                        // Issue #1182: Echo records achieved load (measured peak per cable),
+                        // never the configured/command seed; non-Echo is unchanged.
+                        actualWeightKg = if (params.isEchoMode) {
+                            recordedHeaviestKgPerCable
+                        } else {
+                            recordedWeightPerCableKg
+                        },
                         loggedRpe = coordinator._currentSetRpe.value,
                         isPr = false,
                         completedAt = currentTimeMillis(),

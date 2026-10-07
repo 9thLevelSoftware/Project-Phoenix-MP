@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -183,7 +184,8 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             // isAmrap only decides the set type on first insert.
             queries.updateCompletedSetForTaggedJustLift(
                 actual_reps = actualReps.toLong(),
-                actual_weight_kg = session.weightPerCableKg.toDouble(),
+                // Issue #1182: Echo synthesizes the achieved load, not the configured seed.
+                actual_weight_kg = (EchoAchievedLoadResolver.primaryLoadKg(session) ?: 0f).toDouble(),
                 logged_rpe = session.rpe?.toLong(),
                 completed_at = completedAt,
                 id = existing.id,
@@ -191,7 +193,7 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             queries.markWorkoutComponentDirty(session.id)
             return@withContext existing.copy(
                 actualReps = actualReps,
-                actualWeightKg = session.weightPerCableKg,
+                actualWeightKg = EchoAchievedLoadResolver.primaryLoadKg(session) ?: 0f,
                 loggedRpe = session.rpe,
                 completedAt = completedAt,
             )
@@ -204,7 +206,7 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             setNumber = 0,
             setType = setType,
             actualReps = actualReps,
-            actualWeightKg = session.weightPerCableKg,
+            actualWeightKg = EchoAchievedLoadResolver.primaryLoadKg(session) ?: 0f,
             loggedRpe = session.rpe,
             isPr = false,
             completedAt = completedAt,

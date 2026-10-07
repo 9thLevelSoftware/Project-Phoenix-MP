@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.integration
 import com.devil.phoenixproject.data.integration.CsvExporter.WEIGHT_MULTIPLIER
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
+import com.devil.phoenixproject.util.PhoenixCsvCodec
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
@@ -114,7 +116,12 @@ object CsvExporter {
         val durationSeconds = session.duration / 1000L
         val duration = formatDuration(durationSeconds)
         val exerciseName = session.exerciseName ?: ""
-        val weight = formatWeight(session.weightPerCableKg, weightUnit, session.cableCount)
+        // Issue #1182: Echo exports the ACHIEVED load (measured peak per cable), never the
+        // configured seed; the existing total (cable-count) multiplier is preserved. With no
+        // measurement the weight cell reads "Load unavailable" - never "0 kg" (merge-gate R3).
+        val weight = EchoAchievedLoadResolver.primaryLoadKg(session)
+            ?.let { formatWeight(it, weightUnit, session.cableCount) }
+            ?: PhoenixCsvCodec.LOAD_UNAVAILABLE_TEXT
         val reps = if (session.totalReps > 0) session.totalReps else session.reps
 
         return buildString {

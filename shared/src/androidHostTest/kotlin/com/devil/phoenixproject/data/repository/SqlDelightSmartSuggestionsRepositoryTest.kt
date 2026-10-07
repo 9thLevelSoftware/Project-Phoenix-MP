@@ -1,8 +1,11 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.volumeKg
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -106,6 +109,120 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         assertEquals(listOf(13.0f), history.map { it.weightPerCableKg })
     }
 
+    @Test
+    fun `getExerciseWeightHistory suppresses unmeasured echo rows and never falls back to the echo seed`() = runTest {
+        // Issue #1182 (R4): the configured Echo seed is a placeholder, not an achieved load.
+        // Post-#1182 unmeasured sentinel row -> suppressed.
+        insertWorkoutSession(
+            id = "echo-sentinel",
+            exerciseId = "row",
+            exerciseName = "Row",
+            timestamp = 1_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 0.0,
+            profileId = "default",
+            mode = "Echo",
+        )
+        // Legacy placeholder row (fallback == seed, no telemetry evidence) -> suppressed.
+        insertWorkoutSession(
+            id = "echo-legacy-placeholder",
+            exerciseId = "row",
+            exerciseName = "Row",
+            timestamp = 2_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 5.0,
+            profileId = "default",
+            mode = "Echo",
+        )
+        // Non-Echo rows keep the programmed-weight fallback (unchanged contract).
+        insertWorkoutSession(
+            id = "non-echo-fallback",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            timestamp = 3_000L,
+            weightPerCableKg = 7.5,
+            heaviestLiftKg = null,
+            profileId = "default",
+        )
+
+        val history = repository.getExerciseWeightHistory("default")
+
+        assertEquals(listOf(7.5f), history.map { it.weightPerCableKg })
+    }
+
+    @Test
+    fun `getExerciseWeightHistory keeps measured echo rows including measured equal to configured with evidence`() = runTest {
+        insertWorkoutSession(
+            id = "echo-measured",
+            exerciseId = "row",
+            exerciseName = "Row",
+            timestamp = 1_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 22.5,
+            profileId = "default",
+            mode = "Echo",
+        )
+        insertWorkoutSession(
+            id = "echo-equal-with-evidence",
+            exerciseId = "row",
+            exerciseName = "Row",
+            timestamp = 2_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 5.0,
+            profileId = "default",
+            mode = "Echo",
+            peakForceEccentricA = 9.4,
+        )
+
+        val history = repository.getExerciseWeightHistory("default")
+
+        assertEquals(listOf(22.5f, 5.0f), history.map { it.weightPerCableKg })
+    }
+
+    @Test
+    fun `getSessionSummariesSince carries echo provenance for volume routing`() = runTest {
+        // Issue #1182 (R4): smart-suggestion volume uses the already-stored measured volume
+        // for Echo, gated on measured provenance - never weightPerCableKg * reps off the seed.
+        insertWorkoutSession(
+            id = "echo-measured-vol",
+            exerciseId = "row",
+            exerciseName = "Row",
+            timestamp = 1_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 80.0,
+            profileId = "default",
+            mode = "Echo",
+            workingReps = 9L,
+            totalVolumeKg = 1_440.0,
+            peakForceEccentricA = 88.0,
+        )
+        insertWorkoutSession(
+            id = "echo-unmeasured-vol",
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            timestamp = 2_000L,
+            weightPerCableKg = 5.0,
+            heaviestLiftKg = 0.0,
+            profileId = "default",
+            mode = "Echo",
+            workingReps = 9L,
+            totalVolumeKg = 90.0,
+        )
+
+        val summaries = repository.getSessionSummariesSince(0L, "default")
+
+        val measured = summaries.single { it.exerciseId == "row" }
+        assertTrue(measured.isEcho)
+        assertEquals(80f, measured.measuredPeakKg)
+        assertEquals(1_440f, measured.measuredTotalVolumeKg)
+        assertTrue(measured.hasForceTelemetry)
+        assertEquals(1_440f, measured.volumeKg, "Echo volume is the already-stored measured volume")
+
+        val unmeasured = summaries.single { it.exerciseId == "squat" }
+        assertTrue(unmeasured.isEcho)
+        assertNull(unmeasured.volumeKg, "an unmeasured Echo session contributes NO volume - never the configured seed")
+    }
+
     private fun insertWorkoutSession(
         id: String,
         exerciseId: String,
@@ -117,11 +234,14 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         totalReps: Long = 8L,
         workingReps: Long = totalReps,
         routineName: String? = null,
+        mode: String = "Old School",
+        totalVolumeKg: Double? = null,
+        peakForceEccentricA: Double? = null,
     ) {
         database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = timestamp,
-            mode = "Old School",
+            mode = mode,
             targetReps = 8L,
             weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
@@ -144,14 +264,14 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             spotterActivations = 0L,
             peakForceConcentricA = null,
             peakForceConcentricB = null,
-            peakForceEccentricA = null,
+            peakForceEccentricA = peakForceEccentricA,
             peakForceEccentricB = null,
             avgForceConcentricA = null,
             avgForceConcentricB = null,
             avgForceEccentricA = null,
             avgForceEccentricB = null,
             heaviestLiftKg = heaviestLiftKg,
-            totalVolumeKg = null,
+            totalVolumeKg = totalVolumeKg,
             cableCount = null,
             estimatedCalories = null,
             warmupAvgWeightKg = null,

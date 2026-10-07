@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 
 /**
  * Latest eligible body-weight sample imported from a platform health store.
@@ -50,7 +51,12 @@ data class HealthWorkoutSegment(
     val startTimeMs: Long,
     val endTimeMs: Long,
     val reps: Int,
-    val weightKg: Float,
+    /**
+     * Measured/exported load in kg, or null when no load was measured (merge-gate R3).
+     * Null OMITS the weight from the platform record - an unmeasured Echo set must never
+     * be exported as a measured 0 kg or as the configured placeholder seed.
+     */
+    val weightKg: Float?,
     val rpe: Int?,
 )
 
@@ -164,7 +170,7 @@ object HealthWorkoutExportBuilder {
             startTimeMs = startTimeMs,
             endTimeMs = endTimeMs,
             reps = reps,
-            weightKg = weightKg.coerceAtLeast(0f),
+            weightKg = weightKg?.coerceAtLeast(0f),
             rpe = (completedSet?.loggedRpe ?: session.rpe)?.coerceIn(0, 10),
         )
     }
@@ -173,11 +179,20 @@ object HealthWorkoutExportBuilder {
      * Prefer programmed machine load (per-cable × display multiplier). When that is zero
      * (bodyweight exercises), fall back to persisted effective load from CompletedSet or
      * WorkoutSession.heaviestLiftKg so Health Connect receives the real load.
+     *
+     * Issue #1182: Echo exports the ACHIEVED load (measured peak), never the configured
+     * seed, keeping the existing total-load multiplier. With no accepted measurement there
+     * is no load to send at all: this returns null so the writer OMITS the weight rather
+     * than claiming a measured 0 kg (merge-gate R3).
      */
     private fun resolveExportWeightKg(
         session: WorkoutSession,
         completedSet: CompletedSet?,
-    ): Float {
+    ): Float? {
+        if (EchoAchievedLoadResolver.isEcho(session)) {
+            val achievedPerCableKg = EchoAchievedLoadResolver.fromSession(session) ?: return null
+            return achievedPerCableKg * session.displayLoadMultiplier().toFloat()
+        }
         val programmedTotalKg = session.weightPerCableKg * session.displayLoadMultiplier().toFloat()
         if (programmedTotalKg > 0f) return programmedTotalKg
 
