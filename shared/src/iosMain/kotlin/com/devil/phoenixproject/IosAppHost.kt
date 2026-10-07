@@ -77,6 +77,10 @@ internal fun IosAppHost() {
                     "support=${current.supportCode ?: "NONE"}, " +
                     "presence=${current.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
             }
+            // Issue #1164 exit-capture harness: surface the captured cause on the console
+            // (the user-visible screen only shows the stable diagnostic code).
+            println("VERIFY1164|startup-failure code=${current.diagnosticCode}")
+            current.cause.printStackTrace()
             PersistedFileStartupFailureScreen(current) { retryAttempt++ }
         }
 
