@@ -97,7 +97,6 @@ class ConnectionLogRepository {
             deviceName = deviceName,
             message = message,
             details = details,
-            metadata = null,
         )
 
         _logs.update { currentLogs ->
