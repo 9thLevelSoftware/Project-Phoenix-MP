@@ -25,6 +25,9 @@ class AndroidWorkoutServiceController(
                 isRunning = true
             }
         } catch (e: Exception) {
+            // A dead service makes this throw while isRunning stays true, so later
+            // updates keep calling startService and never promote a new FGS.
+            isRunning = false
             log.e(e) { "Failed to sync workout foreground service" }
         }
     }
