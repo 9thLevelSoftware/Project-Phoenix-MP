@@ -14,6 +14,9 @@ import kotlinx.coroutines.test.runTest
  * equal peak, short windows, asymmetric/single cable, invalid and zero-load telemetry,
  * warmup-only and empty working windows. Availability is accepted-working-sample
  * provenance, never numerical equality and never the compatibility fallback.
+ *
+ * The merge gate's two diagnostic probes live here as the `equal peak` and `warmup-only`
+ * cases below (they supersede the deleted duplicate Issue1182MergeGateAuditTest).
  */
 class Issue1182AchievedLoadMatrixTest {
 

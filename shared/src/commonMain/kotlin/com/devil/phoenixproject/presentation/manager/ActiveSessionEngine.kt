@@ -5783,6 +5783,22 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Issue #1182: the shared persistence rule for the session's MEASURED column. Echo sets
+     * record the achieved load — the accepted working-window measured peak per cable — with
+     * the existing non-null 0 sentinel when unmeasured; never the summary's compatibility
+     * fallback heaviest (warmup transient, or the configured seed for an empty window), which
+     * is not a measurement and must never be read back as achieved load. Non-Echo keeps the
+     * summary heaviest unchanged. Used by both terminal persistence sites (exit snapshot and
+     * manual stop) so the rule cannot drift between them.
+     */
+    private fun WorkoutState.SetSummary.recordedHeaviestKg(isEchoMode: Boolean): Float =
+        if (isEchoMode) {
+            EchoAchievedLoadResolver.fromSummary(this) ?: 0f
+        } else {
+            heaviestLiftKgPerCable
+        }
+
+    /**
      * Apply bodyweight volume overrides to a set summary.
      *
      * For bodyweight exercises (no cable accessories), the cable-based volume calculation
@@ -9218,11 +9234,8 @@ class ActiveSessionEngine(
         // (non-null 0 sentinel when unmeasured), never the summary's compatibility fallback.
         // The fallback heaviest (warmup transient, or the configured seed for an empty
         // window) is not a measurement and must never be read back as achieved load.
-        val recordedHeaviestKgPerCable = if (params.isEchoMode) {
-            EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
-        } else {
-            summary.heaviestLiftKgPerCable
-        }
+        // Shared rule with the manual-stop path: [recordedHeaviestKg].
+        val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -10667,11 +10680,8 @@ class ActiveSessionEngine(
                 val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
                 // Issue #1182: Echo records the achieved peak (measured column + set row),
                 // with the non-null 0 sentinel when unmeasured; non-Echo is unchanged.
-                val recordedHeaviestKgPerCable = if (params.isEchoMode) {
-                    EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
-                } else {
-                    summary.heaviestLiftKgPerCable
-                }
+                // Shared rule with the exit-snapshot path: [recordedHeaviestKg].
+                val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
                 val session = WorkoutSession(
                     timestamp = timing.startMs,
                     mode = params.programMode.displayName,
