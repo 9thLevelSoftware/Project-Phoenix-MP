@@ -12,16 +12,23 @@ import com.devil.phoenixproject.domain.model.WorkoutState
  * the single source of truth for that measured load so completion, reports and outbound
  * sync can never disagree (issue #1182).
  *
- * The achieved Echo load is the **measured peak per cable**: the cable-aware working-window
- * peak already computed as `heaviestLiftKgPerCable` / `WorkoutSession.heaviestLiftKg`. It is
- * deliberately NOT the working/phase average (`workingAvgWeightKg`) and NOT the configured
- * seed (`weightPerCableKg`). Those keep their own labels and meanings.
+ * The achieved Echo load is the **measured peak per cable**: the cable-aware peak over the
+ * accepted finite WORKING-window samples (`SetSummary.measuredWorkingPeakKgPerCable` /
+ * `WorkoutSession.heaviestLiftKg`). It is deliberately NOT the working/phase average
+ * (`workingAvgWeightKg`), NOT a warmup transient, and NOT the configured seed
+ * (`weightPerCableKg`). Those keep their own labels and meanings.
  *
  * Availability contract (binding): a set with no accepted finite working telemetry has NO
  * measured load. Callers must render `null` as "Load unavailable" and must NOT fall back to
  * the configured weight (never present the placeholder seed as achieved) and must NOT render
  * the non-null `0` sentinel as "0 kg lifted". Derived estimates (rep-based 1RM, volume
  * scaling from achieved load) are suppressed when this returns null.
+ *
+ * Availability is decided by PROVENANCE - was working telemetry actually captured? - never
+ * by comparing the measurement to the configured metadata. A legitimate measured load can
+ * equal the configured weight, and it is still a measurement (merge-gate R1). Conversely a
+ * warmup-only or empty window has no measurement even when the summary's compatibility
+ * fallback reports a positive peak (merge-gate R2).
  */
 object EchoAchievedLoadResolver {
 
@@ -32,55 +39,85 @@ object EchoAchievedLoadResolver {
     /**
      * Live resolution from a just-computed set summary.
      *
-     * Returns the measured peak per cable, or null when there is no real measurement. A summary
-     * built from an empty telemetry window stores the configured fallback weight in
-     * `heaviestLiftKgPerCable`; that is command metadata, not a measurement, so it is rejected
-     * here (peak == configured is exactly the placeholder signature) rather than masquerading
-     * as achieved load. The same rule keeps a historical `toSetSummary()` row honest: its
-     * `heaviestLiftKgPerCable` collapses to the configured weight when no measurement exists.
+     * Returns the measured working-window peak per cable, or null when no accepted finite
+     * working sample was captured. The summary carries that provenance explicitly in
+     * `measuredWorkingPeakKgPerCable`; the compatibility fields (`heaviestLiftKgPerCable`,
+     * phase peaks/averages) still carry their fallback values for their own consumers and
+     * are intentionally NOT consulted here.
      */
     fun fromSummary(summary: WorkoutState.SetSummary): Float? {
         if (!summary.isEchoMode) return null
-        val peak = summary.heaviestLiftKgPerCable
-        if (!peak.isFinite() || peak <= 0f) return null
-        val configured = summary.configuredWeightKgPerCable
-        if (configured.isFinite() && peak == configured) return null
-        return peak
+        val peak = summary.measuredWorkingPeakKgPerCable ?: return null
+        return peak.takeIf { it.isFinite() && it > 0f }
     }
 
     /**
-     * Historical resolution from a persisted session row.
+     * Historical resolution from a persisted session row (read time; no rewrite, no
+     * backfill).
      *
-     * `WorkoutSession.heaviestLiftKg` is the measured column. It is trusted as achieved load
-     * only when it is a positive finite value that is not merely the configured placeholder
-     * (`weightPerCableKg`). When there was no accepted telemetry the recorded heaviest equals
-     * the configured seed; that equality is exactly the placeholder signature, so it resolves
-     * to unavailable rather than re-rendering the configured weight as achievement.
+     * Since issue #1182 the measured column `WorkoutSession.heaviestLiftKg` records the
+     * achieved Echo peak and uses the same non-null `0` sentinel as the set rows when there
+     * was no accepted working telemetry, so `<= 0` resolves to unavailable and a positive
+     * value is a real measurement (kept even when it equals the configured metadata).
      *
-     * Legacy rows are resolved at read time. Nothing is rewritten or backfilled.
+     * Rows written before that provenance scheme store the summary's compatibility
+     * fallback in that column instead: for an empty telemetry window that fallback is
+     * exactly the configured seed. A recorded measured value that equals the configured
+     * metadata is therefore only trusted when the row carries independent telemetry
+     * evidence (recorded peak forces); otherwise it is the conservative legacy placeholder
+     * and resolves to unavailable rather than re-rendering the configured weight as
+     * achievement (never the configured 11.02 lb). Nothing is rewritten or backfilled.
      */
     fun fromSession(session: WorkoutSession): Float? {
         if (!isEcho(session)) return null
         val measured = session.heaviestLiftKg ?: return null
         if (!measured.isFinite() || measured <= 0f) return null
-        val configured = session.weightPerCableKg
-        if (configured.isFinite() && measured == configured) {
-            // No distinct measurement: the recorded heaviest is the configured seed.
-            return null
+        return if (hasMeasuredLoad(measured, session.weightPerCableKg, hasForceTelemetry(session))) {
+            measured
+        } else {
+            null
         }
-        return measured
     }
+
+    /**
+     * Row-level measured-load provenance, shared with analytics consumers.
+     *
+     * True only for a finite positive recorded measured value that is either distinct from
+     * the configured placeholder or backed by independent telemetry evidence. See
+     * [fromSession] for the conservative handling of ambiguous legacy rows.
+     */
+    fun hasMeasuredLoad(measuredKg: Float?, configuredKg: Float, forceTelemetry: Boolean = false): Boolean {
+        val measured = measuredKg ?: return false
+        if (!measured.isFinite() || measured <= 0f) return false
+        if (configuredKg.isFinite() && measured == configuredKg) return forceTelemetry
+        return true
+    }
+
+    /**
+     * Independent telemetry evidence on a persisted row: the set summary's force peaks are
+     * computed from accepted samples, so a non-zero recorded force proves telemetry was
+     * captured even when the recorded measured load happens to equal the configured
+     * metadata. An empty-window row (the legacy placeholder signature) has zero forces.
+     */
+    fun hasForceTelemetry(session: WorkoutSession): Boolean =
+        (session.peakForceConcentricA ?: 0f) != 0f ||
+            (session.peakForceConcentricB ?: 0f) != 0f ||
+            (session.peakForceEccentricA ?: 0f) != 0f ||
+            (session.peakForceEccentricB ?: 0f) != 0f
 
     /**
      * Achieved per-cable load for a completed-set row.
      *
      * Echo sets resolve through the associated session's measured peak (a legacy
-     * `CompletedSet.actualWeightKg` placeholder is not achievement). Non-Echo sets keep their
-     * recorded set weight unchanged. Returns null only for an Echo set with no measurement,
-     * which callers must show as "Load unavailable".
+     * `CompletedSet.actualWeightKg` placeholder is not achievement); the set row's own `0`
+     * sentinel is honored first. Non-Echo sets keep their recorded set weight unchanged.
+     * Returns null only for an Echo set with no measurement, which callers must show as
+     * "Load unavailable".
      */
     fun completedSetLoadKg(set: CompletedSet, session: WorkoutSession): Float? {
-        return if (isEcho(session)) fromSession(session) else set.actualWeightKg
+        if (!isEcho(session)) return set.actualWeightKg
+        if (!set.actualWeightKg.isFinite() || set.actualWeightKg <= 0f) return null
+        return fromSession(session)
     }
 
     /**

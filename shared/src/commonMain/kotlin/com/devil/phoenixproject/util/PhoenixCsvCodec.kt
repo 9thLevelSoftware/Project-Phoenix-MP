@@ -42,6 +42,9 @@ object PhoenixCsvCodec {
     const val HISTORY_HEADER =
         "Date,Time,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load"
 
+    /** Text a weight cell shows when no load was measured - never a numeric zero claim. */
+    const val LOAD_UNAVAILABLE_TEXT = "Load unavailable"
+
     const val PERSONAL_RECORD_HEADER = "Exercise,Phase,Weight,Reps,Date,Mode,1RM"
 
     const val PR_PROGRESSION_HEADER = "Exercise,Phase,Date,Weight,Reps,Mode,1RM,Progress From Previous"
@@ -66,7 +69,7 @@ object PhoenixCsvCodec {
                     session.warmupReps.toString(),
                     session.workingReps.toString(),
                     session.totalReps.toString(),
-                    text(formatWeight(weightKg, weightUnit)),
+                    text(weightKg?.let { formatWeight(it, weightUnit) } ?: LOAD_UNAVAILABLE_TEXT),
                     text(formatSignedWeight(session.progressionKg, weightUnit, formatWeight)),
                     durationMsToCsvSeconds(session.duration).toString(),
                     text(if (session.isJustLift) "Yes" else "No"),
@@ -276,11 +279,12 @@ object PhoenixCsvCodec {
     }
 
     /** Echo achieved load is what users see; other modes export the configured per-cable load. */
-    private fun exportWeightKg(session: WorkoutSession): Float {
+    private fun exportWeightKg(session: WorkoutSession): Float? {
         // Issue #1182: the achieved Echo load is the measured peak per cable (the resolver),
         // not a phase-peak/average chain and never the configured seed. An Echo set with no
-        // measurement exports 0 rather than the placeholder.
-        return EchoAchievedLoadResolver.primaryLoadKg(session) ?: 0f
+        // measurement has NO load to export: the cell reads "Load unavailable" instead of a
+        // numeric zero, so a CSV can never claim "0 kg lifted" (merge-gate R3).
+        return EchoAchievedLoadResolver.primaryLoadKg(session)
     }
 
     private fun historyExerciseName(session: WorkoutSession, exerciseNames: Map<String, String>): String = session.exerciseName?.takeIf { it.isNotBlank() }

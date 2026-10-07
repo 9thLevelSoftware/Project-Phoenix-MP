@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import kotlinx.serialization.Serializable
 
 /**
@@ -89,6 +90,12 @@ sealed class WorkoutState {
         val displayMultiplier: Int = 1,
         val heaviestLiftKgPerCable: Float = 0f,
         val configuredWeightKgPerCable: Float = 0f,
+        // Issue #1182: provenance for the Echo achieved load. This is the cable-aware peak
+        // over ACCEPTED FINITE WORKING-WINDOW samples only - no warmup transients and no
+        // compatibility fallback. `null` means no accepted working telemetry was captured,
+        // which is the ONLY "unavailable" signal; a real measurement is kept even when it
+        // happens to equal the configured metadata.
+        val measuredWorkingPeakKgPerCable: Float? = null,
         val peakForceConcentricA: Float = 0f, // Peak during lifting (velocity > 0)
         val peakForceConcentricB: Float = 0f,
         val peakForceEccentricA: Float = 0f, // Peak during lowering (velocity < 0)
@@ -694,6 +701,9 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         displayMultiplier = displayMultiplier ?: cableCount ?: 1,
         heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
         configuredWeightKgPerCable = weightPerCableKg,
+        // Issue #1182: historical Echo summaries carry the same achieved-load provenance
+        // as live ones, resolved at read time (no rewrite/backfill).
+        measuredWorkingPeakKgPerCable = EchoAchievedLoadResolver.fromSession(this),
         peakForceConcentricA = peakForceConcentricA ?: 0f,
         peakForceConcentricB = peakForceConcentricB ?: 0f,
         peakForceEccentricA = peakForceEccentricA ?: 0f,

@@ -5548,18 +5548,33 @@ class ActiveSessionEngine(
         //
         // The mark's own sample counts as the first working sample (`>=`), which is the
         // same convention the seeded rep-1 window uses for its lower bound (R-6).
-        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
-            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        val strictWorkingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }
         } else {
             metrics
         }
+        val workingMetrics = if (strictWorkingMetrics.isNotEmpty()) strictWorkingMetrics else metrics
 
-        val heaviestLiftKgPerCable = if (isSingleCable) {
+        fun peakLoadPerCable(window: List<WorkoutMetric>): Float = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
+            window.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            workingMetrics.maxOf { it.totalLoad / 2f }
+            window.maxOf { it.totalLoad / 2f }
+        }
+
+        val heaviestLiftKgPerCable = peakLoadPerCable(workingMetrics)
+        // Issue #1182 (R1/R2): Echo achieved load needs ACCEPTED-WORKING-SAMPLE provenance,
+        // not the compatibility fallback above. When the working window is empty (warmup-only
+        // telemetry, or no samples at/after the warmup mark) there is NO measurement, full
+        // stop - the fallback window must never advertise a warmup transient as achieved
+        // working load. Likewise a real measurement is preserved even when it equals the
+        // configured metadata; numerical equality is not provenance. Non-finite or non-positive
+        // peaks (invalid/zero-load telemetry) are not measurements either.
+        val measuredWorkingPeakKgPerCable: Float? = if (strictWorkingMetrics.isEmpty()) {
+            null
+        } else {
+            peakLoadPerCable(strictWorkingMetrics).takeIf { it.isFinite() && it > 0f }
         }
 
         val volumeWeightKgPerCable = if (isEchoMode) {
@@ -5746,6 +5761,7 @@ class ActiveSessionEngine(
             displayMultiplier = displayMultiplierHint ?: cableCount,
             heaviestLiftKgPerCable = heaviestLiftKgPerCable,
             configuredWeightKgPerCable = configuredWeightKgPerCable,
+            measuredWorkingPeakKgPerCable = measuredWorkingPeakKgPerCable,
             peakForceConcentricA = peakConcentricA,
             peakForceConcentricB = peakConcentricB,
             peakForceEccentricA = peakEccentricA,
@@ -9198,6 +9214,15 @@ class ActiveSessionEngine(
             params.isEchoMode -> EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
             else -> recordedWeightPerCableKg
         }
+        // Issue #1182: the session's MEASURED column records the same achieved Echo peak
+        // (non-null 0 sentinel when unmeasured), never the summary's compatibility fallback.
+        // The fallback heaviest (warmup transient, or the configured seed for an empty
+        // window) is not a measurement and must never be read back as achieved load.
+        val recordedHeaviestKgPerCable = if (params.isEchoMode) {
+            EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+        } else {
+            summary.heaviestLiftKgPerCable
+        }
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9226,7 +9251,7 @@ class ActiveSessionEngine(
             avgForceConcentricB = summary.avgForceConcentricB,
             avgForceEccentricA = summary.avgForceEccentricA,
             avgForceEccentricB = summary.avgForceEccentricB,
-            heaviestLiftKg = summary.heaviestLiftKgPerCable,
+            heaviestLiftKg = recordedHeaviestKgPerCable,
             totalVolumeKg = summary.totalVolumeKg,
             cableCount = summary.cableCount,
             displayMultiplier = summary.displayMultiplier,
@@ -10640,6 +10665,13 @@ class ActiveSessionEngine(
                 // Capture the biomechanics summary before building the session:
                 // biomechanicsEngine.reset() is not called on this path before this point.
                 val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
+                // Issue #1182: Echo records the achieved peak (measured column + set row),
+                // with the non-null 0 sentinel when unmeasured; non-Echo is unchanged.
+                val recordedHeaviestKgPerCable = if (params.isEchoMode) {
+                    EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+                } else {
+                    summary.heaviestLiftKgPerCable
+                }
                 val session = WorkoutSession(
                     timestamp = timing.startMs,
                     mode = params.programMode.displayName,
@@ -10663,7 +10695,7 @@ class ActiveSessionEngine(
                     avgForceConcentricB = summary.avgForceConcentricB,
                     avgForceEccentricA = summary.avgForceEccentricA,
                     avgForceEccentricB = summary.avgForceEccentricB,
-                    heaviestLiftKg = summary.heaviestLiftKgPerCable,
+                    heaviestLiftKg = recordedHeaviestKgPerCable,
                     totalVolumeKg = summary.totalVolumeKg,
                     cableCount = summary.cableCount,
                     displayMultiplier = summary.displayMultiplier,
@@ -10697,7 +10729,7 @@ class ActiveSessionEngine(
                         // Issue #1182: Echo records achieved load (measured peak per cable),
                         // never the configured/command seed; non-Echo is unchanged.
                         actualWeightKg = if (params.isEchoMode) {
-                            EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+                            recordedHeaviestKgPerCable
                         } else {
                             recordedWeightPerCableKg
                         },

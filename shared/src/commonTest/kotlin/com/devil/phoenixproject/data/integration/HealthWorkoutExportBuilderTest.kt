@@ -242,6 +242,42 @@ class HealthWorkoutExportBuilderTest {
         assertEquals(62.5f, export.segments.single().weightKg)
     }
 
+    @Test
+    fun echoSegmentExportsAchievedLoadNotConfiguredSeed() {
+        // Issue #1182: Echo Health export uses the ACHIEVED measured peak (with the
+        // existing total multiplier), never the configured seed.
+        val session = workoutSession(
+            id = "echo-measured",
+            mode = "Echo",
+            weightPerCableKg = 5f,
+            displayMultiplier = 2,
+            workingReps = 9,
+            heaviestLiftKg = 80f,
+            peakForceConcentricA = 88f,
+        )
+        val export = HealthWorkoutExportBuilder.buildStandaloneWorkout(session, emptyList())
+
+        assertNotNull(export)
+        assertEquals(160f, export.segments.single().weightKg)
+    }
+
+    @Test
+    fun echoSegmentWithoutMeasurementOmitsWeightEntirely() {
+        // Issue #1182 (R3): an unmeasured Echo set must never reach Health Connect as a
+        // measured 0 kg or as the configured placeholder - the weight is omitted (null).
+        val unmeasured = workoutSession(
+            id = "echo-unmeasured",
+            mode = "Echo",
+            weightPerCableKg = 5f,
+            workingReps = 9,
+            heaviestLiftKg = 0f,
+        )
+        val export = HealthWorkoutExportBuilder.buildStandaloneWorkout(unmeasured, emptyList())
+
+        assertNotNull(export)
+        assertNull(export.segments.single().weightKg)
+    }
+
     private fun workoutSession(
         id: String,
         timestamp: Long = 1_000L,
@@ -257,6 +293,8 @@ class HealthWorkoutExportBuilderTest {
         estimatedCalories: Float? = null,
         rpe: Int? = null,
         heaviestLiftKg: Float? = null,
+        mode: String = "OldSchool",
+        peakForceConcentricA: Float? = null,
     ) = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -272,6 +310,8 @@ class HealthWorkoutExportBuilderTest {
         estimatedCalories = estimatedCalories,
         rpe = rpe,
         heaviestLiftKg = heaviestLiftKg,
+        mode = mode,
+        peakForceConcentricA = peakForceConcentricA,
     )
 
     private fun completedSet(

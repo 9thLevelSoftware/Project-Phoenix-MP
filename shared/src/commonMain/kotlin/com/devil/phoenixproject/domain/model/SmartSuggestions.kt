@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
+
 /**
  * Movement category for push/pull/legs classification.
  * Used by SmartSuggestionsEngine to analyze training balance.
@@ -19,10 +21,36 @@ data class SessionSummary(
     val totalReps: Int,
     val workingReps: Int,
     val cableCount: Int? = null, // null for legacy data without cable metadata
+    // Issue #1182: Echo analytics must never fall back to the configured Echo seed.
+    val isEcho: Boolean = false,
+    /** Recorded measured peak per cable (the row's measured column), if any. */
+    val measuredPeakKg: Float? = null,
+    /** Already-stored measured summary volume (v0.2.1+), if any. */
+    val measuredTotalVolumeKg: Float? = null,
+    /** True when the row carries independent telemetry evidence (recorded peak forces). */
+    val hasForceTelemetry: Boolean = false,
 )
 
 /** Effective cable multiplier: 2 for known dual-cable, 1 otherwise (safe default for unknown). */
 val SessionSummary.cableMultiplier: Int get() = if (cableCount == 2) 2 else 1
+
+/**
+ * Volume contribution of one session for smart-suggestion analytics.
+ *
+ * Issue #1182: Echo volume is the ALREADY-STORED measured summary volume, gated on the
+ * row's measured-load provenance (the same rule as [EchoAchievedLoadResolver]). It is
+ * never recomputed from the configured Echo seed and never as an invented peak x reps
+ * formula; an Echo session with no accepted working telemetry has NO volume claim and is
+ * suppressed. Non-Echo keeps the existing programmed-load formula unchanged.
+ */
+val SessionSummary.volumeKg: Float?
+    get() {
+        if (isEcho) {
+            if (!EchoAchievedLoadResolver.hasMeasuredLoad(measuredPeakKg, weightPerCableKg, hasForceTelemetry)) return null
+            return measuredTotalVolumeKg?.takeIf { it.isFinite() && it > 0f }
+        }
+        return weightPerCableKg * cableMultiplier * workingReps
+    }
 
 // SUGG-01: Volume per muscle group
 

@@ -60,6 +60,12 @@ class SqlDelightSmartSuggestionsRepository(private val database: PhoenixDatabase
                 totalReps = row.totalReps.toInt(),
                 workingReps = row.workingReps.toInt(),
                 cableCount = row.cableCount?.toInt(),
+                // Issue #1182: carry Echo measured provenance so analytics never fall back
+                // to the configured Echo seed (see SessionSummary.volumeKg).
+                isEcho = row.mode.contains("Echo", ignoreCase = true),
+                measuredPeakKg = row.heaviestLiftKg?.toFloat(),
+                measuredTotalVolumeKg = row.totalVolumeKg?.toFloat(),
+                hasForceTelemetry = row.hasForceTelemetry != 0L,
             )
         }
     }

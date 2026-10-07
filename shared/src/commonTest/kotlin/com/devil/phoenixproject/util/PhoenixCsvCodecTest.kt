@@ -124,19 +124,46 @@ class PhoenixCsvCodecTest {
     }
 
     @Test
-    fun echoHistoryWithoutMeasurementExportsZeroNotConfiguredSeed() {
-        // No accepted telemetry: heaviestLiftKg collapses to the configured seed, so the
-        // resolver reports unavailable and the export is 0, never the configured 10 kg.
-        val session = WorkoutSession(
+    fun echoHistoryWithoutMeasurementExportsUnavailableNotZeroOrConfiguredSeed() {
+        // No accepted telemetry: the measured column carries the 0 sentinel (post-#1182) or
+        // the legacy placeholder equal to the configured seed, so the resolver reports
+        // unavailable and the weight cell reads "Load unavailable" - never "0 kg lifted" and
+        // never the configured 10 kg (merge-gate R3).
+        val sentinelRow = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 0f,
+            exerciseName = "Row",
+        )
+        val legacyPlaceholderRow = WorkoutSession(
             timestamp = localMinute(2026, 3, 10, 14, 30),
             mode = "Echo",
             weightPerCableKg = 10f,
             heaviestLiftKg = 10f,
             exerciseName = "Row",
         )
+        for (session in listOf(sentinelRow, legacyPlaceholderRow)) {
+            val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
+
+            assertEquals("Load unavailable", cell(csv, "Weight"))
+        }
+    }
+
+    @Test
+    fun echoHistoryKeepsMeasuredLoadEqualToConfiguredWhenTelemetryEvidenceExists() {
+        // Merge-gate R1: a real measurement equal to the configured metadata is preserved.
+        val session = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 10f,
+            peakForceConcentricA = 12.5f,
+            exerciseName = "Row",
+        )
         val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
 
-        assertEquals("0 kg", cell(csv, "Weight"))
+        assertEquals("10 kg", cell(csv, "Weight"))
     }
 
     @Test

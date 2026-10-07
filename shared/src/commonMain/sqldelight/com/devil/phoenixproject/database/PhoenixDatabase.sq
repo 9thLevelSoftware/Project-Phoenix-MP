@@ -3997,9 +3997,17 @@ UPDATE WorkoutSession SET synced_sync_generation = local_sync_generation WHERE i
 -- ==================== SMART SUGGESTIONS QUERIES ====================
 
 -- Session summaries with exercise muscle group data (for volume/balance analysis)
+-- Issue #1182: Echo rows carry their measured provenance columns so smart-suggestion
+-- volume never falls back to the configured Echo seed.
 selectSessionSummariesSince:
 SELECT ws.exerciseId, ws.exerciseName, e.muscleGroup, ws.timestamp,
-       ws.weightPerCableKg, ws.totalReps, ws.workingReps, ws.cableCount
+       ws.weightPerCableKg, ws.totalReps, ws.workingReps, ws.cableCount,
+       ws.heaviestLiftKg, ws.totalVolumeKg, ws.mode,
+       CASE WHEN COALESCE(ws.peakForceConcentricA, 0) != 0
+              OR COALESCE(ws.peakForceConcentricB, 0) != 0
+              OR COALESCE(ws.peakForceEccentricA, 0) != 0
+              OR COALESCE(ws.peakForceEccentricB, 0) != 0
+            THEN 1 ELSE 0 END AS hasForceTelemetry
 FROM WorkoutSession ws
 LEFT JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL
@@ -4021,6 +4029,12 @@ GROUP BY e.id;
 -- Inner CASE converts heaviestLiftKg<=0 to NULL so COALESCE can fall back to
 -- the programmed weightPerCableKg. Wrapping in COALESCE keeps the SQLDelight-
 -- generated type non-nullable (Double, not Double?).
+-- Issue #1182: that COALESCE fallback must never fire for Echo rows - the programmed
+-- Echo weight is a placeholder seed, not an achieved load. Echo rows join plateau
+-- history only when they carry measured-load provenance (positive recorded heaviest
+-- that is not the unprovenanced configured placeholder, mirroring
+-- EchoAchievedLoadResolver); rows with no accepted working telemetry are suppressed
+-- entirely (merge-gate R4).
 selectExerciseWeightHistory:
 SELECT ws.exerciseId,
        ws.exerciseName,
@@ -4033,6 +4047,13 @@ FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
   AND ws.totalReps > 0
+  AND (ws.mode NOT LIKE '%Echo%'
+       OR (ws.heaviestLiftKg > 0
+           AND (ws.heaviestLiftKg != ws.weightPerCableKg
+                OR COALESCE(ws.peakForceConcentricA, 0) != 0
+                OR COALESCE(ws.peakForceConcentricB, 0) != 0
+                OR COALESCE(ws.peakForceEccentricA, 0) != 0
+                OR COALESCE(ws.peakForceEccentricB, 0) != 0)))
 ORDER BY ws.exerciseId, ws.timestamp ASC;
 
 -- ─── External Activities (Third-party integrations) ─────────────────

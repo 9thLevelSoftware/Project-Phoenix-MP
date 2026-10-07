@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.ReadinessResult
 import com.devil.phoenixproject.domain.model.ReadinessStatus
 import com.devil.phoenixproject.domain.model.SessionSummary
 import com.devil.phoenixproject.domain.model.cableMultiplier
+import com.devil.phoenixproject.domain.model.volumeKg
 
 /**
  * Pure ACWR-based readiness computation engine.
@@ -12,6 +13,9 @@ import com.devil.phoenixproject.domain.model.cableMultiplier
  *
  * Follows the SmartSuggestionsEngine pattern exactly:
  * - Volume formula: weightPerCableKg * cableMultiplier * workingReps
+ *   (routed through SessionSummary.volumeKg, Issue #1182: Echo sessions contribute their
+ *   stored measured volume only - never the configured Echo seed - and unmeasured Echo
+ *   sessions are suppressed entirely)
  * - Acute window: last 7 days (inclusive cutoff: timestamp >= now - 7 days)
  * - Chronic window: last 28 days (inclusive cutoff: timestamp >= now - 28 days, divided by 4 for weekly average)
  * - ACWR = acute / chronic weekly average
@@ -62,14 +66,14 @@ object ReadinessEngine {
         val sevenDaysAgo = nowMs - SEVEN_DAYS_MS
         val acuteVolume = sessions
             .filter { isInWindow(it.timestamp, sevenDaysAgo) }
-            .sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }
+            .sumOf { (it.volumeKg ?: 0f).toDouble() }
             .toFloat()
 
         // Compute chronic load (28-day total volume, divided by 4 for weekly average)
         val twentyEightDaysAgo = nowMs - TWENTY_EIGHT_DAYS_MS
         val chronicTotalVolume = sessions
             .filter { isInWindow(it.timestamp, twentyEightDaysAgo) }
-            .sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }
+            .sumOf { (it.volumeKg ?: 0f).toDouble() }
             .toFloat()
         val chronicWeeklyAvg = chronicTotalVolume / 4f
 

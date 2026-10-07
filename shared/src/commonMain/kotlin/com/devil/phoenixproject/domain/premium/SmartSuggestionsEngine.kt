@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
 import com.devil.phoenixproject.domain.model.TimeWindow
 import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import com.devil.phoenixproject.domain.model.cableMultiplier
+import com.devil.phoenixproject.domain.model.volumeKg
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -50,7 +51,9 @@ object SmartSuggestionsEngine {
     /**
      * SUGG-01: Compute weekly volume per muscle group.
      * Filters sessions from current 7-day window (nowMs - 7 days to nowMs).
-     * totalKg = sum of (weightPerCableKg * cableMultiplier * workingReps) per session.
+     * totalKg = sum of each session's volume claim (SessionSummary.volumeKg; the
+     * programmed weightPerCableKg * cableMultiplier * workingReps formula for non-Echo,
+     * stored measured volume for Echo - never the configured Echo seed).
      *
      * Muscle-group tags are grouped case-insensitively: the grouping key is
      * `muscleGroup.trim().lowercase()`, so stored case variants of the same tag
@@ -76,9 +79,7 @@ object SmartSuggestionsEngine {
                     muscleGroup = weeklyVolumeLabel(groupKey),
                     sets = groupSessions.size,
                     reps = groupSessions.sumOf { it.workingReps },
-                    totalKg = groupSessions.sumOf {
-                        (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble()
-                    }.toFloat(),
+                    totalKg = groupSessions.sumOf { (it.volumeKg ?: 0f).toDouble() }.toFloat(),
                 )
             }
 
@@ -114,7 +115,7 @@ object SmartSuggestionsEngine {
         var legsVol = 0f
 
         for (s in recentSessions) {
-            val vol = s.weightPerCableKg * s.cableMultiplier * s.workingReps
+            val vol = s.volumeKg ?: 0f
             when (classifyMuscleGroup(s.muscleGroup)) {
                 MovementCategory.PUSH -> pushVol += vol
                 MovementCategory.PULL -> pullVol += vol
@@ -292,10 +293,12 @@ object SmartSuggestionsEngine {
 
         for ((window, windowSessions) in byWindow) {
             windowCounts[window] = windowSessions.size
-            val totalVolume = windowSessions.sumOf {
-                (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble()
-            }.toFloat()
-            val totalWorkingReps = windowSessions.sumOf { it.workingReps }
+            // Issue #1182: only sessions with a volume claim contribute; an unmeasured Echo
+            // session is suppressed entirely (never a configured-seed volume), so its reps
+            // must not dilute the intensity denominator either.
+            val volumeContributions = windowSessions.mapNotNull { s -> s.volumeKg?.let { s.workingReps to it } }
+            val totalVolume = volumeContributions.sumOf { it.second.toDouble() }.toFloat()
+            val totalWorkingReps = volumeContributions.sumOf { it.first }
             val averageIntensity = if (totalWorkingReps > 0) {
                 totalVolume / totalWorkingReps
             } else {
