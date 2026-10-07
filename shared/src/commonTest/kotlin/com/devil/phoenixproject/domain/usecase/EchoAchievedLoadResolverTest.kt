@@ -111,9 +111,24 @@ class EchoAchievedLoadResolverTest {
             mode = "Echo",
             weightPerCableKg = 5f,
             heaviestLiftKg = 5f,
-            peakForceConcentricA = 9.4f,
+            peakForceEccentricA = 9.4f,
         )
         assertEquals(5f, EchoAchievedLoadResolver.fromSession(session))
+    }
+
+    @Test
+    fun `fromSession does not let portal-hydrated concentric forces vouch for a pulled seed`() {
+        // A pulled row carries weightKg as both configured and measured, and concentric
+        // peaks hydrated from rep summaries. A pre-#1182 push put the configured seed in
+        // weightKg, so those forces are not evidence that the weight was measured.
+        val pulledLegacy = WorkoutSession(
+            mode = "Echo",
+            weightPerCableKg = 5f,
+            heaviestLiftKg = 5f,
+            peakForceConcentricA = 41.2f,
+            peakForceConcentricB = 40.8f,
+        )
+        assertNull(EchoAchievedLoadResolver.fromSession(pulledLegacy))
     }
 
     @Test

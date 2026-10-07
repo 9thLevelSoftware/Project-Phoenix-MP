@@ -5577,8 +5577,11 @@ class ActiveSessionEngine(
             peakLoadPerCable(strictWorkingMetrics).takeIf { it.isFinite() && it > 0f }
         }
 
+        // Echo volume follows the same provenance as its achieved load: a set with no accepted
+        // working sample has no measured load, so it logs no volume rather than the fallback
+        // heaviest (a warmup transient or the configured seed) behind "Load unavailable".
         val volumeWeightKgPerCable = if (isEchoMode) {
-            heaviestLiftKgPerCable
+            measuredWorkingPeakKgPerCable ?: 0f
         } else {
             configuredWeightKgPerCable
         }

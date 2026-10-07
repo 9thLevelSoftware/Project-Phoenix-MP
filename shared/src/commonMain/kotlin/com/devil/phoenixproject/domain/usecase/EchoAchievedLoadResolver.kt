@@ -98,11 +98,16 @@ object EchoAchievedLoadResolver {
      * computed from accepted samples, so a non-zero recorded force proves telemetry was
      * captured even when the recorded measured load happens to equal the configured
      * metadata. An empty-window row (the legacy placeholder signature) has zero forces.
+     *
+     * Only the eccentric peaks count. A portal-pulled row hydrates its concentric peaks
+     * from rep summaries, but its `weightKg` has no provenance: a pre-#1182 push carried
+     * the configured seed there, so concentric forces would vouch for the seed. The pull
+     * path never writes the eccentric columns, and every locally recorded Echo set (whose
+     * eccentric phase is always loaded) does, so this evidence only exists on the device
+     * that measured the set.
      */
     fun hasForceTelemetry(session: WorkoutSession): Boolean =
-        (session.peakForceConcentricA ?: 0f) != 0f ||
-            (session.peakForceConcentricB ?: 0f) != 0f ||
-            (session.peakForceEccentricA ?: 0f) != 0f ||
+        (session.peakForceEccentricA ?: 0f) != 0f ||
             (session.peakForceEccentricB ?: 0f) != 0f
 
     /**

@@ -125,14 +125,17 @@ class Issue1182SqlAchievedLoadPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 
             // The machine measures a real lift that happens to equal the configured weight.
+            // A real Echo rep loads both phases: the lift, then the lowering, so the set
+            // records the eccentric peak that is the locally captured evidence.
             repeat(15) { index ->
+                val velocity = if (index < 8) 200.0 else -200.0
                 harness.fakeBleRepo.emitMetric(
                     WorkoutMetric(
                         timestamp = 1_000L + index * 100L,
                         positionA = 600f + index,
                         positionB = 600f + index,
-                        velocityA = 200.0,
-                        velocityB = 200.0,
+                        velocityA = velocity,
+                        velocityB = velocity,
                         loadA = 5f,
                         loadB = 5f,
                     ),

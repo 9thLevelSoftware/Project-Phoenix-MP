@@ -158,7 +158,7 @@ class PhoenixCsvCodecTest {
             mode = "Echo",
             weightPerCableKg = 10f,
             heaviestLiftKg = 10f,
-            peakForceConcentricA = 12.5f,
+            peakForceEccentricA = 12.5f,
             exerciseName = "Row",
         )
         val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)

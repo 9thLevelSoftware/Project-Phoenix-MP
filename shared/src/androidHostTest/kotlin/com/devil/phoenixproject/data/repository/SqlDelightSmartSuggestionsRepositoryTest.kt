@@ -171,7 +171,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             heaviestLiftKg = 5.0,
             profileId = "default",
             mode = "Echo",
-            peakForceConcentricA = 9.4,
+            peakForceEccentricA = 9.4,
         )
 
         val history = repository.getExerciseWeightHistory("default")
@@ -194,7 +194,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             mode = "Echo",
             workingReps = 9L,
             totalVolumeKg = 1_440.0,
-            peakForceConcentricA = 88.0,
+            peakForceEccentricA = 88.0,
         )
         insertWorkoutSession(
             id = "echo-unmeasured-vol",
@@ -236,7 +236,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         routineName: String? = null,
         mode: String = "Old School",
         totalVolumeKg: Double? = null,
-        peakForceConcentricA: Double? = null,
+        peakForceEccentricA: Double? = null,
     ) {
         database.phoenixDatabaseQueries.insertSession(
             id = id,
@@ -262,9 +262,9 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             deloadWarningCount = 0L,
             romViolationCount = 0L,
             spotterActivations = 0L,
-            peakForceConcentricA = peakForceConcentricA,
+            peakForceConcentricA = null,
             peakForceConcentricB = null,
-            peakForceEccentricA = null,
+            peakForceEccentricA = peakForceEccentricA,
             peakForceEccentricB = null,
             avgForceConcentricA = null,
             avgForceConcentricB = null,
