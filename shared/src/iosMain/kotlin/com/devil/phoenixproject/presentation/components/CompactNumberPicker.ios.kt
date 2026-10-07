@@ -148,23 +148,8 @@ actual fun CompactNumberPicker(
     step: Float,
     compactWheel: Boolean,
 ) {
-    // Generate values deterministically to avoid floating-point drift on iOS.
     val values = remember(range.start, range.endInclusive, step) {
-        if (step <= 0f || range.start > range.endInclusive) {
-            emptyList()
-        } else {
-            buildList {
-                val start = range.start
-                val end = range.endInclusive
-                val totalSteps = (((end - start) / step).toInt()).coerceAtLeast(0)
-                for (index in 0..totalSteps) {
-                    add((start + (index * step)).coerceIn(start, end))
-                }
-                if (isEmpty() || abs(last() - end) > 0.0001f) {
-                    add(end)
-                }
-            }
-        }
+        compactNumberPickerValues(range, step)
     }
 
     // Find current index - use minByOrNull to find CLOSEST value regardless of precision
