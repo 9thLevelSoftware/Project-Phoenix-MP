@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.integration
 
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
-import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.CsvParser
@@ -39,9 +38,9 @@ data class CsvImportPreview(
  * Parses third-party workout CSV exports (Strong, Hevy) into [ExternalActivity] objects.
  *
  * ### Weight convention
- * Weights from external apps represent total weight (both cables / free-weight feel).
- * They are stored as-is on [ExternalActivity], which documents that its weights are NOT
- * per-cable. The portal is responsible for display decisions.
+ * Strong and Hevy export total weight (both cables / free-weight feel), not per-cable
+ * machine load. This importer does not read those columns and does not store a preferred
+ * weight unit on [ExternalActivity].
  *
  * ### Row grouping
  * Both Strong and Hevy CSVs use one row per *set*. This importer groups rows into a single
@@ -80,16 +79,15 @@ object CsvImporter {
      * Parse CSV [content] into a [CsvImportPreview].
      *
      * @param content Full CSV file text including the header row
-     * @param weightUnit User's preferred weight unit (stored as metadata, not converted here)
      * @param profileId Profile to assign to each [ExternalActivity]
      * @param isPaidUser Controls [ExternalActivity.needsSync] — only paid users sync to portal
      */
-    fun parse(content: String, weightUnit: WeightUnit, profileId: String = "default", isPaidUser: Boolean = false): CsvImportPreview {
+    fun parse(content: String, profileId: String = "default", isPaidUser: Boolean = false): CsvImportPreview {
         val format = detectFormat(content)
         return when (format) {
-            CsvFormat.STRONG -> parseStrongCsv(content, weightUnit, profileId, isPaidUser)
+            CsvFormat.STRONG -> parseStrongCsv(content, profileId, isPaidUser)
 
-            CsvFormat.HEVY -> parseHevyCsv(content, weightUnit, profileId, isPaidUser)
+            CsvFormat.HEVY -> parseHevyCsv(content, profileId, isPaidUser)
 
             CsvFormat.UNKNOWN -> CsvImportPreview(
                 format = CsvFormat.UNKNOWN,
@@ -114,7 +112,7 @@ object CsvImporter {
      *
      * Rows are grouped by `Workout Name + Date` key; one [ExternalActivity] is created per group.
      */
-    internal fun parseStrongCsv(content: String, weightUnit: WeightUnit, profileId: String, isPaidUser: Boolean): CsvImportPreview {
+    internal fun parseStrongCsv(content: String, profileId: String, isPaidUser: Boolean): CsvImportPreview {
         val lines = content.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyPreview(CsvFormat.STRONG, "CSV is empty")
 
@@ -197,7 +195,7 @@ object CsvImporter {
      * Rows are grouped by `title + start_time` key; one [ExternalActivity] is created per group.
      * Duration is derived from `end_time - start_time`.
      */
-    internal fun parseHevyCsv(content: String, weightUnit: WeightUnit, profileId: String, isPaidUser: Boolean): CsvImportPreview {
+    internal fun parseHevyCsv(content: String, profileId: String, isPaidUser: Boolean): CsvImportPreview {
         val lines = content.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyPreview(CsvFormat.HEVY, "CSV is empty")
 

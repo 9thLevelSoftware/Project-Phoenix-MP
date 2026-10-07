@@ -150,7 +150,6 @@ fun IntegrationsScreen(
 
     // ── CSV file picker (import) ──────────────────────────────────────────────
     var triggerCsvImport by remember { mutableStateOf(false) }
-    var importWeightUnit by remember { mutableStateOf(weightUnit) }
 
     if (triggerCsvImport) {
         val filePicker = rememberFilePicker()
@@ -160,10 +159,7 @@ fun IntegrationsScreen(
                 scope.launch {
                     val content = readUriContent(uri)
                     if (content != null) {
-                        viewModel.previewCsvImport(
-                            content = content,
-                            weightUnit = importWeightUnit,
-                        )
+                        viewModel.previewCsvImport(content)
                     } else {
                         snackbarHostState.showSnackbar("Could not read file")
                     }
@@ -593,10 +589,7 @@ fun IntegrationsScreen(
                             }
                         }
                         OutlinedButton(
-                            onClick = {
-                                importWeightUnit = csvWeightUnit
-                                triggerCsvImport = true
-                            },
+                            onClick = { triggerCsvImport = true },
                             enabled = !uiState.isImporting,
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
