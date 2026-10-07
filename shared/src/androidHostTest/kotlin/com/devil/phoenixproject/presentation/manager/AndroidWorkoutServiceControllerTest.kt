@@ -1,23 +1,22 @@
 package com.devil.phoenixproject.presentation.manager
 
+import android.content.ComponentName
 import android.content.Context
-import android.util.Log
-import androidx.core.content.ContextCompat
-import io.mockk.every
-import io.mockk.just
-import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.runs
-import io.mockk.unmockkAll
-import io.mockk.verify
-import org.junit.After
+import android.content.ContextWrapper
+import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class AndroidWorkoutServiceControllerTest {
 
-    private val appContext = mockk<Context>()
-    private val context = mockk<Context>()
+    private lateinit var context: RecordingContext
     private lateinit var controller: AndroidWorkoutServiceController
 
     private val snapshot = WorkoutServiceSnapshot(
@@ -27,57 +26,63 @@ class AndroidWorkoutServiceControllerTest {
 
     @Before
     fun setUp() {
-        mockkStatic(ContextCompat::class)
-        mockkStatic(Log::class)
-        every { Log.e(any<String>(), any<String>()) } returns 0
-        every { Log.e(any<String>(), any<String>(), any()) } returns 0
-        every { Log.println(any(), any(), any()) } returns 0
-        every { context.applicationContext } returns appContext
-        every { appContext.packageName } returns "com.devil.phoenixproject"
-        every { ContextCompat.startForegroundService(any(), any()) } just runs
+        context = RecordingContext(ApplicationProvider.getApplicationContext())
         controller = AndroidWorkoutServiceController(context)
-    }
-
-    @After
-    fun tearDown() {
-        unmockkAll()
     }
 
     @Test
     fun deadServiceStart_nextUpdateUsesStartForegroundService() {
-        every { appContext.startService(any()) } throws IllegalStateException("dead")
+        context.startServiceError = IllegalStateException("dead")
 
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
 
-        verify(exactly = 2) { ContextCompat.startForegroundService(appContext, any()) }
-        verify(exactly = 1) { appContext.startService(any()) }
+        assertEquals(2, context.foregroundStarts.size)
+        assertEquals(1, context.serviceStarts.size)
     }
 
     @Test
     fun startForegroundServiceFailure_retriesWithStartForegroundService() {
-        every { ContextCompat.startForegroundService(any(), any()) } throws SecurityException("blocked")
-        every { appContext.startService(any()) } returns null
+        context.foregroundError = SecurityException("blocked")
 
         controller.showOrUpdate(snapshot)
 
-        every { ContextCompat.startForegroundService(any(), any()) } just runs
+        context.foregroundError = null
         controller.showOrUpdate(snapshot)
 
-        verify(exactly = 2) { ContextCompat.startForegroundService(appContext, any()) }
-        verify(exactly = 0) { appContext.startService(any()) }
+        assertEquals(2, context.foregroundStarts.size)
+        assertEquals(0, context.serviceStarts.size)
     }
 
     @Test
     fun runningService_updatesWithStartService() {
-        every { appContext.startService(any()) } returns null
-
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
 
-        verify(exactly = 1) { ContextCompat.startForegroundService(appContext, any()) }
-        verify(exactly = 2) { appContext.startService(any()) }
+        assertEquals(1, context.foregroundStarts.size)
+        assertEquals(2, context.serviceStarts.size)
+    }
+
+    private class RecordingContext(base: Context) : ContextWrapper(base) {
+        val foregroundStarts = mutableListOf<Intent>()
+        val serviceStarts = mutableListOf<Intent>()
+        var startServiceError: Exception? = null
+        var foregroundError: Exception? = null
+
+        override fun getApplicationContext(): Context = this
+
+        override fun startService(service: Intent): ComponentName? {
+            serviceStarts += service
+            startServiceError?.let { throw it }
+            return ComponentName(packageName, "service")
+        }
+
+        override fun startForegroundService(service: Intent): ComponentName? {
+            foregroundStarts += service
+            foregroundError?.let { throw it }
+            return ComponentName(packageName, "service")
+        }
     }
 }
