@@ -36,11 +36,9 @@ data class LoadVelocityPoint(val loadKg: Float, val meanVelocityMs: Float)
  *
  * @property setNumber 1-indexed set number in the assessment
  * @property loadKg Weight used for this set in kilograms
- * @property reps Number of reps performed
  * @property meanVelocityMs Mean concentric velocity in meters/second
- * @property peakVelocityMs Peak concentric velocity in meters/second
  */
-data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val reps: Int, val meanVelocityMs: Float, val peakVelocityMs: Float)
+data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val meanVelocityMs: Float)
 
 /**
  * Final assessment output with estimated 1RM and regression quality metrics.

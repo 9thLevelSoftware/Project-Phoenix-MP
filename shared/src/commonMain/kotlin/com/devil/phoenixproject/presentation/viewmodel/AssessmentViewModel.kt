@@ -202,20 +202,16 @@ class AssessmentViewModel(
      * velocity is captured from the BLE metrics stream.
      *
      * @param loadKg Actual TOTAL weight used for the set (both cables combined, what user sees on machine)
-     * @param reps Number of reps performed (typically 3)
      * @param meanVelocityMs Mean concentric velocity in m/s
-     * @param peakVelocityMs Peak concentric velocity in m/s
      */
-    fun recordSet(loadKg: Float, reps: Int, meanVelocityMs: Float, peakVelocityMs: Float) {
+    fun recordSet(loadKg: Float, meanVelocityMs: Float) {
         val current = _currentStep.value
         if (current !is AssessmentStep.ProgressiveLoading) return
 
         val newSet = AssessmentSetResult(
             setNumber = current.currentSetNumber,
             loadKg = loadKg,
-            reps = reps,
             meanVelocityMs = meanVelocityMs,
-            peakVelocityMs = peakVelocityMs,
         )
 
         val updatedSets = current.recordedSets + newSet
@@ -406,12 +402,11 @@ class AssessmentViewModel(
 
         if (capturedVelocities.isNotEmpty()) {
             val meanVelocity = capturedVelocities.average().toFloat()
-            val peakVelocity = capturedVelocities.max()
             val weight = current.suggestedWeightKg
 
             // Record the set with captured BLE velocity data
             // Weight is total (both cables) as displayed in the UI
-            recordSet(weight, 3, meanVelocity, peakVelocity)
+            recordSet(weight, meanVelocity)
         } else {
             // No velocity data captured -- return to non-capturing state
             _currentStep.value = current.copy(isCapturing = false, liveVelocityMs = null)
