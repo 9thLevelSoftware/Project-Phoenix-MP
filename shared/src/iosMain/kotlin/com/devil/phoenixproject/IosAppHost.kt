@@ -80,8 +80,17 @@ internal fun IosAppHost() {
             PersistedFileStartupFailureScreen(current) { retryAttempt++ }
         }
 
-        is StartupDependencyResolution.Ready -> RequireBlePermissions {
-            IosAppContent(current.dependencies)
+        is StartupDependencyResolution.Ready -> {
+            // Issue #1164 iOS exit-capture seam: launch-argument gated runtime harness.
+            // Rendered outside RequireBlePermissions (BLE permission is unrelated to the
+            // completion-screen exit under verification).
+            if (isRoutineCompleteExitVerificationLaunch()) {
+                IosRoutineCompleteExitVerificationHost(current.dependencies.mainViewModel)
+            } else {
+                RequireBlePermissions {
+                    IosAppContent(current.dependencies)
+                }
+            }
         }
     }
 }
