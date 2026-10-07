@@ -147,7 +147,6 @@ data class RoutineRecoveryRoutineGraph(
 @Serializable
 data class RoutineRecoveryPayload(
     val provenance: RoutineRecoveryProvenance,
-    val isCycleTemplate: Boolean,
     val routines: List<RoutineRecoveryRoutineGraph>,
 )
 
@@ -169,9 +168,6 @@ data class RoutineRecoveryItem(
     val recoveryId: String,
     val graphIndex: Int,
     val reason: String,
-    val source: String,
-    val appliedAt: Long,
-    val expiresAt: Long,
     val routineName: String,
     val exercises: List<RoutineRecoveryExercisePreview>,
 )
@@ -209,7 +205,6 @@ internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries)
                 localUpdatedAt = rows.mapNotNull { it.updatedAt ?: it.createdAt }.maxOrNull(),
                 appliedAt = appliedAt,
             ),
-            isCycleTemplate = rows.any { it.id.startsWith(CYCLE_TEMPLATE_ROUTINE_PREFIX) },
             routines = rows.map(::buildGraph),
         )
         queries.insertRoutineRecoveryIfAbsent(
@@ -350,9 +345,6 @@ internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries)
                     recoveryId = row.id,
                     graphIndex = index,
                     reason = payload.provenance.reason,
-                    source = payload.provenance.source,
-                    appliedAt = row.created_at,
-                    expiresAt = row.expires_at,
                     routineName = original.name,
                     exercises = graph.exercises.map { exercise ->
                         RoutineRecoveryExercisePreview(
@@ -509,6 +501,3 @@ internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries)
         const val RETENTION_WINDOW_MILLIS = 30L * 24 * 60 * 60 * 1000
     }
 }
-
-/** Local-only `cycle_routine_*` template routines are never user routines. */
-internal const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"

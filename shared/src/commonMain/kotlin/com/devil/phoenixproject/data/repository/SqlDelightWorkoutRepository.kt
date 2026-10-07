@@ -944,6 +944,11 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         tombstoneComponents = tombstones,
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Collector cancellation must propagate: swallowing it here would
+                // mark the profile as maintained with no work done and then emit
+                // into a cancelled collector.
+                throw e
             } catch (e: Exception) {
                 Logger.e(e) {
                     "Issue #1162 identity maintenance failed for profile=$profileId; " +

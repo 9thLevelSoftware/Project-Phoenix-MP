@@ -87,9 +87,6 @@ class SqlDelightSyncRepository(
         const val DURATION_SYNC_KNOWN = 1L
         const val DURATION_SYNC_MALFORMED = 2L
 
-        /** Local-only routines generated for template cycles (never synced). */
-        const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
-
         /**
          * Generic canonical UUID. Local captures use [generateUUID], portal ids are
          * UUIDs, and `cycle_routine_*` / blank sentinel rows are neither — so the
@@ -3752,3 +3749,6 @@ class SqlDelightSyncRepository(
 
 /** Ledger key of the one-shot legacy generation seeding (AppliedDataRepair). */
 internal const val LEGACY_SYNC_GENERATIONS_REPAIR_KEY = "legacy-sync-generations-v1"
+
+/** Local-only routines generated for template cycles (never synced, never user routines). */
+internal const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
