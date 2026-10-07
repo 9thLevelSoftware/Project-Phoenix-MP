@@ -107,6 +107,14 @@ private fun loadSound(context: Context, soundPool: SoundPool, cue: AndroidCueRes
 }
 
 /**
+ * Uniform pick from a non-empty sound or cue pool. Callers keep their own
+ * emptiness checks so an empty mild or strong pool still falls through, and
+ * an empty dominatrix pool stays silent.
+ */
+private fun <T> List<T>.randomPoolEntry(): T =
+    this[Random.nextInt(size)]
+
+/**
  * Play sound based on event type using SoundPool, with MediaPlayer fallback for key sounds.
  * Fire OS: Always uses MediaPlayer (SoundPool has documented volume bug on Fire OS).
  */
@@ -132,7 +140,7 @@ private fun playSound(
     val soundId = when (event) {
         is HapticEvent.BADGE_EARNED -> {
             if (badgeSoundIds.isNotEmpty()) {
-                badgeSoundIds[Random.nextInt(badgeSoundIds.size)]
+                badgeSoundIds.randomPoolEntry()
             } else {
                 null
             }
@@ -140,7 +148,7 @@ private fun playSound(
 
         is HapticEvent.PERSONAL_RECORD -> {
             if (prSoundIds.isNotEmpty()) {
-                prSoundIds[Random.nextInt(prSoundIds.size)]
+                prSoundIds.randomPoolEntry()
             } else {
                 null
             }
@@ -391,8 +399,8 @@ internal object AndroidCueResources {
     val countdownTickCue: AndroidCueResource = beep
 
     fun cueForEvent(event: HapticEvent): AndroidCueResource? = when (event) {
-        is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
-        is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
+        is HapticEvent.BADGE_EARNED -> badgeCues.randomPoolEntry()
+        is HapticEvent.PERSONAL_RECORD -> prCues.randomPoolEntry()
         is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)
         is HapticEvent.COUNTDOWN_TICK -> countdownTickCue
         is HapticEvent.ERROR -> null
@@ -401,19 +409,19 @@ internal object AndroidCueResources {
         // empty pool falls through silently (matches missing-asset fallback).
         is HapticEvent.VERBAL_ENCOURAGEMENT -> when {
             // When vulgar mode is off, always use neutral pool
-            !event.vulgarMode -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
+            !event.vulgarMode -> if (encouragementCues.isNotEmpty()) encouragementCues.randomPoolEntry() else null
             event.dominatrixMode && dominatrixCues.isNotEmpty() ->
-                dominatrixCues[Random.nextInt(dominatrixCues.size)]
+                dominatrixCues.randomPoolEntry()
             event.dominatrixMode -> null // dominatrix pool empty: silent no-op
             event.vulgarTier == VulgarTier.MILD && vulgarMildCues.isNotEmpty() ->
-                vulgarMildCues[Random.nextInt(vulgarMildCues.size)]
+                vulgarMildCues.randomPoolEntry()
             event.vulgarTier == VulgarTier.STRONG && vulgarStrongCues.isNotEmpty() ->
-                vulgarStrongCues[Random.nextInt(vulgarStrongCues.size)]
+                vulgarStrongCues.randomPoolEntry()
             event.vulgarTier == VulgarTier.MIX -> {
                 val combined = vulgarMildCues + vulgarStrongCues
-                if (combined.isNotEmpty()) combined[Random.nextInt(combined.size)] else null
+                if (combined.isNotEmpty()) combined.randomPoolEntry() else null
             }
-            else -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
+            else -> if (encouragementCues.isNotEmpty()) encouragementCues.randomPoolEntry() else null
         }
         else -> eventCues[event]
     }

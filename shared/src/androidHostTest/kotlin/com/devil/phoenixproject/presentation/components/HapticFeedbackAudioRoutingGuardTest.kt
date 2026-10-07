@@ -136,14 +136,57 @@ class HapticFeedbackAudioRoutingGuardTest {
         assertTrue(source.contains("val vulgarStrongCues: List<AndroidCueResource>"))
         assertTrue(source.contains("val dominatrixCues: List<AndroidCueResource>"))
 
-        // cueForEvent must route VERBAL_ENCOURAGEMENT through the pool router
+        // cueForEvent must route VERBAL_ENCOURAGEMENT through the shared pool pick
         assertTrue(source.contains("is HapticEvent.VERBAL_ENCOURAGEMENT ->"))
-        assertTrue(source.contains("dominatrixCues[Random.nextInt"))
-        assertTrue(source.contains("vulgarMildCues[Random.nextInt"))
-        assertTrue(source.contains("vulgarStrongCues[Random.nextInt"))
-        assertTrue(source.contains("encouragementCues[Random.nextInt"))
+        assertTrue(source.contains("dominatrixCues.randomPoolEntry()"))
+        assertTrue(source.contains("vulgarMildCues.randomPoolEntry()"))
+        assertTrue(source.contains("vulgarStrongCues.randomPoolEntry()"))
+        assertTrue(source.contains("encouragementCues.randomPoolEntry()"))
 
         // Event mapping for dominatrix unlock SFX
         assertTrue(source.contains("HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock"))
+    }
+
+    /**
+     * Every former `list[Random.nextInt(list.size)]` cue pick goes through one
+     * helper. Empty-pool routing stays at the call sites.
+     */
+    @Test
+    fun randomCuePick_usesOneSharedHelper() {
+        val source = hapticFeedbackSource.readText()
+        val helperAt = source.indexOf("private fun <T> List<T>.randomPoolEntry(): T")
+        assertTrue(helperAt >= 0, "randomPoolEntry owns the uniform cue pick")
+
+        val helper = source.substring(helperAt, source.indexOf("private fun playSound", helperAt))
+        assertTrue(
+            helper.contains("this[Random.nextInt(size)]"),
+            "the helper is the uniform pool index",
+        )
+        assertEquals(1, source.split("Random.nextInt").size - 1, "Random.nextInt stays in the helper only")
+
+        val picks = listOf(
+            "badgeSoundIds.randomPoolEntry()",
+            "prSoundIds.randomPoolEntry()",
+            "badgeCues.randomPoolEntry()",
+            "prCues.randomPoolEntry()",
+            "encouragementCues.randomPoolEntry()",
+            "dominatrixCues.randomPoolEntry()",
+            "vulgarMildCues.randomPoolEntry()",
+            "vulgarStrongCues.randomPoolEntry()",
+            "combined.randomPoolEntry()",
+        )
+        for (pick in picks) {
+            assertTrue(source.contains(pick), "cue pick goes through $pick")
+        }
+        assertEquals(
+            2,
+            source.split("encouragementCues.randomPoolEntry()").size - 1,
+            "vulgar-off and fallback both pick the encouragement pool",
+        )
+        assertEquals(
+            10,
+            Regex("""[A-Za-z0-9]+\.randomPoolEntry\(\)""").findAll(source).count(),
+            "every former nextInt pool pick uses the helper",
+        )
     }
 }
