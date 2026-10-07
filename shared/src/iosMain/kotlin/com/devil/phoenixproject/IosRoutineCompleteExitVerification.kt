@@ -10,7 +10,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -190,10 +189,3 @@ private fun describe(state: Any?): String = when (state) {
 private fun logVerification(message: String) {
     println("VERIFY1164|$message")
 }
-
-/**
- * Captures the NavController the verification host drives so a capture can read the
- * exit destination without reaching into Compose internals.
- */
-internal fun verificationNavState(navController: NavHostController): String =
-    navController.currentBackStack.value.joinToString(" -> ") { it.destination.route ?: "<null>" }

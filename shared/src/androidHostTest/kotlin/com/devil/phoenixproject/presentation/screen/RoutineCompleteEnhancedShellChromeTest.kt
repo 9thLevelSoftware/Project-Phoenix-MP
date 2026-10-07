@@ -109,6 +109,9 @@ class RoutineCompleteEnhancedShellChromeTest {
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
     fun enhancedShell_chromeStaysHiddenOnComplete_doneReturnsToRealOriginSurface() {
         val fx = fixture!!
+        // ViewModel construction must happen outside composition (lint:
+        // ViewModelConstructorInComposable).
+        val profileSwitcherViewModel = ProfileSwitcherViewModel(fx.fakeUserProfileRepository)
         fx.driveToComplete(
             routineName = "beginner",
             exerciseCount = 5,
@@ -127,7 +130,7 @@ class RoutineCompleteEnhancedShellChromeTest {
                 dynamicColorAvailable = false,
                 dynamicColorEnabled = false,
                 onDynamicColorEnabledChange = {},
-                profileSwitcherViewModel = ProfileSwitcherViewModel(fx.fakeUserProfileRepository),
+                profileSwitcherViewModel = profileSwitcherViewModel,
                 navController = nav,
             )
             LaunchedEffect(Unit) {

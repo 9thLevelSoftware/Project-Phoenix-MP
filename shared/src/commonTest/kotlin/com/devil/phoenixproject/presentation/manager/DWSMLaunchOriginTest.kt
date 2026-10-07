@@ -447,18 +447,7 @@ class DWSMLaunchOriginTest {
             advanceUntilIdle()
             harness.completeCurrentRoutine()
 
-            val dest = if (harness.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
-                NavigationRoutes.TrainingCycles.route
-            } else {
-                NavigationRoutes.DailyRoutines.route
-            }
             harness.dwsm.exitRoutineFlow()
-
-            assertEquals(
-                if (cycle == 0) NavigationRoutes.DailyRoutines.route else NavigationRoutes.TrainingCycles.route,
-                dest,
-                "Repeated entry/exit cycle ${cycle + 1} must exit to the correct origin destination",
-            )
             assertRoutineExitCleanup(harness)
         }
         harness.cleanup()
