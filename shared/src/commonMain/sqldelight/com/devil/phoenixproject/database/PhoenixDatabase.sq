@@ -3998,14 +3998,14 @@ UPDATE WorkoutSession SET synced_sync_generation = local_sync_generation WHERE i
 
 -- Session summaries with exercise muscle group data (for volume/balance analysis)
 -- Issue #1182: Echo rows carry their measured provenance columns so smart-suggestion
--- volume never falls back to the configured Echo seed.
+-- volume never falls back to the configured Echo seed. hasForceTelemetry counts eccentric
+-- peaks only (mirrors EchoAchievedLoadResolver.hasForceTelemetry): portal pull hydrates
+-- concentric peaks next to a weightKg of unknown provenance, and never writes eccentric ones.
 selectSessionSummariesSince:
 SELECT ws.exerciseId, ws.exerciseName, e.muscleGroup, ws.timestamp,
        ws.weightPerCableKg, ws.totalReps, ws.workingReps, ws.cableCount,
        ws.heaviestLiftKg, ws.totalVolumeKg, ws.mode,
-       CASE WHEN COALESCE(ws.peakForceConcentricA, 0) != 0
-              OR COALESCE(ws.peakForceConcentricB, 0) != 0
-              OR COALESCE(ws.peakForceEccentricA, 0) != 0
+       CASE WHEN COALESCE(ws.peakForceEccentricA, 0) != 0
               OR COALESCE(ws.peakForceEccentricB, 0) != 0
             THEN 1 ELSE 0 END AS hasForceTelemetry
 FROM WorkoutSession ws
@@ -4050,8 +4050,6 @@ WHERE ws.exerciseId IS NOT NULL
   AND (ws.mode NOT LIKE '%Echo%'
        OR (ws.heaviestLiftKg > 0
            AND (ws.heaviestLiftKg != ws.weightPerCableKg
-                OR COALESCE(ws.peakForceConcentricA, 0) != 0
-                OR COALESCE(ws.peakForceConcentricB, 0) != 0
                 OR COALESCE(ws.peakForceEccentricA, 0) != 0
                 OR COALESCE(ws.peakForceEccentricB, 0) != 0)))
 ORDER BY ws.exerciseId, ws.timestamp ASC;

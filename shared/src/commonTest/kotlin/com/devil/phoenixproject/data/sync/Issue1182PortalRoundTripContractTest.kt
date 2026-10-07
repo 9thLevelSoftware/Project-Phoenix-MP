@@ -36,9 +36,12 @@ import kotlinx.coroutines.test.runTest
  *
  * The fixtures mirror production: the push ALWAYS carries scalar `repSummaries` (only the
  * 50 Hz force curves are gated behind `includeTelemetry`), and the portal returns them plus
- * the session-level config. Those returned rep summaries are what hydrate the row's force
- * columns, which is the provenance that tells the resolver a measured Echo load really was
- * measured. The configured seed is never a fallback: a missing load stays missing across sync.
+ * the session-level config. Those returned rep summaries hydrate the row's concentric force
+ * columns, but they are NOT measurement provenance: the wire carries one `weightKg`, and a
+ * pre-#1182 push put the configured seed there next to the same rep summaries. A pulled-only
+ * row therefore reports "Load unavailable"; the device that recorded the set keeps its local
+ * row (a pull never projects over a locally originated row) and its achieved load. The
+ * configured seed is never a fallback: a missing load stays missing across sync.
  *
  * NOTE: helpers are `suspend` and the tests use `runTest`, not `runBlocking` - this file lives
  * in commonTest and `runBlocking` does not exist in the common source set (it broke the iOS
@@ -189,15 +192,21 @@ class Issue1182PortalRoundTripContractTest {
 
     @Test
     fun `achieved echo load survives push serialize pull merge and read back`() = runTest {
-        val (pulled, _) = roundTrip(achievedEchoSession())
-        val readBack = mergedAndReadBack(pulled)
+        val recorded = achievedEchoSession()
+        val (pulled, _) = roundTrip(recorded)
+        assertEquals(80f, pulled.heaviestLiftKg, "the measured peak is carried through the wire")
+
+        // The recording device: its locally originated row is never projected over by a pull.
+        val database = createTestDatabase()
+        SqlDelightWorkoutRepository(database, FakeExerciseRepository()).saveSession(recorded)
+        mergePulled(database, listOf(pulled))
+        val readBack = assertNotNull(readBack(database, recorded.id))
 
         assertEquals(
             80f,
             EchoAchievedLoadResolver.primaryLoadKg(readBack),
             "the achieved 80 kg peak must survive the sync round trip - never the configured seed",
         )
-        assertEquals(80f, readBack.heaviestLiftKg, "the measured peak is carried through the wire")
     }
 
     @Test
@@ -205,8 +214,9 @@ class Issue1182PortalRoundTripContractTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
         val readBack = mergedAndReadBack(pulled)
 
+        // A pulled-only copy (another device, or a reinstall) has no measurement provenance.
         val reported = EchoAchievedLoadResolver.primaryLoadKg(readBack)
-        assertNotNull(reported, "a measured Echo set must report a load after sync")
+        assertNull(reported, "a pulled-only Echo row reports Load unavailable rather than guessing")
         assertTrue(reported != 5f, "the 5 kg configured seed must never surface as the achieved load")
     }
 
@@ -219,16 +229,23 @@ class Issue1182PortalRoundTripContractTest {
     }
 
     @Test
-    fun `returned telemetry is what proves the measured load and it round trips`() = runTest {
+    fun `returned telemetry is not measurement provenance for a pulled legacy seed`() = runTest {
         val (pulled, _) = roundTrip(achievedEchoSession())
-
         assertTrue(
-            EchoAchievedLoadResolver.hasForceTelemetry(pulled),
-            "the returned rep summaries hydrate force evidence proving the load was measured",
+            (pulled.peakForceConcentricA ?: 0f) > 0f,
+            "the returned rep summaries still hydrate the concentric force columns",
         )
         assertTrue(
-            EchoAchievedLoadResolver.hasMeasuredLoad(pulled.heaviestLiftKg, pulled.weightPerCableKg, forceTelemetry = true),
-            "with telemetry evidence a measured load is trusted even when it equals the configured weight",
+            !EchoAchievedLoadResolver.hasForceTelemetry(pulled),
+            "portal-hydrated forces never vouch for the pulled weight",
+        )
+
+        // What a pre-#1182 push looks like once pulled: the configured seed as weightKg,
+        // next to genuine rep summaries. It must not resolve to the seed.
+        val legacyPull = pulled.copy(weightPerCableKg = 5f, heaviestLiftKg = 5f)
+        assertNull(
+            EchoAchievedLoadResolver.primaryLoadKg(mergedAndReadBack(legacyPull)),
+            "a legacy pulled seed with rep summaries reports Load unavailable, never 5 kg",
         )
     }
 

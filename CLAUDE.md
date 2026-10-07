@@ -114,7 +114,8 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 2. On macOS, build the release iOS framework and app and run the native startup/database tests with the production driver. Confirm foreign keys are enforced after migration and reopening.
 3. On a V-Form and a Trainer+, verify manual and autoplay transitions, edited rack loads and counterweights, same-exercise and next-exercise transitions, idle/armed disconnect and recovery, and repeated timed warmups with the next exercise initially stationary.
 4. During rollout, watch pending ownership/deletion operation counts, age and failures. Missing acknowledgements must stay pending: never treat them as success or rebind them to another account.
-5. Install a minified release APK (R8 keep rules were narrowed in #960; PR CI builds debug only) and verify on device: BLE connect and a workout, sync push/pull, backup export/import, settings persistence across restart, CSV import/export, and a Health Connect write.
+5. Echo achieved load (#1182): an Echo set with no measured load pushes the non-null `weightKg = 0` sentinel with `estimatedOneRepMaxKg = null`. Before this ships, deploy the portal guard: `buildExerciseProgressRows` must not write a 0 `max_weight_kg`/`estimated_1rm_kg`/`total_volume_kg` progress row for such an exercise, and session detail must render 0-weight Echo sets as "Load unavailable", not "0 kg".
+6. Install a minified release APK (R8 keep rules were narrowed in #960; PR CI builds debug only) and verify on device: BLE connect and a workout, sync push/pull, backup export/import, settings persistence across restart, CSV import/export, and a Health Connect write.
 
 ## Sync Architecture
 
