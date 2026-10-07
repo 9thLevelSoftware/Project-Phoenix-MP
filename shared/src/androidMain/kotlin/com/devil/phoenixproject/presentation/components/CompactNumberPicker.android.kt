@@ -305,7 +305,7 @@ internal fun applyCompactNumberPickerState(
     }
 }
 
-internal fun compactNumberPickerLabels(
+private fun compactNumberPickerLabels(
     values: List<Float>,
     step: Float,
     suffix: String,

@@ -231,7 +231,7 @@ internal data class AndroidCueResource(
     val rawResId: Int,
 )
 
-internal object AndroidCueResources {
+private object AndroidCueResources {
     private val beep = AndroidCueResource("beep", R.raw.beep)
     private val beepBoop = AndroidCueResource("beepboop", R.raw.beepboop)
     private val boopBeepBeep = AndroidCueResource("boopbeepbeep", R.raw.boopbeepbeep)
