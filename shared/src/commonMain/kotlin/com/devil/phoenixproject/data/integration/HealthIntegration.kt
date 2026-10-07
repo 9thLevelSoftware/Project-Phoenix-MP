@@ -4,9 +4,9 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 
 /**
  * Latest eligible body-weight sample imported from a platform health store.
