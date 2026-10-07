@@ -65,6 +65,14 @@ internal data class RoutineIdentityResolution(
     val coalescedAwayIds: List<String>,
 )
 
+/** Outcome of eager maintenance over one existing same-identity component. */
+data class ComponentReconciliation(
+    val keeperId: String,
+    val removedIds: List<String>,
+    /** True when a tombstoned row was kept (and its `deletedAt` preserved). */
+    val tombstonePreserved: Boolean,
+)
+
 /**
  * Owner-scoped routine identity resolver (Issue #1162).
  *
@@ -154,18 +162,51 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
 
     /**
      * Deterministic kept row: the most recently updated identity wins (a newer
-     * local edit survives; an equal-time tombstone wins), then a live row beats a
-     * tombstone, then the exact incoming text, then the lexicographically
-     * smallest id. Never picks across ownership boundaries — candidates are
-     * already owner-scoped.
+     * local edit survives), then — at equal time — a tombstone beats a live row
+     * (Issue #1162 acceptance: an equal-time tombstone can never be coalesced
+     * away by an equal-time live row, which would resurrect the identity), then
+     * the exact incoming text, then the lexicographically smallest id. Never
+     * picks across ownership boundaries — candidates are already owner-scoped.
      */
     private fun selectKeeper(incomingId: String, candidates: List<RoutineRow>): RoutineRow =
         candidates.sortedWith(
             compareByDescending<RoutineRow> { it.deletedAt ?: it.updatedAt ?: it.createdAt }
-                .thenBy { if (it.deletedAt == null) 0 else 1 }
+                .thenBy { if (it.deletedAt != null) 0 else 1 }
                 .thenBy { if (it.id == incomingId) 0 else 1 }
                 .thenBy { it.id },
         ).first()
+
+    /**
+     * Issue #1162 eager maintenance: reconcile one existing same-identity
+     * component (already-split alias rows) without any incoming write. Must run
+     * inside a database transaction, and the caller must retain the full source
+     * graphs in the recovery store before calling, since coalescing is
+     * destructive for the alias rows.
+     *
+     * A tombstoned component never passes through unchanged [resolve]/selectKeeper
+     * semantics: if any candidate has `deletedAt`, that tombstoned row is kept with
+     * `deletedAt` preserved and the live aliases are removed into it — a tombstoned
+     * identity is never cleared or resurrected. Only components with at least two
+     * rows are touched; the kept primary key is preserved.
+     */
+    fun reconcileExistingComponent(candidates: List<RoutineRow>): ComponentReconciliation? {
+        if (candidates.size < 2) return null
+        val tombstone = candidates.filter { it.deletedAt != null }.sortedWith(
+            compareByDescending<RoutineRow> { it.deletedAt ?: it.updatedAt ?: it.createdAt }.thenBy { it.id },
+        ).firstOrNull()
+        val keeper = tombstone ?: selectKeeper(
+            incomingId = candidates.map { it.id }.sorted().first(),
+            candidates = candidates,
+        )
+        val losers = candidates.filter { it.id != keeper.id }
+        if (losers.isEmpty()) return null
+        coalesce(keeper.id, losers)
+        return ComponentReconciliation(
+            keeperId = keeper.id,
+            removedIds = losers.map { it.id },
+            tombstonePreserved = tombstone != null,
+        )
+    }
 
     /**
      * Merge each alias row into [keeperId] without discarding either row's data:

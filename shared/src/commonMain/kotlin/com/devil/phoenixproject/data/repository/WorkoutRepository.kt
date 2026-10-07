@@ -12,6 +12,17 @@ import kotlinx.coroutines.flow.Flow
 
 const val MAX_RECENT_EXERCISE_SESSIONS = 5
 
+/** Diagnostics for one Issue #1162 identity maintenance run. */
+data class RoutineIdentityMaintenanceResult(
+    val componentsScanned: Int = 0,
+    val componentsReconciled: Int = 0,
+    val aliasesRemoved: Int = 0,
+    val snapshotsRetained: Int = 0,
+    val tombstoneComponents: Int = 0,
+    val failed: Boolean = false,
+    val error: String? = null,
+)
+
 /**
  * Workout Repository interface.
  * Implemented by SqlDelightWorkoutRepository for type-safe database operations.
@@ -129,6 +140,36 @@ interface WorkoutRepository {
     suspend fun deleteRoutine(routineId: String)
     suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String)
     suspend fun getRoutineById(routineId: String): Routine?
+
+    /**
+     * Issue #1162: one-shot owner/profile-scoped routine identity maintenance,
+     * run transactionally before the first routine-list emission for [profileId]
+     * (offline launch and profile switch included), independent of named writes
+     * and network pulls. Already-split alias rows reconcile into one card; a
+     * failure rolls back and leaves the original rows visible. Idempotent.
+     */
+    suspend fun runRoutineIdentityMaintenance(profileId: String): RoutineIdentityMaintenanceResult =
+        RoutineIdentityMaintenanceResult()
+
+    /**
+     * Issue #1162: routines retained in the local-only recovery store before a
+     * destructive coalesce or server hard delete, shown only for the signed-in
+     * [portalUserId] and the active [profileId].
+     */
+    suspend fun listRoutineRecoveries(profileId: String, portalUserId: String): List<RoutineRecoveryItem> =
+        emptyList()
+
+    /**
+     * Issue #1162: explicit restore-as-copy of one retained routine graph — fresh
+     * routine and child UUIDs in [profileId], never the server-deleted identity,
+     * never a silent cycle or history reconnect. Returns the new routine id.
+     */
+    suspend fun restoreRoutineRecoveryAsCopy(
+        recoveryId: String,
+        graphIndex: Int,
+        profileId: String,
+        portalUserId: String,
+    ): String? = null
 
     /**
      * The profile's live routines without their exercises (#772). Unlike [getAllRoutines] and

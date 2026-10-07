@@ -606,6 +606,7 @@ class FakeSyncRepository : SyncRepository {
         cycleIds: List<String>,
         lastSync: Long,
         syncProfileId: String?,
+        source: String,
     ): ServerDeletionResult {
         if (applyServerDeletionsShouldFail) {
             throw RuntimeException("Simulated server deletion failure")

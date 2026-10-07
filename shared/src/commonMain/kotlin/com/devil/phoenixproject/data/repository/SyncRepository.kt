@@ -594,6 +594,8 @@ interface SyncRepository {
         cycleIds: List<String>,
         lastSync: Long,
         syncProfileId: String? = null,
+        /** Provenance for the local recovery snapshot: 'pull' or 'push skippedDeleted'. */
+        source: String = "pull",
     ): ServerDeletionResult = ServerDeletionResult()
 
     /**

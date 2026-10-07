@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -862,5 +863,42 @@ class Issue1162UuidIdentityDiagnosticTest {
             queries.getProfileById("other-profile").executeAsOne().supabase_user_id,
             "the foreign profile is unchanged",
         )
+    }
+
+    // ===== Eager maintenance + recovery snapshots (architecture follow-up) =====
+
+    /**
+     * Acceptance 1 (arch review follow-up): already-split alias rows reconcile
+     * before the FIRST offline list emission — no save, no named pull.
+     */
+    @Test
+    fun firstOfflineListReadReconcilesSplitAliasesWithoutAWrite() = runTest {
+        val database = newDb()
+        val repository = newWorkoutRepository(database)
+        seedRoutine(database, upperUuid, "Split", updatedAt = 5L)
+        seedRoutine(database, upperUuid.lowercase(), "Split", updatedAt = 5L)
+
+        val routines = repository.getAllRoutines("active-profile").first()
+        assertEquals(1, routines.size, "one card on the first read without any write")
+    }
+
+    /**
+     * Acceptance 2 (arch review follow-up): equal-time tombstones cannot
+     * resurrect — the tombstoned row is kept with deletedAt preserved and the
+     * live alias is removed into it.
+     */
+    @Test
+    fun equalTimeTombstoneKeepsTheIdentityDeleted() = runTest {
+        val database = newDb()
+        val repository = newWorkoutRepository(database)
+        seedRoutine(database, upperUuid, "Deleted", updatedAt = 5L, deletedAt = 5L)
+        seedRoutine(database, upperUuid.lowercase(), "Live alias", updatedAt = 5L)
+
+        val result = repository.runRoutineIdentityMaintenance("active-profile")
+        assertEquals(1, result.tombstoneComponents)
+
+        val row = database.phoenixDatabaseQueries.selectRoutineById(upperUuid).executeAsOne()
+        assertEquals(5L, row.deletedAt, "deletedAt is preserved, never cleared")
+        assertEquals(0, repository.getAllRoutines("active-profile").first().size, "never resurrected")
     }
 }

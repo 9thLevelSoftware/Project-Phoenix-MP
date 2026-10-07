@@ -62,6 +62,7 @@ object ProfileDeletionMergePolicy {
         "ProgressionEvent",
         "Routine",
         "RoutineGroup",
+        "RoutineRecovery",
         "RpgAttributes",
         "StreakHistory",
         "TrainingCycle",

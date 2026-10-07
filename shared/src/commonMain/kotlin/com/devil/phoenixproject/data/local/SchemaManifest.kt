@@ -360,7 +360,7 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 }
 
 // ============================================================
-// TASK 3: manifestTables -- 29 reconciled tables
+// TASK 3: manifestTables -- 30 reconciled tables
 //
 // Three categories of tables that need reconciliation on every open:
 //
@@ -368,7 +368,7 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 //    ensureAllTablesExist(), or platform-specific DriverFactory bootstrap code.
 //    Declared with BASE shape (columns added by later migrations are in manifestColumns).
 //
-// B) Migration-created tables (7): Created by numbered .sqm migrations. Included
+// B) Migration-created tables (8): Created by numbered .sqm migrations. Included
 //    here because branch merging can cause migration version numbers to be "already
 //    applied" on a device that never actually ran the SQL, leaving the table missing.
 //    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
@@ -635,6 +635,24 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // be "already applied" on a device that never actually ran the SQL,
     // leaving the table missing. CREATE TABLE IF NOT EXISTS is idempotent
     // and safe to run on every open.
+
+    // RoutineRecovery -- migration 57 (Issue #1162 local-only routine recovery
+    // snapshots). Full shape: no later migrations add columns.
+    SchemaTableOperation(
+        table = "RoutineRecovery",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RoutineRecovery (
+                id TEXT PRIMARY KEY NOT NULL,
+                portal_user_id TEXT NOT NULL DEFAULT '',
+                profile_id TEXT NOT NULL,
+                canonical_identity TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
 
     // RepMetric -- migration 12 (per-rep force curve data for premium analytics)
     // Full shape: no later migrations add columns
@@ -2014,6 +2032,16 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation(
         "idx_cycle_conflict_draft_profile_cycle",
         "CREATE INDEX IF NOT EXISTS idx_cycle_conflict_draft_profile_cycle ON CycleConflictDraft(original_profile_id, cycle_id)",
+    ),
+
+    // ── RoutineRecovery ─────────────────────────────────────────────────
+    SchemaIndexOperation(
+        "idx_routine_recovery_key",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_routine_recovery_key ON RoutineRecovery(portal_user_id, profile_id, canonical_identity, reason)",
+    ),
+    SchemaIndexOperation(
+        "idx_routine_recovery_profile",
+        "CREATE INDEX IF NOT EXISTS idx_routine_recovery_profile ON RoutineRecovery(profile_id, expires_at)",
     ),
 
     // ── CycleDay ────────────────────────────────────────────────────────

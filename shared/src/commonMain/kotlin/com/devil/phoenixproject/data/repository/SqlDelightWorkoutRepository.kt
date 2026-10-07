@@ -23,7 +23,11 @@ import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
@@ -31,6 +35,12 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     private val queries = db.phoenixDatabaseQueries
     private val routineIdentityResolver = RoutineIdentityResolver(queries)
+    private val routineRecoveryStore = RoutineRecoveryStore(queries)
+
+    // Issue #1162: one-shot identity maintenance per selected profile, run before
+    // the first routine-list emission (offline launch and profile switch included).
+    private val identityMaintenanceMutex = Mutex()
+    private val identityMaintainedProfiles = mutableSetOf<String>()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -823,30 +833,162 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         )
     }
 
-    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
-        .map { basicRoutines ->
-            // Load exercises for each routine
-            basicRoutines.map { routine ->
-                try {
-                    loadRoutineWithExercises(
-                        routine.id,
-                        routine.name,
-                        routine.createdAt,
-                        routine.lastUsed,
-                        routine.useCount,
-                        routine.profileId,
-                        routine.groupId,
-                        updatedAt = routine.updatedAt,
-                        description = routine.description,
-                    )
-                } catch (e: Exception) {
-                    Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
-                    routine
-                }
-            }
+    /**
+     * Issue #1162: one-shot owner-scoped identity maintenance runs before the
+     * first list emission for this profile (before the reactive query is even
+     * subscribed — never inside its mapper), so already-split alias rows are one
+     * card on an offline launch without any save or named pull. Maintenance
+     * failure leaves the original rows visible and logs a diagnostic.
+     */
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = flow {
+        val shouldMaintain = identityMaintenanceMutex.withLock { identityMaintainedProfiles.add(profileId) }
+        if (shouldMaintain) {
+            runRoutineIdentityMaintenance(profileId)
         }
+        emitAll(
+            queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
+                .asFlow()
+                .mapToList(Dispatchers.IO)
+                .map { basicRoutines ->
+                    // Load exercises for each routine
+                    basicRoutines.map { routine ->
+                        try {
+                            loadRoutineWithExercises(
+                                routine.id,
+                                routine.name,
+                                routine.createdAt,
+                                routine.lastUsed,
+                                routine.useCount,
+                                routine.profileId,
+                                routine.groupId,
+                                updatedAt = routine.updatedAt,
+                                description = routine.description,
+                            )
+                        } catch (e: Exception) {
+                            Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
+                            routine
+                        }
+                    }
+                },
+        )
+    }
+
+    /**
+     * Issue #1162 eager identity maintenance, run transactionally per selected
+     * profile before the first routine-list emission (offline launch and profile
+     * switch included), independent of named writes and network pulls.
+     *
+     * Each same-profile identity component (validated full UUID equivalence or a
+     * genuine stored `serverId` edge, owner-scoped) is reconciled once: the full
+     * source graph is retained in the local-only recovery store first, then the
+     * aliases coalesce into the kept row with its stored primary key preserved. A
+     * tombstoned component keeps the tombstoned row with `deletedAt` preserved.
+     * Any failure rolls the whole run back (original rows stay visible) and is
+     * reported here as a diagnostic.
+     */
+    override suspend fun runRoutineIdentityMaintenance(profileId: String): RoutineIdentityMaintenanceResult =
+        withContext(Dispatchers.IO) {
+            var result = RoutineIdentityMaintenanceResult()
+            try {
+                db.transaction {
+                    val now = currentTimeMillis()
+                    routineRecoveryStore.pruneExpired(now)
+                    val portalUserId = queries.getProfileById(profileId).executeAsOneOrNull()
+                        ?.supabase_user_id ?: ""
+                    val rows = queries.selectAllRoutinesByProfileIncludingDeleted(profileId).executeAsList()
+                    val visited = mutableSetOf<String>()
+                    var components = 0
+                    var reconciled = 0
+                    var removed = 0
+                    var snapshots = 0
+                    var tombstones = 0
+                    for (row in rows) {
+                        if (row.id in visited) continue
+                        val candidates = routineIdentityResolver.findCandidates(
+                            incomingId = row.id,
+                            scopeProfileId = profileId,
+                        ) { it.profile_id == profileId }
+                        candidates.forEach { visited += it.id }
+                        if (candidates.size < 2) continue
+                        components++
+                        // Retain the full source graph BEFORE the destructive
+                        // coalesce, in this same transaction. Failure throws and
+                        // rolls everything back.
+                        routineRecoveryStore.retainRoutineGraphs(
+                            rows = candidates.sortedBy { it.id },
+                            canonicalIdentity = componentCanonicalIdentity(candidates),
+                            portalUserId = portalUserId,
+                            profileId = profileId,
+                            reason = RoutineRecoveryReasons.ALIAS_COALESCE,
+                            source = "identity_maintenance",
+                            incomingIdentity = null,
+                            appliedAt = now,
+                        )
+                        snapshots++
+                        val reconciliation = routineIdentityResolver
+                            .reconcileExistingComponent(candidates) ?: continue
+                        reconciled++
+                        removed += reconciliation.removedIds.size
+                        if (reconciliation.tombstonePreserved) tombstones++
+                        Logger.d("RoutineIdentity") {
+                            "Issue #1162 maintenance (profile=$profileId): kept '${reconciliation.keeperId}', " +
+                                "removed aliases ${reconciliation.removedIds}, " +
+                                "tombstonePreserved=${reconciliation.tombstonePreserved}"
+                        }
+                    }
+                    result = RoutineIdentityMaintenanceResult(
+                        componentsScanned = components,
+                        componentsReconciled = reconciled,
+                        aliasesRemoved = removed,
+                        snapshotsRetained = snapshots,
+                        tombstoneComponents = tombstones,
+                    )
+                }
+            } catch (e: Exception) {
+                Logger.e(e) {
+                    "Issue #1162 identity maintenance failed for profile=$profileId; " +
+                        "the run was rolled back and the original rows stay visible"
+                }
+                result = RoutineIdentityMaintenanceResult(failed = true, error = e.message)
+            }
+            result
+        }
+
+    /** Deterministic canonical identity of one equivalence component (Issue #1162). */
+    private fun componentCanonicalIdentity(candidates: List<RoutineRow>): String {
+        val sorted = candidates.sortedBy { it.id }
+        return sorted.firstNotNullOfOrNull {
+            RoutineIdentity.canonicalUuidOrNull(it.id) ?: RoutineIdentity.canonicalUuidOrNull(it.serverId)
+        } ?: sorted.first().id
+    }
+
+    override suspend fun listRoutineRecoveries(
+        profileId: String,
+        portalUserId: String,
+    ): List<RoutineRecoveryItem> = withContext(Dispatchers.IO) {
+        routineRecoveryStore.listRecoverableRoutines(
+            profileId = profileId,
+            portalUserId = portalUserId,
+            now = currentTimeMillis(),
+        )
+    }
+
+    override suspend fun restoreRoutineRecoveryAsCopy(
+        recoveryId: String,
+        graphIndex: Int,
+        profileId: String,
+        portalUserId: String,
+    ): String? = withContext(Dispatchers.IO) {
+        db.transactionWithResult {
+            routineRecoveryStore.restoreAsCopy(
+                recoveryId = recoveryId,
+                graphIndex = graphIndex,
+                profileId = profileId,
+                portalUserId = portalUserId,
+                now = currentTimeMillis(),
+            )
+        }
+    }
 
     /**
      * Best-effort heal of a RoutineExercise.exerciseId. A failed write (e.g. a foreign-key
