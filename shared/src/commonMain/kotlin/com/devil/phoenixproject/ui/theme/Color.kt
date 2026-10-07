@@ -22,7 +22,7 @@ internal val EmberYellowLight = Color(0xFF6A5F00) // Olive gold (light mode)
 private val EmberYellowDark = Color(0xFFE2C446) // Bright gold (dark mode)
 
 // Tertiary: "Cooling Ash" - Used for accents to balance the heat
-val AshBlueLight = Color(0xFF006684) // Deep teal (light mode)
+internal val AshBlueLight = Color(0xFF006684) // Deep teal (light mode)
 internal val AshBlueDark = Color(0xFF6ED2FF) // Electric cyan (dark mode)
 
 // --- SLATE NEUTRALS (Tinted Blue-Grey) ---
@@ -30,8 +30,8 @@ internal val AshBlueDark = Color(0xFF6ED2FF) // Electric cyan (dark mode)
 val Slate950 = Color(0xFF020617) // Almost black, blue-tinted (OLED friendly)
 val Slate900 = Color(0xFF0F172A) // Deep background
 internal val Slate800 = Color(0xFF1E293B) // Card background
-val Slate700 = Color(0xFF334155) // Border/Divider
-val Slate400 = Color(0xFF94A3B8) // Subtext
+internal val Slate700 = Color(0xFF334155) // Border/Divider
+internal val Slate400 = Color(0xFF94A3B8) // Subtext
 internal val Slate200 = Color(0xFFE2E8F0) // Light mode surfaces
 val Slate50 = Color(0xFFF8FAFC) // Light mode background
 
@@ -40,23 +40,23 @@ val ForgeGreen = Color(0xFF10B981) // Phoenix Forge Green — brand success/cali
 
 // --- SIGNAL COLORS (Status) ---
 // Intentionally NOT orange to avoid confusion with primary
-val SignalSuccess = Color(0xFF22C55E) // Green
-val SignalError = Color(0xFFEF4444) // Red
-val SignalWarning = Color(0xFFF59E0B) // Amber
+internal val SignalSuccess = Color(0xFF22C55E) // Green
+internal val SignalError = Color(0xFFEF4444) // Red
+internal val SignalWarning = Color(0xFFF59E0B) // Amber
 
 // --- MATERIAL 3 DARK MODE TOKENS ---
-val Primary80 = PhoenixOrangeDark
-val Primary20 = Color(0xFF4C1400)
-val PrimaryContainerDark = Color(0xFF702300)
+internal val Primary80 = PhoenixOrangeDark
+internal val Primary20 = Color(0xFF4C1400)
+internal val PrimaryContainerDark = Color(0xFF702300)
 val OnPrimaryContainerDark = Color(0xFFFFDBCF)
 
-val Secondary80 = EmberYellowDark
-val Secondary20 = Color(0xFF373100)
-val SecondaryContainerDark = Color(0xFF4F4700)
+internal val Secondary80 = EmberYellowDark
+internal val Secondary20 = Color(0xFF373100)
+internal val SecondaryContainerDark = Color(0xFF4F4700)
 val OnSecondaryContainerDark = Color(0xFFFFE06F)
 
-val Tertiary80 = AshBlueDark
-val Tertiary20 = Color(0xFF003546)
+internal val Tertiary80 = AshBlueDark
+internal val Tertiary20 = Color(0xFF003546)
 
 // --- MATERIAL 3 LIGHT MODE TOKENS ---
 internal val PrimaryContainerLight = Color(0xFFFFDBCF)
@@ -64,12 +64,12 @@ internal val OnPrimaryContainerLight = Color(0xFF380D00)
 
 // --- SURFACE CONTAINERS (Dark Mode) ---
 // Using Slate scale for depth without opacity hacks
-val SurfaceDimDark = Slate950
-val SurfaceContainerDark = Slate900
-val SurfaceContainerHighDark = Slate800
-val SurfaceContainerHighestDark = Slate700
-val OnSurfaceDark = Slate200
-val OnSurfaceVariantDark = Slate400
+internal val SurfaceDimDark = Slate950
+internal val SurfaceContainerDark = Slate900
+internal val SurfaceContainerHighDark = Slate800
+internal val SurfaceContainerHighestDark = Slate700
+internal val OnSurfaceDark = Slate200
+internal val OnSurfaceVariantDark = Slate400
 
 // --- SURFACE CONTAINERS (Light Mode) ---
 internal val SurfaceDimLight = Color(0xFFDED8E1)

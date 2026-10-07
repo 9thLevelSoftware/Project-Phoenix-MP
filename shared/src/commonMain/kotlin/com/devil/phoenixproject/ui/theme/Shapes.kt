@@ -20,7 +20,7 @@ private object ExpressiveShapeValues {
 /**
  * Material 3 Expressive Shapes for MaterialTheme
  */
-val ExpressiveShapes = Shapes(
+internal val ExpressiveShapes = Shapes(
     extraSmall = ExpressiveShapeValues.ExtraSmall,
     small = ExpressiveShapeValues.Small,
     medium = ExpressiveShapeValues.Medium,
