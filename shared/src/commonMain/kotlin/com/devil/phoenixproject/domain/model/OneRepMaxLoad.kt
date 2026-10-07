@@ -7,10 +7,6 @@ package com.devil.phoenixproject.domain.model
 fun Exercise.oneRepMaxInputToPerCableKg(inputKg: Float): Float? =
     displayMultiplier?.let { inputKg / it }
 
-/** Convert a canonical per-cable baseline back to the wizard's total-load input. */
-fun Exercise.perCableKgToOneRepMaxInput(perCableKg: Float): Float? =
-    displayMultiplier?.let { perCableKg * it }
-
 /**
  * Convert a canonical per-cable baseline back to the wizard's editable kilogram value.
  * Only resolved display metadata can safely determine the wizard input value.

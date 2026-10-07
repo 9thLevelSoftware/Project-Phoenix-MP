@@ -177,7 +177,7 @@ class ExerciseTest {
     }
 
     @Test
-    fun `cycle one rep max conversion splits unified total and round trips`() {
+    fun `cycle one rep max conversion splits unified total`() {
         val squat = Exercise(
             name = "Barbell Squat",
             muscleGroup = "Legs",
@@ -186,7 +186,6 @@ class ExerciseTest {
         )
 
         assertEquals(50f, squat.oneRepMaxInputToPerCableKg(100f)!!, 0.0001f)
-        assertEquals(100f, squat.perCableKgToOneRepMaxInput(50f)!!, 0.0001f)
     }
 
     @Test
@@ -370,6 +369,5 @@ class ExerciseTest {
         )
 
         assertEquals(null, unknown.oneRepMaxInputToPerCableKg(100f))
-        assertEquals(null, unknown.perCableKgToOneRepMaxInput(50f))
     }
 }
