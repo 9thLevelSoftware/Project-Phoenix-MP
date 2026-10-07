@@ -100,8 +100,8 @@ by a `Phoenix` name or by UUID/FEF3 are left out of that list.
 1. Connect your iOS device
 2. Select your device as the run destination
 3. Build and run from Xcode
-4. Grant Bluetooth permission when prompted
-5. The app will scan for Phoenix devices
+4. On the in-app Bluetooth screen, tap Continue, then grant the system permission
+5. After the permission state is Granted, the scan UI appears and the app can scan for Phoenix devices
 
 ## Troubleshooting
 
@@ -141,12 +141,9 @@ Android follows the same gate in `AndroidAppHost`: `runRequiredMigrations()` and
 
 ### BLE Permission Handling
 
-The app includes a BLE permission UI component (`RequireBlePermissions`) that:
-- Shows guidance screens before BLE is first used
-- Provides instructions for enabling permissions in Settings if denied
-- Matches Android's permission handling UX
+After startup succeeds, `IosAppHost` shows `RequireBlePermissions` around `IosAppContent`. The implementation is `RequireBlePermissions` in `shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/BlePermissionHandler.ios.kt`. `IosAppContent` (including the scan UI) is composed only when the permission state is `Granted`.
 
-On iOS, CoreBluetooth automatically requests permission when BLE scanning starts, but the UI provides guidance beforehand.
+`RequireBlePermissions` reads `CBCentralManager.authorization` before it creates a `CBCentralManager`. That read does not raise the system prompt. While the state is `NotGranted`, the in-app screen waits for Continue. Continue calls `requestPermission()`, which creates the `CBCentralManager` and raises the iOS Bluetooth dialog. `Requesting` and `Denied` keep the scan UI hidden. If permission is denied, the screen points to Settings, and Check Again re-reads `CBCentralManager.authorization`.
 
 ### Background Execution
 
