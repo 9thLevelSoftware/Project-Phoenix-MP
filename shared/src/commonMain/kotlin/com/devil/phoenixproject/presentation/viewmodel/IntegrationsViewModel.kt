@@ -251,12 +251,11 @@ class IntegrationsViewModel(
      */
     fun previewCsvImport(
         content: String,
-        weightUnit: WeightUnit,
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isImporting = true, errorMessage = null)
             try {
-                val preview = CsvImporter.parse(content, weightUnit, activeProfileId.value, isPaidUser.value)
+                val preview = CsvImporter.parse(content, activeProfileId.value, isPaidUser.value)
                 _uiState.value = _uiState.value.copy(importPreview = preview)
                 if (preview.errors.isNotEmpty()) {
                     log.w { "CSV preview has ${preview.errors.size} error(s): ${preview.errors.first()}" }
