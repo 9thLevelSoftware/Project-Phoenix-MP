@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
@@ -52,7 +53,16 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
 
     if (completeState == null) {
         LaunchedEffect(Unit) {
-            navController.navigateUp()
+            // Stale-entry guard ONLY: bail out when this route is showing without a
+            // Complete state (restored/deep-linked entry). The Done/Back exit action
+            // clears RoutineFlowState.Complete and then navigates to its own destination
+            // in the same dispatch; popping again here would undo that exit and drop the
+            // user on Home instead of the origin screen (issue #1164 runtime finding).
+            val stillOnThisRoute =
+                navController.currentBackStackEntry?.destination?.route == NavigationRoutes.RoutineComplete.route
+            if (stillOnThisRoute) {
+                navController.navigateUp()
+            }
         }
         return
     }
