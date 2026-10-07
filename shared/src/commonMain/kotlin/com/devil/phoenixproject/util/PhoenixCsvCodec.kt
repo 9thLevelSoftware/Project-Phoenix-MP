@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -274,14 +275,12 @@ object PhoenixCsvCodec {
         }
     }
 
-    /** Echo peak load is the weight users see; other modes export the configured per-cable load. */
+    /** Echo achieved load is what users see; other modes export the configured per-cable load. */
     private fun exportWeightKg(session: WorkoutSession): Float {
-        val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
-        return if (isEchoMode) {
-            session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
-        } else {
-            session.weightPerCableKg
-        }
+        // Issue #1182: the achieved Echo load is the measured peak per cable (the resolver),
+        // not a phase-peak/average chain and never the configured seed. An Echo set with no
+        // measurement exports 0 rather than the placeholder.
+        return EchoAchievedLoadResolver.primaryLoadKg(session) ?: 0f
     }
 
     private fun historyExerciseName(session: WorkoutSession, exerciseNames: Map<String, String>): String = session.exerciseName?.takeIf { it.isNotBlank() }

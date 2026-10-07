@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.serialization.builtins.ListSerializer
@@ -471,13 +472,17 @@ object PortalSyncAdapter {
 
         // One mobile session = one "set" in portal (the entire exercise execution)
         val pr = swr.prRecord ?: swr.prRecords.legacySetPrHint()
+        // Issue #1182: the wire set weight and the rep-based estimate both use the ACHIEVED
+        // Echo load (measured peak per cable), never the configured seed. Null means an Echo
+        // set with no measurement: the numeric wire weight is 0 and the estimate is suppressed.
+        val achievedLoadKg = EchoAchievedLoadResolver.primaryLoadKg(session)
         val set = PortalSetDto(
             id = setId,
             exerciseId = exerciseId,
             setNumber = 1,
             targetReps = session.reps,
             actualReps = session.totalReps,
-            weightKg = session.weightPerCableKg,
+            weightKg = achievedLoadKg ?: 0f,
             rpe = session.rpe,
             isPr = swr.isPr || swr.prRecords.isNotEmpty(),
             prType = pr?.prType?.name, // "MAX_WEIGHT" or "MAX_VOLUME"
@@ -495,11 +500,15 @@ object PortalSyncAdapter {
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
             // Working reps exclude warmup; fall back to totalReps when working
-            // is 0 so legacy rows still get an estimate.
-            estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
-                session.weightPerCableKg,
-                session.workingReps.takeIf { it > 0 } ?: session.totalReps,
-            ).takeIf { it > 0f },
+            // is 0 so legacy rows still get an estimate. Issue #1182: the estimate is
+            // computed from the ACHIEVED Echo load and suppressed entirely when that load
+            // is unavailable (never estimated off the configured placeholder).
+            estimatedOneRepMaxKg = achievedLoadKg?.let { loadKg ->
+                OneRepMaxCalculator.estimate(
+                    loadKg,
+                    session.workingReps.takeIf { it > 0 } ?: session.totalReps,
+                )
+            }?.takeIf { it > 0f },
             // Velocity-based (VBT) estimate, looked up by catalog exerciseId from
             // the precomputed map. Distinct from the rep-based estimate above; null
             // when this exercise has no exerciseId or no passing velocity estimate.

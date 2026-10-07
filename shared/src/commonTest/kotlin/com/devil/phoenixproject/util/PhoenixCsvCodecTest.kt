@@ -107,17 +107,36 @@ class PhoenixCsvCodecTest {
     }
 
     @Test
-    fun echoHistoryExportsPeakLoad() {
+    fun echoHistoryExportsAchievedMeasuredPeakNotConfiguredSeed() {
+        // Issue #1182: Echo exports the ACHIEVED measured peak per cable (heaviestLiftKg),
+        // not the phase peak (peakWeightKg) and never the configured seed (weightPerCableKg).
         val session = WorkoutSession(
             timestamp = localMinute(2026, 3, 10, 14, 30),
             mode = "Echo",
             weightPerCableKg = 10f,
-            peakWeightKg = 40f,
+            heaviestLiftKg = 40f,
+            peakWeightKg = 55f,
             exerciseName = "Row",
         )
         val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
 
         assertEquals("40 kg", cell(csv, "Weight"))
+    }
+
+    @Test
+    fun echoHistoryWithoutMeasurementExportsZeroNotConfiguredSeed() {
+        // No accepted telemetry: heaviestLiftKg collapses to the configured seed, so the
+        // resolver reports unavailable and the export is 0, never the configured 10 kg.
+        val session = WorkoutSession(
+            timestamp = localMinute(2026, 3, 10, 14, 30),
+            mode = "Echo",
+            weightPerCableKg = 10f,
+            heaviestLiftKg = 10f,
+            exerciseName = "Row",
+        )
+        val csv = PhoenixCsvCodec.encodeWorkoutHistory(listOf(session), emptyMap(), WeightUnit.KG, ::formatKg)
+
+        assertEquals("0 kg", cell(csv, "Weight"))
     }
 
     @Test

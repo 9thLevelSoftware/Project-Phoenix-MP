@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.util.KmpUtils
@@ -171,13 +172,17 @@ private fun SessionRow(
     formatWeight: (Float, WeightUnit) -> String,
     showDuration: Boolean,
 ) {
+    // Issue #1182: Echo shows the achieved load (measured peak), not the configured seed.
+    val loadText = EchoAchievedLoadResolver.primaryLoadKg(session)
+        ?.let { formatWeight(it, weightUnit) }
+        ?: "Load unavailable"
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .semantics {
                 val date = KmpUtils.formatTimestamp(session.timestamp, "MMM d")
-                val weight = formatWeight(session.weightPerCableKg, weightUnit)
+                val weight = loadText
                 val reps = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps"
                 val duration = if (session.duration > 0) ", duration ${formatDuration(session.duration)}" else ""
                 contentDescription = "$date, $weight, $reps$duration"
@@ -192,7 +197,7 @@ private fun SessionRow(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = formatWeight(session.weightPerCableKg, weightUnit),
+            text = loadText,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f),
         )

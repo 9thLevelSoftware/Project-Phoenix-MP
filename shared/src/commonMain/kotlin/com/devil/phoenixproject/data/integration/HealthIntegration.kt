@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 
@@ -178,6 +179,13 @@ object HealthWorkoutExportBuilder {
         session: WorkoutSession,
         completedSet: CompletedSet?,
     ): Float {
+        // Issue #1182: Echo exports the ACHIEVED load (measured peak), never the configured
+        // seed, keeping the existing total-load multiplier. With no measurement there is no
+        // measured load to send, so this reports 0 rather than the configured placeholder.
+        if (EchoAchievedLoadResolver.isEcho(session)) {
+            val achievedPerCableKg = EchoAchievedLoadResolver.fromSession(session) ?: return 0f
+            return achievedPerCableKg * session.displayLoadMultiplier().toFloat()
+        }
         val programmedTotalKg = session.weightPerCableKg * session.displayLoadMultiplier().toFloat()
         if (programmedTotalKg > 0f) return programmedTotalKg
 

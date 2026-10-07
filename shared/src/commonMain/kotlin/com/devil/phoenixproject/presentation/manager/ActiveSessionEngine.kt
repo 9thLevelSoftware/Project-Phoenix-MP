@@ -88,6 +88,7 @@ import com.devil.phoenixproject.domain.usecase.DropSetCandidateRequest
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityRequest
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -9186,6 +9187,17 @@ class ActiveSessionEngine(
         } else {
             recordedWeightPerCableKg
         }
+        // Issue #1182: an Echo set records the load the user ACHIEVED (measured peak per
+        // cable), not the configured/command weight. This lands ONLY on
+        // CompletedSet.actualWeightKg: WorkoutSession.weightPerCableKg (command metadata) and
+        // the MAX_VOLUME PR (volumeWeightKg) keep the configured figure, and non-Echo and
+        // bodyweight sets are unchanged. With no accepted measurement this is the existing
+        // non-null 0 sentinel -> "Load unavailable", never the configured seed.
+        val completedSetWeightKg = when {
+            lease.isBodyweight -> savedWeightKg
+            params.isEchoMode -> EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+            else -> recordedWeightPerCableKg
+        }
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9248,7 +9260,7 @@ class ActiveSessionEngine(
                 setNumber = context.completionFacts.routineIdentity?.logicalSetKey?.setIndex ?: setIndex,
                 setType = context.completionFacts.plannedSetType,
                 actualReps = repCount.workingReps,
-                actualWeightKg = savedWeightKg,
+                actualWeightKg = completedSetWeightKg,
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
@@ -10682,7 +10694,13 @@ class ActiveSessionEngine(
                         setNumber = setIndex,
                         setType = legacyLogicalSetKey?.setKind ?: if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
                         actualReps = repCount.workingReps,
-                        actualWeightKg = recordedWeightPerCableKg,
+                        // Issue #1182: Echo records achieved load (measured peak per cable),
+                        // never the configured/command seed; non-Echo is unchanged.
+                        actualWeightKg = if (params.isEchoMode) {
+                            EchoAchievedLoadResolver.fromSummary(summary) ?: 0f
+                        } else {
+                            recordedWeightPerCableKg
+                        },
                         loggedRpe = coordinator._currentSetRpe.value,
                         isPr = false,
                         completedAt = currentTimeMillis(),

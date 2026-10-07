@@ -301,7 +301,7 @@ class WeightDisplaySourceGuardTest {
                 "GUARD VIOLATION: Echo phase weights are per-cable and must not be labeled total.",
             )
             assertTrue(
-                source.contains("unit = \"(\$unitLabel/cable)\""),
+                source.contains("\"(\$unitLabel/cable)\""),
                 "Set Summary set weight should be labeled per-cable.",
             )
         } else {

@@ -33,6 +33,7 @@ import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -118,7 +119,20 @@ fun SetSummaryCard(
     // so it only needs unit conversion.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit)
+    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    // Issue #1182: an Echo set's primary load is the ACHIEVED measured peak ("Peak load"),
+    // never the configured seed. A fixed-load set keeps its configured "Set Weight". When an
+    // Echo set has no accepted measurement we show "Load unavailable" (not the seed, not 0).
+    val achievedEchoLoadKg = if (summary.isEchoMode) EchoAchievedLoadResolver.fromSummary(summary) else null
+    val setWeightLabel = if (summary.isEchoMode) "Peak load" else "Set Weight"
+    val setWeightValueText: String = if (summary.isEchoMode) {
+        achievedEchoLoadKg
+            ?.let { WeightDisplayFormatter.toDisplayWeight(it, weightUnit).roundToInt().toString() }
+            ?: "Load unavailable"
+    } else {
+        WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit).roundToInt().toString()
+    }
+    val setWeightUnitText: String = if (summary.isEchoMode && achievedEchoLoadKg == null) "" else "($unitLabel/cable)"
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 
@@ -128,8 +142,6 @@ fun SetSummaryCard(
     val peakEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB), weightUnit)
     val avgConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), weightUnit)
     val avgEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), weightUnit)
-
-    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -205,9 +217,9 @@ fun SetSummaryCard(
                     modifier = Modifier.weight(1f),
                 )
                 SummaryStatCard(
-                    label = "Set Weight",
-                    value = "${setWeightDisplay.roundToInt()}",
-                    unit = "($unitLabel/cable)",
+                    label = setWeightLabel,
+                    value = setWeightValueText,
+                    unit = setWeightUnitText,
                     icon = Icons.Default.FitnessCenter,
                     modifier = Modifier.weight(1f),
                 )
