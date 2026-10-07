@@ -392,31 +392,6 @@ class ProfilePreferencesCodecTest {
         assertEquals(legacy, document.toLegacySingleExerciseDefaults())
     }
 
-    @Test
-    fun justLiftDefaultsMapToDocumentWithoutLoss() {
-        val legacy = JustLiftDefaults(
-            workoutModeId = 10,
-            weightPerCableKg = 24.5f,
-            weightChangePerRep = -0.5f,
-            eccentricLoadPercentage = 130,
-            echoLevelValue = 3,
-            stallDetectionEnabled = false,
-            repCountTimingName = "BOTTOM",
-            restSeconds = 75,
-        )
-
-        val document = legacy.toDocument()
-
-        assertEquals(legacy.workoutModeId, document.workoutModeId)
-        assertEquals(legacy.weightPerCableKg, document.weightPerCableKg)
-        assertEquals(legacy.weightChangePerRep, document.weightChangePerRep)
-        assertEquals(legacy.eccentricLoadPercentage, document.eccentricLoadPercentage)
-        assertEquals(legacy.echoLevelValue, document.echoLevelValue)
-        assertEquals(legacy.stallDetectionEnabled, document.stallDetectionEnabled)
-        assertEquals(legacy.repCountTimingName, document.repCountTimingName)
-        assertEquals(legacy.restSeconds, document.restSeconds)
-    }
-
     private fun assertValid(errors: List<String>, case: String) {
         assertTrue(errors.isEmpty(), "Expected valid $case, got $errors")
     }

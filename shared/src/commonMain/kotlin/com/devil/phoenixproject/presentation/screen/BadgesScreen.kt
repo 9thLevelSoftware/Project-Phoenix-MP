@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.presentation.components.getBadgeIcon
+import com.devil.phoenixproject.presentation.components.getCategoryIcon
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -28,7 +30,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -634,46 +635,4 @@ private fun BadgeDetailDialog(badgeWithProgress: BadgeWithProgress, onDismiss: (
             }
         },
     )
-}
-
-// Helper functions
-private fun getCategoryIcon(category: BadgeCategory): ImageVector = when (category) {
-    BadgeCategory.CONSISTENCY -> Icons.Default.LocalFireDepartment
-    BadgeCategory.STRENGTH -> Icons.Default.EmojiEvents
-    BadgeCategory.VOLUME -> Icons.Default.Repeat
-    BadgeCategory.EXPLORER -> Icons.Default.Explore
-    BadgeCategory.DEDICATION -> Icons.Default.FitnessCenter
-}
-
-private fun getBadgeIcon(iconResource: String): ImageVector = when (iconResource) {
-    "fire" -> Icons.Default.LocalFireDepartment
-
-    "trophy" -> Icons.Default.EmojiEvents
-
-    "dumbbell" -> Icons.Default.FitnessCenter
-
-    "repeat" -> Icons.Default.Repeat
-
-    "compass" -> Icons.Default.Explore
-
-    "calendar" -> Icons.Default.CalendarMonth
-
-    "sun" -> Icons.Default.WbSunny
-
-    "moon" -> Icons.Default.NightsStay
-
-    "weight" -> Icons.Default.FitnessCenter
-
-    "lightning" -> Icons.Default.Bolt
-
-    "body" -> Icons.Default.Accessibility
-
-    "phoenix" -> Icons.Default.LocalFireDepartment
-
-    // Phoenix uses fire icon
-    "shield" -> Icons.Default.Shield
-
-    "list" -> Icons.Default.Checklist
-
-    else -> Icons.Default.Star
 }

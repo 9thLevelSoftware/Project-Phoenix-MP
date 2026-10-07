@@ -7,7 +7,7 @@ import java.io.File
 
 internal const val PREFERENCE_MIGRATION_MARKER = "__phoenix_preference_filename_migration_v1"
 
-internal object AndroidPreferenceFileNames {
+private object AndroidPreferenceFileNames {
     const val LEGACY_PLAINTEXT = "vitruvian_preferences"
     const val TARGET_PLAINTEXT = "phoenix_preferences"
     const val RECOVERY_PLAINTEXT = "phoenix_preferences_recovery"

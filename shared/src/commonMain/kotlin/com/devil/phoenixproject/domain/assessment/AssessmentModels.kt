@@ -36,11 +36,9 @@ data class LoadVelocityPoint(val loadKg: Float, val meanVelocityMs: Float)
  *
  * @property setNumber 1-indexed set number in the assessment
  * @property loadKg Weight used for this set in kilograms
- * @property reps Number of reps performed
  * @property meanVelocityMs Mean concentric velocity in meters/second
- * @property peakVelocityMs Peak concentric velocity in meters/second
  */
-data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val reps: Int, val meanVelocityMs: Float, val peakVelocityMs: Float)
+data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val meanVelocityMs: Float)
 
 /**
  * Final assessment output with estimated 1RM and regression quality metrics.
@@ -48,13 +46,11 @@ data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val reps: 
  * @property estimatedOneRepMaxKg Estimated one-rep max extrapolated from load-velocity regression
  * @property loadVelocityPoints Data points used for the regression
  * @property r2 R-squared value indicating regression fit quality (0.0 to 1.0)
- * @property velocityAt1RM The velocity threshold used for 1RM extrapolation (m/s)
  */
 data class AssessmentResult(
     val estimatedOneRepMaxKg: Float,
     val loadVelocityPoints: List<LoadVelocityPoint>,
-    val r2: Float,
-    val velocityAt1RM: Float,
+    val r2: Float
 )
 
 /**

@@ -51,7 +51,6 @@ class AssessmentEngineTest {
             "1RM should be approximately 108.67kg",
         )
         assertEquals(2, result.loadVelocityPoints.size)
-        assertEquals(0.17f, result.velocityAt1RM)
     }
 
     @Test
@@ -223,7 +222,6 @@ class AssessmentEngineTest {
         assertNotNull(result)
         // At 0.2 m/s: load = (0.2 - 1.8) / -0.015 = 106.67
         assertEquals(106.67f, result.estimatedOneRepMaxKg, tolerance)
-        assertEquals(0.2f, result.velocityAt1RM)
     }
 
     // =========================================================================

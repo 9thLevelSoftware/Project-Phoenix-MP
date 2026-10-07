@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -868,7 +869,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 ?: RoutineIdentity.canonicalize(generateUUID())
 
             db.transaction {
-                val routineId = resolveSavedRoutineId(requestedId, routine.profileId, routine.name)
+                val routineId = resolveWritableRoutineId(requestedId, routine.profileId, routine.name)
                     ?: return@transaction
                 writeRoutineRows(routine, routineId)
             }
@@ -878,21 +879,36 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
     }
 
     /**
-     * Issue #1162: resolve the saved identity to its existing owner-scoped primary key
-     * (a validated-UUID case variant or genuine `serverId` alias of an existing row
-     * resolves to that row instead of creating a canonical alias). A primary key
-     * already owned by another profile is never written. Returns null when the save
-     * must be skipped. Must run inside a [db.transaction] block.
+     * Issue #1162 write boundary: the one owner-scoped primary key this identity may
+     * write, or null when the write must be refused. Every caller of [writeRoutineRows]
+     * resolves here first, so the same resolver/owner/tombstone guards hold before all
+     * routine writes:
+     * - a primary key already owned by another profile is never written;
+     * - a deleted identity is never silently resurrected. The tombstone check runs on
+     *   the pure candidate read before alias reconciliation, so a refused write also
+     *   leaves already-split rows untouched.
+     * A validated-UUID case variant or genuine `serverId` alias of an existing row
+     * resolves to that row instead of creating a canonical alias. Returns null when the
+     * write must be skipped. Must run inside a [db.transaction] block.
      */
-    private fun resolveSavedRoutineId(requestedId: String, profileId: String, routineName: String): String? {
-        val resolution = routineIdentityResolver.resolve(requestedId, scopeProfileId = profileId) {
-            it.profile_id == profileId
+    private fun resolveWritableRoutineId(requestedId: String, profileId: String, routineName: String): String? {
+        val ownerScope: (RoutineRow) -> Boolean = { it.profile_id == profileId }
+        val tombstone = routineIdentityResolver
+            .findCandidates(requestedId, scopeProfileId = profileId, scopeMatches = ownerScope)
+            .firstOrNull { it.deletedAt != null }
+        if (tombstone != null) {
+            Logger.e("WorkoutRepository") {
+                "Skipping write of routine '$routineName': identity '$requestedId' is deleted locally " +
+                    "('${tombstone.id}'); a deleted identity is never resurrected by a write"
+            }
+            return null
         }
+        val resolution = routineIdentityResolver.resolve(requestedId, scopeProfileId = profileId, scopeMatches = ownerScope)
         val foreignRow = queries.selectRoutineById(resolution.localId).executeAsOneOrNull()
             ?.takeIf { it.profile_id != profileId }
         if (foreignRow != null) {
             Logger.e("WorkoutRepository") {
-                "Skipping save of routine '$routineName': primary key '${resolution.localId}' " +
+                "Skipping write of routine '$routineName': primary key '${resolution.localId}' " +
                     "belongs to profile '${foreignRow.profile_id}', not '$profileId'"
             }
             return null
@@ -928,45 +944,110 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             groupId = routine.groupId,
         )
 
-        // Delete existing supersets and exercises before re-inserting
+        // Reconcile supersets and exercises in place; only genuinely removed children
+        // are deleted (see rebuildRoutineChildren).
         rebuildRoutineChildren(routine, routineId)
     }
 
     /**
-     * Delete-and-rebuild the routine's supersets and exercises, keeping each existing
-     * child's primary key text when the model child is a validated-UUID case variant
-     * of it (Issue #1162), so planned-set parents and completed-set references stay
-     * attached. Callers run it inside a transaction.
+     * Reconcile the routine's supersets and exercises against the model in place
+     * (Issue #1162). A model child that matches an existing row of this routine by
+     * identity — its own primary-key text, or a validated-UUID case variant of it —
+     * updates that row in place instead of delete + re-insert. The old delete-and-
+     * rebuild fired RoutineExercise's cascading foreign keys immediately: PlannedSet
+     * rows were deleted (ON DELETE CASCADE) and CompletedSet.planned_set_id was NULLed
+     * (ON DELETE SET NULL) before the same primary key came back, and a same-PK
+     * re-insert cannot undo either action. Only children the model genuinely removed
+     * are deleted now, and never a row owned by another routine. Callers run it inside
+     * a transaction.
      */
     private fun rebuildRoutineChildren(routine: Routine, routineId: String) {
         val previousDurations = snapshotRoutineExerciseDurations(routineId)
-        // Issue #1162: stabilize child ids against the existing local rows first. A
-        // model child whose id is only a case variant of an existing child keeps that
-        // row's primary key text through the rebuild, so planned-set parents and
-        // completed-set references stay attached. Supersets first: RoutineExercise
-        // .supersetId references them.
-        val existingSupersetIdByKey = queries.selectSupersetsByRoutine(routineId).executeAsList()
-            .associate { RoutineIdentity.canonicalize(it.id) to it.id }
-        val existingExerciseIdByKey = queries.selectExercisesByRoutine(routineId).executeAsList()
-            .associate { RoutineIdentity.canonicalize(it.id) to it.id }
-        queries.deleteSupersetsByRoutine(routineId)
-        queries.deleteRoutineExercises(routineId)
+        val existingSupersets = queries.selectSupersetsByRoutine(routineId).executeAsList()
+        val existingExercises = queries.selectExercisesByRoutine(routineId).executeAsList()
 
+        // Supersets first: RoutineExercise.supersetId references them.
+        val matchedSupersetIds = HashSet<String>()
         val supersetIdByModelId = HashMap<String, String>()
         routine.supersets.forEach { superset ->
-            val stableId = existingSupersetIdByKey[RoutineIdentity.canonicalize(superset.id)] ?: superset.id
+            val existing = matchExistingChild(existingSupersets, matchedSupersetIds, superset.id) { it.id }
+            val stableId = existing?.id ?: superset.id
             supersetIdByModelId[superset.id] = stableId
-            insertSuperset(routineId, superset.copy(id = stableId))
+            if (existing != null) {
+                queries.updateSuperset(
+                    name = superset.name,
+                    colorIndex = superset.colorIndex.toLong(),
+                    restBetweenSeconds = superset.restBetweenSeconds.toLong(),
+                    orderIndex = superset.orderIndex.toLong(),
+                    id = stableId,
+                )
+            } else {
+                rejectForeignChildPrimaryKey("superset", superset.id, routineId)
+                insertSuperset(routineId, superset.copy(id = stableId))
+            }
         }
 
+        val matchedExerciseIds = HashSet<String>()
         routine.exercises.forEachIndexed { index, exercise ->
-            val stableId = existingExerciseIdByKey[RoutineIdentity.canonicalize(exercise.id)] ?: exercise.id
-            val stableSupersetId = exercise.supersetId?.let { supersetIdByModelId[it] ?: it }
-            insertRoutineExercise(
-                routineId,
-                exercise.copy(id = stableId, supersetId = stableSupersetId),
-                index,
-                previousDurations,
+            val existing = matchExistingChild(existingExercises, matchedExerciseIds, exercise.id) { it.id }
+            if (existing == null) {
+                rejectForeignChildPrimaryKey("exercise", exercise.id, routineId)
+            }
+            val row = exercise.copy(
+                id = existing?.id ?: exercise.id,
+                supersetId = exercise.supersetId?.let { supersetIdByModelId[it] ?: it },
+            )
+            writeRoutineExerciseRow(routineId, row, index, previousDurations, existingRowId = existing?.id)
+        }
+
+        // Children the model no longer has are the only rows deleted. A row whose
+        // identity is still in the model (e.g. a duplicate UUID-case alias row no
+        // model child claimed) stays put rather than cascading its planned sets away.
+        val keptExerciseKeys = routine.exercises.mapTo(HashSet()) { RoutineIdentity.canonicalize(it.id) }
+        existingExercises.filter { RoutineIdentity.canonicalize(it.id) !in keptExerciseKeys }
+            .forEach { queries.deleteRoutineExerciseById(it.id) }
+        val keptSupersetKeys = routine.supersets.mapTo(HashSet()) { RoutineIdentity.canonicalize(it.id) }
+        existingSupersets.filter { RoutineIdentity.canonicalize(it.id) !in keptSupersetKeys }
+            .forEach { queries.deleteSuperset(it.id) }
+    }
+
+    /**
+     * The existing child row a model child updates in place: its own primary-key text
+     * first, then a validated-UUID case variant no other model child has taken. Only
+     * the routine's own rows are ever matched, so a primary key owned by another
+     * routine is never updated through an identity match.
+     */
+    private fun <T> matchExistingChild(
+        existing: List<T>,
+        taken: MutableSet<String>,
+        modelId: String,
+        idOf: (T) -> String,
+    ): T? {
+        val match = existing.firstOrNull { idOf(it) !in taken && idOf(it) == modelId }
+            ?: existing.firstOrNull {
+                idOf(it) !in taken &&
+                    RoutineIdentity.canonicalize(idOf(it)) == RoutineIdentity.canonicalize(modelId)
+            }
+        if (match != null) taken += idOf(match)
+        return match
+    }
+
+    /**
+     * A model child whose primary key is not one of this routine's rows must not
+     * overwrite the same key on another routine (CSV imports and restores can carry
+     * ids already stored elsewhere). Fail the transaction with an actionable error
+     * instead of mutating the other row.
+     */
+    private fun rejectForeignChildPrimaryKey(kind: String, childId: String, routineId: String) {
+        if (childId.isBlank()) return
+        val taken = when (kind) {
+            "superset" -> queries.selectSupersetById(childId).executeAsOneOrNull() != null
+            else -> queries.selectRoutineExerciseById(childId).executeAsOneOrNull() != null
+        }
+        if (taken) {
+            throw IllegalStateException(
+                "Routine child conflict: $kind '$childId' (requested for routine '$routineId') " +
+                    "already belongs to another routine; refusing to overwrite it",
             )
         }
     }
@@ -1005,94 +1086,190 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                     )
                 }
                 for (routine in routines) {
-                    writeRoutineRows(routine.copy(profileId = profileId), routine.id)
+                    // Issue #1162 write boundary: the same resolver/owner/tombstone
+                    // guards as saveRoutine hold before every writeRoutineRows write.
+                    // A case-variant id updates the existing identity instead of
+                    // inserting a second logical UUID, a raw primary key owned by
+                    // another profile is never written, and a deleted identity is
+                    // never silently resurrected. Each of those is an actionable
+                    // import conflict, not a silent mutation.
+                    val routineId = resolveWritableRoutineId(routine.id, profileId, routine.name)
+                        ?: throw RoutineCsvImportConflictException(routine.id)
+                    writeRoutineRows(routine.copy(profileId = profileId), routineId)
                 }
             }
             Logger.d { "Committed CSV import: ${routines.size} routines, ${newGroups.size} new groups" }
         }
     }
 
-    /** Local (duration, durationSyncKnown) per routine exercise id, read before a delete-and-reinsert. */
+    /** Local (duration, durationSyncKnown) per routine exercise id, read before the child rows are written. */
     private fun snapshotRoutineExerciseDurations(routineId: String): Map<String, Pair<Long?, Long>> =
         queries.selectExercisesByRoutine(routineId).executeAsList()
             .associate { it.id to (it.duration to it.durationSyncKnown) }
 
-    private fun insertRoutineExercise(
+    /**
+     * Write one routine exercise row. A non-null [existingRowId] updates that row in
+     * place (Issue #1162: an identity-matched child is never deleted first, so its
+     * PlannedSet rows and CompletedSet planned-set links stay attached); null inserts
+     * a new row. Callers run it inside a transaction.
+     */
+    private fun writeRoutineExerciseRow(
         routineId: String,
         exercise: RoutineExercise,
         index: Int,
         previousDurations: Map<String, Pair<Long?, Long>>,
+        existingRowId: String?,
     ) {
         // Generate a UUID for the exercise if not provided (canonical lowercase text)
-        val exerciseRowId = exercise.id.takeIf { it.isNotBlank() }
+        val exerciseRowId = existingRowId
+            ?: exercise.id.takeIf { it.isNotBlank() }
             ?: RoutineIdentity.canonicalize(generateUUID())
 
-        queries.insertRoutineExercise(
-            id = exerciseRowId,
-            routineId = routineId,
-            exerciseName = exercise.exercise.name,
-            exerciseMuscleGroup = exercise.exercise.muscleGroup,
-            exerciseEquipment = exercise.exercise.equipment,
-            exerciseDefaultCableConfig = "DOUBLE", // Legacy field - no longer used
-            exerciseId = exercise.exercise.id,
-            cableConfig = "DOUBLE", // Legacy field - no longer used
-            orderIndex = index.toLong(),
-            setReps = exercise.setReps.joinToString(",") { it?.toString() ?: "AMRAP" },
-            weightPerCableKg = exercise.weightPerCableKg.toDouble(),
-            setWeights = exercise.setWeightsPerCableKg.joinToString(","),
-            mode = serializeProgramMode(exercise.programMode),
-            eccentricLoad = exercise.eccentricLoad.percentage.toLong(),
-            echoLevel = exercise.echoLevel.ordinal.toLong(),
-            progressionKg = exercise.progressionKg.toDouble(),
-            restSeconds = exercise.setRestSeconds.firstOrNull()?.toLong() ?: 60L,
-            duration = exercise.duration?.toLong(),
-            setRestSeconds = json.encodeToString(exercise.setRestSeconds),
-            perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
-            isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-            supersetId = exercise.supersetId,
-            orderInSuperset = exercise.orderInSuperset.toLong(),
-            // PR percentage scaling fields
-            usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
-            weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
-            prTypeForScaling = exercise.prTypeForScaling.name,
-            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) {
-                null
-            } else {
-                json.encodeToString(
-                    exercise.setWeightsPercentOfPR,
-                )
-            },
-            // Per-exercise behavior overrides
-            stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-            stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-            repCountTiming = exercise.repCountTiming.name,
-            // Per-set echo levels (stored as JSON array of nullable ordinals)
-            setEchoLevels = if (exercise.setEchoLevels.isEmpty()) {
-                ""
-            } else {
-                json.encodeToString(exercise.setEchoLevels.map { it?.ordinal })
-            },
-            // Variable warm-up sets (Phase 35C)
-            warmupSets = if (exercise.warmupSets.isEmpty()) {
-                ""
-            } else {
-                json.encodeToString(exercise.warmupSets)
-            },
-            defaultRackItemIds = json.encodeToString(
-                exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
-            ),
-            rackBehaviorOverrides = if (exercise.rackBehaviorOverrides.isEmpty()) {
-                "{}"
-            } else {
-                json.encodeToString(exercise.rackBehaviorOverrides)
-            },
-            scalingBasis = exercise.scalingBasis?.name,
-            // #635: persist the explicit flag so reloads and sync keep the exact
-            // classification (null = derive from equipment, pre-migration behavior)
-            isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L },
-            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
-            dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
+        val exerciseName = exercise.exercise.name
+        val exerciseMuscleGroup = exercise.exercise.muscleGroup
+        val exerciseEquipment = exercise.exercise.equipment
+        val exerciseDefaultCableConfig = "DOUBLE" // Legacy field - no longer used
+        val exerciseId = exercise.exercise.id
+        val cableConfig = "DOUBLE" // Legacy field - no longer used
+        val orderIndex = index.toLong()
+        val setReps = exercise.setReps.joinToString(",") { it?.toString() ?: "AMRAP" }
+        val weightPerCableKg = exercise.weightPerCableKg.toDouble()
+        val setWeights = exercise.setWeightsPerCableKg.joinToString(",")
+        val mode = serializeProgramMode(exercise.programMode)
+        val eccentricLoad = exercise.eccentricLoad.percentage.toLong()
+        val echoLevel = exercise.echoLevel.ordinal.toLong()
+        val progressionKg = exercise.progressionKg.toDouble()
+        val restSeconds = exercise.setRestSeconds.firstOrNull()?.toLong() ?: 60L
+        val duration = exercise.duration?.toLong()
+        val setRestSeconds = json.encodeToString(exercise.setRestSeconds)
+        val perSetRestTime = if (exercise.perSetRestTime) 1L else 0L
+        val isAMRAP = if (exercise.isAMRAP) 1L else 0L
+        val supersetId = exercise.supersetId
+        val orderInSuperset = exercise.orderInSuperset.toLong()
+        // PR percentage scaling fields
+        val usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L
+        val weightPercentOfPR = exercise.weightPercentOfPR.toLong()
+        val prTypeForScaling = exercise.prTypeForScaling.name
+        val setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) {
+            null
+        } else {
+            json.encodeToString(
+                exercise.setWeightsPercentOfPR,
+            )
+        }
+        // Per-exercise behavior overrides
+        val stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L
+        val stopAtTop = if (exercise.stopAtTop) 1L else 0L
+        val repCountTiming = exercise.repCountTiming.name
+        // Per-set echo levels (stored as JSON array of nullable ordinals)
+        val setEchoLevels = if (exercise.setEchoLevels.isEmpty()) {
+            ""
+        } else {
+            json.encodeToString(exercise.setEchoLevels.map { it?.ordinal })
+        }
+        // Variable warm-up sets (Phase 35C)
+        val warmupSets = if (exercise.warmupSets.isEmpty()) {
+            ""
+        } else {
+            json.encodeToString(exercise.warmupSets)
+        }
+        val defaultRackItemIds = json.encodeToString(
+            exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
         )
+        val rackBehaviorOverrides = if (exercise.rackBehaviorOverrides.isEmpty()) {
+            "{}"
+        } else {
+            json.encodeToString(exercise.rackBehaviorOverrides)
+        }
+        val scalingBasis = exercise.scalingBasis?.name
+        // #635: persist the explicit flag so reloads and sync keep the exact
+        // classification (null = derive from equipment, pre-migration behavior)
+        val isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L }
+        val dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L
+        val dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble()
+
+        if (existingRowId != null) {
+            queries.updateRoutineExercise(
+                exerciseName = exerciseName,
+                exerciseMuscleGroup = exerciseMuscleGroup,
+                exerciseEquipment = exerciseEquipment,
+                exerciseDefaultCableConfig = exerciseDefaultCableConfig,
+                exerciseId = exerciseId,
+                cableConfig = cableConfig,
+                orderIndex = orderIndex,
+                setReps = setReps,
+                weightPerCableKg = weightPerCableKg,
+                setWeights = setWeights,
+                mode = mode,
+                eccentricLoad = eccentricLoad,
+                echoLevel = echoLevel,
+                progressionKg = progressionKg,
+                restSeconds = restSeconds,
+                duration = duration,
+                setRestSeconds = setRestSeconds,
+                perSetRestTime = perSetRestTime,
+                isAMRAP = isAMRAP,
+                supersetId = supersetId,
+                orderInSuperset = orderInSuperset,
+                usePercentOfPR = usePercentOfPR,
+                weightPercentOfPR = weightPercentOfPR,
+                prTypeForScaling = prTypeForScaling,
+                setWeightsPercentOfPR = setWeightsPercentOfPR,
+                stallDetectionEnabled = stallDetectionEnabled,
+                stopAtTop = stopAtTop,
+                repCountTiming = repCountTiming,
+                setEchoLevels = setEchoLevels,
+                warmupSets = warmupSets,
+                defaultRackItemIds = defaultRackItemIds,
+                rackBehaviorOverrides = rackBehaviorOverrides,
+                scalingBasis = scalingBasis,
+                isBodyweight = isBodyweight,
+                dropSetEnabled = dropSetEnabled,
+                dropSetMinWeightKg = dropSetMinWeightKg,
+                id = exerciseRowId,
+            )
+        } else {
+            queries.insertRoutineExercise(
+                id = exerciseRowId,
+                routineId = routineId,
+                exerciseName = exerciseName,
+                exerciseMuscleGroup = exerciseMuscleGroup,
+                exerciseEquipment = exerciseEquipment,
+                exerciseDefaultCableConfig = exerciseDefaultCableConfig,
+                exerciseId = exerciseId,
+                cableConfig = cableConfig,
+                orderIndex = orderIndex,
+                setReps = setReps,
+                weightPerCableKg = weightPerCableKg,
+                setWeights = setWeights,
+                mode = mode,
+                eccentricLoad = eccentricLoad,
+                echoLevel = echoLevel,
+                progressionKg = progressionKg,
+                restSeconds = restSeconds,
+                duration = duration,
+                setRestSeconds = setRestSeconds,
+                perSetRestTime = perSetRestTime,
+                isAMRAP = isAMRAP,
+                supersetId = supersetId,
+                orderInSuperset = orderInSuperset,
+                usePercentOfPR = usePercentOfPR,
+                weightPercentOfPR = weightPercentOfPR,
+                prTypeForScaling = prTypeForScaling,
+                setWeightsPercentOfPR = setWeightsPercentOfPR,
+                stallDetectionEnabled = stallDetectionEnabled,
+                stopAtTop = stopAtTop,
+                repCountTiming = repCountTiming,
+                setEchoLevels = setEchoLevels,
+                warmupSets = warmupSets,
+                defaultRackItemIds = defaultRackItemIds,
+                rackBehaviorOverrides = rackBehaviorOverrides,
+                scalingBasis = scalingBasis,
+                isBodyweight = isBodyweight,
+                dropSetEnabled = dropSetEnabled,
+                dropSetMinWeightKg = dropSetMinWeightKg,
+            )
+        }
 
         // Portal sync (PR 13): the duration is known to be current when this build
         // created the row, when it was already known, or when the user changed it.
@@ -1130,7 +1307,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
             db.transaction {
                 // Issue #1162: the update lands on the resolved owner-scoped primary key.
-                val routineId = resolveSavedRoutineId(requestedId, routine.profileId, routine.name)
+                val routineId = resolveWritableRoutineId(requestedId, routine.profileId, routine.name)
                     ?: return@transaction
 
                 // Update the routine
@@ -1141,7 +1318,8 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                     id = routineId,
                 )
 
-                // Delete existing supersets and exercises, then re-insert
+                // Reconcile supersets and exercises in place; only genuinely removed
+                // children are deleted (see rebuildRoutineChildren).
                 rebuildRoutineChildren(routine, routineId)
             }
 

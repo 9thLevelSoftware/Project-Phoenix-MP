@@ -73,7 +73,7 @@ internal fun <T> launchHealthConnectSettingsChain(
     return null
 }
 
-internal fun healthConnectSettingsFailureMessage(index: Int): String = when (index) {
+private fun healthConnectSettingsFailureMessage(index: Int): String = when (index) {
     0 -> "Health Connect app-permissions settings unavailable; opening Health Connect home settings"
     1 -> "Health Connect home settings unavailable; opening app details settings"
     else -> "Failed to open Health Connect settings"

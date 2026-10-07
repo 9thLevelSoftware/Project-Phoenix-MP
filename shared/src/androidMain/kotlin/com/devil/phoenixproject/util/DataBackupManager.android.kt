@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
  * the public Downloads/MediaStore collection, and is removed on uninstall.
  * Before scoped storage, apps holding READ_EXTERNAL_STORAGE can still read it.
  */
-internal fun appSpecificPhoenixBackupsDirectory(
+private fun appSpecificPhoenixBackupsDirectory(
     filesDir: File,
     externalDocumentsDir: () -> File?,
 ): File = File(externalDocumentsDir() ?: filesDir, "PhoenixBackups")

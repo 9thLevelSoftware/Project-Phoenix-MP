@@ -49,6 +49,34 @@ expect fun CompactNumberPicker(
     suffix: String = "",
 )
 
+/**
+ * Integer-step wheel grid shared by the Android and iOS number pickers.
+ *
+ * Each entry is `start + index * step`, clamped to the range. When the last
+ * entry is farther than 0.0001 from the range end, the end is appended so the
+ * maximum stays selectable. A non-positive step or an inverted range yields
+ * an empty list.
+ */
+internal fun compactNumberPickerValues(
+    range: ClosedFloatingPointRange<Float>,
+    step: Float,
+): List<Float> {
+    if (step <= 0f || range.start > range.endInclusive) {
+        return emptyList()
+    }
+    return buildList {
+        val start = range.start
+        val end = range.endInclusive
+        val totalSteps = (((end - start) / step).toInt()).coerceAtLeast(0)
+        for (index in 0..totalSteps) {
+            add((start + (index * step)).coerceIn(start, end))
+        }
+        if (isEmpty() || abs(last() - end) > 0.0001f) {
+            add(end)
+        }
+    }
+}
+
 internal fun formatCompactNumberPickerValue(value: Float, step: Float): String {
     val decimals = decimalPlacesForStep(step)
     val formatted = if (decimals <= 0) {

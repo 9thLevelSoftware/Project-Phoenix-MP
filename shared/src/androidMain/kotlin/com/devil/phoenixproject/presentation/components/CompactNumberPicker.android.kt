@@ -34,15 +34,8 @@ actual fun CompactNumberPicker(
 ) {
     val wheelHeight = if (compactWheel) 96.dp else 120.dp
     val buttonSize = if (compactWheel) 40.dp else 48.dp
-    // Generate array of values based on step
-    val values = remember(range, step) {
-        buildList {
-            var current = range.start
-            while (current <= range.endInclusive) {
-                add(current)
-                current += step
-            }
-        }
+    val values = remember(range.start, range.endInclusive, step) {
+        compactNumberPickerValues(range, step)
     }
 
     // Find current index - use minByOrNull to find CLOSEST value regardless of precision
@@ -305,7 +298,7 @@ internal fun applyCompactNumberPickerState(
     }
 }
 
-internal fun compactNumberPickerLabels(
+private fun compactNumberPickerLabels(
     values: List<Float>,
     step: Float,
     suffix: String,

@@ -174,7 +174,7 @@ class HandleStateDetector(
      *
      * State transitions:
      * - WaitingForRest -> Released: When both handles < 5mm (armed)
-     * - Released/Moving -> Grabbed: When position > threshold AND velocity > threshold (GRAB DETECTED)
+     * - Released/Moving -> Grabbed: When position > threshold AND velocity > threshold, sustained for the dwell (GRAB DETECTED)
      * - Released/Moving -> Moving: When position > threshold but no velocity (intermediate)
      * - Released/Moving -> Released: When position <= threshold (back to rest)
      * - Grabbed -> Released: When handles return to rest (RELEASE DETECTED)

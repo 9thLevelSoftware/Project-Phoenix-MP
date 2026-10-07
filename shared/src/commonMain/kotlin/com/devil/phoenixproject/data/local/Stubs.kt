@@ -13,5 +13,4 @@ data class ConnectionLogEntity(
     val deviceName: String? = null,
     val message: String,
     val details: String? = null,
-    val metadata: String? = null, // Additional metadata as JSON string if needed
 )

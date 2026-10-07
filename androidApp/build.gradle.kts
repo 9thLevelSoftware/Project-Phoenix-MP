@@ -108,10 +108,6 @@ abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
         val host = checkNotNull(uri.host).lowercase()
 
         val addresses = InetAddress.getAllByName(host)
-        if (addresses.isEmpty()) {
-            throw GradleException("Supabase host '$host' did not resolve.")
-        }
-
         println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}, authPath=/auth/v1")
     }
 

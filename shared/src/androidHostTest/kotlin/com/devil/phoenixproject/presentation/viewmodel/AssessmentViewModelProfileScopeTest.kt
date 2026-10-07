@@ -147,8 +147,8 @@ class AssessmentViewModelProfileScopeTest {
         advanceUntilIdle()
         viewModel.selectExerciseById("bench")
         advanceUntilIdle()
-        viewModel.recordSet(40f, 3, 1.0f, 1.1f)
-        viewModel.recordSet(80f, 3, 0.25f, 0.30f)
+        viewModel.recordSet(40f, 1.0f)
+        viewModel.recordSet(80f, 0.25f)
         assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
     }
 }

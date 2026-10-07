@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.integration
 
 import com.devil.phoenixproject.domain.model.IntegrationProvider
-import com.devil.phoenixproject.domain.model.WeightUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -57,7 +56,7 @@ class CsvImporterTest {
 
     @Test
     fun parse_unknownFormat_returnsPreviewWithError() {
-        val preview = CsvImporter.parse("col1,col2\n1,2", WeightUnit.KG)
+        val preview = CsvImporter.parse("col1,col2\n1,2")
         assertEquals(CsvFormat.UNKNOWN, preview.format)
         assertTrue(preview.activities.isEmpty())
         assertTrue(preview.errors.isNotEmpty())
@@ -70,7 +69,7 @@ class CsvImporterTest {
     @Test
     fun strongCsv_exportFormulaGuard_strippedFromWorkoutName() {
         val csv = strongCsv("2023-10-15 09:30:00,'=Push Day,1h 0m,Bench Press,1,80,10,,,, ")
-        val preview = CsvImporter.parse(csv, WeightUnit.KG, "user1", isPaidUser = true)
+        val preview = CsvImporter.parse(csv, "user1", isPaidUser = true)
         assertEquals("=Push Day", preview.activities.single().name)
     }
 
@@ -80,7 +79,7 @@ class CsvImporterTest {
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
                 "2023-10-15 09:30:00,Push Day,1h 0m,Overhead Press,2,60,10,,,, ",
         )
-        val preview = CsvImporter.parse(csv, WeightUnit.KG, "user1", isPaidUser = true)
+        val preview = CsvImporter.parse(csv, "user1", isPaidUser = true)
         assertEquals(CsvFormat.STRONG, preview.format)
         assertEquals(1, preview.activities.size, "Two rows with same workout key → one activity")
         assertEquals("Push Day", preview.activities[0].name)
@@ -97,7 +96,7 @@ class CsvImporterTest {
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
                 "2023-10-16 07:00:00,Leg Day,45m,Squat,1,100,8,,,, ",
         )
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         assertEquals(2, preview.activities.size)
         assertEquals("Push Day", preview.activities[0].name)
         assertEquals("Leg Day", preview.activities[1].name)
@@ -108,8 +107,8 @@ class CsvImporterTest {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, ",
         )
-        val preview1 = CsvImporter.parse(csv, WeightUnit.KG)
-        val preview2 = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview1 = CsvImporter.parse(csv)
+        val preview2 = CsvImporter.parse(csv)
 
         // External IDs must be identical across two parses of the same content
         assertEquals(
@@ -127,14 +126,14 @@ class CsvImporterTest {
     @Test
     fun strongCsv_needsSync_falseForFreeUser() {
         val csv = strongCsv("2023-10-15 09:30:00,Leg Day,30m,Squat,1,100,5,,,, ")
-        val preview = CsvImporter.parse(csv, WeightUnit.KG, isPaidUser = false)
+        val preview = CsvImporter.parse(csv, isPaidUser = false)
         assertEquals(false, preview.activities[0].needsSync)
     }
 
     @Test
     fun strongCsv_headerOnly_returnsEmptyActivities() {
         val csv = "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes"
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         assertEquals(CsvFormat.STRONG, preview.format)
         assertTrue(preview.activities.isEmpty())
         assertNull(preview.dateRange)
@@ -143,7 +142,7 @@ class CsvImporterTest {
     @Test
     fun strongCsv_emptyContent_returnsError() {
         // Blank content → UNKNOWN format (no headers to detect)
-        val preview = CsvImporter.parse("", WeightUnit.KG)
+        val preview = CsvImporter.parse("")
         assertEquals(CsvFormat.UNKNOWN, preview.format)
         assertTrue(preview.errors.isNotEmpty())
     }
@@ -158,7 +157,7 @@ class CsvImporterTest {
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
                 "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, ",
         )
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         assertNotNull(preview.dateRange)
         val (earliest, latest) = preview.dateRange!!
         assertTrue(earliest < latest, "Earliest should be before latest")
@@ -170,7 +169,7 @@ class CsvImporterTest {
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
                 "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, ",
         )
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         // 1h = 3600s, 30m = 1800s, total = 5400s
         assertEquals(5400L, preview.totalDurationSeconds)
     }
@@ -185,7 +184,7 @@ class CsvImporterTest {
             "Push Day,2023-10-15T09:30:00Z,2023-10-15T10:30:00Z,,Bench Press,,,,80,10,,,\n" +
                 "Push Day,2023-10-15T09:30:00Z,2023-10-15T10:30:00Z,,Overhead Press,,,,60,10,,,",
         )
-        val preview = CsvImporter.parse(csv, WeightUnit.KG, "user2", isPaidUser = true)
+        val preview = CsvImporter.parse(csv, "user2", isPaidUser = true)
         assertEquals(CsvFormat.HEVY, preview.format)
         assertEquals(1, preview.activities.size, "Two rows same key → one activity")
         assertEquals("Push Day", preview.activities[0].name)
@@ -198,8 +197,8 @@ class CsvImporterTest {
     @Test
     fun hevyCsv_externalId_isDeterministic() {
         val csv = hevyCsv("Pull Day,2023-11-01T06:00:00Z,2023-11-01T07:00:00Z,,Deadlift,,,,120,5,,,")
-        val p1 = CsvImporter.parse(csv, WeightUnit.KG)
-        val p2 = CsvImporter.parse(csv, WeightUnit.KG)
+        val p1 = CsvImporter.parse(csv)
+        val p2 = CsvImporter.parse(csv)
         assertEquals(p1.activities[0].externalId, p2.activities[0].externalId)
         assertTrue(p1.activities[0].externalId.startsWith("hevy-pull_day-"))
     }
@@ -208,7 +207,7 @@ class CsvImporterTest {
     fun hevyCsv_localDateFallback_parsedAsLocalTime() {
         // Hevy sometimes exports without timezone — should still parse
         val csv = hevyCsv("Morning Lift,2023-10-15 09:30:00,2023-10-15 10:00:00,,Squat,,,,100,8,,,")
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         assertEquals(1, preview.activities.size)
         assertTrue(preview.activities[0].startedAt > 0L)
         // 30-minute session
@@ -218,7 +217,7 @@ class CsvImporterTest {
     @Test
     fun hevyCsv_headerOnly_returnsEmptyActivities() {
         val csv = "title,start_time,end_time,description,exercise_title,superset_id,notes,set_index,weight_kg,reps,distance_km,duration_seconds,rpe"
-        val preview = CsvImporter.parse(csv, WeightUnit.KG)
+        val preview = CsvImporter.parse(csv)
         assertEquals(CsvFormat.HEVY, preview.format)
         assertTrue(preview.activities.isEmpty())
         assertNull(preview.dateRange)

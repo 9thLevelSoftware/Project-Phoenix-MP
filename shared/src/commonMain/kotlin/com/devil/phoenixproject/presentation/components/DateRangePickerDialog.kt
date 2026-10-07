@@ -34,10 +34,9 @@ private enum class DateRangeOption(val label: String, val daysBack: Int?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateRangePickerDialog(
-    totalRecords: Int,
     onDateRangeSelected: (startDate: Long?, endDate: Long?) -> Unit,
     onDismiss: () -> Unit,
-    filterRecordCount: (startDate: Long?, endDate: Long?) -> Int = { _, _ -> totalRecords },
+    filterRecordCount: (startDate: Long?, endDate: Long?) -> Int,
 ) {
     var selectedOption by remember { mutableStateOf(DateRangeOption.ALL_TIME) }
 

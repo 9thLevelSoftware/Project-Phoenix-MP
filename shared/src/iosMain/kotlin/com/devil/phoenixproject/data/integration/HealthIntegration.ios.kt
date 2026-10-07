@@ -274,7 +274,7 @@ actual class HealthIntegration : HealthWorkoutWriter {
             val startDate = NSDate.dateWithTimeIntervalSince1970(epochSeconds)
 
             val durationMs = (data.endTimeMs - data.startTimeMs).coerceAtLeast(1000L)
-            val durationSeconds = (durationMs / 1000L).toDouble()
+            val durationSeconds = durationMs / 1000.0
             val endDate = NSDate.dateWithTimeIntervalSince1970(epochSeconds + durationSeconds)
 
             // Build optional calorie quantity. Active energy permission is optional; do not block workout sync.

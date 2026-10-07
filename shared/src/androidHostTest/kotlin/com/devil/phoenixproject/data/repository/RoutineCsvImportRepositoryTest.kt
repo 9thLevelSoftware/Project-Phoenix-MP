@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** Issue #772: the CSV import commit against real SQLite (foreign keys on). */
@@ -155,6 +156,117 @@ class RoutineCsvImportRepositoryTest {
             repository.commitRoutineCsvImport("p1", plan.newGroups, plan.writes, plan.overwriteRoutineIds)
         }
         assertEquals("p2", repository.getRoutineById("r1")?.profileId)
+    }
+
+    // ===== Issue #1162 write-boundary guards (merge gate R2) =====
+
+    private val csvRoutineId = "abcdefab-1234-4abc-8def-abcdef123456"
+    private val csvChildId = "1111aaaa-2222-3333-4444-555566667777"
+
+    /** An import write as the repository boundary sees it: one routine with one child. */
+    private fun importWrite(
+        id: String,
+        name: String,
+        childId: String = csvChildId,
+        profileId: String = "p1",
+    ) = Routine(
+        id = id,
+        name = name,
+        profileId = profileId,
+        exercises = listOf(
+            RoutineExercise(
+                id = childId,
+                exercise = bench,
+                orderIndex = 0,
+                setReps = listOf(5),
+                weightPerCableKg = 50f,
+                setWeightsPerCableKg = listOf(50f),
+                setRestSeconds = listOf(90),
+            ),
+        ),
+    )
+
+    /**
+     * Merge gate R2: a CSV write whose id is only a UUID-case variant of an existing
+     * identity updates that identity instead of inserting a second logical UUID, and
+     * its case-variant child id updates the existing child row in place.
+     */
+    @Test
+    fun aCaseVariantImportUpdatesTheExistingIdentityInsteadOfDuplicatingIt() = runTest {
+        repository.saveRoutine(importWrite(csvRoutineId, "Push"))
+
+        repository.commitRoutineCsvImport(
+            "p1",
+            emptyList(),
+            listOf(importWrite(csvRoutineId.uppercase(), "Push Renamed", csvChildId.uppercase())),
+            emptySet(),
+        )
+
+        val stored = repository.getRoutineHeaders("p1")
+        assertEquals(1, stored.size, "a case-variant import must not duplicate the identity")
+        assertEquals(csvRoutineId, stored.single().id, "the stored routine primary key is preserved")
+        assertEquals("Push Renamed", stored.single().name, "the import landed on the resolved identity")
+        val children = database.phoenixDatabaseQueries.selectExercisesByRoutine(csvRoutineId).executeAsList()
+        assertEquals(listOf(csvChildId), children.map { it.id }, "the stored child primary key is preserved")
+    }
+
+    /**
+     * Merge gate R2: a raw primary-key collision with another profile's routine is an
+     * actionable import conflict and never mutates that profile's row or children.
+     */
+    @Test
+    fun aRawPrimaryKeyCollisionNeverMutatesAnotherProfile() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("p2", "Partner", 1L, 1L, 0L)
+        repository.saveRoutine(importWrite(csvRoutineId, "Partner Push", profileId = "p2"))
+
+        assertFailsWith<RoutineCsvImportConflictException> {
+            repository.commitRoutineCsvImport(
+                "p1",
+                emptyList(),
+                listOf(importWrite(csvRoutineId, "Imported Push")),
+                emptySet(),
+            )
+        }
+
+        val foreign = database.phoenixDatabaseQueries.selectRoutineById(csvRoutineId).executeAsOne()
+        assertEquals("p2", foreign.profile_id, "the foreign row's profile is unchanged")
+        assertEquals("Partner Push", foreign.name, "the foreign row is not mutated")
+        assertEquals(
+            listOf(csvChildId),
+            database.phoenixDatabaseQueries.selectExercisesByRoutine(csvRoutineId).executeAsList().map { it.id },
+            "the foreign row's children are unchanged",
+        )
+        assertTrue(repository.getRoutineHeaders("p1").isEmpty(), "nothing is written for the importing profile")
+    }
+
+    /**
+     * Merge gate R2: a deleted identity is never silently resurrected — not by its own
+     * primary key and not by a UUID-case variant spelling of it.
+     */
+    @Test
+    fun aDeletedIdentityIsNotResurrectedByImport() = runTest {
+        repository.saveRoutine(importWrite(csvRoutineId, "Push"))
+        repository.deleteRoutine(csvRoutineId)
+
+        assertFailsWith<RoutineCsvImportConflictException> {
+            repository.commitRoutineCsvImport(
+                "p1",
+                emptyList(),
+                listOf(importWrite(csvRoutineId.uppercase(), "Imported Push")),
+                emptySet(),
+            )
+        }
+
+        assertTrue(repository.getRoutineHeaders("p1").isEmpty(), "the deleted identity stays deleted")
+        assertEquals(
+            1,
+            database.phoenixDatabaseQueries.selectAllRoutinesSync().executeAsList().size,
+            "no case-variant alias row is inserted beside the tombstone",
+        )
+        assertNotNull(
+            database.phoenixDatabaseQueries.selectRoutineById(csvRoutineId).executeAsOne().deletedAt,
+            "the tombstone is intact",
+        )
     }
 
     private fun routine(id: String, name: String, description: String = "") = Routine(

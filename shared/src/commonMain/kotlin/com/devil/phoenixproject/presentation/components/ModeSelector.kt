@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.presentation.util.programModeShortLabel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -100,7 +101,7 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = getModeAbbreviation(mode),
+                        text = programModeShortLabel(mode),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isSelected) {
@@ -115,16 +116,4 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
             }
         }
     }
-}
-
-/**
- * Get short abbreviation for mode display in pills.
- */
-private fun getModeAbbreviation(mode: ProgramMode): String = when (mode) {
-    ProgramMode.OldSchool -> "OLD"
-    ProgramMode.TUT -> "TUT"
-    ProgramMode.Pump -> "PUMP"
-    ProgramMode.EccentricOnly -> "ECC"
-    ProgramMode.TUTBeast -> "BEAST"
-    ProgramMode.Echo -> "ECHO"
 }

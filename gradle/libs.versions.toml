@@ -65,6 +65,8 @@ turbine = "1.2.1"
 truth = "1.4.5"
 koin-test = "4.2.2"
 multiplatform-settings-test = "1.3.0"
+robolectric = "4.15.1"
+androidx-test-core = "1.7.0"
 
 [libraries]
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
@@ -73,6 +75,8 @@ turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 truth = { module = "com.google.truth:truth", version.ref = "truth" }
 koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin-test" }
 multiplatform-settings-test = { module = "com.russhwolf:multiplatform-settings-test", version.ref = "multiplatform-settings-test" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
 # Kotlin
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
@@ -110,6 +114,12 @@ cmp-material-icons-extended = { module = "org.jetbrains.compose.material:materia
 cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
 cmp-ui-tooling-preview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "compose-multiplatform" }
 cmp-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
+# Compose UI test harness (issue #1164 runtime reachability evidence)
+cmp-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
+cmp-ui-test-junit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "compose-multiplatform" }
+# androidx-only artifact (CMP publishes no ui-test-manifest); version matches the
+# androidx compose that CMP 1.11.1 resolves to for the Android target.
+androidx-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version = "1.11.2" }
 
 # Koin (Multiplatform DI)
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
