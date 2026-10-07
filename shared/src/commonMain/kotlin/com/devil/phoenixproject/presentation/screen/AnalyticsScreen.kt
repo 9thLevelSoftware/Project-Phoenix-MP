@@ -747,7 +747,6 @@ fun AnalyticsScreen(
     // Date range picker for workout history export
     if (showDateRangePicker) {
         DateRangePickerDialog(
-            totalRecords = allWorkoutSessions.size,
             onDateRangeSelected = { startDate, endDate ->
                 showDateRangePicker = false
                 isExporting = true
