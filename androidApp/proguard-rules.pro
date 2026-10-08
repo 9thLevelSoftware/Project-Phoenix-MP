@@ -37,12 +37,8 @@
 -dontwarn kotlinx.coroutines.flow.**
 
 # ==================== Ktor HTTP Client (sync layer) ====================
+# io.ktor.** matches client, engine, plugins, serialization, and utils.
 -keep class io.ktor.** { *; }
--keep class io.ktor.client.** { *; }
--keep class io.ktor.client.engine.** { *; }
--keep class io.ktor.client.plugins.** { *; }
--keep class io.ktor.serialization.** { *; }
--keep class io.ktor.utils.** { *; }
 -dontwarn io.ktor.**
 
 # ==================== OkHttp (Ktor Android engine) ====================
@@ -74,17 +70,13 @@
 -dontwarn co.touchlab.kermit.**
 
 # ==================== Compose ====================
+# androidx.compose.** keeps runtime classes and their fields.
 -keep class androidx.compose.** { *; }
 -dontwarn androidx.compose.**
 
-# Keep Compose runtime internal classes
--keepclassmembers class androidx.compose.runtime.** {
-    <fields>;
-}
-
 # ==================== Lifecycle / ViewModel ====================
+# AndroidViewModel extends ViewModel, so this keep covers those subclasses.
 -keep class * extends androidx.lifecycle.ViewModel { *; }
--keep class * extends androidx.lifecycle.AndroidViewModel { *; }
 -keepclassmembers class * extends androidx.lifecycle.ViewModel {
     <init>(...);
 }
