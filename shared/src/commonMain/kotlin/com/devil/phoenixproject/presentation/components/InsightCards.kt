@@ -620,8 +620,9 @@ private data class VolumeComparison(val funValue: String, val funLabel: String, 
 /**
  * Format a float to one decimal place (KMP-compatible)
  */
-private fun formatOneDecimal(value: Float): String {
-    val rounded = kotlin.math.round(value * 10) / 10
+internal fun formatOneDecimal(value: Float): String {
+    // round(Float) returns Int; divide by 10f so the fractional tenth survives.
+    val rounded = kotlin.math.round(value * 10) / 10f
     return if (rounded == rounded.toLong().toFloat()) {
         "${rounded.toLong()}.0"
     } else {
