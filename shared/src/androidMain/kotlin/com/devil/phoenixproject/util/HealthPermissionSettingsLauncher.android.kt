@@ -87,9 +87,9 @@ internal fun <T> launchHealthConnectSettingsChain(
 
 private fun healthConnectSettingsFailureMessage(index: Int, lastIndex: Int): String = when {
     index >= lastIndex -> "Failed to open Health Connect settings"
-    index == 0 && lastIndex >= 2 ->
-        "Health Connect app-permissions settings unavailable; opening Health Connect home settings"
-    else -> "Health Connect home settings unavailable; opening app details settings"
+    // The attempt before app details is Health Connect home (API 34+) or its settings (below 34).
+    index == lastIndex - 1 -> "Health Connect settings unavailable; opening app details settings"
+    else -> "Health Connect app-permissions settings unavailable; opening Health Connect home settings"
 }
 
 @Composable
