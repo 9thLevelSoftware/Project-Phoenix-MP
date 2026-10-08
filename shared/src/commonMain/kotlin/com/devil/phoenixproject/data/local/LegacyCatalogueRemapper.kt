@@ -6,7 +6,53 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.coroutines.cancellation.CancellationException
 
 /** One stock catalogue row as the legacy id resolution sees it. */
-data class LegacyCatalogueRow(val id: String, val name: String)
+private data class LegacyCatalogueRow(val id: String, val name: String)
+
+/**
+ * The one legacy -> replacement resolution every entry point shares (this remap, restore
+ * translation, pull lookup): an explicit id mapping first, then the reviewed name
+ * fallbacks: exact name, [LegacyCatalogueIdMap.nameAliases], a name another archived row
+ * was explicitly mapped under, then [LegacyCatalogueIdMap.stemKey].
+ */
+private fun resolveMappings(active: List<LegacyCatalogueRow>, archived: List<LegacyCatalogueRow>): Map<String, String> {
+    val activeById = active.associateBy { it.id }
+    val activeByName = active
+        .groupBy { LegacyCatalogueIdMap.matchKey(it.name) }
+        .mapNotNull { (name, rows) -> rows.singleOrNull()?.let { name to it.id } }
+        .toMap()
+    val activeByStem = active
+        .groupBy { LegacyCatalogueIdMap.stemKey(it.name) }
+        .mapNotNull { (key, rows) -> rows.singleOrNull()?.let { key to it.id } }
+        .toMap()
+
+    val mappings = LinkedHashMap<String, String>()
+    val mappedTargetByName = LinkedHashMap<String, String>()
+    for (row in archived) {
+        val explicit = LegacyCatalogueIdMap.explicit[row.id]
+        if (explicit != null && activeById.containsKey(explicit)) {
+            mappings[row.id] = explicit
+            val key = LegacyCatalogueIdMap.matchKey(row.name)
+            val existing = mappedTargetByName[key]
+            if (existing == null) {
+                mappedTargetByName[key] = explicit
+            } else if (existing != explicit) {
+                mappedTargetByName.remove(key)
+            }
+        }
+    }
+    for (row in archived) {
+        if (row.id in mappings) continue
+        val exact = LegacyCatalogueIdMap.matchKey(row.name)
+        val byName = activeByName[exact]
+            ?: LegacyCatalogueIdMap.nameAliases[exact]?.let { activeByName[it] }
+            ?: mappedTargetByName[exact]
+            ?: activeByStem[LegacyCatalogueIdMap.stemKey(row.name)]
+        if (byName != null && byName != row.id) {
+            mappings[row.id] = byName
+        }
+    }
+    return mappings
+}
 
 /**
  * Re-points history, PRs, routines and every other per-exercise row from archived legacy
@@ -111,52 +157,6 @@ class LegacyCatalogueRemapper(database: PhoenixDatabase) {
 
     companion object {
         /**
-         * The one legacy -> replacement resolution every entry point shares (this remap, restore
-         * translation, pull lookup): an explicit id mapping first, then the reviewed name
-         * fallbacks: exact name, [LegacyCatalogueIdMap.nameAliases], a name another archived row
-         * was explicitly mapped under, then [LegacyCatalogueIdMap.stemKey].
-         */
-        fun resolveMappings(active: List<LegacyCatalogueRow>, archived: List<LegacyCatalogueRow>): Map<String, String> {
-            val activeById = active.associateBy { it.id }
-            val activeByName = active
-                .groupBy { LegacyCatalogueIdMap.matchKey(it.name) }
-                .mapNotNull { (name, rows) -> rows.singleOrNull()?.let { name to it.id } }
-                .toMap()
-            val activeByStem = active
-                .groupBy { LegacyCatalogueIdMap.stemKey(it.name) }
-                .mapNotNull { (key, rows) -> rows.singleOrNull()?.let { key to it.id } }
-                .toMap()
-
-            val mappings = LinkedHashMap<String, String>()
-            val mappedTargetByName = LinkedHashMap<String, String>()
-            for (row in archived) {
-                val explicit = LegacyCatalogueIdMap.explicit[row.id]
-                if (explicit != null && activeById.containsKey(explicit)) {
-                    mappings[row.id] = explicit
-                    val key = LegacyCatalogueIdMap.matchKey(row.name)
-                    val existing = mappedTargetByName[key]
-                    if (existing == null) {
-                        mappedTargetByName[key] = explicit
-                    } else if (existing != explicit) {
-                        mappedTargetByName.remove(key)
-                    }
-                }
-            }
-            for (row in archived) {
-                if (row.id in mappings) continue
-                val exact = LegacyCatalogueIdMap.matchKey(row.name)
-                val byName = activeByName[exact]
-                    ?: LegacyCatalogueIdMap.nameAliases[exact]?.let { activeByName[it] }
-                    ?: mappedTargetByName[exact]
-                    ?: activeByStem[LegacyCatalogueIdMap.stemKey(row.name)]
-                if (byName != null && byName != row.id) {
-                    mappings[row.id] = byName
-                }
-            }
-            return mappings
-        }
-
-        /**
          * Runs [remapIfNeeded] after a bulk write (pull merge, restore, startup) without letting
          * a remap failure fail that write: the remap is atomic and data-gated, so a failure
          * leaves the legacy rows in place and the next entry point retries.
@@ -207,7 +207,7 @@ class LegacyCatalogueTranslator(database: PhoenixDatabase) {
     private fun resolve(exerciseId: String, name: String?): String? {
         val active = stock.filter { it.archived == 0L }.map { LegacyCatalogueRow(it.id, it.name) }
         val archived = stock.filter { it.archived == 1L }.map { LegacyCatalogueRow(it.id, it.name) }
-        val target = LegacyCatalogueRemapper.resolveMappings(
+        val target = resolveMappings(
             active = active,
             archived = archived + LegacyCatalogueRow(exerciseId, name.orEmpty()),
         )[exerciseId] ?: return null
