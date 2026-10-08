@@ -27,7 +27,7 @@ internal val AshBlueDark = Color(0xFF6ED2FF) // Electric cyan (dark mode)
 
 // --- SLATE NEUTRALS (Tinted Blue-Grey) ---
 // 2025 Trend: Tinted neutrals instead of pure grey
-val Slate950 = Color(0xFF020617) // Almost black, blue-tinted (OLED friendly)
+internal val Slate950 = Color(0xFF020617) // Almost black, blue-tinted (OLED friendly)
 val Slate900 = Color(0xFF0F172A) // Deep background
 internal val Slate800 = Color(0xFF1E293B) // Card background
 internal val Slate700 = Color(0xFF334155) // Border/Divider
@@ -48,12 +48,12 @@ internal val SignalWarning = Color(0xFFF59E0B) // Amber
 internal val Primary80 = PhoenixOrangeDark
 internal val Primary20 = Color(0xFF4C1400)
 internal val PrimaryContainerDark = Color(0xFF702300)
-val OnPrimaryContainerDark = Color(0xFFFFDBCF)
+internal val OnPrimaryContainerDark = Color(0xFFFFDBCF)
 
 internal val Secondary80 = EmberYellowDark
 internal val Secondary20 = Color(0xFF373100)
 internal val SecondaryContainerDark = Color(0xFF4F4700)
-val OnSecondaryContainerDark = Color(0xFFFFE06F)
+internal val OnSecondaryContainerDark = Color(0xFFFFE06F)
 
 internal val Tertiary80 = AshBlueDark
 internal val Tertiary20 = Color(0xFF003546)
