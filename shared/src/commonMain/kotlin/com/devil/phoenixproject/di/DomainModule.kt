@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
+import com.devil.phoenixproject.domain.usecase.GeneratedDraftMapper
 import com.devil.phoenixproject.domain.usecase.MvtExerciseView
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
@@ -53,6 +54,7 @@ val domainModule = module {
     factory { ApplyRoutineModifierUseCase(get(), get(), get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get(), get()) }
+    factory { GeneratedDraftMapper(get(), get()) }
 
     // Assessment
     single { AssessmentEngine() }

@@ -621,6 +621,50 @@ open class PortalApiClient(
         }
     }
 
+    /**
+     * Generate one AI workout draft (issue #1223) via the `generate-routine` Edge
+     * Function. Same auth shape as the other function posts (user JWT + anon apikey);
+     * the phone holds no model key. The 60s request timeout comes from the shared
+     * client config; the provider budget is enforced inside the function.
+     *
+     * Nothing is persisted here. The response's `draft` is mapped by
+     * [com.devil.phoenixproject.domain.usecase.GeneratedDraftMapper] into an unsaved
+     * in-memory Routine; the user's editor Save is the first write.
+     *
+     * Failures carry [GenerateRoutineErrorKind] so the screen can show distinct copy
+     * for 402 ("upgrade to Flame"), 403/404 ("not available right now"), 422
+     * ("could not build a valid workout"), 429 (retry timing) and 503 ("temporarily
+     * unavailable"). The structured error body is parsed before any fall back to
+     * [classifyByStatusCode] (which collapses 402/403).
+     */
+    open suspend fun generateRoutine(request: GenerateRoutineRequest): Result<GenerateRoutineResponse> {
+        return try {
+            val token = ensureValidToken() ?: return Result.failure(
+                GenerateRoutineException(
+                    kind = GenerateRoutineErrorKind.UNAUTHORIZED,
+                    message = "Not authenticated - please log in again",
+                    statusCode = 401,
+                ),
+            )
+            val response = httpClient.post("${supabaseConfig.url}/functions/v1/generate-routine") {
+                bearerAuth(token)
+                header("apikey", supabaseConfig.anonKey)
+                setBody(request)
+            }
+            parseGenerateRoutineHttpResponse(response)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            val classified = classifyError(e, "Generate routine")
+            Result.failure(
+                GenerateRoutineException(
+                    kind = GenerateRoutineErrorKind.TEMPORARILY_UNAVAILABLE,
+                    message = classified.message,
+                    cause = e,
+                ),
+            )
+        }
+    }
+
     // === Private Helpers ===
 
     /**
