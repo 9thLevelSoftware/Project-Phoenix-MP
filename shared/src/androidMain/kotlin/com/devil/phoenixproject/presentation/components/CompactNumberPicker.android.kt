@@ -180,7 +180,9 @@ actual fun CompactNumberPicker(
  *
  * API 29+ uses [NumberPicker.setTextColor]. API 26–28 still need a posted child walk
  * plus the selector-wheel paint, because [NumberPicker.setTextColor] is not available.
- * Both the AndroidView factory and update blocks share this path.
+ * Text color and background are applied only to [android.widget.TextView] children,
+ * which includes the wheel's [android.widget.EditText]. Both the AndroidView factory
+ * and update blocks share this path.
  */
 private fun NumberPicker.applyNumberPickerTextColor(textColor: Color) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -193,13 +195,6 @@ private fun NumberPicker.applyNumberPickerTextColor(textColor: Color) {
                 for (i in 0 until count) {
                     val child = getChildAt(i)
                     when (child) {
-                        is android.widget.EditText -> {
-                            child.setTextColor(textColor.toArgb())
-                            child.setBackgroundColor(
-                                android.graphics.Color.TRANSPARENT,
-                            )
-                        }
-
                         is android.widget.TextView -> {
                             child.setTextColor(textColor.toArgb())
                             child.setBackgroundColor(
