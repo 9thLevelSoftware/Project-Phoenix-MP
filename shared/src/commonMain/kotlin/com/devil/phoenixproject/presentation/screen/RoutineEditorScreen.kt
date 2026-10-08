@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,7 +84,11 @@ import com.devil.phoenixproject.presentation.components.SelectionActionBar
 import com.devil.phoenixproject.presentation.components.SupersetContainer
 import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
+import com.devil.phoenixproject.presentation.viewmodel.AiRoutineEditorLoad
+import com.devil.phoenixproject.presentation.viewmodel.generatedDraftSaveEnabled
+import com.devil.phoenixproject.presentation.viewmodel.loadRoutineEditorState
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
@@ -93,12 +98,17 @@ import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_back
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_discard
 import projectphoenix.shared.generated.resources.action_edit
 import projectphoenix.shared.generated.resources.action_save
 import projectphoenix.shared.generated.resources.add_exercise
+import projectphoenix.shared.generated.resources.ai_routine_draft_expired
+import projectphoenix.shared.generated.resources.ai_routine_draft_profile_changed_message
+import projectphoenix.shared.generated.resources.ai_routine_draft_profile_changed_title
+import projectphoenix.shared.generated.resources.ai_routine_regenerate
 import projectphoenix.shared.generated.resources.cannot_be_undone
 import projectphoenix.shared.generated.resources.choose_color
 import projectphoenix.shared.generated.resources.delete_all
@@ -150,6 +160,10 @@ fun RoutineEditorScreen(
     var state by remember { mutableStateOf(RoutineEditorState()) }
     var showExercisePicker by remember { mutableStateOf(false) }
     var hasInitialized by remember { mutableStateOf(false) }
+    // Issue #1223: load outcome of the AI-draft holder handoff. StagedDraft means
+    // an unsaved generated draft was consumed; ExpiredDraft means the holder is
+    // absent and the id is not in the DB.
+    var aiDraftLoad by remember { mutableStateOf<AiRoutineEditorLoad?>(null) }
 
     // Exercise configuration state - holds exercise being configured (new or edit)
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
@@ -210,22 +224,41 @@ fun RoutineEditorScreen(
         viewModel.updateTopBarTitle("")
     }
 
-    // Load routine if editing
+    // Load routine if editing. Issue #1223: consumeGeneratedRoutine (the in-memory
+    // AI draft holder) runs BEFORE getRoutineById; when a staged draft is consumed
+    // both the repository lookup and the "new" branch are skipped. When the holder
+    // is absent after recreation and the id is not in the DB, the expired-draft
+    // recovery state shows with Save disabled (never autosave, never persist).
     LaunchedEffect(routineId) {
-        if (!hasInitialized && routineId != "new") {
-            val existing = viewModel.getRoutineById(routineId)
-            if (existing != null) {
-                state = state.copy(
-                    routineName = existing.name,
-                    routine = existing,
-                )
-            }
-            hasInitialized = true
-        } else if (!hasInitialized) {
-            state = state.copy(
-                routineName = "New Routine",
-                routine = Routine(id = "new", name = "New Routine"),
+        if (!hasInitialized) {
+            val load = loadRoutineEditorState(
+                routineId = routineId,
+                consumeGeneratedRoutine = viewModel::consumeGeneratedRoutine,
+                getRoutineById = viewModel::getRoutineById,
             )
+            aiDraftLoad = load
+            when (load) {
+                is AiRoutineEditorLoad.StagedDraft -> {
+                    state = state.copy(
+                        routineName = load.routine.name,
+                        routine = load.routine,
+                    )
+                }
+                is AiRoutineEditorLoad.ExistingRoutine -> {
+                    state = state.copy(
+                        routineName = load.routine.name,
+                        routine = load.routine,
+                    )
+                }
+                // Recovery state: nothing loaded into the editor; Save stays disabled.
+                AiRoutineEditorLoad.ExpiredDraft -> Unit
+                AiRoutineEditorLoad.NewRoutine -> {
+                    state = state.copy(
+                        routineName = "New Routine",
+                        routine = Routine(id = "new", name = "New Routine"),
+                    )
+                }
+            }
             hasInitialized = true
         }
     }
@@ -251,6 +284,19 @@ fun RoutineEditorScreen(
             state.supersets != snapshotSupersets
         )
     val canSaveRoutine = state.exercises.isNotEmpty() && state.routineName.isNotBlank()
+    // Issue #1223: generated-draft save gating (re-check before Save). A staged
+    // draft carries the profile it was generated for; Save is disabled for the
+    // expired-draft recovery state and while the active profile no longer matches
+    // (the UI offers regenerate rather than moving prior-profile loads into the
+    // new profile). Routines without a staged generated draft are unaffected.
+    val expiredDraft = aiDraftLoad == AiRoutineEditorLoad.ExpiredDraft
+    val stagedDraftProfileId = (aiDraftLoad as? AiRoutineEditorLoad.StagedDraft)?.routine?.profileId
+    val draftSaveAllowed = generatedDraftSaveEnabled(
+        expiredDraft = expiredDraft,
+        stagedDraftProfileId = stagedDraftProfileId,
+        currentProfileId = activeProfileId,
+    )
+    val stagedProfileChanged = stagedDraftProfileId != null && !expiredDraft && !draftSaveAllowed
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -398,6 +444,58 @@ fun RoutineEditorScreen(
                     },
                 ),
         ) {
+            // Issue #1223: expired generated-draft recovery state — the holder is
+            // absent after recreation and the id is not in the DB. Save stays
+            // disabled; nothing is restored from persistence and nothing autosaves.
+            if (expiredDraft) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(Res.string.ai_routine_draft_expired),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+                        )
+                        TextButton(onClick = {
+                            navController.navigate(NavigationRoutes.AiRoutine.route)
+                        }) {
+                            Text(stringResource(Res.string.ai_routine_regenerate))
+                        }
+                    }
+                }
+            }
+
+            // Issue #1223: profile changed since the draft was generated — offer
+            // regenerate instead of moving prior-profile loads into the new profile
+            // (Save is disabled while this holds).
+            if (stagedProfileChanged) {
+                AlertDialog(
+                    onDismissRequest = {},
+                    title = { Text(stringResource(Res.string.ai_routine_draft_profile_changed_title)) },
+                    text = { Text(stringResource(Res.string.ai_routine_draft_profile_changed_message)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            navController.navigate(NavigationRoutes.AiRoutine.route)
+                        }) {
+                            Text(stringResource(Res.string.ai_routine_regenerate))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { navController.popBackStack() }) {
+                            Text(stringResource(Res.string.action_back))
+                        }
+                    },
+                )
+            }
+
             // Editable name row with Save button
             Row(
                 modifier = Modifier
@@ -438,7 +536,7 @@ fun RoutineEditorScreen(
                         viewModel.saveRoutine(routineToSave)
                         navController.popBackStack()
                     },
-                    enabled = canSaveRoutine,
+                    enabled = canSaveRoutine && draftSaveAllowed,
                 ) {
                     Text(stringResource(Res.string.action_save))
                 }

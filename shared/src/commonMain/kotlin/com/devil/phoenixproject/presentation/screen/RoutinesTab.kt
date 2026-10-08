@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -100,6 +101,7 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.ai_routine_create_with_ai
 import projectphoenix.shared.generated.resources.action_copy
 import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_edit
@@ -158,6 +160,9 @@ fun RoutinesTab(
     // Issue #772: routine CSV. Null hides the entry points.
     onExportRoutineCsv: ((Routine) -> Unit)? = null,
     onImportRoutinesCsv: (() -> Unit)? = null,
+    // Issue #1223: Create with AI entry. Null hides the action (e.g. hosts that
+    // do not wire the AI routine flow).
+    onCreateWithAi: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // showRoutineBuilder and routineToEdit states removed
@@ -396,6 +401,19 @@ fun RoutinesTab(
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         ) {
                             Icon(Icons.Default.FileUpload, contentDescription = stringResource(Res.string.routine_csv_import))
+                        }
+                    }
+                    // Issue #1223: secondary Create with AI action, above the Add
+                    // FAB in the same column as the import button. Hidden in
+                    // selection mode (this whole block is !selectionMode). The Add
+                    // FAB below is unchanged.
+                    if (onCreateWithAi != null) {
+                        SmallFloatingActionButton(
+                            onClick = onCreateWithAi,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = stringResource(Res.string.ai_routine_create_with_ai))
                         }
                     }
                     FloatingActionButton(

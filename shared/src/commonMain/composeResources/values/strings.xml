@@ -904,4 +904,49 @@
     <string name="cycle_training_max_missing_title">Training max not set</string>
     <string name="cycle_training_max_missing_body">Weekly training-max increases are skipped for %1$s until this profile has a training max for it.</string>
     <string name="cycle_training_max_missing_action">Set training max</string>
+
+    <!-- ==================== AI routine creation (issue #1223) ====================
+         Consent/disclosure copy is the exact signed-off English source (spec §1.4).
+         The fixed generation disclaimer is NOT a key here: the preview renders the
+         server constant AI_ROUTINE_DRAFT_DISCLAIMER verbatim. -->
+    <string name="ai_routine_create_with_ai">Create with AI</string>
+    <string name="ai_routine_title">Create with AI</string>
+    <string name="ai_routine_prompt_label">Workout description</string>
+    <string name="ai_routine_prompt_hint">e.g. 35-min upper body workout avoiding shoulders, with supersets</string>
+    <string name="ai_routine_prompt_char_count">%1$d / %2$d</string>
+    <string name="ai_routine_minutes_label">Target length in minutes (optional, 10–120)</string>
+    <string name="ai_routine_minutes_invalid">Enter a duration between 10 and 120 minutes, or leave the field empty.</string>
+    <string name="ai_routine_generate">Generate draft</string>
+    <string name="ai_routine_generating">Building your workout draft…</string>
+    <string name="ai_routine_disclosure">Your prompt is sent to Phoenix's AI service and processed by an external AI model provider to create this draft. Phoenix does not save your prompt.</string>
+    <string name="ai_routine_retention">The provider may retain the content briefly for safety monitoring and does not use it to train models.</string>
+    <string name="ai_routine_load_toggle">Use my weights to choose exercises</string>
+    <string name="ai_routine_load_toggle_helper">Shares estimated one-rep max numbers for exercises you've done — no names, no workout history. Off by default.</string>
+    <string name="ai_routine_hint_limitation">Constraint hints currently understand English muscle and mode words.</string>
+    <string name="ai_routine_gate_title">Create with AI needs Flame or higher</string>
+    <string name="ai_routine_gate_message">AI routine generation is included with the Flame subscription and above. Link your account to continue.</string>
+    <string name="ai_routine_gate_link_account">Link account</string>
+    <string name="ai_routine_error_not_subscribed">AI routine generation needs the Flame plan or higher. Upgrade to generate workout drafts.</string>
+    <string name="ai_routine_error_not_available">AI routine generation is not available right now.</string>
+    <string name="ai_routine_error_invalid_draft">We could not build a valid workout from that prompt. Try adjusting it.</string>
+    <string name="ai_routine_error_invalid_request">That prompt could not be used. Adjust it and try again.</string>
+    <string name="ai_routine_error_rate_limited_seconds">You have reached the generation limit. Try again in %1$d seconds.</string>
+    <string name="ai_routine_error_rate_limited_minutes">You have reached the generation limit. Try again in %1$d minutes.</string>
+    <string name="ai_routine_error_temporary">AI routine generation is temporarily unavailable. Try again shortly.</string>
+    <string name="ai_routine_error_unauthorized">Please link your account to generate workout drafts.</string>
+    <string name="ai_routine_preview_badge">AI-GENERATED · UNSAVED DRAFT</string>
+    <string name="ai_routine_preview_unsaved_note">Nothing is saved until you save in the editor.</string>
+    <string name="ai_routine_preview_exclusion">This draft avoids muscle groups you excluded (as classified in the exercise catalog). An exercise may still involve a nearby muscle.</string>
+    <string name="ai_routine_preview_requested_minutes">Requested: %1$d min</string>
+    <string name="ai_routine_preview_estimated_minutes">Estimated: %1$d min</string>
+    <string name="ai_routine_preview_over_target">This draft may run longer than your target.</string>
+    <string name="ai_routine_preview_dropped">Dropped (not in your exercise library): %1$s</string>
+    <string name="ai_routine_preview_unmet">Note: %1$s</string>
+    <string name="ai_routine_preview_percent_of_1rm">%1$d%% of estimated 1RM</string>
+    <string name="ai_routine_preview_sets_reps">%1$d × %2$d</string>
+    <string name="ai_routine_preview_superset">Superset</string>
+    <string name="ai_routine_draft_expired">This generated draft is no longer available — generate again</string>
+    <string name="ai_routine_draft_profile_changed_title">Profile changed</string>
+    <string name="ai_routine_draft_profile_changed_message">Your active profile changed since this draft was generated. Generate a new draft for the current profile instead of saving these weights there.</string>
+    <string name="ai_routine_regenerate">Generate again</string>
 </resources>

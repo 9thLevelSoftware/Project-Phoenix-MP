@@ -32,6 +32,11 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(routineId: String) = "routine_editor/${routineId.encodeRouteSegment()}"
     }
 
+    // AI routine creation (issue #1223): prompt + preview. No route arguments —
+    // the generated draft id is never part of the route (the draft is handed to
+    // the editor through the in-memory holder, never through navigation).
+    object AiRoutine : NavigationRoutes("ai_routine")
+
     object CycleEditor : NavigationRoutes("cycle_editor/{cycleId}") {
         fun createRoute(cycleId: String) = "cycle_editor/${cycleId.encodeRouteSegment()}"
     }

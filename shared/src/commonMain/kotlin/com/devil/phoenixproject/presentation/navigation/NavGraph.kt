@@ -639,6 +639,16 @@ fun NavGraph(
             )
         }
 
+        // AI routine creation (issue #1223) - prompt + generated-draft preview.
+        // No route arguments: the draft id never appears in a route; the draft is
+        // staged in MainViewModel's in-memory holder and consumed by the editor.
+        composable(NavigationRoutes.AiRoutine.route) {
+            AiRoutinePromptScreen(
+                navController = navController,
+                viewModel = viewModel,
+            )
+        }
+
         // Cycle Editor - timeline builder for rolling schedules
         composable(
             route = NavigationRoutes.CycleEditor.route,

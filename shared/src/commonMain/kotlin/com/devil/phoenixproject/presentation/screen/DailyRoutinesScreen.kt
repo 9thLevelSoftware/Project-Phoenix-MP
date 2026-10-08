@@ -122,6 +122,18 @@ fun DailyRoutinesScreen(
                         navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
                     }
                 },
+                // Issue #1223: Create with AI. Same workout-active guard dialog as
+                // onCreateRoutine; navigates to the ai_routine prompt+preview flow
+                // (never the "new" editor — the AI draft is staged in memory and
+                // consumed by the editor only after explicit Edit).
+                onCreateWithAi = {
+                    // Issue #130: Block creating during active workout
+                    if (viewModel.isWorkoutActive) {
+                        showWorkoutActiveDialog = true
+                    } else {
+                        navController.navigate(NavigationRoutes.AiRoutine.route)
+                    }
+                },
                 onExportRoutineCsv = { routine -> routineCsvViewModel.exportRoutine(routine) },
                 onImportRoutinesCsv = {
                     // Same rule as editing: routines are not replaced during a workout.

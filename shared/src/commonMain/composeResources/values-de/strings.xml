@@ -739,4 +739,46 @@
     <string name="startup_contact_support">Support per E-Mail kontaktieren</string>
     <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
     <string name="startup_support_code">Supportcode: %1$s</string>
+
+    <!-- ==================== KI-Routinen-Erstellung (issue #1223) ==================== -->
+    <string name="ai_routine_create_with_ai">Mit KI erstellen</string>
+    <string name="ai_routine_title">Mit KI erstellen</string>
+    <string name="ai_routine_prompt_label">Workout-Beschreibung</string>
+    <string name="ai_routine_prompt_hint">z. B. 35-minütiges Oberkörper-Workout ohne Schultern, mit Supersets</string>
+    <string name="ai_routine_prompt_char_count">%1$d / %2$d</string>
+    <string name="ai_routine_minutes_label">Zielänge in Minuten (optional, 10–120)</string>
+    <string name="ai_routine_minutes_invalid">Gib eine Dauer zwischen 10 und 120 Minuten ein oder lass das Feld leer.</string>
+    <string name="ai_routine_generate">Entwurf generieren</string>
+    <string name="ai_routine_generating">Dein Workout-Entwurf wird erstellt…</string>
+    <string name="ai_routine_disclosure">Deine Eingabe wird an den KI-Dienst von Phoenix gesendet und von einem externen KI-Modellanbieter verarbeitet, um diesen Entwurf zu erstellen. Phoenix speichert deine Eingabe nicht.</string>
+    <string name="ai_routine_retention">Der Anbieter kann den Inhalt kurzzeitig für Sicherheitsüberwachungen aufbewahren und verwendet ihn nicht zum Trainieren von Modellen.</string>
+    <string name="ai_routine_load_toggle">Meine Gewichte zur Übungsauswahl verwenden</string>
+    <string name="ai_routine_load_toggle_helper">Teilt geschätzte 1RM-Werte für Übungen, die du gemacht hast — keine Namen, keine Workout-Historie. Standardmäßig aus.</string>
+    <string name="ai_routine_hint_limitation">Einschränkungs-Hinweise verstehen derzeit nur englische Muskel- und Modusbegriffe.</string>
+    <string name="ai_routine_gate_title">„Mit KI erstellen“ benötigt Flame oder höher</string>
+    <string name="ai_routine_gate_message">KI-Routinen-Generierung ist im Flame-Abo und höher enthalten. Verknüpfe dein Konto, um fortzufahren.</string>
+    <string name="ai_routine_gate_link_account">Konto verknüpfen</string>
+    <string name="ai_routine_error_not_subscribed">KI-Routinen-Generierung benötigt den Flame-Plan oder höher. Upgrade, um Workout-Entwürfe zu generieren.</string>
+    <string name="ai_routine_error_not_available">KI-Routinen-Generierung ist derzeit nicht verfügbar.</string>
+    <string name="ai_routine_error_invalid_draft">Aus dieser Eingabe konnte kein gültiges Workout erstellt werden. Versuche, sie anzupassen.</string>
+    <string name="ai_routine_error_invalid_request">Diese Eingabe konnte nicht verwendet werden. Passe sie an und versuche es erneut.</string>
+    <string name="ai_routine_error_rate_limited_seconds">Du hast das Generierungslimit erreicht. Versuche es in %1$d Sekunden erneut.</string>
+    <string name="ai_routine_error_rate_limited_minutes">Du hast das Generierungslimit erreicht. Versuche es in %1$d Minuten erneut.</string>
+    <string name="ai_routine_error_temporary">KI-Routinen-Generierung ist vorübergehend nicht verfügbar. Versuche es gleich noch einmal.</string>
+    <string name="ai_routine_error_unauthorized">Bitte verknüpfe dein Konto, um Workout-Entwürfe zu generieren.</string>
+    <string name="ai_routine_preview_badge">KI-GENERIERT · UNGESPEICHERTER ENTWURF</string>
+    <string name="ai_routine_preview_unsaved_note">Nichts wird gespeichert, bis du im Editor speicherst.</string>
+    <string name="ai_routine_preview_exclusion">Dieser Entwurf vermeidet Muskelgruppen, die du ausgeschlossen hast (nach Klassifizierung im Übungskatalog). Eine Übung kann dennoch einen benachbarten Muskel beteiligen.</string>
+    <string name="ai_routine_preview_requested_minutes">Gewünscht: %1$d Min.</string>
+    <string name="ai_routine_preview_estimated_minutes">Geschätzt: %1$d Min.</string>
+    <string name="ai_routine_preview_over_target">Dieser Entwurf könnte länger dauern als dein Ziel.</string>
+    <string name="ai_routine_preview_dropped">Entfernt (nicht in deiner Übungsbibliothek): %1$s</string>
+    <string name="ai_routine_preview_unmet">Hinweis: %1$s</string>
+    <string name="ai_routine_preview_percent_of_1rm">%1$d %% des geschätzten 1RM</string>
+    <string name="ai_routine_preview_sets_reps">%1$d × %2$d</string>
+    <string name="ai_routine_preview_superset">Superset</string>
+    <string name="ai_routine_draft_expired">Dieser generierte Entwurf ist nicht mehr verfügbar — generiere erneut</string>
+    <string name="ai_routine_draft_profile_changed_title">Profil geändert</string>
+    <string name="ai_routine_draft_profile_changed_message">Dein aktives Profil hat sich geändert, seit dieser Entwurf erstellt wurde. Generiere einen neuen Entwurf für das aktuelle Profil, anstatt diese Gewichte dort zu speichern.</string>
+    <string name="ai_routine_regenerate">Erneut generieren</string>
 </resources>

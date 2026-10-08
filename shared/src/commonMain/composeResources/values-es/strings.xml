@@ -739,4 +739,46 @@
     <string name="startup_contact_support">Escribir al soporte</string>
     <string name="startup_diagnostic_code">Código de diagnóstico: %1$s</string>
     <string name="startup_support_code">Código de soporte: %1$s</string>
+
+    <!-- ==================== Creación de rutinas con IA (issue #1223) ==================== -->
+    <string name="ai_routine_create_with_ai">Crear con IA</string>
+    <string name="ai_routine_title">Crear con IA</string>
+    <string name="ai_routine_prompt_label">Descripción del entrenamiento</string>
+    <string name="ai_routine_prompt_hint">p. ej., entrenamiento de tren superior de 35 min evitando hombros, con superseries</string>
+    <string name="ai_routine_prompt_char_count">%1$d / %2$d</string>
+    <string name="ai_routine_minutes_label">Duración objetivo en minutos (opcional, 10–120)</string>
+    <string name="ai_routine_minutes_invalid">Introduce una duración entre 10 y 120 minutos, o deja el campo vacío.</string>
+    <string name="ai_routine_generate">Generar borrador</string>
+    <string name="ai_routine_generating">Creando el borrador de tu entrenamiento…</string>
+    <string name="ai_routine_disclosure">Tu indicación se envía al servicio de IA de Phoenix y la procesa un proveedor externo de modelos de IA para crear este borrador. Phoenix no guarda tu indicación.</string>
+    <string name="ai_routine_retention">El proveedor puede retener el contenido brevemente para monitorización de seguridad y no lo usa para entrenar modelos.</string>
+    <string name="ai_routine_load_toggle">Usar mis pesos para elegir ejercicios</string>
+    <string name="ai_routine_load_toggle_helper">Comparte cifras estimadas de 1RM de ejercicios que has hecho — sin nombres, sin historial de entrenamientos. Desactivado por defecto.</string>
+    <string name="ai_routine_hint_limitation">Las pistas de restricciones entienden actualmente palabras de músculos y modos en inglés.</string>
+    <string name="ai_routine_gate_title">Crear con IA requiere Flame o superior</string>
+    <string name="ai_routine_gate_message">La generación de rutinas con IA está incluida en la suscripción Flame y superiores. Vincula tu cuenta para continuar.</string>
+    <string name="ai_routine_gate_link_account">Vincular cuenta</string>
+    <string name="ai_routine_error_not_subscribed">La generación de rutinas con IA requiere el plan Flame o superior. Mejora tu plan para generar borradores de entrenamiento.</string>
+    <string name="ai_routine_error_not_available">La generación de rutinas con IA no está disponible ahora.</string>
+    <string name="ai_routine_error_invalid_draft">No pudimos crear un entrenamiento válido con esa indicación. Prueba a ajustarla.</string>
+    <string name="ai_routine_error_invalid_request">Esa indicación no se pudo usar. Ajústala e inténtalo de nuevo.</string>
+    <string name="ai_routine_error_rate_limited_seconds">Has alcanzado el límite de generación. Inténtalo de nuevo en %1$d segundos.</string>
+    <string name="ai_routine_error_rate_limited_minutes">Has alcanzado el límite de generación. Inténtalo de nuevo en %1$d minutos.</string>
+    <string name="ai_routine_error_temporary">La generación de rutinas con IA no está disponible temporalmente. Inténtalo más tarde.</string>
+    <string name="ai_routine_error_unauthorized">Vincula tu cuenta para generar borradores de entrenamiento.</string>
+    <string name="ai_routine_preview_badge">GENERADO POR IA · BORRADOR SIN GUARDAR</string>
+    <string name="ai_routine_preview_unsaved_note">No se guarda nada hasta que guardes en el editor.</string>
+    <string name="ai_routine_preview_exclusion">Este borrador evita los grupos musculares que excluiste (según la clasificación del catálogo de ejercicios). Un ejercicio aún puede involucrar un músculo cercano.</string>
+    <string name="ai_routine_preview_requested_minutes">Solicitado: %1$d min</string>
+    <string name="ai_routine_preview_estimated_minutes">Estimado: %1$d min</string>
+    <string name="ai_routine_preview_over_target">Este borrador podría durar más que tu objetivo.</string>
+    <string name="ai_routine_preview_dropped">Descartado (no está en tu biblioteca de ejercicios): %1$s</string>
+    <string name="ai_routine_preview_unmet">Nota: %1$s</string>
+    <string name="ai_routine_preview_percent_of_1rm">%1$d %% del 1RM estimado</string>
+    <string name="ai_routine_preview_sets_reps">%1$d × %2$d</string>
+    <string name="ai_routine_preview_superset">Superserie</string>
+    <string name="ai_routine_draft_expired">Este borrador generado ya no está disponible — genera otro</string>
+    <string name="ai_routine_draft_profile_changed_title">Perfil cambiado</string>
+    <string name="ai_routine_draft_profile_changed_message">Tu perfil activo cambió desde que se generó este borrador. Genera uno nuevo para el perfil actual en lugar de guardar estos pesos allí.</string>
+    <string name="ai_routine_regenerate">Generar de nuevo</string>
 </resources>

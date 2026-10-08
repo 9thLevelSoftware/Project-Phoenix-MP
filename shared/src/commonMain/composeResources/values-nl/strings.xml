@@ -717,4 +717,46 @@
     <string name="startup_contact_support">Support mailen</string>
     <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
     <string name="startup_support_code">Supportcode: %1$s</string>
+
+    <!-- ==================== AI-routine maken (issue #1223) ==================== -->
+    <string name="ai_routine_create_with_ai">Maken met AI</string>
+    <string name="ai_routine_title">Maken met AI</string>
+    <string name="ai_routine_prompt_label">Beschrijving van de training</string>
+    <string name="ai_routine_prompt_hint">bijv. 35-min bovenlichaamstraining zonder schouders, met supersets</string>
+    <string name="ai_routine_prompt_char_count">%1$d / %2$d</string>
+    <string name="ai_routine_minutes_label">Doelduur in minuten (optioneel, 10–120)</string>
+    <string name="ai_routine_minutes_invalid">Voer een duur tussen 10 en 120 minuten in, of laat het veld leeg.</string>
+    <string name="ai_routine_generate">Concept genereren</string>
+    <string name="ai_routine_generating">Je trainingsconcept wordt gemaakt…</string>
+    <string name="ai_routine_disclosure">Je invoer wordt naar de AI-service van Phoenix gestuurd en verwerkt door een externe AI-modelprovider om dit concept te maken. Phoenix bewaart je invoer niet.</string>
+    <string name="ai_routine_retention">De provider kan de inhoud kort bewaren voor veiligheidsmonitoring en gebruikt het niet om modellen te trainen.</string>
+    <string name="ai_routine_load_toggle">Mijn gewichten gebruiken om oefeningen te kiezen</string>
+    <string name="ai_routine_load_toggle_helper">Deelt geschatte 1RM-waarden van oefeningen die je hebt gedaan — geen namen, geen trainingsgeschiedenis. Standaard uit.</string>
+    <string name="ai_routine_hint_limitation">Beperkingshints begrijpen momenteel alleen Engelse spier- en moduswoorden.</string>
+    <string name="ai_routine_gate_title">Maken met AI vereist Flame of hoger</string>
+    <string name="ai_routine_gate_message">AI-routinegeneratie is inbegrepen bij het Flame-abonnement en hoger. Koppel je account om door te gaan.</string>
+    <string name="ai_routine_gate_link_account">Account koppelen</string>
+    <string name="ai_routine_error_not_subscribed">AI-routinegeneratie vereist het Flame-plan of hoger. Upgrade om trainingsconcepten te genereren.</string>
+    <string name="ai_routine_error_not_available">AI-routinegeneratie is momenteel niet beschikbaar.</string>
+    <string name="ai_routine_error_invalid_draft">We konden geen geldige training maken van die invoer. Probeer deze aan te passen.</string>
+    <string name="ai_routine_error_invalid_request">Die invoer kon niet worden gebruikt. Pas deze aan en probeer het opnieuw.</string>
+    <string name="ai_routine_error_rate_limited_seconds">Je hebt de generatielimiet bereikt. Probeer het over %1$d seconden opnieuw.</string>
+    <string name="ai_routine_error_rate_limited_minutes">Je hebt de generatielimiet bereikt. Probeer het over %1$d minuten opnieuw.</string>
+    <string name="ai_routine_error_temporary">AI-routinegeneratie is tijdelijk niet beschikbaar. Probeer het zo meteen opnieuw.</string>
+    <string name="ai_routine_error_unauthorized">Koppel je account om trainingsconcepten te genereren.</string>
+    <string name="ai_routine_preview_badge">DOOR AI GEMAAKT · ONGEOPSLAGEN CONCEPT</string>
+    <string name="ai_routine_preview_unsaved_note">Er wordt niets opgeslagen totdat je in de editor opslaat.</string>
+    <string name="ai_routine_preview_exclusion">Dit concept vermijdt spiergroepen die je hebt uitgesloten (volgens de classificatie in de oefencatalogus). Een oefening kan nog steeds een nabije spier gebruiken.</string>
+    <string name="ai_routine_preview_requested_minutes">Gevraagd: %1$d min</string>
+    <string name="ai_routine_preview_estimated_minutes">Geschat: %1$d min</string>
+    <string name="ai_routine_preview_over_target">Dit concept kan langer duren dan je doel.</string>
+    <string name="ai_routine_preview_dropped">Verwijderd (niet in je oefenbibliotheek): %1$s</string>
+    <string name="ai_routine_preview_unmet">Opmerking: %1$s</string>
+    <string name="ai_routine_preview_percent_of_1rm">%1$d %% van geschatte 1RM</string>
+    <string name="ai_routine_preview_sets_reps">%1$d × %2$d</string>
+    <string name="ai_routine_preview_superset">Superset</string>
+    <string name="ai_routine_draft_expired">Dit gegenereerde concept is niet meer beschikbaar — genereer opnieuw</string>
+    <string name="ai_routine_draft_profile_changed_title">Profiel gewijzigd</string>
+    <string name="ai_routine_draft_profile_changed_message">Je actieve profiel is gewijzigd sinds dit concept is gegenereerd. Genereer een nieuw concept voor het huidige profiel in plaats van deze gewichten daar op te slaan.</string>
+    <string name="ai_routine_regenerate">Opnieuw genereren</string>
 </resources>

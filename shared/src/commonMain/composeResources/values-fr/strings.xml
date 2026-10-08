@@ -739,4 +739,46 @@
     <string name="startup_contact_support">Contacter l’assistance par e-mail</string>
     <string name="startup_diagnostic_code">Code de diagnostic : %1$s</string>
     <string name="startup_support_code">Code d’assistance : %1$s</string>
+
+    <!-- ==================== Création de routines avec l’IA (issue #1223) ==================== -->
+    <string name="ai_routine_create_with_ai">Créer avec l’IA</string>
+    <string name="ai_routine_title">Créer avec l’IA</string>
+    <string name="ai_routine_prompt_label">Description de la séance</string>
+    <string name="ai_routine_prompt_hint">ex. : séance haut du corps de 35 min sans épaules, avec supersets</string>
+    <string name="ai_routine_prompt_char_count">%1$d / %2$d</string>
+    <string name="ai_routine_minutes_label">Durée cible en minutes (facultatif, 10–120)</string>
+    <string name="ai_routine_minutes_invalid">Saisissez une durée entre 10 et 120 minutes, ou laissez le champ vide.</string>
+    <string name="ai_routine_generate">Générer un brouillon</string>
+    <string name="ai_routine_generating">Création du brouillon de votre séance…</string>
+    <string name="ai_routine_disclosure">Votre demande est envoyée au service d’IA de Phoenix et traitée par un fournisseur externe de modèles d’IA pour créer ce brouillon. Phoenix n’enregistre pas votre demande.</string>
+    <string name="ai_routine_retention">Le fournisseur peut conserver brièvement le contenu pour la surveillance de sécurité et ne l’utilise pas pour entraîner des modèles.</string>
+    <string name="ai_routine_load_toggle">Utiliser mes charges pour choisir les exercices</string>
+    <string name="ai_routine_load_toggle_helper">Partage les estimations de 1RM des exercices que vous avez faits — pas de noms, pas d’historique d’entraînement. Désactivé par défaut.</string>
+    <string name="ai_routine_hint_limitation">Les indications de contraintes comprennent actuellement les mots anglais de muscles et de modes.</string>
+    <string name="ai_routine_gate_title">« Créer avec l’IA » nécessite Flame ou plus</string>
+    <string name="ai_routine_gate_message">La génération de routines par IA est incluse avec l’abonnement Flame et au-dessus. Liez votre compte pour continuer.</string>
+    <string name="ai_routine_gate_link_account">Lier le compte</string>
+    <string name="ai_routine_error_not_subscribed">La génération de routines par IA nécessite l’offre Flame ou supérieure. Passez à une offre supérieure pour générer des brouillons de séance.</string>
+    <string name="ai_routine_error_not_available">La génération de routines par IA n’est pas disponible pour le moment.</string>
+    <string name="ai_routine_error_invalid_draft">Impossible de créer une séance valide à partir de cette demande. Essayez de la modifier.</string>
+    <string name="ai_routine_error_invalid_request">Cette demande n’a pas pu être utilisée. Modifiez-la et réessayez.</string>
+    <string name="ai_routine_error_rate_limited_seconds">Vous avez atteint la limite de génération. Réessayez dans %1$d secondes.</string>
+    <string name="ai_routine_error_rate_limited_minutes">Vous avez atteint la limite de génération. Réessayez dans %1$d minutes.</string>
+    <string name="ai_routine_error_temporary">La génération de routines par IA est temporairement indisponible. Réessayez bientôt.</string>
+    <string name="ai_routine_error_unauthorized">Veuillez lier votre compte pour générer des brouillons de séance.</string>
+    <string name="ai_routine_preview_badge">GÉNÉRÉ PAR L’IA · BROUILLON NON ENREGISTRÉ</string>
+    <string name="ai_routine_preview_unsaved_note">Rien n’est enregistré tant que vous n’enregistrez pas dans l’éditeur.</string>
+    <string name="ai_routine_preview_exclusion">Ce brouillon évite les groupes musculaires que vous avez exclus (selon la classification du catalogue d’exercices). Un exercice peut encore solliciter un muscle voisin.</string>
+    <string name="ai_routine_preview_requested_minutes">Demandé : %1$d min</string>
+    <string name="ai_routine_preview_estimated_minutes">Estimé : %1$d min</string>
+    <string name="ai_routine_preview_over_target">Ce brouillon pourrait durer plus longtemps que votre objectif.</string>
+    <string name="ai_routine_preview_dropped">Retiré (absent de votre bibliothèque d’exercices) : %1$s</string>
+    <string name="ai_routine_preview_unmet">Remarque : %1$s</string>
+    <string name="ai_routine_preview_percent_of_1rm">%1$d %% du 1RM estimé</string>
+    <string name="ai_routine_preview_sets_reps">%1$d × %2$d</string>
+    <string name="ai_routine_preview_superset">Superset</string>
+    <string name="ai_routine_draft_expired">Ce brouillon généré n’est plus disponible — générez-en un nouveau</string>
+    <string name="ai_routine_draft_profile_changed_title">Profil modifié</string>
+    <string name="ai_routine_draft_profile_changed_message">Votre profil actif a changé depuis la génération de ce brouillon. Générez un nouveau brouillon pour le profil actuel plutôt que d’y enregistrer ces charges.</string>
+    <string name="ai_routine_regenerate">Générer à nouveau</string>
 </resources>

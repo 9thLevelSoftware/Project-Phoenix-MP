@@ -25,6 +25,11 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.data.sync.GenerateRoutineErrorKind
+import com.devil.phoenixproject.data.sync.GenerateRoutineException
+import com.devil.phoenixproject.data.sync.GenerateRoutineLoadContextItem
+import com.devil.phoenixproject.data.sync.GenerateRoutineRequest
+import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Badge
@@ -54,12 +59,15 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
+import com.devil.phoenixproject.domain.usecase.GeneratedDraftMapper
+import com.devil.phoenixproject.domain.usecase.GeneratedDraftResult
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -1110,6 +1118,28 @@ class MainViewModel(
     fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = workoutSessionManager.moveRoutinesToProfile(routineIds, targetProfileId)
     fun saveRoutineToProfile(routine: Routine, targetProfileId: String) = workoutSessionManager.saveRoutineToProfile(routine, targetProfileId)
 
+    // ===== AI generated drafts (issue #1223 FE-C) =====
+    // One in-memory, one-shot holder for the generated draft handed off from the
+    // AI preview to this editor. Never a StateFlow, never persisted: a generated
+    // draft exists only in memory until the user's explicit editor Save (which is
+    // the existing save path and the first and only write).
+
+    val aiRoutineDraftHolder = AiRoutineDraftHolder()
+
+    /** Stage a generated draft for [RoutineEditorScreen] to consume on load. */
+    fun stageGeneratedRoutine(routine: Routine) = aiRoutineDraftHolder.stageGeneratedRoutine(routine)
+
+    /**
+     * One-shot consume of the staged generated draft. Returns null (and clears the
+     * holder) when the id does not match — the editor then falls back to the
+     * repository lookup and, if that misses too, the expired-draft recovery state.
+     */
+    fun consumeGeneratedRoutine(routineId: String): Routine? =
+        aiRoutineDraftHolder.consumeGeneratedRoutine(routineId)
+
+    /** Cancel / navigate away / logout / profile switch: drop in-flight and staged drafts. */
+    fun invalidateAiRoutineDrafts() = aiRoutineDraftHolder.invalidate()
+
     // Routine Group CRUD
     fun createGroup(name: String) = workoutSessionManager.createGroup(name)
     fun renameGroup(groupId: String, newName: String) = workoutSessionManager.renameGroup(groupId, newName)
@@ -1427,5 +1457,330 @@ class MainViewModel(
             }
             Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
+    }
+}
+
+// ===== Issue #1223 FE-C: AI generated-draft holder + response scoping =====
+// Non-composable and dependency-free so every scoping rule from binding amendment
+// 4 (session/profile binding) is unit-testable without a Compose runtime.
+
+/**
+ * Identity snapshot captured when a Generate request starts (binding amendment 4).
+ *
+ * @param accountId the portal account at request start (null when signed out).
+ * @param profileId the active profile at request start.
+ * @param requestToken a fresh per-request token; a response is accepted only for
+ *   the request that is still current.
+ */
+data class AiRoutineRequestIdentity(
+    val accountId: String?,
+    val profileId: String,
+    val requestToken: String,
+)
+
+/** Outcome of trying to accept a generated response into [AiRoutineDraftHolder]. */
+enum class AiRoutineDraftAcceptance {
+    /** Token and identities still match; the draft is staged. */
+    ACCEPTED,
+
+    /** Cancelled, navigated away, superseded by a newer request, or already consumed. */
+    STALE_REQUEST,
+
+    /** The account or profile changed while the request was in flight; nothing staged. */
+    IDENTITY_CHANGED,
+}
+
+/**
+ * One-shot, in-memory holder for one AI generated routine draft (issue #1223).
+ *
+ * Holds exactly ONE [Routine] — never a collected StateFlow, never persisted, and
+ * cleared when a consume attempt's id does not match. It also owns the request
+ * identity scoping: [beginRequest] captures account/profile/token on Generate,
+ * [acceptResponse] accepts a response only if all three still match, and
+ * [invalidate] (cancel, navigation away, logout, profile/account switch) drops
+ * both the in-flight request and any staged draft so late responses stage nothing.
+ */
+class AiRoutineDraftHolder {
+
+    private var inFlight: AiRoutineRequestIdentity? = null
+    private var staged: Routine? = null
+    private var stagedProfileId: String? = null
+
+    /**
+     * Capture the request identity on Generate and return its request token.
+     * Starting a new request supersedes any previous in-flight request and drops
+     * any staged draft (a newer generation replaces the older one).
+     */
+    fun beginRequest(
+        accountId: String?,
+        profileId: String,
+        requestToken: String = generateUUID(),
+    ): String {
+        inFlight = AiRoutineRequestIdentity(accountId, profileId, requestToken)
+        staged = null
+        stagedProfileId = null
+        return requestToken
+    }
+
+    /** The request finished without a usable response (error path); nothing is staged. */
+    fun finishRequest(requestToken: String) {
+        if (inFlight?.requestToken == requestToken) {
+            inFlight = null
+        }
+    }
+
+    /**
+     * Accept a generated response only if the per-request token AND the captured
+     * account/profile identity still match the current ones. On success the mapped
+     * draft is staged for [consumeGeneratedRoutine]; otherwise nothing is staged.
+     */
+    fun acceptResponse(
+        requestToken: String,
+        routine: Routine,
+        currentAccountId: String?,
+        currentProfileId: String,
+    ): AiRoutineDraftAcceptance {
+        val request = inFlight
+        if (request == null || request.requestToken != requestToken) {
+            return AiRoutineDraftAcceptance.STALE_REQUEST
+        }
+        if (currentAccountId != request.accountId || currentProfileId != request.profileId) {
+            invalidate()
+            return AiRoutineDraftAcceptance.IDENTITY_CHANGED
+        }
+        inFlight = null
+        staged = routine
+        stagedProfileId = request.profileId
+        return AiRoutineDraftAcceptance.ACCEPTED
+    }
+
+    /**
+     * Invalidate everything: cancel, navigation away, logout, or a profile/account
+     * switch. A response arriving after this is rejected and stages nothing.
+     */
+    fun invalidate() {
+        inFlight = null
+        staged = null
+        stagedProfileId = null
+    }
+
+    /** Edit handoff: stage the draft, then navigate to the editor to consume it. */
+    fun stageGeneratedRoutine(routine: Routine) {
+        inFlight = null
+        staged = routine
+        stagedProfileId = routine.profileId
+    }
+
+    /**
+     * One-shot consume. Returns the staged draft only for a matching id; any
+     * consume attempt clears the holder ("cleared when the id does not match").
+     */
+    fun consumeGeneratedRoutine(routineId: String): Routine? {
+        val match = staged?.takeIf { it.id == routineId }
+        staged = null
+        stagedProfileId = null
+        return match
+    }
+
+    /**
+     * Profile re-check before Edit (and mirrored before Save via
+     * [generatedDraftSaveEnabled]): the draft's profile must still be active, or
+     * the UI offers regeneration instead of moving prior-profile loads.
+     */
+    fun stagedProfileMatches(currentProfileId: String): Boolean =
+        staged != null && stagedProfileId == currentProfileId
+
+    /** Test/observation seam: whether a draft is currently staged. */
+    fun hasStagedDraft(): Boolean = staged != null
+}
+
+/** Result of resolving the editor's load effect for one routine id (issue #1223). */
+sealed class AiRoutineEditorLoad {
+    /** A generated draft was consumed from the holder; skip the repository lookup. */
+    data class StagedDraft(val routine: Routine) : AiRoutineEditorLoad()
+
+    /** An existing routine was found in the repository. */
+    data class ExistingRoutine(val routine: Routine) : AiRoutineEditorLoad()
+
+    /**
+     * The holder is absent and the id is not in the DB (process death, or the
+     * one-shot draft was already consumed): show the expired-draft recovery state
+     * with Save disabled. Never autosave, never restore from persistence.
+     */
+    data object ExpiredDraft : AiRoutineEditorLoad()
+
+    /** The "new routine" branch. */
+    data object NewRoutine : AiRoutineEditorLoad()
+}
+
+/**
+ * The editor's load decision (issue #1223): consume the generated-draft holder
+ * BEFORE [getRoutineById], and when a staged draft is consumed skip both the
+ * repository lookup and the "new" branch.
+ */
+suspend fun loadRoutineEditorState(
+    routineId: String,
+    consumeGeneratedRoutine: (String) -> Routine?,
+    getRoutineById: suspend (String) -> Routine?,
+): AiRoutineEditorLoad {
+    if (routineId == "new") return AiRoutineEditorLoad.NewRoutine
+    val staged = consumeGeneratedRoutine(routineId)
+    if (staged != null) return AiRoutineEditorLoad.StagedDraft(staged)
+    val existing = getRoutineById(routineId)
+    return if (existing != null) {
+        AiRoutineEditorLoad.ExistingRoutine(existing)
+    } else {
+        AiRoutineEditorLoad.ExpiredDraft
+    }
+}
+
+/**
+ * Save gating for the editor's existing save path (issue #1223): Save is disabled
+ * for an expired generated draft, and for a staged draft whose generation profile
+ * is no longer active (re-check before Save — offer regenerate rather than moving
+ * prior-profile loads into the new profile). Routines without a staged generated
+ * draft keep the existing save semantics.
+ */
+fun generatedDraftSaveEnabled(
+    expiredDraft: Boolean,
+    stagedDraftProfileId: String?,
+    currentProfileId: String,
+): Boolean = when {
+    expiredDraft -> false
+    stagedDraftProfileId != null -> stagedDraftProfileId == currentProfileId
+    else -> true
+}
+
+/** Result of one AI generation attempt (issue #1223). */
+sealed class AiRoutineGenerateOutcome {
+    /**
+     * A usable draft was generated, accepted (identity-scoped) and staged.
+     * [warnings] lists draft exercises dropped because the local library does not
+     * know them; [unmetConstraints] are the server's unmet-constraint notes.
+     */
+    data class Draft(
+        val routine: Routine,
+        val warnings: List<String>,
+        val unmetConstraints: List<String>,
+        val requestedMinutes: Int?,
+        val remainingToday: Int,
+    ) : AiRoutineGenerateOutcome()
+
+    /** No draft exercise survived the local re-check — the 422-style message, no editor. */
+    data object EmptyDraft : AiRoutineGenerateOutcome()
+
+    /**
+     * The response arrived after cancel / navigation away / logout / profile switch
+     * (or was superseded): rejected, nothing staged, prompt retained for retry.
+     */
+    data class Rejected(val reason: AiRoutineDraftAcceptance) : AiRoutineGenerateOutcome()
+
+    /** Typed failure copy bucket; never raw provider errors. Nothing staged, nothing saved. */
+    data class Failed(
+        val kind: GenerateRoutineErrorKind,
+        val retryAfterSeconds: Int?,
+    ) : AiRoutineGenerateOutcome()
+}
+
+/**
+ * Non-composable coordinator for one AI generation flow (issue #1223): captures
+ * the request identity on Generate, builds the request (including the opt-in
+ * load context), calls the portal function, maps the draft through
+ * [GeneratedDraftMapper], and accepts the response into [AiRoutineDraftHolder]
+ * only when the identity still matches. It performs NO repository writes: the
+ * user's editor Save is the first and only write.
+ */
+class AiRoutineGenerationCoordinator(
+    private val client: PortalApiClient,
+    private val mapper: GeneratedDraftMapper,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
+    private val holder: AiRoutineDraftHolder,
+    private val accountIdProvider: () -> String?,
+    private val profileIdProvider: () -> String,
+    private val newRequestToken: () -> String = { generateUUID() },
+) {
+
+    suspend fun generate(
+        prompt: String,
+        targetMinutes: Int?,
+        includeLoadContext: Boolean,
+    ): AiRoutineGenerateOutcome {
+        val accountAtStart = accountIdProvider()
+        val profileAtStart = profileIdProvider()
+        val token = holder.beginRequest(accountAtStart, profileAtStart, newRequestToken())
+
+        val loadContext = if (includeLoadContext) buildLoadContext(profileAtStart) else emptyList()
+        val result = client.generateRoutine(
+            GenerateRoutineRequest(
+                prompt = prompt.trim(),
+                kind = "routine",
+                targetMinutes = targetMinutes,
+                includeLoadContext = includeLoadContext,
+                loadContext = loadContext,
+            ),
+        )
+        val response = result.getOrElse { error ->
+            holder.finishRequest(token)
+            val failure = error as? GenerateRoutineException
+            return AiRoutineGenerateOutcome.Failed(
+                kind = failure?.kind ?: GenerateRoutineErrorKind.TEMPORARILY_UNAVAILABLE,
+                retryAfterSeconds = failure?.retryAfterSeconds,
+            )
+        }
+
+        return when (val mapped = mapper.map(response.draft, activeProfileId = profileAtStart)) {
+            GeneratedDraftResult.EmptyDraft -> {
+                holder.finishRequest(token)
+                AiRoutineGenerateOutcome.EmptyDraft
+            }
+
+            is GeneratedDraftResult.Mapped -> {
+                val acceptance = holder.acceptResponse(
+                    requestToken = token,
+                    routine = mapped.routine,
+                    currentAccountId = accountIdProvider(),
+                    currentProfileId = profileIdProvider(),
+                )
+                if (acceptance == AiRoutineDraftAcceptance.ACCEPTED) {
+                    AiRoutineGenerateOutcome.Draft(
+                        routine = mapped.routine,
+                        warnings = mapped.warnings,
+                        unmetConstraints = response.draft.unmetConstraints,
+                        requestedMinutes = targetMinutes,
+                        remainingToday = response.remainingToday,
+                    )
+                } else {
+                    AiRoutineGenerateOutcome.Rejected(acceptance)
+                }
+            }
+        }
+    }
+
+    /**
+     * Opt-in aggregate load context: estimated 1RM numbers (the profile baseline's
+     * `oneRepMaxPerCableKg`, the phone's only estimated-1RM source) for exercises
+     * the user has done. Never names, never workout history, never stored; capped
+     * at the wire contract's 40 items. Read fresh per request, only when the user
+     * explicitly toggles it on (default off).
+     */
+    private suspend fun buildLoadContext(profileId: String): List<GenerateRoutineLoadContextItem> =
+        baselineRepository.getAllForProfile(profileId)
+            .asSequence()
+            .mapNotNull { baseline ->
+                val estimatedOneRmKg = baseline.oneRepMaxPerCableKg
+                if (estimatedOneRmKg != null && estimatedOneRmKg.isFinite() && estimatedOneRmKg > 0f) {
+                    GenerateRoutineLoadContextItem(
+                        exerciseId = baseline.exerciseId,
+                        estimated1RmKg = estimatedOneRmKg,
+                    )
+                } else {
+                    null
+                }
+            }
+            .take(MAX_AI_ROUTINE_LOAD_CONTEXT_ITEMS)
+            .toList()
+
+    private companion object {
+        const val MAX_AI_ROUTINE_LOAD_CONTEXT_ITEMS = 40
     }
 }
