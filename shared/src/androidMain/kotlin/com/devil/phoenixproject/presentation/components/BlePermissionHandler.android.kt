@@ -71,7 +71,7 @@ private object BlePermissions {
 /**
  * State holder for BLE permission status.
  */
-sealed class BlePermissionState {
+private sealed class BlePermissionState {
     data object Granted : BlePermissionState()
     data object NotGranted : BlePermissionState()
     data object Denied : BlePermissionState()
