@@ -30,9 +30,6 @@ object SupplementalCatalogSeed {
         FreeExerciseJson(
             id = BELT_SQUAT_ID,
             name = "Belt Squat",
-            force = "push",
-            level = "beginner",
-            mechanic = "compound",
             equipment = "belt",
             primaryMuscles = listOf("quadriceps"),
             secondaryMuscles = listOf("glutes", "hamstrings"),
@@ -47,9 +44,6 @@ object SupplementalCatalogSeed {
         FreeExerciseJson(
             id = SUMO_BELT_SQUAT_ID,
             name = "Sumo Belt Squat",
-            force = "push",
-            level = "intermediate",
-            mechanic = "compound",
             equipment = "belt",
             primaryMuscles = listOf("quadriceps"),
             secondaryMuscles = listOf("glutes", "adductors", "hamstrings"),
@@ -64,9 +58,6 @@ object SupplementalCatalogSeed {
         FreeExerciseJson(
             id = BELT_SQUAT_PULSES_ID,
             name = "Belt Squat Pulses",
-            force = "push",
-            level = "intermediate",
-            mechanic = "compound",
             equipment = "belt",
             primaryMuscles = listOf("quadriceps"),
             secondaryMuscles = listOf("glutes", "hamstrings"),
