@@ -1638,6 +1638,7 @@ purgeProfileOwnedRows {
     DELETE FROM ProgressionEvent WHERE profile_id = :profileId;
     DELETE FROM ProfileExerciseBaseline WHERE profile_id = :profileId;
     DELETE FROM CycleConflictDraft WHERE original_profile_id = :profileId;
+    DELETE FROM RoutineRecovery WHERE profile_id = :profileId;
     DELETE FROM RoutineGroup WHERE profile_id = :profileId;
     DELETE FROM ActiveWorkoutRuntime WHERE profile_id = :profileId;
     DELETE FROM ExternalActivity WHERE profileId = :profileId;
@@ -1963,6 +1964,37 @@ CREATE TABLE CycleConflictDraft (
 CREATE INDEX idx_cycle_conflict_draft_profile_cycle
 ON CycleConflictDraft(original_profile_id, cycle_id);
 
+-- Local-only routine recovery snapshots (Issue #1162, additive migration 57).
+-- Before a destructive routine coalesce or a server-reported hard delete, the
+-- complete source routine graph (parent, exercises, supersets, planned sets and
+-- the cycle references that pointed at it) is retained here as payload_json with
+-- structured provenance. This table is deliberately outside every sync surface:
+-- it is never listed with routines, never collected into deletedRoutineIds,
+-- never sent in known-id lists, never part of ownership claims or push DTOs, and
+-- never replaces the server-deleted identity. Retention is 30 days from
+-- created_at; inserts are insert-if-absent per (portal user, profile, canonical
+-- identity, reason), so a repeated delivery can neither overwrite a complete
+-- snapshot nor refresh its expiry. Purged with its profile (purgeProfileOwnedRows).
+CREATE TABLE RoutineRecovery (
+    id TEXT PRIMARY KEY NOT NULL,
+    portal_user_id TEXT NOT NULL DEFAULT '',
+    profile_id TEXT NOT NULL,
+    -- Canonical identity of the recovered routine (canonical UUID text, or the
+    -- opaque id unchanged).
+    canonical_identity TEXT NOT NULL,
+    -- 'server_delete' or 'alias_coalesce'.
+    reason TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX idx_routine_recovery_key
+ON RoutineRecovery(portal_user_id, profile_id, canonical_identity, reason);
+
+CREATE INDEX idx_routine_recovery_profile
+ON RoutineRecovery(profile_id, expires_at);
+
 -- Cycle Days (replaces ProgramDay - day 1, 2, 3... instead of Mon/Tue/Wed)
 CREATE TABLE CycleDay (
     id TEXT PRIMARY KEY NOT NULL,
@@ -2234,6 +2266,36 @@ SELECT * FROM CycleConflictDraft ORDER BY created_at, id;
 resolveCycleConflictDraft:
 UPDATE CycleConflictDraft SET resolution = :resolution WHERE id = :id AND resolution IS NULL;
 
+-- ==================== ROUTINE RECOVERY SNAPSHOTS (Issue #1162) ====================
+-- Local-only retention of routine graphs that are about to be destructively
+-- removed. Not part of any sync/known-id/ownership-claim/push enumeration.
+
+-- Insert-if-absent on (portal user, profile, canonical identity, reason): a
+-- repeated delivery can neither overwrite a complete snapshot nor refresh its
+-- 30-day expiry (expires_at is set once, at first retention).
+insertRoutineRecoveryIfAbsent:
+INSERT OR IGNORE INTO RoutineRecovery(
+    id, portal_user_id, profile_id, canonical_identity, reason, payload_json, created_at, expires_at
+)
+VALUES (
+    :id, :portalUserId, :profileId, :canonicalIdentity, :reason, :payloadJson, :createdAt, :expiresAt
+);
+
+selectRoutineRecoveryById:
+SELECT * FROM RoutineRecovery WHERE id = :id;
+
+selectRoutineRecoveriesByProfile:
+SELECT * FROM RoutineRecovery
+WHERE profile_id = :profileId AND portal_user_id = :portalUserId AND expires_at >= :now
+  AND canonical_identity NOT LIKE 'cycle_routine_%'
+ORDER BY created_at DESC, id ASC;
+
+pruneExpiredRoutineRecoveries:
+DELETE FROM RoutineRecovery WHERE expires_at < :now;
+
+deleteRoutineRecoveryById:
+DELETE FROM RoutineRecovery WHERE id = :id;
+
 -- CycleDay Queries
 selectCycleDaysByCycle:
 SELECT * FROM CycleDay WHERE cycle_id = ? ORDER BY day_number ASC;
@@ -2258,6 +2320,11 @@ UPDATE CycleDay SET routine_id = NULL WHERE routine_id = ?;
 
 countCycleDaysReferencingRoutine:
 SELECT COUNT(*) FROM CycleDay WHERE routine_id = ?;
+
+-- Recovery snapshot provenance: the cycle days that referenced a routine at the
+-- moment it was destructively removed. Captured only; never reconnected by restore.
+selectCycleDayRefsByRoutine:
+SELECT id, cycle_id, day_number FROM CycleDay WHERE routine_id = :routineId;
 
 -- ==================== ROUTINE UUID IDENTITY (Issue #1162) ====================
 -- Alias-reconciliation helpers used by RoutineIdentityResolver. Canonical

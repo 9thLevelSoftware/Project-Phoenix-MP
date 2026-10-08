@@ -1,0 +1,26 @@
+-- Migration 57: local-only routine recovery snapshots (Issue #1162).
+-- Additive only. Before a destructive routine alias coalesce or a server-reported
+-- hard delete, the complete source routine graph is retained here as payload_json
+-- with structured provenance (source pull/push, incoming identity, resolved local
+-- identity, local update time, apply time, reason). The table is outside every
+-- sync surface (routine lists, deletedRoutineIds, known-id lists, ownership
+-- claims, push DTOs) and never replaces the server-deleted identity. Inserts are
+-- insert-if-absent per (portal user, profile, canonical identity, reason) so a
+-- repeated delivery cannot overwrite a complete snapshot or refresh its 30-day
+-- expiry. Purged with its profile by purgeProfileOwnedRows.
+CREATE TABLE IF NOT EXISTS RoutineRecovery (
+    id TEXT PRIMARY KEY NOT NULL,
+    portal_user_id TEXT NOT NULL DEFAULT '',
+    profile_id TEXT NOT NULL,
+    canonical_identity TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_routine_recovery_key
+ON RoutineRecovery(portal_user_id, profile_id, canonical_identity, reason);
+
+CREATE INDEX IF NOT EXISTS idx_routine_recovery_profile
+ON RoutineRecovery(profile_id, expires_at);

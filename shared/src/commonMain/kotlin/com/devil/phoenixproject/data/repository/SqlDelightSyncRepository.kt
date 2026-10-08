@@ -19,6 +19,7 @@ import com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
 import com.devil.phoenixproject.data.sync.customExerciseIdTimestamp
 import com.devil.phoenixproject.data.sync.isNeverSyncedSession
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
 import com.devil.phoenixproject.database.Superset as SupersetRow
 import com.devil.phoenixproject.domain.model.CycleDay
@@ -65,11 +66,12 @@ class SqlDelightSyncRepository(
     private val userProfileRepository: UserProfileRepository,
     private val localOwnershipClaimLookup: LocalOwnershipClaimLookup =
         SqlDelightLocalOwnershipClaimLookup(db),
+    private val routineRecoveryStore: RoutineRecoveryStore = RoutineRecoveryStore(db.phoenixDatabaseQueries),
 ) : SyncRepository {
 
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
-    private val routineIdentityResolver = RoutineIdentityResolver(queries)
+    private val routineIdentityResolver = RoutineIdentityResolver(queries, routineRecoveryStore)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
@@ -84,9 +86,6 @@ class SqlDelightSyncRepository(
         const val DURATION_SYNC_UNKNOWN = 0L
         const val DURATION_SYNC_KNOWN = 1L
         const val DURATION_SYNC_MALFORMED = 2L
-
-        /** Local-only routines generated for template cycles (never synced). */
-        const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
 
         /**
          * Generic canonical UUID. Local captures use [generateUUID], portal ids are
@@ -119,7 +118,11 @@ class SqlDelightSyncRepository(
         // Issue #1162: a pulled routine reference resolves to the kept local routine
         // primary key (validated UUID spellings may differ from the stored id text).
         if (portalDay.routineId != null) {
-            return routineIdentityResolver.resolve(portalDay.routineId, scopeProfileId = profileId) {
+            return routineIdentityResolver.resolve(
+                portalDay.routineId,
+                scopeProfileId = profileId,
+                source = "pull_cycle",
+            ) {
                 it.profile_id == profileId
             }.localId
         }
@@ -2631,6 +2634,7 @@ class SqlDelightSyncRepository(
         cycleIds: List<String>,
         lastSync: Long,
         syncProfileId: String?,
+        source: String,
     ): ServerDeletionResult = withContext(Dispatchers.IO) {
         if (routineIds.isEmpty() && cycleIds.isEmpty()) return@withContext ServerDeletionResult()
 
@@ -2649,6 +2653,19 @@ class SqlDelightSyncRepository(
                 val localRows = routineIdentityResolver.findCandidates(serverRoutineId) {
                     profileOwnerMatches(it.profile_id, ownerUserId, syncProfileId)
                 }
+                // Issue #1162: retain the complete source graph BEFORE the
+                // destructive hard delete, in this same transaction. A snapshot
+                // failure throws, rolling the deletion back and failing the pull
+                // page so its checkpoint does not advance (the ids are re-reported
+                // and re-applied idempotently). Unknown or foreign ids match no
+                // owner-scoped row and are left untouched.
+                retainRoutineGraphsForRecovery(
+                    rows = localRows,
+                    incomingIdentity = serverRoutineId,
+                    ownerUserId = ownerUserId,
+                    reason = RoutineRecoveryReasons.SERVER_DELETE,
+                    source = source,
+                )
                 for (row in localRows) {
                     // lastSync == 0 (first pull / forced resync) has no sync base, so an
                     // edit cannot be classified as "unsynced"; skip the report then.
@@ -2690,6 +2707,16 @@ class SqlDelightSyncRepository(
                         profileOwnerMatches(templateRoutine.profile_id, ownerUserId, syncProfileId) &&
                         queries.countCycleDaysReferencingRoutine(templateRoutineId).executeAsOne() == 0L
                     ) {
+                        // Issue #1162: retain before the destructive hard delete.
+                        // Template deletions are retained but never surfaced as
+                        // user routines by the recovery UI.
+                        retainRoutineGraphsForRecovery(
+                            rows = listOf(templateRoutine),
+                            incomingIdentity = templateRoutineId,
+                            ownerUserId = ownerUserId,
+                            reason = RoutineRecoveryReasons.SERVER_DELETE,
+                            source = source,
+                        )
                         hardDeleteRoutineWithChildren(templateRoutineId)
                         deletedTemplateRoutines += templateRoutineId
                     }
@@ -2716,6 +2743,35 @@ class SqlDelightSyncRepository(
         queries.deleteSupersetsByRoutine(routineId)
         queries.clearCycleDayRoutineReferences(routineId)
         queries.deleteRoutineById(routineId)
+    }
+
+    /**
+     * Issue #1162: retain the complete source graph of every matched routine in
+     * the local-only recovery store before a destructive hard delete. Must run
+     * inside the deletion transaction — a snapshot failure throws and rolls the
+     * deletion back so the sync page fails and its checkpoint does not advance.
+     * Retention is grouped per profile (account/profile-scoped snapshots).
+     */
+    private fun retainRoutineGraphsForRecovery(
+        rows: List<RoutineRow>,
+        incomingIdentity: String,
+        ownerUserId: String,
+        reason: String,
+        source: String,
+    ) {
+        val now = currentTimeMillis()
+        for ((profileId, rowsInProfile) in rows.groupBy { it.profile_id }) {
+            routineRecoveryStore.retainRoutineGraphs(
+                rows = rowsInProfile.sortedBy { it.id },
+                canonicalIdentity = RoutineIdentity.canonicalUuidOrNull(incomingIdentity) ?: incomingIdentity,
+                portalUserId = ownerUserId,
+                profileId = profileId,
+                reason = reason,
+                source = source,
+                incomingIdentity = incomingIdentity,
+                appliedAt = now,
+            )
+        }
     }
 
     /**
@@ -3251,7 +3307,11 @@ class SqlDelightSyncRepository(
         // Issue #1162: one owner-scoped identity resolution before every read and
         // write — exact id, genuine serverId aliases, and validated-UUID-equivalent
         // spellings all denote one local row (whose stored primary key is kept).
-        val identity = routineIdentityResolver.resolve(portalRoutine.id, scopeProfileId = profileId) {
+        val identity = routineIdentityResolver.resolve(
+            portalRoutine.id,
+            scopeProfileId = profileId,
+            source = "pull",
+        ) {
             it.profile_id == profileId
         }
         val localId = identity.localId
@@ -3697,3 +3757,6 @@ class SqlDelightSyncRepository(
 
 /** Ledger key of the one-shot legacy generation seeding (AppliedDataRepair). */
 internal const val LEGACY_SYNC_GENERATIONS_REPAIR_KEY = "legacy-sync-generations-v1"
+
+/** Local-only routines generated for template cycles (never synced, never user routines). */
+internal const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"

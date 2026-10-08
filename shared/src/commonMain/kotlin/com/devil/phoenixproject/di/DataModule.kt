@@ -54,7 +54,18 @@ val dataModule = module {
     single { LegacyBaselineRepair(get()) }
     single { ProfileMutationBarrier() }
     single { ProfileRecoveryActivityTracker() }
-    single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
+    single<WorkoutRepository> {
+        val scope = this
+        SqlDelightWorkoutRepository(
+            db = get(),
+            exerciseRepository = get(),
+            // Resolved per call (Issue #1162 final audit R4): recovery access is
+            // authorized by the authenticated portal identity and the active
+            // profile at execution time — both change over the app's lifetime.
+            signedInPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.currentUser?.value?.id },
+            activeProfileId = { scope.getOrNull<UserProfileRepository>()?.activeProfile?.value?.id },
+        )
+    }
     single<WorkoutDeletionRepository> { SqlDelightWorkoutDeletionRepository(get()) }
     single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }

@@ -1283,5 +1283,22 @@ WHERE gs.rowid = (
         "DROP TABLE IF EXISTS ExerciseSignature",
     )
 
+    // Migration 57: local-only routine recovery snapshots (Issue #1162). Mirrors
+    // 57.sqm exactly: additive table plus its two indexes, nothing else.
+    57 -> listOf(
+        """CREATE TABLE IF NOT EXISTS RoutineRecovery (
+            id TEXT PRIMARY KEY NOT NULL,
+            portal_user_id TEXT NOT NULL DEFAULT '',
+            profile_id TEXT NOT NULL,
+            canonical_identity TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_routine_recovery_key ON RoutineRecovery(portal_user_id, profile_id, canonical_identity, reason)",
+        "CREATE INDEX IF NOT EXISTS idx_routine_recovery_profile ON RoutineRecovery(profile_id, expires_at)",
+    )
+
     else -> emptyList()
 }

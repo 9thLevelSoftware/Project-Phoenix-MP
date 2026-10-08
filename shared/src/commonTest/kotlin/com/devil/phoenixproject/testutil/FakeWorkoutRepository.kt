@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
+import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -15,6 +16,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 
 /**
@@ -28,6 +30,19 @@ class FakeWorkoutRepository : WorkoutRepository {
         val profileId: String,
         val limit: Int,
     )
+
+    /**
+     * Issue #1162 final audit R5 hook: the observed recovery stream handed to
+     * [observeRoutineRecoveries], keyed by the requested scope so UI tests can
+     * control per-scope emissions (including late in-flight publications).
+     */
+    var routineRecoveryObserver: (profileId: String, portalUserId: String) -> Flow<List<RoutineRecoveryItem>> =
+        { _, _ -> emptyFlow() }
+
+    override fun observeRoutineRecoveries(
+        profileId: String,
+        portalUserId: String,
+    ): Flow<List<RoutineRecoveryItem>> = routineRecoveryObserver(profileId, portalUserId)
 
     private val sessions = mutableMapOf<String, WorkoutSession>()
     private val routines = mutableMapOf<String, Routine>()

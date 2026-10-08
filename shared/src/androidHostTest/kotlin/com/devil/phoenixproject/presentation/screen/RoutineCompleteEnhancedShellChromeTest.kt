@@ -89,6 +89,9 @@ class RoutineCompleteEnhancedShellChromeTest {
                     single<ExerciseRepository> { fx.fakeExerciseRepository }
                     single<PersonalRecordRepository> { fx.fakePersonalRecordRepository }
                     single<ProfileExerciseBaselineRepository> { fx.fakeBaselineRepository }
+                    // Issue #1162 R4 UI: the recovery surface observes the
+                    // authenticated portal identity from the production auth store.
+                    single { com.devil.phoenixproject.data.sync.PortalTokenStorage(com.russhwolf.settings.MapSettings()) }
                     single<SyncManager> { syncManager }
                     single { RoutineTimeEstimator(get()) }
                     single { TemplateConverter(get(), get()) }

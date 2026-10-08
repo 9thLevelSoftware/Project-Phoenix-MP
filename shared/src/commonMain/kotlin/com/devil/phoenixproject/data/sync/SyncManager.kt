@@ -4591,6 +4591,7 @@ class SyncManager(
             routineIds = routineIds,
             cycleIds = cycleIds,
             lastSync = lastSync,
+            source = source,
         )
         if (result.discardedRoutineEditIds.isNotEmpty()) {
             Logger.w("SyncManager") {

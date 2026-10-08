@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.database.Routine as RoutineRow
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 
 /**
  * Issue #1162 — routine UUID identity contract.
@@ -65,6 +66,14 @@ internal data class RoutineIdentityResolution(
     val coalescedAwayIds: List<String>,
 )
 
+/** Outcome of eager maintenance over one existing same-identity component. */
+data class ComponentReconciliation(
+    val keeperId: String,
+    val removedIds: List<String>,
+    /** True when a tombstoned row was kept (and its `deletedAt` preserved). */
+    val tombstonePreserved: Boolean,
+)
+
 /**
  * Owner-scoped routine identity resolver (Issue #1162).
  *
@@ -79,7 +88,10 @@ internal data class RoutineIdentityResolution(
  *
  * Callers must run [resolve] inside a database transaction.
  */
-internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueries) {
+internal class RoutineIdentityResolver(
+    private val queries: PhoenixDatabaseQueries,
+    private val recoveryStore: RoutineRecoveryStore = RoutineRecoveryStore(queries),
+) {
 
     /**
      * All owner-scoped rows denoting the same identity as [incomingId], joined
@@ -127,10 +139,17 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
      * row. When no row exists yet, the incoming id text is preserved verbatim as
      * the new primary key — canonical lowercase is a wire and lookup form only.
      * Must run inside a database transaction.
+     *
+     * Issue #1162 merge gate R2: this is a destructive coalesce boundary. Before
+     * any alias is removed, the complete source graph of every component row is
+     * retained in the local-only recovery store (same transaction); a snapshot
+     * failure throws so the caller's whole transaction rolls back and the sync
+     * page (if any) fails without advancing its checkpoint.
      */
     fun resolve(
         incomingId: String,
         scopeProfileId: String? = null,
+        source: String = "named_write",
         scopeMatches: (RoutineRow) -> Boolean,
     ): RoutineIdentityResolution {
         val candidates = findCandidates(incomingId, scopeProfileId, scopeMatches)
@@ -141,6 +160,7 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
         val keeper = selectKeeper(incomingId, candidates)
         val losers = candidates.filter { it.id != keeper.id }
         if (losers.isNotEmpty()) {
+            retainBeforeCoalesce(candidates, incomingIdentity = incomingId, source = source)
             coalesce(keeper.id, losers)
         }
         val keptRow = queries.selectRoutineById(keeper.id).executeAsOneOrNull() ?: keeper
@@ -153,19 +173,100 @@ internal class RoutineIdentityResolver(private val queries: PhoenixDatabaseQueri
     }
 
     /**
-     * Deterministic kept row: the most recently updated identity wins (a newer
-     * local edit survives; an equal-time tombstone wins), then a live row beats a
-     * tombstone, then the exact incoming text, then the lexicographically
-     * smallest id. Never picks across ownership boundaries — candidates are
-     * already owner-scoped.
+     * Deterministic kept row. No-resurrection rule (Issue #1162 acceptance): when
+     * ANY candidate is tombstoned, the tombstoned row is kept with its `deletedAt`
+     * preserved — a live alias never wins and clears the identity's deletion.
+     * Otherwise the most recently updated identity wins (a newer local edit
+     * survives), then the exact incoming text, then the lexicographically smallest
+     * id. Never picks across ownership boundaries — candidates are already
+     * owner-scoped.
      */
-    private fun selectKeeper(incomingId: String, candidates: List<RoutineRow>): RoutineRow =
-        candidates.sortedWith(
+    private fun selectKeeper(incomingId: String, candidates: List<RoutineRow>): RoutineRow {
+        val tombstone = candidates.filter { it.deletedAt != null }.sortedWith(
             compareByDescending<RoutineRow> { it.deletedAt ?: it.updatedAt ?: it.createdAt }
-                .thenBy { if (it.deletedAt == null) 0 else 1 }
+                .thenBy { it.id },
+        ).firstOrNull()
+        if (tombstone != null) return tombstone
+        return candidates.sortedWith(
+            compareByDescending<RoutineRow> { it.deletedAt ?: it.updatedAt ?: it.createdAt }
                 .thenBy { if (it.id == incomingId) 0 else 1 }
                 .thenBy { it.id },
         ).first()
+    }
+
+    /**
+     * Issue #1162 eager maintenance: reconcile one existing same-identity
+     * component (already-split alias rows) without any incoming write. Must run
+     * inside a database transaction, and the caller must retain the full source
+     * graphs in the recovery store before calling, since coalescing is
+     * destructive for the alias rows.
+     *
+     * A tombstoned component never passes through unchanged [resolve]/selectKeeper
+     * semantics: if any candidate has `deletedAt`, that tombstoned row is kept with
+     * `deletedAt` preserved and the live aliases are removed into it — a tombstoned
+     * identity is never cleared or resurrected. Only components with at least two
+     * rows are touched; the kept primary key is preserved.
+     *
+     * Issue #1162 merge gate R2: like [resolve], this is a destructive coalesce
+     * boundary — the complete source graph is retained in the recovery store first
+     * (same transaction), and a snapshot failure throws, rolling the whole run back.
+     */
+    fun reconcileExistingComponent(
+        candidates: List<RoutineRow>,
+        source: String = "identity_maintenance",
+    ): ComponentReconciliation? {
+        if (candidates.size < 2) return null
+        val keeper = selectKeeper(
+            incomingId = candidates.map { it.id }.sorted().first(),
+            candidates = candidates,
+        )
+        val losers = candidates.filter { it.id != keeper.id }
+        if (losers.isEmpty()) return null
+        retainBeforeCoalesce(candidates, incomingIdentity = null, source = source)
+        coalesce(keeper.id, losers)
+        return ComponentReconciliation(
+            keeperId = keeper.id,
+            removedIds = losers.map { it.id },
+            tombstonePreserved = keeper.deletedAt != null,
+        )
+    }
+
+    /**
+     * Issue #1162 merge gate R2: retain the complete source graph of every
+     * component row in the local-only recovery store BEFORE a destructive
+     * coalesce, inside the caller's transaction. Retention is grouped per profile
+     * with the account identity resolved from the profile row; any failure throws
+     * so the destructive write rolls back with it.
+     */
+    private fun retainBeforeCoalesce(
+        rows: List<RoutineRow>,
+        incomingIdentity: String?,
+        source: String,
+        appliedAt: Long = currentTimeMillis(),
+    ) {
+        for ((profileId, profileRows) in rows.groupBy { it.profile_id }) {
+            val portalUserId = queries.getProfileById(profileId).executeAsOneOrNull()
+                ?.supabase_user_id ?: ""
+            recoveryStore.retainRoutineGraphs(
+                rows = profileRows.sortedBy { it.id },
+                canonicalIdentity = componentCanonicalIdentity(profileRows),
+                portalUserId = portalUserId,
+                profileId = profileId,
+                reason = RoutineRecoveryReasons.ALIAS_COALESCE,
+                source = source,
+                incomingIdentity = incomingIdentity,
+                appliedAt = appliedAt,
+            )
+        }
+    }
+
+    /** Deterministic canonical identity of one equivalence component (Issue #1162). */
+    private fun componentCanonicalIdentity(rows: List<RoutineRow>): String {
+        val sorted = rows.sortedBy { it.id }
+        return sorted.firstNotNullOfOrNull {
+            RoutineIdentity.canonicalUuidOrNull(it.id) ?: RoutineIdentity.canonicalUuidOrNull(it.serverId)
+        } ?: sorted.first().id
+    }
 
     /**
      * Merge each alias row into [keeperId] without discarding either row's data:

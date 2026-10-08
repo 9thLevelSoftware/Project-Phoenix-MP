@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.presentation.components.RoutineCsvExportBlockedDialog
 import com.devil.phoenixproject.presentation.components.RoutineCsvImportDialog
+import com.devil.phoenixproject.presentation.components.RoutineRecoveryHost
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvExportUiState
@@ -120,6 +123,14 @@ fun DailyRoutinesScreen(
                 }
             },
             modifier = Modifier.fillMaxSize(),
+        )
+
+        // Issue #1162: recoverable routines entry (explicit restore-as-copy). The
+        // routine list is never blocked by it; the sheet opens on explicit request.
+        RoutineRecoveryHost(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 20.dp),
         )
 
         if (pickRoutineCsv) {
