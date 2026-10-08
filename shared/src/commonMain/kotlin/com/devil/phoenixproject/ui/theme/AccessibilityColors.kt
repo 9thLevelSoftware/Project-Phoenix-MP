@@ -62,7 +62,7 @@ data class AccessibilityColors(
  * Velocity zones aligned to BiomechanicsHistoryCard mapping (VBT standard):
  * Cyan=Explosive, Green=Fast, Amber=Moderate, Orange=Slow, Red=Grind.
  */
-val StandardPalette = AccessibilityColors(
+internal val StandardPalette = AccessibilityColors(
     // Semantic status (single source of truth: Color.kt)
     success = SignalSuccess,
     error = SignalError,
