@@ -22,9 +22,6 @@ import projectphoenix.shared.generated.resources.Res
 data class FreeExerciseJson(
     val id: String,
     val name: String,
-    val force: String? = null,
-    val level: String? = null,
-    val mechanic: String? = null,
     val equipment: String? = null,
     val primaryMuscles: List<String> = emptyList(),
     val secondaryMuscles: List<String> = emptyList(),
