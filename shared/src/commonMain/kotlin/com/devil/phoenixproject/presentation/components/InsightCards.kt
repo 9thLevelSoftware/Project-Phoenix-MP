@@ -673,7 +673,7 @@ private fun getVolumeComparison(totalVolumeKg: Float): VolumeComparison = when {
 /**
  * Lifetime stats data class
  */
-data class LifetimeStats(
+private data class LifetimeStats(
     val totalWorkouts: Int,
     val totalVolumeKg: Float,
     val totalReps: Int,
