@@ -72,66 +72,68 @@ fun DailyRoutinesScreen(
             .fillMaxSize()
             .background(backgroundGradient),
     ) {
-        // Reuse RoutinesTab content
-        RoutinesTab(
-            routines = routines,
-            onStartWorkout = { routine -> routineResume.launchDailyRoutine(routine) },
-            onStartWorkoutWithModifier = { routine, modifier ->
-                viewModel.enterRoutineOverview(routine, modifier)
-                navController.navigate(NavigationRoutes.RoutineOverview.route)
-            },
-            onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
-            onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
-            onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
-            profiles = profiles,
-            activeProfileId = activeProfile?.id ?: "default",
-            onMoveToProfile = { routineIds, targetProfileId ->
-                viewModel.moveRoutinesToProfile(routineIds, targetProfileId)
-            },
-            onSaveRoutineToProfile = { routine, targetProfileId ->
-                viewModel.saveRoutineToProfile(routine, targetProfileId)
-            },
-            // Routine group support
-            routineGroups = routineGroups,
-            onCreateGroup = { name -> viewModel.createGroup(name) },
-            onRenameGroup = { groupId, newName -> viewModel.renameGroup(groupId, newName) },
-            onDeleteGroup = { groupId -> viewModel.deleteGroup(groupId) },
-            onMoveToGroup = { routineIds, groupId -> viewModel.moveRoutinesToGroup(routineIds, groupId) },
-            onEditRoutine = { routineId ->
-                // Issue #130: Block editing during active workout
-                if (viewModel.isWorkoutActive) {
-                    showWorkoutActiveDialog = true
-                } else {
-                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId))
-                }
-            },
-            onCreateRoutine = {
-                // Issue #130: Block creating during active workout
-                if (viewModel.isWorkoutActive) {
-                    showWorkoutActiveDialog = true
-                } else {
-                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
-                }
-            },
-            onExportRoutineCsv = { routine -> routineCsvViewModel.exportRoutine(routine) },
-            onImportRoutinesCsv = {
-                // Same rule as editing: routines are not replaced during a workout.
-                if (viewModel.isWorkoutActive) {
-                    showWorkoutActiveDialog = true
-                } else {
-                    pickRoutineCsv = true
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        // Issue #1162: recoverable routines entry (explicit restore-as-copy). The
-        // routine list is never blocked by it; the sheet opens on explicit request.
-        RoutineRecoveryHost(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 20.dp),
-        )
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Issue #1162: recoverable routines entry (explicit restore-as-copy). It
+            // renders nothing until a snapshot exists, never blocks the list, and the
+            // sheet opens only on explicit request.
+            RoutineRecoveryHost(
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 8.dp, end = 20.dp),
+            )
+            // Reuse RoutinesTab content
+            RoutinesTab(
+                routines = routines,
+                onStartWorkout = { routine -> routineResume.launchDailyRoutine(routine) },
+                onStartWorkoutWithModifier = { routine, modifier ->
+                    viewModel.enterRoutineOverview(routine, modifier)
+                    navController.navigate(NavigationRoutes.RoutineOverview.route)
+                },
+                onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
+                onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
+                onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
+                profiles = profiles,
+                activeProfileId = activeProfile?.id ?: "default",
+                onMoveToProfile = { routineIds, targetProfileId ->
+                    viewModel.moveRoutinesToProfile(routineIds, targetProfileId)
+                },
+                onSaveRoutineToProfile = { routine, targetProfileId ->
+                    viewModel.saveRoutineToProfile(routine, targetProfileId)
+                },
+                // Routine group support
+                routineGroups = routineGroups,
+                onCreateGroup = { name -> viewModel.createGroup(name) },
+                onRenameGroup = { groupId, newName -> viewModel.renameGroup(groupId, newName) },
+                onDeleteGroup = { groupId -> viewModel.deleteGroup(groupId) },
+                onMoveToGroup = { routineIds, groupId -> viewModel.moveRoutinesToGroup(routineIds, groupId) },
+                onEditRoutine = { routineId ->
+                    // Issue #130: Block editing during active workout
+                    if (viewModel.isWorkoutActive) {
+                        showWorkoutActiveDialog = true
+                    } else {
+                        navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId))
+                    }
+                },
+                onCreateRoutine = {
+                    // Issue #130: Block creating during active workout
+                    if (viewModel.isWorkoutActive) {
+                        showWorkoutActiveDialog = true
+                    } else {
+                        navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
+                    }
+                },
+                onExportRoutineCsv = { routine -> routineCsvViewModel.exportRoutine(routine) },
+                onImportRoutinesCsv = {
+                    // Same rule as editing: routines are not replaced during a workout.
+                    if (viewModel.isWorkoutActive) {
+                        showWorkoutActiveDialog = true
+                    } else {
+                        pickRoutineCsv = true
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        }
 
         if (pickRoutineCsv) {
             val filePicker = rememberFilePicker()

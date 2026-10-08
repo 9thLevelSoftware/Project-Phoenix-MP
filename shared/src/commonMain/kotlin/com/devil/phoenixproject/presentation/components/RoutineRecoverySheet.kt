@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -92,6 +93,9 @@ fun RoutineRecoveryHost(
     var expandedKey by remember(scopeKey) { mutableStateOf<String?>(null) }
     // Bumped on explicit entry and after restore so the surface revalidates (R5).
     var refreshTick by remember(scopeKey) { mutableStateOf(0) }
+    // Snapshots restored in this scope: restore keeps the snapshot listed (it is
+    // never consumed), so the button itself has to show that the copy exists.
+    val restoredKeys = remember(scopeKey) { mutableStateSetOf<String>() }
 
     LaunchedEffect(scopeKey, refreshTick) {
         if (scopeKey == null || profileId == null || authId == null) {
@@ -120,7 +124,7 @@ fun RoutineRecoveryHost(
         }
     }
 
-    if (scopeKey != null && items.isNotEmpty() && !sheetOpen) {
+    if (scopeKey != null && items.isNotEmpty()) {
         FilledTonalButton(
             onClick = {
                 sheetOpen = true
@@ -185,31 +189,37 @@ fun RoutineRecoveryHost(
                                         Text(if (expandedKey == key) "Hide preview" else "Preview")
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Button(onClick = {
-                                        val targetProfileId = profileId
-                                        val targetAuthId = authId
-                                        if (targetProfileId == null || targetAuthId == null) return@Button
-                                        scope.launch {
-                                            try {
-                                                // Revalidated at execution time by the
-                                                // repository (R4): a scope that changed
-                                                // after the list loaded cannot restore.
-                                                workoutRepository.restoreRoutineRecoveryAsCopy(
-                                                    recoveryId = item.recoveryId,
-                                                    graphIndex = item.graphIndex,
-                                                    profileId = targetProfileId,
-                                                    portalUserId = targetAuthId,
-                                                )
-                                            } catch (e: CancellationException) {
-                                                throw e
-                                            } catch (e: Exception) {
-                                                Logger.w(e) { "RoutineRecovery: restore failed for $key" }
+                                    val restored = key in restoredKeys
+                                    Button(
+                                        enabled = !restored,
+                                        onClick = {
+                                            val targetProfileId = profileId
+                                            val targetAuthId = authId
+                                            if (targetProfileId == null || targetAuthId == null) return@Button
+                                            scope.launch {
+                                                val newId = try {
+                                                    // Revalidated at execution time by the
+                                                    // repository (R4): a scope that changed
+                                                    // after the list loaded cannot restore.
+                                                    workoutRepository.restoreRoutineRecoveryAsCopy(
+                                                        recoveryId = item.recoveryId,
+                                                        graphIndex = item.graphIndex,
+                                                        profileId = targetProfileId,
+                                                        portalUserId = targetAuthId,
+                                                    )
+                                                } catch (e: CancellationException) {
+                                                    throw e
+                                                } catch (e: Exception) {
+                                                    Logger.w(e) { "RoutineRecovery: restore failed for $key" }
+                                                    null
+                                                }
+                                                if (newId != null) restoredKeys += key
+                                                // Revalidate the explicit entry after restore (R5).
+                                                refreshTick += 1
                                             }
-                                            // Revalidate the explicit entry after restore (R5).
-                                            refreshTick += 1
-                                        }
-                                    }) {
-                                        Text("Restore as copy")
+                                        },
+                                    ) {
+                                        Text(if (restored) "Restored" else "Restore as copy")
                                     }
                                 }
                                 if (expandedKey == key) {

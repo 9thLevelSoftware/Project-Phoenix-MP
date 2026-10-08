@@ -2293,9 +2293,6 @@ ORDER BY created_at DESC, id ASC;
 pruneExpiredRoutineRecoveries:
 DELETE FROM RoutineRecovery WHERE expires_at < :now;
 
-deleteRoutineRecoveryById:
-DELETE FROM RoutineRecovery WHERE id = :id;
-
 -- CycleDay Queries
 selectCycleDaysByCycle:
 SELECT * FROM CycleDay WHERE cycle_id = ? ORDER BY day_number ASC;
