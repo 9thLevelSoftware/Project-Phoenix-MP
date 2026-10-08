@@ -29,7 +29,7 @@ The Xcode project picks up:
 - the framework from `shared/build/bin/iosArm64/xcodeFramework/shared.framework`
 - the Compose resources from `shared/build/processedResources/iosArm64/main/composeResources` (copied by a build phase; device SDK only)
 
-Release workflows (`.github/workflows/ios-testflight.yml`, `ios-release-ipa.yml`, `ios-testflight-internal.yml`) run `:shared:linkReleaseFrameworkIosArm64` and then `iosApp/install-xcode-framework.sh release`.
+Release workflows (`.github/workflows/ios-testflight.yml`, `.github/workflows/ios-release-ipa.yml`, `.github/workflows/ios-testflight-internal.yml`) run `:shared:linkReleaseFrameworkIosArm64` and then `iosApp/install-xcode-framework.sh release`.
 
 Then open the project:
 
@@ -42,40 +42,40 @@ open iosApp/PhoenixApp/PhoenixApp.xcodeproj
 ### Supabase Configuration
 
 The Xcode project references the tracked
-`PhoenixApp/Config/SupabaseBase.xcconfig`, which optionally includes the
-local-only `PhoenixApp/Config/Supabase.xcconfig`. The local file is
+`iosApp/PhoenixApp/Config/SupabaseBase.xcconfig`, which optionally includes the
+local-only `iosApp/PhoenixApp/Config/Supabase.xcconfig`. The local file is
 intentionally ignored by git because it contains environment values. Create it
 from the tracked template before opening the project:
 
 ```bash
-cp PhoenixApp/Config/Supabase.xcconfig.example PhoenixApp/Config/Supabase.xcconfig
+cp iosApp/PhoenixApp/Config/Supabase.xcconfig.example iosApp/PhoenixApp/Config/Supabase.xcconfig
 ```
 
-Fill in local development values in `Supabase.xcconfig`. GitHub Actions writes
+Fill in local development values in `iosApp/PhoenixApp/Config/Supabase.xcconfig`. GitHub Actions writes
 that ignored file from encrypted repository secrets during iOS build workflows, so the
 real file must not be committed. If a real anon key was ever committed, rotate
 it in Supabase and update the GitHub secrets.
 
 ### Project Files
 
-Use the checked-in `PhoenixApp/PhoenixApp.xcodeproj`. The `PhoenixApp/PhoenixApp/` directory contains the Swift source files:
+Use the checked-in `iosApp/PhoenixApp/PhoenixApp.xcodeproj`. The `iosApp/PhoenixApp/PhoenixApp/` directory contains the Swift source files:
 
-- `PhoenixApp.swift` - App entry point with Koin initialization
-- `ContentView.swift` - SwiftUI wrapper for Compose Multiplatform UI
-- `Info.plist` - App configuration with BLE permissions
+- `iosApp/PhoenixApp/PhoenixApp/PhoenixApp.swift` - App entry point with Koin initialization
+- `iosApp/PhoenixApp/PhoenixApp/ContentView.swift` - SwiftUI wrapper for Compose Multiplatform UI
+- `iosApp/PhoenixApp/PhoenixApp/Info.plist` - App configuration with BLE permissions
 
 ## Key Features
 
 ### Bluetooth Permissions
 
-The `Info.plist` includes the required BLE permission string:
+The `iosApp/PhoenixApp/PhoenixApp/Info.plist` includes the required BLE permission string:
 - `NSBluetoothAlwaysUsageDescription` - Required for BLE scanning/connection
 
 ### Bluetooth Integration
 
-BLE is shared code: `KableBleRepository.kt` in `shared/src/commonMain` uses the
+BLE is shared code: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/KableBleRepository.kt` uses the
 Kable multiplatform library, which runs on CoreBluetooth on iOS. Scanning and
-connection live in `KableBleConnectionManager.kt`. The app parses real-time
+connection live in `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/ble/KableBleConnectionManager.kt`. The app parses real-time
 workout metrics and handles rep notifications. iOS-specific code lives in
 `shared/src/iosMain/`.
 
@@ -120,7 +120,7 @@ If you get "No such module 'shared'" error:
 
 ### Koin Initialization and Migrations
 
-`PhoenixAppEntry.init()` in `PhoenixApp/PhoenixApp/PhoenixApp.swift` starts Koin before the SwiftUI scene is shown:
+`PhoenixAppEntry.init()` in `iosApp/PhoenixApp/PhoenixApp/PhoenixApp.swift` starts Koin before the SwiftUI scene is shown:
 
 ```swift
 try KoinInitIosKt.doInitKoin()
@@ -128,7 +128,7 @@ try KoinInitIosKt.doInitKoin()
 
 `doInitKoin()` is declared in `shared/src/iosMain/kotlin/com/devil/phoenixproject/di/KoinInitIos.kt` with `@Throws(Throwable::class)`, so the Swift `try` receives initialization failures. It delegates to `doInitKoinInternal()` in `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`, which calls `initKoin()`.
 
-Required startup work runs later, inside the Compose host. `ContentView` (`PhoenixApp/PhoenixApp/ContentView.swift`) creates the UI with `MainViewControllerKt.MainViewController()`. `MainViewController()` in `shared/src/iosMain/kotlin/com/devil/phoenixproject/MainViewController.kt` builds a `ComposeUIViewController` whose content is `IosAppHost()`.
+Required startup work runs later, inside the Compose host. `ContentView` (`iosApp/PhoenixApp/PhoenixApp/ContentView.swift`) creates the UI with `MainViewControllerKt.MainViewController()`. `MainViewController()` in `shared/src/iosMain/kotlin/com/devil/phoenixproject/MainViewController.kt` builds a `ComposeUIViewController` whose content is `IosAppHost()`.
 
 `IosAppHost` (`shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt`) then:
 
@@ -147,7 +147,7 @@ After startup succeeds, `IosAppHost` shows `RequireBlePermissions` around `IosAp
 
 ### Background Execution
 
-The app supports background BLE execution via `UIBackgroundModes` with `bluetooth-central` in `Info.plist`. This allows BLE connections to persist when the app is backgrounded, similar to Android's foreground service.
+The app supports background BLE execution via `UIBackgroundModes` with `bluetooth-central` in `iosApp/PhoenixApp/PhoenixApp/Info.plist`. This allows BLE connections to persist when the app is backgrounded, similar to Android's foreground service.
 
 ## Assets
 
@@ -155,7 +155,7 @@ Icons, the launch image, and the launch background are already in the Xcode asse
 
 ### App icon
 
-`Assets.xcassets/AppIcon.appiconset` is a single universal 1024×1024 PNG (`AppIcon1024.png`). The same file is also at `iosApp/AppIcon1024.png`. PR CI (`.github/workflows/ci-tests.yml`) and the release workflows (`ios-testflight.yml`, `ios-testflight-internal.yml`, `ios-release-ipa.yml`) validate both:
+`iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset` is a single universal 1024×1024 PNG (`iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png`). The same file is also at `iosApp/AppIcon1024.png`. PR CI (`.github/workflows/ci-tests.yml`) and the release workflows (`.github/workflows/ios-testflight.yml`, `.github/workflows/ios-testflight-internal.yml`, `.github/workflows/ios-release-ipa.yml`) validate both:
 
 ```bash
 python3 scripts/validate_ios_app_icons.py --source iosApp/AppIcon1024.png
@@ -164,14 +164,14 @@ python3 scripts/test_ios_app_icons.py
 
 ### Launch screen
 
-`Info.plist` `UILaunchScreen` names two catalog entries that are checked in:
+`iosApp/PhoenixApp/PhoenixApp/Info.plist` `UILaunchScreen` names two catalog entries that are checked in:
 
-- `LaunchIcon.imageset` — 200pt mark (1x/2x/3x) downsampled from `AppIcon1024.png`
-- `LaunchScreenBackground.colorset` — light `#F8FAFC`, dark `#0F172A` (same window background as Android)
+- `iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/LaunchIcon.imageset` — 200pt mark (1x/2x/3x) downsampled from `iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png`
+- `iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/LaunchScreenBackground.colorset` — light `#F8FAFC`, dark `#0F172A` (same window background as Android)
 
 ### Sounds
 
-`iosApp/convert_sounds.sh` converts `shared/src/androidMain/res/raw/*.ogg` to `PhoenixApp/PhoenixApp/Sounds/*.caf`. Run it on macOS only when those OGG sources change (`brew install ffmpeg`). The Xcode project uses a synchronized group, so new `.caf` files in that folder are bundled without adding them by hand.
+`iosApp/convert_sounds.sh` converts `shared/src/androidMain/res/raw/*.ogg` to `iosApp/PhoenixApp/PhoenixApp/Sounds/*.caf`. Run it on macOS only when those OGG sources change (`brew install ffmpeg`). The Xcode project uses a synchronized group, so new `.caf` files in that folder are bundled without adding them by hand.
 
 ### TestFlight Deployment
 
@@ -185,5 +185,5 @@ See [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md).
 - Platform-specific code is in `shared/src/iosMain/`
 - All business logic is shared via the `shared` module
 - The SwiftUI wrapper is minimal - just hosts the Compose view
-- Sound playback uses AVAudioPlayer in `HapticFeedbackEffect.ios.kt`
+- Sound playback uses AVAudioPlayer in `shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.ios.kt`
 - Haptic feedback uses UIImpactFeedbackGenerator and UINotificationFeedbackGenerator
