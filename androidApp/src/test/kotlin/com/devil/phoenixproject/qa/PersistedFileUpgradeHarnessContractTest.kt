@@ -33,7 +33,7 @@ class PersistedFileUpgradeHarnessContractTest {
             "svc data disable",
             "fallocate",
             "Invoke-RetryAction",
-            "[int] \$ExpectedSchemaVersion = 57",
+            "[int] \$ExpectedSchemaVersion = 58",
         ).forEach { required ->
             assertTrue("Harness is missing contract marker: $required", text.contains(required))
         }
