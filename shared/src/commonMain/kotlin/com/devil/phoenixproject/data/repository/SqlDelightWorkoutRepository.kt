@@ -31,11 +31,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
+class SqlDelightWorkoutRepository(
+    private val db: PhoenixDatabase,
+    private val exerciseRepository: ExerciseRepository,
+    private val routineRecoveryStore: RoutineRecoveryStore = RoutineRecoveryStore(db.phoenixDatabaseQueries),
+) : WorkoutRepository {
 
     private val queries = db.phoenixDatabaseQueries
-    private val routineIdentityResolver = RoutineIdentityResolver(queries)
-    private val routineRecoveryStore = RoutineRecoveryStore(queries)
+    private val routineIdentityResolver = RoutineIdentityResolver(queries, routineRecoveryStore)
 
     // Issue #1162: one-shot identity maintenance per selected profile, run before
     // the first routine-list emission (offline launch and profile switch included).
@@ -841,10 +844,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
      * failure leaves the original rows visible and logs a diagnostic.
      */
     override fun getAllRoutines(profileId: String): Flow<List<Routine>> = flow {
-        val shouldMaintain = identityMaintenanceMutex.withLock { identityMaintainedProfiles.add(profileId) }
-        if (shouldMaintain) {
-            runRoutineIdentityMaintenance(profileId)
-        }
+        ensureRoutineIdentityMaintenance(profileId)
         emitAll(
             queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
                 .asFlow()
@@ -874,6 +874,23 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
     }
 
     /**
+     * Issue #1162 merge gate R1: maintenance runs at most once per profile per
+     * repository, serialized with its completion bookkeeping in one lock — every
+     * first collector waits for the in-flight run, and the profile is marked
+     * maintained ONLY after successful completion. A cancelled or failed run
+     * leaves the profile retryable (the next collector runs maintenance again).
+     */
+    private suspend fun ensureRoutineIdentityMaintenance(profileId: String) {
+        identityMaintenanceMutex.withLock {
+            if (profileId in identityMaintainedProfiles) return
+            val result = runRoutineIdentityMaintenance(profileId)
+            if (!result.failed) {
+                identityMaintainedProfiles += profileId
+            }
+        }
+    }
+
+    /**
      * Issue #1162 eager identity maintenance, run transactionally per selected
      * profile before the first routine-list emission (offline launch and profile
      * switch included), independent of named writes and network pulls.
@@ -893,8 +910,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 db.transaction {
                     val now = currentTimeMillis()
                     routineRecoveryStore.pruneExpired(now)
-                    val portalUserId = queries.getProfileById(profileId).executeAsOneOrNull()
-                        ?.supabase_user_id ?: ""
                     val rows = queries.selectAllRoutinesByProfileIncludingDeleted(profileId).executeAsList()
                     val visited = mutableSetOf<String>()
                     var components = 0
@@ -911,23 +926,13 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         candidates.forEach { visited += it.id }
                         if (candidates.size < 2) continue
                         components++
-                        // Retain the full source graph BEFORE the destructive
-                        // coalesce, in this same transaction. Failure throws and
-                        // rolls everything back.
-                        routineRecoveryStore.retainRoutineGraphs(
-                            rows = candidates.sortedBy { it.id },
-                            canonicalIdentity = componentCanonicalIdentity(candidates),
-                            portalUserId = portalUserId,
-                            profileId = profileId,
-                            reason = RoutineRecoveryReasons.ALIAS_COALESCE,
-                            source = "identity_maintenance",
-                            incomingIdentity = null,
-                            appliedAt = now,
-                        )
-                        snapshots++
+                        // The resolver retains the full source graph BEFORE the
+                        // destructive coalesce, in this same transaction (merge
+                        // gate R2). Failure throws and rolls everything back.
                         val reconciliation = routineIdentityResolver
                             .reconcileExistingComponent(candidates) ?: continue
                         reconciled++
+                        snapshots++
                         removed += reconciliation.removedIds.size
                         if (reconciliation.tombstonePreserved) tombstones++
                         Logger.d("RoutineIdentity") {
@@ -946,8 +951,8 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Collector cancellation must propagate: swallowing it here would
-                // mark the profile as maintained with no work done and then emit
-                // into a cancelled collector.
+                // return a success-shaped result and let the caller mark the
+                // profile maintained with no work done.
                 throw e
             } catch (e: Exception) {
                 Logger.e(e) {
@@ -958,14 +963,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             }
             result
         }
-
-    /** Deterministic canonical identity of one equivalence component (Issue #1162). */
-    private fun componentCanonicalIdentity(candidates: List<RoutineRow>): String {
-        val sorted = candidates.sortedBy { it.id }
-        return sorted.firstNotNullOfOrNull {
-            RoutineIdentity.canonicalUuidOrNull(it.id) ?: RoutineIdentity.canonicalUuidOrNull(it.serverId)
-        } ?: sorted.first().id
-    }
 
     override suspend fun listRoutineRecoveries(
         profileId: String,
@@ -1050,7 +1047,12 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             }
             return null
         }
-        val resolution = routineIdentityResolver.resolve(requestedId, scopeProfileId = profileId, scopeMatches = ownerScope)
+        val resolution = routineIdentityResolver.resolve(
+            requestedId,
+            scopeProfileId = profileId,
+            source = "named_write",
+            scopeMatches = ownerScope,
+        )
         val foreignRow = queries.selectRoutineById(resolution.localId).executeAsOneOrNull()
             ?.takeIf { it.profile_id != profileId }
         if (foreignRow != null) {

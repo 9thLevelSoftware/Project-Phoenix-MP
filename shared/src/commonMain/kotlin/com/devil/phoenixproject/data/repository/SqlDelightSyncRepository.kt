@@ -66,12 +66,12 @@ class SqlDelightSyncRepository(
     private val userProfileRepository: UserProfileRepository,
     private val localOwnershipClaimLookup: LocalOwnershipClaimLookup =
         SqlDelightLocalOwnershipClaimLookup(db),
+    private val routineRecoveryStore: RoutineRecoveryStore = RoutineRecoveryStore(db.phoenixDatabaseQueries),
 ) : SyncRepository {
 
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
-    private val routineIdentityResolver = RoutineIdentityResolver(queries)
-    private val routineRecoveryStore = RoutineRecoveryStore(queries)
+    private val routineIdentityResolver = RoutineIdentityResolver(queries, routineRecoveryStore)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
@@ -118,7 +118,11 @@ class SqlDelightSyncRepository(
         // Issue #1162: a pulled routine reference resolves to the kept local routine
         // primary key (validated UUID spellings may differ from the stored id text).
         if (portalDay.routineId != null) {
-            return routineIdentityResolver.resolve(portalDay.routineId, scopeProfileId = profileId) {
+            return routineIdentityResolver.resolve(
+                portalDay.routineId,
+                scopeProfileId = profileId,
+                source = "pull_cycle",
+            ) {
                 it.profile_id == profileId
             }.localId
         }
@@ -3303,7 +3307,11 @@ class SqlDelightSyncRepository(
         // Issue #1162: one owner-scoped identity resolution before every read and
         // write — exact id, genuine serverId aliases, and validated-UUID-equivalent
         // spellings all denote one local row (whose stored primary key is kept).
-        val identity = routineIdentityResolver.resolve(portalRoutine.id, scopeProfileId = profileId) {
+        val identity = routineIdentityResolver.resolve(
+            portalRoutine.id,
+            scopeProfileId = profileId,
+            source = "pull",
+        ) {
             it.profile_id == profileId
         }
         val localId = identity.localId

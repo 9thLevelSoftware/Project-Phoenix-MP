@@ -39,7 +39,7 @@ internal object RoutineRecoveryReasons {
 @Serializable
 data class RoutineRecoveryProvenance(
     val reason: String,
-    /** Where the destructive operation came from: pull / push / identity maintenance. */
+    /** Where the destructive operation came from: pull / pull_cycle / named_write / identity maintenance. */
     val source: String,
     val incomingIdentity: String? = null,
     val resolvedLocalIdentity: String? = null,
@@ -172,7 +172,7 @@ data class RoutineRecoveryItem(
     val exercises: List<RoutineRecoveryExercisePreview>,
 )
 
-internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries) {
+open class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries) {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -185,7 +185,7 @@ internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries)
      * throws so the destructive write rolls back with it. Insert-if-absent per
      * (portal user, profile, canonical identity, reason).
      */
-    fun retainRoutineGraphs(
+    open fun retainRoutineGraphs(
         rows: List<RoutineRow>,
         canonicalIdentity: String,
         portalUserId: String,
@@ -384,6 +384,11 @@ internal class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries)
     ): String? {
         val row = queries.selectRoutineRecoveryById(recoveryId).executeAsOneOrNull() ?: return null
         if (row.profile_id != profileId || row.portal_user_id != portalUserId) return null
+        // Retention-window enforcement at execution time (merge gate R3): the SQL
+        // listing filters by `expires_at >= :now`, and a sheet may have cached its
+        // selection past that point. A snapshot is restorable exactly while it is
+        // listable, and never after — before any insert.
+        if (row.expires_at < now) return null
         val payload = try {
             json.decodeFromString(RoutineRecoveryPayload.serializer(), row.payload_json)
         } catch (error: Exception) {
