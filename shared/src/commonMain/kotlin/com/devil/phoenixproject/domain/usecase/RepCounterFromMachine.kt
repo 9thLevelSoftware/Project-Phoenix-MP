@@ -262,7 +262,7 @@ class RepCounterFromMachine {
      * @param down Directional counter - increments at BOTTOM (eccentric valley)
      * @param posA Position A for range calibration
      * @param posB Position B for range calibration
-     * @param isLegacyFormat True if using 6-byte legacy packet format (Issue #187)
+     * @param isLegacyFormat True if using the 6..23 effective-byte legacy packet format (Issue #187)
      */
     fun process(
         repsRomCount: Int,
@@ -300,7 +300,7 @@ class RepCounterFromMachine {
 
     /**
      * LEGACY rep counting (Beta 4 method) - counts reps when topCounter increments.
-     * Used when machine sends 6-byte packets without repsRomCount/repsSetCount fields.
+     * Used when machine sends 6..23 effective-byte packets without repsRomCount/repsSetCount fields.
      */
     private fun processLegacy(up: Int, down: Int, posA: Float, posB: Float) {
         val topDelta = calculateDelta(lastTopCounter, up)

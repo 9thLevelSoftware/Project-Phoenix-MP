@@ -51,7 +51,7 @@ enum class HandleState {
  *
  * Supports TWO packet formats for backwards compatibility (Issue #187):
  *
- * LEGACY FORMAT (6+ bytes, used in Beta 4, Samsung devices):
+ * LEGACY FORMAT (6..23 effective bytes, used in Beta 4, Samsung devices):
  * - Bytes 0-1: topCounter (u16) - concentric completions
  * - Bytes 2-3: (unused)
  * - Bytes 4-5: completeCounter (u16) - eccentric completions
