@@ -61,7 +61,7 @@ python .agents/skills/update-phoenix-version/scripts/update_version.py --check -
 5. Search for stale app-version literals:
 
 ```powershell
-rg -n "1.0.6|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp shared .github docs
+rg -n "1\.0\.6|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp shared .github docs
 ```
 
 Replace the escaped old version with the actual previous version. Ignore test fixtures, historical docs, generated release metadata, and localized Settings label templates unless the user explicitly asks to update those too.
