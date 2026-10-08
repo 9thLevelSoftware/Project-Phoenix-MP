@@ -388,5 +388,4 @@ data class ActiveWorkoutRuntimeRowRevision(
 enum class ActiveWorkoutRuntimeRejection {
     CORRUPT_JSON,
     UNSUPPORTED_VERSION,
-    IDENTITY_MISMATCH,
 }
