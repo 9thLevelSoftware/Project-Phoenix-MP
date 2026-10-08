@@ -92,7 +92,15 @@ internal fun autoBackupLocationNoteFor(sdkInt: Int): String? = if (sdkInt < Buil
     null
 }
 
-/** Settings label for [BackupDestination.Default]; must match [sessionBackupDirectory]. */
+/**
+ * Settings label for [BackupDestination.Default].
+ *
+ * - Android 10+ (Q): `"Downloads/PhoenixBackups"`. Session backups are written
+ *   through MediaStore into that Downloads collection (`Download/PhoenixBackups`).
+ *   [sessionBackupDirectory] is only a cache staging path on these API levels.
+ * - Android 9 and older (API 26–28): `"App storage (Android/data/.../files/Documents/PhoenixBackups)"`,
+ *   the app-specific Documents location [sessionBackupDirectory] writes to.
+ */
 internal fun defaultBackupLocationLabelFor(sdkInt: Int): String = if (sdkInt < Build.VERSION_CODES.Q) {
     "App storage (Android/data/.../files/Documents/PhoenixBackups)"
 } else {
