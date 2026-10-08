@@ -114,7 +114,7 @@ fun ProgressionSettingsSheet(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = percentLabel(kotlin.math.round(weightPercent * 10) / 10),
+                        text = percentLabel(weightIncreasePercentLabelValue(weightPercent)),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.width(50.dp),
                     )
@@ -222,4 +222,17 @@ fun ProgressionSettingsSheet(
             }
         }
     }
+}
+
+/**
+ * Display value for the weight-increase slider label.
+ *
+ * [kotlin.math.round] on a Float returns Int, so dividing by the Int literal 10
+ * truncates tenths (the default 2.5 reads as 2, and 0.5 reads as 0). Divide by
+ * 10f, then drop a trailing .0 so whole percents stay "2%" while 2.5 and 0.5
+ * keep their tenth. The saved [CycleProgression.weightIncreasePercent] is unchanged.
+ */
+internal fun weightIncreasePercentLabelValue(weightPercent: Float): Number {
+    val rounded = kotlin.math.round(weightPercent * 10) / 10f
+    return if (rounded == rounded.toInt().toFloat()) rounded.toInt() else rounded
 }
