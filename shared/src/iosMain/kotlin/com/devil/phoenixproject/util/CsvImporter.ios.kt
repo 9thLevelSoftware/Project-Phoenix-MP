@@ -82,7 +82,7 @@ internal class IosCsvImporter(private val workoutRepository: WorkoutRepository) 
                     }
                 }
 
-                Logger.i("CsvImporter") { "Import complete: $imported imported, $skipped skipped, ${parseErrors.size} parse errors" }
+                Logger.i("CsvImporter") { "Import complete: $imported imported, $skipped skipped, ${parseErrors.size} parse errors, $saveFailures save failures" }
 
                 CsvImportResult(
                     imported = imported,
