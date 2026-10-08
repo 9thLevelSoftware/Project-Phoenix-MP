@@ -35,6 +35,14 @@ class SqlDelightWorkoutRepository(
     private val db: PhoenixDatabase,
     private val exerciseRepository: ExerciseRepository,
     private val routineRecoveryStore: RoutineRecoveryStore = RoutineRecoveryStore(db.phoenixDatabaseQueries),
+    // Issue #1162 final audit R4: recovery access is authorized by the
+    // AUTHENTICATED portal identity and the active profile, resolved per call at
+    // execution time (the signed-in account and selected profile change over the
+    // app's lifetime) — never by stored profile linkage or caller-supplied
+    // strings alone. Defaults deny: a repository built without these providers
+    // shows and restores nothing.
+    private val signedInPortalUserId: () -> String? = { null },
+    private val activeProfileId: () -> String? = { null },
 ) : WorkoutRepository {
 
     private val queries = db.phoenixDatabaseQueries
@@ -964,10 +972,33 @@ class SqlDelightWorkoutRepository(
             result
         }
 
+    /**
+     * Issue #1162 final audit R4: recovery listing/restoration is authorized ONLY
+     * for the authenticated portal identity and the active profile, resolved at
+     * execution time. Rejected BEFORE any read or write: a missing/blank
+     * authenticated identity (unsigned or logged out), a caller-supplied identity
+     * that differs from the authenticated one, a profile that is not the active
+     * profile, a missing profile row, and a profile whose stored owner differs
+     * from the authenticated account (e.g. the former owner after an account
+     * switch). Anonymous snapshots stay retained but hidden — never destroyed or
+     * relabeled. A genuinely signed-in cached session keeps working offline.
+     */
+    private fun recoveryAccessAllowed(profileId: String, portalUserId: String): Boolean {
+        val authenticated = signedInPortalUserId()?.takeIf { it.isNotBlank() } ?: return false
+        if (portalUserId != authenticated) return false
+        if (activeProfileId() != profileId) return false
+        val profile = queries.getProfileById(profileId).executeAsOneOrNull() ?: return false
+        if (profile.supabase_user_id != authenticated) return false
+        return true
+    }
+
     override suspend fun listRoutineRecoveries(
         profileId: String,
         portalUserId: String,
     ): List<RoutineRecoveryItem> = withContext(Dispatchers.IO) {
+        if (!recoveryAccessAllowed(profileId, portalUserId)) {
+            return@withContext emptyList()
+        }
         routineRecoveryStore.listRecoverableRoutines(
             profileId = profileId,
             portalUserId = portalUserId,
@@ -975,12 +1006,58 @@ class SqlDelightWorkoutRepository(
         )
     }
 
+    /**
+     * Issue #1162 final audit R5: owner/profile-scoped observation of the local
+     * recovery store. Emits whenever retained snapshots change, so a mounted
+     * recovery surface discovers new recoveries without a remount, and
+     * re-authorized at every emission (R4) — a scope that lost its authenticated
+     * owner or active-profile status publishes nothing.
+     */
+    override fun observeRoutineRecoveries(
+        profileId: String,
+        portalUserId: String,
+    ): Flow<List<RoutineRecoveryItem>> =
+        queries.selectRoutineRecoveriesByProfile(
+            profileId = profileId,
+            portalUserId = portalUserId,
+            now = currentTimeMillis(),
+        )
+            .asFlow()
+            .mapToList(Dispatchers.IO)
+            .map {
+                if (!recoveryAccessAllowed(profileId, portalUserId)) {
+                    emptyList()
+                } else {
+                    try {
+                        routineRecoveryStore.listRecoverableRoutines(
+                            profileId = profileId,
+                            portalUserId = portalUserId,
+                            now = currentTimeMillis(),
+                        )
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Logger.w(e) { "RoutineRecovery: could not load recoverable routines" }
+                        emptyList()
+                    }
+                }
+            }
+
+    /**
+     * Issue #1162 explicit restore-as-copy, revalidated at execution time (final
+     * audit R4): the authenticated identity, active profile and profile owner
+     * are checked immediately before any write, so a scope that changed after
+     * the list was loaded can never restore another owner's snapshot.
+     */
     override suspend fun restoreRoutineRecoveryAsCopy(
         recoveryId: String,
         graphIndex: Int,
         profileId: String,
         portalUserId: String,
     ): String? = withContext(Dispatchers.IO) {
+        if (!recoveryAccessAllowed(profileId, portalUserId)) {
+            return@withContext null
+        }
         db.transactionWithResult {
             routineRecoveryStore.restoreAsCopy(
                 recoveryId = recoveryId,

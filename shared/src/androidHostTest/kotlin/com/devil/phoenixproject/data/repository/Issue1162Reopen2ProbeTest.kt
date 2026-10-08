@@ -74,8 +74,18 @@ class Issue1162Reopen2ProbeTest {
         )
     }
 
+    /**
+     * Recovery access is authorized by the authenticated portal identity and the
+     * active profile at execution time (final audit R4). The probe scenarios run
+     * as the signed-in owner of the seeded active profile.
+     */
     private fun newWorkoutRepository(database: PhoenixDatabase) =
-        SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        SqlDelightWorkoutRepository(
+            db = database,
+            exerciseRepository = FakeExerciseRepository(),
+            signedInPortalUserId = { "owner-user" },
+            activeProfileId = { "active-profile" },
+        )
 
     private fun newSyncRepository(
         database: PhoenixDatabase,
@@ -554,6 +564,7 @@ class Issue1162Reopen2ProbeTest {
     fun `expired snapshots are pruned and profile purge removes recoveries`() = runBlocking {
         val database = createTestDatabase()
         database.seedExercise()
+        seedOwnerProfile(database)
         seedRoutine(database, lowerUuid)
         val queries = database.phoenixDatabaseQueries
         val repository = newWorkoutRepository(database)

@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,8 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -59,37 +62,71 @@ fun RoutineRecoveryHost(
     modifier: Modifier = Modifier,
     workoutRepository: WorkoutRepository = koinInject(),
     profileRepository: UserProfileRepository = koinInject(),
+    portalTokenStorage: PortalTokenStorage = koinInject(),
 ) {
     val activeProfile by profileRepository.activeProfile.collectAsState()
+    val authUser by portalTokenStorage.currentUser.collectAsState()
     val scope = rememberCoroutineScope()
-    var items by remember { mutableStateOf<List<RoutineRecoveryItem>>(emptyList()) }
-    var sheetOpen by remember { mutableStateOf(false) }
-    var expandedKey by remember { mutableStateOf<String?>(null) }
 
-    suspend fun reload() {
-        val profile = activeProfile
-        items = if (profile == null) {
-            emptyList()
+    // Issue #1162 final audit R4: the authorized scope is the AUTHENTICATED
+    // portal user plus the active profile it owns — never stored linkage or a
+    // caller string alone. A logout, an account switch or a profile change
+    // changes this key immediately, and a scope whose stored owner is not the
+    // signed-in account (e.g. the former owner after an account switch) is not
+    // an authorized scope at all.
+    val profileId = activeProfile?.id
+    val authId = authUser?.id
+    val scopeKey: String? =
+        if (profileId != null && authId != null && activeProfile?.supabaseUserId == authId) {
+            "$profileId#$authId"
         } else {
-            try {
-                workoutRepository.listRoutineRecoveries(
-                    profileId = profile.id,
-                    portalUserId = profile.supabaseUserId ?: "",
-                )
-            } catch (e: Exception) {
-                Logger.w(e) { "RoutineRecovery: could not load recoverable routines" }
-                emptyList()
-            }
+            null
+        }
+    // Latest scope key for stale-publication checks from in-flight loads (R4 UI).
+    val currentScopeKey = rememberUpdatedState(scopeKey)
+
+    // Scope-keyed state (R4 UI): a scope change resets items, sheet and preview
+    // immediately — nothing carries over between owners or profiles.
+    var items by remember(scopeKey) { mutableStateOf<List<RoutineRecoveryItem>>(emptyList()) }
+    var sheetOpen by remember(scopeKey) { mutableStateOf(false) }
+    var expandedKey by remember(scopeKey) { mutableStateOf<String?>(null) }
+    // Bumped on explicit entry and after restore so the surface revalidates (R5).
+    var refreshTick by remember(scopeKey) { mutableStateOf(0) }
+
+    LaunchedEffect(scopeKey, refreshTick) {
+        if (scopeKey == null || profileId == null || authId == null) {
+            items = emptyList()
+            return@LaunchedEffect
+        }
+        try {
+            // Issue #1162 final audit R5: observe the owner/profile-scoped
+            // recovery store so newly retained snapshots surface on the mounted
+            // screen without a remount. The repository re-authorizes at every
+            // emission.
+            workoutRepository
+                .observeRoutineRecoveries(profileId = profileId, portalUserId = authId)
+                .collect { loaded ->
+                    // An in-flight load must never publish into a scope that
+                    // changed while it was running (R4 UI).
+                    if (currentScopeKey.value == scopeKey) {
+                        items = loaded
+                    }
+                }
+        } catch (e: CancellationException) {
+            // Scope change or disposal: propagate, never swallow.
+            throw e
+        } catch (e: Exception) {
+            Logger.w(e) { "RoutineRecovery: could not load recoverable routines" }
         }
     }
 
-    LaunchedEffect(activeProfile?.id, activeProfile?.supabaseUserId) {
-        reload()
-    }
-
-    if (items.isNotEmpty() && !sheetOpen) {
+    if (scopeKey != null && items.isNotEmpty() && !sheetOpen) {
         FilledTonalButton(
-            onClick = { sheetOpen = true },
+            onClick = {
+                sheetOpen = true
+                // Explicit entry revalidates the list (R5).
+                refreshTick += 1
+            },
             modifier = modifier,
         ) {
             Text("Recover deleted routines (${items.size})")
@@ -149,18 +186,27 @@ fun RoutineRecoveryHost(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Button(onClick = {
+                                        val targetProfileId = profileId
+                                        val targetAuthId = authId
+                                        if (targetProfileId == null || targetAuthId == null) return@Button
                                         scope.launch {
                                             try {
+                                                // Revalidated at execution time by the
+                                                // repository (R4): a scope that changed
+                                                // after the list loaded cannot restore.
                                                 workoutRepository.restoreRoutineRecoveryAsCopy(
                                                     recoveryId = item.recoveryId,
                                                     graphIndex = item.graphIndex,
-                                                    profileId = activeProfile?.id ?: return@launch,
-                                                    portalUserId = activeProfile?.supabaseUserId ?: "",
+                                                    profileId = targetProfileId,
+                                                    portalUserId = targetAuthId,
                                                 )
+                                            } catch (e: CancellationException) {
+                                                throw e
                                             } catch (e: Exception) {
                                                 Logger.w(e) { "RoutineRecovery: restore failed for $key" }
                                             }
-                                            reload()
+                                            // Revalidate the explicit entry after restore (R5).
+                                            refreshTick += 1
                                         }
                                     }) {
                                         Text("Restore as copy")

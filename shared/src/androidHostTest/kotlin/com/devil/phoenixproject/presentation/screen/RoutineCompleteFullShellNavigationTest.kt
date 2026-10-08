@@ -83,6 +83,9 @@ class RoutineCompleteFullShellNavigationTest {
                     single<ExerciseRepository> { fixture!!.fakeExerciseRepository }
                     single<PersonalRecordRepository> { fixture!!.fakePersonalRecordRepository }
                     single<ProfileExerciseBaselineRepository> { fixture!!.fakeBaselineRepository }
+                    // Issue #1162 R4 UI: the recovery surface observes the
+                    // authenticated portal identity from the production auth store.
+                    single { com.devil.phoenixproject.data.sync.PortalTokenStorage(com.russhwolf.settings.MapSettings()) }
                     single { RoutineTimeEstimator(get()) }
                     single { TemplateConverter(get(), get()) }
                     // Mirrors production PresentationModule (factory + koinViewModel()).
