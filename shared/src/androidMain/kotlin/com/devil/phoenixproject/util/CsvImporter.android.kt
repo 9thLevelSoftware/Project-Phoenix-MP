@@ -80,7 +80,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                     }
                 }
 
-                Logger.i("CsvImporter") { "Import complete: $imported imported, $skipped skipped, ${parseErrors.size} parse errors" }
+                Logger.i("CsvImporter") { "Import complete: $imported imported, $skipped skipped, ${parseErrors.size} parse errors, $saveFailures save failures" }
 
                 CsvImportResult(
                     imported = imported,
