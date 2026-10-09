@@ -4415,6 +4415,45 @@ class ActiveSessionEngine(
         }
 
     /**
+     * Issue #1226: true while the session sits on a real loaded routine's terminal step —
+     * the same inputs as [DefaultWorkoutSessionManager.isTerminalRoutineSummary] minus the
+     * `SetSummary` state check. That state check cannot gate the pre-publish decision in
+     * [handleSetCompletion]: the state is not `SetSummary` yet when the hold is decided.
+     *
+     * Successor source matches the predicate exactly: the cached transition snapshot's
+     * `nextStep` when that cache belongs to the current rest-transition plan, else the live
+     * successor query ([WorkoutFlowDelegate.getNextStepForRecovery] — the same
+     * `RoutineFlowManager.getNextStep` the predicate uses, deliberately without the
+     * action-navigation observation). Never flat-list position: a routine that ends in a
+     * superset is terminal before its last flat-list entry.
+     *
+     * False for Just Lift, `temp_single_` routines and a `RoutineFlowState.Complete` flow,
+     * so those sessions keep their existing summary behaviour (no hold exemption).
+     */
+    internal fun isTerminalRoutineStep(): Boolean {
+        val routine = coordinator._loadedRoutine.value ?: return false
+        if (routine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)) return false
+        if (coordinator._workoutParameters.value.isJustLift) return false
+        if (coordinator._routineFlowState.value is RoutineFlowState.Complete) return false
+        val delegate = flowDelegate ?: return false
+        val cache = cachedTransitionNavigationSnapshot()
+        val currentPlan = coordinator._restTransitionPlan.value
+        val cacheMatchesCurrentPlan = cache != null &&
+            currentPlan != null &&
+            cache.transitionId == currentPlan.transitionId &&
+            cache.sourceExecutionId == currentPlan.sourceExecutionId
+        return if (cacheMatchesCurrentPlan) {
+            cache.nextStep == null
+        } else {
+            delegate.getNextStepForRecovery(
+                routine,
+                coordinator._currentExerciseIndex.value,
+                coordinator._currentSetIndex.value,
+            ) == null
+        }
+    }
+
+    /**
      * Issue #1018: rebind the already-cached terminal successor to a session-appended
      * exercise, in the same guarded mutation as the append. The identity completion path
      * caches `nextStep = null` before the summary is published, and later advance prefers
@@ -11571,9 +11610,18 @@ class ActiveSessionEngine(
             // Re-read after the wait: a rest action may have landed while it ran.
             val preservePlanOwnedResting = planOwnsResting()
 
-            Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
+            // Issue #1226: a real routine's terminal summary is presented and held for
+            // every summary preference — Automatic must not skip it, and no scheduler may
+            // auto-advance it. Scoped to the routine/single-exercise branch: Just Lift and
+            // AMRAP sessions keep their existing summary behaviour. The successor source is
+            // the predicate's (cached nextStep when the cache matches the current plan, else
+            // the live successor query) minus its SetSummary state check — state is not
+            // SetSummary yet at this pre-publish decision.
+            val holdTerminalRoutineSummary = !isJustLift && !params.isAMRAP && isTerminalRoutineStep()
 
-            if (!effectiveSkipSummary && !preservePlanOwnedResting) {
+            Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}, holdTerminalRoutineSummary=$holdTerminalRoutineSummary")
+
+            if ((!effectiveSkipSummary || holdTerminalRoutineSummary) && !preservePlanOwnedResting) {
                 Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
                 val summaryPublished = executionGuard.commitIfCurrent(lease) {
                     coordinator._workoutState.value = summary
@@ -11669,8 +11717,8 @@ class ActiveSessionEngine(
                     Logger.d("AMRAP: Summary Unlimited - waiting for user action")
                 }
             } else {
-                Logger.d("Routine/SingleExercise mode: skipSummary=$skipSummary, effectiveSkipSummary=$effectiveSkipSummary, wasBodyweight=$wasBodyweight, summaryCountdownSeconds=$summaryCountdownSeconds")
-                if (effectiveSkipSummary) {
+                Logger.d("Routine/SingleExercise mode: skipSummary=$skipSummary, effectiveSkipSummary=$effectiveSkipSummary, wasBodyweight=$wasBodyweight, summaryCountdownSeconds=$summaryCountdownSeconds, holdTerminalRoutineSummary=$holdTerminalRoutineSummary")
+                if (effectiveSkipSummary && !holdTerminalRoutineSummary) {
                     Logger.d("Routine mode: Summary skipped (effectiveSkipSummary=true, wasBodyweight=$wasBodyweight) - calling startRestTimer()")
 
                     repCounter.reset()
@@ -11679,10 +11727,12 @@ class ActiveSessionEngine(
                     Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
                     startRestTimer(completion)
-                } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator)) {
+                } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator) && !holdTerminalRoutineSummary) {
                     // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
                     // full bookkeeping: clearing RPE, marking exercises completed, checking routine
                     // completion, and starting rest timer. Direct startRestTimer() would bypass this.
+                    // Issue #1226: never armed at a real routine's terminal summary — the engine
+                    // delay is one of the three auto-advance schedulers that must be inert there.
                     Logger.d("Routine mode: Auto-advancing from summary after ${summaryDelayMs}ms (Issue #320)")
                     delay(summaryDelayMs)
                     if (!hasCurrentAuthority(lease, "routine_summary_delay")) return@launchCompletionJob
@@ -11697,6 +11747,9 @@ class ActiveSessionEngine(
                             }
                     }
                 } else {
+                    // Issue #1226: the terminal summary is held like a Manual one. An
+                    // explicit Complete Routine tap (no-args proceedFromSummary) still routes
+                    // onward; no scheduler may.
                     Logger.d("Routine mode: Summary Unlimited - waiting for user action")
                 }
             }

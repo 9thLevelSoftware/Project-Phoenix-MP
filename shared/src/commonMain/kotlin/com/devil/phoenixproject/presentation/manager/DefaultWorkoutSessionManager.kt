@@ -282,6 +282,32 @@ class DefaultWorkoutSessionManager(
     internal var restTransitionNavigationLookupObserverForTest: (() -> Unit)? = null
 
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
+
+    /**
+     * Issue #1226: host tests cannot construct an iOS platform; this override lets them
+     * arm the manager-level summary auto-advance fallback (DefaultWorkoutSessionManager's
+     * `scope.launch` collector) and prove it stays inert at a terminal summary.
+     */
+    internal var isIosPlatformOverrideForTest: Boolean? = null
+
+    /**
+     * Manager-level summary auto-advance decision (iOS fallback; on other platforms the
+     * job is never armed). Issue #1226: inert at a real routine's terminal summary — one
+     * of the three auto-advance schedulers (engine delay, Compose countdown, this job)
+     * that must not fire there. An explicit user tap still proceeds via the no-args
+     * [proceedFromSummary].
+     */
+    internal fun shouldAutoAdvanceSummaryInManager(
+        summaryCountdownSeconds: Int,
+        isIos: Boolean = isIosPlatformOverrideForTest ?: isIosPlatform,
+    ): Boolean {
+        val params = coordinator._workoutParameters.value
+        return isIos &&
+            summaryCountdownSeconds > 0 &&
+            !params.isJustLift &&
+            !params.isAMRAP &&
+            !activeSessionEngine.isTerminalRoutineStep()
+    }
     private var summaryAutoAdvanceJob: Job? = null
 
     /**
@@ -529,12 +555,7 @@ class DefaultWorkoutSessionManager(
                     if (state !is WorkoutState.SetSummary) return@collect
 
                     val summaryCountdownSeconds = settingsManager.userPreferences.value.summaryCountdownSeconds
-                    val params = coordinator._workoutParameters.value
-                    val shouldAutoAdvanceInManager =
-                        isIosPlatform &&
-                            summaryCountdownSeconds > 0 &&
-                            !params.isJustLift &&
-                            !params.isAMRAP
+                    val shouldAutoAdvanceInManager = shouldAutoAdvanceSummaryInManager(summaryCountdownSeconds)
 
                     if (!shouldAutoAdvanceInManager) return@collect
 
@@ -1201,28 +1222,14 @@ class DefaultWorkoutSessionManager(
      *
      * False for Just Lift, `temp_single_` routines, non-`SetSummary` states and a
      * `RoutineFlowState.Complete` flow.
+     *
+     * Issue #1226: the inputs minus the `SetSummary` state check live in
+     * [ActiveSessionEngine.isTerminalRoutineStep] so the summary hold can gate the
+     * pre-publish decision in `handleSetCompletion`, where the state is not `SetSummary` yet.
      */
     fun isTerminalRoutineSummary(): Boolean {
         if (coordinator._workoutState.value !is WorkoutState.SetSummary) return false
-        val routine = coordinator._loadedRoutine.value ?: return false
-        if (routine.id.startsWith(TEMP_SINGLE_EXERCISE_PREFIX)) return false
-        if (coordinator._workoutParameters.value.isJustLift) return false
-        if (coordinator._routineFlowState.value is RoutineFlowState.Complete) return false
-        val cache = activeSessionEngine.cachedTransitionNavigationSnapshot()
-        val currentPlan = coordinator._restTransitionPlan.value
-        val cacheMatchesCurrentPlan = cache != null &&
-            currentPlan != null &&
-            cache.transitionId == currentPlan.transitionId &&
-            cache.sourceExecutionId == currentPlan.sourceExecutionId
-        return if (cacheMatchesCurrentPlan) {
-            cache.nextStep == null
-        } else {
-            routineFlowManager.getNextStep(
-                routine,
-                coordinator._currentExerciseIndex.value,
-                coordinator._currentSetIndex.value,
-            ) == null
-        }
+        return activeSessionEngine.isTerminalRoutineStep()
     }
 
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
