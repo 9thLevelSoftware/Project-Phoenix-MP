@@ -17,8 +17,8 @@ class IosBackupStreamSourceContractTest {
         val body = functionBody(source, "private fun refill()")
 
         assertTrue(!body.contains("bytesRead <= 0"), "a negative read is not end of stream")
-        val errorAt = body.indexOf("bytesRead < 0")
-        val eofAt = body.indexOf("bytesRead == 0")
+        val errorAt = body.indexOf("bytesRead < 0L")
+        val eofAt = body.indexOf("bytesRead == 0L")
         assertTrue(errorAt >= 0 && eofAt > errorAt, "a read error is rejected before end of stream")
 
         val errorBranch = body.substring(errorAt, eofAt)
