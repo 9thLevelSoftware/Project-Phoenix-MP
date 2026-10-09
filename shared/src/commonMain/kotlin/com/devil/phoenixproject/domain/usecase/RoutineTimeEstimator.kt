@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.RoutineItem
  * - Warmup sets at 0.7x working set duration (no rest between warmup sets)
  * - Superset-aware traversal using Routine.getItems()
  * - 30s exercise transition time between top-level items
+ * - Timed sets (cable or bodyweight) use executionTimedDurationSeconds per set (the workout timer)
  * - Bodyweight exercise fallback (30s per set)
  *
  * Issue #225
@@ -214,13 +215,18 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
             upperMs += warmupTotalMs
         }
 
+        // A timed set (cable or bodyweight) runs the workout timer for
+        // executionTimedDurationSeconds, including a launch-adjusted duration, and ends
+        // when it expires, AMRAP or not. It takes precedence over history and fallbacks.
+        val timedSetMs = exercise.executionTimedDurationSeconds?.times(1000L)
+
         // === Working sets ===
         // `sets` is setReps.size, so this index matches execution's setReps walk
         // (null reps, or the last-set isAMRAP flag on setReps.lastIndex).
         for (setIdx in 0 until exercise.sets) {
             val isAmrapSet = exercise.isAmrapSet(setIdx)
 
-            if (isAmrapSet) {
+            if (isAmrapSet && timedSetMs == null) {
                 hasAmrap = true
                 if (historicalAvgMs != null) {
                     // AMRAP with history: use multiplier range
@@ -235,8 +241,9 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
                     upperMs += (amrapFallbackMs * 2.0 / AMRAP_DURATION_MULTIPLIER).toLong()
                 }
             } else {
-                // Fixed rep set
-                val setDurationMs = historicalAvgMs
+                // Timed or fixed-rep set
+                val setDurationMs = timedSetMs
+                    ?: historicalAvgMs
                     ?: (if (isBodyweight) BODYWEIGHT_SET_FALLBACK_SEC else CABLE_SET_FALLBACK_SEC) * 1000L
                 midpointMs += setDurationMs
                 lowerMs += setDurationMs
