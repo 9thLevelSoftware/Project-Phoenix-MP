@@ -231,6 +231,158 @@ class MiniExercisePickerDialogContractTest {
         assertTrue(src.contains("size(64.dp)"), "Thumbnail must stay 64dp.")
     }
 
+    // ── Issue #1225: Custom filter chip in the Tag exercise picker ─────────
+
+    @Test
+    fun miniPicker_exposesCustomFilterChipWiring() {
+        val src = readMiniPickerSource()
+
+        // The chip is visible: no more hardcoded hide + dead handler.
+        assertTrue(
+            src.contains("showCustomFilter = true"),
+            "Tag exercise must show the existing Custom filter chip (showCustomFilter = true).",
+        )
+        assertFalse(
+            src.contains("dead control"),
+            "The dead-control comment is stale: the chip filters exercises that already exist.",
+        )
+
+        // State is threaded to the content, not pinned to false. (The clear handler inside the
+        // same call legitimately assigns false, so pin the argument's right-hand side instead.)
+        val contentBlock = balancedFrom(src, src.indexOf("ExercisePickerContent("), '(', ')')
+        val customArgRhs = Regex("""showCustomOnly\s*=\s*([^,\n]+)""")
+            .find(contentBlock)
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
+        assertEquals(
+            "showCustomOnly",
+            customArgRhs,
+            "ExercisePickerContent must receive the showCustomOnly state, not a hardcoded false.",
+        )
+        assertTrue(
+            contentBlock.contains("enableCustomExercises = false"),
+            "The tag dialog stays create-disabled (B5).",
+        )
+
+        // The filtered list must recompute on a Custom tap: showCustomOnly is a key of the
+        // remember(...) that caches it, and it reaches the shared filter as the state value.
+        val filteredRemember = src.substringAfter("val exercises = remember(")
+        val rememberKeys = filteredRemember.substringBefore(") {")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        assertTrue(
+            "showCustomOnly" in rememberKeys,
+            "showCustomOnly must be a key of the filtered-list remember(...) so toggling Custom recomputes it; keys were $rememberKeys.",
+        )
+        val filterStateBlock = balancedFrom(src, src.indexOf("ExercisePickerFilterState("), '(', ')')
+        assertTrue(
+            Regex("""showCustomOnly\s*=\s*showCustomOnly\s*,""").containsMatchIn(filterStateBlock),
+            "ExercisePickerFilterState must receive showCustomOnly = showCustomOnly.",
+        )
+        assertTrue(
+            src.contains("customExerciseCount = library.count { it.isCustom }"),
+            "The custom count must come from the loaded library (B3), never getCustomExercises() or candidates.",
+        )
+
+        // Clear resets the chip state but must not re-arm the one-shot Recent default.
+        val clearBlock = balancedBlock(src, src.indexOf("onClearAllFilters ="))
+        assertTrue(
+            clearBlock.contains("showCustomOnly = false"),
+            "onClearAllFilters must clear showCustomOnly.",
+        )
+        assertFalse(
+            clearBlock.contains("recentDefaultApplied = false"),
+            "onClearAllFilters must not re-arm the one-shot Recent default (B2).",
+        )
+
+        // Custom-on clears Recent and consumes the one-shot Recent default.
+        val toggleBlock = balancedBlock(src, src.indexOf("onToggleCustom ="))
+        assertTrue(
+            toggleBlock.contains("showRecentOnly = false"),
+            "Custom-on must clear Recent so never-tagged customs are visible (B2).",
+        )
+        assertTrue(
+            toggleBlock.contains("recentDefaultApplied = true"),
+            "Custom-on must consume the one-shot Recent default so a late library emission cannot undo the tap (B2).",
+        )
+        assertFalse(
+            toggleBlock.contains("recentDefaultApplied = false"),
+            "onToggleCustom must never assign recentDefaultApplied = false (B2).",
+        )
+
+        // The one-shot Recent effect must not fire once Custom has claimed intent.
+        val effectBlock = balancedBlock(src, src.indexOf("LaunchedEffect("))
+        assertTrue(
+            effectBlock.contains("!showCustomOnly"),
+            "The one-shot Recent effect must be guarded by !showCustomOnly (B2).",
+        )
+
+        // Count comes from the already-loaded library, not a second SQL subscription.
+        assertFalse(
+            src.contains("getCustomExercises"),
+            "Do not collect getCustomExercises(): it is a second subscription on the wrong SQL (B3).",
+        )
+
+        // B9 (public signature unchanged for the four call sites) is pinned exactly once,
+        // in miniPicker_publicSignatureUnchanged above.
+    }
+
+    @Test
+    fun emptyState_createSubtitleOnlyWhenCreateEnabled() {
+        val src = readProjectFile(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/exercisepicker/GroupedExerciseList.kt",
+        )
+        assertNotNull(src, "Could not locate GroupedExerciseList.kt on disk.")
+
+        // The custom-empty branch only.
+        val branchStart = src.indexOf("showCustomOnly && customExerciseCount == 0 ->")
+        assertTrue(branchStart >= 0, "The custom-empty state branch not found.")
+        val branch = balancedBlock(src, branchStart)
+
+        // The spec's "Create your own exercises..." pin maps to this source literal.
+        val subtitle = "Create your own exercises to track workouts"
+        val titleIdx = branch.indexOf("\"No custom exercises yet\"")
+        val ifIdx = branch.indexOf("if (enableCustomExercises)")
+        val subtitleIdx = branch.indexOf(subtitle)
+
+        assertTrue(titleIdx >= 0, "The empty-state title must stay unconditional.")
+        assertTrue(ifIdx >= 0, "The create affordance must be gated on enableCustomExercises (ADR-5).")
+        assertTrue(
+            titleIdx < ifIdx,
+            "The title \"No custom exercises yet\" must be emitted before the if (enableCustomExercises) gate.",
+        )
+        val ifBlockStart = branch.indexOf('{', ifIdx)
+        val ifBlock = balancedBlock(branch, ifIdx)
+        assertTrue(
+            subtitleIdx in ifBlockStart until (ifBlockStart + ifBlock.length),
+            "The create subtitle must live inside if (enableCustomExercises) so create-disabled hosts see only the title.",
+        )
+    }
+
+    /** Source text from the first `{` at or after [startIndex] through its matching `}`. */
+    private fun balancedBlock(src: String, startIndex: Int): String =
+        balancedFrom(src, startIndex, '{', '}')
+
+    /** Source text from the first [open] at or after [startIndex] through its matching [close]. */
+    private fun balancedFrom(src: String, startIndex: Int, open: Char, close: Char): String {
+        require(startIndex >= 0) { "balancedFrom: marker not found" }
+        val start = src.indexOf(open, startIndex)
+        check(start >= 0) { "balancedFrom: no '$open' after marker" }
+        var depth = 0
+        for (i in start until src.length) {
+            val c = src[i]
+            if (c == open) {
+                depth++
+            } else if (c == close) {
+                depth--
+                if (depth == 0) return src.substring(start, i + 1)
+            }
+        }
+        error("balancedFrom: unbalanced '$open' after marker")
+    }
+
     private fun readMiniPickerSource(): String {
         val path =
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/MiniExercisePickerDialog.kt"

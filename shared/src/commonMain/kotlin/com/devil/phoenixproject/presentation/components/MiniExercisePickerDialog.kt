@@ -51,15 +51,21 @@ fun MiniExercisePickerDialog(
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showEssentialsOnly by remember { mutableStateOf(false) }
+    var showCustomOnly by remember { mutableStateOf(false) }
     // Only recent ids that still name an exercise count: a deleted custom exercise must not
     // leave Recent selected over an empty list.
     val library by remember { exerciseRepository.getAllExercises() }.collectAsState(initial = emptyList())
+    // Issue #1225: live non-archived custom count from the already-loaded library. Not a second
+    // custom-exercise subscription (wrong SQL), and never candidateExercises (that shrinks under
+    // a non-blank search and would show "No exercises found" instead of "No custom exercises yet").
+    val customExerciseCount = library.count { it.isCustom }
     val recentIds = remember(recentExerciseIds, library) { selectableRecentExerciseIds(recentExerciseIds, library) }
     var showRecentOnly by remember { mutableStateOf(false) }
     // The ids and the library load after the dialog opens; select Recent once when they do.
+    // Custom-on has already claimed intent, so a late library emission must not re-arm Recent.
     var recentDefaultApplied by remember { mutableStateOf(false) }
     LaunchedEffect(recentIds.isNotEmpty()) {
-        if (recentIds.isNotEmpty() && !recentDefaultApplied) {
+        if (recentIds.isNotEmpty() && !recentDefaultApplied && !showCustomOnly) {
             showRecentOnly = true
             recentDefaultApplied = true
         }
@@ -81,6 +87,7 @@ fun MiniExercisePickerDialog(
         candidateExercises,
         showFavoritesOnly,
         showEssentialsOnly,
+        showCustomOnly,
         selectedMuscles,
         selectedEquipment,
         recentActive,
@@ -90,6 +97,7 @@ fun MiniExercisePickerDialog(
             candidates = candidateExercises,
             filters = ExercisePickerFilterState(
                 showFavoritesOnly = showFavoritesOnly,
+                showCustomOnly = showCustomOnly,
                 selectedMuscles = selectedMuscles,
                 selectedEquipment = selectedEquipment,
                 showEssentialsOnly = showEssentialsOnly,
@@ -130,17 +138,26 @@ fun MiniExercisePickerDialog(
                     onSearchQueryChange = { searchQuery = it },
                     showFavoritesOnly = showFavoritesOnly,
                     onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
-                    showCustomOnly = false,
-                    onToggleCustom = {},
-                    // Tagging never creates exercises, so the Custom chip would be a dead control.
-                    showCustomFilter = false,
+                    showCustomOnly = showCustomOnly,
+                    // Issue #1225: the chip only filters exercises that already exist; it is
+                    // not the create button. Custom-on clears Recent (the auto-selected Recent
+                    // would otherwise hide never-tagged customs) and consumes the one-shot
+                    // Recent default so a late library emission cannot undo the tap.
+                    onToggleCustom = {
+                        showCustomOnly = !showCustomOnly
+                        if (showCustomOnly) {
+                            showRecentOnly = false
+                            recentDefaultApplied = true
+                        }
+                    },
+                    showCustomFilter = true,
                     enableEssentialsFilter = true,
                     showEssentialsOnly = showEssentialsOnly,
                     onToggleEssentials = { showEssentialsOnly = !showEssentialsOnly },
                     enableRecentFilter = recentIds.isNotEmpty(),
                     showRecentOnly = recentActive,
                     onToggleRecent = { showRecentOnly = !showRecentOnly },
-                    customExerciseCount = 0,
+                    customExerciseCount = customExerciseCount,
                     selectedMuscles = selectedMuscles,
                     onToggleMuscle = { muscle ->
                         selectedMuscles = if (muscle in selectedMuscles) {
@@ -161,6 +178,7 @@ fun MiniExercisePickerDialog(
                         searchQuery = ""
                         showFavoritesOnly = false
                         showEssentialsOnly = false
+                        showCustomOnly = false
                         showRecentOnly = false
                         selectedMuscles = emptySet()
                         selectedEquipment = emptySet()
