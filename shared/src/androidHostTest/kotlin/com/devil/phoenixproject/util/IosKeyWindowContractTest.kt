@@ -27,7 +27,7 @@ class IosKeyWindowContractTest {
             functionBody(source, "internal fun keyWindowRootViewController()").contains(
                 "return keyWindow()?.rootViewController",
             ),
-            "document pickers still present from the key window's root controller",
+            "the helper still returns the key window's root controller",
         )
     }
 

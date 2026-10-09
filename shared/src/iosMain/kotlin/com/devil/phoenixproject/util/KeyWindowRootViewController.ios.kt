@@ -21,7 +21,6 @@ internal fun keyWindow(): UIWindow? {
 
 /**
  * Root [UIViewController] of the key window on the first connected [UIWindowScene].
- * Document pickers present from this controller.
  */
 @OptIn(ExperimentalForeignApi::class)
 internal fun keyWindowRootViewController(): UIViewController? {
