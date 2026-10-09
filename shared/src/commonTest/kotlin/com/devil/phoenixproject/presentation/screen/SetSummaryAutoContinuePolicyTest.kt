@@ -63,7 +63,7 @@ internal class SetSummaryAutoContinuePolicyTest {
     }
 
     @Test
-    fun `existing hold, history and autoplay gates are unchanged`() {
+    fun `existing hold history and autoplay gates are unchanged`() {
         assertFalse(
             shouldAutoContinueSetSummary(
                 autoplayEnabled = true,
