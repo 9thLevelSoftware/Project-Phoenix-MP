@@ -61,6 +61,7 @@ import com.devil.phoenixproject.presentation.components.TimeframeBadge
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -370,35 +371,60 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
 
 // ---- Section B: Balance Analysis ----
 
+/**
+ * Integer labels for the push / pull / legs balance bars.
+ *
+ * Push and pull are rounded to the nearest percent. Legs is `100 - push - pull`,
+ * clamped to 0..100, so the three labels sum to 100 and the last one cannot go
+ * negative. A non-positive total returns null; the card keeps the empty placeholder.
+ */
+internal fun balanceSharePercents(
+    pushVolume: Float,
+    pullVolume: Float,
+    legsVolume: Float,
+): BalanceSharePercents? {
+    val total = pushVolume + pullVolume + legsVolume
+    if (total <= 0f) return null
+    val push = (pushVolume / total * 100f).roundToInt().coerceIn(0, 100)
+    // Cap pull at the points left after push so a pair of round-ups cannot
+    // force the legs remainder below zero.
+    val pull = (pullVolume / total * 100f).roundToInt().coerceIn(0, 100 - push)
+    val legs = (100 - push - pull).coerceIn(0, 100)
+    return BalanceSharePercents(push = push, pull = pull, legs = legs)
+}
+
+internal data class BalanceSharePercents(
+    val push: Int,
+    val pull: Int,
+    val legs: Int,
+)
+
 @Composable
 private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
     InsightCard(title = stringResource(Res.string.insights_training_balance), definition = "Push/pull/legs share of your recent volume.", timeframe = "Last 28 days", soWhat = "Shift upcoming sessions toward the underrepresented bucket.") {
         val total = analysis.pushVolume + analysis.pullVolume + analysis.legsVolume
+        val shares = balanceSharePercents(analysis.pushVolume, analysis.pullVolume, analysis.legsVolume)
 
-        if (total <= 0f) {
+        if (shares == null) {
             PlaceholderText(stringResource(Res.string.no_balance_data))
         } else {
-            val pushPct = (analysis.pushVolume / total * 100).toInt()
-            val pullPct = (analysis.pullVolume / total * 100).toInt()
-            val legsPct = (analysis.legsVolume / total * 100).toInt()
-
             BalanceBar(
                 label = stringResource(Res.string.insights_push),
-                percentage = pushPct,
+                percentage = shares.push,
                 fraction =
                     analysis.pushVolume / total,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_pull),
-                percentage = pullPct,
+                percentage = shares.pull,
                 fraction =
                     analysis.pullVolume / total,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_legs),
-                percentage = legsPct,
+                percentage = shares.legs,
                 fraction =
                     analysis.legsVolume / total,
             )
