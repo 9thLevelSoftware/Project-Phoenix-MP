@@ -95,14 +95,18 @@ object CsvImportIntentClassifier {
         }
     }
 
-    /** The raw (still percent-encoded) value of [key] in `uri`'s query, or null. */
+    /**
+     * The raw (still percent-encoded) value of [key] in `uri`'s query, or null. Keys are matched
+     * literally on the wire, as standard URL parsing does — `d%61ta` is not the `data` parameter;
+     * only the returned value is percent-decoded (exactly once, by the caller).
+     */
     private fun queryParameter(uri: String, key: String): String? {
         val queryStart = uri.indexOf('?')
         if (queryStart < 0) return null
         for (pair in uri.substring(queryStart + 1).split('&')) {
             val eq = pair.indexOf('=')
             val pairKey = if (eq < 0) pair else pair.substring(0, eq)
-            if (percentDecode(pairKey) == key) {
+            if (pairKey == key) {
                 return if (eq < 0) "" else pair.substring(eq + 1)
             }
         }

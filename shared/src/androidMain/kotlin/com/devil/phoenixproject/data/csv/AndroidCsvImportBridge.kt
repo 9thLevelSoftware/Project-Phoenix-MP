@@ -5,14 +5,15 @@ import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.BoundedUriContent
 import com.devil.phoenixproject.util.readUpTo
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import org.koin.java.KoinJavaComponent.getKoin
 
@@ -26,16 +27,26 @@ object AndroidCsvImportBridge {
 
     private val _offers = MutableSharedFlow<CsvImportOffer>(
         // Replay keeps a delivery offered before the collector composed (cold start runs
-        // splash/EULA/migrations first). Ownership still grants at-most-once handling: a
-        // replayed offer for a consumed delivery is silently dropped.
+        // splash/EULA/migrations first).
         replay = 8,
         extraBufferCapacity = 8,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    val offers: Flow<CsvImportOffer> = _offers.asSharedFlow()
+
+    /**
+     * A consumed delivery is silently dropped here, before any collector sees it: the collector
+     * acknowledges at handling time and that record is process-scoped, so it outlives Activity
+     * recreation (low-memory destroy + restore) even though a recreated `RoutineCsvViewModel`
+     * starts with a fresh, empty `CsvImportIntakeOwnership`. Without this filter the replay
+     * buffer would re-deliver the offer and re-import; a pending (never acknowledged) delivery
+     * still replays to the first collector, which is the cold-start case replay exists for.
+     */
+    val offers: Flow<CsvImportOffer> = _offers.asSharedFlow().filter { !isAcknowledged(it.deliveryId) }
 
     private val acknowledged = ArrayDeque<String>()
-    private val outstandingReads = AtomicInteger(0)
+
+    /** Atomic bound on concurrent provider reads: a third delivery reports Busy (B1). */
+    private val readPermits = Semaphore(MAX_OUTSTANDING_READS)
 
     /** Publishes one delivery's terminal result. Acknowledged (consumed) ids never replay. */
     @Synchronized
@@ -52,6 +63,10 @@ object AndroidCsvImportBridge {
         while (acknowledged.size > ACK_MEMORY) acknowledged.removeFirst()
     }
 
+    /** Replay-suppression check for [offers]; same lock as [offer]/[acknowledge]. */
+    @Synchronized
+    private fun isAcknowledged(deliveryId: String): Boolean = acknowledged.contains(deliveryId)
+
     /**
      * Bounded, off-main read of an incoming provider URI. Streams are always closed and a
      * cancelled coroutine interrupts the blocking read (a timeout alone never proved that).
@@ -59,8 +74,7 @@ object AndroidCsvImportBridge {
      */
     suspend fun readCsvImportText(uri: String, maxBytes: Int): CsvImportDeliveryResult =
         withContext(Dispatchers.IO) {
-            if (outstandingReads.incrementAndGet() > MAX_OUTSTANDING_READS) {
-                outstandingReads.decrementAndGet()
+            if (!readPermits.tryAcquire()) {
                 log.i { "csv_import_read outcome=busy" }
                 return@withContext CsvImportDeliveryResult.Busy
             }
@@ -98,7 +112,7 @@ object AndroidCsvImportBridge {
                 log.i { "csv_import_read outcome=unreadable" }
                 CsvImportDeliveryResult.Unreadable
             } finally {
-                outstandingReads.decrementAndGet()
+                readPermits.release()
             }
         }
 

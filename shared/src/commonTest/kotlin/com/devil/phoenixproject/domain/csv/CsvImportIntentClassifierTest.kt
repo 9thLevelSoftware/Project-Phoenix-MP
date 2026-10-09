@@ -152,6 +152,19 @@ class CsvImportIntentClassifierTest {
     }
 
     @Test
+    fun phoenixImportMatchesTheDataKeyLiterally() {
+        // Standard URL parsing matches keys on the wire: a percent-encoded key is not `data`.
+        assertEquals(
+            CsvImportPayload.Unreadable,
+            view(scheme = "phoenix", host = "import", data = "phoenix://import?d%61ta=csv"),
+        )
+        assertEquals(
+            CsvImportPayload.InlineText("csv"),
+            view(scheme = "phoenix", host = "import", data = "phoenix://import?data=csv"),
+        )
+    }
+
+    @Test
     fun phoenixImportOversizeDataIsTooLarge() {
         val oversize = "a".repeat(RoutineCsvFormat.MAX_BYTES + 1)
         val result = view(scheme = "phoenix", host = "import", data = "phoenix://import?data=$oversize")
