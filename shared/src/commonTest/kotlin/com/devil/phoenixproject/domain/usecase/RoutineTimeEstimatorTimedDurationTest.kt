@@ -12,7 +12,7 @@ import kotlin.test.assertFalse
 import kotlinx.coroutines.test.runTest
 
 /**
- * Timed cable sets must be estimated from [RoutineExercise.executionTimedDurationSeconds],
+ * Timed sets must be estimated from [RoutineExercise.executionTimedDurationSeconds],
  * the same per-set duration the workout timer runs. Rep-count fallbacks stay for sets
  * execution does not treat as timed.
  */
@@ -122,6 +122,35 @@ class RoutineTimeEstimatorTimedDurationTest {
 
         assertEquals(20, result.totalSeconds)
         assertEquals(true, result.isHistoryBased)
+    }
+
+    @Test
+    fun timedAmrapSetUsesDurationNotAmrapRange() = runTest {
+        // Execution ends a timed set when the timer expires, so null reps add no range.
+        val result = estimator().estimateRoutineDuration(
+            routine(setReps = listOf(10, null), restSeconds = listOf(30), durationSeconds = 20),
+            profileId,
+        )
+
+        assertEquals(20 * 2 + 30, result.totalSeconds)
+        assertFalse(result.hasRange)
+    }
+
+    @Test
+    fun timedBodyweightSetsUseExecutionDuration() = runTest {
+        val plank = cableExercise(
+            setReps = listOf(10, 10),
+            restSeconds = listOf(30),
+            durationSeconds = 60,
+        ).let { it.copy(exercise = it.exercise.copy(isBodyweightOverride = true)) }
+
+        val result = estimator(sessionCount = 5, averageSetDurationMs = 20_000L).estimateRoutineDuration(
+            Routine(id = "routine-bw", name = "Plank", profileId = profileId, exercises = listOf(plank)),
+            profileId,
+        )
+
+        // 2 * 60s timer + 30s rest. Not the 30s bodyweight fallback or the 20s history.
+        assertEquals(60 * 2 + 30, result.totalSeconds)
     }
 
     @Test
