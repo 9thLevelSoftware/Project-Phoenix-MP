@@ -475,6 +475,13 @@ open class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries) {
                 dropSetEnabled = exercise.dropSetEnabled,
                 dropSetMinWeightKg = exercise.dropSetMinWeightKg,
             )
+            // insertRoutineExercise omits durationSyncKnown (column default 0).
+            // Write the snapshot's flag in this same transaction so a restored
+            // copy keeps the original known/unknown/malformed state.
+            queries.updateRoutineExerciseDurationSyncKnown(
+                durationSyncKnown = exercise.durationSyncKnown,
+                id = newExerciseId,
+            )
         }
 
         for (plannedSet in graph.plannedSets) {
