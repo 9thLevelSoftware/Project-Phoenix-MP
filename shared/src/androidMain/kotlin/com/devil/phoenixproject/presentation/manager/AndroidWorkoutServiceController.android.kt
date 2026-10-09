@@ -10,7 +10,11 @@ class AndroidWorkoutServiceController(
 ) : WorkoutServiceController {
     private val appContext = context.applicationContext
     private val log = Logger.withTag("AndroidWorkoutServiceController")
-    private val serviceClassName = "${appContext.packageName}.service.WorkoutForegroundService"
+    // The manifest service is `.service.WorkoutForegroundService`, resolved from the
+    // namespace (`com.devil.phoenixproject`). Debug builds append `.debug` to the
+    // applicationId, so the component package must stay the runtime packageName
+    // while the class stays the namespace class.
+    private val serviceClassName = "com.devil.phoenixproject.service.WorkoutForegroundService"
 
     @Volatile
     private var isRunning = false
