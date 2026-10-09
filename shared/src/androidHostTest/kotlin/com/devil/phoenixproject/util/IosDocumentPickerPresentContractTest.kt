@@ -20,10 +20,13 @@ class IosDocumentPickerPresentContractTest {
 
         val missing = body.indexOf("keyWindowRootViewController()")
         val cancel = body.indexOf("delegate.onCancelled()")
-        val present = body.indexOf("presentViewController")
+        val walk = body.indexOf("presenter = presenter.presentedViewController ?: break")
+        val present = body.indexOf("presenter.presentViewController")
         assertTrue(missing >= 0 && cancel > missing, "a missing root controller cancels")
         assertTrue(body.contains("Could not get root view controller"), "missing root still logs the same error")
-        assertTrue(present > cancel, "present runs only after the root controller is known")
+        assertTrue(walk > cancel, "the presented chain is walked after the root controller is known")
+        assertTrue(present > walk, "present runs from the top of that chain")
+        assertTrue(!body.contains("rootViewController.presentViewController"), "a modal on the root is not the presenter")
         assertTrue(body.contains("picker.delegate = delegate"), "the presenter assigns the shared delegate")
         assertTrue(body.contains("animated = true"), "presentation stays animated")
         assertTrue(body.contains("completion = null"), "presentation has no completion")
@@ -78,7 +81,10 @@ class IosDocumentPickerPresentContractTest {
 
         assertTrue(source.contains("fun presentShareSheet"), "share sheet presenter remains")
         assertTrue(source.contains("presentViewController"), "share sheet still presents itself")
-        assertTrue(source.contains("presentedViewController"), "share sheet still walks to the top presenter")
+        assertTrue(
+            source.contains("presenter = presenter.presentedViewController ?: break"),
+            "share sheet still walks to the top presenter",
+        )
         assertTrue(!source.contains("presentDocumentPicker"), "share sheet does not use the document presenter")
         assertTrue(!source.contains("keyWindowRootViewController"), "share sheet keeps its own window walk")
     }
