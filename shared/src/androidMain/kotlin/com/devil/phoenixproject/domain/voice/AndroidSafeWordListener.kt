@@ -311,9 +311,6 @@ class AndroidSafeWordListener(
         cancelEndOfSpeechResultFallback()
         if (!shouldBeListening || generation != listeningGeneration || utteranceRestartClaimed) return
         val fallback = Runnable {
-            if (endOfSpeechResultFallback === fallback) {
-                endOfSpeechResultFallback = null
-            }
             if (generation != listeningGeneration) return@Runnable
             if (!claimUtteranceRestart()) return@Runnable
             Log.w(TAG, "No final recognition result after end of speech; restarting")
