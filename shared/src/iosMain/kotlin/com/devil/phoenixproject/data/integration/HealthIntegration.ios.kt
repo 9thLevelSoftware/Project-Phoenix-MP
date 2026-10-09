@@ -26,6 +26,8 @@ import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
 import platform.HealthKit.HKQuantityTypeIdentifierBodyMass
 import platform.HealthKit.HKQuery
 import platform.HealthKit.HKSampleQuery
+import platform.HealthKit.predicateForObjectsFromSource
+import platform.HealthKit.predicateForObjectsWithMetadataKey
 import platform.HealthKit.HKSampleSortIdentifierEndDate
 import platform.HealthKit.HKSource
 import platform.HealthKit.HKUnit
