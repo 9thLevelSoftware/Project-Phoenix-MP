@@ -1802,8 +1802,11 @@ SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NU
 countPersonalRecords:
 SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
 
+-- Distinct local calendar days. Streak math compares these strings to the device's
+-- local today; UTC bucketing breaks an east-of-UTC streak the next local morning.
+-- Same 'localtime' modifier as selectWorkoutLocalEpochDays.
 selectWorkoutDates:
-SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 ORDER BY timestamp DESC;
+SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch', 'localtime') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 ORDER BY timestamp DESC;
 
 -- ==================== RPG ATTRIBUTES QUERIES ====================
 
