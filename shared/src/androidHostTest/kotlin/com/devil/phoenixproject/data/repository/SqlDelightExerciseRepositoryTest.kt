@@ -435,6 +435,30 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `getAllExercises and searchExercises omit archived custom exercises`() = runTest {
+        // Issue #1225: the Tag picker's Custom chip reads these flows, so an archived-only
+        // custom library must reach it as no customs at all.
+        insertExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+        insertExercise(
+            id = "custom-archived",
+            name = "Archived Custom",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            isCustom = 1L,
+            archived = 1L,
+        )
+
+        repository.getAllExercises().test {
+            assertEquals(listOf("bench"), awaitItem().map { it.id })
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.searchExercises("custom").test {
+            assertTrue(awaitItem().isEmpty())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `name fallbacks prefer active rows over archived legacy ids`() = runTest {
         insertExercise(
             id = "legacy-plank",
