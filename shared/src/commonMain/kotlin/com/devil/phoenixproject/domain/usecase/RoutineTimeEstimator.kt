@@ -215,9 +215,10 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
         }
 
         // === Working sets ===
+        // `sets` is setReps.size, so this index matches execution's setReps walk
+        // (null reps, or the last-set isAMRAP flag on setReps.lastIndex).
         for (setIdx in 0 until exercise.sets) {
-            val reps = exercise.setReps.getOrNull(setIdx)
-            val isAmrapSet = reps == null // null reps = AMRAP indicator
+            val isAmrapSet = exercise.isAmrapSet(setIdx)
 
             if (isAmrapSet) {
                 hasAmrap = true
