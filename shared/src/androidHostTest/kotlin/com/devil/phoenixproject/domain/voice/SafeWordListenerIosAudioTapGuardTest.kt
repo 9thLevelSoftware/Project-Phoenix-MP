@@ -194,6 +194,38 @@ class SafeWordListenerIosAudioTapGuardTest {
     }
 
     @Test
+    fun iosSafeWordListener_ignoresRecognitionResultsAfterStopOrStaleGeneration() {
+        val source = safeWordListenerSource.readText()
+        val handleResultIndex = source.indexOf("private fun handleRecognitionResult(")
+        val emitIndex = source.indexOf("_detectedWord.tryEmit", handleResultIndex)
+        assertTrue(handleResultIndex >= 0, "handleRecognitionResult() must exist.")
+        assertTrue(
+            emitIndex > handleResultIndex,
+            "handleRecognitionResult() must emit a detection for an accepted result.",
+        )
+
+        val beforeEmit = source.substring(handleResultIndex, emitIndex)
+        assertTrue(
+            beforeEmit.contains("!shouldBeListening"),
+            "handleRecognitionResult() must return before emitting when listening has been stopped.",
+        )
+        assertTrue(
+            beforeEmit.contains("generation == lifecycleRecoveryCancellationGeneration"),
+            "handleRecognitionResult() must return before emitting a lifecycle-cancelled generation.",
+        )
+        assertTrue(
+            beforeEmit.contains("generation != recognitionCallbackGeneration"),
+            "handleRecognitionResult() must return before emitting when the callback generation is stale.",
+        )
+        val guardReturnIndex = beforeEmit.indexOf("return")
+        val shouldBeListeningIndex = beforeEmit.indexOf("!shouldBeListening")
+        assertTrue(
+            guardReturnIndex > shouldBeListeningIndex,
+            "The stopped/stale guard must return before any detection emit.",
+        )
+    }
+
+    @Test
     fun iosSafeWordListener_installsAndRemovesLifecycleObservers() {
         val source = safeWordListenerSource.readText()
 
