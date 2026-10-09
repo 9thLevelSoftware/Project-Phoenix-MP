@@ -264,6 +264,23 @@ class MiniExercisePickerDialogContractTest {
             contentBlock.contains("enableCustomExercises = false"),
             "The tag dialog stays create-disabled (B5).",
         )
+
+        // The filtered list must recompute on a Custom tap: showCustomOnly is a key of the
+        // remember(...) that caches it, and it reaches the shared filter as the state value.
+        val filteredRemember = src.substringAfter("val exercises = remember(")
+        val rememberKeys = filteredRemember.substringBefore(") {")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        assertTrue(
+            "showCustomOnly" in rememberKeys,
+            "showCustomOnly must be a key of the filtered-list remember(...) so toggling Custom recomputes it; keys were $rememberKeys.",
+        )
+        val filterStateBlock = balancedFrom(src, src.indexOf("ExercisePickerFilterState("), '(', ')')
+        assertTrue(
+            Regex("""showCustomOnly\s*=\s*showCustomOnly\s*,""").containsMatchIn(filterStateBlock),
+            "ExercisePickerFilterState must receive showCustomOnly = showCustomOnly.",
+        )
         assertTrue(
             src.contains("customExerciseCount = library.count { it.isCustom }"),
             "The custom count must come from the loaded library (B3), never getCustomExercises() or candidates.",
