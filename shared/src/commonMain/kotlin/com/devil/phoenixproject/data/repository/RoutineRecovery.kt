@@ -475,6 +475,12 @@ open class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries) {
                 dropSetEnabled = exercise.dropSetEnabled,
                 dropSetMinWeightKg = exercise.dropSetMinWeightKg,
             )
+            // insertRoutineExercise leaves durationSyncKnown at its default 0
+            // (unknown), which re-selects the routine on every push and forces a
+            // full pull until hydrated. The copy is a new identity created by this
+            // build, so its duration is known (same rule as writeRoutineExerciseRow);
+            // the snapshot's flag described the deleted identity, not this one.
+            queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown = 1L, id = newExerciseId)
         }
 
         for (plannedSet in graph.plannedSets) {
