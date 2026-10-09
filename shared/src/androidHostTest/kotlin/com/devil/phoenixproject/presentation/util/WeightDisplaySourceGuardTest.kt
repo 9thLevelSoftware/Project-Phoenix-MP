@@ -261,6 +261,7 @@ class WeightDisplaySourceGuardTest {
             "com/devil/phoenixproject/presentation/screen/AnalyticsScreen.kt",
             "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt",
             "com/devil/phoenixproject/presentation/components/InsightCards.kt",
+            "com/devil/phoenixproject/presentation/util/SmartInsightsWeightText.kt",
         )
         val cableArg = Regex("""(?:formatDisplayWeight|toDisplayWeight)\([^)]*cableCount""")
         val violations = callSites.mapNotNull { path ->
@@ -270,6 +271,30 @@ class WeightDisplaySourceGuardTest {
         assertTrue(
             violations.isEmpty(),
             "GUARD VIOLATION: Ordinary load text must not take cableCount. Violations: $violations",
+        )
+    }
+
+    @Test
+    fun smartInsightsSurfaces_doNotHardcodeKilogramDisplay() {
+        val files = listOf(
+            "com/devil/phoenixproject/presentation/screen/SmartInsightsTab.kt",
+            "com/devil/phoenixproject/presentation/components/ReadinessBriefingCard.kt",
+        )
+        val hardcodedKg = Regex("""(?i)(total_kg|\}kg|"\s*kg")""")
+        val violations = files.mapNotNull { path ->
+            val source = readSourceFile(path) ?: return@mapNotNull "$path missing"
+            val problems = mutableListOf<String>()
+            if (!source.contains("SmartInsightsWeightText")) {
+                problems.add("does not format through SmartInsightsWeightText")
+            }
+            if (hardcodedKg.containsMatchIn(source)) {
+                problems.add("hard-codes a kg display")
+            }
+            if (problems.isEmpty()) null else "$path: ${problems.joinToString()}"
+        }
+        assertTrue(
+            violations.isEmpty(),
+            "GUARD VIOLATION: Smart Insights weight text must follow the profile unit. $violations",
         )
     }
 
