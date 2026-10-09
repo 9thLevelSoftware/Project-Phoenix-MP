@@ -247,12 +247,15 @@ fun ExerciseListEmptyState(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        text = "Create your own exercises to track workouts\nnot in the library",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
+                    // Issue #1225 (ADR-5): the create affordance only belongs to hosts that
+                    // can actually create. A create-disabled host (Tag exercise, Profile's
+                    // picker) shows the title alone instead of telling users to create.
                     if (enableCustomExercises) {
+                        Text(
+                            text = "Create your own exercises to track workouts\nnot in the library",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
                         Button(onClick = onCreateExercise) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = androidx.compose.ui.Modifier.padding(4.dp))

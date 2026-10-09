@@ -45,4 +45,34 @@ class RecentJustLiftExercisesTest {
 
         assertEquals(listOf("bench", "squat"), recentJustLiftExerciseIdsFromHistory(sessions))
     }
+
+    /**
+     * Issue #1225 hazard: a custom exercise that was never tagged has no recent id, so it must
+     * survive the Custom filter yet still be dropped once Recent narrows the list. If either
+     * helper regressed (Custom filtering by recency, or Recent admitting non-recent rows) the
+     * Tag exercise chip would show or hide the wrong rows.
+     */
+    @Test
+    fun neverTaggedCustomSurvivesCustomFilterThenRecentDropsIt() {
+        val tagged = exercise("bench")
+        val neverTaggedCustom = exercise("custom_1712", "Cable Split Squat").copy(isCustom = true)
+        val candidates = listOf(tagged, neverTaggedCustom)
+
+        val customFiltered = filterExercisePickerCandidates(
+            candidates = candidates,
+            filters = ExercisePickerFilterState(showCustomOnly = true),
+        )
+        assertEquals(
+            listOf("custom_1712"),
+            customFiltered.map { it.id },
+            "The Custom filter must keep a never-tagged custom exercise (and drop the tagged non-custom).",
+        )
+
+        val afterRecent = orderByRecentExercises(customFiltered, listOf("bench"))
+        assertEquals(
+            emptyList(),
+            afterRecent.map { it.id },
+            "Recent must drop the never-tagged custom exercise once it is the only narrowing left.",
+        )
+    }
 }
