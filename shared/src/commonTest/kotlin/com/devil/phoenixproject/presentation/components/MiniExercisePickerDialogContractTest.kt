@@ -308,18 +308,8 @@ class MiniExercisePickerDialogContractTest {
             "Do not collect getCustomExercises(): it is a second subscription on the wrong SQL (B3).",
         )
 
-        // Public signature stays fixed for the four call sites (B9).
-        val declaration = src.substringAfter("fun MiniExercisePickerDialog(")
-        assertTrue(declaration.isNotEmpty(), "MiniExercisePickerDialog declaration not found.")
-        val paramNames = Regex("""([a-zA-Z_][a-zA-Z0-9_]*)\s*:""")
-            .findAll(declaration.substringBefore(") {"))
-            .map { it.groupValues[1] }
-            .toList()
-        assertEquals(
-            listOf("exerciseRepository", "onDismiss", "onExerciseSelected", "recentExerciseIds"),
-            paramNames,
-            "MiniExercisePickerDialog's public parameter list must stay unchanged for its four call sites.",
-        )
+        // B9 (public signature unchanged for the four call sites) is pinned exactly once,
+        // in miniPicker_publicSignatureUnchanged above.
     }
 
     @Test
