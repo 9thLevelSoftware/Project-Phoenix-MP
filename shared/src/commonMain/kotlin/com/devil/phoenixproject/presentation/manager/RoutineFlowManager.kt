@@ -177,15 +177,6 @@ class RoutineFlowManager(
                 coordinator._workoutState.value is WorkoutState.SetSummary
             )
 
-    /**
-     * Per-set AMRAP when reps are null, plus the legacy ExerciseEditDialog
-     * "last set AMRAP" flag used by routine load and autoplay.
-     */
-    private fun isAmrapSet(exercise: RoutineExercise, setIndex: Int): Boolean {
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        return rawSetReps == null || (exercise.isAMRAP && setIndex == exercise.setReps.lastIndex)
-    }
-
     private fun markExerciseSkipped(index: Int) {
         coordinator._skippedExercises.update { it + index }
         coordinator._completedExercises.update { it - index }
@@ -838,7 +829,7 @@ class RoutineFlowManager(
         )
         if (!programmedBaseWeightPerCableKg.isFinite() || programmedBaseWeightPerCableKg < 0f) return null
         val configuredReps = exercise.setReps[setIndex]
-        val semanticSetType = if (configuredReps == null || (exercise.isAMRAP && setIndex == exercise.setReps.lastIndex)) {
+        val semanticSetType = if (exercise.isAmrapSet(setIndex)) {
             SetType.AMRAP
         } else {
             SetType.STANDARD
@@ -931,10 +922,9 @@ class RoutineFlowManager(
         // Only bodyweight exercises should have warmupReps = 0
         val isFirstBodyweight = firstExercise.exercise.isBodyweight
 
-        // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-        // Legacy "Last set AMRAP" only applies when we're on the last set (set index 0 for single-set exercises)
-        val isFirstSetLastSet = firstExercise.setReps.size <= 1
-        val firstIsAMRAP = firstSetReps == null || (firstExercise.isAMRAP && isFirstSetLastSet)
+        // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility.
+        // Legacy "Last set AMRAP" applies only on the last set (set 0 when this exercise has one set).
+        val firstIsAMRAP = firstExercise.isAmrapSet(0)
 
         val params = WorkoutParameters(
             programMode = firstExercise.programMode,
@@ -1234,7 +1224,7 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-        val isSetAmrap = isAmrapSet(exercise, setIndex)
+        val isSetAmrap = exercise.isAmrapSet(setIndex)
         val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
@@ -1308,7 +1298,7 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-        val isSetAmrap = isAmrapSet(exercise, setIndex)
+        val isSetAmrap = exercise.isAmrapSet(setIndex)
         val initializeWarmups = isNewExercise && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
