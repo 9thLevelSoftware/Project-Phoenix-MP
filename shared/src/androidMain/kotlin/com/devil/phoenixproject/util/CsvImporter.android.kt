@@ -45,9 +45,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                 // Pre-load existing sessions for duplicate detection (one DB round-trip).
                 // MutableSet so intra-file duplicates are also caught as they are imported.
                 val existingSessions = workoutRepository.getRecentSessionsSync(profileId = profileId, limit = Int.MAX_VALUE)
-                val existingKeys = existingSessions.map { s ->
-                    DuplicateKey(s.timestamp, s.exerciseName ?: s.exerciseId ?: "")
-                }.toMutableSet()
+                val existingKeys = existingSessions.map(::csvImportDuplicateKey).toMutableSet()
 
                 var imported = 0
                 var skipped = 0
@@ -58,7 +56,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                     // Stamp each imported session with the active profile's ID
                     // so it appears in the correct user's history.
                     val session = parsedSession.copy(profileId = profileId)
-                    val key = DuplicateKey(session.timestamp, session.exerciseName ?: "")
+                    val key = csvImportDuplicateKey(session)
                     if (key in existingKeys) {
                         skipped++
                         continue
@@ -99,6 +97,4 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
             }
         }
     }
-
-    private data class DuplicateKey(val timestamp: Long, val exerciseName: String)
 }
