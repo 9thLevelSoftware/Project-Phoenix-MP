@@ -335,6 +335,17 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun handleRecognitionResult(generation: Long, result: SFSpeechRecognitionResult?, error: NSError?) {
+        // stopListening() clears shouldBeListening immediately but tears the
+        // recognizer down on the next main-queue turn, so a result already in
+        // flight can still arrive. A replaced task can too. Ignore both before
+        // any detection emit.
+        if (!shouldBeListening ||
+            generation == lifecycleRecoveryCancellationGeneration ||
+            generation != recognitionCallbackGeneration
+        ) {
+            return
+        }
+
         if (result != null) {
             val text = result.bestTranscription.formattedString
             if (matchesSafeWord(text)) {
