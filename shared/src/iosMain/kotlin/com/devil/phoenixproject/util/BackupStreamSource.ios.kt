@@ -92,7 +92,14 @@ internal class FileBackupStreamSource(private val filePath: String) : BackupStre
             )
         }
 
-        if (bytesRead <= 0) {
+        if (bytesRead < 0L) {
+            // NSInputStream.read returns a negative count when the read fails.
+            // Treating that as EOF would truncate the backup and finish the import.
+            val description = s.streamError?.localizedDescription ?: "unknown error"
+            throw IllegalStateException("Backup stream read failed: $description")
+        }
+
+        if (bytesRead == 0L) {
             // On EOF, decode any remaining leftover bytes (may produce a
             // replacement character if the file was truncated mid-sequence).
             if (leftover.isNotEmpty()) {
