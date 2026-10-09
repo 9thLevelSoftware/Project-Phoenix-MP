@@ -373,19 +373,12 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     /**
-     * Checks result text for the safe word (case-insensitive).
-     * Splits on whitespace so "stop now" matches a safeWord of "stop", and
-     * strips punctuation from each token so transcripts like "stop!", "stop.",
-     * or "stop, now" still match — a safety-critical false negative otherwise
-     * (audit F062).
+     * Checks result text for the safe word.
+     * See [SafeWordPhraseMatcher]: consecutive normalized tokens, so a multi-word
+     * phrase can match and a single word still matches only that exact token.
      */
-    private fun matchesSafeWord(text: String): Boolean {
-        val target = safeWord.normalizeForSafeWordMatch()
-        if (target.isEmpty()) return false
-        return text.split("\\s+".toRegex()).any { it.normalizeForSafeWordMatch() == target }
-    }
-
-    private fun String.normalizeForSafeWordMatch(): String = filter { it.isLetterOrDigit() }.lowercase()
+    private fun matchesSafeWord(text: String): Boolean =
+        SafeWordPhraseMatcher.matches(safeWord, text)
 
     private fun cancelExistingTask() {
         val taskState = recognitionTask?.state
