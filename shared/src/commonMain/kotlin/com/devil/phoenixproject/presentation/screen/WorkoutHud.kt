@@ -246,8 +246,8 @@ fun WorkoutHud(
 
             // Left Bar - show only when cable A is active/latched and metric data is available
             if (showCableA && metric != null && !isCurrentExerciseBodyweight) {
-                // Calculate danger zone status
-                val isDangerA = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
+                // Color this bar from cable A's own range. A low other cable must not paint it red.
+                val isDangerA = repRanges?.isCableAInDangerZone(metric.positionA) ?: false
 
                 EnhancedCablePositionBar(
                     label = "L",
@@ -269,8 +269,8 @@ fun WorkoutHud(
 
             // Right Bar - show only when cable B is active/latched and metric data is available
             if (showCableB && metric != null && !isCurrentExerciseBodyweight) {
-                // Calculate danger zone status
-                val isDangerB = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
+                // Color this bar from cable B's own range. A low other cable must not paint it red.
+                val isDangerB = repRanges?.isCableBInDangerZone(metric.positionB) ?: false
 
                 EnhancedCablePositionBar(
                     label = "R",

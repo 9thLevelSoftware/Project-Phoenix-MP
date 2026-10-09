@@ -848,35 +848,50 @@ data class RepRanges(
     }
 
     /**
-     * Check if position is in danger zone (within 5% of ROM minimum).
-     * Used to trigger red color warning on position bars.
+     * True when either cable with a meaningful range is within 5% of its own ROM minimum.
+     *
+     * Auto-stop keeps this combined OR. The HUD colors each bar from
+     * [isCableAInDangerZone] and [isCableBInDangerZone] so one low cable does not
+     * turn the other bar red.
      *
      * @param posA Current position A in mm
      * @param posB Current position B in mm
-     * @param minRangeThreshold Minimum ROM range required to activate danger zone check
+     * @param minRangeThreshold Minimum ROM range required before that cable can be in the danger zone
      * @return true if either cable with meaningful range is in danger zone
      */
     fun isInDangerZone(posA: Float, posB: Float, minRangeThreshold: Float = 50f): Boolean {
-        // Check if position A is in danger zone (within 5% of minimum)
-        // The range > minRangeThreshold check already ensures only active cables are checked -
-        // inactive cables at ~0 won't build meaningful range
-        if (minPosA != null && maxPosA != null) {
-            val range = maxPosA - minPosA
+        return isCableAInDangerZone(posA, minRangeThreshold) ||
+            isCableBInDangerZone(posB, minRangeThreshold)
+    }
+
+    /**
+     * True when cable A has built a meaningful range and [posA] is within 5% of its minimum.
+     */
+    fun isCableAInDangerZone(posA: Float, minRangeThreshold: Float = 50f): Boolean {
+        return isCableInDangerZone(posA, minPosA, maxPosA, minRangeThreshold)
+    }
+
+    /**
+     * True when cable B has built a meaningful range and [posB] is within 5% of its minimum.
+     */
+    fun isCableBInDangerZone(posB: Float, minRangeThreshold: Float = 50f): Boolean {
+        return isCableInDangerZone(posB, minPosB, maxPosB, minRangeThreshold)
+    }
+
+    private fun isCableInDangerZone(
+        position: Float,
+        minPos: Float?,
+        maxPos: Float?,
+        minRangeThreshold: Float,
+    ): Boolean {
+        // range > minRangeThreshold keeps inactive cables (stuck near 0, no real ROM) out.
+        if (minPos != null && maxPos != null) {
+            val range = maxPos - minPos
             if (range > minRangeThreshold) {
-                val threshold = minPosA + (range * 0.05f)
-                if (posA <= threshold) return true
+                val threshold = minPos + (range * 0.05f)
+                if (position <= threshold) return true
             }
         }
-
-        // Check if position B is in danger zone (within 5% of minimum)
-        if (minPosB != null && maxPosB != null) {
-            val range = maxPosB - minPosB
-            if (range > minRangeThreshold) {
-                val threshold = minPosB + (range * 0.05f)
-                if (posB <= threshold) return true
-            }
-        }
-
         return false
     }
 }
