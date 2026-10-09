@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.csv.CsvImportIntakeOwnership
+import com.devil.phoenixproject.data.csv.CsvImportIntakePhase
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -46,6 +48,21 @@ sealed interface RoutineCsvImportUiState {
     data class Imported(val routineCount: Int) : RoutineCsvImportUiState
 }
 
+/**
+ * Host-only result of an intent-driven import (#1242): where to navigate after the commit.
+ * The Daily Routines import dialog ignores this; only the intent host reads it.
+ */
+data class RoutineCsvImportHostResult(
+    val profileId: String,
+    val firstRoutineId: String,
+    val firstName: String,
+    val routineCount: Int,
+    /** The committed routine's `updatedAt`; the navigation wait requires it (B3). */
+    val committedUpdatedAt: Long,
+    /** True when the first written routine replaced an existing one (its id pre-existed). */
+    val overwrite: Boolean,
+)
+
 /** Export state for one routine (#772). */
 sealed interface RoutineCsvExportUiState {
     data class Ready(val fileName: String, val content: String) : RoutineCsvExportUiState
@@ -70,6 +87,13 @@ class RoutineCsvViewModel(
 
     private val _exportState = MutableStateFlow<RoutineCsvExportUiState?>(null)
     val exportState: StateFlow<RoutineCsvExportUiState?> = _exportState.asStateFlow()
+
+    /** Host-only intent import result (#1242); cleared by the host after navigation. */
+    private val _hostResult = MutableStateFlow<RoutineCsvImportHostResult?>(null)
+    val hostResult: StateFlow<RoutineCsvImportHostResult?> = _hostResult.asStateFlow()
+
+    /** B4 delivery ownership for the intent intake: one active delivery, at most one commit. */
+    val intakeOwnership = CsvImportIntakeOwnership()
 
     private var drafts: List<RoutineCsvRoutineDraft> = emptyList()
     private var previewProfileId: String? = null
@@ -98,6 +122,93 @@ class RoutineCsvViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Intent-driven import (#1242): same parse/plan/commit machinery as [previewImport], but a
+     * clean `CREATE_NEW` plan with no issues commits immediately and skips the preview. Name
+     * collisions, ambiguous names and planner issues land in the existing preview dialog before
+     * anything is written. The commit publishes a host-only [RoutineCsvImportHostResult].
+     */
+    fun importIncoming(content: String) {
+        planJob?.cancel()
+        planJob = viewModelScope.launch {
+            when (val parsed = RoutineCsvCodec.parse(content)) {
+                is RoutineCsvParseResult.Invalid -> _importState.value = RoutineCsvImportUiState.Unreadable(parsed.issues)
+
+                is RoutineCsvParseResult.Parsed -> {
+                    val profileId = activeProfileId() ?: run {
+                        _importState.value = RoutineCsvImportUiState.Unreadable(listOf(PROFILE_SWITCHING))
+                        return@launch
+                    }
+                    drafts = parsed.routines
+                    previewProfileId = profileId
+                    val plan = plan(profileId, RoutineCsvImportMode.CREATE_NEW)
+                    if (!plan.hasMatches && plan.canCommit) {
+                        commitIncoming(profileId, plan)
+                    } else {
+                        val initial = if (plan.hasMatches) plan(profileId, RoutineCsvImportMode.CREATE_COPIES) else plan
+                        _importState.value = RoutineCsvImportUiState.Preview(initial)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The clean-create auto-commit of [importIncoming]. Rebuilds the plan from current data
+     * first; a plan that changed under it falls back to the preview instead of writing.
+     */
+    private suspend fun commitIncoming(profileId: String, initial: RoutineCsvImportPlan) {
+        intakeOwnership.moveTo(CsvImportIntakePhase.COMMITTING)
+        try {
+            if (activeProfileId() != profileId) {
+                _importState.value = RoutineCsvImportUiState.Unreadable(listOf(PROFILE_CHANGED))
+                return
+            }
+            val fresh = plan(profileId, initial.mode)
+            if (fresh.routines != initial.routines || !fresh.canCommit) {
+                _importState.value = RoutineCsvImportUiState.Preview(fresh, refreshed = true)
+                return
+            }
+            workoutRepository.commitRoutineCsvImport(
+                profileId = profileId,
+                newGroups = fresh.newGroups,
+                routines = fresh.writes,
+                overwriteRoutineIds = fresh.overwriteRoutineIds,
+            )
+            drafts = emptyList()
+            previewProfileId = null
+            // No Preview, no Imported-count dialog on this path: the host navigates instead.
+            _importState.value = null
+            publishHostResult(profileId, fresh)
+            intakeOwnership.moveTo(CsvImportIntakePhase.RESULT)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: RoutineCsvImportConflictException) {
+            Logger.w(e) { "Routine CSV import target changed before commit" }
+            _importState.value = RoutineCsvImportUiState.Preview(plan(profileId, initial.mode), refreshed = true)
+        } catch (e: Exception) {
+            Logger.e(e) { "Routine CSV import failed; nothing was written" }
+            _importState.value = RoutineCsvImportUiState.Preview(initial, commitFailed = true)
+        }
+    }
+
+    private fun publishHostResult(profileId: String, plan: RoutineCsvImportPlan) {
+        val first = plan.writes.firstOrNull() ?: return
+        _hostResult.value = RoutineCsvImportHostResult(
+            profileId = profileId,
+            firstRoutineId = first.id,
+            firstName = first.name,
+            routineCount = plan.writes.size,
+            committedUpdatedAt = first.updatedAt ?: nowMs(),
+            overwrite = first.id in plan.overwriteRoutineIds,
+        )
+    }
+
+    /** Clears the consumed host result so a later navigation never replays it. */
+    fun clearHostResult() {
+        _hostResult.value = null
     }
 
     /**
@@ -152,6 +263,8 @@ class RoutineCsvViewModel(
                 drafts = emptyList()
                 previewProfileId = null
                 _importState.value = RoutineCsvImportUiState.Imported(fresh.writes.size)
+                publishHostResult(profileId, fresh)
+                intakeOwnership.moveTo(CsvImportIntakePhase.RESULT)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RoutineCsvImportConflictException) {
@@ -172,6 +285,15 @@ class RoutineCsvViewModel(
     /** The picked file is over [RoutineCsvFormat.MAX_BYTES]; it was not read. */
     fun onFileTooLarge() {
         _importState.value = RoutineCsvImportUiState.Unreadable(listOf(RoutineCsvIssue(null, RoutineCsvFormat.TOO_LARGE_MESSAGE)))
+    }
+
+    /**
+     * The active profile changed while an intent import waited for display readiness (B3).
+     * The commit stands (or never happened); navigation is cancelled with this explanation
+     * instead of retargeting another profile.
+     */
+    fun onProfileChangedDuringWait() {
+        _importState.value = RoutineCsvImportUiState.Unreadable(listOf(PROFILE_CHANGED))
     }
 
     fun dismissImport() {

@@ -22,6 +22,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -194,5 +195,114 @@ class RoutineCsvViewModelTest {
         viewModel.exportRoutine(routine.copy(exercises = routine.exercises.map { it.copy(stopAtTop = true) }))
         advanceUntilIdle()
         assertIs<RoutineCsvExportUiState.Ready>(viewModel.exportState.value)
+    }
+
+    // ===== #1242: intent-driven import (importIncoming) =====
+
+    @Test
+    fun importIncomingCommitsACleanCreateWithoutAPreviewOrCountDialog() = runTest(dispatcher) {
+        viewModel.importIncoming(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+
+        assertNull(viewModel.importState.value, "the intent host shows neither a preview nor the count dialog")
+        val host = assertNotNull(viewModel.hostResult.value)
+        assertEquals("Push", host.firstName)
+        assertEquals(1, host.routineCount)
+        assertEquals(false, host.overwrite)
+        assertEquals("Push", workouts.getAllRoutines(profileId).first().single().name)
+    }
+
+    @Test
+    fun previewImportStillAlwaysPreviewsTheSameContent() = runTest(dispatcher) {
+        viewModel.previewImport(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+
+        assertIs<RoutineCsvImportUiState.Preview>(viewModel.importState.value)
+        assertNull(viewModel.hostResult.value, "no host result before a confirmed commit")
+        assertTrue(workouts.getAllRoutines(profileId).first().isEmpty())
+    }
+
+    @Test
+    fun importIncomingWithAMatchPreviewsAndWritesOnlyAfterConfirm() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.importIncoming(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+
+        val preview = assertIs<RoutineCsvImportUiState.Preview>(viewModel.importState.value)
+        assertEquals(RoutineCsvImportMode.CREATE_COPIES, preview.plan.mode, "starts on the choice that changes nothing")
+        assertNull(viewModel.hostResult.value)
+        assertEquals(1, workouts.getAllRoutines(profileId).first().size, "nothing is written before confirm")
+
+        viewModel.confirmImport()
+        advanceUntilIdle()
+
+        assertIs<RoutineCsvImportUiState.Imported>(viewModel.importState.value, "the Daily Routines dialog path is unchanged")
+        val host = assertNotNull(viewModel.hostResult.value)
+        assertEquals("Push (Copy)", host.firstName)
+        assertEquals(2, workouts.getAllRoutines(profileId).first().size)
+    }
+
+    @Test
+    fun anOverwriteConfirmPublishesTheReplacedRoutineForFreshEditorNavigation() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.importIncoming(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+        viewModel.selectMode(RoutineCsvImportMode.OVERWRITE_MATCHING)
+        advanceUntilIdle()
+        viewModel.confirmImport()
+        advanceUntilIdle()
+
+        val host = assertNotNull(viewModel.hostResult.value)
+        assertEquals(true, host.overwrite)
+        assertEquals("existing-Push", host.firstRoutineId)
+        assertEquals(8, workouts.getRoutineById("existing-Push")?.exercises?.single()?.setReps?.single())
+    }
+
+    @Test
+    fun aMultiRoutineImportWritesAllAndReportsTheFirstForNavigation() = runTest(dispatcher) {
+        viewModel.importIncoming(
+            csv(
+                ",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,",
+                ",Pull,,,,bench-id,Bench Press,0,,,,,8,40,,,",
+            ),
+        )
+        advanceUntilIdle()
+
+        val host = assertNotNull(viewModel.hostResult.value)
+        assertEquals(2, host.routineCount)
+        assertEquals("Push", host.firstName)
+        assertEquals(2, workouts.getAllRoutines(profileId).first().size)
+    }
+
+    @Test
+    fun corruptInputWritesNothingAndReportsUnreadable() = runTest(dispatcher) {
+        viewModel.importIncoming("not a routine file")
+        advanceUntilIdle()
+
+        assertIs<RoutineCsvImportUiState.Unreadable>(viewModel.importState.value)
+        assertNull(viewModel.hostResult.value)
+        assertTrue(workouts.getAllRoutines(profileId).first().isEmpty(), "nothing is written")
+    }
+
+    @Test
+    fun dismissingAnIncomingPreviewWritesNothing() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.importIncoming(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+
+        viewModel.dismissImport()
+        assertNull(viewModel.importState.value)
+        assertNull(viewModel.hostResult.value)
+        assertEquals(5, workouts.getRoutineById("existing-Push")?.exercises?.single()?.setReps?.single(), "the draft target is untouched")
+    }
+
+    @Test
+    fun aClearedHostResultNeverReplays() = runTest(dispatcher) {
+        viewModel.importIncoming(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+        assertNotNull(viewModel.hostResult.value)
+
+        viewModel.clearHostResult()
+        assertNull(viewModel.hostResult.value)
     }
 }

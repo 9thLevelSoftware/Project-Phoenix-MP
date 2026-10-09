@@ -100,4 +100,11 @@
     <string name="label_recent">Recenti</string>
     <string name="cd_filter_essentials">Mostra solo gli esercizi essenziali</string>
     <string name="cd_phoenix_logo">Logo Phoenix</string>
+
+    <!-- CSV import via Android intents (#1242) -->
+    <string name="routine_csv_imported_builder">Importato nel Builder: %1$s</string>
+    <string name="routine_csv_imported_builder_more">Importato nel Builder: %1$s (+%2$d in più in Routine giornaliere)</string>
+    <string name="routine_csv_saved_daily">Importato: %1$s. Si trova in Routine giornaliere.</string>
+    <string name="action_open">Apri</string>
+    <string name="routine_csv_import_busy">Un'importazione è in corso — condividi di nuovo il file quando termina.</string>
 </resources>

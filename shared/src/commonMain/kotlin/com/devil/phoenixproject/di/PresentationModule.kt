@@ -28,6 +28,9 @@ val presentationModule = module {
     // when that entry leaves the back stack.
     viewModel { CycleEditorViewModel(get(), get()) }
     viewModel { GamificationViewModel(get(), get()) }
+    // #1242: the intent-import host owns an activity-scoped instance (viewModel { }); the
+    // factory line stays for plain resolution. Never single: drafts must not survive logout.
+    viewModel { RoutineCsvViewModel(get(), get(), get()) }
     factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { RoutineCsvViewModel(get(), get(), get()) }
     factory { ExternalActivitiesViewModel(get(), get()) }
