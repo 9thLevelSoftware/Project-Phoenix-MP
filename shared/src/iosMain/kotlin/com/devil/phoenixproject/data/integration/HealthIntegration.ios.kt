@@ -2,16 +2,21 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import platform.Foundation.NSBundle
+import platform.Foundation.NSCompoundPredicate
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSNumber
+import platform.Foundation.NSPredicate
 import platform.Foundation.NSSortDescriptor
 import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.timeIntervalSince1970
 import platform.HealthKit.HKAuthorizationStatusSharingAuthorized
 import platform.HealthKit.HKDevice
 import platform.HealthKit.HKHealthStore
+import platform.HealthKit.HKMetadataKeyExternalUUID
 import platform.HealthKit.HKMetadataKeyWasUserEntered
 import platform.HealthKit.HKObjectType
 import platform.HealthKit.HKQuantity
@@ -19,8 +24,10 @@ import platform.HealthKit.HKQuantitySample
 import platform.HealthKit.HKQuantityType
 import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
 import platform.HealthKit.HKQuantityTypeIdentifierBodyMass
+import platform.HealthKit.HKQuery
 import platform.HealthKit.HKSampleQuery
 import platform.HealthKit.HKSampleSortIdentifierEndDate
+import platform.HealthKit.HKSource
 import platform.HealthKit.HKUnit
 import platform.HealthKit.HKWorkout
 import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
@@ -28,6 +35,9 @@ import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
 private val log = Logger.withTag("HealthIntegration.iOS")
 
 private const val BODY_MASS_QUERY_LIMIT = 50UL
+
+/** Cap when the external-UUID query cannot be restricted to this app's source. */
+private const val EXTERNAL_UUID_QUERY_LIMIT_WITHOUT_SOURCE = 25UL
 
 /**
  * iOS implementation of HealthIntegration using Apple HealthKit.
@@ -255,6 +265,10 @@ actual class HealthIntegration : HealthWorkoutWriter {
      * Android Health Connect ExerciseSegment, so [HealthWorkoutData.segments] are not persisted on iOS.
      * Positive [HealthWorkoutData.totalCalories] are stored as active energy only when
      * that optional write is authorized; a missing calorie permission does not fail the workout write.
+     *
+     * Before saving, looks up workouts from this app whose `HKExternalUUID` metadata
+     * equals [HealthWorkoutData.externalId]. A match is a successful export and is not
+     * written again. A failed lookup still saves.
      */
     actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         if (!isAvailable()) {
@@ -311,6 +325,20 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 metadata = metadata,
             )
 
+            val existing = lookupExistingExternalUuidWorkout(data.externalId)
+            when (
+                healthKitWorkoutExportAction(
+                    queryFailed = existing.queryFailed,
+                    workoutsFromThisApp = existing.workoutsFromThisApp,
+                )
+            ) {
+                HealthKitWorkoutExportAction.SKIP_AS_SUCCESS -> {
+                    log.d { "HealthKit workout already exists for ${data.externalId}; skipping duplicate save" }
+                    return Result.success(Unit)
+                }
+                HealthKitWorkoutExportAction.SAVE -> Unit
+            }
+
             // Save to HealthKit
             suspendCancellableCoroutine { continuation ->
                 healthStore.saveObject(workout) { success: Boolean, error: NSError? ->
@@ -336,9 +364,107 @@ actual class HealthIntegration : HealthWorkoutWriter {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.e(e) { "Failed to write workout to HealthKit for ${data.externalId}" }
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Workouts this app already saved with [externalId] in `HKExternalUUID` metadata.
+     * A query failure is reported instead of thrown so the caller can still save.
+     */
+    private suspend fun lookupExistingExternalUuidWorkout(externalId: String): ExternalUuidLookup {
+        if (externalId.isBlank()) {
+            return ExternalUuidLookup(queryFailed = false, workoutsFromThisApp = 0)
+        }
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                val spec = externalUuidWorkoutPredicate(externalId)
+                val query = HKSampleQuery(
+                    sampleType = workoutType,
+                    predicate = spec.predicate,
+                    limit = if (spec.restrictsToThisApp) 1UL else EXTERNAL_UUID_QUERY_LIMIT_WITHOUT_SOURCE,
+                    sortDescriptors = null,
+                ) { _, samples, error ->
+                    if (!continuation.isActive) return@HKSampleQuery
+                    if (error != null) {
+                        log.w {
+                            "HealthKit external UUID lookup failed for $externalId: " +
+                                "${error.localizedDescription}; saving workout"
+                        }
+                        continuation.resume(ExternalUuidLookup(queryFailed = true, workoutsFromThisApp = 0))
+                        return@HKSampleQuery
+                    }
+                    continuation.resume(
+                        ExternalUuidLookup(
+                            queryFailed = false,
+                            workoutsFromThisApp = workoutsFromThisApp(samples),
+                        ),
+                    )
+                }
+                continuation.invokeOnCancellation {
+                    healthStore.stopQuery(query)
+                }
+                healthStore.executeQuery(query)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.w(e) { "HealthKit external UUID lookup failed for $externalId; saving workout" }
+            ExternalUuidLookup(queryFailed = true, workoutsFromThisApp = 0)
+        }
+    }
+
+    /**
+     * Metadata predicate on [HKMetadataKeyExternalUUID], AND this app's source when
+     * [HKSource.defaultSource] is the current app. Otherwise the metadata predicate
+     * alone; [workoutsFromThisApp] still drops other apps' samples.
+     */
+    private fun externalUuidWorkoutPredicate(externalId: String): ExternalUuidWorkoutPredicate {
+        val metadataPredicate = HKQuery.predicateForObjectsWithMetadataKey(
+            HKMetadataKeyExternalUUID,
+            allowedValues = listOf(externalId),
+        )
+        val sourcePredicate = currentAppSourcePredicateOrNull()
+        if (sourcePredicate == null) {
+            return ExternalUuidWorkoutPredicate(predicate = metadataPredicate, restrictsToThisApp = false)
+        }
+        return ExternalUuidWorkoutPredicate(
+            predicate = NSCompoundPredicate.andPredicateWithSubpredicates(
+                listOf(metadataPredicate, sourcePredicate),
+            ),
+            restrictsToThisApp = true,
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun currentAppSourcePredicateOrNull(): NSPredicate? {
+        val appBundleId = NSBundle.mainBundle.bundleIdentifier?.takeIf { it.isNotBlank() } ?: return null
+        val source = try {
+            HKSource.defaultSource()
+        } catch (e: Exception) {
+            log.w(e) { "Unable to read the current HealthKit source; external UUID query will not filter by source" }
+            return null
+        }
+        if (source.bundleIdentifier != appBundleId) {
+            log.w {
+                "HealthKit default source ${source.bundleIdentifier} is not this app ($appBundleId); " +
+                    "external UUID query will not filter by source"
+            }
+            return null
+        }
+        return HKQuery.predicateForObjectsFromSource(source)
+    }
+
+    private fun workoutsFromThisApp(samples: List<*>?): Int {
+        val appBundleId = NSBundle.mainBundle.bundleIdentifier?.takeIf { it.isNotBlank() }
+        return samples.orEmpty().count { sample ->
+            val workout = sample as? HKWorkout ?: return@count false
+            if (appBundleId == null) return@count true
+            workout.sourceRevision.source.bundleIdentifier == appBundleId
         }
     }
 
@@ -422,4 +548,14 @@ actual class HealthIntegration : HealthWorkoutWriter {
         is NSNumber -> boolValue
         else -> null
     }
+
+    private data class ExternalUuidLookup(
+        val queryFailed: Boolean,
+        val workoutsFromThisApp: Int,
+    )
+
+    private data class ExternalUuidWorkoutPredicate(
+        val predicate: NSPredicate,
+        val restrictsToThisApp: Boolean,
+    )
 }
