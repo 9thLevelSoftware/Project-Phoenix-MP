@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ReadinessResult
 import com.devil.phoenixproject.domain.model.ReadinessStatus
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.SmartInsightsWeightText
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
 
@@ -27,7 +29,11 @@ import com.devil.phoenixproject.util.KmpUtils
  * - "Insufficient data" state for new users (<28 days history)
  */
 @Composable
-fun ReadinessBriefingCard(readinessResult: ReadinessResult, modifier: Modifier = Modifier) {
+fun ReadinessBriefingCard(
+    readinessResult: ReadinessResult,
+    weightUnit: WeightUnit,
+    modifier: Modifier = Modifier,
+) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -50,7 +56,7 @@ fun ReadinessBriefingCard(readinessResult: ReadinessResult, modifier: Modifier =
 
             when (readinessResult) {
                 is ReadinessResult.InsufficientData -> InsufficientDataContent()
-                is ReadinessResult.Ready -> ReadyContent(readinessResult)
+                is ReadinessResult.Ready -> ReadyContent(readinessResult, weightUnit)
             }
         }
     }
@@ -78,7 +84,7 @@ private fun InsufficientDataContent() {
 }
 
 @Composable
-private fun ReadyContent(result: ReadinessResult.Ready) {
+private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) {
     val readinessColors = AccessibilityTheme.colors
     val statusColor = when (result.status) {
         ReadinessStatus.GREEN -> readinessColors.statusGreen
@@ -161,11 +167,11 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
     ) {
         VolumeColumn(
             label = "Acute (7d)",
-            valueKg = result.acuteVolumeKg,
+            valueText = SmartInsightsWeightText.volumeWithUnit(result.acuteVolumeKg, weightUnit),
         )
         VolumeColumn(
             label = "Chronic (avg/wk)",
-            valueKg = result.chronicWeeklyAvgKg,
+            valueText = SmartInsightsWeightText.volumeWithUnit(result.chronicWeeklyAvgKg, weightUnit),
         )
     }
 
@@ -180,7 +186,7 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
 }
 
 @Composable
-private fun VolumeColumn(label: String, valueKg: Float) {
+private fun VolumeColumn(label: String, valueText: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -190,7 +196,7 @@ private fun VolumeColumn(label: String, valueKg: Float) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "${valueKg.toInt()} kg",
+            text = valueText,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,

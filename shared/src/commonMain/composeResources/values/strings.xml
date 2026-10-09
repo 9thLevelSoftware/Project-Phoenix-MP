@@ -450,7 +450,7 @@
     <string name="insights_col_muscle_group">Muscle Group</string>
     <string name="insights_col_sets">Sets</string>
     <string name="insights_col_reps">Reps</string>
-    <string name="insights_col_total_kg">Total kg</string>
+    <string name="insights_col_total">Total %1$s</string>
     <string name="insights_push">Push</string>
     <string name="insights_pull">Pull</string>
     <string name="insights_legs">Legs</string>
