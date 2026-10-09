@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.database.UserProfilePreferences as ProfilePreferenceRow
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
@@ -136,12 +137,16 @@ internal class ProfilePreferenceSyncCodec {
     fun rackPayload(value: RackPreferences): JsonObject =
         document(ProfilePreferencesCodec.encodeRack(value))
 
+    fun customEquipmentPayload(value: CustomEquipmentPreferences): JsonObject =
+        document(ProfilePreferencesCodec.encodeCustomEquipment(value))
+
     fun workoutPayload(value: WorkoutPreferences): JsonObject =
         document(ProfilePreferencesCodec.encodeWorkout(value))
 
     fun normalizedPayload(value: DecodedProfilePreferenceValue): JsonObject = when (value) {
         is DecodedProfilePreferenceValue.Core -> corePayload(value.value)
         is DecodedProfilePreferenceValue.Rack -> rackPayload(value.value)
+        is DecodedProfilePreferenceValue.CustomEquipment -> customEquipmentPayload(value.value)
         is DecodedProfilePreferenceValue.Workout -> workoutPayload(value.value)
         is DecodedProfilePreferenceValue.Led -> ledPayload(value.value)
         is DecodedProfilePreferenceValue.Vbt -> vbtPayload(value.value)
@@ -246,6 +251,23 @@ internal class ProfilePreferenceSyncCodec {
                     )
                 }
             }
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> {
+                val decoded = ProfilePreferencesCodec.decodeCustomEquipment(row.custom_equipment_json)
+                if (decoded.validity !is ProfilePreferenceValidity.Valid) {
+                    LocalPayloadResult.Invalid(ProfilePreferenceSyncIssueReason.INVALID_LOCAL_DOCUMENT)
+                } else if (decoded.value.items.any { item ->
+                        exactJsonIntegerIssue(item.createdAt) != null
+                    }
+                ) {
+                    LocalPayloadResult.Invalid(
+                        ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER,
+                    )
+                } else {
+                    LocalPayloadResult.Valid(
+                        LocalPayload(decoded.value.version, customEquipmentPayload(decoded.value)),
+                    )
+                }
+            }
             ProfilePreferenceSectionName.WORKOUT -> {
                 val decoded = ProfilePreferencesCodec.decodeWorkout(row.workout_preferences_json)
                 if (decoded.validity !is ProfilePreferenceValidity.Valid) {
@@ -314,6 +336,7 @@ internal class ProfilePreferenceSyncCodec {
         ProfilePreferenceSectionName.WORKOUT -> row.workout_dirty == 1L
         ProfilePreferenceSectionName.LED -> row.led_dirty == 1L
         ProfilePreferenceSectionName.VBT -> row.vbt_dirty == 1L
+        ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> row.custom_equipment_dirty == 1L
     }
 
     private fun sectionUpdatedAt(
@@ -325,6 +348,7 @@ internal class ProfilePreferenceSyncCodec {
         ProfilePreferenceSectionName.WORKOUT -> row.workout_updated_at
         ProfilePreferenceSectionName.LED -> row.led_updated_at
         ProfilePreferenceSectionName.VBT -> row.vbt_updated_at
+        ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> row.custom_equipment_updated_at
     }
 
     private fun sectionLocalGeneration(
@@ -336,6 +360,7 @@ internal class ProfilePreferenceSyncCodec {
         ProfilePreferenceSectionName.WORKOUT -> row.workout_local_generation
         ProfilePreferenceSectionName.LED -> row.led_local_generation
         ProfilePreferenceSectionName.VBT -> row.vbt_local_generation
+        ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> row.custom_equipment_local_generation
     }
 
     private fun sectionServerRevision(
@@ -347,6 +372,7 @@ internal class ProfilePreferenceSyncCodec {
         ProfilePreferenceSectionName.WORKOUT -> row.workout_server_revision
         ProfilePreferenceSectionName.LED -> row.led_server_revision
         ProfilePreferenceSectionName.VBT -> row.vbt_server_revision
+        ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> row.custom_equipment_server_revision
     }
 
     private fun numericPrimitive(payload: JsonObject, key: String): JsonPrimitive =
@@ -375,6 +401,9 @@ internal class ProfilePreferenceSyncCodec {
             ProfilePreferenceSectionName.RACK -> DecodedProfilePreferenceValue.Rack(
                 PortalWireJson.decodeFromJsonElement<RackPreferences>(payload),
             )
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> DecodedProfilePreferenceValue.CustomEquipment(
+                PortalWireJson.decodeFromJsonElement<CustomEquipmentPreferences>(payload),
+            )
             ProfilePreferenceSectionName.WORKOUT -> DecodedProfilePreferenceValue.Workout(
                 PortalWireJson.decodeFromJsonElement<WorkoutPreferences>(payload),
             )
@@ -396,6 +425,7 @@ internal class ProfilePreferenceSyncCodec {
         val errors = when (decoded) {
             is DecodedProfilePreferenceValue.Core -> ProfilePreferencesValidator.core(decoded.value)
             is DecodedProfilePreferenceValue.Rack -> ProfilePreferencesValidator.rack(decoded.value)
+            is DecodedProfilePreferenceValue.CustomEquipment -> ProfilePreferencesValidator.customEquipment(decoded.value)
             is DecodedProfilePreferenceValue.Workout -> ProfilePreferencesValidator.workout(decoded.value)
             is DecodedProfilePreferenceValue.Led -> ProfilePreferencesValidator.led(decoded.value)
             is DecodedProfilePreferenceValue.Vbt -> ProfilePreferencesValidator.vbt(decoded.value)
@@ -423,6 +453,7 @@ internal class ProfilePreferenceSyncCodec {
             val element = when (section) {
                 ProfilePreferenceSectionName.CORE -> null
                 ProfilePreferenceSectionName.RACK,
+                ProfilePreferenceSectionName.CUSTOM_EQUIPMENT,
                 ProfilePreferenceSectionName.WORKOUT -> payload["version"]
                 ProfilePreferenceSectionName.LED,
                 ProfilePreferenceSectionName.VBT ->
@@ -448,9 +479,15 @@ internal class ProfilePreferenceSyncCodec {
         ) {
             return ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER
         }
+        if (decoded is DecodedProfilePreferenceValue.CustomEquipment &&
+            decoded.value.items.any { item -> exactJsonIntegerIssue(item.createdAt) != null }
+        ) {
+            return ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER
+        }
         val decodedVersion = when (decoded) {
             is DecodedProfilePreferenceValue.Core -> 1
             is DecodedProfilePreferenceValue.Rack -> decoded.value.version
+            is DecodedProfilePreferenceValue.CustomEquipment -> decoded.value.version
             is DecodedProfilePreferenceValue.Workout -> decoded.value.version
             is DecodedProfilePreferenceValue.Led -> decoded.value.version
             is DecodedProfilePreferenceValue.Vbt -> decoded.value.version
@@ -536,6 +573,16 @@ internal class ProfilePreferenceSyncCodec {
                     ?.let(::rackPayload)
             }.getOrNull(),
         )
+        ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> CurrentProfilePreferenceSyncState(
+            row.custom_equipment_server_revision,
+            row.custom_equipment_dirty == 1L,
+            runCatching {
+                ProfilePreferencesCodec.decodeCustomEquipment(row.custom_equipment_json)
+                    .takeIf { it.validity is ProfilePreferenceValidity.Valid }
+                    ?.value
+                    ?.let(::customEquipmentPayload)
+            }.getOrNull(),
+        )
         ProfilePreferenceSectionName.WORKOUT -> CurrentProfilePreferenceSyncState(
             row.workout_server_revision,
             row.workout_dirty == 1L,
@@ -614,6 +661,7 @@ internal enum class ProfilePreferenceSyncIssueReason {
 internal sealed interface DecodedProfilePreferenceValue {
     data class Core(val value: CoreProfilePreferences) : DecodedProfilePreferenceValue
     data class Rack(val value: RackPreferences) : DecodedProfilePreferenceValue
+    data class CustomEquipment(val value: CustomEquipmentPreferences) : DecodedProfilePreferenceValue
     data class Workout(val value: WorkoutPreferences) : DecodedProfilePreferenceValue
     data class Led(val value: LedPreferences) : DecodedProfilePreferenceValue
     data class Vbt(val value: VbtPreferences) : DecodedProfilePreferenceValue

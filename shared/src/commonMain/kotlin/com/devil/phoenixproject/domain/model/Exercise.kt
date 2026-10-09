@@ -42,9 +42,15 @@ data class Exercise(
     /**
      * Whether this exercise uses any cable accessory (handles, bar, rope, etc.).
      * Exercises with only non-cable equipment (e.g., bench) or no equipment are bodyweight.
+     * Issue #1227: a custom-equipment `U_` token counts too (prefix rule only), so a later
+     * save never rewrites the row to BODYWEIGHT. `usesUnifiedAttachment` deliberately does
+     * NOT gain this rule — custom equipment is never a unified attachment (signoff B8).
      */
     val hasCableAccessory: Boolean
-        get() = equipment.split(",").any { it.trim().uppercase() in CABLE_ACCESSORIES }
+        get() = equipment.split(",").any {
+            val token = it.trim().uppercase()
+            token in CABLE_ACCESSORIES || token.startsWith("U_")
+        }
 
     /**
      * Whether this is a bodyweight exercise.

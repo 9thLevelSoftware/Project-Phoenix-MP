@@ -444,6 +444,11 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 vbt_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(vbt_local_generation >= 0),
                 vbt_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(vbt_server_revision >= 0),
                 vbt_dirty INTEGER NOT NULL DEFAULT 1 CHECK(vbt_dirty IN (0, 1)),
+                custom_equipment_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}',
+                custom_equipment_updated_at INTEGER NOT NULL DEFAULT 0,
+                custom_equipment_local_generation INTEGER NOT NULL DEFAULT 0,
+                custom_equipment_server_revision INTEGER NOT NULL DEFAULT 0,
+                custom_equipment_dirty INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -1767,6 +1772,34 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL"),
     // Migration 53: tri-state duration sync upgrade marker.
     SchemaHealOperation("RoutineExercise", "durationSyncKnown", "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0"),
+
+    // ── UserProfilePreferences (5 columns) ─────────────────────────────
+    // Migration 58: profile-scoped custom equipment names (Issue #1227).
+    SchemaHealOperation(
+        "UserProfilePreferences",
+        "custom_equipment_json",
+        """ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}'""",
+    ),
+    SchemaHealOperation(
+        "UserProfilePreferences",
+        "custom_equipment_updated_at",
+        "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_updated_at INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        "UserProfilePreferences",
+        "custom_equipment_local_generation",
+        "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_local_generation INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        "UserProfilePreferences",
+        "custom_equipment_server_revision",
+        "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_server_revision INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        "UserProfilePreferences",
+        "custom_equipment_dirty",
+        "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_dirty INTEGER NOT NULL DEFAULT 0",
+    ),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 

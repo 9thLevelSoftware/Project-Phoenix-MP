@@ -325,6 +325,7 @@ fun AnalyticsScreen(
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val recentJustLiftExerciseIds by viewModel.recentJustLiftExerciseIds.collectAsState()
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
@@ -569,6 +570,7 @@ fun AnalyticsScreen(
                             viewModel.clearJustLiftSessionExercise(sessionId)
                         },
                         recentJustLiftExerciseIds = recentJustLiftExerciseIds,
+                        customEquipmentOverlay = customEquipmentOverlay,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

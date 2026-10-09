@@ -13,6 +13,7 @@ import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
@@ -435,6 +436,20 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
+    override suspend fun updateCustomEquipment(profileId: String, value: CustomEquipmentPreferences) {
+        require(ProfilePreferencesValidator.customEquipment(value).isEmpty())
+        mutateActiveProfile(profileId) { current, now ->
+            current.copy(
+                customEquipment = current.customEquipment.copy(
+                    value = value,
+                    raw = ProfilePreferencesCodec.encodeCustomEquipment(value),
+                    validity = ProfilePreferenceValidity.Valid,
+                    metadata = current.customEquipment.metadata.advanced(now),
+                ),
+            )
+        }
+    }
+
     override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) {
         beforeWorkoutMutation?.invoke(profileId)
         val request = PreferenceUpdateRequest.Workout(profileId, value)
@@ -807,6 +822,12 @@ class FakeUserProfileRepository : UserProfileRepository {
             vbt = ProfilePreferenceSection(
                 VbtPreferences(),
                 ProfilePreferencesCodec.encodeVbt(VbtPreferences()),
+                ProfilePreferenceValidity.Valid,
+                metadata,
+            ),
+            customEquipment = ProfilePreferenceSection(
+                CustomEquipmentPreferences(),
+                ProfilePreferencesCodec.encodeCustomEquipment(CustomEquipmentPreferences()),
                 ProfilePreferenceValidity.Valid,
                 metadata,
             ),

@@ -53,18 +53,49 @@ internal object EquipmentVocabulary {
      */
     val DISPLAY_NAME_TOKENS: Map<String, List<String>> =
         TOKEN_LABELS.entries.groupBy({ it.value }, { it.key }) + mapOf("Cable" to listOf("CABLE"))
+
+    /** Issue #1227: reserved prefix for per-profile custom equipment tokens (`U_EZ_BAR`). */
+    const val CUSTOM_EQUIPMENT_PREFIX = "U_"
 }
+
+/**
+ * Issue #1227: humanized display name for a custom `U_` token that has no overlay hit
+ * (renamed entry removed, or another profile's row). Splits the slug on "_"; short
+ * fragments (<= 2 chars, e.g. "EZ") stay uppercase, longer words are title-cased.
+ */
+internal fun humanizeCustomEquipmentToken(token: String): String =
+    token.trim()
+        .removePrefix(EquipmentVocabulary.CUSTOM_EQUIPMENT_PREFIX)
+        .split("_")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { fragment ->
+            if (fragment.length <= 2) fragment.uppercase()
+            else fragment.lowercase().replaceFirstChar { it.uppercase() }
+        }
 
 /**
  * Compact display form of a raw equipment string: comma-separated tokens mapped to
  * labels, noise and unknown tokens dropped, aliases collapsed. Returns "" when
  * nothing displayable remains — callers supply their own fallback.
+ *
+ * Issue #1227: [customEquipmentOverlay] maps custom `U_` tokens to their profile-scoped
+ * labels. Lookup order per token: overlay label, then the official vocabulary, then a
+ * humanized slug for an unmatched `U_` token. Any other unknown token is dropped as
+ * before. An empty overlay leaves today's behavior exactly unchanged.
  */
-internal fun compactEquipmentLabel(rawEquipment: String): String =
+internal fun compactEquipmentLabel(
+    rawEquipment: String,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): String =
     rawEquipment
         .split(",")
         .map { it.trim().uppercase() }
         .filter { it !in EquipmentVocabulary.NOISE_TOKENS }
-        .mapNotNull { EquipmentVocabulary.TOKEN_LABELS[it] }
+        .mapNotNull { token ->
+            customEquipmentOverlay[token]
+                ?: EquipmentVocabulary.TOKEN_LABELS[token]
+                ?: token.takeIf { it.startsWith(EquipmentVocabulary.CUSTOM_EQUIPMENT_PREFIX) }
+                    ?.let { humanizeCustomEquipmentToken(it) }
+        }
         .distinct()
         .joinToString(", ")

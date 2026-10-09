@@ -63,6 +63,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 fun TemplatePreviewEditSheet(
     template: CycleTemplate,
     exerciseRepository: ExerciseRepository,
+    // Issue #1227: TOKEN -> LABEL custom-equipment overlay, passed in by TrainingCyclesScreen
+    // (the sheet has no view model).
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     onContinue: (CycleTemplate) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -201,6 +204,7 @@ fun TemplatePreviewEditSheet(
     pickingForDay?.let { dayNumber ->
         MiniExercisePickerDialog(
             exerciseRepository = exerciseRepository,
+            customEquipmentOverlay = customEquipmentOverlay,
             onDismiss = { pickingForDay = null },
             onExerciseSelected = { exercise ->
                 updateDay(dayNumber) { exercises ->

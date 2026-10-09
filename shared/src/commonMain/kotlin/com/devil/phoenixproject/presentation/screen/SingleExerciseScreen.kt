@@ -71,6 +71,7 @@ fun SingleExerciseScreen(
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
     val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
@@ -147,6 +148,7 @@ fun SingleExerciseScreen(
                     showEssentialsOnly = showEssentialsOnly,
                 ),
                 completedExerciseIds = pickerCompletedExerciseIds,
+                customEquipmentOverlay = customEquipmentOverlay,
             )
         }
     }
@@ -276,6 +278,7 @@ fun SingleExerciseScreen(
             // Always show the picker content as the background
             ExercisePickerContent(
                 exercises = exercises,
+                customEquipmentOverlay = customEquipmentOverlay,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 showFavoritesOnly = showFavoritesOnly,

@@ -86,9 +86,12 @@ class MiniExercisePickerDialogContractTest {
             .map { it.groupValues[1] }
             .toList()
         assertEquals(
-            listOf("exerciseRepository", "onDismiss", "onExerciseSelected", "recentExerciseIds"),
+            // Issue #1227: customEquipmentOverlay joins the signature (signoff B10 — every
+            // picker host, including the Tag exercise dialog, gets the overlay). It is
+            // defaulted so existing call sites stay source-compatible.
+            listOf("exerciseRepository", "onDismiss", "onExerciseSelected", "recentExerciseIds", "customEquipmentOverlay"),
             paramNames,
-            "MiniExercisePickerDialog's public parameter list must stay unchanged for its four call sites.",
+            "MiniExercisePickerDialog's public parameter list must stay unchanged for its call sites.",
         )
     }
 

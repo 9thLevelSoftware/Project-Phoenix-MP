@@ -56,6 +56,7 @@ fun SwipeableExerciseRow(
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -172,6 +173,7 @@ fun SwipeableExerciseRow(
                 onLongPress = onLongPress,
                 onLongPressLabel = onLongPressLabel,
                 onThumbnailClick = onThumbnailClick,
+                customEquipmentOverlay = customEquipmentOverlay,
             )
         }
     }

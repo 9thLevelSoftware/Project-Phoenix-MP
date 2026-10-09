@@ -42,6 +42,7 @@ import projectphoenix.shared.generated.resources.Res
 @Composable
 fun CreateExerciseDialog(
     existingExercise: Exercise? = null,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     onSave: (Exercise) -> Unit,
     onDelete: (() -> Unit)? = null,
     onViewHistory: (() -> Unit)? = null,
@@ -64,7 +65,9 @@ fun CreateExerciseDialog(
     // option token (explicit pick or known preselect) and the preserved unrecognized
     // existing token (BARBELL, CABLE, comma lists, ...) are tracked separately so a
     // save-without-change never coerces an unknown token to HANDLES.
-    val equipmentPreselect = remember(existingExercise) { preselectCustomEquipment(existingExercise) }
+    val equipmentPreselect = remember(existingExercise, customEquipmentOverlay) {
+        preselectCustomEquipment(existingExercise, customEquipmentOverlay)
+    }
     var selectedEquipmentToken by remember(existingExercise) {
         mutableStateOf(equipmentPreselect.selectedToken.takeIf { equipmentPreselect.isListedOption })
     }
@@ -78,6 +81,7 @@ fun CreateExerciseDialog(
     val selectedOrPreservedEquipmentToken = selectedEquipmentToken ?: preservedEquipmentToken ?: ""
     val equipmentFieldLabel = labelForCustomEquipmentToken(
         selectedOrPreservedEquipmentToken.ifBlank { "HANDLES" },
+        customEquipmentOverlay,
     )
 
     var showMuscleGroupDropdown by remember { mutableStateOf(false) }
@@ -276,7 +280,9 @@ fun CreateExerciseDialog(
                                 expanded = showEquipmentDropdown,
                                 onDismissRequest = { showEquipmentDropdown = false },
                             ) {
-                                customCableEquipmentOptions().forEach { (token, label) ->
+                                // Issue #1227: official six in their exact order first, then the
+                                // profile's custom names (signoff B9 — never edit the official list).
+                                customEquipmentDropdownOptions(customEquipmentOverlay).forEach { (token, label) ->
                                     DropdownMenuItem(
                                         text = { Text(label) },
                                         onClick = {

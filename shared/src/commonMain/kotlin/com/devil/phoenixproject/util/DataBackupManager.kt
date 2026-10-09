@@ -39,6 +39,7 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.database.WorkoutDeletion
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
@@ -382,6 +383,7 @@ abstract class BaseDataBackupManager(
             workout = json.encodeValidBackupSection(workout),
             led = json.encodeValidBackupSection(led),
             vbt = json.encodeValidBackupSection(vbt),
+            customEquipment = json.encodeValidBackupSection(customEquipment),
         )
 
     // -- Streaming export (Discussion #244 OOM fix) --
@@ -3711,6 +3713,18 @@ abstract class BaseDataBackupManager(
                     ProfilePreferencesValidator::vbt,
                     onInvalid,
                 )?.let { profilePreferencesRepository.updateVbt(entry.profileId, it, now) }
+            }
+            // Issue #1227: no `else` — an absent field must not call update, so an older
+            // backup can never wipe a list the phone already has. A present-but-invalid
+            // document goes through onInvalid and leaves the stored list untouched.
+            entry.customEquipment?.let { element ->
+                decodeBackupSection<CustomEquipmentPreferences>(
+                    entry.profileId,
+                    "customEquipment",
+                    element,
+                    ProfilePreferencesValidator::customEquipment,
+                    onInvalid,
+                )?.let { profilePreferencesRepository.updateCustomEquipment(entry.profileId, it, now) }
             }
         }
     }

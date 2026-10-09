@@ -46,6 +46,21 @@ fun customCableEquipmentOptions(): List<Pair<String, String>> =
         .map { token -> token to EquipmentVocabulary.TOKEN_LABELS.getValue(token) }
 
 /**
+ * Issue #1227: the custom-exercise dropdown contents — the official six in their exact
+ * order first, then the profile's custom equipment names (label order preserved), never
+ * restating an official token. The official list itself is untouched.
+ */
+fun customEquipmentDropdownOptions(
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): List<Pair<String, String>> {
+    val official = customCableEquipmentOptions()
+    val officialTokens = official.mapTo(HashSet()) { (token, _) -> token }
+    return official + customEquipmentOverlay
+        .map { (token, label) -> token to label }
+        .filter { (token, _) -> token !in officialTokens }
+}
+
+/**
  * Token stored by the custom-exercise save path.
  *
  * - `usesCables == false` writes BODYWEIGHT unconditionally (no stale cable token).
@@ -72,12 +87,15 @@ fun equipmentTokenForCustomSave(usesCables: Boolean, selectedOrPreservedToken: S
  *   raw token; save-without-change writes the same string (see
  *   [equipmentTokenForCustomSave]).
  */
-fun preselectCustomEquipment(existing: Exercise?): CustomEquipmentPreselect {
+fun preselectCustomEquipment(
+    existing: Exercise?,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): CustomEquipmentPreselect {
     if (existing == null) {
         return CustomEquipmentPreselect(
             usesCables = true,
             selectedToken = HANDLES_TOKEN,
-            displayLabel = labelForCustomEquipmentToken(HANDLES_TOKEN),
+            displayLabel = labelForCustomEquipmentToken(HANDLES_TOKEN, customEquipmentOverlay),
             isListedOption = true,
         )
     }
@@ -85,12 +103,19 @@ fun preselectCustomEquipment(existing: Exercise?): CustomEquipmentPreselect {
     val rawToken = existing.equipment.trim()
     val listedOption = customCableEquipmentOptions()
         .firstOrNull { (token, _) -> token.equals(rawToken, ignoreCase = true) }
+    // Issue #1227: a U_ token present in the overlay is a listed option (reopen selects
+    // the row). A U_ token missing from the overlay stays on the preserved-unknown path.
+    val customOption = customEquipmentOverlay.entries
+        .firstOrNull { (token, _) -> token.equals(rawToken, ignoreCase = true) }
 
     return when {
         existing.isBodyweight && listedOption == null -> CustomEquipmentPreselect(
             usesCables = false,
             selectedToken = rawToken.ifBlank { BODYWEIGHT_TOKEN },
-            displayLabel = labelForCustomEquipmentToken(rawToken.ifBlank { BODYWEIGHT_TOKEN }),
+            displayLabel = labelForCustomEquipmentToken(
+                rawToken.ifBlank { BODYWEIGHT_TOKEN },
+                customEquipmentOverlay,
+            ),
             isListedOption = false,
         )
 
@@ -101,10 +126,17 @@ fun preselectCustomEquipment(existing: Exercise?): CustomEquipmentPreselect {
             isListedOption = true,
         )
 
+        customOption != null -> CustomEquipmentPreselect(
+            usesCables = true,
+            selectedToken = rawToken,
+            displayLabel = customOption.value,
+            isListedOption = true,
+        )
+
         else -> CustomEquipmentPreselect(
             usesCables = true,
             selectedToken = rawToken,
-            displayLabel = labelForCustomEquipmentToken(rawToken),
+            displayLabel = labelForCustomEquipmentToken(rawToken, customEquipmentOverlay),
             isListedOption = false,
         )
     }
@@ -112,11 +144,15 @@ fun preselectCustomEquipment(existing: Exercise?): CustomEquipmentPreselect {
 
 /**
  * Display label for a stored equipment token: the listed option label when it is one
- * of the six, else the same compact mapping `compactEquipmentLabel` uses, else the
- * raw token. The raw fallback is mandatory: the compact mapping drops unknown tokens
- * entirely, which would leave the field blank.
+ * of the six, else the profile's custom-equipment label (issue #1227), else the same
+ * compact mapping `compactEquipmentLabel` uses (which humanizes an unmatched U_ slug),
+ * else the raw token. The raw fallback is mandatory: the compact mapping drops unknown
+ * tokens entirely, which would leave the field blank.
  */
-fun labelForCustomEquipmentToken(token: String): String {
+fun labelForCustomEquipmentToken(
+    token: String,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): String {
     val trimmed = token.trim()
     if (trimmed.isEmpty()) return trimmed
 
@@ -124,5 +160,9 @@ fun labelForCustomEquipmentToken(token: String): String {
         optionToken.equals(trimmed, ignoreCase = true)
     }?.let { (_, label) -> return label }
 
-    return compactEquipmentLabel(trimmed).ifBlank { trimmed }
+    customEquipmentOverlay.entries.firstOrNull { (optionToken, _) ->
+        optionToken.equals(trimmed, ignoreCase = true)
+    }?.let { (_, label) -> return label }
+
+    return compactEquipmentLabel(trimmed, customEquipmentOverlay).ifBlank { trimmed }
 }

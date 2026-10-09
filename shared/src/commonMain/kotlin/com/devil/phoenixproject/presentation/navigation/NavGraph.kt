@@ -367,6 +367,9 @@ fun NavGraph(
                 onNavigateToEquipmentRack = {
                     navController.navigate(NavigationRoutes.EquipmentRack.route)
                 },
+                onNavigateToCustomEquipment = {
+                    navController.navigate(NavigationRoutes.CustomEquipment.route)
+                },
                 onNavigateToBadges = {
                     navController.navigate(NavigationRoutes.Badges.route)
                 },
@@ -515,6 +518,38 @@ fun NavGraph(
             },
         ) {
             EquipmentRackScreen(viewModel = viewModel)
+        }
+
+        // Issue #1227: Custom equipment management screen (sibling of the Equipment rack
+        // screen; the rack screen is never the host — signoff B11).
+        composable(
+            route = NavigationRoutes.CustomEquipment.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300),
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300),
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300),
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300),
+                )
+            },
+        ) {
+            CustomEquipmentScreen(viewModel = viewModel)
         }
 
         // Connection Logs screen - debug BLE connections

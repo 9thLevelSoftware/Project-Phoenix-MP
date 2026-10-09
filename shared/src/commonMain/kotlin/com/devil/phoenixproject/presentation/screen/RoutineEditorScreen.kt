@@ -139,6 +139,7 @@ fun RoutineEditorScreen(
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
     val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
         completedExerciseIdsState.profileId == activeProfileId
@@ -753,6 +754,7 @@ fun RoutineEditorScreen(
     if (showExercisePicker) {
         ExercisePickerDialog(
             showDialog = true,
+            customEquipmentOverlay = customEquipmentOverlay,
             onDismiss = {
                 showExercisePicker = false
                 supersetForAddExercise = null // Clear superset target on dismiss

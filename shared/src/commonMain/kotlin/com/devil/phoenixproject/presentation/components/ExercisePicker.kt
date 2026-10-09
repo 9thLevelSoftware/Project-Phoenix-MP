@@ -76,8 +76,17 @@ import projectphoenix.shared.generated.resources.select_exercise
  * Delegates to the shared [EquipmentVocabulary] so the filter chips, the list
  * subtitle, and the custom-exercise Equipment dropdown cannot drift apart.
  */
-internal fun getEquipmentDatabaseValues(displayName: String): List<String> =
-    EquipmentVocabulary.DISPLAY_NAME_TOKENS[displayName].orEmpty()
+internal fun getEquipmentDatabaseValues(
+    displayName: String,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): List<String> =
+    // Official lookup first (B1/B9): a user label can never steal BAR/BELT/…; add-time
+    // validation rejects official names and this order backstops it.
+    EquipmentVocabulary.DISPLAY_NAME_TOKENS[displayName]
+        ?: customEquipmentOverlay.entries
+            .firstOrNull { (_, label) -> label == displayName }
+            ?.let { (token, _) -> listOf(token) }
+        .orEmpty()
 
 /**
  * Exercise Picker Dialog - Streamlined exercise selection component
@@ -93,6 +102,7 @@ fun ExercisePickerDialog(
     modifier: Modifier = Modifier,
     fullScreen: Boolean = false,
     enableCustomExercises: Boolean = true,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     enablePreviouslyCompletedFilter: Boolean = false,
     completedExerciseIds: Set<String> = emptySet(),
     completedExerciseIdsLoading: Boolean = false,
@@ -112,6 +122,23 @@ fun ExercisePickerDialog(
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
+
+    // Issue #1227 (signoff B3): equipment selections are label-keyed, so a rename or a
+    // profile switch must re-key or clear them through the token identity. A label-only
+    // rename keeps the selection; a removed entry or a profile switch drops it so a
+    // vanished chip can never invisibly hide every result.
+    var equipmentOverlayForSelection by remember { mutableStateOf(customEquipmentOverlay) }
+    LaunchedEffect(customEquipmentOverlay) {
+        val previous = equipmentOverlayForSelection
+        if (previous != customEquipmentOverlay) {
+            selectedEquipment = selectedEquipment.mapNotNull { selected ->
+                EquipmentVocabulary.DISPLAY_NAME_TOKENS[selected]?.let { selected }
+                    ?: previous.entries.firstOrNull { (_, label) -> label == selected }
+                        ?.let { (token, _) -> customEquipmentOverlay[token] }
+            }.toSet()
+            equipmentOverlayForSelection = customEquipmentOverlay
+        }
+    }
 
     val customExercises by exerciseRepository.getCustomExercises().collectAsState(initial = emptyList())
 
@@ -134,6 +161,7 @@ fun ExercisePickerDialog(
         showPreviouslyCompletedOnly,
         completedExerciseIds,
         isCompletedFilterLoading,
+        customEquipmentOverlay,
     ) {
         if (isCompletedFilterLoading) {
             emptyList()
@@ -150,6 +178,7 @@ fun ExercisePickerDialog(
                     showEssentialsOnly = showEssentialsOnly,
                 ),
                 completedExerciseIds = completedExerciseIds,
+                customEquipmentOverlay = customEquipmentOverlay,
             )
         }
     }
@@ -172,6 +201,7 @@ fun ExercisePickerDialog(
     if (showCreateDialog || exerciseToEdit != null) {
         CreateExerciseDialog(
             existingExercise = exerciseToEdit,
+            customEquipmentOverlay = customEquipmentOverlay,
             onSave = { exercise ->
                 val editExerciseId = exerciseToEdit?.id
                 showCreateDialog = false
@@ -281,6 +311,7 @@ fun ExercisePickerDialog(
                         exerciseRepository = exerciseRepository,
                         enableVideoPlayback = enableVideoPlayback,
                         enableCustomExercises = enableCustomExercises,
+                        customEquipmentOverlay = customEquipmentOverlay,
                         onCreateExercise = { showCreateDialog = true },
                         onEditExercise = { exercise -> exerciseToEdit = exercise },
                         isLoading = isCompletedFilterLoading,
@@ -347,6 +378,7 @@ fun ExercisePickerDialog(
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
                 enableCustomExercises = enableCustomExercises,
+                customEquipmentOverlay = customEquipmentOverlay,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
                 isLoading = isCompletedFilterLoading,
@@ -396,6 +428,7 @@ fun ExercisePickerContent(
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean,
     enableCustomExercises: Boolean = true,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     onCreateExercise: () -> Unit = {},
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
@@ -507,6 +540,7 @@ fun ExercisePickerContent(
                 onToggleMuscle = onToggleMuscle,
                 selectedEquipment = selectedEquipment,
                 onToggleEquipment = onToggleEquipment,
+                customEquipmentOverlay = customEquipmentOverlay,
                 onClearAll = onClearAllFilters,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
@@ -562,6 +596,7 @@ fun ExercisePickerContent(
                 onViewExerciseDetail = onViewExerciseDetail,
                 listState = listState,
                 rowNameStyle = rowNameStyle,
+                customEquipmentOverlay = customEquipmentOverlay,
                 modifier = Modifier.weight(1f),
                 emptyContent = {
                     ExerciseListEmptyState(

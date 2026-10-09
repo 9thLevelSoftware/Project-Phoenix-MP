@@ -683,6 +683,9 @@ data class ProfilePreferencesBackup(
     val workout: JsonElement? = null,
     val led: JsonElement? = null,
     val vbt: JsonElement? = null,
+    // Issue #1227: custom equipment vocabulary. Optional so older backups decode; an
+    // absent field must never clear a list the phone already has.
+    val customEquipment: JsonElement? = null,
 )
 
 /**

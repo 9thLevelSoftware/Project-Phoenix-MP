@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.RackPreferences
@@ -183,6 +184,10 @@ interface UserProfileRepository {
         transform: (CoreProfilePreferences) -> CoreProfilePreferences,
     )
     suspend fun updateRack(profileId: String, value: RackPreferences)
+    // Issue #1227: profile-scoped custom equipment. Routed through mutateActiveProfile so a
+    // write begun under one profile is rejected after a profile switch (signoff B3) and the
+    // Ready context republishes, keeping the derived equipment overlay live.
+    suspend fun updateCustomEquipment(profileId: String, value: CustomEquipmentPreferences)
     suspend fun updateWorkout(profileId: String, value: WorkoutPreferences)
 
     /** Atomically transforms the latest active workout section after validating [profileId]. */
@@ -723,6 +728,11 @@ class SqlDelightUserProfileRepository(
     override suspend fun updateRack(profileId: String, value: RackPreferences) = mutateActiveProfile(profileId) {
         profilePreferencesRepository.updateRack(profileId, value, currentTimeMillis())
     }
+
+    override suspend fun updateCustomEquipment(profileId: String, value: CustomEquipmentPreferences) =
+        mutateActiveProfile(profileId) {
+            profilePreferencesRepository.updateCustomEquipment(profileId, value, currentTimeMillis())
+        }
 
     override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) = mutateActiveProfile(profileId) {
         profilePreferencesRepository.updateWorkout(profileId, value, currentTimeMillis())

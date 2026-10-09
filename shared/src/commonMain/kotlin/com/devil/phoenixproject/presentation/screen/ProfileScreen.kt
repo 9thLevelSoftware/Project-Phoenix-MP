@@ -129,6 +129,7 @@ fun ProfileScreen(
     onOpenProfileSwitcher: () -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
     onNavigateToEquipmentRack: () -> Unit,
+    onNavigateToCustomEquipment: () -> Unit,
     onNavigateToBadges: () -> Unit,
     onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
     isConnected: Boolean,
@@ -435,6 +436,7 @@ fun ProfileScreen(
                             trackPreferenceToken(viewModel.unlockDominatrixMode())
                         },
                         onManageEquipmentRack = onNavigateToEquipmentRack,
+                        onManageCustomEquipment = onNavigateToCustomEquipment,
                         onDiscoModeToggle = onDiscoModeToggle,
                     )
                 }
@@ -478,6 +480,9 @@ fun ProfileScreen(
 
     ExercisePickerDialog(
         showDialog = pickerProfileId == ready?.profile?.id,
+        customEquipmentOverlay = ready?.preferences?.customEquipment?.value?.items
+            ?.associate { it.token to it.label }
+            .orEmpty(),
         onDismiss = { pickerProfileId = null },
         onExerciseSelected = { exercise ->
             pickerProfileId = null

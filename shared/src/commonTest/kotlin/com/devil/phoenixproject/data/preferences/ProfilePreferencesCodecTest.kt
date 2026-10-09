@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.preferences
 
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -76,6 +77,7 @@ class ProfilePreferencesCodecTest {
             workout = ProfilePreferenceSection(WorkoutPreferences(), validity = ProfilePreferenceValidity.Valid, metadata = metadata),
             led = ProfilePreferenceSection(LedPreferences(), validity = ProfilePreferenceValidity.Valid, metadata = metadata),
             vbt = ProfilePreferenceSection(VbtPreferences(), validity = ProfilePreferenceValidity.Valid, metadata = metadata),
+            customEquipment = ProfilePreferenceSection(CustomEquipmentPreferences(), validity = ProfilePreferenceValidity.Valid, metadata = metadata),
         )
 
         assertEquals("profile-1", profile.profileId)

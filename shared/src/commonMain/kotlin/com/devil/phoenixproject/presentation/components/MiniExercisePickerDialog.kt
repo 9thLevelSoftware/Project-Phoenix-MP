@@ -46,6 +46,7 @@ fun MiniExercisePickerDialog(
      * and then starts selected, so the usual choices are one tap away.
      */
     recentExerciseIds: List<String> = emptyList(),
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
 ) {
     val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
@@ -94,6 +95,7 @@ fun MiniExercisePickerDialog(
                 selectedEquipment = selectedEquipment,
                 showEssentialsOnly = showEssentialsOnly,
             ),
+            customEquipmentOverlay = customEquipmentOverlay,
         )
         if (recentActive) orderByRecentExercises(filtered, recentIds) else filtered
     }
@@ -141,6 +143,7 @@ fun MiniExercisePickerDialog(
                     showRecentOnly = recentActive,
                     onToggleRecent = { showRecentOnly = !showRecentOnly },
                     customExerciseCount = 0,
+                    customEquipmentOverlay = customEquipmentOverlay,
                     selectedMuscles = selectedMuscles,
                     onToggleMuscle = { muscle ->
                         selectedMuscles = if (muscle in selectedMuscles) {

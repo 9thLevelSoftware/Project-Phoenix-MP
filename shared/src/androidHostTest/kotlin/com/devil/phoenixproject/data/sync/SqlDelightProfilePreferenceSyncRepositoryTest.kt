@@ -4,6 +4,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentItem
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RackItem
@@ -407,6 +409,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             ProfilePreferenceSectionName.WORKOUT -> "workout_updated_at"
             ProfilePreferenceSectionName.LED -> "led_updated_at"
             ProfilePreferenceSectionName.VBT -> "vbt_updated_at"
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> "custom_equipment_updated_at"
         }
         val dirtyColumn = when (section) {
             ProfilePreferenceSectionName.CORE -> "core_dirty"
@@ -414,6 +417,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             ProfilePreferenceSectionName.WORKOUT -> "workout_dirty"
             ProfilePreferenceSectionName.LED -> "led_dirty"
             ProfilePreferenceSectionName.VBT -> "vbt_dirty"
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> "custom_equipment_dirty"
         }
         driver.execute(
             identifier = null,
@@ -479,6 +483,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         invalidProfileIds.forEach { profileId ->
             createProfile(profileId)
             foundationRepository.insertDefaults(profileId)
+            forceDirtyAllSections(profileId)
         }
 
         val snapshot = repository.snapshotDirtySections()
@@ -495,6 +500,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
 
         createProfile("surrogate-template")
         foundationRepository.insertDefaults("surrogate-template")
+        forceDirtyAllSections("surrogate-template")
         val surrogate = codec.encodeDirtyRow(
             database.phoenixDatabaseQueries.selectProfilePreferences("surrogate-template")
                 .executeAsOne()
@@ -742,6 +748,16 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
                     put("velocityLossThresholdPercent", 20 + variant)
                 }
             }
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> buildJsonObject {
+                put("version", 1)
+                putJsonArray("items") {
+                    add(buildJsonObject {
+                        put("token", "U_GADGET_$variant")
+                        put("label", "Gadget $variant")
+                        put("createdAt", variant.toLong())
+                    })
+                }
+            }
         },
     )
 
@@ -756,6 +772,8 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         assertEquals(variant % 2 == 1, preferences.led.value.discoModeUnlocked)
         assertEquals(variant % 2 == 0, preferences.vbt.value.enabled)
         assertEquals(20 + variant, preferences.vbt.value.velocityLossThresholdPercent)
+        assertEquals("U_GADGET_$variant", preferences.customEquipment.value.items.single().token)
+        assertEquals("Gadget $variant", preferences.customEquipment.value.items.single().label)
     }
 
     private fun allMetadata(preferences: UserProfilePreferences) = listOf(
@@ -764,9 +782,22 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         preferences.workout.metadata,
         preferences.led.metadata,
         preferences.vbt.metadata,
+        preferences.customEquipment.metadata,
     )
 
+    /**
+     * CUSTOM_EQUIPMENT rows start clean (58.sqm default 0) because an empty list has
+     * nothing to push; tests that walk every section need it dirty like the legacy
+     * sections before they can snapshot it.
+     */
+    private fun forceDirtyAllSections(profileId: String, updatedAt: Long = 20L) {
+        ProfilePreferenceSectionName.entries.forEach { section ->
+            forceDirtySectionUpdatedAt(profileId, section, updatedAt)
+        }
+    }
+
     private suspend fun acknowledgeAllDirty(profileId: String, revision: Long, variant: Int) {
+        forceDirtyAllSections(profileId)
         val sent = repository.snapshotDirtySections().valid
             .filter { it.key.localProfileId == profileId }
             .associateBy { it.key.section }
@@ -785,7 +816,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     }
 
     @Test
-    fun `matching generation push persists all five sections and row owned columns`() = runTest {
+    fun `matching generation push persists all six sections and row owned columns`() = runTest {
         createProfile("push-all")
         foundationRepository.insertDefaults("push-all")
 
@@ -807,9 +838,10 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     }
 
     @Test
-    fun `newer local generations preserve all five values while advancing revisions`() = runTest {
+    fun `newer local generations preserve all six values while advancing revisions`() = runTest {
         createProfile("race-all")
         foundationRepository.insertDefaults("race-all")
+        forceDirtyAllSections("race-all")
         val sent = repository.snapshotDirtySections().valid
             .filter { it.key.localProfileId == "race-all" }
             .associateBy { it.key.section }
@@ -821,6 +853,15 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         foundationRepository.updateRack(
             "race-all",
             RackPreferences(items = listOf(RackItem(id = "local", name = "Local", weightKg = 9f))),
+            now = 30,
+        )
+        foundationRepository.updateCustomEquipment(
+            "race-all",
+            CustomEquipmentPreferences(
+                items = listOf(
+                    CustomEquipmentItem(token = "U_LOCAL_KIT", label = "Local Kit", createdAt = 1_700_000_000_000L),
+                ),
+            ),
             now = 30,
         )
         foundationRepository.updateWorkout(
@@ -855,6 +896,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         val current = foundationRepository.get("race-all")
         assertEquals(95f, current.core.value.bodyWeightKg)
         assertEquals("local", current.rack.value.items.single().id)
+        assertEquals("Local Kit", current.customEquipment.value.items.single().label)
         assertFalse(current.workout.value.beepsEnabled)
         assertEquals(9, current.led.value.colorScheme)
         assertEquals(45, current.vbt.value.velocityLossThresholdPercent)
@@ -862,11 +904,11 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             assertEquals(4, metadata.serverRevision)
             assertTrue(metadata.dirty)
         }
-        assertEquals(5, report.preservedNewerLocal)
+        assertEquals(6, report.preservedNewerLocal)
     }
 
     @Test
-    fun `clean pull applies all five sections and rejects every lower revision`() = runTest {
+    fun `clean pull applies all six sections and rejects every lower revision`() = runTest {
         createProfile("pull-all")
         foundationRepository.insertDefaults("pull-all")
         acknowledgeAllDirty("pull-all", revision = 2, variant = 1)
@@ -877,7 +919,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             },
         )
         val afterHigher = foundationRepository.get("pull-all")
-        assertEquals(5, applied.applied)
+        assertEquals(6, applied.applied)
         assertVariant(afterHigher, variant = 2)
         allMetadata(afterHigher).forEach { metadata ->
             assertEquals(3, metadata.serverRevision)

@@ -207,7 +207,7 @@ DECLARE
     current_row public.local_profile_preferences%ROWTYPE;
     current_revision bigint;
 BEGIN
-    IF p_section IS NULL OR p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT') THEN
+    IF p_section IS NULL OR p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT', 'CUSTOM_EQUIPMENT') THEN
         RETURN QUERY SELECT false, 'UNSUPPORTED_SECTION', 0::bigint, NULL::jsonb;
         RETURN;
     END IF;

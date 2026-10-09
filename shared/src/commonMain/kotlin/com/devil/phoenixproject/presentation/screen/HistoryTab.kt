@@ -130,6 +130,8 @@ fun HistoryTab(
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
+    // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs.
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
@@ -225,6 +227,7 @@ fun HistoryTab(
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
+                                customEquipmentOverlay = customEquipmentOverlay,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
@@ -240,6 +243,7 @@ fun HistoryTab(
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
+                                customEquipmentOverlay = customEquipmentOverlay,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
                                 // History "Delete All Sets" path also
@@ -268,6 +272,8 @@ fun WorkoutHistoryCard(
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
+    // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     onDelete: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -609,6 +615,7 @@ fun WorkoutHistoryCard(
         MiniExercisePickerDialog(
             exerciseRepository = exerciseRepository,
             recentExerciseIds = recentJustLiftExerciseIds,
+            customEquipmentOverlay = customEquipmentOverlay,
             onDismiss = { showExerciseTagPicker = false },
             onExerciseSelected = { exercise ->
                 showExerciseTagPicker = false
@@ -820,6 +827,8 @@ fun GroupedRoutineCard(
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
+    // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
     // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
@@ -1220,6 +1229,7 @@ fun GroupedRoutineCard(
         MiniExercisePickerDialog(
             exerciseRepository = exerciseRepository,
             recentExerciseIds = recentJustLiftExerciseIds,
+            customEquipmentOverlay = customEquipmentOverlay,
             onDismiss = { taggingSessionId = null },
             onExerciseSelected = { exercise ->
                 val sessionId = taggingSessionId

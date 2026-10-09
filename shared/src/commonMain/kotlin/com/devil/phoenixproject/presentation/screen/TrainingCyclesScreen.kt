@@ -192,6 +192,8 @@ internal class CycleCreationSubmissionGate {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel) {
+    // Issue #1227: the active profile's custom-equipment overlay for the template sheet's picker.
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val cycleRepository: TrainingCycleRepository = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
     val workoutRepository: WorkoutRepository = koinInject()
@@ -611,6 +613,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
             TemplatePreviewEditSheet(
                 template = state.template,
                 exerciseRepository = exerciseRepository,
+                customEquipmentOverlay = customEquipmentOverlay,
                 onContinue = { editedTemplate ->
                     creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
                 },
