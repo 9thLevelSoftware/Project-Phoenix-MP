@@ -50,7 +50,7 @@ class ConnectionLogsViewModel : ViewModel() {
                 LogLevel.INFO.name -> filter.showInfo
                 LogLevel.WARNING.name -> filter.showWarning
                 LogLevel.ERROR.name -> filter.showError
-                else -> true
+                else -> false
             }
 
             val searchMatch = if (filter.searchQuery.isBlank()) {

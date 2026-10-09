@@ -1,12 +1,14 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -83,5 +85,62 @@ class ConnectionLogsViewModelTest {
 
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `all level chips off hides unknown levels and known levels follow their chips`() = runTest {
+        viewModel.logs.test {
+            assertEquals(emptyList(), awaitItem())
+
+            repository.debug(LogEventType.SCAN_START, "Debug log")
+            repository.info(LogEventType.CONNECT_SUCCESS, "Info log")
+            repository.warning(LogEventType.DISCONNECT, "Warning log")
+            repository.error(LogEventType.CONNECT_FAIL, "Error log")
+            val seeded = repository.logs.value
+            setRepositoryLogs(
+                seeded + ConnectionLogEntity(
+                    id = seeded.maxOf { it.id } + 1,
+                    timestamp = 1L,
+                    eventType = LogEventType.DIAGNOSTIC,
+                    level = "TRACE",
+                    message = "Unknown level log",
+                ),
+            )
+            advanceUntilIdle()
+
+            val withAllChipsOn = awaitItem()
+            assertEquals(
+                listOf(
+                    LogLevel.ERROR.name,
+                    LogLevel.WARNING.name,
+                    LogLevel.INFO.name,
+                    LogLevel.DEBUG.name,
+                ),
+                withAllChipsOn.map { it.level },
+            )
+
+            LogLevel.entries.forEach { viewModel.toggleLevel(it) }
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), awaitItem())
+
+            viewModel.toggleLevel(LogLevel.ERROR)
+            advanceUntilIdle()
+
+            val errorsOnly = awaitItem()
+            assertEquals(listOf(LogLevel.ERROR.name), errorsOnly.map { it.level })
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // log() only accepts LogLevel, so an unrecognized level has to be written onto the store directly.
+    @Suppress("UNCHECKED_CAST")
+    private fun setRepositoryLogs(logs: List<ConnectionLogEntity>) {
+        val flow = ConnectionLogRepository::class.java
+            .getDeclaredField("_logs")
+            .apply { isAccessible = true }
+            .get(repository) as MutableStateFlow<List<ConnectionLogEntity>>
+        flow.value = logs
     }
 }
