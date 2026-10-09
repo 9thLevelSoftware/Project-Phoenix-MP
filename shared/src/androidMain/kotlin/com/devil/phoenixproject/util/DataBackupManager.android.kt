@@ -113,6 +113,30 @@ internal fun defaultBackupLocationLabelFor(sdkInt: Int): String = if (sdkInt < B
  */
 internal fun canOpenBackupFolderFor(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.Q
 
+/**
+ * Run [write] for a MediaStore Downloads row that has already been inserted.
+ *
+ * If [write] throws, [deleteInsertedRow] removes that row and the original
+ * exception is rethrown. A failure of the delete is logged and ignored so the
+ * write error still propagates.
+ */
+internal fun writeDownloadDeletingRowOnFailure(
+    destUri: String,
+    deleteInsertedRow: () -> Unit,
+    write: () -> Unit,
+) {
+    try {
+        write()
+    } catch (writeError: Exception) {
+        try {
+            deleteInsertedRow()
+        } catch (deleteError: Exception) {
+            Logger.w(deleteError) { "Failed to delete partial Downloads backup $destUri" }
+        }
+        throw writeError
+    }
+}
+
 // Getters (not stored vals) so host tests never touch Build.VERSION on class load.
 actual val autoBackupLocationNote: String? get() = autoBackupLocationNoteFor(Build.VERSION.SDK_INT)
 actual val defaultBackupLocationLabel: String get() = defaultBackupLocationLabelFor(Build.VERSION.SDK_INT)
@@ -177,6 +201,8 @@ class AndroidDataBackupManager(
      * (`Download/ProjectPhoenix`) share this path. Callers keep their own folder
      * and failure text. A null output stream means nothing was written: the empty
      * row is deleted and the call throws [streamFailureMessage] (F060 fail-closed).
+     * If the write throws, the inserted row is deleted and the original exception
+     * is rethrown.
      *
      * @return the inserted content URI
      */
@@ -201,7 +227,12 @@ class AndroidDataBackupManager(
             runCatching { resolver.delete(destUri, null, null) }
             throw Exception(streamFailureMessage)
         }
-        outputStream.use(write)
+        writeDownloadDeletingRowOnFailure(
+            destUri = destUri.toString(),
+            deleteInsertedRow = { resolver.delete(destUri, null, null) },
+        ) {
+            outputStream.use(write)
+        }
         return destUri
     }
 
