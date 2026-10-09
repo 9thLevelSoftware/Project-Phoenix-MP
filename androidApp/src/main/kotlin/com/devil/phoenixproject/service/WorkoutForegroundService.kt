@@ -16,6 +16,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
 import com.devil.phoenixproject.R
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.presentation.manager.AndroidWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -110,10 +111,10 @@ class WorkoutForegroundService : Service() {
      * F056: startForeground() can throw at runtime (SecurityException,
      * ForegroundServiceStartNotAllowedException, or a service-type mismatch when
      * POST_NOTIFICATIONS / connected-device prerequisites aren't satisfied). The
-     * throw happens inside this service process, so the controller's try/catch
-     * around startForegroundService() cannot catch it and the app would crash
-     * mid-workout. Catch it here, log, and stop the service so we degrade
-     * gracefully instead.
+     * throw happens inside this service, so the controller's try/catch around
+     * startForegroundService() cannot catch it and the app would crash
+     * mid-workout. Catch it here, tell the controller the promote failed, and
+     * stop so the next update calls startForegroundService again.
      */
     private fun startWorkoutForeground(): Boolean {
         val notification = createNotification()
@@ -127,9 +128,11 @@ class WorkoutForegroundService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
             true
         } catch (e: Exception) {
             log.e(e) { "Failed to start workout foreground service; stopping" }
+            AndroidWorkoutServiceController.reportForegroundOutcome(promoted = false)
             stopSelf()
             false
         }

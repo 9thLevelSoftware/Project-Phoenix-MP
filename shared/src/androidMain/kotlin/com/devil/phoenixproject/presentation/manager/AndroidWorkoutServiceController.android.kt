@@ -15,25 +15,39 @@ class AndroidWorkoutServiceController(
     @Volatile
     private var isRunning = false
 
+    /** startForegroundService was accepted, and the service has not reported back yet. */
+    @Volatile
+    private var awaitingForeground = false
+
+    init {
+        foregroundOutcomeListener = ::onForegroundOutcome
+    }
+
     override fun showOrUpdate(snapshot: WorkoutServiceSnapshot) {
         val intent = buildIntent(snapshot)
         try {
             if (isRunning) {
                 appContext.startService(intent)
             } else {
+                // Set before the call so a promote result delivered on this thread,
+                // before startForegroundService returns, still counts.
+                awaitingForeground = true
                 ContextCompat.startForegroundService(appContext, intent)
-                isRunning = true
             }
         } catch (e: Exception) {
             // A dead service makes this throw while isRunning stays true, so later
             // updates keep calling startService and never promote a new FGS.
             isRunning = false
+            awaitingForeground = false
             log.e(e) { "Failed to sync workout foreground service" }
         }
     }
 
     override fun stop() {
-        if (!isRunning) return
+        val shouldStop = isRunning || awaitingForeground
+        isRunning = false
+        awaitingForeground = false
+        if (!shouldStop) return
 
         try {
             appContext.startService(
@@ -43,8 +57,31 @@ class AndroidWorkoutServiceController(
             )
         } catch (e: Exception) {
             log.e(e) { "Failed to stop workout foreground service" }
-        } finally {
+        }
+    }
+
+    /**
+     * Success is the only way into the running state. A failed promote clears it
+     * so the next update calls startForegroundService again.
+     */
+    private fun onForegroundOutcome(promoted: Boolean) {
+        if (!promoted) {
             isRunning = false
+            awaitingForeground = false
+            return
+        }
+        if (!awaitingForeground) return
+        awaitingForeground = false
+        isRunning = true
+    }
+
+    companion object {
+        @Volatile
+        private var foregroundOutcomeListener: ((Boolean) -> Unit)? = null
+
+        /** In-process promote result from the workout foreground service. No IPC. */
+        fun reportForegroundOutcome(promoted: Boolean) {
+            foregroundOutcomeListener?.invoke(promoted)
         }
     }
 

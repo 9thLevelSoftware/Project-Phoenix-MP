@@ -32,9 +32,10 @@ class AndroidWorkoutServiceControllerTest {
 
     @Test
     fun deadServiceStart_nextUpdateUsesStartForegroundService() {
+        controller.showOrUpdate(snapshot)
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
         context.startServiceError = IllegalStateException("dead")
 
-        controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
 
@@ -58,6 +59,7 @@ class AndroidWorkoutServiceControllerTest {
     @Test
     fun runningService_updatesWithStartService() {
         controller.showOrUpdate(snapshot)
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
 
@@ -65,11 +67,74 @@ class AndroidWorkoutServiceControllerTest {
         assertEquals(2, context.serviceStarts.size)
     }
 
+    @Test
+    fun promoteFailure_nextUpdateUsesStartForegroundService() {
+        controller.showOrUpdate(snapshot)
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = false)
+
+        controller.showOrUpdate(snapshot)
+        controller.showOrUpdate(snapshot)
+
+        assertEquals(3, context.foregroundStarts.size)
+        assertEquals(0, context.serviceStarts.size)
+    }
+
+    @Test
+    fun synchronousPromoteFailure_nextUpdateUsesStartForegroundService() {
+        context.onForegroundStart = {
+            AndroidWorkoutServiceController.reportForegroundOutcome(promoted = false)
+        }
+
+        controller.showOrUpdate(snapshot)
+        controller.showOrUpdate(snapshot)
+
+        assertEquals(2, context.foregroundStarts.size)
+        assertEquals(0, context.serviceStarts.size)
+    }
+
+    @Test
+    fun synchronousPromoteSuccess_nextUpdateUsesStartService() {
+        context.onForegroundStart = {
+            AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
+        }
+
+        controller.showOrUpdate(snapshot)
+        controller.showOrUpdate(snapshot)
+
+        assertEquals(1, context.foregroundStarts.size)
+        assertEquals(1, context.serviceStarts.size)
+    }
+
+    @Test
+    fun promoteFailureAfterConfirmedRunning_nextUpdateUsesStartForegroundService() {
+        controller.showOrUpdate(snapshot)
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = false)
+
+        controller.showOrUpdate(snapshot)
+
+        assertEquals(2, context.foregroundStarts.size)
+        assertEquals(0, context.serviceStarts.size)
+    }
+
+    @Test
+    fun stopWhileAwaitingForeground_nextUpdateUsesStartForegroundService() {
+        controller.showOrUpdate(snapshot)
+        controller.stop()
+        AndroidWorkoutServiceController.reportForegroundOutcome(promoted = true)
+
+        controller.showOrUpdate(snapshot)
+
+        assertEquals(WorkoutServiceProtocol.ACTION_STOP, context.serviceStarts.single().action)
+        assertEquals(2, context.foregroundStarts.size)
+    }
+
     private class RecordingContext(base: Context) : ContextWrapper(base) {
         val foregroundStarts = mutableListOf<Intent>()
         val serviceStarts = mutableListOf<Intent>()
         var startServiceError: Exception? = null
         var foregroundError: Exception? = null
+        var onForegroundStart: (() -> Unit)? = null
 
         override fun getApplicationContext(): Context = this
 
@@ -82,6 +147,7 @@ class AndroidWorkoutServiceControllerTest {
         override fun startForegroundService(service: Intent): ComponentName? {
             foregroundStarts += service
             foregroundError?.let { throw it }
+            onForegroundStart?.invoke()
             return ComponentName(packageName, "service")
         }
     }
