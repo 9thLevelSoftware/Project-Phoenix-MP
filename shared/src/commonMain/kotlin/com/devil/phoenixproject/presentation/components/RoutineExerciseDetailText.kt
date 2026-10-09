@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.components
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 
 /**
  * Builds the set/rep/weight detail string for a routine exercise row.
@@ -32,9 +33,7 @@ fun routineExerciseDetailText(
         val weightText = if (isEchoMode) {
             "Adaptive"
         } else {
-            val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
-            val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
-            "${weight.toInt()} $unitLabel"
+            formatRoutineSetWeight(exercise.weightPerCableKg, weightUnit)
         }
         val progressionText = when {
             exercise.progressionKg > 0 -> {
@@ -58,9 +57,7 @@ fun routineExerciseDetailText(
         val weightText = if (isEchoMode) {
             "Adaptive"
         } else {
-            val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
-            val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
-            "${weight.toInt()} $unitLabel"
+            formatRoutineSetWeight(exercise.weightPerCableKg, weightUnit)
         }
         // Handle AMRAP vs fixed reps display
         val repsText = if (exercise.isAMRAP) "AMRAP" else "${exercise.reps} reps"
@@ -82,4 +79,10 @@ fun routineExerciseDetailText(
         }
         "${exercise.sets} sets x $repsText @ $weightText$progressionText"
     }
+}
+
+/** Per-cable set weight for a routine row, with that row's existing unit label. */
+private fun formatRoutineSetWeight(weightPerCableKg: Float, weightUnit: WeightUnit): String {
+    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+    return "${WeightDisplayFormatter.formatDisplayWeight(weightPerCableKg, weightUnit)} $unitLabel"
 }
