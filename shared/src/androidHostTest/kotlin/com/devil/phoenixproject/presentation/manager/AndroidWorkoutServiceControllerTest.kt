@@ -56,6 +56,24 @@ class AndroidWorkoutServiceControllerTest {
     }
 
     @Test
+    fun applicationIdSuffix_targetsNamespaceServiceClass() {
+        context.packageNameOverride = "com.devil.phoenixproject.debug"
+
+        controller.showOrUpdate(snapshot)
+        controller.stop()
+
+        val components = (context.foregroundStarts + context.serviceStarts).map { it.component }
+        assertEquals(2, components.size)
+        components.forEach { component ->
+            assertEquals("com.devil.phoenixproject.debug", component?.packageName)
+            assertEquals(
+                "com.devil.phoenixproject.service.WorkoutForegroundService",
+                component?.className,
+            )
+        }
+    }
+
+    @Test
     fun runningService_updatesWithStartService() {
         controller.showOrUpdate(snapshot)
         controller.showOrUpdate(snapshot)
@@ -70,8 +88,11 @@ class AndroidWorkoutServiceControllerTest {
         val serviceStarts = mutableListOf<Intent>()
         var startServiceError: Exception? = null
         var foregroundError: Exception? = null
+        var packageNameOverride: String? = null
 
         override fun getApplicationContext(): Context = this
+
+        override fun getPackageName(): String = packageNameOverride ?: super.getPackageName()
 
         override fun startService(service: Intent): ComponentName? {
             serviceStarts += service
