@@ -165,7 +165,7 @@ class AchievedLoadPresentationTest {
             val primary = AchievedLoadPresentation.setSummaryPrimary(echoSummary(measuredPeakKgPerCable = 80f), unit)
             assertEquals("Peak load", primary.label, "Echo is labelled Peak load ($unit)")
             assertEquals(
-                WeightDisplayFormatter.toDisplayWeight(80f, unit).toInt().toString(),
+                WeightDisplayFormatter.formatDisplayWeight(80f, unit),
                 primary.valueText,
                 "the value is the achieved peak ($unit)",
             )
@@ -187,15 +187,42 @@ class AchievedLoadPresentationTest {
     fun `set summary keeps Set Weight for a fixed load set`() {
         val primary = AchievedLoadPresentation.setSummaryPrimary(fixedLoadSummary(), WeightUnit.LB)
         assertEquals("Set Weight", primary.label, "a fixed-load set is not a Peak load")
-        assertEquals("(${WeightDisplayFormatter.toDisplayWeight(40f, WeightUnit.LB).toInt()})", "(${primary.valueText})")
+        assertEquals(WeightDisplayFormatter.formatDisplayWeight(40f, WeightUnit.LB), primary.valueText)
         assertEquals("(lbs/cable)", primary.unitText)
+    }
+
+    @Test
+    fun `set summary keeps one decimal for a fractional load`() {
+        val fixed = AchievedLoadPresentation.setSummaryPrimary(
+            fixedLoadSummary(configuredKg = 20.5f),
+            WeightUnit.KG,
+        )
+        assertEquals("Set Weight", fixed.label)
+        assertEquals("20.5", fixed.valueText, "20.5 kg stays 20.5 and is not rounded to 21")
+        assertEquals(
+            WeightDisplayFormatter.formatDisplayWeight(20.5f, WeightUnit.KG),
+            fixed.valueText,
+        )
+        assertEquals("(kg/cable)", fixed.unitText)
+
+        val echo = AchievedLoadPresentation.setSummaryPrimary(
+            echoSummary(measuredPeakKgPerCable = 20.5f),
+            WeightUnit.KG,
+        )
+        assertEquals("Peak load", echo.label)
+        assertEquals("20.5", echo.valueText, "a 20.5 kg Echo peak stays 20.5 and is not rounded to 21")
+        assertEquals(
+            WeightDisplayFormatter.formatDisplayWeight(20.5f, WeightUnit.KG),
+            echo.valueText,
+        )
+        assertEquals("(kg/cable)", echo.unitText)
     }
 
     @Test
     fun `set summary renders the seed as achieved value only for fixed load and never for echo`() {
         val echoPrimary = AchievedLoadPresentation.setSummaryPrimary(echoSummary(measuredPeakKgPerCable = 80f), WeightUnit.LB)
         assertNotEquals(
-            WeightDisplayFormatter.toDisplayWeight(5f, WeightUnit.LB).toInt().toString(),
+            WeightDisplayFormatter.formatDisplayWeight(5f, WeightUnit.LB),
             echoPrimary.valueText,
             "the configured 5 kg seed must never be the Echo primary value",
         )
