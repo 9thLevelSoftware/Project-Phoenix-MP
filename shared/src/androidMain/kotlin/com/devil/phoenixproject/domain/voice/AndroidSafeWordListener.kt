@@ -24,7 +24,9 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Key behaviors:
  * - On-device only via [RecognizerIntent.EXTRA_PREFER_OFFLINE]
- * - Continuous listening via auto-restart on end-of-speech or recoverable errors
+ * - Continuous listening via auto-restart after the final result or a recoverable
+ *   error. End-of-speech waits for that callback; tearing the recognizer down
+ *   there drops the final hypothesis.
  * - Coexists with music via [AudioManager.AUDIOFOCUS_GAIN_TRANSIENT]
  * - All SpeechRecognizer calls dispatched to main thread (API requirement)
  * - RECORD_AUDIO is requested before the first listen when it is not already
@@ -37,6 +39,18 @@ class AndroidSafeWordListener(
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_MS = 500L
+
+        /**
+         * How long to wait after end-of-speech for [RecognitionListener.onResults]
+         * or [RecognitionListener.onError] before restarting anyway.
+         *
+         * [SpeechRecognizer.cancel] and [SpeechRecognizer.destroy] drop an
+         * undelivered final hypothesis, so the restart must not run from
+         * end-of-speech itself. The wait is long enough for on-device recognition
+         * to deliver that callback and short enough that a recognizer which
+         * delivers nothing cannot stick.
+         */
+        const val END_OF_SPEECH_RESULT_GRACE_MS = 2_000L
 
         /** Minimum interval between emissions to prevent partial+final double-counting. */
         const val DEBOUNCE_MS = 1000L
@@ -63,6 +77,22 @@ class AndroidSafeWordListener(
 
     /** Last time we emitted a detection — used to debounce partial+final duplicates. */
     private var lastEmitTimeMs = 0L
+
+    /**
+     * Bumped in [startRecognition]. Callbacks and the end-of-speech fallback
+     * capture the value for the session that created them, so a recognizer we
+     * already replaced cannot restart the new one.
+     */
+    private var listeningGeneration = 0
+
+    /**
+     * True once this recognition session has scheduled its single restart
+     * (final results, an error, or the end-of-speech fallback).
+     */
+    private var utteranceRestartClaimed = false
+
+    /** Pending end-of-speech fallback. Cleared when results or an error arrive. */
+    private var endOfSpeechResultFallback: Runnable? = null
 
     /** Active audio focus request, held for abandoning on teardown. */
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -154,6 +184,11 @@ class AndroidSafeWordListener(
 
         if (!shouldBeListening) return
 
+        // New session. Callbacks from the recognizer we are replacing must not
+        // restart this one, and this session may restart exactly once.
+        listeningGeneration++
+        utteranceRestartClaimed = false
+
         // F-039: a start request only becomes Armed in onReadyForSpeech. Too many
         // starts in a row that never get there means the microphone is not coming.
         val attemptState = armingTracker.onStartAttempt()
@@ -167,7 +202,7 @@ class AndroidSafeWordListener(
             requestTransientAudioFocus()
 
             val sr = SpeechRecognizer.createSpeechRecognizer(context)
-            sr.setRecognitionListener(SafeWordRecognitionListener())
+            sr.setRecognitionListener(SafeWordRecognitionListener(listeningGeneration))
             recognizer = sr
 
             val intent = createRecognizerIntent()
@@ -231,6 +266,10 @@ class AndroidSafeWordListener(
     }
 
     private fun tearDown() {
+        // Drop a pending end-of-speech fallback before destroy. stopListening()
+        // and a restart both land here; a fallback left armed would start a
+        // second recognizer.
+        cancelEndOfSpeechResultFallback()
         try {
             recognizer?.apply {
                 stopListening()
@@ -261,6 +300,41 @@ class AndroidSafeWordListener(
         } finally {
             audioFocusRequest = null
         }
+    }
+
+    /**
+     * Arms a one-shot restart used only when end-of-speech is not followed by
+     * [RecognitionListener.onResults] or [RecognitionListener.onError].
+     * Both of those callbacks cancel this timeout and claim the session restart.
+     */
+    private fun armEndOfSpeechResultFallback(generation: Int) {
+        cancelEndOfSpeechResultFallback()
+        if (!shouldBeListening || generation != listeningGeneration || utteranceRestartClaimed) return
+        val fallback = Runnable {
+            if (generation != listeningGeneration) return@Runnable
+            if (!claimUtteranceRestart()) return@Runnable
+            Log.w(TAG, "No final recognition result after end of speech; restarting")
+            scheduleRestart()
+        }
+        endOfSpeechResultFallback = fallback
+        mainHandler.postDelayed(fallback, END_OF_SPEECH_RESULT_GRACE_MS)
+    }
+
+    private fun cancelEndOfSpeechResultFallback() {
+        endOfSpeechResultFallback?.let { mainHandler.removeCallbacks(it) }
+        endOfSpeechResultFallback = null
+    }
+
+    /**
+     * Returns true for the first restart of this recognition session.
+     * The end-of-speech fallback, final results, and errors share it so only
+     * one of them restarts.
+     */
+    private fun claimUtteranceRestart(): Boolean {
+        if (utteranceRestartClaimed || !shouldBeListening) return false
+        utteranceRestartClaimed = true
+        cancelEndOfSpeechResultFallback()
+        return true
     }
 
     private fun scheduleRestart() {
@@ -306,8 +380,14 @@ class AndroidSafeWordListener(
 
     // ---- RecognitionListener ----
 
-    private inner class SafeWordRecognitionListener : RecognitionListener {
+    private inner class SafeWordRecognitionListener(
+        private val generation: Int,
+    ) : RecognitionListener {
+        /** Callbacks from a recognizer we already replaced must not restart the new one. */
+        private fun isStale(): Boolean = generation != listeningGeneration
+
         override fun onReadyForSpeech(params: Bundle?) {
+            if (isStale()) return
             // F-039: only here does the recognizer actually hold the microphone,
             // so only here may the HUD claim the safe word will stop the machine.
             Log.d(TAG, "Ready for speech")
@@ -315,6 +395,7 @@ class AndroidSafeWordListener(
         }
 
         override fun onBeginningOfSpeech() {
+            if (isStale()) return
             Log.d(TAG, "Speech started")
         }
 
@@ -327,11 +408,18 @@ class AndroidSafeWordListener(
         }
 
         override fun onEndOfSpeech() {
-            Log.d(TAG, "End of speech, scheduling restart for continuous listening")
-            scheduleRestart()
+            if (isStale()) return
+            // Restarting here destroys the recognizer and drops the final hypothesis,
+            // which arrives afterwards through onResults or onError.
+            Log.d(TAG, "End of speech; waiting for the final recognition result")
+            armEndOfSpeechResultFallback(generation)
         }
 
         override fun onError(error: Int) {
+            if (isStale()) return
+            // The utterance is over, whether or not we restart. Cancel the
+            // end-of-speech fallback so it cannot start a second recognizer.
+            cancelEndOfSpeechResultFallback()
             val errorName = when (error) {
                 SpeechRecognizer.ERROR_AUDIO -> "ERROR_AUDIO"
                 SpeechRecognizer.ERROR_CLIENT -> "ERROR_CLIENT"
@@ -352,17 +440,25 @@ class AndroidSafeWordListener(
                 return
             }
 
-            // All other errors: restart for continuous listening
-            scheduleRestart()
+            if (claimUtteranceRestart()) {
+                scheduleRestart()
+            }
         }
 
         override fun onResults(results: Bundle?) {
+            if (isStale()) return
+            // Match before any restart. Restarting destroys the recognizer, and
+            // the fallback must not start a second one once this final hypothesis
+            // has been taken.
+            cancelEndOfSpeechResultFallback()
             processResults(results)
-            // Final results signal end of utterance — restart
-            scheduleRestart()
+            if (claimUtteranceRestart()) {
+                scheduleRestart()
+            }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            if (isStale()) return
             processResults(partialResults)
         }
 
