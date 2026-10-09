@@ -64,6 +64,39 @@ class SqlDelightGamificationRepositoryTest {
     }
 
     @Test
+    fun `updateStats keeps a streak across early-morning local days`() = runTest {
+        // selectWorkoutDates must bucket with SQLite 'localtime', the same zone
+        // calculateStreaks uses for "today". An early-morning workout east of UTC
+        // falls on the previous UTC day; the next local morning then looks like a
+        // two-day gap and the streak breaks. SQLite reads the process zone, not
+        // the JVM default, so this only diverges from UTC on a non-UTC host.
+        val zone = TimeZone.currentSystemDefault()
+        val today = Clock.System.now().toLocalDateTime(zone).date
+        val yesterday = LocalDate.fromEpochDays(today.toEpochDays() - 1)
+        val dayBefore = LocalDate.fromEpochDays(today.toEpochDays() - 2)
+        fun atLocal(date: LocalDate, hour: Int, minute: Int) =
+            LocalDateTime(date.year, date.monthNumber, date.dayOfMonth, hour, minute)
+                .toInstant(zone)
+                .toEpochMilliseconds()
+
+        insertWorkoutSession(id = "yesterday-early", totalReps = 5, weightPerCableKg = 20.0, timestamp = atLocal(yesterday, 0, 1))
+        insertWorkoutSession(id = "day-before-early", totalReps = 5, weightPerCableKg = 20.0, timestamp = atLocal(dayBefore, 0, 1))
+
+        assertEquals(
+            listOf(yesterday.toString(), dayBefore.toString()),
+            database.phoenixDatabaseQueries.selectWorkoutDates(profileId = profileId).executeAsList(),
+        )
+
+        repository.updateStats(profileId)
+        repository.getGamificationStats(profileId).test {
+            val stats = awaitItem()
+            assertEquals(2, stats.currentStreak)
+            assertEquals(2, stats.longestStreak)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `updateStats ignores zero-rep sessions and tracks valid untagged sessions`() = runTest {
         insertWorkoutSession(id = "session-valid-tagged", totalReps = 10, weightPerCableKg = 20.0, exerciseId = "bench")
         insertWorkoutSession(id = "session-valid-untagged", totalReps = 8, weightPerCableKg = 15.0, exerciseId = null)
