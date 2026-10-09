@@ -95,7 +95,9 @@ data class RoutineExercise(
     val setEchoLevels: List<EchoLevel?> = emptyList(),
     // Optional duration in seconds for duration-based sets
     val duration: Int? = null,
-    // AMRAP (As Many Reps As Possible) flag - when true, setReps should be null for that set
+    // Exercise-level AMRAP flag. Null setReps mark individual AMRAP sets. When this
+    // is true and the last set still has a rep count, only that last set is AMRAP
+    // (the editor's "last set AMRAP" flag). See isAmrapSet.
     val isAMRAP: Boolean = false,
     // Per Set Rest Time toggle - when true, each set has its own rest time; when false, single rest time applies to all sets
     val perSetRestTime: Boolean = false,
@@ -160,9 +162,27 @@ data class RoutineExercise(
             supportedTimedDurationSeconds
         }
 
-    // Computed property for backwards compatibility
+    // Computed property for backwards compatibility.
+    // Always `setReps.size`; there is no separate working-set count to index against.
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
+
+    /**
+     * Whether working set [setIndex] is AMRAP.
+     *
+     * A null [setReps] entry is AMRAP. The exercise-level [isAMRAP] flag is the
+     * editor's "last set AMRAP" switch and applies only when [setIndex] is
+     * [setReps]'s last index — the same rule routine execution uses.
+     *
+     * [sets] is `setReps.size`, so a `0 until sets` walk and `setReps.lastIndex`
+     * name the same last working set (both are `-1` when [setReps] is empty).
+     * An index outside [setReps] is AMRAP because [List.getOrNull] is null;
+     * callers that only walk `0 until sets` never hit that case.
+     */
+    fun isAmrapSet(setIndex: Int): Boolean {
+        val rawSetReps = setReps.getOrNull(setIndex)
+        return rawSetReps == null || (isAMRAP && setIndex == setReps.lastIndex)
+    }
 
     /** The resolved scaling baseline; derives from prTypeForScaling for legacy rows. */
     val effectiveScalingBasis: ScalingBasis

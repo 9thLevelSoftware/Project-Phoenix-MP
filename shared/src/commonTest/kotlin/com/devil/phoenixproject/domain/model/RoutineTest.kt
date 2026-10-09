@@ -159,6 +159,30 @@ class RoutineTest {
     }
 
     @Test
+    fun isAmrapSet_nullRepsOrLastSetFlag_matchesExecutionIndexing() {
+        val flagged = createTestRoutineExercise(setReps = listOf(10, 8, 6)).copy(isAMRAP = true)
+        // `sets` is setReps.size, so the last working-set index is the same either way.
+        assertEquals(flagged.setReps.size, flagged.sets)
+        assertEquals(flagged.sets - 1, flagged.setReps.lastIndex)
+        assertEquals(false, flagged.isAmrapSet(0))
+        assertEquals(false, flagged.isAmrapSet(1))
+        assertEquals(true, flagged.isAmrapSet(2))
+        assertEquals(false, flagged.copy(isAMRAP = false).isAmrapSet(2))
+
+        val nullMiddle = createTestRoutineExercise(setReps = listOf(10, null, 6))
+        assertEquals(false, nullMiddle.isAmrapSet(0))
+        assertEquals(true, nullMiddle.isAmrapSet(1))
+        assertEquals(false, nullMiddle.isAmrapSet(2))
+
+        val empty = createTestRoutineExercise(setReps = emptyList())
+        assertEquals(-1, empty.setReps.lastIndex)
+        assertEquals(empty.sets - 1, empty.setReps.lastIndex)
+        // Outside setReps, getOrNull is null, so execution treats the index as AMRAP.
+        assertEquals(true, empty.isAmrapSet(0))
+        assertEquals(true, flagged.isAmrapSet(3))
+    }
+
+    @Test
     fun routineExercise_defaultEchoSettings_useIssue553EchoDefaults() {
         val exercise = createTestRoutineExercise(programMode = ProgramMode.Echo)
 
