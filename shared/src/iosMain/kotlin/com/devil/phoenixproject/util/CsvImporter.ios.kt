@@ -50,9 +50,7 @@ internal class IosCsvImporter(private val workoutRepository: WorkoutRepository) 
                 // Pre-load existing sessions for duplicate detection (one DB round-trip).
                 // MutableSet so intra-file duplicates are also caught as they are imported.
                 val existingSessions = workoutRepository.getRecentSessionsSync(profileId = profileId, limit = Int.MAX_VALUE)
-                val existingKeys = existingSessions.map { s ->
-                    DuplicateKey(s.timestamp, s.exerciseName ?: s.exerciseId ?: "")
-                }.toMutableSet()
+                val existingKeys = existingSessions.map(::csvImportDuplicateKey).toMutableSet()
 
                 var imported = 0
                 var skipped = 0
@@ -60,7 +58,7 @@ internal class IosCsvImporter(private val workoutRepository: WorkoutRepository) 
                 val importErrors = parseErrors.toMutableList()
 
                 for (session in sessions) {
-                    val key = DuplicateKey(session.timestamp, session.exerciseName ?: "")
+                    val key = csvImportDuplicateKey(session)
                     if (key in existingKeys) {
                         skipped++
                         continue
@@ -101,6 +99,4 @@ internal class IosCsvImporter(private val workoutRepository: WorkoutRepository) 
             }
         }
     }
-
-    private data class DuplicateKey(val timestamp: Long, val exerciseName: String)
 }
