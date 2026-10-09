@@ -276,8 +276,8 @@ class AndroidSafeWordListener(
 
     /**
      * Checks partial or final result text for the safe word.
-     * See [SafeWordPhraseMatcher]: consecutive normalized tokens, so a multi-word
-     * phrase can match and a single word still matches only that exact token.
+     * See [SafeWordPhraseMatcher]: whole consecutive transcript tokens, so a
+     * multi-word phrase can match and "stop" never matches inside "stopper".
      */
     private fun matchesSafeWord(text: String): Boolean =
         SafeWordPhraseMatcher.matches(safeWord, text)
