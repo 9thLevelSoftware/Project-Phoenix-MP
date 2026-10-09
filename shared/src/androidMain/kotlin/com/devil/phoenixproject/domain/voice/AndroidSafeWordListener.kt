@@ -275,18 +275,12 @@ class AndroidSafeWordListener(
     }
 
     /**
-     * Checks partial or final result text for the safe word (case-insensitive).
-     * Splits on whitespace so "stop now" matches a safeWord of "stop", and strips
-     * punctuation from each token so "stop!", "stop.", or "stop, now" still match
-     * — a safety-critical false negative otherwise (audit F062).
+     * Checks partial or final result text for the safe word.
+     * See [SafeWordPhraseMatcher]: whole consecutive transcript tokens, so a
+     * multi-word phrase can match and "stop" never matches inside "stopper".
      */
-    private fun matchesSafeWord(text: String): Boolean {
-        val target = safeWord.normalizeForSafeWordMatch()
-        if (target.isEmpty()) return false
-        return text.split("\\s+".toRegex()).any { it.normalizeForSafeWordMatch() == target }
-    }
-
-    private fun String.normalizeForSafeWordMatch(): String = filter { it.isLetterOrDigit() }.lowercase()
+    private fun matchesSafeWord(text: String): Boolean =
+        SafeWordPhraseMatcher.matches(safeWord, text)
 
     private fun processResults(results: Bundle?) {
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
