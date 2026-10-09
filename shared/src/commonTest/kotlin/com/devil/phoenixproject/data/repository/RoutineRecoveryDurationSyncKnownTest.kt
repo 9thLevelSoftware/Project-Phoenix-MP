@@ -3,18 +3,25 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 /**
- * Restored routine copies must keep the snapshot's duration sync flag.
- * `insertRoutineExercise` omits `durationSyncKnown`, so a restore that only
- * inserts leaves the column at its default of 0 (unknown) even when the
- * retained graph recorded the authoritative state (1, wire `true`).
+ * A restored routine copy is a new identity created by this build, so its
+ * duration is known (1) whatever state the deleted source had. Left at the
+ * insert default of 0 (unknown), the copy would be re-selected on every push
+ * and force full pulls via `selectRoutineIdsNeedingDurationBackfill`.
  */
 class RoutineRecoveryDurationSyncKnownTest {
 
     @Test
-    fun `restored routine copy keeps durationSyncKnown`() {
+    fun `restored routine copy has a known duration whatever the source state`() {
+        for (sourceState in listOf(0L, 1L, 2L)) {
+            assertRestoredCopyIsKnown(sourceState)
+        }
+    }
+
+    private fun assertRestoredCopyIsKnown(sourceState: Long) {
         val db = createTestDatabase()
         val queries = db.phoenixDatabaseQueries
         val profile = "active-profile"
@@ -72,9 +79,7 @@ class RoutineRecoveryDurationSyncKnownTest {
             dropSetEnabled = 0L,
             dropSetMinWeightKg = null,
         )
-        // 1 is the authoritative known state (Boolean true on the sync wire).
-        queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown = 1L, id = exerciseId)
-        assertEquals(1L, queries.selectRoutineExerciseById(exerciseId).executeAsOne().durationSyncKnown)
+        queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown = sourceState, id = exerciseId)
 
         val store = RoutineRecoveryStore(queries)
         db.transaction {
@@ -108,7 +113,11 @@ class RoutineRecoveryDurationSyncKnownTest {
 
         assertNotNull(restoredId)
         val restored = queries.selectExercisesByRoutine(restoredId).executeAsList().single()
-        assertEquals(1L, restored.durationSyncKnown)
+        assertEquals(1L, restored.durationSyncKnown, "source state $sourceState")
         assertEquals(45L, restored.duration)
+        assertFalse(
+            restoredId in queries.selectRoutineIdsNeedingDurationBackfill(profile).executeAsList(),
+            "source state $sourceState",
+        )
     }
 }
