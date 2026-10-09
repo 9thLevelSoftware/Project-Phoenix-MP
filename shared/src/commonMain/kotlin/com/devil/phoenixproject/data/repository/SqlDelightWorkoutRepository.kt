@@ -20,10 +20,15 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -43,6 +48,9 @@ class SqlDelightWorkoutRepository(
     // shows and restores nothing.
     private val signedInPortalUserId: () -> String? = { null },
     private val activeProfileId: () -> String? = { null },
+    // Same clock as [currentTimeMillis]. Injected so observation can re-read it
+    // on each emission instead of capturing one timestamp for the life of the flow.
+    private val nowMillis: () -> Long = { currentTimeMillis() },
 ) : WorkoutRepository {
 
     private val queries = db.phoenixDatabaseQueries
@@ -1011,7 +1019,10 @@ class SqlDelightWorkoutRepository(
      * recovery store. Emits whenever retained snapshots change, so a mounted
      * recovery surface discovers new recoveries without a remount, and
      * re-authorized at every emission (R4) — a scope that lost its authenticated
-     * owner or active-profile status publishes nothing.
+     * owner or active-profile status publishes nothing. Expiry is applied with a
+     * fresh [nowMillis] reading on every emission, and the flow wakes again when
+     * the earliest retained snapshot reaches its `expires_at`, so a snapshot
+     * leaves the list without a table write.
      */
     override fun observeRoutineRecoveries(
         profileId: String,
@@ -1020,28 +1031,67 @@ class SqlDelightWorkoutRepository(
         queries.selectRoutineRecoveriesByProfile(
             profileId = profileId,
             portalUserId = portalUserId,
-            now = currentTimeMillis(),
+            // SQLDelight re-executes this query with the parameters captured here.
+            // A clock reading would stay frozen for the life of the flow, and the
+            // query only re-emits on table writes. Zero keeps every retained row
+            // visible to the notification query; expiry is applied in
+            // [recoveriesUntilNextExpiry].
+            now = 0L,
         )
             .asFlow()
             .mapToList(Dispatchers.IO)
-            .map {
-                if (!recoveryAccessAllowed(profileId, portalUserId)) {
-                    emptyList()
-                } else {
-                    try {
-                        routineRecoveryStore.listRecoverableRoutines(
-                            profileId = profileId,
-                            portalUserId = portalUserId,
-                            now = currentTimeMillis(),
-                        )
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Logger.w(e) { "RoutineRecovery: could not load recoverable routines" }
-                        emptyList()
-                    }
-                }
+            .flatMapLatest { recoveriesUntilNextExpiry(profileId, portalUserId) }
+            .distinctUntilChanged()
+
+    /**
+     * Lists recoverable routines with a fresh clock, then suspends until the
+     * earliest still-retained snapshot expires. A table write cancels this flow
+     * (via [flatMapLatest]) and starts a new wait from the updated rows.
+     */
+    private fun recoveriesUntilNextExpiry(
+        profileId: String,
+        portalUserId: String,
+    ): Flow<List<RoutineRecoveryItem>> = flow {
+        while (true) {
+            val now = nowMillis()
+            if (!recoveryAccessAllowed(profileId, portalUserId)) {
+                emit(emptyList())
+                awaitCancellation()
             }
+            val items = try {
+                routineRecoveryStore.listRecoverableRoutines(
+                    profileId = profileId,
+                    portalUserId = portalUserId,
+                    now = now,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(e) { "RoutineRecovery: could not load recoverable routines" }
+                emit(emptyList())
+                awaitCancellation()
+            }
+            emit(items)
+            val nextExpiry = try {
+                queries.selectRoutineRecoveriesByProfile(
+                    profileId = profileId,
+                    portalUserId = portalUserId,
+                    now = now,
+                ).executeAsList().minOfOrNull { it.expires_at }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(e) { "RoutineRecovery: could not schedule recovery expiry" }
+                awaitCancellation()
+            }
+            // `expires_at >= now` is still listed. Wake on the following millisecond
+            // so the next read excludes that snapshot. A clock that has already
+            // moved past it falls through and re-reads immediately.
+            if (nextExpiry == null) awaitCancellation()
+            val waitMillis = nextExpiry + 1L - nowMillis()
+            if (waitMillis > 0L) delay(waitMillis)
+        }
+    }
 
     /**
      * Issue #1162 explicit restore-as-copy, revalidated at execution time (final
