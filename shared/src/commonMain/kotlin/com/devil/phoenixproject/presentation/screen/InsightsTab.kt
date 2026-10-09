@@ -202,7 +202,7 @@ fun InsightsTab(
             InsightContextBlock("Summary of completed sessions and personal records.", selectedPeriod.label, "Check if this period is on track before changing your plan.")
             ResponsiveCardWrapper {
                 ThisWeekSummaryCard(
-                    workoutSessions = filteredSessions,
+                    workoutSessions = workoutSessions,
                     personalRecords = prs,
                     weightUnit = weightUnit,
                     modifier = Modifier.fillMaxWidth(),
@@ -241,7 +241,7 @@ fun InsightsTab(
             InsightContextBlock("Session frequency consistency score.", selectedPeriod.label, "Inconsistency usually explains stalled progress more than load choices.")
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
-                    workoutSessions = filteredSessions,
+                    workoutSessions = workoutSessions,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
