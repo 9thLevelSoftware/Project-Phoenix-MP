@@ -971,4 +971,57 @@ class RepRangesTest {
         // Position at 50 should NOT trigger (above threshold of 40)
         assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))
     }
+
+    @Test
+    fun `per-cable helpers flag only the cable inside its own 5 percent band`() {
+        // A: min 100, max 1000, threshold = 100 + 900 * 0.05
+        // B: min 400, max 1400, threshold = 400 + 1000 * 0.05
+        val ranges = RepRanges(
+            minPosA = 100f,
+            maxPosA = 1000f,
+            minPosB = 400f,
+            maxPosB = 1400f,
+        )
+        val thresholdA = 100f + ((1000f - 100f) * 0.05f)
+        val thresholdB = 400f + ((1400f - 400f) * 0.05f)
+
+        assertTrue(ranges.isCableAInDangerZone(thresholdA))
+        assertFalse(ranges.isCableBInDangerZone(500f))
+        assertTrue(ranges.isInDangerZone(posA = thresholdA, posB = 500f))
+
+        assertFalse(ranges.isCableAInDangerZone(200f))
+        assertTrue(ranges.isCableBInDangerZone(thresholdB))
+        assertTrue(ranges.isInDangerZone(posA = 200f, posB = thresholdB))
+
+        assertFalse(ranges.isCableAInDangerZone(thresholdA + 1f))
+        assertFalse(ranges.isCableBInDangerZone(thresholdB + 1f))
+        assertFalse(ranges.isInDangerZone(posA = thresholdA + 1f, posB = thresholdB + 1f))
+    }
+
+    @Test
+    fun `isInDangerZone stays the OR of the per-cable checks`() {
+        val onlyA = RepRanges(
+            minPosA = 100f,
+            maxPosA = 1000f,
+            minPosB = 100f,
+            maxPosB = 120f, // range 20 is below the default 50 mm threshold
+        )
+        assertTrue(onlyA.isCableAInDangerZone(110f))
+        assertFalse(onlyA.isCableBInDangerZone(100f))
+        assertTrue(onlyA.isInDangerZone(posA = 110f, posB = 100f))
+        assertFalse(onlyA.isInDangerZone(posA = 500f, posB = 100f))
+
+        val onlyB = RepRanges(
+            minPosA = null,
+            maxPosA = null,
+            minPosB = 30f,
+            maxPosB = 230f,
+        )
+        assertFalse(onlyB.isCableAInDangerZone(0f))
+        assertTrue(onlyB.isCableBInDangerZone(0f))
+        assertFalse(onlyB.isCableBInDangerZone(0f, minRangeThreshold = 250f))
+        assertTrue(onlyB.isCableBInDangerZone(35f))
+        assertTrue(onlyB.isInDangerZone(posA = 0f, posB = 35f))
+        assertFalse(onlyB.isInDangerZone(posA = 0f, posB = 50f))
+    }
 }
