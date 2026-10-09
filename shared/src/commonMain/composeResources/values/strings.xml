@@ -904,4 +904,11 @@
     <string name="cycle_training_max_missing_title">Training max not set</string>
     <string name="cycle_training_max_missing_body">Weekly training-max increases are skipped for %1$s until this profile has a training max for it.</string>
     <string name="cycle_training_max_missing_action">Set training max</string>
+
+    <!-- CSV import via Android intents (#1242) -->
+    <string name="routine_csv_imported_builder">Imported to Builder: %1$s</string>
+    <string name="routine_csv_imported_builder_more">Imported to Builder: %1$s (+%2$d more in Daily Routines)</string>
+    <string name="routine_csv_saved_daily">Imported: %1$s. It's in Daily Routines.</string>
+    <string name="action_open">Open</string>
+    <string name="routine_csv_import_busy">An import is in progress — share the file again when it finishes.</string>
 </resources>

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -82,18 +84,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.devil.phoenixproject.data.csv.CsvImportDeliveryResult
+import com.devil.phoenixproject.data.csv.CsvImportIntakePhase
+import com.devil.phoenixproject.data.csv.acknowledgeCsvImportOffer
+import com.devil.phoenixproject.data.csv.csvImportOffers
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileAddDialog
 import com.devil.phoenixproject.presentation.components.ProfileRecoveryDialog
 import com.devil.phoenixproject.presentation.components.ProfileSwitcherSheet
+import com.devil.phoenixproject.presentation.components.RoutineCsvImportDialog
 import com.devil.phoenixproject.presentation.navigation.BottomNavItem
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.navigation.NavGraph
@@ -110,13 +118,31 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ProfileOverlayError
 import com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RootProfileOperationKind
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvImportHostResult
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvImportUiState
+import com.devil.phoenixproject.presentation.viewmodel.RoutineCsvViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.setKeepScreenOn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_ok
+import projectphoenix.shared.generated.resources.action_open
+import projectphoenix.shared.generated.resources.routine_csv_import_busy
+import projectphoenix.shared.generated.resources.routine_csv_imported_builder
+import projectphoenix.shared.generated.resources.routine_csv_imported_builder_more
+import projectphoenix.shared.generated.resources.routine_csv_saved_daily
+import projectphoenix.shared.generated.resources.stop_before_editing
+import projectphoenix.shared.generated.resources.workout_in_progress
 import projectphoenix.shared.generated.resources.workout_save_retry_failed
 import projectphoenix.shared.generated.resources.workout_save_failed
 import projectphoenix.shared.generated.resources.action_retry
@@ -250,10 +276,220 @@ fun EnhancedMainScreen(
         }
     }
 
+    // ===== CSV import intake (#1242) =====
+    // Activity-scoped import ViewModel (the bridge offers land here); Daily Routines keeps its
+    // own nav-scoped instance for the in-app preview-always import, which is unchanged.
+    val csvImportViewModel: RoutineCsvViewModel = koinViewModel()
+    val csvImportState by csvImportViewModel.importState.collectAsState()
+    val csvImportSnackbarHostState = remember { SnackbarHostState() }
+    val csvImportScope = rememberCoroutineScope()
+    var showCsvWorkoutDialog by remember { mutableStateOf(false) }
+    var csvImportJob by remember { mutableStateOf<Job?>(null) }
+    // Per-delivery consent from the dirty-editor leave gate (B2): once the user consented to
+    // discard the draft for THIS delivery, navigation does not ask a second time.
+    var csvLeaveConsent by remember { mutableStateOf(false) }
+
+    /**
+     * Resolves the imported routine's readiness to show (B3): the wait observes committed
+     * content pinned to the plan's profile — never just an id — and a profile change cancels
+     * navigation instead of retargeting it.
+     */
+    fun csvReadiness(routines: List<Routine>, expected: RoutineCsvImportHostResult, currentProfileId: String): CsvImportReadiness =
+        csvImportNavigationReadiness(routines, expected, currentProfileId)
+
+    // Truthful post-commit result when the builder cannot be shown: the routine WAS saved.
+    suspend fun showCsvSavedDailySnackbar(result: RoutineCsvImportHostResult) {
+        val message = getString(Res.string.routine_csv_saved_daily, result.firstName)
+        val action = csvImportSnackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = getString(Res.string.action_open),
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        if (action == SnackbarResult.ActionPerformed) {
+            // Open re-invokes the gate (P4): the draft may still be there and dirty.
+            RoutineEditorLeaveGate.requestLeave(
+                onLeft = {
+                    RoutineEditorLeaveGate.registeredRoutineId()?.let { staleId ->
+                        navController.popBackStack(NavigationRoutes.RoutineEditor.createRoute(staleId), inclusive = true)
+                    }
+                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute(result.firstRoutineId))
+                    csvImportScope.launch {
+                        csvImportSnackbarHostState.showSnackbar(
+                            getString(Res.string.routine_csv_imported_builder, result.firstName),
+                            duration = SnackbarDuration.Long,
+                        )
+                    }
+                },
+                onCancelled = {
+                    csvImportScope.launch {
+                        csvImportSnackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long)
+                    }
+                },
+            )
+        }
+    }
+
+    // Opens the imported routine in the builder: a stale editor entry for a replaced routine is
+    // removed only after the successful commit, and the editor that opens is freshly initialized.
+    suspend fun showCsvBuilderSnackbar(result: RoutineCsvImportHostResult) {
+        val message = if (result.routineCount > 1) {
+            getString(Res.string.routine_csv_imported_builder_more, result.firstName, result.routineCount - 1)
+        } else {
+            getString(Res.string.routine_csv_imported_builder, result.firstName)
+        }
+        csvImportSnackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long)
+    }
+
+    suspend fun openImportedBuilder(result: RoutineCsvImportHostResult) {
+        val open = {
+            if (result.overwrite) {
+                navController.popBackStack(NavigationRoutes.RoutineEditor.createRoute(result.firstRoutineId), inclusive = true)
+            }
+            navController.navigate(NavigationRoutes.RoutineEditor.createRoute(result.firstRoutineId))
+        }
+        if (!csvLeaveConsent && RoutineEditorLeaveGate.isDirty()) {
+            RoutineEditorLeaveGate.requestLeave(
+                onLeft = {
+                    csvLeaveConsent = true
+                    RoutineEditorLeaveGate.registeredRoutineId()?.let { staleId ->
+                        navController.popBackStack(NavigationRoutes.RoutineEditor.createRoute(staleId), inclusive = true)
+                    }
+                    open()
+                    csvImportScope.launch { showCsvBuilderSnackbar(result) }
+                },
+                onCancelled = {
+                    csvImportScope.launch { showCsvSavedDailySnackbar(result) }
+                },
+            )
+        } else {
+            open()
+            showCsvBuilderSnackbar(result)
+        }
+    }
+
+    suspend fun handleCsvImportDelivery(result: CsvImportDeliveryResult) {
+        val ownership = csvImportViewModel.intakeOwnership
+        // A host result left over from a cancelled earlier delivery must never drive navigation.
+        csvImportViewModel.clearHostResult()
+        ownership.moveTo(CsvImportIntakePhase.WAITING_STARTUP)
+        // The main graph already gates this screen (EULA/splash/migrations, then the BLE
+        // permission gate); the remaining wait is the active profile.
+        withTimeoutOrNull(PROFILE_READY_TIMEOUT_MS) {
+            profileRepository.activeProfileContext.first { it is ActiveProfileContext.Ready }
+        }
+        // Workout state is checked at acceptance AND immediately before any commit.
+        if (viewModel.isWorkoutActive || viewModel.isInWorkoutSessionNow()) {
+            showCsvWorkoutDialog = true
+            return
+        }
+        when (result) {
+            is CsvImportDeliveryResult.Read -> {
+                ownership.moveTo(CsvImportIntakePhase.PREVIEW)
+                csvImportViewModel.importIncoming(result.content)
+                // Clean creates commit here; a collision/issue preview suspends until the user
+                // confirms (commit) or dismisses (cancellation consumes the delivery).
+                val committed = csvImportViewModel.hostResult.filterNotNull().first()
+                csvImportViewModel.clearHostResult()
+                ownership.moveTo(CsvImportIntakePhase.RESULT)
+                if (viewModel.isWorkoutActive || viewModel.isInWorkoutSessionNow()) {
+                    showCsvWorkoutDialog = true
+                    return
+                }
+                var readiness = csvReadiness(viewModel.routines.value, committed, viewModel.activeProfileId.value)
+                if (readiness == CsvImportReadiness.WAIT) {
+                    readiness = withTimeoutOrNull(NAV_READY_TIMEOUT_MS) {
+                        viewModel.routines
+                            .map { csvReadiness(it, committed, viewModel.activeProfileId.value) }
+                            .first { it != CsvImportReadiness.WAIT }
+                    } ?: CsvImportReadiness.WAIT
+                }
+                when (readiness) {
+                    CsvImportReadiness.READY -> openImportedBuilder(committed)
+                    // Persistence succeeded but display readiness never arrived: say the
+                    // routine was saved, never that nothing was written, and never retry.
+                    CsvImportReadiness.WAIT -> showCsvSavedDailySnackbar(committed)
+                    CsvImportReadiness.PROFILE_CHANGED -> csvImportViewModel.onProfileChangedDuringWait()
+                }
+            }
+
+            CsvImportDeliveryResult.TooLarge -> {
+                csvImportViewModel.onFileTooLarge()
+                awaitCancellation()
+            }
+
+            CsvImportDeliveryResult.Unreadable -> {
+                csvImportViewModel.onFileUnreadable()
+                awaitCancellation()
+            }
+
+            CsvImportDeliveryResult.Busy -> Unit
+        }
+    }
+
+    // Dismiss of the intent-hosted dialog: writes nothing and consumes the delivery.
+    fun csvDismissImport() {
+        csvImportViewModel.dismissImport()
+        csvImportJob?.cancel()
+    }
+
+    // Confirm of the intent-hosted preview dialog. A dirty same-id overwrite resolves the
+    // editor leave gate BEFORE the commit (B2); cancel writes nothing and keeps the draft.
+    fun csvConfirmImport() {
+        if (viewModel.isWorkoutActive || viewModel.isInWorkoutSessionNow()) {
+            csvDismissImport()
+            showCsvWorkoutDialog = true
+            return
+        }
+        val preview = csvImportViewModel.importState.value as? RoutineCsvImportUiState.Preview ?: return
+        val staleId = RoutineEditorLeaveGate.registeredRoutineId()
+        if (staleId != null && staleId in preview.plan.overwriteRoutineIds && RoutineEditorLeaveGate.isDirty()) {
+            RoutineEditorLeaveGate.requestLeave(
+                onLeft = {
+                    csvLeaveConsent = true
+                    csvImportViewModel.confirmImport()
+                },
+                onCancelled = { /* nothing written; the draft stays */ },
+            )
+        } else {
+            csvImportViewModel.confirmImport()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        csvImportOffers().collect { offer ->
+            val ownership = csvImportViewModel.intakeOwnership
+            val result = offer.result
+            if (result is CsvImportDeliveryResult.Busy) {
+                acknowledgeCsvImportOffer(offer.deliveryId)
+                csvImportSnackbarHostState.showSnackbar(getString(Res.string.routine_csv_import_busy))
+                return@collect
+            }
+            // One active intake state machine: a second delivery is rejected with a localized
+            // message requiring a re-share, and a consumed delivery never re-commits (B4).
+            if (!ownership.begin(offer.deliveryId)) {
+                acknowledgeCsvImportOffer(offer.deliveryId)
+                if (!ownership.isConsumed(offer.deliveryId)) {
+                    csvImportSnackbarHostState.showSnackbar(getString(Res.string.routine_csv_import_busy))
+                }
+                return@collect
+            }
+            acknowledgeCsvImportOffer(offer.deliveryId)
+            csvLeaveConsent = false
+            csvImportJob?.cancel()
+            csvImportJob = csvImportScope.launch {
+                try {
+                    handleCsvImportDelivery(result)
+                } finally {
+                    ownership.markConsumed(offer.deliveryId)
+                }
+            }
+        }
+    }
+
     var currentRoute by remember(navController) {
         mutableStateOf(navController.currentBackStackEntry?.destination?.route ?: NavigationRoutes.Home.route)
     }
-
     // Track navigation changes
     LaunchedEffect(navController) {
         navController.currentBackStackEntryFlow.collect { backStackEntry ->
@@ -371,7 +607,12 @@ fun EnhancedMainScreen(
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 snackbarHost = {
-                    SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                    Box {
+                        SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                        // Feature snackbar host (#1242): a separate host, never the
+                        // server-deletion scaffold host above.
+                        SnackbarHost(hostState = csvImportSnackbarHostState)
+                    }
                 },
                 topBar = {
                     if (shouldShowTopBar) {
@@ -623,6 +864,33 @@ fun EnhancedMainScreen(
                         switcherState.error == ProfileOverlayError.RECOVERY_RETRY_FAILED
                     },
                     onRetry = profileSwitcherViewModel::retryRecovery,
+                )
+            }
+
+            // CSV import intake dialogs (#1242): Unreadable and Preview only. The intent host
+            // never shows the Imported count dialog — the feature snackbar carries the result.
+            val csvImportDialogState = csvImportState
+            if (csvImportDialogState != null && csvImportDialogState !is RoutineCsvImportUiState.Imported) {
+                RoutineCsvImportDialog(
+                    state = csvImportDialogState,
+                    onSelectMode = csvImportViewModel::selectMode,
+                    onConfirm = ::csvConfirmImport,
+                    onDismiss = ::csvDismissImport,
+                )
+            }
+
+            // Active-workout refusal for intent imports (#1242): existing copy, nothing
+            // imported, the delivery is consumed with no auto-retry when the workout ends.
+            if (showCsvWorkoutDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCsvWorkoutDialog = false },
+                    title = { Text(stringResource(Res.string.workout_in_progress)) },
+                    text = { Text(stringResource(Res.string.stop_before_editing)) },
+                    confirmButton = {
+                        TextButton(onClick = { showCsvWorkoutDialog = false }) {
+                            Text(stringResource(Res.string.action_ok))
+                        }
+                    },
                 )
             }
         } // CompositionLocalProvider
@@ -1045,6 +1313,36 @@ private fun ConnectionStatusIndicator(
         }
     }
 }
+
+/** B3 navigation-wait outcome for an imported routine. */
+internal enum class CsvImportReadiness { READY, WAIT, PROFILE_CHANGED }
+
+/**
+ * The navigation wait observes committed CONTENT, not just an id (B3): for a new routine the
+ * list must contain the committed id; for an overwrite the emitted routine must reflect the
+ * committed content/revision. Profile identity is pinned to the plan's profile — a profile
+ * change cancels navigation instead of retargeting it.
+ */
+internal fun csvImportNavigationReadiness(
+    routines: List<Routine>,
+    expected: RoutineCsvImportHostResult,
+    currentProfileId: String,
+): CsvImportReadiness {
+    if (currentProfileId != expected.profileId) return CsvImportReadiness.PROFILE_CHANGED
+    val routine = routines.firstOrNull { it.id == expected.firstRoutineId } ?: return CsvImportReadiness.WAIT
+    val freshEnough = (routine.updatedAt ?: 0L) >= expected.committedUpdatedAt
+    return if (freshEnough && routine.name == expected.firstName) {
+        CsvImportReadiness.READY
+    } else {
+        CsvImportReadiness.WAIT
+    }
+}
+
+/** Finite display-readiness bound; its failure path is "saved but could not be opened" (B3). */
+private const val NAV_READY_TIMEOUT_MS = 5_000L
+
+/** How long an intake waits for the active profile before the profile-switching message. */
+private const val PROFILE_READY_TIMEOUT_MS = 15_000L
 
 /**
  * Shell title for the cycle editor and review routes.

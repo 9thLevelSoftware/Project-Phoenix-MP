@@ -739,4 +739,11 @@
     <string name="startup_contact_support">Support per E-Mail kontaktieren</string>
     <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
     <string name="startup_support_code">Supportcode: %1$s</string>
+
+    <!-- CSV import via Android intents (#1242) -->
+    <string name="routine_csv_imported_builder">In den Builder importiert: %1$s</string>
+    <string name="routine_csv_imported_builder_more">In den Builder importiert: %1$s (+%2$d weitere in Tägliche Routinen)</string>
+    <string name="routine_csv_saved_daily">Importiert: %1$s. Findest du in den Täglichen Routinen.</string>
+    <string name="action_open">Öffnen</string>
+    <string name="routine_csv_import_busy">Ein Import läuft — teile die Datei erneut, wenn er abgeschlossen ist.</string>
 </resources>

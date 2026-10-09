@@ -90,11 +90,45 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
             android:theme="@style/Theme.PhoenixProject">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- CSV import (#1242) 1/3: system share sheet ("Send to"). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="application/csv" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- CSV import (#1242) 2/3: direct file open ("Open with"). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+            </intent-filter>
+
+            <!-- CSV import (#1242) 3/3: phoenix://import?data= deep link. No autoVerify:
+                 custom-scheme App Link verification is rejected by AGP 9 lint
+                 (AppLinkUrlError), and scheme/host sit on separate <data> tags for
+                 IntentFilterUniqueDataAttributes. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="phoenix" />
+                <data android:host="import" />
             </intent-filter>
 
             <!-- Health Connect: permissions rationale (pre-Android 14, Health Connect APK) -->
