@@ -2,6 +2,8 @@
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
+# Created by Gradle runs; never commit (see CLAUDE.md).
+gradle/gradle-daemon-jvm.properties
 
 # IDE
 .idea/
