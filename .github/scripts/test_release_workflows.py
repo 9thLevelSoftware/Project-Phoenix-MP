@@ -13,12 +13,15 @@ def workflow(name: str) -> str:
 
 class ReleaseWorkflowContracts(unittest.TestCase):
     def test_ios_release_konan_cache_follows_gradle_version_inputs(self) -> None:
+        ci_text = workflow("ci-tests.yml")
         ci_keys = re.findall(
-            r"(?m)^[ ]+key: \$\{\{ runner\.os \}\}-konan-\$\{\{ hashFiles\([^)]+\) \}\}$",
-            workflow("ci-tests.yml"),
+            r"(?m)^[ ]+key: \$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-konan-\$\{\{ hashFiles\([^)]+\) \}\}$",
+            ci_text,
         )
         self.assertGreaterEqual(len(ci_keys), 1)
         expected_key = ci_keys[0].strip()
+        restore_prefix = "restore-keys: |\n            ${{ runner.os }}-${{ runner.arch }}-konan-\n"
+        self.assertEqual(ci_text.count(restore_prefix), len(ci_keys))
         self.assertIn("gradle/libs.versions.toml", expected_key)
         self.assertIn("**/*.gradle*", expected_key)
         self.assertIn("**/gradle-wrapper.properties", expected_key)
@@ -33,7 +36,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertIn("path: ~/.konan", text)
                 self.assertRegex(text, r"uses: actions/cache@[0-9a-f]{40}")
                 self.assertIn(expected_key, text)
-                self.assertIn("restore-keys: |\n            ${{ runner.os }}-konan-\n", text)
+                self.assertIn(restore_prefix, text)
                 self.assertNotRegex(text, r"konan-\d+\.\d+\.\d+")
 
     def test_ios_archives_use_xcode_26_sdk(self) -> None:
