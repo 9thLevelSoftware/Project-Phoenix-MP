@@ -2615,10 +2615,6 @@ insertCycleDayIgnore:
 INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
-insertCycleProgressIgnore:
-INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
 insertCycleProgressionIgnore:
 INSERT OR IGNORE INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
 VALUES (?, ?, ?, ?, ?);
