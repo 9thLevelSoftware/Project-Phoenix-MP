@@ -49,6 +49,25 @@ import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 
 /**
+ * Issue #1226: the auto-continue decision for [SetSummaryCard]'s countdown, extracted so
+ * the scheduler contract is host-testable without a Compose UI test. The countdown runs
+ * only for a live, autoplaying, timed summary that is not held by the Add Exercise flow
+ * and is not the routine's terminal summary (which is held like a Manual one).
+ */
+internal fun shouldAutoContinueSetSummary(
+    autoplayEnabled: Boolean,
+    summaryCountdownSeconds: Int,
+    isHistoryView: Boolean,
+    holdAutoContinue: Boolean,
+    isTerminalSummary: Boolean,
+): Boolean =
+    autoplayEnabled &&
+        summaryCountdownSeconds > 0 &&
+        !isHistoryView &&
+        !holdAutoContinue &&
+        !isTerminalSummary
+
+/**
  * Enhanced Set Summary Card
  * Shows detailed metrics: reps, volume, mode, peak/avg forces, duration, energy
  */
@@ -81,6 +100,10 @@ fun SetSummaryCard(
     // open. Set by the caller before the picker opens and never cleared on dialog dismiss —
     // a restarted countdown could complete the routine out from under the user.
     holdAutoContinue: Boolean = false,
+    // Issue #1226: the terminal routine summary is held like a Manual one for every
+    // summary preference, so this card's auto-continue countdown must be inert there.
+    // An explicit tap (onContinue) still proceeds. Non-terminal summaries are unchanged.
+    isTerminalSummary: Boolean = false,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -91,7 +114,20 @@ fun SetSummaryCard(
 
     // Auto-continue countdown - reset when summary changes
     var autoCountdown by remember(summaryKey) {
-        mutableStateOf(if (autoplayEnabled && summaryCountdownSeconds > 0) summaryCountdownSeconds else -1)
+        mutableStateOf(
+            if (shouldAutoContinueSetSummary(
+                    autoplayEnabled = autoplayEnabled,
+                    summaryCountdownSeconds = summaryCountdownSeconds,
+                    isHistoryView = isHistoryView,
+                    holdAutoContinue = holdAutoContinue,
+                    isTerminalSummary = isTerminalSummary,
+                )
+            ) {
+                summaryCountdownSeconds
+            } else {
+                -1
+            },
+        )
     }
 
     // Issue #142: Auto-advance countdown for routine progression.
@@ -100,8 +136,16 @@ fun SetSummaryCard(
     // so we don't need explicit isActive checks - delay() will throw CancellationException.
     // Issue #1018: keyed on holdAutoContinue and inert while the hold is set, so opening
     // Add Exercise stops the countdown and a dialog dismiss never restarts it.
-    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds, holdAutoContinue) {
-        if (autoplayEnabled && summaryCountdownSeconds > 0 && !isHistoryView && !holdAutoContinue) {
+    // Issue #1226: also inert at the terminal routine summary (isTerminalSummary).
+    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds, holdAutoContinue, isTerminalSummary) {
+        if (shouldAutoContinueSetSummary(
+                autoplayEnabled = autoplayEnabled,
+                summaryCountdownSeconds = summaryCountdownSeconds,
+                isHistoryView = isHistoryView,
+                holdAutoContinue = holdAutoContinue,
+                isTerminalSummary = isTerminalSummary,
+            )
+        ) {
             autoCountdown = summaryCountdownSeconds
             while (autoCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
