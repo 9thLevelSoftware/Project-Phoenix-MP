@@ -2337,7 +2337,7 @@ abstract class BaseDataBackupManager(
                                                     }
                                                     continue
                                                 }
-                                                queries.insertCycleProgressIgnore(
+                                                queries.insertCycleProgressIfNotExists(
                                                     id = progress.id,
                                                     cycle_id = progress.cycleId,
                                                     current_day_number = progress.currentDayNumber.toLong(),
