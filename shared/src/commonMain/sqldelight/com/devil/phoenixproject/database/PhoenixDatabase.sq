@@ -2424,12 +2424,6 @@ ORDER BY session_id ASC, set_number ASC, completed_at ASC;
 selectCompletedSetById:
 SELECT * FROM CompletedSet WHERE id = ?;
 
-selectCompletedSetsForExercise:
-SELECT cs.* FROM CompletedSet cs
-INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
-WHERE ws.exerciseId = ?
-ORDER BY cs.completed_at DESC;
-
 selectRecentCompletedSetsForExercise:
 SELECT
     cs.id,
