@@ -28,11 +28,6 @@ class SqlDelightOwnershipTransferRepository(
             .map(OwnershipTransferOutbox::toMutation)
     }
 
-    override suspend fun pendingAll(): List<OwnershipTransferMutation> =
-        queries.selectAllPendingOwnershipTransfers()
-            .executeAsList()
-            .map(OwnershipTransferOutbox::toMutation)
-
     override fun observePending(): Flow<List<OwnershipTransferMutation>> =
         queries.selectAllPendingOwnershipTransfers()
             .asFlow()
