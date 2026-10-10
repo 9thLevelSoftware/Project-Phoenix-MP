@@ -1183,7 +1183,7 @@ private fun SetRow(
 }
 
 @Composable
-fun ModeSelector(
+private fun ModeSelector(
     selectedMode: WorkoutMode,
     onModeChange: (WorkoutMode) -> Unit,
 ) {
@@ -1329,7 +1329,7 @@ private fun EccentricLoadSelector(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EchoLevelSelector(
+private fun EchoLevelSelector(
     level: EchoLevel,
     onLevelChange: (EchoLevel) -> Unit,
 ) {
