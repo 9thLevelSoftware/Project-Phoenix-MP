@@ -537,15 +537,7 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 -1,
             )
         }
-
-        is HapticEvent.REP_COUNT_ANNOUNCED -> {
-            // Already handled above, but needed for exhaustive when
-            return
-        }
-
-        // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - early return at top of fn,
-        // but the exhaustive when requires an explicit arm.
-        is HapticEvent.VERBAL_ENCOURAGEMENT -> return
+        // REP_COUNT_ANNOUNCED and VERBAL_ENCOURAGEMENT return before this when.
     }
     vibrator.vibrate(effect)
 }
