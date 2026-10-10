@@ -645,7 +645,6 @@ fun WorkoutTab(
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
-                        formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410
                         // KD-9: rest-screen weight slider is bounded by the connected trainer.
