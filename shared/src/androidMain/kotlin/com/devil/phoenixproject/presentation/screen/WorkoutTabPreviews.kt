@@ -782,6 +782,9 @@ private fun RestTimerDropSetUnresolvedPreview() {
             totalSets = 4,
             nextExerciseWeight = 40f,
             nextExerciseReps = 8,
+            formatWeightWithUnit = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onSkipRest = {},
             onEndWorkout = {},
             dropSetOffer = DropSetOfferUiState.Unresolved(
