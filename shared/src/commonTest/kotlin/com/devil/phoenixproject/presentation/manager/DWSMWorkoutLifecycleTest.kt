@@ -4937,8 +4937,14 @@ class DWSMWorkoutLifecycleTest {
         val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(session.id)
         assertEquals(1, completedSets.size)
         assertEquals(firstSetId, completedSets.single().id)
-        assertEquals(1, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.deadlift.id!!).size)
-        assertEquals(0, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.squat.id!!).size)
+        assertEquals(
+            1,
+            harness.fakeCompletedSetRepo.getRecentCompletedSetsForExercise(TestFixtures.deadlift.id!!, 20, session.profileId).size,
+        )
+        assertEquals(
+            0,
+            harness.fakeCompletedSetRepo.getRecentCompletedSetsForExercise(TestFixtures.squat.id!!, 20, session.profileId).size,
+        )
         assertEquals(
             listOf(TestFixtures.squat.id),
             harness.fakePRRepo.updateCalls.map { it.exerciseId },
