@@ -46,10 +46,7 @@ class DropSetEligibilityPolicy(
         val identity = completion.routineIdentity ?: return ineligible(DropSetIneligibleReason.IDENTITY_MISMATCH)
         val liveIdentity = request.expectedLiveIdentity ?: return ineligible(DropSetIneligibleReason.IDENTITY_MISMATCH)
         if (!identity.matches(liveIdentity) ||
-            completion.plannedSetType != identity.logicalSetKey.setKind ||
-            identity.logicalSetKey.setIndex != identity.setIndex ||
-            identity.logicalSetKey.routineSessionId != identity.routineSessionId ||
-            identity.logicalSetKey.routineExerciseId != identity.routineExerciseId
+            completion.plannedSetType != identity.logicalSetKey.setKind
         ) {
             return ineligible(DropSetIneligibleReason.IDENTITY_MISMATCH)
         }
