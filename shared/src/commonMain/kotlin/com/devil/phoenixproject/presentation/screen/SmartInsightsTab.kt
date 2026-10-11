@@ -560,7 +560,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>, weightUnit: W
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Column {
                         Text(
-                            "${plateau.exerciseName} at ${SmartInsightsWeightText.plateauLoad(plateau.currentWeightKg, weightUnit)}",
+                            "${plateau.exerciseName} at ${SmartInsightsWeightText.plateauLoad(plateau.currentWeightKg, weightUnit, SmartInsightsWeightText.unitLabel(weightUnit))}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

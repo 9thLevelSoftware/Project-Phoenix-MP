@@ -85,6 +85,7 @@ private fun InsufficientDataContent() {
 
 @Composable
 private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) {
+    val unitLabel = SmartInsightsWeightText.unitLabel(weightUnit)
     val readinessColors = AccessibilityTheme.colors
     val statusColor = when (result.status) {
         ReadinessStatus.GREEN -> readinessColors.statusGreen
@@ -167,11 +168,11 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
     ) {
         VolumeColumn(
             label = "Acute (7d)",
-            valueText = SmartInsightsWeightText.volumeWithUnit(result.acuteVolumeKg, weightUnit),
+            valueText = SmartInsightsWeightText.volumeWithUnit(result.acuteVolumeKg, weightUnit, unitLabel),
         )
         VolumeColumn(
             label = "Chronic (avg/wk)",
-            valueText = SmartInsightsWeightText.volumeWithUnit(result.chronicWeeklyAvgKg, weightUnit),
+            valueText = SmartInsightsWeightText.volumeWithUnit(result.chronicWeeklyAvgKg, weightUnit, unitLabel),
         )
     }
 
