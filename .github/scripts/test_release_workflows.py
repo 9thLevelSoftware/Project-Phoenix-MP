@@ -173,7 +173,16 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     "    if: ${{ !cancelled() && needs.tests.result != 'failure' }}\n",
                     text,
                 )
-        self.assertIn("ref: ${{ needs.tests.outputs.sha }}", workflow("release-all.yml"))
+        release_all = workflow("release-all.yml")
+        self.assertIn("ref: ${{ needs.tests.outputs.sha }}", release_all)
+        # The test gate must check out the dispatched SHA, not the moving main branch.
+        self.assertIn(
+            "    uses: ./.github/workflows/release-tests.yml\n"
+            "    with:\n"
+            "      ref: ${{ github.sha }}\n",
+            release_all,
+        )
+        self.assertNotIn("ref: main\n", release_all)
         self.assertEqual(
             workflow("release-all-existing.yml").count(
                 "source_ref: ${{ needs.prepare-release.outputs.sha }}"

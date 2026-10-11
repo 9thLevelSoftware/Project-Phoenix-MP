@@ -38,11 +38,13 @@ permissions:
 
 jobs:
   # Off-main dispatches skip the test run; create-release then fails fast on its main-branch check.
+  # Test the dispatched commit. Checking out the moving main branch can pick up a
+  # later push and make the tested SHA differ from the SHA this run was started on.
   tests:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release-tests.yml
     with:
-      ref: main
+      ref: ${{ github.sha }}
 
   create-release:
     needs: tests
