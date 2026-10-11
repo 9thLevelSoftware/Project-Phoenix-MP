@@ -49,6 +49,7 @@ import com.devil.phoenixproject.domain.model.PlateauDetection
 import com.devil.phoenixproject.domain.model.SessionSummary
 import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
 import com.devil.phoenixproject.domain.model.TimeWindow
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.ReadinessEngine
@@ -58,9 +59,9 @@ import com.devil.phoenixproject.presentation.components.InsightContextBlock
 import com.devil.phoenixproject.presentation.components.InsightSectionHeader
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.presentation.components.TimeframeBadge
+import com.devil.phoenixproject.presentation.util.SmartInsightsWeightText
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.format
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -76,7 +77,7 @@ import projectphoenix.shared.generated.resources.insights_best_window
 import projectphoenix.shared.generated.resources.insights_col_muscle_group
 import projectphoenix.shared.generated.resources.insights_col_reps
 import projectphoenix.shared.generated.resources.insights_col_sets
-import projectphoenix.shared.generated.resources.insights_col_total_kg
+import projectphoenix.shared.generated.resources.insights_col_total
 import projectphoenix.shared.generated.resources.insights_days_ago
 import projectphoenix.shared.generated.resources.insights_exercise_variety
 import projectphoenix.shared.generated.resources.insights_legs
@@ -106,12 +107,18 @@ import projectphoenix.shared.generated.resources.no_workouts_this_week
  * 6. Training Readiness / ACWR (ACWR-01)
  */
 @Composable
-fun SmartInsightsTab(modifier: Modifier = Modifier) {
-    SmartInsightsContent(modifier = modifier)
+fun SmartInsightsTab(
+    weightUnit: WeightUnit,
+    modifier: Modifier = Modifier,
+) {
+    SmartInsightsContent(weightUnit = weightUnit, modifier = modifier)
 }
 
 @Composable
-private fun SmartInsightsContent(modifier: Modifier = Modifier) {
+private fun SmartInsightsContent(
+    weightUnit: WeightUnit,
+    modifier: Modifier = Modifier,
+) {
     val repository: SmartSuggestionsRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
@@ -229,7 +236,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
         // Section A: Weekly Volume (SUGG-01)
         item {
-            WeeklyVolumeCard(weeklyVolume)
+            WeeklyVolumeCard(weeklyVolume, weightUnit)
         }
 
         item { InsightSectionHeader("2. Trends", "How it changed") }
@@ -248,7 +255,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
         // Section D: Plateau Detection (SUGG-04)
         item {
-            PlateauDetectionCard(plateaus)
+            PlateauDetectionCard(plateaus, weightUnit)
         }
 
         item { InsightSectionHeader("4. Actions", "What to do next") }
@@ -269,7 +276,10 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
                 timeframe = "Acute 7d vs Chronic 28d",
                 soWhat = "If readiness is low, reduce intensity/volume and prioritize recovery.",
             )
-            ReadinessBriefingCard(readinessResult = readiness)
+            ReadinessBriefingCard(
+                readinessResult = readiness,
+                weightUnit = weightUnit,
+            )
         }
     }
 }
@@ -277,7 +287,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 // ---- Section A: Weekly Volume ----
 
 @Composable
-private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
+private fun WeeklyVolumeCard(report: WeeklyVolumeReport, weightUnit: WeightUnit) {
     InsightCard(title = stringResource(Res.string.insights_weekly_volume), definition = "Weekly muscle-group workload breakdown.", timeframe = "Last 7 days", soWhat = "Use as drill-down detail after checking the main total-volume trend.") {
         if (report.volumes.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_workouts_this_week))
@@ -313,7 +323,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                     textAlign = TextAlign.End,
                 )
                 Text(
-                    stringResource(Res.string.insights_col_total_kg),
+                    stringResource(Res.string.insights_col_total, SmartInsightsWeightText.unitLabel(weightUnit)),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -356,7 +366,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                         textAlign = TextAlign.End,
                     )
                     Text(
-                        "${vol.totalKg.toInt()}",
+                        SmartInsightsWeightText.volumeAmount(vol.totalKg, weightUnit),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -557,7 +567,7 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
 // ---- Section D: Plateau Detection ----
 
 @Composable
-private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
+private fun PlateauDetectionCard(plateaus: List<PlateauDetection>, weightUnit: WeightUnit) {
     InsightCard(title = stringResource(Res.string.insights_plateau_alert), definition = "Movements with stalled peak load progression.", timeframe = "Recent comparable sessions", soWhat = "Change reps, tempo, or exercise variant to restart overload.") {
         if (plateaus.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_plateaus))
@@ -577,13 +587,8 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Column {
-                        val displayWeight = if (plateau.currentWeightKg % 1f == 0f) {
-                            "${plateau.currentWeightKg.toInt()}kg"
-                        } else {
-                            "${plateau.currentWeightKg.format(1)}kg"
-                        }
                         Text(
-                            "${plateau.exerciseName} at $displayWeight",
+                            "${plateau.exerciseName} at ${SmartInsightsWeightText.plateauLoad(plateau.currentWeightKg, weightUnit, SmartInsightsWeightText.unitLabel(weightUnit))}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

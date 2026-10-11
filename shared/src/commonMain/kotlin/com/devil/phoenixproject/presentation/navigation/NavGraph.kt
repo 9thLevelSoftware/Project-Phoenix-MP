@@ -340,7 +340,8 @@ fun NavGraph(
             LaunchedEffect(insightsTitle) {
                 viewModel.updateTopBarTitle(insightsTitle)
             }
-            SmartInsightsTab()
+            val weightUnit by viewModel.weightUnit.collectAsState()
+            SmartInsightsTab(weightUnit = weightUnit)
         }
 
         composable(
