@@ -264,6 +264,27 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
 
+    def test_ci_host_unit_tests_share_one_gradle_invocation(self) -> None:
+        text = workflow("ci-tests.yml")
+        job = re.search(
+            r"(?ms)^  unit-tests:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", text
+        )
+        self.assertIsNotNone(job)
+        body = job.group("body")
+        combined = (
+            "run: ./gradlew -Pskip.supabase.check=true "
+            ":shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue\n"
+        )
+        self.assertEqual(body.count(combined), 1)
+        self.assertNotIn("Run shared module unit tests", body)
+        self.assertNotIn("Run androidApp unit tests", body)
+        self.assertNotIn("continue-on-error", body)
+        self.assertIn("name: Upload test results\n        if: always()", body)
+        self.assertIn("shared/build/test-results/", body)
+        self.assertIn("androidApp/build/test-results/", body)
+        self.assertIn("check_name: 'Shared Module Test Results'", body)
+        self.assertIn("check_name: 'Android App Unit Test Results'", body)
+
     def test_ci_path_filter_still_runs_for_sealed_backend_handoff_and_qa_docs(self) -> None:
         text = workflow("ci-tests.yml")
         on_block = text.split("permissions:", 1)[0]
