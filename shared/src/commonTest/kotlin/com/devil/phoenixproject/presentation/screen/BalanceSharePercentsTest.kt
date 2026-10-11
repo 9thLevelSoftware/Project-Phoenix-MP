@@ -20,6 +20,12 @@ class BalanceSharePercentsTest {
     }
 
     @Test
+    fun non_finite_volume_has_no_percent_labels() {
+        assertNull(balanceSharePercents(pushVolume = Float.NaN, pullVolume = 10f, legsVolume = 10f))
+        assertNull(balanceSharePercents(pushVolume = Float.POSITIVE_INFINITY, pullVolume = 10f, legsVolume = 10f))
+    }
+
+    @Test
     fun one_category_owns_the_whole_bar() {
         assertEquals(
             BalanceSharePercents(push = 100, pull = 0, legs = 0),

@@ -376,7 +376,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
  *
  * Push and pull are rounded to the nearest percent. Legs is `100 - push - pull`,
  * clamped to 0..100, so the three labels sum to 100 and the last one cannot go
- * negative. A non-positive total returns null; the card keeps the empty placeholder.
+ * negative. A non-positive or non-finite total returns null; the card keeps the empty placeholder.
  */
 internal fun balanceSharePercents(
     pushVolume: Float,
@@ -384,7 +384,9 @@ internal fun balanceSharePercents(
     legsVolume: Float,
 ): BalanceSharePercents? {
     val total = pushVolume + pullVolume + legsVolume
-    if (total <= 0f) return null
+    // roundToInt() throws on NaN, and NaN <= 0f is false: treat a non-finite
+    // total like an empty one instead of crashing the card.
+    if (!total.isFinite() || total <= 0f) return null
     val push = (pushVolume / total * 100f).roundToInt().coerceIn(0, 100)
     // Cap pull at the points left after push so a pair of round-ups cannot
     // force the legs remainder below zero.
