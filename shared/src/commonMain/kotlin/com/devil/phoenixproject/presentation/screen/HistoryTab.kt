@@ -258,7 +258,7 @@ fun HistoryTab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WorkoutHistoryCard(
+private fun WorkoutHistoryCard(
     session: WorkoutSession,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -810,7 +810,7 @@ private data class ExerciseGroup(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupedRoutineCard(
+private fun GroupedRoutineCard(
     groupedItem: com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,

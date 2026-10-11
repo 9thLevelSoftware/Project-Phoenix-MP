@@ -991,7 +991,7 @@ private fun ProfilePickerDialog(
  * Supports multi-select mode with checkbox and long-press gestures.
  */
 @Composable
-fun RoutineCard(
+private fun RoutineCard(
     routine: Routine,
     isSelectionMode: Boolean,
     isSelected: Boolean,
