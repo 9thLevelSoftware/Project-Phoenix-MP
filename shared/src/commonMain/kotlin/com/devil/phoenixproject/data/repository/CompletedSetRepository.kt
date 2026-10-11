@@ -52,11 +52,6 @@ interface CompletedSetRepository {
     fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>>
 
     /**
-     * Get all completed sets for a specific exercise across all sessions.
-     */
-    suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet>
-
-    /**
      * Get recent completed sets for an exercise (for progression analysis).
      * @param limit Maximum number of sets to return
      * @param profileId Profile to scope the query to — prevents another profile's
