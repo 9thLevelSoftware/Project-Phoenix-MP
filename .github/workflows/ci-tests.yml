@@ -78,11 +78,8 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Run shared module unit tests
-        run: ./gradlew :shared:testAndroidHostTest --continue -Pskip.supabase.check=true
-
-      - name: Run androidApp unit tests
-        run: ./gradlew :androidApp:testDebugUnitTest --continue -Pskip.supabase.check=true
+      - name: Run unit tests
+        run: ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue
 
       - name: Upload test results
         if: always()

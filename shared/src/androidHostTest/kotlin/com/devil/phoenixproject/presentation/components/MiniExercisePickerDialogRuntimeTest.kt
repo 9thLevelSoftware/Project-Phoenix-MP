@@ -13,14 +13,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.SqlDelightExerciseRepository
-import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
-import com.devil.phoenixproject.testutil.FakePreferencesManager
-import com.devil.phoenixproject.testutil.createTestDriver
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -182,11 +177,12 @@ class MiniExercisePickerDialogRuntimeTest {
 
     @Test
     fun archivedOnlyCustoms_showNoCustomExercisesYet_withoutCreateAffordance() {
-        // Real repository: the archived custom is excluded by selectAllExercises' SQL.
-        val database = PhoenixDatabase(createTestDriver())
-        database.insert(bench, archived = false)
-        database.insert(neverTaggedCustom.copy(name = "Archived Custom"), archived = true)
-        val repo = SqlDelightExerciseRepository(database, ExerciseImporter(database), FakePreferencesManager())
+        // The repository never emits archived rows (SqlDelightExerciseRepositoryTest pins
+        // that), so an archived-only custom library reaches the dialog as catalog rows only.
+        // A fake keeps JDBC out of the Robolectric sandbox: sharing org.sqlite.JDBC between
+        // sandbox and plain-JVM tests in one worker breaks DriverManager for whichever loader
+        // registers second.
+        val repo = FakeExerciseRepository().apply { seed(bench) }
         mount(repo, recentIds = emptyList())
         rule.waitUntil(5_000) { rule.onAllNodes(hasText("Bench Press")).fetchSemanticsNodes().isNotEmpty() }
 
@@ -252,35 +248,5 @@ class MiniExercisePickerDialogRuntimeTest {
         rule.waitForIdle()
 
         assertEquals(listOf("dismiss"), events)
-    }
-
-    private fun PhoenixDatabase.insert(exercise: Exercise, archived: Boolean) {
-        phoenixDatabaseQueries.insertExercise(
-            id = exercise.id!!,
-            name = exercise.name,
-            displayName = null,
-            description = null,
-            created = 0L,
-            muscleGroup = exercise.muscleGroup,
-            muscleGroups = exercise.muscleGroups,
-            muscles = null,
-            equipment = exercise.equipment,
-            movement = null,
-            sidedness = null,
-            grip = null,
-            gripWidth = null,
-            minRepRange = null,
-            popularity = 0.0,
-            archived = if (archived) 1L else 0L,
-            isFavorite = 0L,
-            isCustom = if (exercise.isCustom) 1L else 0L,
-            timesPerformed = 0L,
-            lastPerformed = null,
-            aliases = null,
-            defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
-            mvtOverrideMs = null,
-            isBodyweight = null,
-        )
     }
 }

@@ -675,6 +675,19 @@ class ActiveSessionEngineIntegrationTest {
                 )
             }
         }
+
+        // Issue #1226: the routine's terminal summary is now held for every summary
+        // preference (Automatic no longer skips it and no scheduler advances it), so the
+        // day completes on the user's Complete Routine action instead of the removed
+        // terminal auto-advance. Route that action through the summary-proceed entry the
+        // engine's auto-advance used to call — the transition the UI tap resolves to once
+        // a claimed completion owns it — so the cycle bookkeeping stays on the tested path.
+        if (harness.coordinator.workoutState.value is com.devil.phoenixproject.domain.model.WorkoutState.SetSummary) {
+            val lease = engine.currentExecutionLeaseForTest()
+            val completion = assertNotNull(engine.claimedCompletion(lease))
+            engine.flowDelegate?.proceedFromSummary(completion)
+            harness.testScope.advanceUntilIdle()
+        }
     }
 
     private suspend fun completeLoadedCycleSet(
