@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
+import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.util.KmpUtils
@@ -183,7 +184,7 @@ private fun SessionRow(
                 val date = KmpUtils.formatTimestamp(session.timestamp, "MMM d")
                 val weight = loadText
                 val reps = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps"
-                val duration = if (session.duration > 0) ", duration ${formatDuration(session.duration)}" else ""
+                val duration = if (session.duration > 0) ", duration ${DurationFormatter.formatDuration(session.duration)}" else ""
                 contentDescription = "$date, $weight, $reps$duration"
             },
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -207,7 +208,7 @@ private fun SessionRow(
         )
         if (showDuration && session.duration > 0) {
             Text(
-                text = formatDuration(session.duration),
+                text = DurationFormatter.formatDuration(session.duration),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(0.8f),
                 textAlign = TextAlign.End,
@@ -217,15 +218,4 @@ private fun SessionRow(
             Spacer(modifier = Modifier.weight(0.8f))
         }
     }
-}
-
-/**
- * Formats duration in milliseconds to M:SS format.
- * e.g. 42000ms -> "0:42", 75000ms -> "1:15"
- */
-private fun formatDuration(durationMs: Long): String {
-    val totalSeconds = durationMs / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }

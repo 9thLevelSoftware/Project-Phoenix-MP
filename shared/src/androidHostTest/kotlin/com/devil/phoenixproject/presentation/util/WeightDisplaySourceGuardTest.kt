@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.util
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -262,6 +263,7 @@ class WeightDisplaySourceGuardTest {
             "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt",
             "com/devil/phoenixproject/presentation/components/InsightCards.kt",
             "com/devil/phoenixproject/presentation/util/SmartInsightsWeightText.kt",
+            "com/devil/phoenixproject/presentation/components/RoutineExerciseDetailText.kt",
         )
         val cableArg = Regex("""(?:formatDisplayWeight|toDisplayWeight)\([^)]*cableCount""")
         val violations = callSites.mapNotNull { path ->
@@ -295,6 +297,31 @@ class WeightDisplaySourceGuardTest {
         assertTrue(
             violations.isEmpty(),
             "GUARD VIOLATION: Smart Insights weight text must follow the profile unit. $violations",
+        )
+    }
+
+    @Test
+    fun routineExerciseRows_formatSetWeightWithoutTruncating() {
+        val source = readSourceFile("com/devil/phoenixproject/presentation/components/RoutineExerciseDetailText.kt")
+            ?: error("RoutineExerciseDetailText.kt not found")
+        assertTrue(
+            source.contains("WeightDisplayFormatter.formatDisplayWeight(weightPerCableKg, weightUnit)"),
+            "Routine rows must format set weight through WeightDisplayFormatter.formatDisplayWeight",
+        )
+        assertFalse(
+            source.contains(".toInt()"),
+            "Routine rows must not truncate a converted set weight with toInt()",
+        )
+        val setWeightLabel = "\"kg\" else \"lbs\""
+        val progressionLabel = "\"kg\" else \"lb\""
+        assertTrue(
+            source.contains(setWeightLabel),
+            "Routine row set-weight label stays lbs",
+        )
+        assertEquals(
+            4,
+            Regex(Regex.escape(progressionLabel)).findAll(source).count(),
+            "Progression labels stay lb",
         )
     }
 

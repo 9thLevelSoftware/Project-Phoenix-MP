@@ -13,12 +13,15 @@ def workflow(name: str) -> str:
 
 class ReleaseWorkflowContracts(unittest.TestCase):
     def test_ios_release_konan_cache_follows_gradle_version_inputs(self) -> None:
+        ci_text = workflow("ci-tests.yml")
         ci_keys = re.findall(
-            r"(?m)^[ ]+key: \$\{\{ runner\.os \}\}-konan-\$\{\{ hashFiles\([^)]+\) \}\}$",
-            workflow("ci-tests.yml"),
+            r"(?m)^[ ]+key: \$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-konan-\$\{\{ hashFiles\([^)]+\) \}\}$",
+            ci_text,
         )
         self.assertGreaterEqual(len(ci_keys), 1)
         expected_key = ci_keys[0].strip()
+        restore_prefix = "restore-keys: |\n            ${{ runner.os }}-${{ runner.arch }}-konan-\n"
+        self.assertEqual(ci_text.count(restore_prefix), len(ci_keys))
         self.assertIn("gradle/libs.versions.toml", expected_key)
         self.assertIn("**/*.gradle*", expected_key)
         self.assertIn("**/gradle-wrapper.properties", expected_key)
@@ -33,7 +36,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertIn("path: ~/.konan", text)
                 self.assertRegex(text, r"uses: actions/cache@[0-9a-f]{40}")
                 self.assertIn(expected_key, text)
-                self.assertIn("restore-keys: |\n            ${{ runner.os }}-konan-\n", text)
+                self.assertIn(restore_prefix, text)
                 self.assertNotRegex(text, r"konan-\d+\.\d+\.\d+")
 
     def test_ios_archives_use_xcode_26_sdk(self) -> None:
@@ -173,7 +176,16 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     "    if: ${{ !cancelled() && needs.tests.result != 'failure' }}\n",
                     text,
                 )
-        self.assertIn("ref: ${{ needs.tests.outputs.sha }}", workflow("release-all.yml"))
+        release_all = workflow("release-all.yml")
+        self.assertIn("ref: ${{ needs.tests.outputs.sha }}", release_all)
+        # The test gate must check out the dispatched SHA, not the moving main branch.
+        self.assertIn(
+            "    uses: ./.github/workflows/release-tests.yml\n"
+            "    with:\n"
+            "      ref: ${{ github.sha }}\n",
+            release_all,
+        )
+        self.assertNotIn("ref: main\n", release_all)
         self.assertEqual(
             workflow("release-all-existing.yml").count(
                 "source_ref: ${{ needs.prepare-release.outputs.sha }}"
@@ -263,6 +275,27 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertIn("Stage and promote", text)
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
+
+    def test_ci_host_unit_tests_share_one_gradle_invocation(self) -> None:
+        text = workflow("ci-tests.yml")
+        job = re.search(
+            r"(?ms)^  unit-tests:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", text
+        )
+        self.assertIsNotNone(job)
+        body = job.group("body")
+        combined = (
+            "run: ./gradlew -Pskip.supabase.check=true "
+            ":shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue\n"
+        )
+        self.assertEqual(body.count(combined), 1)
+        self.assertNotIn("Run shared module unit tests", body)
+        self.assertNotIn("Run androidApp unit tests", body)
+        self.assertNotIn("continue-on-error", body)
+        self.assertIn("name: Upload test results\n        if: always()", body)
+        self.assertIn("shared/build/test-results/", body)
+        self.assertIn("androidApp/build/test-results/", body)
+        self.assertIn("check_name: 'Shared Module Test Results'", body)
+        self.assertIn("check_name: 'Android App Unit Test Results'", body)
 
     def test_ci_path_filter_still_runs_for_sealed_backend_handoff_and_qa_docs(self) -> None:
         text = workflow("ci-tests.yml")

@@ -96,15 +96,14 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         return flow.asStateFlow()
     }
 
-    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> = completedSets.values
-        .filter { sessionExerciseIds[it.sessionId] == exerciseId }
-        .sortedByDescending { it.completedAt }
-
     // profileId is accepted to match the interface; this fake does not model
     // per-session profiles, so profile scoping is exercised by the SQL-backed
     // repository, not here.
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> {
-        val recent = getCompletedSetsForExercise(exerciseId).filter { it.sessionId !in deletedSessionIds }
+        val recent = completedSets.values
+            .filter { sessionExerciseIds[it.sessionId] == exerciseId }
+            .sortedByDescending { it.completedAt }
+            .filter { it.sessionId !in deletedSessionIds }
         return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
     }
 

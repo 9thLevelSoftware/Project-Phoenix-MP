@@ -138,8 +138,7 @@ fun RestTimerCard(
     currentExerciseIndex: Int? = null,
     totalExercises: Int? = null,
     weightUnit: WeightUnit = WeightUnit.KG,
-    formatWeight: ((Float) -> String)? = null,
-    formatWeightWithUnit: ((Float, WeightUnit) -> String)? = null,
+    formatWeightWithUnit: (Float, WeightUnit) -> String,
     isSupersetTransition: Boolean = false,
     supersetLabel: String? = null,
     // Issue #297, #228: Rest timer controls
@@ -431,7 +430,6 @@ fun RestTimerCard(
                     offer = dropSetOffer,
                     weightUnit = weightUnit,
                     formatWeightWithUnit = formatWeightWithUnit,
-                    formatWeight = formatWeight,
                     onAcceptDropSet = onAcceptDropSet,
                     onDeclineDropSet = onDeclineDropSet,
                 )
@@ -498,7 +496,7 @@ fun RestTimerCard(
                     activeRackItemIds = activeRackItemIds,
                     behaviorOverrides = behaviorOverrides,
                     weightUnit = weightUnit,
-                    formatWeight = formatWeightWithUnit ?: { _, _ -> "" },
+                    formatWeight = formatWeightWithUnit,
                     onSelectionChange = onRackSelectionChange,
                     onBehaviorOverrideChange = onRackBehaviorOverrideChange,
                 )
@@ -562,7 +560,7 @@ fun RestTimerCard(
                             )
                         } else {
                             // Non-Echo modes: Show weight adjuster
-                            if (nextExerciseWeight != null && formatWeightWithUnit != null) {
+                            if (nextExerciseWeight != null) {
                                 val maxWeightKg = maxWeightPerCableKg
                                 // Issue #266/#410: weightStepKg now comes from parameter
 
@@ -724,8 +722,7 @@ private fun formatRestTime(seconds: Int): String {
 private fun DropSetOfferCard(
     offer: DropSetOfferUiState,
     weightUnit: WeightUnit,
-    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
-    formatWeight: ((Float) -> String)?,
+    formatWeightWithUnit: (Float, WeightUnit) -> String,
     onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit,
     onDeclineDropSet: (RestActionIdentity) -> Unit,
 ) {
@@ -741,7 +738,6 @@ private fun DropSetOfferCard(
                 identity = identity,
                 weightUnit = weightUnit,
                 formatWeightWithUnit = formatWeightWithUnit,
-                formatWeight = formatWeight,
                 onAcceptDropSet = onAcceptDropSet,
                 onDeclineDropSet = onDeclineDropSet,
             )
@@ -752,7 +748,6 @@ private fun DropSetOfferCard(
                     offer.acceptedCandidate.weightPerCableKg,
                     weightUnit,
                     formatWeightWithUnit,
-                    formatWeight,
                 )
                 val waitText = when (offer.waitState) {
                     DropSetRetryWaitState.PREPARING_TRAINER ->
@@ -811,7 +806,6 @@ private fun DropSetOfferCard(
                                     accepted.weightPerCableKg,
                                     weightUnit,
                                     formatWeightWithUnit,
-                                    formatWeight,
                                 ),
                             ),
                             style = MaterialTheme.typography.bodyMedium,
@@ -830,8 +824,7 @@ private fun UnresolvedDropSetOffer(
     offer: DropSetOfferUiState.Unresolved,
     identity: RestActionIdentity,
     weightUnit: WeightUnit,
-    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
-    formatWeight: ((Float) -> String)?,
+    formatWeightWithUnit: (Float, WeightUnit) -> String,
     onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit,
     onDeclineDropSet: (RestActionIdentity) -> Unit,
 ) {
@@ -873,7 +866,6 @@ private fun UnresolvedDropSetOffer(
                     candidate.weightPerCableKg,
                     weightUnit,
                     formatWeightWithUnit,
-                    formatWeight,
                 )
                 val selected = selection == candidate.percentage
                 val description = if (candidate.enabled) {
@@ -950,8 +942,5 @@ private fun UnresolvedDropSetOffer(
 private fun formatDropSetWeight(
     weightPerCableKg: Float,
     weightUnit: WeightUnit,
-    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
-    formatWeight: ((Float) -> String)?,
-): String = formatWeightWithUnit?.invoke(weightPerCableKg, weightUnit)
-    ?: formatWeight?.invoke(weightPerCableKg)
-    ?: "$weightPerCableKg kg"
+    formatWeightWithUnit: (Float, WeightUnit) -> String,
+): String = formatWeightWithUnit(weightPerCableKg, weightUnit)

@@ -459,6 +459,9 @@ fun WorkoutTab(
                             },
                             addExerciseLabel = stringResource(Res.string.add_exercise),
                             holdAutoContinue = holdAutoContinue,
+                            // Issue #1226: the terminal routine summary is held — the Compose
+                            // auto-continue countdown (scheduler #3 of 3) must be inert there.
+                            isTerminalSummary = state.isTerminalRoutineSummary,
                         )
 
                         if (showExerciseTagPicker && summarySessionId != null) {
@@ -642,7 +645,6 @@ fun WorkoutTab(
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
-                        formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410
                         // KD-9: rest-screen weight slider is bounded by the connected trainer.

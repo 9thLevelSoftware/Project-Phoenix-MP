@@ -34,6 +34,7 @@ import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.estimatedOneRepMaxPerCableOrNull
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
+import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -855,7 +856,7 @@ private fun SessionHistoryRow(
                 ) {
                     DetailItem("Mode", session.mode)
                     DetailItem("Total Reps", session.workingReps.toString())
-                    DetailItem("Duration", formatDuration(session.duration))
+                    DetailItem("Duration", DurationFormatter.formatDuration(session.duration))
                 }
             }
         }
@@ -888,9 +889,4 @@ private enum class TimeRange(val label: String) {
     DAYS_90("90d"),
     YEAR_1("1y"),
     ALL("All"),
-}
-
-private fun formatDuration(durationMs: Long): String {
-    val minutes = durationMs / 60000
-    return if (minutes > 0) "${minutes}min" else "<1min"
 }

@@ -5,7 +5,6 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
-import kotlin.math.roundToInt
 
 /**
  * The single source of truth for how a load is rendered on the reporting surfaces
@@ -63,15 +62,19 @@ object AchievedLoadPresentation {
      * Set Summary primary stat. Echo is explicitly labelled "Peak load" because it is a
      * measured peak; a fixed-load set keeps "Set Weight". The unit suffix disappears with the
      * value when there is no measurement, so an unavailable row never shows a stray "(lbs/cable)".
+     *
+     * The number uses [WeightDisplayFormatter.formatDisplayWeight], the same formatter as Home
+     * and History: one decimal when the display value is fractional, a bare whole number otherwise.
      */
     fun setSummaryPrimary(summary: WorkoutState.SetSummary, weightUnit: WeightUnit): SetSummaryPrimary {
         val unitLabel = unitLabel(weightUnit)
         if (!summary.isEchoMode) {
             return SetSummaryPrimary(
                 label = "Set Weight",
-                valueText = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, weightUnit)
-                    .roundToInt()
-                    .toString(),
+                valueText = WeightDisplayFormatter.formatDisplayWeight(
+                    summary.configuredWeightKgPerCable,
+                    weightUnit,
+                ),
                 unitText = "($unitLabel/cable)",
             )
         }
@@ -79,7 +82,7 @@ object AchievedLoadPresentation {
             ?: return SetSummaryPrimary(label = "Peak load", valueText = LOAD_UNAVAILABLE, unitText = "")
         return SetSummaryPrimary(
             label = "Peak load",
-            valueText = WeightDisplayFormatter.toDisplayWeight(achievedEchoLoadKg, weightUnit).roundToInt().toString(),
+            valueText = WeightDisplayFormatter.formatDisplayWeight(achievedEchoLoadKg, weightUnit),
             unitText = "($unitLabel/cable)",
         )
     }

@@ -70,16 +70,6 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `getCompletedSetsForExercise filters by session exercise`() = runTest {
-        insertCompletedSet(completedSet("cset-1", "session-1", setNumber = 1))
-        insertCompletedSet(completedSet("cset-2", "session-1", setNumber = 2))
-
-        val sets = repository.getCompletedSetsForExercise("bench")
-
-        assertEquals(2, sets.size)
-    }
-
-    @Test
     fun `commitCompletedSet round-trips setEndReason STALL_FAILURE`() = runTest {
         val completed = completedSet("cset-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE)
         commitCompletedSet(completed)

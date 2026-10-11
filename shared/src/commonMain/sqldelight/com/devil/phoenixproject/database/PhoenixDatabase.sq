@@ -2424,12 +2424,6 @@ ORDER BY session_id ASC, set_number ASC, completed_at ASC;
 selectCompletedSetById:
 SELECT * FROM CompletedSet WHERE id = ?;
 
-selectCompletedSetsForExercise:
-SELECT cs.* FROM CompletedSet cs
-INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
-WHERE ws.exerciseId = ?
-ORDER BY cs.completed_at DESC;
-
 selectRecentCompletedSetsForExercise:
 SELECT
     cs.id,
@@ -2614,10 +2608,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 insertCycleDayIgnore:
 INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-insertCycleProgressIgnore:
-INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCycleProgressionIgnore:
 INSERT OR IGNORE INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)

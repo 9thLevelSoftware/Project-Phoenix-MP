@@ -138,10 +138,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
     override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> = queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet)
         .asFlow().mapToList(Dispatchers.IO)
 
-    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
-        queries.selectCompletedSetsForExercise(exerciseId, ::mapToCompletedSet).executeAsList()
-    }
-
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
         val routineSessionBySessionId = mutableMapOf<String, String?>()
         val sets = queries.selectRecentCompletedSetsForExercise(
