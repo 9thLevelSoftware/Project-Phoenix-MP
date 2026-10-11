@@ -119,15 +119,19 @@ class ExerciseQuickHistoryCardWiringTest {
         val src = readHistoryCardSource()
         // Duration must be formatted as M:SS
         assertTrue(
-            src.contains("formatDuration"),
-            "ExerciseQuickHistoryCard must have a formatDuration helper for M:SS display.",
+            src.contains("DurationFormatter.formatDuration"),
+            "ExerciseQuickHistoryCard must format durations with the shared M:SS helper.",
         )
         assertTrue(
             src.contains("durationMs") || src.contains("duration"),
             "ExerciseQuickHistoryCard must reference duration field.",
         )
+        val formatter = readProjectFile(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/DurationFormatter.kt",
+        )
+        assertNotNull(formatter, "Shared M:SS duration formatter must live in DurationFormatter.kt.")
         assertTrue(
-            src.contains("padStart(2, '0')"),
+            formatter.contains("padStart(2, '0')"),
             "Duration formatting must pad seconds to 2 digits (e.g., '0:42' not '0:2').",
         )
     }
