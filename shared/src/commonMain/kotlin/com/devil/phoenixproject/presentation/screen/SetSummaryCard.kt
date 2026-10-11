@@ -291,7 +291,6 @@ fun SetSummaryCard(
                 SummaryStatCard(
                     label = "Duration",
                     value = durationFormatted,
-                    unit = "sec",
                     icon = Icons.Default.Timer,
                     modifier = Modifier.weight(1f),
                 )
