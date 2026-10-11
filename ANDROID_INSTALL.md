@@ -116,9 +116,9 @@ If you installed the APK:
 
 The app includes a built-in backup feature:
 1. Go to **Settings** tab in the app
-2. Tap **Export Data** to save your workout history
+2. Tap **Backup All Data** to save a full personal-data backup
 3. Store the backup file safely
-4. Use **Import Data** to restore on a new device
+4. Tap **Restore from Backup** to restore it on a new device
 
 ---
 

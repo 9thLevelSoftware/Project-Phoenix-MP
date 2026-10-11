@@ -9935,9 +9935,19 @@ class DWSMWorkoutLifecycleTest {
             harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
             advanceTimeBy(1_000)
             // The completion job makes the first durable attempt before summary work;
-            // summary-skipped flow retries it automatically. Both writes must retain
+            // the proceed flow retries it automatically. Both writes must retain
             // the single generated transition identity.
             val firstAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.first().document
+            if (harness.coordinator.workoutState.value is WorkoutState.SetSummary) {
+                // Issue #1226: the final set's summary is held for every summary preference
+                // (it used to be skipped under Automatic), so the failed replace is retried
+                // by the user's Complete Routine action instead of the summary-skip flow.
+                val engine = harness.activeSessionEngine
+                val completion = assertNotNull(engine.claimedCompletion(engine.currentExecutionLeaseForTest()))
+                engine.flowDelegate?.proceedFromSummary(completion)
+                advanceTimeBy(1_000)
+                runCurrent()
+            }
             val retryAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
             assertEquals(firstAttempt.restTransitionPlan, retryAttempt.restTransitionPlan)
             assertEquals(1, transitionCalls)

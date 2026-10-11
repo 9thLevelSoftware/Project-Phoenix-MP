@@ -459,6 +459,9 @@ fun WorkoutTab(
                             },
                             addExerciseLabel = stringResource(Res.string.add_exercise),
                             holdAutoContinue = holdAutoContinue,
+                            // Issue #1226: the terminal routine summary is held — the Compose
+                            // auto-continue countdown (scheduler #3 of 3) must be inert there.
+                            isTerminalSummary = state.isTerminalRoutineSummary,
                         )
 
                         if (showExerciseTagPicker && summarySessionId != null) {
