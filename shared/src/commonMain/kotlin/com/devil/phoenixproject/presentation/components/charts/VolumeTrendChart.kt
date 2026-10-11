@@ -42,6 +42,7 @@ import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.util.UnitConverter
+import kotlin.math.roundToInt
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
@@ -435,10 +436,11 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
 
 /**
  * Format volume label for Y-axis.
- * Values of 1000 and above use a compact "Nk" form; smaller values are whole numbers.
+ * Values of 1000 and above use a compact "Nk" form, rounded to the nearest thousand.
+ * Smaller values are whole numbers, truncated toward zero.
  */
-private fun formatVolumeLabel(volume: Float): String =
-    if (volume >= 1000) "${(volume / 1000).toInt()}k" else "${volume.toInt()}"
+internal fun formatVolumeLabel(volume: Float): String =
+    if (volume >= 1000) "${(volume / 1000).roundToInt()}k" else "${volume.toInt()}"
 
 @Composable
 private fun EmptyVolumeTrendState(modifier: Modifier = Modifier) {
