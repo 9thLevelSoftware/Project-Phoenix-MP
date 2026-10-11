@@ -199,7 +199,7 @@ fun InsightsTab(
 
         // This Week Summary Card - week-over-week comparison
         item {
-            InsightContextBlock("Summary of completed sessions and personal records.", selectedPeriod.label, "Check if this period is on track before changing your plan.")
+            InsightContextBlock("Summary of completed sessions and personal records.", "Last 7 days vs prior 7 days", "Check if this week is on track before changing your plan.")
             ResponsiveCardWrapper {
                 ThisWeekSummaryCard(
                     workoutSessions = workoutSessions,
@@ -238,7 +238,7 @@ fun InsightsTab(
 
         // 2. Workout Consistency Gauge (Replaces circular progress)
         item {
-            InsightContextBlock("Session frequency consistency score.", selectedPeriod.label, "Inconsistency usually explains stalled progress more than load choices.")
+            InsightContextBlock("Session frequency consistency score.", "Last 30 days", "Inconsistency usually explains stalled progress more than load choices.")
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
                     workoutSessions = workoutSessions,
