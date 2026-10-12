@@ -35,6 +35,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
+import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
@@ -172,8 +173,7 @@ fun SetSummaryCard(
     val setWeightLabel = primary.label
     val setWeightValueText: String = primary.valueText
     val setWeightUnitText: String = primary.unitText
-    val durationSeconds = (summary.durationMs / 1000).toInt()
-    val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
+    val durationFormatted = DurationFormatter.formatDuration(summary.durationMs)
 
     // Peak/Avg forces - take max of both cables for display
     // Force values are per-cable measurements; primary display stays per-cable.
