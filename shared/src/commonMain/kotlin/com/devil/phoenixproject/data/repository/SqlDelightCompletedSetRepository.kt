@@ -239,16 +239,6 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         ).executeAsOne() > 0L
     }
 
-    override suspend fun updateRpe(setId: String, rpe: Int) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
-                queries.updateCompletedSetRpe(logged_rpe = rpe.toLong(), id = setId)
-                sessionId?.let(queries::markWorkoutComponentDirty)
-            }
-        }
-    }
-
     override suspend fun markAsPr(setId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {

@@ -181,12 +181,6 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
             }
     }
 
-    override suspend fun updateRpe(setId: String, rpe: Int) {
-        val current = completedSets[setId] ?: return
-        completedSets[setId] = current.copy(loggedRpe = rpe)
-        updateCompletedFlow(current.sessionId)
-    }
-
     override suspend fun markAsPr(setId: String) {
         beforeMarkAsPr(setId)
         val current = completedSets[setId] ?: return

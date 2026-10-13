@@ -57,15 +57,13 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
-    fun `updateRpe and markAsPr persist on an inserted completed set`() = runTest {
+    fun `markAsPr persists on an inserted completed set`() = runTest {
         val completed = completedSet("cset-1", "session-1", setNumber = 1)
         insertCompletedSet(completed)
 
-        repository.updateRpe("cset-1", 8)
         repository.markAsPr("cset-1")
 
         val updated = repository.getCompletedSets("session-1").first()
-        assertEquals(8, updated.loggedRpe)
         assertTrue(updated.isPr)
     }
 
