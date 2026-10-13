@@ -507,17 +507,170 @@ tasks.register("validateSchemaManifest") {
 
         // ── 1. Parse CREATE TABLE blocks from PhoenixDatabase.sq ──────────
         val sqText = sqFile.readText()
-        val createTableRegex = Regex(
-            """CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\)""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
-        )
+
+        fun isSqlIdentifierChar(char: Char): Boolean =
+            char == '_' || char in '0'..'9' || char in 'A'..'Z' || char in 'a'..'z'
+
+        fun isSqlWhitespace(char: Char): Boolean =
+            char == ' ' || char == '\t' || char == '\n' || char == '\u000B' || char == '\u000C' || char == '\r'
+
+        /** `\s*` when [required] is false, `\s+` when it is true. -1 if required whitespace is missing. */
+        fun skipSqlWhitespace(text: String, index: Int, required: Boolean): Int {
+            var i = index
+            if (required) {
+                if (i >= text.length || !isSqlWhitespace(text[i])) return -1
+                i++
+            }
+            while (i < text.length && isSqlWhitespace(text[i])) i++
+            return i
+        }
+
+        /**
+         * Index just past a quoted literal or comment that begins at [index], or -1 when
+         * [index] is not one. Single quotes treat `''` as an escaped quote, matching
+         * [splitTopLevelSql]. Double quotes end at the first `"`.
+         */
+        fun skipSqlLiteralOrComment(text: String, index: Int): Int {
+            if (index >= text.length) return -1
+            val char = text[index]
+            if (char == '-' && index + 1 < text.length && text[index + 1] == '-') {
+                val newline = text.indexOf('\n', index + 2)
+                return if (newline < 0) text.length else newline
+            }
+            if (char == '/' && index + 1 < text.length && text[index + 1] == '*') {
+                val end = text.indexOf("*/", index + 2)
+                return if (end < 0) text.length else end + 2
+            }
+            if (char == '\'' || char == '"') {
+                var i = index + 1
+                while (i < text.length) {
+                    if (text[i] == char) {
+                        if (char == '\'' && i + 1 < text.length && text[i + 1] == '\'') {
+                            i += 2
+                            continue
+                        }
+                        return i + 1
+                    }
+                    i++
+                }
+                return text.length
+            }
+            return -1
+        }
+
+        fun matchSqlKeyword(text: String, index: Int, keyword: String): Int {
+            val end = index + keyword.length
+            if (end > text.length) return -1
+            if (!text.regionMatches(index, keyword, 0, keyword.length, ignoreCase = true)) return -1
+            if (end < text.length && isSqlIdentifierChar(text[end])) return -1
+            if (index > 0 && isSqlIdentifierChar(text[index - 1])) return -1
+            return end
+        }
+
+        /**
+         * Closing `)` that balances the `(` at [openIndex]. Parentheses inside quotes and
+         * comments (`--` and block comments) do not change depth, so `DEFAULT (x)`,
+         * `CHECK (...)`, and `REFERENCES t(id)` stay inside the table body.
+         */
+        fun indexOfBalancedCloseParen(text: String, openIndex: Int): Int {
+            if (openIndex >= text.length || text[openIndex] != '(') return -1
+            var depth = 0
+            var i = openIndex
+            while (i < text.length) {
+                val skipped = skipSqlLiteralOrComment(text, i)
+                if (skipped >= 0) {
+                    i = skipped
+                    continue
+                }
+                when (text[i]) {
+                    '(' -> {
+                        depth++
+                        i++
+                    }
+                    ')' -> {
+                        depth--
+                        if (depth == 0) return i
+                        i++
+                    }
+                    else -> i++
+                }
+            }
+            return -1
+        }
+
+        /**
+         * CREATE TABLE statements (optional IF NOT EXISTS) outside quotes and comments,
+         * each with the balanced parenthesized body. Shared by the .sq, migration, and
+         * SchemaTableOperation provenance extractors.
+         */
+        fun extractCreateTableBodies(text: String): List<Pair<String, String>> {
+            val tables = mutableListOf<Pair<String, String>>()
+            var i = 0
+            while (i < text.length) {
+                val skipped = skipSqlLiteralOrComment(text, i)
+                if (skipped >= 0) {
+                    i = skipped
+                    continue
+                }
+                val afterCreate = matchSqlKeyword(text, i, "CREATE")
+                if (afterCreate < 0) {
+                    i++
+                    continue
+                }
+                val afterCreateSpace = skipSqlWhitespace(text, afterCreate, required = true)
+                if (afterCreateSpace < 0) {
+                    i = afterCreate
+                    continue
+                }
+                val afterTable = matchSqlKeyword(text, afterCreateSpace, "TABLE")
+                if (afterTable < 0) {
+                    i = afterCreate
+                    continue
+                }
+                var cursor = skipSqlWhitespace(text, afterTable, required = true)
+                if (cursor < 0) {
+                    i = afterTable
+                    continue
+                }
+                val afterIf = matchSqlKeyword(text, cursor, "IF")
+                if (afterIf >= 0) {
+                    val afterIfSpace = skipSqlWhitespace(text, afterIf, required = true)
+                    val afterNot = if (afterIfSpace >= 0) matchSqlKeyword(text, afterIfSpace, "NOT") else -1
+                    val afterNotSpace = if (afterNot >= 0) skipSqlWhitespace(text, afterNot, required = true) else -1
+                    val afterExists = if (afterNotSpace >= 0) matchSqlKeyword(text, afterNotSpace, "EXISTS") else -1
+                    val afterExistsSpace =
+                        if (afterExists >= 0) skipSqlWhitespace(text, afterExists, required = true) else -1
+                    if (afterExistsSpace >= 0) cursor = afterExistsSpace
+                }
+                if (cursor >= text.length || !isSqlIdentifierChar(text[cursor])) {
+                    i = if (cursor > i) cursor else i + 1
+                    continue
+                }
+                val nameStart = cursor
+                while (cursor < text.length && isSqlIdentifierChar(text[cursor])) cursor++
+                val table = text.substring(nameStart, cursor)
+                val open = skipSqlWhitespace(text, cursor, required = false)
+                if (open >= text.length || text[open] != '(') {
+                    i = if (open > i) open else i + 1
+                    continue
+                }
+                val close = indexOfBalancedCloseParen(text, open)
+                if (close < 0) {
+                    i = open + 1
+                    continue
+                }
+                tables.add(table to text.substring(open + 1, close))
+                i = close + 1
+            }
+            return tables
+        }
+
         // Map<TableName, Set<ColumnName>>
         val sqColumns = mutableMapOf<String, MutableSet<String>>()
-        for (match in createTableRegex.findAll(sqText)) {
-            val table = match.groupValues[1]
+        for ((table, body) in extractCreateTableBodies(sqText)) {
             // Skip temp/rebuild tables (used in migrations, not in final schema)
             if (table.contains("_temp") || table.contains("_rebuild") || table.contains("_new") || table.contains("_v")) continue
-            sqColumns[table] = extractSqlColumnNames(stripSqlLineComments(match.groupValues[2])).toMutableSet()
+            sqColumns[table] = extractSqlColumnNames(stripSqlLineComments(body)).toMutableSet()
         }
 
         // ── 2. Parse ALTER TABLE ADD COLUMN from .sqm files ─────────────────
@@ -540,13 +693,12 @@ tasks.register("validateSchemaManifest") {
             }
 
             // CREATE TABLE in migrations (covers all columns of the created table)
-            for (ctMatch in createTableRegex.findAll(sqmText)) {
-                val table = ctMatch.groupValues[1]
+            for ((table, body) in extractCreateTableBodies(sqmText)) {
                 // Skip temp/rebuild/versioned tables
                 if (table.contains("_temp") || table.contains("_rebuild") || table.contains("_new") || table.contains("_v")) continue
                 // Only track if this is a "real" table that also exists in the .sq
                 if (!sqColumns.containsKey(table)) continue
-                val cols = extractSqlColumnNames(stripSqlLineComments(ctMatch.groupValues[2]))
+                val cols = extractSqlColumnNames(stripSqlLineComments(body))
                 migrationCreatedTables.getOrPut(table) { mutableSetOf() }.addAll(cols)
             }
         }
@@ -572,11 +724,9 @@ tasks.register("validateSchemaManifest") {
             val table = m.groupValues[1]
             val createBody = m.groupValues[2]
             // Extract columns from the CREATE TABLE body inside the raw string
-            val innerMatch = createTableRegex.find(createBody)
-            if (innerMatch != null) {
-                manifestTableColumns[table] =
-                    extractSqlColumnNames(stripSqlLineComments(innerMatch.groupValues[2])).toMutableSet()
-            }
+            val inner = extractCreateTableBodies(createBody).firstOrNull() ?: continue
+            manifestTableColumns[table] =
+                extractSqlColumnNames(stripSqlLineComments(inner.second)).toMutableSet()
         }
 
         // ── 5. Verify every .sq column has provenance ───────────────────────
