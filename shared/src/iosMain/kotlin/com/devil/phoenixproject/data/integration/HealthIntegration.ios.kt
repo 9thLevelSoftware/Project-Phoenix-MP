@@ -175,6 +175,7 @@ actual class HealthIntegration : HealthWorkoutWriter {
                     limit = BODY_MASS_QUERY_LIMIT,
                     sortDescriptors = sortDescriptors,
                 ) { _, samples, error ->
+                    if (!continuation.isActive) return@HKSampleQuery
                     if (error != null) {
                         log.e { "HealthKit body mass query error: ${error.localizedDescription}" }
                         continuation.resume(
@@ -198,6 +199,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 }
                 healthStore.executeQuery(query)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.e(e) { "Failed to read latest HealthKit scale body weight" }
             Result.failure(e)
@@ -234,7 +237,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 healthStore.requestAuthorizationToShareTypes(
                     typesToShare = writeTypes,
                     readTypes = readTypes,
-                    completion = { success: Boolean, error: NSError? ->
+                    completion = authCompletion@{ success: Boolean, error: NSError? ->
+                        if (!continuation.isActive) return@authCompletion
                         if (error != null) {
                             log.e {
                                 "HealthKit authorization request error: ${error.localizedDescription}"
@@ -254,6 +258,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
             val granted = hasPermissions()
             log.d { "HealthKit authorization result: permissions granted = $granted" }
             granted
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.e(e) { "Failed to request HealthKit permissions" }
             false
