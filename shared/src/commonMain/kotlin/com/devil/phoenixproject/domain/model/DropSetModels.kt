@@ -51,7 +51,8 @@ fun PlannedSetAttemptState.consumeRepeat(acceptedDrop: Boolean): RepeatConsumpti
     ),
 )
 
-private const val MAX_ACCEPTED_DROPS = 2
+/** Shared cap for accepted drop-set reductions on one logical set. */
+internal const val MAX_ACCEPTED_DROPS = 2
 
 @Serializable
 enum class DropPercentage(val fraction: Float) {

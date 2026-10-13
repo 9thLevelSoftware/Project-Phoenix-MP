@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.DropSetEligibilityResult
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.DropSetIneligibleReason
 import com.devil.phoenixproject.domain.model.DropSetOffer
+import com.devil.phoenixproject.domain.model.MAX_ACCEPTED_DROPS
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
@@ -89,8 +90,4 @@ class DropSetEligibilityPolicy(
         (plannedSetId == null || plannedSetId == live.plannedSetId)
 
     private fun ineligible(reason: DropSetIneligibleReason) = DropSetEligibilityResult.Ineligible(reason)
-
-    private companion object {
-        const val MAX_ACCEPTED_DROPS = 2
-    }
 }
