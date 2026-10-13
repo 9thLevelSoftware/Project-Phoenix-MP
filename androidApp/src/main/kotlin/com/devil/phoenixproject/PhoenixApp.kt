@@ -11,12 +11,15 @@ import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
+import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.applyPersistedApplicationNightMode
 import com.devil.phoenixproject.util.ActivityHolder
 import com.devil.phoenixproject.util.AndroidCrashLog
 import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.util.syncDefaultLocale
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.dsl.module
@@ -28,6 +31,15 @@ open class PhoenixApp :
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         applyPersistedApplicationNightMode(this)
+        // Resource locale is applied later; Locale-default formatting needs the
+        // persisted language as soon as the process starts. Blank keeps the system default.
+        applyPersistedDefaultLocale()
+    }
+
+    private fun applyPersistedDefaultLocale() {
+        val langCode = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
+            .getString(SettingsPreferencesManager.KEY_LANGUAGE, null)
+        syncDefaultLocale(langCode.orEmpty())
     }
 
     override fun onCreate() {
