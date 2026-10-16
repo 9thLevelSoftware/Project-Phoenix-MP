@@ -20,7 +20,7 @@ import kotlin.math.abs
  * 2. Status flag processing (deload debounce, ROM violation callbacks)
  * 3. Issue #210: Position tracking update BEFORE jump validation (cascade prevention)
  * 4. Sample validation (range, load, jump filter)
- * 5. Velocity calculation (raw position delta / time delta)
+ * 5. Firmware velocity (raw firmware velocity divided by 10)
  * 6. EMA smoothing (with cold-start seeding and filtered-sample edge case)
  * 7. WorkoutMetric construction
  *
