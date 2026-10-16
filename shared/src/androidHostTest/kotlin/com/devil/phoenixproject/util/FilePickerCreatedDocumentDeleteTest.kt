@@ -90,6 +90,28 @@ class FilePickerCreatedDocumentDeleteTest {
     }
 
     @Test
+    fun writeFailure_onAnExistingDocument_keepsIt() {
+        // CreateDocument returns the existing document when the user confirms an overwrite.
+        provider = installProvider(openFailure = FileNotFoundException("read-only"), existingSize = 512L)
+
+        val result = saveFilePickerCreatedDocument(context, documentUri, "{}")
+
+        assertNull(result)
+        assertTrue(provider.deletedUris.isEmpty())
+        assertEquals(0, provider.deleteAttempts)
+    }
+
+    @Test
+    fun writeFailure_withAnUnknownSize_keepsTheDocument() {
+        provider = installProvider(openFailure = FileNotFoundException("disk full"), existingSize = null)
+
+        val result = saveFilePickerCreatedDocument(context, documentUri, "{}")
+
+        assertNull(result)
+        assertEquals(0, provider.deleteAttempts)
+    }
+
+    @Test
     fun writeCancellation_deletesTheDocument_andRethrowsCancellation() {
         val cancellation = CancellationException("cancelled")
         provider = installProvider(openFailure = cancellation)
@@ -106,6 +128,7 @@ class FilePickerCreatedDocumentDeleteTest {
         openFailure: Exception? = null,
         returnNullStream: Boolean = false,
         failDelete: Boolean = false,
+        existingSize: Long? = 0L,
     ): FakeFilePickerDocumentsProvider {
         val info = android.content.pm.ProviderInfo().apply {
             authority = this@FilePickerCreatedDocumentDeleteTest.authority
@@ -118,6 +141,7 @@ class FilePickerCreatedDocumentDeleteTest {
         installed.openFailure = openFailure
         installed.returnNullStream = returnNullStream
         installed.failDelete = failDelete
+        installed.existingSize = existingSize
         return installed
     }
 }
@@ -130,6 +154,9 @@ class FakeFilePickerDocumentsProvider : ContentProvider() {
     var openFailure: Exception? = null
     var returnNullStream: Boolean = false
     var failDelete: Boolean = false
+
+    /** Size reported for the document before the write; null reports an unknown size. */
+    var existingSize: Long? = 0L
     var deleteAttempts: Int = 0
     val calls = mutableListOf<String>()
     val deletedUris = mutableListOf<Uri>()
@@ -144,13 +171,18 @@ class FakeFilePickerDocumentsProvider : ContentProvider() {
         selection: String?,
         selectionArgs: Array<out String>?,
         sortOrder: String?,
-    ): Cursor = MatrixCursor(
-        projection ?: arrayOf(
+    ): Cursor {
+        val columns = projection ?: arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-        ),
-    )
+        )
+        val cursor = MatrixCursor(columns)
+        if (columns.contentEquals(arrayOf(DocumentsContract.Document.COLUMN_SIZE))) {
+            cursor.addRow(arrayOf<Any?>(existingSize))
+        }
+        return cursor
+    }
 
     override fun getType(uri: Uri): String = "application/json"
 

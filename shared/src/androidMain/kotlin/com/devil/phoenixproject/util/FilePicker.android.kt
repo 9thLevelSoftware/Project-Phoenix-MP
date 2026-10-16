@@ -20,7 +20,8 @@ private val log = Logger.withTag("FilePicker.Android")
  * ActivityResultContracts.CreateDocument for file saving.
  *
  * CreateDocument inserts the destination before this callback runs. A failed
- * write deletes that empty or partial document.
+ * write deletes that document only when it was empty before the write; when the
+ * user picked an existing file to overwrite, the file is left in place.
  */
 actual class FilePicker {
 
@@ -87,12 +88,14 @@ actual class FilePicker {
 actual fun rememberFilePicker(): FilePicker = remember { FilePicker() }
 
 /**
- * Write [content] to a document CreateDocument already created.
+ * Write [content] to the document CreateDocument returned.
  *
  * Returns the document URI on success. A null output stream or a write
- * exception deletes that document and returns null — the same failure result
- * the saver reported before cleanup. [CancellationException] is rethrown after
- * the best-effort delete, from the write or from the delete.
+ * exception returns null — the same failure result the saver reported before
+ * cleanup. The document is deleted on failure only when the provider reported
+ * it as empty before the write: CreateDocument also returns an existing
+ * document when the user confirms an overwrite, and that file must never be
+ * deleted. [CancellationException] is rethrown after any best-effort delete.
  */
 internal fun saveFilePickerCreatedDocument(
     context: Context,
@@ -100,9 +103,16 @@ internal fun saveFilePickerCreatedDocument(
     content: String,
 ): String? {
     try {
+        val createdEmpty = isEmptyDocument(context, uri)
         writeFilePickerDocumentDeletingPartialOnFailure(
             documentUri = uri.toString(),
-            deleteCreatedDocument = { deleteFilePickerCreatedDocument(context, uri) },
+            deleteCreatedDocument = {
+                if (createdEmpty) {
+                    deleteFilePickerCreatedDocument(context, uri)
+                } else {
+                    log.w { "Keeping $uri after a failed write: it was not reported empty before the write" }
+                }
+            },
         ) {
             // A null stream wrote nothing, but CreateDocument already inserted the row.
             val stream = context.contentResolver.openOutputStream(uri)
@@ -116,6 +126,28 @@ internal fun saveFilePickerCreatedDocument(
         log.w(e) { "Failed to save document $uri" }
         return null
     }
+}
+
+/**
+ * True only when the provider reports [uri] with a size of 0. An unknown size
+ * (no row, a null size or a query error) is treated as not empty, so an
+ * existing file is never deleted on a guess.
+ */
+internal fun isEmptyDocument(context: Context, uri: Uri): Boolean = try {
+    context.contentResolver.query(
+        uri,
+        arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        cursor.moveToFirst() && !cursor.isNull(0) && cursor.getLong(0) == 0L
+    } == true
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    log.w(e) { "Could not read the size of $uri" }
+    false
 }
 
 /**
