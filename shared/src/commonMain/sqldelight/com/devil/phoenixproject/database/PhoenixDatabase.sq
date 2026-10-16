@@ -2492,9 +2492,6 @@ WHERE cs.session_id = :stableSessionId
   AND cs.set_type = :setKind
   AND CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END = :attemptNumber;
 
-updateCompletedSetRpe:
-UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
-
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 

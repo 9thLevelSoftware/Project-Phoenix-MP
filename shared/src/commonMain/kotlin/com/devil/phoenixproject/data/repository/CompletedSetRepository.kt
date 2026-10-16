@@ -75,11 +75,6 @@ interface CompletedSetRepository {
     suspend fun isAttemptDurable(stableSessionId: String, key: LogicalSetKey, attemptNumber: Int): Boolean
 
     /**
-     * Update RPE for a completed set (user logs after the fact).
-     */
-    suspend fun updateRpe(setId: String, rpe: Int)
-
-    /**
      * Mark a completed set as a personal record.
      */
     suspend fun markAsPr(setId: String)
