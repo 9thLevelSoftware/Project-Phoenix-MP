@@ -96,6 +96,7 @@ import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -1709,13 +1710,13 @@ internal fun DropSetRoutineConfigurationCard(
     }
 }
 
-private fun formatDropSetMinWeightInput(
+internal fun formatDropSetMinWeightInput(
     weightKg: Float?,
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
 ): String {
     val display = weightKg?.let { kgToDisplay(it, weightUnit) } ?: return ""
-    return if (display % 1f == 0f) display.toInt().toString() else display.toString()
+    return UnitConverter.formatDecimal(display)
 }
 
 /**
