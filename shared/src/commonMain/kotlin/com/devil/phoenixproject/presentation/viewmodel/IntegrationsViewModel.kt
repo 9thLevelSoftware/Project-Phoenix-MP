@@ -33,6 +33,7 @@ import com.devil.phoenixproject.domain.model.IntegrationSyncResult
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.isIosPlatform
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -434,6 +435,8 @@ class IntegrationsViewModel(
                     val granted = healthIntegration.requestPermissions()
                     applyHealthPermissionResult(provider, profileId, granted)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "Unexpected error toggling health integration" }
                 _uiState.value = _uiState.value.copy(errorMessage = "Health toggle failed: ${e.message}")
