@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
+import com.devil.phoenixproject.data.sync.CanonicalUuid
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -84,17 +85,6 @@ class SqlDelightSyncRepository(
         const val DURATION_SYNC_UNKNOWN = 0L
         const val DURATION_SYNC_KNOWN = 1L
         const val DURATION_SYNC_MALFORMED = 2L
-
-        /**
-         * Generic canonical UUID. Local captures use [generateUUID], portal ids are
-         * UUIDs, and `cycle_routine_*` / blank sentinel rows are neither — so the
-         * known-id feed drops anything that is not canonical before it reaches the
-         * pull request (PR 10 step 7 / R-19). Same pattern as SyncManager's.
-         */
-        val CANONICAL_UUID_REGEX = Regex(
-            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            RegexOption.IGNORE_CASE,
-        )
     }
 
     private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
@@ -2358,11 +2348,15 @@ class SqlDelightSyncRepository(
      * PR 10 step 7 (R-19): distinct UUID-valid portal session ids (grouped
      * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
      * newest-first so the parity cap drops the oldest.
+     *
+     * `cycle_routine_*` and other non-UUID ids are dropped before the pull
+     * request. A matching id keeps its stored spelling; this feed does not
+     * lowercase.
      */
     override suspend fun getKnownPortalSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectKnownPortalSessionIdsByProfile(profileId)
             .executeAsList()
-            .filter { it.matches(CANONICAL_UUID_REGEX) }
+            .filter(CanonicalUuid::matches)
     }
 
     override suspend fun getAllRoutineIds(profileId: String): List<String> = withContext(Dispatchers.IO) {

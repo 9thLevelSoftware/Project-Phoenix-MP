@@ -477,11 +477,6 @@ class SyncManager(
          */
         const val TELEMETRY_SYNC_TIER = "INFERNO"
 
-        private val CANONICAL_UUID_REGEX = Regex(
-            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            RegexOption.IGNORE_CASE,
-        )
-
         private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
     }
 
@@ -1359,7 +1354,7 @@ class SyncManager(
             val outstandingCycleDeletions = trainingCycleRepository
                 ?.getPendingCycleDeletions(userId, profile.id)
                 .orEmpty()
-                .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+                .filter { CanonicalUuid.matches(it.id) }
             // The portal returns no per-PR ack, only `personalRecordsInserted`: dedicated rows
             // that passed its LWW gate. Every PR row a pending profile sends is a tombstone
             // (re-stamped just before this push, so each should pass); fewer written than sent
@@ -2042,7 +2037,7 @@ class SyncManager(
         val pendingCycleDeletions = trainingCycleRepository
             ?.getPendingCycleDeletions(userId, activeProfileId)
             .orEmpty()
-            .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+            .filter { CanonicalUuid.matches(it.id) }
 
         // 1a. Group-complete gather (AF-3). One portal workout = every mobile row that
         // shares a routineSessionId, and the portal's replace_session_children DELETEs
@@ -2281,7 +2276,7 @@ class SyncManager(
         // reach the server's UUID ownership checks.
         val rawRoutines = syncRepository.getFullRoutinesModifiedSince(repairFrom, activeProfileId)
         val routines = rawRoutines.filter { routine ->
-            CANONICAL_UUID_REGEX.matches(routine.id) && !exclusions.excludesRoutine(routine.id)
+            CanonicalUuid.matches(routine.id) && !exclusions.excludesRoutine(routine.id)
         }
         val droppedRoutineCount = rawRoutines.size - routines.size
         if (droppedRoutineCount > 0) {
@@ -2292,7 +2287,7 @@ class SyncManager(
 
         // 4a. Gather soft-deleted routine IDs for server-side deletion propagation.
         val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(repairFrom, activeProfileId)
-            .filter { CANONICAL_UUID_REGEX.matches(it) && !exclusions.excludesRoutine(it) }
+            .filter { CanonicalUuid.matches(it) && !exclusions.excludesRoutine(it) }
         if (deletedRoutineIds.isNotEmpty()) {
             Logger.d("SyncManager") {
                 "Push payload: ${deletedRoutineIds.size} deleted routine(s) to propagate"
@@ -2322,7 +2317,7 @@ class SyncManager(
             val sanitizedDays = ctx.cycle.days.map { day ->
                 val routineId = day.routineId
                 if (routineId != null &&
-                    (!CANONICAL_UUID_REGEX.matches(routineId) || exclusions.excludesRoutine(routineId))
+                    (!CanonicalUuid.matches(routineId) || exclusions.excludesRoutine(routineId))
                 ) {
                     droppedCycleRoutineRefs++
                     day.copy(routineId = null)
@@ -3811,7 +3806,7 @@ class SyncManager(
             .getRoutineIdsNeedingDurationBackfill(mergeProfileId)
             // Template-derived cycle routines are local-only and cannot converge through
             // the portal's UUID contract. They must not pin every later pull to lastSync=0.
-            .filter(CANONICAL_UUID_REGEX::matches)
+            .filter(CanonicalUuid::matches)
             .toHashSet()
         // Legacy rows require one complete server snapshot to establish whether duration was
         // explicitly null or merely absent from older sync payloads. Keep routine IDs in parity
@@ -3858,7 +3853,7 @@ class SyncManager(
         // in knownEntityIds fails UUID validation. Filter non-canonical UUIDs
         // client-side before sending.
         fun filterUuids(ids: List<String>, label: String): List<String> {
-            val filtered = ids.filter { CANONICAL_UUID_REGEX.matches(it) }
+            val filtered = ids.filter { CanonicalUuid.matches(it) }
             val dropped = ids.size - filtered.size
             if (dropped > 0) {
                 Logger.w("SyncManager") {
@@ -4120,7 +4115,7 @@ class SyncManager(
 
             for (record in pullResponse.personalRecords) {
                 val id = record.id
-                if (CANONICAL_UUID_REGEX.matches(id) && knownPersonalRecordIdSet.add(id)) {
+                if (CanonicalUuid.matches(id) && knownPersonalRecordIdSet.add(id)) {
                     knownPersonalRecordIds.addFirst(id)
                 }
             }

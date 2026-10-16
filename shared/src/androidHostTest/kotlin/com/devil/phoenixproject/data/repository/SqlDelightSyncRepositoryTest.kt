@@ -1288,6 +1288,55 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `getKnownPortalSessionIds drops non-uuids and keeps stored spelling`() = runTest {
+        val uppercase = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        val lowercase = "12345678-1234-4234-8234-123456789abc"
+        insertHistoricalSession(
+            id = uppercase,
+            timestamp = 300L,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        insertHistoricalSession(
+            id = "opaque-row",
+            timestamp = 200L,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = "cycle_routine_$lowercase",
+        )
+        insertHistoricalSession(
+            id = "grouped-child",
+            timestamp = 100L,
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = lowercase,
+        )
+
+        assertEquals(
+            listOf(uppercase, lowercase),
+            repository.getKnownPortalSessionIds("active-profile"),
+        )
+    }
+
+    @Test
     fun `getExerciseMuscleGroup resolves by id then name and is null for unknown`() = runTest {
         // Seed one catalog exercise. Positional args follow the insertExercise
         // column order: id, name, displayName, description, created, muscleGroup,
