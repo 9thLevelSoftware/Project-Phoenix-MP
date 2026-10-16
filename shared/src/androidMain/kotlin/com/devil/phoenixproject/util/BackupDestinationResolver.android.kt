@@ -99,12 +99,31 @@ class AndroidBackupDestinationResolver(
 
 /**
  * Best-effort delete of a SAF document created for a backup that did not finish.
- * [DocumentsContract.deleteDocument] is tried first; [DocumentFile.delete] is the
- * fallback when that call reports failure. A false result is logged and ignored.
+ *
+ * [DocumentsContract.deleteDocument] is tried first. [DocumentFile.delete] is the
+ * fallback when that call returns false or throws. Delete errors are logged and
+ * ignored. [CancellationException] is rethrown.
  */
 internal fun deletePartialSafDocument(contentResolver: ContentResolver, document: DocumentFile) {
-    val deleted = DocumentsContract.deleteDocument(contentResolver, document.uri) || document.delete()
-    if (!deleted) {
+    val deletedByContract = try {
+        DocumentsContract.deleteDocument(contentResolver, document.uri)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.w(e) { "DocumentsContract.deleteDocument failed for ${document.uri}" }
+        false
+    }
+    if (deletedByContract) return
+
+    val deletedByFile = try {
+        document.delete()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.w(e) { "DocumentFile.delete failed for ${document.uri}" }
+        false
+    }
+    if (!deletedByFile) {
         log.w { "Failed to delete partial SAF backup ${document.uri}" }
     }
 }
