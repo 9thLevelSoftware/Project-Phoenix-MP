@@ -36,6 +36,16 @@ class HealthKitCancellationGuardTest {
     }
 
     @Test
+    fun writeHealthWorkout_rethrowsCancellationAndResumesOnlyWhenActive() {
+        val body = functionBody(
+            source = read("shared/src/iosMain/kotlin/com/devil/phoenixproject/data/integration/HealthIntegration.ios.kt"),
+            signature = "actual override suspend fun writeHealthWorkout",
+        )
+        assertRethrowsCancellation(body, "writeHealthWorkout")
+        assertResumesOnlyWhenActive(body, "writeHealthWorkout")
+    }
+
+    @Test
     fun toggleHealthIntegration_rethrowsCancellation() {
         val body = functionBody(
             source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/IntegrationsViewModel.kt"),
