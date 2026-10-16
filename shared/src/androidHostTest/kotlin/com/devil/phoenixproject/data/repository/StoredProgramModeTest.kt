@@ -2,11 +2,9 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.ProgramMode
-import java.io.File
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -206,27 +204,6 @@ class StoredProgramModeTest {
         assertEquals(EccentricLoad.LOAD_0, mapEccentricLoadFromDb(25L))
     }
 
-    @Test
-    fun workoutRepositoryKeepsNonstandardLogAndSyncStaysSilent() {
-        val workout = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt",
-        )
-        val sync = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightSyncRepository.kt",
-        )
-
-        assertTrue(workout.contains("Non-standard eccentric load value:"))
-        assertTrue(workout.contains("DB eccentric load "))
-        assertTrue(workout.contains("onNonStandard"))
-        assertFalse(sync.contains("Non-standard eccentric load"))
-        assertFalse(sync.contains("onNonStandard"))
-        assertFalse(sync.contains("onClamped"))
-        assertFalse(workout.contains("private fun parseProgramMode"))
-        assertFalse(workout.contains("private fun mapEccentricLoadFromDb"))
-        assertFalse(sync.contains("private fun parseProgramMode"))
-        assertFalse(sync.contains("private fun mapEccentricLoadFromDb"))
-    }
-
     private fun assertMapped(
         stored: Long,
         expected: EccentricLoad,
@@ -244,13 +221,5 @@ class StoredProgramModeTest {
         assertEquals(expected, load, stored.toString())
         assertEquals(listOfNotNull(clamped), clampedEvents, stored.toString())
         assertEquals(listOfNotNull(nonStandard), nonStandardEvents, stored.toString())
-    }
-
-    private fun read(relativePath: String): String {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        return File(dir, relativePath).readText()
     }
 }

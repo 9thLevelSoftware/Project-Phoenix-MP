@@ -28,7 +28,7 @@ internal fun parseProgramMode(modeStr: String): ProgramMode = when {
         ProgramMode.Echo
     }
 
-    // Issue #7 Fix: Handle unprefixed legacy mode strings
+    // Handle unprefixed legacy mode strings
     modeStr == "Pump" -> ProgramMode.Pump
 
     modeStr == "TUT" -> ProgramMode.TUT
