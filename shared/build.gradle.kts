@@ -262,9 +262,10 @@ tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
 // Schema Manifest Validator
 //
 // Fails the build when either of these drifts:
-// 1. A column in PhoenixDatabase.sq lacks provenance (migration ALTER TABLE,
-//    migration CREATE TABLE, SchemaHealOperation, SchemaTableOperation, or a
-//    grandfathered v1 table).
+// 1. A column in PhoenixDatabase.sq lacks provenance. A column is covered by an
+//    ALTER TABLE ADD COLUMN match in a .sqm file, a column named by a migration
+//    CREATE TABLE, a SchemaHealOperation, a column named by a SchemaTableOperation
+//    CREATE TABLE, or any column of a grandfathered v1 table.
 // 2. A SchemaManifest CREATE TABLE does not list the same column names in the
 //    same order as PhoenixDatabase.sq. iOS schema heal creates missing tables
 //    from that manifest DDL, so order is part of the contract.
@@ -493,11 +494,10 @@ tasks.register("validateSchemaManifest") {
             )
         }
 
-        // V1 tables are grandfathered -- their original columns existed before
-        // any migration system. Only flag columns on non-v1 tables that lack provenance.
+        // Listed v1 tables are grandfathered in full. The check is the table name,
+        // so every column is skipped, including columns added later by ALTER TABLE.
         val v1Tables = setOf(
             "Exercise",
-            "ExerciseVideo",
             "WorkoutSession",
             "MetricSample",
             "PersonalRecord",
@@ -673,26 +673,29 @@ tasks.register("validateSchemaManifest") {
             sqColumns[table] = extractSqlColumnNames(stripSqlLineComments(body)).toMutableSet()
         }
 
-        // ── 2. Parse ALTER TABLE ADD COLUMN from .sqm files ─────────────────
+        // ── 2. Match ALTER TABLE ADD COLUMN in raw .sqm text ────────────────
+        // Not the CREATE TABLE scanner above. The regex runs on the whole file,
+        // so a hit inside quotes or a `--` / block comment still counts.
         val alterRegex = Regex(
             """ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)""",
             RegexOption.IGNORE_CASE,
         )
-        // Set of "Table.Column" pairs covered by migrations
+        // "Table.Column" pairs from that ALTER TABLE ADD COLUMN regex.
         val migrationCovered = mutableSetOf<String>()
-        // Also track tables fully created in migrations (all their columns are covered)
+        // Columns named by CREATE TABLE in migrations. A column that shows up
+        // only in a later ALTER is not added here.
         val migrationCreatedTables = mutableMapOf<String, MutableSet<String>>()
 
         val sqmFiles = migrationsDir.listFiles()?.filter { it.extension == "sqm" } ?: emptyList()
         for (sqmFile in sqmFiles) {
             val sqmText = sqmFile.readText()
 
-            // ALTER TABLE ADD COLUMN
+            // ALTER TABLE ADD COLUMN regex matches, including commented text.
             for (m in alterRegex.findAll(sqmText)) {
                 migrationCovered.add("${m.groupValues[1]}.${m.groupValues[2]}")
             }
 
-            // CREATE TABLE in migrations (covers all columns of the created table)
+            // CREATE TABLE in migrations (each column in that statement is covered)
             for ((table, body) in extractCreateTableBodies(sqmText)) {
                 // Skip temp/rebuild/versioned tables
                 if (table.contains("_temp") || table.contains("_rebuild") || table.contains("_new") || table.contains("_v")) continue
@@ -711,9 +714,10 @@ tasks.register("validateSchemaManifest") {
             manifestCovered.add("${m.groupValues[1]}.${m.groupValues[2]}")
         }
 
-        // ── 4. Parse SchemaTableOperation base columns from SchemaManifest.kt ──
-        // These are tables created by the manifest (no migration). Their base shape
-        // columns are covered.
+        // ── 4. Parse SchemaTableOperation CREATE TABLE columns ──────────────
+        // Every column extracted from createSql is covered. Entries include
+        // migration-created tables and full current shapes, not only the base
+        // columns of tables that have no migration.
         val tableOpRegex = Regex(
             """SchemaTableOperation\(\s*table\s*=\s*"(\w+)"\s*,\s*createSql\s*=\s*""" +
                 """["$]{3}(.*?)["$]{3}""",
@@ -723,7 +727,7 @@ tasks.register("validateSchemaManifest") {
         for (m in tableOpRegex.findAll(manifestText)) {
             val table = m.groupValues[1]
             val createBody = m.groupValues[2]
-            // Extract columns from the CREATE TABLE body inside the raw string
+            // CREATE TABLE statement inside the raw string, not a pre-split body.
             val inner = extractCreateTableBodies(createBody).firstOrNull() ?: continue
             manifestTableColumns[table] =
                 extractSqlColumnNames(stripSqlLineComments(inner.second)).toMutableSet()
@@ -738,10 +742,10 @@ tasks.register("validateSchemaManifest") {
                 totalColumns++
                 val key = "$table.$col"
 
-                // V1 tables: all original columns are grandfathered
+                // Every column of a v1 table is grandfathered, including later ALTERs.
                 if (table in v1Tables) continue
 
-                // Covered by migration ALTER TABLE ADD COLUMN?
+                // Covered by an ALTER TABLE ADD COLUMN regex match?
                 if (key in migrationCovered) continue
 
                 // Covered by migration CREATE TABLE?
@@ -750,7 +754,7 @@ tasks.register("validateSchemaManifest") {
                 // Covered by SchemaManifest SchemaHealOperation?
                 if (key in manifestCovered) continue
 
-                // Covered by SchemaManifest SchemaTableOperation base columns?
+                // Covered by a SchemaTableOperation CREATE TABLE column?
                 if (manifestTableColumns[table]?.contains(col) == true) continue
 
                 uncovered.add(key)
