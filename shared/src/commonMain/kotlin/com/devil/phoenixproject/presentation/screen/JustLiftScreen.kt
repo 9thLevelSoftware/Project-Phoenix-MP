@@ -103,6 +103,7 @@ import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -529,13 +530,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                             )
                         }
 
-                        val totalDisplay = displayWeight * 2
-                        val totalText = if (totalDisplay % 1f == 0f) {
-                            totalDisplay.toInt().toString()
-                        } else {
-                            val rounded = (totalDisplay * 10).toInt() / 10f
-                            rounded.toString()
-                        }
+                        val totalText = WeightDisplayFormatter.formatTwoCableTotalWeight(
+                            weightPerCableKg = weightPerCable,
+                            unit = weightUnit,
+                        )
                         Text(
                             text = "Total: $totalText $weightSuffix",
                             style = MaterialTheme.typography.bodySmall,

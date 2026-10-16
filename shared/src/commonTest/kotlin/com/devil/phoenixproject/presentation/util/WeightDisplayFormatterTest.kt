@@ -101,4 +101,18 @@ class WeightDisplayFormatterTest {
 
         assertEquals("75", result)
     }
+
+    @Test
+    fun formatTwoCableTotalWeight_lb_roundsTenKgPerCable() {
+        val result = WeightDisplayFormatter.formatTwoCableTotalWeight(
+            weightPerCableKg = 10f,
+            unit = WeightUnit.LB,
+        )
+
+        assertEquals(
+            "44.1",
+            result,
+            "10 kg/cable is 44.092 lb across two cables and rounds to one decimal",
+        )
+    }
 }
