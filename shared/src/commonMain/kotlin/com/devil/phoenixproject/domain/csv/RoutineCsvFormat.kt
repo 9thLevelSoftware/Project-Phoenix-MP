@@ -130,7 +130,7 @@ object RoutineCsvFormat {
     /** Percent cells (of a PR or of a working weight) read 0-200. */
     const val MAX_PERCENT = 200
 
-    /** Timed sets run 1-300 s, the range the editor and the machine accept. */
+    /** The editor accepts 10-300 s; CSV accepts down to 1 s to match launch-adjusted durations. */
     const val MIN_TIMED_DURATION_SECONDS = 1
     const val MAX_TIMED_DURATION_SECONDS = 300
 
