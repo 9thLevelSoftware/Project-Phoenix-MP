@@ -349,7 +349,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
 
             // Save to HealthKit
             suspendCancellableCoroutine { continuation ->
-                healthStore.saveObject(workout) { success: Boolean, error: NSError? ->
+                healthStore.saveObject(workout) saveCompletion@{ success: Boolean, error: NSError? ->
+                    if (!continuation.isActive) return@saveCompletion
                     if (error != null) {
                         log.e { "HealthKit save error: ${error.localizedDescription}" }
                         continuation.resume(
