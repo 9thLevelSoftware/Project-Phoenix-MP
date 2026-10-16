@@ -38,6 +38,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.SetTypeLabel
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -370,7 +371,11 @@ private fun HudBottomBar(
         ) {
             // Weight Controls - Echo mode shows "Adaptive" since weight is dynamic
             val selectedDisplayKg = workoutParameters.weightPerCableKg
-            val rackContext = rackLoadAdjustment.toHudText(formatWeight, weightUnit)
+            val rackContext = formatRackItemLine(
+                items = rackLoadAdjustment.selectedItems,
+                weightUnit = weightUnit,
+                formatWeight = formatWeight,
+            )
             Column {
                 if (isCurrentExerciseBodyweight) {
                     Text(
@@ -408,26 +413,6 @@ private fun HudBottomBar(
                 }
             }
         }
-    }
-}
-
-private fun RackLoadAdjustment.toHudText(
-    formatWeight: (Float, WeightUnit) -> String,
-    weightUnit: WeightUnit,
-): String? {
-    if (selectedItems.isEmpty()) return null
-    val visibleItems = selectedItems.take(2).map { item ->
-        when (item.behavior) {
-            RackItemBehavior.ADDED_RESISTANCE -> "${item.name} +${formatWeight(item.weightKg, weightUnit)}"
-            RackItemBehavior.COUNTERWEIGHT -> "${item.name} -${formatWeight(item.weightKg, weightUnit)}"
-            RackItemBehavior.DISPLAY_ONLY -> item.name
-        }
-    }
-    val hiddenCount = selectedItems.size - visibleItems.size
-    return if (hiddenCount > 0) {
-        visibleItems.joinToString(", ") + " +$hiddenCount"
-    } else {
-        visibleItems.joinToString(", ")
     }
 }
 
