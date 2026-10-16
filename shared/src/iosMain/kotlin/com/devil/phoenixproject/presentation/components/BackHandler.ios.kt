@@ -3,16 +3,13 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.runtime.Composable
 
 /**
- * iOS implementation of BackHandler.
+ * iOS actual for [BackHandler].
  *
- * iOS doesn't have a hardware back button like Android.
- * Back navigation is handled through:
- * - Swipe gestures (iOS navigation)
- * - UI back buttons
- *
- * This is effectively a no-op on iOS.
+ * The body is empty. [enabled] and [onBack] are not read: this composable does not
+ * install an edge-swipe (or any other) back gesture, does not connect to UIKit
+ * navigation, and does not call [onBack].
  */
 @Composable
 actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
-    // No-op on iOS - back navigation is handled through gestures and UI buttons
+    // Empty on purpose. enabled and onBack are unused; nothing is registered or invoked.
 }
