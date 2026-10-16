@@ -240,4 +240,60 @@ class KableBleConnectionManagerTest {
         assertEquals(emptyList(), tracker.scannedDevicesUpdates.last())
         assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
     }
+
+    // =========================================================================
+    // Activation CONFIG summary (log decode only)
+    // =========================================================================
+
+    @Test
+    fun `activation summary reads eccentric-up min and max as int16 and ramp as float`() {
+        val (manager, _) = createTestManager()
+        val command = ByteArray(96)
+        command[0] = 0x04
+        // Same layout BlePacketFactory writes: int16 min, int16 max, float ramp.
+        // A float read at 0x48 would swallow the max and hide both velocities.
+        putInt16LE(command, 0x48, -260)
+        putInt16LE(command, 0x4A, -110)
+        putFloatLE(command, 0x4C, 1.0f)
+        putFloatLE(command, 0x50, 0.0f)
+        putFloatLE(command, 0x54, 50.0f)
+        putFloatLE(command, 0x58, 40.0f)
+        putFloatLE(command, 0x5C, 3.0f)
+
+        val summary = manager.activationConfigSummary(command)
+
+        assertTrue(summary.contains("eccUpMinMmS[0x48]=-260"), summary)
+        assertTrue(summary.contains("eccUpMaxMmS[0x4A]=-110"), summary)
+        assertTrue(summary.contains("eccUpRamp[0x4C]=1.0"), summary)
+        assertTrue(summary.contains("forceMin[0x50]=0.0"), summary)
+        assertTrue(summary.contains("forceMax[0x54]=50.0"), summary)
+        assertTrue(summary.contains("softMax[0x58]=40.0"), summary)
+        assertTrue(summary.contains("increment[0x5C]=3.0"), summary)
+        assertFalse(summary.contains("profileTail"), summary)
+    }
+
+    @Test
+    fun `activation summary stays empty unless the frame is a 96-byte activation command`() {
+        val (manager, _) = createTestManager()
+        val shortActivation = ByteArray(95)
+        shortActivation[0] = 0x04
+        val otherOpcode = ByteArray(96)
+        otherOpcode[0] = 0x0A
+
+        assertEquals("", manager.activationConfigSummary(shortActivation))
+        assertEquals("", manager.activationConfigSummary(otherOpcode))
+    }
+
+    private fun putInt16LE(buffer: ByteArray, offset: Int, value: Int) {
+        buffer[offset] = (value and 0xFF).toByte()
+        buffer[offset + 1] = ((value shr 8) and 0xFF).toByte()
+    }
+
+    private fun putFloatLE(buffer: ByteArray, offset: Int, value: Float) {
+        val bits = value.toRawBits()
+        buffer[offset] = (bits and 0xFF).toByte()
+        buffer[offset + 1] = ((bits shr 8) and 0xFF).toByte()
+        buffer[offset + 2] = ((bits shr 16) and 0xFF).toByte()
+        buffer[offset + 3] = ((bits shr 24) and 0xFF).toByte()
+    }
 }
