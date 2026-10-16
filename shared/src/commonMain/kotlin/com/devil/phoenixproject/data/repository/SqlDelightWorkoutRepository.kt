@@ -5,7 +5,6 @@ import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.Routine as RoutineRow
-import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
@@ -390,7 +389,15 @@ class SqlDelightWorkoutRepository(
                     emptyMap()
                 }
 
-                val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
+                val eccentricLoad = mapEccentricLoadFromDb(
+                    dbValue = row.eccentricLoad,
+                    onClamped = { original, safeValue ->
+                        Logger.w { "DB eccentric load $original% clamped to $safeValue% (hardware limit 150%)" }
+                    },
+                    onNonStandard = { safeValue ->
+                        Logger.w { "Non-standard eccentric load value: $safeValue%, finding closest match" }
+                    },
+                )
                 val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
 
                 val programMode = parseProgramMode(row.mode)
@@ -475,74 +482,6 @@ class SqlDelightWorkoutRepository(
             groupId = groupId,
             updatedAt = updatedAt,
         )
-    }
-
-    private fun mapEccentricLoadFromDb(dbValue: Long): EccentricLoad {
-        // Defensive clamping: Machine hardware limit is 150% eccentric load
-        // Values > 150% can cause machine faults (yellow light)
-        val safeValue = dbValue.toInt().coerceIn(0, 150)
-        if (dbValue.toInt() != safeValue) {
-            Logger.w { "DB eccentric load $dbValue% clamped to $safeValue% (hardware limit 150%)" }
-        }
-
-        return when (safeValue) {
-            0 -> EccentricLoad.LOAD_0
-
-            50 -> EccentricLoad.LOAD_50
-
-            75 -> EccentricLoad.LOAD_75
-
-            100 -> EccentricLoad.LOAD_100
-
-            110 -> EccentricLoad.LOAD_110
-
-            120 -> EccentricLoad.LOAD_120
-
-            130 -> EccentricLoad.LOAD_130
-
-            140 -> EccentricLoad.LOAD_140
-
-            150 -> EccentricLoad.LOAD_150
-
-            else -> {
-                // Value is within 0-150 but not a standard enum value - find closest match
-                Logger.w { "Non-standard eccentric load value: $safeValue%, finding closest match" }
-                EccentricLoad.entries.minByOrNull { kotlin.math.abs(it.percentage - safeValue) }
-                    ?: EccentricLoad.LOAD_100
-            }
-        }
-    }
-
-    private fun parseProgramMode(modeStr: String): ProgramMode = when {
-        modeStr.startsWith("Program:") -> {
-            val programModeName = modeStr.removePrefix("Program:")
-            when (programModeName) {
-                "OldSchool" -> ProgramMode.OldSchool
-                "Pump" -> ProgramMode.Pump
-                "TUT" -> ProgramMode.TUT
-                "TUTBeast" -> ProgramMode.TUTBeast
-                "EccentricOnly" -> ProgramMode.EccentricOnly
-                "Echo" -> ProgramMode.Echo
-                else -> ProgramMode.OldSchool
-            }
-        }
-
-        modeStr == "Echo" || modeStr.startsWith("Echo") -> {
-            ProgramMode.Echo
-        }
-
-        // Issue #7 Fix: Handle unprefixed legacy mode strings
-        modeStr == "Pump" -> ProgramMode.Pump
-
-        modeStr == "TUT" -> ProgramMode.TUT
-
-        modeStr == "TUTBeast" -> ProgramMode.TUTBeast
-
-        modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
-
-        modeStr == "OldSchool" -> ProgramMode.OldSchool
-
-        else -> ProgramMode.OldSchool
     }
 
     private fun serializeProgramMode(programMode: ProgramMode): String = when (programMode) {
