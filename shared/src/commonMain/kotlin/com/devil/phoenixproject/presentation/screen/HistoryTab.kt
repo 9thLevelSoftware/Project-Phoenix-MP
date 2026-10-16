@@ -403,13 +403,10 @@ private fun WorkoutHistoryCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    if (session.reps == 0) {
-                        "1" // AMRAP = single set with variable reps
-                    } else if (session.workingReps > 0) {
-                        (session.workingReps / session.reps.coerceAtLeast(1)).toString()
-                    } else {
-                        "0"
-                    },
+                    singleSessionHistorySetCount(
+                        reps = session.reps,
+                        workingReps = session.workingReps,
+                    ).toString(),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1446,6 +1443,17 @@ private fun JustLiftLabelControls(
         }
     }
 }
+
+/**
+ * Set count for one ungrouped history row.
+ *
+ * Just Lift and single-exercise sessions stay ungrouped, so each card is one
+ * saved set. Show 1 when that set recorded working reps. A target of 0 (AMRAP)
+ * is still one set. Do not divide working reps by the target: a partial set
+ * would show 0, and a Just Lift set past the default target of 10 would show 2+.
+ */
+internal fun singleSessionHistorySetCount(reps: Int, workingReps: Int): Int =
+    if (reps == 0 || workingReps > 0) 1 else 0
 
 private fun formatTimestamp(timestamp: Long): String {
     // Format as "MMM dd, yyyy at HH:mm"
