@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.util
 
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.util.Constants
 
 /**
  * Issue #646: pure-Kotlin helper for the workout set-type badge.
@@ -21,16 +22,12 @@ sealed class SetTypeLabel {
     data object Working : SetTypeLabel()
 }
 
-// ponytail: 3 mirrors Constants.DEFAULT_WARMUP_REPS; revisit if firmware
-// calibration buffer size ever changes.
-private const val CALIBRATION_BUFFER_REPS = 3
-
 fun setTypeLabel(
     repCount: RepCount,
     currentWarmupSetIndex: Int,
     showCalibrationLabel: Boolean,
 ): SetTypeLabel = when {
-    showCalibrationLabel && repCount.warmupReps < CALIBRATION_BUFFER_REPS && !repCount.isWarmupComplete ->
+    showCalibrationLabel && repCount.warmupReps < Constants.DEFAULT_WARMUP_REPS && !repCount.isWarmupComplete ->
         SetTypeLabel.Calibration
     currentWarmupSetIndex >= 0 ->
         SetTypeLabel.Warmup(currentWarmupSetIndex + 1)
