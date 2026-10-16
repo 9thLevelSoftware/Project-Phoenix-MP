@@ -1557,7 +1557,8 @@ class KableBleConnectionManager(
     /**
      * Issue #333: human-readable command summary for connection logs — size,
      * opcode, little-endian command id, first 8 bytes, and (for 96-byte CONFIG
-     * packets) the force-profile floats that matter when debugging workout start.
+     * packets) the eccentric-up ramp and force-config fields that matter when
+     * debugging workout start.
      */
     private fun commandSummary(command: ByteArray): String {
         val opcode = command.firstOrNull()?.toInt()?.and(0xFF)
@@ -1572,12 +1573,20 @@ class KableBleConnectionManager(
         return "Size: ${command.size} bytes, opcode=$opcodeText$commandIdText, first8=$preview$configDetails"
     }
 
-    private fun activationConfigSummary(command: ByteArray): String {
+    /**
+     * Debug-only decode of a 96-byte activation frame. The eccentric-up ramp
+     * written by [com.devil.phoenixproject.util.BlePacketFactory] is int16 min
+     * at 0x48, int16 max at 0x4A, and a float ramp at 0x4C. Reading 0x48 as a
+     * float consumes the max and prints neither velocity. Force-config floats
+     * still start at 0x50.
+     */
+    internal fun activationConfigSummary(command: ByteArray): String {
         if (command.size < 96 || command[0] != 0x04.toByte()) {
             return ""
         }
-        return ", profileTail[0x48]=${getFloatLE(command, 0x48)}" +
-            ", profileTail[0x4C]=${getFloatLE(command, 0x4C)}" +
+        return ", eccUpMinMmS[0x48]=${getInt16LE(command, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}" +
+            ", eccUpMaxMmS[0x4A]=${getInt16LE(command, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}" +
+            ", eccUpRamp[0x4C]=${getFloatLE(command, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}" +
             ", forceMin[0x50]=${getFloatLE(command, 0x50)}" +
             ", forceMax[0x54]=${getFloatLE(command, 0x54)}" +
             ", softMax[0x58]=${getFloatLE(command, 0x58)}" +
