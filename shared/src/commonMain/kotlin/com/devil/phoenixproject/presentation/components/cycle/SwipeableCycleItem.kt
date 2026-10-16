@@ -15,6 +15,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleItem
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_copy
+import projectphoenix.shared.generated.resources.action_delete
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +30,9 @@ fun SwipeableCycleItem(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
+    val deleteLabel = stringResource(Res.string.action_delete)
+    val copyLabel = stringResource(Res.string.action_copy)
+
     @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -71,8 +78,8 @@ fun SwipeableCycleItem(
                 else -> null
             }
             val label = when (direction) {
-                SwipeToDismissBoxValue.EndToStart -> "DELETE"
-                SwipeToDismissBoxValue.StartToEnd -> "COPY"
+                SwipeToDismissBoxValue.EndToStart -> deleteLabel
+                SwipeToDismissBoxValue.StartToEnd -> copyLabel
                 else -> ""
             }
 
