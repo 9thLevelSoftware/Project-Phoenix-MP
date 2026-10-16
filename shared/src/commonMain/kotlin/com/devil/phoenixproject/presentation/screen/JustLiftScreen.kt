@@ -1003,7 +1003,7 @@ private fun AutoStartStopCard(
         label = "rotation",
     )
 
-    // Determine colors based on state (from AccessibilityTheme for color-blind support)
+    // Determine colors based on state (from AccessibilityTheme)
     val autoStartGreen = AccessibilityTheme.colors.success
     val countdownOrange = AccessibilityTheme.colors.warning
     val stopRed = AccessibilityTheme.colors.error
