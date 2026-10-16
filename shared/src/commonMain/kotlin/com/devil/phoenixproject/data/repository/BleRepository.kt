@@ -64,9 +64,9 @@ enum class HandleState {
  * - rangeTop (float): Maximum ROM boundary
  * - rangeBottom (float): Minimum ROM boundary
  * - repsRomCount (u16): Warmup reps with proper ROM - USE FOR WARMUP DISPLAY
- * - repsRomTotal (u16): Total reps regardless of ROM
+ * - repsRomTotal (u16): Machine's warmup target (bytes 18-19) - for sync verification
  * - repsSetCount (u16): Working set rep count - USE FOR WORKING REPS DISPLAY
- * - repsSetTotal (u16): Total reps in set
+ * - repsSetTotal (u16): Machine's working target (bytes 22-23) - for sync verification
  * - isLegacyFormat = false
  */
 data class RepNotification(
