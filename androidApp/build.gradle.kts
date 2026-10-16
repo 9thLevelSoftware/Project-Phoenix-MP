@@ -108,7 +108,7 @@ abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
         val host = checkNotNull(uri.host).lowercase()
 
         val addresses = InetAddress.getAllByName(host)
-        println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}, authPath=/auth/v1")
+        println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}")
     }
 
     companion object {
