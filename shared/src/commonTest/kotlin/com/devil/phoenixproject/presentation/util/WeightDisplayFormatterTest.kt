@@ -115,4 +115,32 @@ class WeightDisplayFormatterTest {
             "10 kg/cable is 44.092 lb across two cables and rounds to one decimal",
         )
     }
+
+    @Test
+    fun formatDisplayNumber_matchesFormatDisplayWeightWithoutReconverting() {
+        val samples = listOf(0f, 20f, 20.4f, 20.5f, 20.6f, 50.25f, 110f)
+        samples.forEach { kg ->
+            assertEquals(
+                WeightDisplayFormatter.formatDisplayWeight(kg, WeightUnit.KG),
+                WeightDisplayFormatter.formatDisplayNumber(kg),
+                "kg $kg",
+            )
+            assertEquals(
+                WeightDisplayFormatter.formatDisplayWeight(kg, WeightUnit.LB),
+                WeightDisplayFormatter.formatDisplayNumber(
+                    WeightDisplayFormatter.toDisplayWeight(kg, WeightUnit.LB),
+                ),
+                "lb $kg",
+            )
+        }
+    }
+
+    @Test
+    fun formatDisplayNumber_keepsFractionsThatIntegerRoundingDrops() {
+        assertEquals("20", WeightDisplayFormatter.formatDisplayNumber(20f))
+        assertEquals("20.4", WeightDisplayFormatter.formatDisplayNumber(20.4f))
+        assertEquals("20.5", WeightDisplayFormatter.formatDisplayNumber(20.5f))
+        assertEquals("20.6", WeightDisplayFormatter.formatDisplayNumber(20.6f))
+        assertEquals("50.3", WeightDisplayFormatter.formatDisplayNumber(50.25f))
+    }
 }

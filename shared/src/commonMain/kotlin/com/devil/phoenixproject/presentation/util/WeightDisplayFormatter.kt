@@ -46,6 +46,15 @@ object WeightDisplayFormatter {
     fun formatTwoCableTotalWeight(weightPerCableKg: Float, unit: WeightUnit): String =
         formatNumeric(toTwoCableTotalDisplayWeight(weightPerCableKg, unit))
 
+    /**
+     * Format a number already expressed in the selected display unit.
+     *
+     * Same numeric rules as [formatDisplayWeight]: a whole number stays bare, and a
+     * fractional value keeps one decimal. This does not convert units. Callers that
+     * still have per-cable kilograms should use [formatDisplayWeight] instead.
+     */
+    fun formatDisplayNumber(display: Float): String = formatNumeric(display)
+
     private fun formatNumeric(display: Float): String = if (display % 1f == 0f) {
         display.toInt().toString()
     } else {
