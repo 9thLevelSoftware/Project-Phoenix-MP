@@ -199,6 +199,8 @@ fun EnhancedMainScreen(
     val lastSyncTime by syncManager.lastSyncTime.collectAsState()
     val serverDeletionNotice by syncManager.serverDeletionNotice.collectAsState()
     val serverDeletionNoticeSnackbarHostState = remember { SnackbarHostState() }
+    // Shared/opened routine CSV files (#1242) report on their own host.
+    val sharedCsvImportSnackbarHostState = remember { SnackbarHostState() }
 
     // Keep the notice pending until its snackbar has been displayed and dismissed. The
     // acknowledgement is conditional, so a newer notice merged while this one is visible
@@ -371,7 +373,10 @@ fun EnhancedMainScreen(
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 snackbarHost = {
-                    SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                    Box {
+                        SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                        SnackbarHost(hostState = sharedCsvImportSnackbarHostState)
+                    }
                 },
                 topBar = {
                     if (shouldShowTopBar) {
@@ -625,6 +630,12 @@ fun EnhancedMainScreen(
                     onRetry = profileSwitcherViewModel::retryRecovery,
                 )
             }
+
+            SharedCsvImportHost(
+                viewModel = viewModel,
+                navController = navController,
+                snackbarHostState = sharedCsvImportSnackbarHostState,
+            )
         } // CompositionLocalProvider
     } // BoxWithConstraints
 }

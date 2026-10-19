@@ -96,6 +96,8 @@ class RoutineCompleteEnhancedShellChromeTest {
                     single { RoutineTimeEstimator(get()) }
                     single { TemplateConverter(get(), get()) }
                     viewModel { RoutineCsvViewModel(get(), get(), get()) }
+                    // Issue #1242: the shell hosts the shared-file CSV import.
+                    single { com.devil.phoenixproject.data.csv.CsvImportInbox() }
                 },
             )
         }

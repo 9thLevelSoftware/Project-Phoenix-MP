@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
+import com.devil.phoenixproject.data.csv.CsvImportInbox
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
@@ -45,6 +46,9 @@ val dataModule = module {
 
     // Data Import
     single { ExerciseImporter(get()) }
+
+    // Shared/opened routine CSV files (#1242): one process-wide handoff, intake to import host.
+    single { CsvImportInbox() }
 
     // Repositories
     // BleRepository is provided by platformModule
