@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
+import com.devil.phoenixproject.data.local.LegacyLabelSanitizer
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
@@ -415,7 +416,7 @@ class MigrationManager(
                 var profileRepairedRecords = 0
 
                 profileSessions.sortedBy { it.timestamp }.forEach { session ->
-                    val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return@forEach
+                    val exerciseId = LegacyLabelSanitizer.sanitize(session.exerciseId) ?: return@forEach
                     if (session.isJustLift != 0L) return@forEach
 
                     val normalizedMode = normalizeWorkoutModeKey(session.mode)
@@ -601,10 +602,10 @@ class MigrationManager(
         session: WorkoutSession,
         routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
-        val existingRoutineName = sanitizeRoutineName(session.routineName)
+        val existingRoutineName = LegacyLabelSanitizer.sanitizeRoutineName(session.routineName)
         val inferredRoutineName = inferRoutineName(session, routineNameResolutionContext)
         val existingLooksLikeExercisePlaceholder =
-            normalizeExerciseToken(existingRoutineName) == normalizeExerciseToken(session.exerciseName)
+            LegacyLabelSanitizer.normalizeExerciseToken(existingRoutineName) == LegacyLabelSanitizer.normalizeExerciseToken(session.exerciseName)
 
         return when {
             session.isJustLift != 0L -> "Just Lift"
@@ -622,7 +623,7 @@ class MigrationManager(
         session: WorkoutSession,
         routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
-        val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return null
+        val exerciseId = LegacyLabelSanitizer.sanitize(session.exerciseId) ?: return null
         return routineNameResolutionContext.routineIdByExerciseId[exerciseId]
     }
 
@@ -630,12 +631,12 @@ class MigrationManager(
         session: WorkoutSession,
         routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
-        val byExerciseId = sanitizeLegacyLabel(session.exerciseId)?.let { exerciseId ->
+        val byExerciseId = LegacyLabelSanitizer.sanitize(session.exerciseId)?.let { exerciseId ->
             routineNameResolutionContext.uniqueRoutineNameByExerciseId[exerciseId]
         }
         if (byExerciseId != null) return byExerciseId
 
-        val normalizedExerciseName = normalizeExerciseToken(session.exerciseName) ?: return null
+        val normalizedExerciseName = LegacyLabelSanitizer.normalizeExerciseToken(session.exerciseName) ?: return null
         return routineNameResolutionContext.uniqueRoutineNameByExerciseName[normalizedExerciseName]
     }
 
@@ -644,13 +645,13 @@ class MigrationManager(
         routineExercises: List<RoutineExercise>,
     ): RoutineNameResolutionContext {
         val routineNameById = routines.associate { routine ->
-            routine.id to sanitizeEntityName(routine.name, "Unnamed Routine")
+            routine.id to LegacyLabelSanitizer.sanitizeEntityName(routine.name, "Unnamed Routine")
         }
 
         // Build exerciseId → routineId map for sessions where exercise uniquely belongs to one routine
         val routineIdsByExerciseId = mutableMapOf<String, MutableSet<String>>()
         routineExercises.forEach { exercise ->
-            val exerciseId = sanitizeLegacyLabel(exercise.exerciseId) ?: return@forEach
+            val exerciseId = LegacyLabelSanitizer.sanitize(exercise.exerciseId) ?: return@forEach
             routineIdsByExerciseId.getOrPut(exerciseId) { mutableSetOf() }.add(exercise.routineId)
         }
         val routineIdByExerciseId = mutableMapOf<String, String>()
@@ -672,7 +673,7 @@ class MigrationManager(
             val routineIdsByExerciseId = mutableMapOf<String, MutableSet<String>>()
             routineExercises.forEach { exercise ->
                 if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
-                val exerciseId = sanitizeLegacyLabel(exercise.exerciseId) ?: return@forEach
+                val exerciseId = LegacyLabelSanitizer.sanitize(exercise.exerciseId) ?: return@forEach
                 routineIdsByExerciseId.getOrPut(exerciseId) { mutableSetOf() }.add(exercise.routineId)
             }
 
@@ -692,7 +693,7 @@ class MigrationManager(
             val routineIdsByExerciseName = mutableMapOf<String, MutableSet<String>>()
             routineExercises.forEach { exercise ->
                 if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
-                val normalizedExerciseName = normalizeExerciseToken(exercise.exerciseName) ?: return@forEach
+                val normalizedExerciseName = LegacyLabelSanitizer.normalizeExerciseToken(exercise.exerciseName) ?: return@forEach
                 routineIdsByExerciseName.getOrPut(normalizedExerciseName) { mutableSetOf() }.add(exercise.routineId)
             }
 
@@ -727,39 +728,6 @@ class MigrationManager(
             uniqueRoutineNameByExerciseId = uniqueRoutineNameByExerciseId,
             uniqueRoutineNameByExerciseName = uniqueRoutineNameByExerciseName,
         )
-    }
-
-    private fun sanitizeEntityName(raw: String?, fallback: String): String = sanitizeLegacyLabel(raw) ?: fallback
-
-    private fun sanitizeLegacyLabel(raw: String?): String? {
-        val trimmed = raw?.trim().orEmpty()
-        if (trimmed.isEmpty()) return null
-        if (trimmed.equals("null", ignoreCase = true)) return null
-        if (!trimmed.any { it.isLetterOrDigit() }) return null
-        return trimmed
-    }
-
-    /**
-     * Generic placeholder routine names set by external imports (e.g. legacy cloud exports).
-     * These don't identify a real routine and should be treated as null/unknown.
-     */
-    private val GARBAGE_ROUTINE_NAMES = setOf(
-        "imported strength training session",
-    )
-
-    private fun sanitizeRoutineName(raw: String?): String? {
-        val sanitized = sanitizeLegacyLabel(raw) ?: return null
-        if (sanitized.lowercase().trim() in GARBAGE_ROUTINE_NAMES) return null
-        return sanitized
-    }
-
-    private fun normalizeExerciseToken(raw: String?): String? {
-        val sanitized = sanitizeLegacyLabel(raw) ?: return null
-        val collapsedWhitespace = sanitized
-            .lowercase()
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        return collapsedWhitespace.ifEmpty { null }
     }
 
     /**
