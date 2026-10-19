@@ -9,9 +9,7 @@ package com.devil.phoenixproject.data.sync
  * empty-list sentinel the pull request sends.
  *
  * [matches] is the check both callers use. A match is not rewritten: push and
- * known-id lists keep the stored spelling, including uppercase. [canonicalOrNull]
- * is the lowercase spelling of a match for a caller that needs one form. It does
- * not trim.
+ * known-id lists keep the stored spelling, including uppercase.
  *
  * Routine identity keeps its own equivalent hex check. That check's canonicalize
  * step leaves opaque ids unchanged, and this gate must reject them, so the two
@@ -24,7 +22,4 @@ internal object CanonicalUuid {
     )
 
     fun matches(value: String): Boolean = PATTERN.matches(value)
-
-    /** Lowercase spelling when [value] matches; null otherwise. */
-    fun canonicalOrNull(value: String): String? = if (matches(value)) value.lowercase() else null
 }

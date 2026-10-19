@@ -1,9 +1,7 @@
 package com.devil.phoenixproject.data.sync
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CanonicalUuidTest {
@@ -37,19 +35,5 @@ class CanonicalUuidTest {
         assertFalse(CanonicalUuid.matches(uuid.dropLast(1)))
         assertFalse(CanonicalUuid.matches("${uuid}0"))
         assertFalse(CanonicalUuid.matches("12345678-1234-4234-8234-123456789abg"))
-    }
-
-    @Test
-    fun canonicalOrNullLowercasesAMatchAndDropsTheRest() {
-        assertEquals(
-            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
-            CanonicalUuid.canonicalOrNull("AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"),
-        )
-        val lower = "42345678-1234-4abc-8def-1234567890ab"
-        assertEquals(lower, CanonicalUuid.canonicalOrNull(lower))
-        assertEquals(SyncManager.NIL_UUID_SENTINEL, CanonicalUuid.canonicalOrNull(SyncManager.NIL_UUID_SENTINEL))
-        assertNull(CanonicalUuid.canonicalOrNull("cycle_routine_$lower"))
-        assertNull(CanonicalUuid.canonicalOrNull(" $lower"))
-        assertNull(CanonicalUuid.canonicalOrNull(""))
     }
 }
