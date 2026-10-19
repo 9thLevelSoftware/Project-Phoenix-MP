@@ -116,6 +116,7 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 4. During rollout, watch pending ownership/deletion operation counts, age and failures. Missing acknowledgements must stay pending: never treat them as success or rebind them to another account.
 5. Echo achieved load (#1182): an Echo set with no measured load pushes the non-null `weightKg = 0` sentinel with `estimatedOneRepMaxKg = null`. Before this ships, deploy the portal guard: `buildExerciseProgressRows` must not write a 0 `max_weight_kg`/`estimated_1rm_kg`/`total_volume_kg` progress row for such an exercise, and session detail must render 0-weight Echo sets as "Load unavailable", not "0 kg".
 6. Install a minified release APK (R8 keep rules were narrowed in #960; PR CI builds debug only) and verify on device: BLE connect and a workout, sync push/pull, backup export/import, settings persistence across restart, CSV import/export, and a Health Connect write.
+7. Custom equipment (#1227): deploy the portal's `CUSTOM_EQUIPMENT` profile-preference section first (additive migration, `profilePreferenceContract.ts`, `mobile-sync-pull` and manifest emission; portal branch `enhancement/1227-custom-equipment`). Until it is deployed the portal rejects the section, so each device keeps its list local and dirty. Devices on 1.0.6 or older treat `U_` custom exercises as bodyweight if they edit them, so the release notes must tell users to update every device before editing those exercises.
 
 ## Sync Architecture
 

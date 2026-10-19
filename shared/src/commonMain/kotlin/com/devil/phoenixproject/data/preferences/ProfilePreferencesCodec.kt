@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.preferences
 
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
 import com.devil.phoenixproject.domain.model.RackPreferences
@@ -39,6 +40,7 @@ object ProfilePreferencesCodec {
     )
 
     fun encodeRack(value: RackPreferences): String = json.encodeToString(value)
+    fun encodeCustomEquipment(value: CustomEquipmentPreferences): String = json.encodeToString(value)
     fun encodeWorkout(value: WorkoutPreferences): String = json.encodeToString(value)
     fun encodeLed(value: LedPreferences): String = json.encodeToString(
         LedPreferencesDocument(value.version, value.discoModeUnlocked),
@@ -58,6 +60,7 @@ object ProfilePreferencesCodec {
     )
 
     fun decodeRack(raw: String) = decode(raw, RackPreferences(), ProfilePreferencesValidator::rack)
+    fun decodeCustomEquipment(raw: String) = decode(raw, CustomEquipmentPreferences(), ProfilePreferencesValidator::customEquipment)
     fun decodeWorkout(raw: String) = decode(raw, WorkoutPreferences(), ProfilePreferencesValidator::workout)
     fun decodeLed(raw: String, colorScheme: Int): DecodedProfileDocument<LedPreferences> =
         decode(raw, LedPreferencesDocument()) { value -> if (value.version == 1) emptyList() else listOf("version") }

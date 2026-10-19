@@ -4,11 +4,13 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.data.preferences.CustomEquipmentEdit
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsRecentJustLiftExerciseStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentItem
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.RackItem
@@ -33,9 +35,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -357,6 +359,47 @@ class SqlDelightUserProfileRepositoryTest {
             .preferences.workout.value
         assertTrue(workout.stopAtTop)
         assertFalse(workout.beepsEnabled)
+    }
+
+    @Test
+    fun mutateCustomEquipmentEditsTheStoredListAndRefusesInvalidResults() = runTest {
+        // Issue #1227: an edit lands on the list as stored, never on a stale copy of it.
+        ready()
+        val profileId = repository.activeProfile.value!!.id
+        repository.mutateCustomEquipment(profileId, CustomEquipmentEdit.Add("EZ Bar", createdAt = 1L)::applyTo)
+        repository.mutateCustomEquipment(profileId, CustomEquipmentEdit.Add("Landmine", createdAt = 2L)::applyTo)
+        repository.mutateCustomEquipment(profileId, CustomEquipmentEdit.Rename("U_EZ_BAR", "Curl Bar")::applyTo)
+
+        fun stored() = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
+            .preferences.customEquipment.value.items
+        assertEquals(
+            listOf(CustomEquipmentItem("U_EZ_BAR", "Curl Bar", 1L), CustomEquipmentItem("U_LANDMINE", "Landmine", 2L)),
+            stored(),
+        )
+
+        // A duplicate (another device added it first) is refused; nothing is lost.
+        assertFailsWith<IllegalArgumentException> {
+            repository.mutateCustomEquipment(profileId, CustomEquipmentEdit.Add("landmine", createdAt = 3L)::applyTo)
+        }
+        assertEquals(2, stored().size)
+
+        repository.mutateCustomEquipment(profileId, CustomEquipmentEdit.Remove("U_LANDMINE")::applyTo)
+        assertEquals(listOf("U_EZ_BAR"), stored().map { it.token })
+    }
+
+    @Test
+    fun aCustomEquipmentEditBegunUnderAnotherProfileIsRejected() = runTest {
+        ready()
+        val profileA = repository.createAndActivateProfile("A", 1)
+        repository.createAndActivateProfile("B", 2)
+
+        assertFailsWith<StaleProfileContextException> {
+            repository.mutateCustomEquipment(profileA.id, CustomEquipmentEdit.Add("EZ Bar", createdAt = 1L)::applyTo)
+        }
+        assertEquals(
+            emptyList<CustomEquipmentItem>(),
+            assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).preferences.customEquipment.value.items,
+        )
     }
 
     @Test

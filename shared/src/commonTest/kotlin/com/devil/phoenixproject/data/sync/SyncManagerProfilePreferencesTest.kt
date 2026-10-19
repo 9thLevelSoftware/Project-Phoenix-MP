@@ -442,6 +442,31 @@ class SyncManagerProfilePreferencesTest {
     }
 
     @Test
+    fun `a portal without CUSTOM_EQUIPMENT leaves that section pending and acknowledges the rest`() {
+        // Issue #1227 rollout: until the portal knows the section it rejects it on its own.
+        // The section must stay dirty for a later push, never be marked synced or wiped.
+        val workoutKey = workoutSection(generation = 12).key
+        val customKey = ProfilePreferenceSectionKey("profile-a", ProfilePreferenceSectionName.CUSTOM_EQUIPMENT)
+        val outcomes = buildProfilePreferencePushOutcomes(
+            response(
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(workoutCanonical(4)),
+                profilePreferenceRejections = listOf(
+                    ProfilePreferenceSectionRejectionDto(
+                        localProfileId = "profile-a",
+                        section = "CUSTOM_EQUIPMENT",
+                        serverRevision = 0,
+                        reason = "UNSUPPORTED_SECTION",
+                    ),
+                ),
+            ),
+            ledger = mapOf(workoutKey to 12L, customKey to 3L),
+        )
+
+        assertEquals(listOf(workoutKey), outcomes.map { it.key })
+    }
+
+    @Test
     fun `rejection canonical key or revision mismatch invalidates only that ledger key`() {
         val coreKey = coreSection(generation = 11).key
         val workoutKey = workoutSection(generation = 12).key

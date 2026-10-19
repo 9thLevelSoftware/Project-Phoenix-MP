@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.RackPreferences
@@ -183,6 +184,16 @@ interface UserProfileRepository {
         transform: (CoreProfilePreferences) -> CoreProfilePreferences,
     )
     suspend fun updateRack(profileId: String, value: RackPreferences)
+    /**
+     * Issue #1227: atomically transforms the latest custom-equipment list of the active
+     * profile after validating [profileId]. A write begun under one profile is rejected after
+     * a profile switch (signoff B3), an edit applies to the stored list rather than to a copy
+     * the caller read earlier, and the Ready context republishes so the overlay stays live.
+     */
+    suspend fun mutateCustomEquipment(
+        profileId: String,
+        transform: (CustomEquipmentPreferences) -> CustomEquipmentPreferences,
+    )
     suspend fun updateWorkout(profileId: String, value: WorkoutPreferences)
 
     /** Atomically transforms the latest active workout section after validating [profileId]. */
@@ -722,6 +733,17 @@ class SqlDelightUserProfileRepository(
 
     override suspend fun updateRack(profileId: String, value: RackPreferences) = mutateActiveProfile(profileId) {
         profilePreferencesRepository.updateRack(profileId, value, currentTimeMillis())
+    }
+
+    override suspend fun mutateCustomEquipment(
+        profileId: String,
+        transform: (CustomEquipmentPreferences) -> CustomEquipmentPreferences,
+    ) = mutateActiveProfile(profileId) { context ->
+        profilePreferencesRepository.updateCustomEquipment(
+            profileId,
+            transform(context.preferences.customEquipment.value),
+            currentTimeMillis(),
+        )
     }
 
     override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) = mutateActiveProfile(profileId) {

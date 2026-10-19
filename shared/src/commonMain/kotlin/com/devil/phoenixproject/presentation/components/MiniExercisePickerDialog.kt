@@ -46,6 +46,7 @@ fun MiniExercisePickerDialog(
      * and then starts selected, so the usual choices are one tap away.
      */
     recentExerciseIds: List<String> = emptyList(),
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
 ) {
     val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
@@ -73,6 +74,15 @@ fun MiniExercisePickerDialog(
     val recentActive = showRecentOnly && recentIds.isNotEmpty()
     var selectedMuscles by remember { mutableStateOf(setOf<String>()) }
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
+
+    // Issue #1227 (signoff B3): re-key label-keyed equipment selections when the overlay changes.
+    var equipmentOverlayForSelection by remember { mutableStateOf(customEquipmentOverlay) }
+    LaunchedEffect(customEquipmentOverlay) {
+        if (equipmentOverlayForSelection != customEquipmentOverlay) {
+            selectedEquipment = rekeyEquipmentSelection(selectedEquipment, equipmentOverlayForSelection, customEquipmentOverlay)
+            equipmentOverlayForSelection = customEquipmentOverlay
+        }
+    }
 
     // Search picks the candidates; every chip then narrows them through the shared helper,
     // as in the full picker, so Favorites and Essentials respect the search text.
@@ -102,6 +112,7 @@ fun MiniExercisePickerDialog(
                 selectedEquipment = selectedEquipment,
                 showEssentialsOnly = showEssentialsOnly,
             ),
+            customEquipmentOverlay = customEquipmentOverlay,
         )
         if (recentActive) orderByRecentExercises(filtered, recentIds) else filtered
     }
@@ -158,6 +169,7 @@ fun MiniExercisePickerDialog(
                     showRecentOnly = recentActive,
                     onToggleRecent = { showRecentOnly = !showRecentOnly },
                     customExerciseCount = customExerciseCount,
+                    customEquipmentOverlay = customEquipmentOverlay,
                     selectedMuscles = selectedMuscles,
                     onToggleMuscle = { muscle ->
                         selectedMuscles = if (muscle in selectedMuscles) {

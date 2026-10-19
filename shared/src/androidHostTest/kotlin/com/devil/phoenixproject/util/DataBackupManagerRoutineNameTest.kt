@@ -15,6 +15,8 @@ import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentItem
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -2602,6 +2604,42 @@ class DataBackupManagerRoutineNameTest {
             fixture.preferences.get(PROFILE_A).rack.value.items.map { it.id },
             "v5+ must ignore a supplied legacy rack",
         )
+    }
+
+    @Test
+    fun `custom equipment restores from a backup and an absent or invalid field keeps the stored list`() = runTest {
+        // Issue #1227: the field is optional, so an older backup (or a broken document) must
+        // never clear a list the phone already has.
+        val fixture = profileFixture()
+        seedDistinctProfilePreferences(fixture)
+        val stored = CustomEquipmentPreferences(items = listOf(CustomEquipmentItem("U_LANDMINE", "Landmine", 1L)))
+        fixture.preferences.updateCustomEquipment(PROFILE_A, stored, now = 10)
+        fun restore(entry: JsonElement) = rawBackupJson(
+            version = 7,
+            identities = listOf(profileBackup(PROFILE_A)),
+            profilePreferences = listOf(entry),
+        )
+
+        assertTrue(fixture.manager.importFromJson(restore(buildJsonObject { put("profileId", PROFILE_A) })).isSuccess)
+        assertEquals(stored, fixture.preferences.get(PROFILE_A).customEquipment.value, "absent field")
+
+        val duplicateLabels = CustomEquipmentPreferences(
+            items = listOf(CustomEquipmentItem("U_EZ_BAR", "EZ Bar", 1L), CustomEquipmentItem("U_EZBAR", "EZ-Bar", 2L)),
+        )
+        val invalid = buildJsonObject {
+            put("profileId", PROFILE_A)
+            put("customEquipment", jsonElement(duplicateLabels))
+        }
+        assertTrue(fixture.manager.importFromJson(restore(invalid)).isSuccess)
+        assertEquals(stored, fixture.preferences.get(PROFILE_A).customEquipment.value, "invalid document")
+
+        val backedUp = CustomEquipmentPreferences(items = listOf(CustomEquipmentItem("U_EZ_BAR", "EZ Bar", 5L)))
+        val valid = buildJsonObject {
+            put("profileId", PROFILE_A)
+            put("customEquipment", jsonElement(backedUp))
+        }
+        assertTrue(fixture.manager.importFromJson(restore(valid)).isSuccess)
+        assertEquals(backedUp, fixture.preferences.get(PROFILE_A).customEquipment.value, "valid document")
     }
 
     @Test

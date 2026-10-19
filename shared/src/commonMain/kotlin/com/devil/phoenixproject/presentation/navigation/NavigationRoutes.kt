@@ -25,6 +25,7 @@ sealed class NavigationRoutes(val route: String) {
     }
     object Settings : NavigationRoutes("settings")
     object EquipmentRack : NavigationRoutes("equipment_rack")
+    object CustomEquipment : NavigationRoutes("custom_equipment")
     object ConnectionLogs : NavigationRoutes("connection_logs")
     object Diagnostics : NavigationRoutes("diagnostics")
     object Badges : NavigationRoutes("badges")

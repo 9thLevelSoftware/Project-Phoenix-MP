@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.database.UserProfilePreferences as ProfilePreferencesRow
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
@@ -29,6 +30,7 @@ interface ProfilePreferencesRepository {
     suspend fun insertDefaults(profileId: String)
     suspend fun updateCore(profileId: String, value: CoreProfilePreferences, now: Long)
     suspend fun updateRack(profileId: String, value: RackPreferences, now: Long)
+    suspend fun updateCustomEquipment(profileId: String, value: CustomEquipmentPreferences, now: Long)
     suspend fun updateWorkout(profileId: String, value: WorkoutPreferences, now: Long)
     suspend fun updateLed(profileId: String, value: LedPreferences, now: Long)
     suspend fun updateVbt(profileId: String, value: VbtPreferences, now: Long)
@@ -86,6 +88,19 @@ class SqlDelightProfilePreferencesRepository(
         )
     }
 
+    override suspend fun updateCustomEquipment(
+        profileId: String,
+        value: CustomEquipmentPreferences,
+        now: Long,
+    ) {
+        require(ProfilePreferencesValidator.customEquipment(value).isEmpty())
+        queries.updateCustomEquipmentProfilePreferences(
+            custom_equipment_json = ProfilePreferencesCodec.encodeCustomEquipment(value),
+            custom_equipment_updated_at = now,
+            profile_id = profileId,
+        )
+    }
+
     override suspend fun updateWorkout(
         profileId: String,
         value: WorkoutPreferences,
@@ -130,6 +145,7 @@ class SqlDelightProfilePreferencesRepository(
             ProfilePreferenceSectionName.WORKOUT -> updateWorkout(profileId, WorkoutPreferences(), now)
             ProfilePreferenceSectionName.LED -> updateLed(profileId, LedPreferences(), now)
             ProfilePreferenceSectionName.VBT -> updateVbt(profileId, VbtPreferences(), now)
+            ProfilePreferenceSectionName.CUSTOM_EQUIPMENT -> updateCustomEquipment(profileId, CustomEquipmentPreferences(), now)
         }
     }
 
@@ -156,6 +172,7 @@ class SqlDelightProfilePreferencesRepository(
             ?.let(ProfilePreferencesValidator::core)
             ?: listOf("weightUnit")
         val rack = ProfilePreferencesCodec.decodeRack(row.equipment_rack_json)
+        val customEquipment = ProfilePreferencesCodec.decodeCustomEquipment(row.custom_equipment_json)
         val workout = ProfilePreferencesCodec.decodeWorkout(row.workout_preferences_json)
         val led = ProfilePreferencesCodec.decodeLed(
             row.led_preferences_json,
@@ -226,6 +243,17 @@ class SqlDelightProfilePreferencesRepository(
                     row.vbt_local_generation,
                     row.vbt_server_revision,
                     row.vbt_dirty,
+                ),
+            ),
+            customEquipment = ProfilePreferenceSection(
+                customEquipment.value,
+                customEquipment.raw,
+                customEquipment.validity,
+                metadata(
+                    row.custom_equipment_updated_at,
+                    row.custom_equipment_local_generation,
+                    row.custom_equipment_server_revision,
+                    row.custom_equipment_dirty,
                 ),
             ),
         )

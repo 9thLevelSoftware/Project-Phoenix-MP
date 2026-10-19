@@ -22,6 +22,7 @@ internal fun filterExercisePickerCandidates(
     candidates: List<Exercise>,
     filters: ExercisePickerFilterState,
     completedExerciseIds: Set<String> = emptySet(),
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
 ): List<Exercise> = candidates.filter { exercise ->
     val matchesFavorites = !filters.showFavoritesOnly || exercise.isFavorite
     val matchesCustom = !filters.showCustomOnly || exercise.isCustom
@@ -34,7 +35,7 @@ internal fun filterExercisePickerCandidates(
             if (equipment == "Bodyweight" && exercise.isBodyweight) {
                 true
             } else {
-                val databaseValues = getEquipmentDatabaseValues(equipment)
+                val databaseValues = getEquipmentDatabaseValues(equipment, customEquipmentOverlay)
                 val exerciseEquipment = exercise.equipment.uppercase().split(",").map { it.trim() }
                 databaseValues.any { databaseValue ->
                     databaseValue.uppercase() in exerciseEquipment

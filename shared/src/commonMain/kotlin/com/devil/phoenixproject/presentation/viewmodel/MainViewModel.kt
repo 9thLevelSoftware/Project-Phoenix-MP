@@ -6,6 +6,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
+import com.devil.phoenixproject.data.preferences.CustomEquipmentEdit
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
@@ -31,6 +32,7 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -561,6 +563,37 @@ class MainViewModel(
         userProfileRepository.activeProfile
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
+
+    /**
+     * Issue #1227: the active profile's custom-equipment document. Empty document while the
+     * profile is SWITCHING so a screen can never show another profile's entries (signoff B3).
+     * Derived from the Ready context, which republishes after every preference write.
+     */
+    val customEquipment: StateFlow<CustomEquipmentPreferences> =
+        userProfileRepository.activeProfileContext
+            .map { context ->
+                when (context) {
+                    is ActiveProfileContext.Ready -> context.preferences.customEquipment.value
+                    is ActiveProfileContext.Switching -> CustomEquipmentPreferences()
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, CustomEquipmentPreferences())
+
+    /** Issue #1227: TOKEN -> LABEL overlay for the picker surfaces, from [customEquipment]. */
+    val customEquipmentOverlay: StateFlow<Map<String, String>> =
+        customEquipment
+            .map { document -> document.items.associate { it.token to it.label } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /**
+     * Issue #1227: apply [edit] to the stored custom-equipment list of [profileId]. The edit
+     * runs against the latest list under the profile lock, so a sync pull or another edit
+     * landing first is never overwritten, and an edit begun under one profile is rejected
+     * (StaleProfileContextException) after a profile switch (signoff B3).
+     */
+    suspend fun editCustomEquipment(profileId: String, edit: CustomEquipmentEdit) {
+        userProfileRepository.mutateCustomEquipment(profileId, edit::applyTo)
+    }
 
     /**
      * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever

@@ -40,6 +40,7 @@ import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
+import com.devil.phoenixproject.presentation.components.rekeyEquipmentSelection
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -71,6 +72,7 @@ fun SingleExerciseScreen(
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
     val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
@@ -102,6 +104,15 @@ fun SingleExerciseScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedMuscles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // Issue #1227 (signoff B3): re-key label-keyed equipment selections when the overlay changes.
+    var equipmentOverlayForSelection by remember { mutableStateOf(customEquipmentOverlay) }
+    LaunchedEffect(customEquipmentOverlay) {
+        if (equipmentOverlayForSelection != customEquipmentOverlay) {
+            selectedEquipment = rekeyEquipmentSelection(selectedEquipment, equipmentOverlayForSelection, customEquipmentOverlay)
+            equipmentOverlayForSelection = customEquipmentOverlay
+        }
+    }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
     var showEssentialsOnly by remember { mutableStateOf(false) }
@@ -147,6 +158,7 @@ fun SingleExerciseScreen(
                     showEssentialsOnly = showEssentialsOnly,
                 ),
                 completedExerciseIds = pickerCompletedExerciseIds,
+                customEquipmentOverlay = customEquipmentOverlay,
             )
         }
     }
@@ -218,6 +230,7 @@ fun SingleExerciseScreen(
     if (showCreateDialog || exerciseToEdit != null) {
         CreateExerciseDialog(
             existingExercise = exerciseToEdit,
+            customEquipmentOverlay = customEquipmentOverlay,
             onSave = { exercise ->
                 val editExerciseId = exerciseToEdit?.id
                 showCreateDialog = false
@@ -276,6 +289,7 @@ fun SingleExerciseScreen(
             // Always show the picker content as the background
             ExercisePickerContent(
                 exercises = exercises,
+                customEquipmentOverlay = customEquipmentOverlay,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 showFavoritesOnly = showFavoritesOnly,
