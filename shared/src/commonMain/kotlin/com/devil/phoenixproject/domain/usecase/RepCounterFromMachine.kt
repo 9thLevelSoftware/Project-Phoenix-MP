@@ -9,18 +9,26 @@ import com.devil.phoenixproject.domain.model.RepType
 /**
  * Handles rep counting based on notifications emitted by the Phoenix machine.
  *
- * REP COUNTING APPROACH (trust the machine counters):
- * - warmupReps = repsRomCount (directly from machine)
- * - workingReps = down - repsRomCount (down counter minus warmup count)
+ * Modern packets take warmup and working counts from the machine's ROM and set
+ * counters:
+ * - Warmup steps one integer at a time up to `min(repsRomCount, warmupTarget)`.
+ *   When `repsRomCount` and `repsSetCount` are both 0, those steps come from the
+ *   up-counter delta instead, still capped at `warmupTarget`.
+ * - Working reps become `repsSetCount` when that count is higher than the local
+ *   count. A lower or equal machine count leaves the local count unchanged. If
+ *   working reps arrive before warmup reaches `warmupTarget`, warmup is forced
+ *   complete. [getRepCount] reports `totalReps` as this working count and
+ *   excludes warmup reps.
+ * - On a modern packet, a positive `repsRomTotal` replaces a positive configured
+ *   `warmupTarget` when they differ. `repsSetTotal` is logged and leaves
+ *   `workingTarget` unchanged.
+ * - After warmup, an up increment shows a pending grey preview and a down
+ *   increment clears it. `stopAtTop` can complete the final working rep on that
+ *   preview. Otherwise the colored working count updates from `repsSetCount`.
  *
- * This works for ALL exercises including single-side because the down counter
- * always increments regardless of which cable is used.
- *
- * Visual feedback timing uses directional counters (up/down):
- * - At TOP (concentric peak): Show PENDING rep (grey number, +1 preview)
- * - At BOTTOM (eccentric valley): Rep CONFIRMED (colored number)
- *
- * This creates the "number rolls up grey, fills with color going down" effect.
+ * Legacy packets count from up-counter increments. The first `warmupTarget`
+ * increments are warmup reps; later increments are working reps. The down
+ * counter records the bottom position.
  */
 class RepCounterFromMachine {
 
@@ -245,19 +253,25 @@ class RepCounterFromMachine {
      * Supports TWO modes (Issue #187):
      *
      * MODERN MODE (isLegacyFormat=false):
-     * - Uses repsRomCount for warmup reps
-     * - Uses repsSetCount for working reps
-     * - Issue #210: Uses repsRomTotal/repsSetTotal for sync verification
-     * - up/down counters for visual pending feedback
+     * - Warmup steps toward `repsRomCount`, capped at `warmupTarget`. When both
+     *   `repsRomCount` and `repsSetCount` stay 0, warmup steps from the up counter.
+     * - Working reps become `repsSetCount` when that count is higher. [getRepCount]
+     *   reports `totalReps` as the working count and excludes warmup.
+     * - A positive `repsRomTotal` replaces a positive configured `warmupTarget`
+     *   when they differ. `repsSetTotal` is logged and leaves `workingTarget` unchanged.
+     * - up/down time the pending preview. `stopAtTop` can complete the final
+     *   working rep on the up preview.
      *
      * LEGACY MODE (isLegacyFormat=true, Beta 4 compatible):
      * - Uses topCounter (up) increments to count reps directly
      * - This is the method that worked in Beta 4 and handles Samsung devices
      *
      * @param repsRomCount Machine's ROM rep count (warmup reps) - 0 for legacy
-     * @param repsRomTotal Machine's warmup target (bytes 18-19) - Issue #210
+     * @param repsRomTotal Machine warmup target (bytes 18-19). On a modern packet, a
+     *   positive value replaces a positive configured warmupTarget when they differ.
      * @param repsSetCount Machine's set rep count (working reps) - 0 for legacy
-     * @param repsSetTotal Machine's working target (bytes 22-23) - Issue #210
+     * @param repsSetTotal Machine working target (bytes 22-23). Logged only;
+     *   workingTarget is not updated from it.
      * @param up Directional counter - increments at TOP (concentric peak)
      * @param down Directional counter - increments at BOTTOM (eccentric valley)
      * @param posA Position A for range calibration
@@ -364,20 +378,20 @@ class RepCounterFromMachine {
     }
 
     /**
-     * MODERN rep counting - MATCHES PARENT REPO (PhoenixRedux) EXACTLY.
+     * MODERN rep counting trusts the machine's ROM and set counters.
      *
-     * Issue #210 ROOT CAUSE FIX: Previous implementation used custom down counter
-     * calculations with safety nets. The parent repo simply TRUSTS THE MACHINE:
-     * - warmupReps = repsRomCount (directly from machine)
-     * - workingReps = repsSetCount (directly from machine)
+     * The machine distinguishes warmup from working:
+     * - warmupReps steps to `min(repsRomCount, warmupTarget)`, one event per integer.
+     *   When `repsRomCount` and `repsSetCount` are both 0, the same step comes from
+     *   the up-counter delta, still capped at `warmupTarget`.
+     * - workingReps becomes `repsSetCount` when `repsSetCount` is greater. The machine
+     *   increments that field for working reps only. If it arrives before warmup is
+     *   complete, warmup is forced to `warmupTarget`.
      *
-     * The machine handles warmup/working distinction internally. repsSetCount
-     * increments for WORKING reps only - trust the machine!
-     *
-     * VISUAL FEEDBACK (up/down counters are ONLY for visual feedback):
-     * - UP counter: triggers PENDING (grey) preview at top of rep
-     * - DOWN counter: clears pending state at bottom
-     * - Actual rep counting comes from repsRomCount/repsSetCount
+     * VISUAL FEEDBACK (the working total comes from `repsSetCount`):
+     * - UP counter: pending (grey) preview at the top, after warmup. `stopAtTop` can
+     *   treat that preview as the final working rep.
+     * - DOWN counter: clears the pending preview at the bottom.
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
         // Issue #531 (symptom 1, heuristic): suppress a phantom warmup chirp caused by the
