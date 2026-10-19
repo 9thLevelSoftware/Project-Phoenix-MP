@@ -104,15 +104,23 @@ internal fun saveFilePickerCreatedDocument(
 ): String? {
     try {
         val createdEmpty = isEmptyDocument(context, uri)
-        writeFilePickerDocumentDeletingPartialOnFailure(
+        val failedDeleteMessage = "Failed to delete created document $uri"
+        writeSafDocumentDeletingPartialOnFailure(
             documentUri = uri.toString(),
             deleteCreatedDocument = {
                 if (createdEmpty) {
-                    deleteFilePickerCreatedDocument(context, uri)
+                    deleteSafDocumentBestEffort(
+                        contentResolver = context.contentResolver,
+                        uri = uri,
+                        deleteByDocumentFile = { DocumentFile.fromSingleUri(context, uri)?.delete() == true },
+                        logger = log,
+                        failedDeleteMessage = failedDeleteMessage,
+                    )
                 } else {
                     log.w { "Keeping $uri after a failed write: it was not reported empty before the write" }
                 }
             },
+            onDeleteFailure = { deleteError -> log.w(deleteError) { failedDeleteMessage } },
         ) {
             // A null stream wrote nothing, but CreateDocument already inserted the row.
             val stream = context.contentResolver.openOutputStream(uri)
@@ -148,62 +156,4 @@ internal fun isEmptyDocument(context: Context, uri: Uri): Boolean = try {
 } catch (e: Exception) {
     log.w(e) { "Could not read the size of $uri" }
     false
-}
-
-/**
- * Best-effort delete of a document created by CreateDocument whose write did not finish.
- *
- * [DocumentsContract.deleteDocument] is tried first. [DocumentFile.delete] is the
- * fallback when that call returns false or throws. Delete errors are logged and
- * ignored. [CancellationException] is rethrown.
- */
-internal fun deleteFilePickerCreatedDocument(context: Context, uri: Uri) {
-    val deletedByContract = try {
-        DocumentsContract.deleteDocument(context.contentResolver, uri)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.w(e) { "DocumentsContract.deleteDocument failed for $uri" }
-        false
-    }
-    if (deletedByContract) return
-
-    val deletedByFile = try {
-        DocumentFile.fromSingleUri(context, uri)?.delete() == true
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.w(e) { "DocumentFile.delete failed for $uri" }
-        false
-    }
-    if (!deletedByFile) {
-        log.w { "Failed to delete created document $uri" }
-    }
-}
-
-/**
- * Run [write] for a SAF document that has already been created.
- *
- * If [write] fails, [deleteCreatedDocument] removes that document and the
- * original exception is rethrown, including [CancellationException]. Errors
- * from the delete are logged and ignored so the write failure is preserved,
- * except a [CancellationException] from the delete, which is rethrown.
- */
-internal fun writeFilePickerDocumentDeletingPartialOnFailure(
-    documentUri: String,
-    deleteCreatedDocument: () -> Unit,
-    write: () -> Unit,
-) {
-    try {
-        write()
-    } catch (writeError: Exception) {
-        try {
-            deleteCreatedDocument()
-        } catch (deleteError: CancellationException) {
-            throw deleteError
-        } catch (deleteError: Exception) {
-            log.w(deleteError) { "Failed to delete created document $documentUri" }
-        }
-        throw writeError
-    }
 }

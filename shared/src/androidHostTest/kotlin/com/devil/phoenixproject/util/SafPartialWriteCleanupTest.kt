@@ -1,17 +1,21 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import kotlinx.coroutines.CancellationException
 
 /**
- * Policy for removing a Storage Access Framework document when the backup write
- * fails after that document has been created. The Android resolver calls
- * [writeSafDocumentDeletingPartialOnFailure] with
- * [android.provider.DocumentsContract.deleteDocument] and [androidx.documentfile.provider.DocumentFile.delete].
+ * Policy for removing a Storage Access Framework document when a backup or
+ * file-saver write fails after that document has been created. Both call
+ * [writeSafDocumentDeletingPartialOnFailure] and [deleteSafDocumentBestEffort],
+ * which tries [android.provider.DocumentsContract.deleteDocument] and then
+ * [androidx.documentfile.provider.DocumentFile.delete].
  */
 class SafPartialWriteCleanupTest {
 
@@ -77,6 +81,24 @@ class SafPartialWriteCleanupTest {
     }
 
     @Test
+    fun writeFailure_whenDeleteFails_invokesOnDeleteFailure_andRethrowsTheOriginalException() {
+        val failure = IllegalStateException("disk full")
+        val deleteFailure = IllegalStateException("resolver busy")
+        var reported: Exception? = null
+        val thrown = assertFailsWith<IllegalStateException> {
+            writeSafDocumentDeletingPartialOnFailure(
+                documentUri = "content://com.android.externalstorage.documents/document/export",
+                deleteCreatedDocument = { throw deleteFailure },
+                onDeleteFailure = { reported = it },
+            ) {
+                throw failure
+            }
+        }
+        assertSame(failure, thrown)
+        assertSame(deleteFailure, reported)
+    }
+
+    @Test
     fun deleteCancellation_isRethrown() {
         val cancellation = CancellationException("delete cancelled")
         val thrown = assertFailsWith<CancellationException> {
@@ -88,5 +110,33 @@ class SafPartialWriteCleanupTest {
             }
         }
         assertSame(cancellation, thrown)
+    }
+
+    @Test
+    fun backupAndFileSaverShareThePartialWriteHelper() {
+        val helper = readProjectFile(
+            "src/androidMain/kotlin/com/devil/phoenixproject/util/SafPartialDocumentWrite.kt",
+        ) ?: fail("Missing SafPartialDocumentWrite.kt")
+        val backup = readProjectFile(
+            "src/androidMain/kotlin/com/devil/phoenixproject/util/BackupDestinationResolver.android.kt",
+        ) ?: fail("Missing BackupDestinationResolver.android.kt")
+
+        assertTrue(helper.contains("fun writeSafDocumentDeletingPartialOnFailure"))
+        assertTrue(helper.contains("fun deleteSafDocumentBestEffort"))
+        assertTrue(helper.contains("DocumentsContract.deleteDocument"))
+        assertTrue(
+            helper.contains("deleteByDocumentFile()"),
+            "deleteDocument false or throw falls back to DocumentFile.delete",
+        )
+        assertTrue(backup.contains("writeSafDocumentDeletingPartialOnFailure("))
+        assertTrue(backup.contains("deleteSafDocumentBestEffort("))
+        assertTrue(backup.contains("deleteByDocumentFile = { newFile.delete() }"))
+        assertTrue(backup.contains("Failed to delete partial SAF backup"))
+        assertFalse(backup.contains("fun writeSafDocumentDeletingPartialOnFailure"))
+        assertFalse(backup.contains("fun deletePartialSafDocument"))
+        assertEquals(
+            1,
+            helper.split("fun writeSafDocumentDeletingPartialOnFailure").size - 1,
+        )
     }
 }

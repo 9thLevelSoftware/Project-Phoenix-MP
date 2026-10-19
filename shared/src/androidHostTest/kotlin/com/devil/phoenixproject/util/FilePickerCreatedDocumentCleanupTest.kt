@@ -12,16 +12,15 @@ import kotlinx.coroutines.CancellationException
 /**
  * Policy for removing a Storage Access Framework document when a CreateDocument
  * save fails after the picker has already created that document.
- * [FilePicker] calls [writeFilePickerDocumentDeletingPartialOnFailure] with
- * [android.provider.DocumentsContract.deleteDocument] and
- * [androidx.documentfile.provider.DocumentFile.delete].
+ * [FilePicker] calls [writeSafDocumentDeletingPartialOnFailure] with
+ * [deleteSafDocumentBestEffort].
  */
 class FilePickerCreatedDocumentCleanupTest {
 
     @Test
     fun successfulWrite_leavesTheDocument() {
         var deleted = false
-        writeFilePickerDocumentDeletingPartialOnFailure(
+        writeSafDocumentDeletingPartialOnFailure(
             documentUri = "content://com.android.externalstorage.documents/document/export",
             deleteCreatedDocument = { deleted = true },
         ) {
@@ -35,7 +34,7 @@ class FilePickerCreatedDocumentCleanupTest {
         var deleted = false
         val failure = IllegalStateException("disk full")
         val thrown = assertFailsWith<IllegalStateException> {
-            writeFilePickerDocumentDeletingPartialOnFailure(
+            writeSafDocumentDeletingPartialOnFailure(
                 documentUri = "content://com.android.externalstorage.documents/document/export",
                 deleteCreatedDocument = { deleted = true },
             ) {
@@ -50,7 +49,7 @@ class FilePickerCreatedDocumentCleanupTest {
     fun writeFailure_whenDeleteFails_rethrowsTheOriginalException() {
         val failure = IllegalStateException("disk full")
         val thrown = assertFailsWith<IllegalStateException> {
-            writeFilePickerDocumentDeletingPartialOnFailure(
+            writeSafDocumentDeletingPartialOnFailure(
                 documentUri = "content://com.android.externalstorage.documents/document/export",
                 deleteCreatedDocument = { throw IllegalStateException("resolver busy") },
             ) {
@@ -65,7 +64,7 @@ class FilePickerCreatedDocumentCleanupTest {
         var deleted = false
         val cancellation = CancellationException("cancelled")
         val thrown = assertFailsWith<CancellationException> {
-            writeFilePickerDocumentDeletingPartialOnFailure(
+            writeSafDocumentDeletingPartialOnFailure(
                 documentUri = "content://com.android.externalstorage.documents/document/export",
                 deleteCreatedDocument = {
                     deleted = true
@@ -83,7 +82,7 @@ class FilePickerCreatedDocumentCleanupTest {
     fun deleteCancellation_isRethrown() {
         val cancellation = CancellationException("delete cancelled")
         val thrown = assertFailsWith<CancellationException> {
-            writeFilePickerDocumentDeletingPartialOnFailure(
+            writeSafDocumentDeletingPartialOnFailure(
                 documentUri = "content://com.android.externalstorage.documents/document/export",
                 deleteCreatedDocument = { throw cancellation },
             ) {
@@ -110,12 +109,31 @@ class FilePickerCreatedDocumentCleanupTest {
         )
         assertTrue(body.contains("onSaved(null)"), "dismissed picker preserves the null result")
         assertTrue(
-            source.contains("DocumentsContract.deleteDocument"),
-            "cleanup tries DocumentsContract.deleteDocument first",
+            source.contains("writeSafDocumentDeletingPartialOnFailure"),
+            "a chosen document is written through the shared partial-write helper",
+        )
+        assertTrue(
+            source.contains("deleteSafDocumentBestEffort"),
+            "cleanup uses the shared delete fallback",
         )
         assertTrue(
             source.contains("DocumentFile.fromSingleUri"),
             "cleanup falls back to DocumentFile.delete",
+        )
+        assertTrue(
+            source.contains("Failed to delete created document"),
+            "file-saver cleanup keeps its delete-failure message",
+        )
+        val helper = readProjectFile(
+            "src/androidMain/kotlin/com/devil/phoenixproject/util/SafPartialDocumentWrite.kt",
+        ) ?: fail("Missing SafPartialDocumentWrite.kt")
+        assertTrue(
+            helper.contains("DocumentsContract.deleteDocument"),
+            "cleanup tries DocumentsContract.deleteDocument first",
+        )
+        assertTrue(
+            helper.contains("deleteByDocumentFile"),
+            "deleteDocument failure falls back to DocumentFile.delete",
         )
     }
 
