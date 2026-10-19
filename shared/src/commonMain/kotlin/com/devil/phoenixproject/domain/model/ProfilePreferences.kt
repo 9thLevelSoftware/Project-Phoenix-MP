@@ -16,6 +16,19 @@ data class RackPreferences(
 )
 
 @Serializable
+data class CustomEquipmentItem(
+    val token: String,
+    val label: String,
+    val createdAt: Long,
+)
+
+@Serializable
+data class CustomEquipmentPreferences(
+    val version: Int = 1,
+    val items: List<CustomEquipmentItem> = emptyList(),
+)
+
+@Serializable
 data class JustLiftDefaultsDocument(
     val workoutModeId: Int = 0,
     val weightPerCableKg: Float = 20f,
@@ -95,7 +108,7 @@ data class ProfileLocalSafetyPreferences(
     val adultsOnlyPrompted: Boolean = false,
 )
 
-enum class ProfilePreferenceSectionName { CORE, RACK, WORKOUT, LED, VBT }
+enum class ProfilePreferenceSectionName { CORE, RACK, WORKOUT, LED, VBT, CUSTOM_EQUIPMENT }
 
 sealed interface ProfilePreferenceValidity {
     data object Valid : ProfilePreferenceValidity
@@ -125,4 +138,5 @@ data class UserProfilePreferences(
     val workout: ProfilePreferenceSection<WorkoutPreferences>,
     val led: ProfilePreferenceSection<LedPreferences>,
     val vbt: ProfilePreferenceSection<VbtPreferences>,
+    val customEquipment: ProfilePreferenceSection<CustomEquipmentPreferences>,
 )

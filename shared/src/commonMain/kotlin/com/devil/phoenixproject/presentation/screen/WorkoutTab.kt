@@ -138,6 +138,9 @@ fun WorkoutTab(
     // button stays hidden while these are null or the summary is non-terminal.
     personalRecordRepository: PersonalRecordRepository? = null,
     userPreferences: UserPreferences? = null,
+    // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs. The host
+    // passes the active profile's overlay; the empty default is for previews/tests only.
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
 ) {
     val connectionState = state.connectionState
     val workoutState = state.workoutState
@@ -468,6 +471,7 @@ fun WorkoutTab(
                             MiniExercisePickerDialog(
                                 exerciseRepository = exerciseRepository,
                                 recentExerciseIds = recentJustLiftExerciseIds,
+                                customEquipmentOverlay = customEquipmentOverlay,
                                 onDismiss = { showExerciseTagPicker = false },
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
@@ -555,6 +559,7 @@ fun WorkoutTab(
                         if (showAddExercisePicker && canAddExercise) {
                             ExercisePickerDialog(
                                 showDialog = true,
+                                customEquipmentOverlay = customEquipmentOverlay,
                                 onDismiss = { showAddExercisePicker = false },
                                 onExerciseSelected = { selectedExercise ->
                                     val prefs = userPreferences

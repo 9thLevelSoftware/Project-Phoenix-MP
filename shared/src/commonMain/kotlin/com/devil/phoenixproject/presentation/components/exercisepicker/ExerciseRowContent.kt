@@ -53,6 +53,7 @@ fun ExerciseRowContent(
     onThumbnailClick: (() -> Unit)? = null,
     /** Row name typography. Defaults to titleMedium; the Tag exercise dialog passes titleSmall (#363). */
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -108,7 +109,7 @@ fun ExerciseRowContent(
                 }
 
                 // Subtitle: Muscle • Equipment
-                val subtitle = buildSubtitle(exercise)
+                val subtitle = buildSubtitle(exercise, customEquipmentOverlay)
                 if (subtitle.isNotBlank()) {
                     Text(
                         text = subtitle,
@@ -221,7 +222,10 @@ private fun ExerciseInitialEnhanced(exerciseName: String, modifier: Modifier = M
     }
 }
 
-private fun buildSubtitle(exercise: Exercise): String {
+private fun buildSubtitle(
+    exercise: Exercise,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
+): String {
     val parts = mutableListOf<String>()
 
     if (exercise.muscleGroups.isNotBlank()) {
@@ -237,7 +241,7 @@ private fun buildSubtitle(exercise: Exercise): String {
     }
 
     if (exercise.equipment.isNotBlank() && exercise.equipment.lowercase() != "null") {
-        val equipment = compactEquipmentLabel(exercise.equipment)
+        val equipment = compactEquipmentLabel(exercise.equipment, customEquipmentOverlay)
         if (equipment.isNotBlank()) {
             parts.add(equipment)
         }

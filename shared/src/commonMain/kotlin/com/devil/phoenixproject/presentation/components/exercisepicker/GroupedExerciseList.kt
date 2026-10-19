@@ -54,6 +54,7 @@ fun GroupedExerciseList(
     listState: LazyListState = rememberLazyListState(),
     /** Row name typography forwarded to each exercise row. Defaults to titleMedium (#363). */
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
     emptyContent: @Composable () -> Unit = {},
     /** False lists [exercises] in their given order, with no letter headers or alphabet strip. */
@@ -94,6 +95,7 @@ fun GroupedExerciseList(
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = enableVideoPlayback,
             rowNameStyle = rowNameStyle,
+            customEquipmentOverlay = customEquipmentOverlay,
             onSelect = { onExerciseSelected(exercise) },
             onToggleFavorite = { onToggleFavorite(exercise) },
             onShowVideo = { images -> onShowVideo(exercise, images) },
@@ -167,6 +169,7 @@ private fun ExerciseItemWithImage(
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean,
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowVideo: (List<ExerciseImageEntity>) -> Unit,
@@ -204,6 +207,7 @@ private fun ExerciseItemWithImage(
         thumbnailUrl = thumbnailUrl,
         isLoadingThumbnail = isLoadingImage,
         rowNameStyle = rowNameStyle,
+        customEquipmentOverlay = customEquipmentOverlay,
         onSelect = onSelect,
         onToggleFavorite = onToggleFavorite,
         onLongPress = onLongPress,

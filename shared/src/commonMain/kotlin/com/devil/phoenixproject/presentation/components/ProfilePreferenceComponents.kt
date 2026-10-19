@@ -101,11 +101,14 @@ fun ProfilePreferenceSections(
     onUnlockDiscoMode: () -> Long?,
     onUnlockDominatrixMode: () -> Long?,
     onManageEquipmentRack: () -> Unit,
+    onManageCustomEquipment: () -> Unit,
     onDiscoModeToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val core = preferences.core.value
     val rack = preferences.rack.value
+    // Issue #1227: the profile's custom equipment names (count shown on the card).
+    val customEquipment = preferences.customEquipment.value
     val workout = preferences.workout.value
     val led = preferences.led.value
     val vbt = preferences.vbt.value
@@ -140,6 +143,32 @@ fun ProfilePreferenceSections(
                     Text(stringResource(Res.string.equipment_rack_manage))
                     Text(
                         text = "$enabledItems/${rack.items.size}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        // Issue #1227: Custom equipment is its own card immediately after the Equipment rack
+        // card (prototype image 1). The rack card copy and contents are untouched (signoff B11).
+        PreferenceCard(title = stringResource(Res.string.custom_equipment_title)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .clickable(onClick = onManageCustomEquipment)
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Default.FitnessCenter,
+                    contentDescription = stringResource(Res.string.cd_custom_equipment),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.custom_equipment_manage))
+                    Text(
+                        text = "${customEquipment.items.size}/24",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

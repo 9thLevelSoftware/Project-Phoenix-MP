@@ -92,6 +92,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
     val workoutParameters by viewModel.workoutParameters.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
+    val customEquipmentOverlay by viewModel.customEquipmentOverlay.collectAsState()
     val activeRackItemIds by viewModel.activeRackItemIds.collectAsState()
     val activeRackBehaviorOverrides by viewModel.activeRackBehaviorOverrides.collectAsState()
     val repCount by viewModel.repCount.collectAsState()
@@ -536,6 +537,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 // flow (no Koin lookup in WorkoutTab).
                 personalRecordRepository = viewModel.personalRecordRepository,
                 userPreferences = userPreferences,
+                customEquipmentOverlay = customEquipmentOverlay,
             )
         }
     }

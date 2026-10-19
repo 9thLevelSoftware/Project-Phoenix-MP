@@ -88,11 +88,15 @@ fun ExerciseFilterShelf(
     selectedEquipment: Set<String>,
     onToggleEquipment: (String) -> Unit,
     onClearAll: () -> Unit,
+    customEquipmentOverlay: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     val muscleGroups = listOf("Chest", "Back", "Legs", "Shoulders", "Arms", "Core")
     // Issue #883: see EQUIPMENT_FILTER_CHIPS for the chip contract and retired chips.
-    val equipmentTypes = EQUIPMENT_FILTER_CHIPS
+    // Issue #1227: the profile's custom names append after Bodyweight; the official eight
+    // stay exactly as they are (signoff B9).
+    val equipmentTypes = EQUIPMENT_FILTER_CHIPS +
+        customEquipmentOverlay.values.filterNot { it in EQUIPMENT_FILTER_CHIPS }
 
     val previouslyCompletedDescription =
         stringResource(Res.string.cd_filter_previously_completed)

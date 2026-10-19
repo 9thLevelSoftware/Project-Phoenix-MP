@@ -132,6 +132,13 @@ internal class SqlDelightProfilePreferenceSyncRepository(
                 profile_id = columns.key.localProfileId,
                 sent_local_generation = sentLocalGeneration,
             )
+            is DecodedProfilePreferenceValue.CustomEquipment -> queries.applyCustomEquipmentCanonicalForGeneration(
+                custom_equipment_json = ProfilePreferencesCodec.encodeCustomEquipment(value.value),
+                server_updated_at = columns.serverUpdatedAtEpochMs,
+                server_revision = columns.serverRevision,
+                profile_id = columns.key.localProfileId,
+                sent_local_generation = sentLocalGeneration,
+            )
             is DecodedProfilePreferenceValue.Workout -> queries.applyWorkoutCanonicalForGeneration(
                 workout_preferences_json = ProfilePreferencesCodec.encodeWorkout(value.value),
                 server_updated_at = columns.serverUpdatedAtEpochMs,
@@ -174,6 +181,12 @@ internal class SqlDelightProfilePreferenceSyncRepository(
                 profile_id = columns.key.localProfileId,
                 sent_local_generation = sentLocalGeneration,
             )
+            is DecodedProfilePreferenceValue.CustomEquipment ->
+                queries.advanceCustomEquipmentRevisionForNewerGeneration(
+                    server_revision = columns.serverRevision,
+                    profile_id = columns.key.localProfileId,
+                    sent_local_generation = sentLocalGeneration,
+                )
             is DecodedProfilePreferenceValue.Workout ->
                 queries.advanceWorkoutRevisionForNewerGeneration(
                     server_revision = columns.serverRevision,
@@ -212,6 +225,12 @@ internal class SqlDelightProfilePreferenceSyncRepository(
             )
             is DecodedProfilePreferenceValue.Rack -> queries.applyPulledRackWhenClean(
                 equipment_rack_json = ProfilePreferencesCodec.encodeRack(value.value),
+                server_updated_at = columns.serverUpdatedAtEpochMs,
+                server_revision = columns.serverRevision,
+                profile_id = columns.key.localProfileId,
+            )
+            is DecodedProfilePreferenceValue.CustomEquipment -> queries.applyPulledCustomEquipmentWhenClean(
+                custom_equipment_json = ProfilePreferencesCodec.encodeCustomEquipment(value.value),
                 server_updated_at = columns.serverUpdatedAtEpochMs,
                 server_revision = columns.serverRevision,
                 profile_id = columns.key.localProfileId,

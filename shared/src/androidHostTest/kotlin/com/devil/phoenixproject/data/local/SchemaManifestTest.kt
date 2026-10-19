@@ -421,6 +421,11 @@ class SchemaManifestTest {
                 "vbt_local_generation",
                 "vbt_server_revision",
                 "vbt_dirty",
+                "custom_equipment_json",
+                "custom_equipment_updated_at",
+                "custom_equipment_local_generation",
+                "custom_equipment_server_revision",
+                "custom_equipment_dirty",
             ),
             columnNames(driver, "UserProfilePreferences"),
         )
