@@ -161,7 +161,8 @@ fun SetSummaryCard(
 
     // Calculate display values.
     // Primary load display is per-cable. Total volume is already a total value,
-    // so it only needs unit conversion.
+    // so it only needs unit conversion. The number then uses the shared weight
+    // formatter so a fractional kg/lb volume is not rounded away.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
@@ -229,7 +230,7 @@ fun SetSummaryCard(
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                         )
                         Text(
-                            "${totalVolumeDisplay.roundToInt()}",
+                            WeightDisplayFormatter.formatDisplayNumber(totalVolumeDisplay),
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary,
@@ -660,7 +661,7 @@ private fun SummaryForceCard(label: String, concentricValue: Float, eccentricVal
                 // Concentric (lifting) with up arrow
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "${concentricValue.roundToInt()}",
+                        WeightDisplayFormatter.formatDisplayNumber(concentricValue),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -674,7 +675,7 @@ private fun SummaryForceCard(label: String, concentricValue: Float, eccentricVal
                 // Eccentric (lowering) with down arrow
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "${eccentricValue.roundToInt()}",
+                        WeightDisplayFormatter.formatDisplayNumber(eccentricValue),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -730,7 +731,7 @@ private fun EchoPhaseBreakdownCard(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    "Peak: ${peakWeight.roundToInt()} $unitLabel/cable",
+                    "Peak: ${WeightDisplayFormatter.formatDisplayNumber(peakWeight)} $unitLabel/cable",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -794,7 +795,7 @@ private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unit
             fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Normal,
         )
         Text(
-            "${avgWeight.roundToInt()}",
+            WeightDisplayFormatter.formatDisplayNumber(avgWeight),
             style = if (isPrimary) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
