@@ -6,9 +6,10 @@ import app.cash.sqldelight.db.SqlDriver
 // ============================================================
 // SchemaManifest.kt -- Single source of truth for schema reconciliation
 //
-// This file replaces 5 fragmented mechanisms (pre-flights, bootstrap code,
-// legacy heals, platform-specific fallbacks, ensureAllTablesExist) with one
-// comprehensive manifest that is COMPLETE, IDEMPOTENT, and CROSS-PLATFORM.
+// DriverFactory calls reconcileFullSchema() on open. That drops retired tables
+// (applyTableDrop), creates manifestTables (applyTableCreate), heals
+// manifestColumns (applyColumnHeal), and creates manifestIndexes
+// (applyIndexCreate). The manifest is COMPLETE, IDEMPOTENT, and CROSS-PLATFORM.
 //
 // Every table that needs guaranteed existence (both bootstrap tables and
 // migration-created tables vulnerable to branch-merge gaps), every column
@@ -360,20 +361,20 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 }
 
 // ============================================================
-// TASK 3: manifestTables -- 30 reconciled tables
+// TASK 3: manifestTables -- 58 reconciled tables
 //
 // Three categories of tables that need reconciliation on every open:
 //
-// A) Bootstrap tables (6): Originally created by ensureGamificationTablesExist(),
-//    ensureAllTablesExist(), or platform-specific DriverFactory bootstrap code.
+// A) Bootstrap tables (6): Gamification and diagnostics tables.
+//    reconcileFullSchema() creates them through applyTableCreate().
 //    Declared with BASE shape (columns added by later migrations are in manifestColumns).
 //
-// B) Migration-created tables (8): Created by numbered .sqm migrations. Included
+// B) Migration-created tables: Created by numbered .sqm migrations. Included
 //    here because branch merging can cause migration version numbers to be "already
 //    applied" on a device that never actually ran the SQL, leaving the table missing.
 //    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
 //
-// C) Initial-schema tables (16): Tables defined in PhoenixDatabase.sq from the
+// C) Initial-schema tables: Tables defined in PhoenixDatabase.sq from the
 //    initial schema. Included with their FULL current shape (all columns including
 //    those added by later migrations). applyColumnHeal in manifestColumns handles
 //    "duplicate column" errors gracefully, so having ALL columns is safe and ensures
@@ -504,7 +505,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
+    // EarnedBadge -- applyTableCreate() in reconcileFullSchema()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
         table = "EarnedBadge",
@@ -522,7 +523,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // StreakHistory -- originally bootstrapped by ensureGamificationTablesExist()
+    // StreakHistory -- applyTableCreate() in reconcileFullSchema()
     // Full current shape: profile_id (m22)
     SchemaTableOperation(
         table = "StreakHistory",
@@ -537,7 +538,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // GamificationStats -- originally bootstrapped by ensureGamificationTablesExist()
+    // GamificationStats -- applyTableCreate() in reconcileFullSchema()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
         table = "GamificationStats",
@@ -561,7 +562,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // ConnectionLog -- originally bootstrapped by ensureAllTablesExist()
+    // ConnectionLog -- applyTableCreate() in reconcileFullSchema()
     // Full shape: all columns present from creation (no later migrations add columns)
     SchemaTableOperation(
         table = "ConnectionLog",
@@ -580,7 +581,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // DiagnosticsHistory -- originally bootstrapped by ensureAllTablesExist()
+    // DiagnosticsHistory -- applyTableCreate() in reconcileFullSchema()
     // Full shape: all columns present from creation (no later migrations add columns)
     SchemaTableOperation(
         table = "DiagnosticsHistory",
@@ -603,7 +604,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // PhaseStatistics -- originally bootstrapped by ensureAllTablesExist()
+    // PhaseStatistics -- applyTableCreate() in reconcileFullSchema()
     // Full shape: all columns present from creation (no later migrations add columns)
     SchemaTableOperation(
         table = "PhaseStatistics",
@@ -1650,7 +1651,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 39: explicit bodyweight classification (issue #635)
     SchemaHealOperation("Exercise", "isBodyweight", "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER"),
 
-    // ── WorkoutSession (31 columns) ─────────────────────────────────────
+    // ── WorkoutSession (38 columns) ─────────────────────────────────────
 
     // Migration 5: set summary metrics
     SchemaHealOperation("WorkoutSession", "peakForceConcentricA", "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL"),
@@ -1738,7 +1739,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 21: multi-profile support
     SchemaHealOperation("Routine", "profile_id", "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
 
-    // ── RoutineExercise (15 columns) ────────────────────────────────────
+    // ── RoutineExercise (18 columns) ────────────────────────────────────
 
     // Migration 4: superset container model
     SchemaHealOperation("RoutineExercise", "supersetId", "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT"),
@@ -1763,6 +1764,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
+    // Migration 46: opt-in drop-set offer (46.sqm)
     SchemaHealOperation("RoutineExercise", "dropSetEnabled", "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL"),
     // Migration 53: tri-state duration sync upgrade marker.
@@ -1776,7 +1778,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("UserProfile", "subscription_expires_at", "ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER"),
     SchemaHealOperation("UserProfile", "last_auth_at", "ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER"),
 
-    // ── TrainingCycle (5 columns) ────────────────────────────────────────
+    // ── TrainingCycle (6 columns) ────────────────────────────────────────
 
     // Migration 21: multi-profile support
     SchemaHealOperation("TrainingCycle", "profile_id", "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
@@ -1835,16 +1837,16 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 31: provider tombstone handling
     SchemaHealOperation("ExternalActivity", "deletedAt", "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER"),
 
-    // ── CompletedSet (3 columns, migrations 43-44) ─────────────────────
-    // Migration 43: set-end reason for workout history analytics (Issue #673 PR 1)
+    // ── CompletedSet (3 columns, migrations 44-45) ─────────────────────
+    // Migration 44: set-end reason for workout history analytics (Issue #673 PR 1)
     SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'"),
-    // Migration 44: stable logical-set attempt identity (Issue #673 PR 2)
+    // Migration 45: stable logical-set attempt identity (Issue #673 PR 2)
     SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
     SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
 )
 
 // ============================================================
-// TASK 5: manifestIndexes -- 36 index operations
+// TASK 5: manifestIndexes -- 78 index operations
 //
 // Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
