@@ -1243,7 +1243,6 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
 
 /**
  * Asymmetry severity color from AccessibilityTheme.
- * Uses asymmetryGood/Caution/Bad which change with color-blind mode.
  */
 @Composable
 private fun asymmetrySeverityColor(percent: Float): Color {

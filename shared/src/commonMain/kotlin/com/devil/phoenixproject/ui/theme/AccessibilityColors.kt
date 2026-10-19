@@ -102,7 +102,7 @@ internal val StandardPalette = AccessibilityColors(
 
 /**
  * CompositionLocal for the active accessibility color palette.
- * Static (staticCompositionLocalOf) -- entire value swaps on mode change.
+ * Static (staticCompositionLocalOf).
  */
 val LocalAccessibilityColors = staticCompositionLocalOf { StandardPalette }
 
@@ -143,7 +143,6 @@ fun velocityZoneColor(zone: BiomechanicsVelocityZone): Color {
  * SetSummaryCard into a single source of truth.
  *
  * Thresholds: 95 excellent, 80 good, 60 fair, 40 below average, otherwise poor.
- * Colors change with color-blind mode for WCAG 1.4.1 compliance.
  */
 @Composable
 fun qualityScoreColor(score: Int): Color {
