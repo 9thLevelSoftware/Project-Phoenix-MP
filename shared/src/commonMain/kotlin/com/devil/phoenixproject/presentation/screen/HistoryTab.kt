@@ -60,7 +60,6 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.RackItem
-import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -68,6 +67,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
+import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
@@ -1291,26 +1291,22 @@ private fun RackContextRow(
     }
 }
 
+/**
+ * Snapshot items use [formatRackItemLine], the same line as the workout HUD.
+ *
+ * Sessions saved before rack snapshots have no items. Those keep a separate
+ * line: aggregate added load and counterweight only, joined with " / ", and
+ * with no item names.
+ */
 private fun WorkoutSession.rackContextText(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
 ): String? {
-    val snapshotItems = decodeRackSnapshotItems()
-    if (snapshotItems.isNotEmpty()) {
-        val visibleItems = snapshotItems.take(2).map { item ->
-            when (item.behavior) {
-                RackItemBehavior.ADDED_RESISTANCE -> "${item.name} +${formatWeight(item.weightKg, weightUnit)}"
-                RackItemBehavior.COUNTERWEIGHT -> "${item.name} -${formatWeight(item.weightKg, weightUnit)}"
-                RackItemBehavior.DISPLAY_ONLY -> item.name
-            }
-        }
-        val hiddenCount = snapshotItems.size - visibleItems.size
-        return if (hiddenCount > 0) {
-            visibleItems.joinToString(", ") + " +$hiddenCount"
-        } else {
-            visibleItems.joinToString(", ")
-        }
-    }
+    formatRackItemLine(
+        items = decodeRackSnapshotItems(),
+        weightUnit = weightUnit,
+        formatWeight = formatWeight,
+    )?.let { return it }
 
     val fallbackParts = buildList {
         if (externalAddedLoadKg > 0f) add("+${formatWeight(externalAddedLoadKg, weightUnit)}")
