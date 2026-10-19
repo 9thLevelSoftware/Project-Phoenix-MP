@@ -2,7 +2,6 @@ package com.devil.phoenixproject.util
 
 import android.content.ContentResolver
 import android.content.Context
-import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import co.touchlab.kermit.Logger
 import java.io.File
@@ -76,7 +75,15 @@ class AndroidBackupDestinationResolver(
             // the write, so it throws into the cleanup below instead of returning early.
             writeSafDocumentDeletingPartialOnFailure(
                 documentUri = newFile.uri.toString(),
-                deleteCreatedDocument = { deletePartialSafDocument(context.contentResolver, newFile) },
+                deleteCreatedDocument = {
+                    deleteSafDocumentBestEffort(
+                        contentResolver = context.contentResolver,
+                        uri = newFile.uri,
+                        deleteByDocumentFile = { newFile.delete() },
+                        logger = log,
+                        failedDeleteMessage = "Failed to delete partial SAF backup ${newFile.uri}",
+                    )
+                },
             ) {
                 val tempFile = File(tempFilePath)
                 context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
@@ -94,63 +101,5 @@ class AndroidBackupDestinationResolver(
             log.e(e) { "writeFile failed for $fileName to ${destination.displayName}" }
             Result.failure(e)
         }
-    }
-}
-
-/**
- * Best-effort delete of a SAF document created for a backup that did not finish.
- *
- * [DocumentsContract.deleteDocument] is tried first. [DocumentFile.delete] is the
- * fallback when that call returns false or throws. Delete errors are logged and
- * ignored. [CancellationException] is rethrown.
- */
-internal fun deletePartialSafDocument(contentResolver: ContentResolver, document: DocumentFile) {
-    val deletedByContract = try {
-        DocumentsContract.deleteDocument(contentResolver, document.uri)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.w(e) { "DocumentsContract.deleteDocument failed for ${document.uri}" }
-        false
-    }
-    if (deletedByContract) return
-
-    val deletedByFile = try {
-        document.delete()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        log.w(e) { "DocumentFile.delete failed for ${document.uri}" }
-        false
-    }
-    if (!deletedByFile) {
-        log.w { "Failed to delete partial SAF backup ${document.uri}" }
-    }
-}
-
-/**
- * Run [write] for a SAF document that has already been created.
- *
- * If [write] fails, [deleteCreatedDocument] removes that document and the
- * original exception is rethrown, including [CancellationException]. Errors
- * from the delete are logged and ignored so the write failure is preserved,
- * except a [CancellationException] from the delete, which is rethrown.
- */
-internal fun writeSafDocumentDeletingPartialOnFailure(
-    documentUri: String,
-    deleteCreatedDocument: () -> Unit,
-    write: () -> Unit,
-) {
-    try {
-        write()
-    } catch (writeError: Exception) {
-        try {
-            deleteCreatedDocument()
-        } catch (deleteError: CancellationException) {
-            throw deleteError
-        } catch (deleteError: Exception) {
-            log.w(deleteError) { "Failed to delete partial SAF backup $documentUri" }
-        }
-        throw writeError
     }
 }
