@@ -139,6 +139,47 @@
             </intent-filter>
         </activity>
 
+        <!-- Routine CSV import (#1242): "Send to", "Open with" and phoenix://import?data=
+             links. A transparent trampoline, like the OAuth redirect above: share and open
+             intents arrive in the sending app's task, so it reads the file there (while it
+             holds the sender's read grant), hands the bytes to the app and brings the app's
+             own task forward, instead of starting a second MainActivity in the sender's task.
+             Only content:// is registered: a file:// URI would be read with this app's own
+             file permissions. -->
+        <activity
+            android:name=".csv.CsvImportActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation|uiMode|locale|layoutDirection|fontScale"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="application/csv" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+            </intent-filter>
+            <!-- No autoVerify (AppLinkUrlError on a custom scheme); scheme and host on
+                 separate <data> tags (IntentFilterUniqueDataAttributes). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="phoenix" />
+                <data android:host="import" />
+            </intent-filter>
+        </activity>
+
         <!-- Foreground service for workout sessions -->
         <service
             android:name=".service.WorkoutForegroundService"

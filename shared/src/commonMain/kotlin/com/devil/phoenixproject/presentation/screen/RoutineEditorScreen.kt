@@ -47,6 +47,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -110,6 +111,12 @@ import projectphoenix.shared.generated.resources.discard_changes_title
 import projectphoenix.shared.generated.resources.label_name
 import projectphoenix.shared.generated.resources.rename_superset
 import projectphoenix.shared.generated.resources.routine_name
+
+// Pending leave-gate discard decision (#1242): confirm leaves forward, cancel stays.
+private data class LeaveGateRequest(
+    val onConfirmed: () -> Unit,
+    val onCancelled: () -> Unit,
+)
 
 // State holder for the editor
 private data class RoutineEditorState(
@@ -251,6 +258,33 @@ fun RoutineEditorScreen(
             state.supersets != snapshotSupersets
         )
     val canSaveRoutine = state.exercises.isNotEmpty() && state.routineName.isNotBlank()
+
+    // Leave gate (#1242): registered exactly while this editor is composed. The dirty check
+    // reads live state through the delegates, so a later import always sees the current draft.
+    // A gate discard request is a second, distinct confirm target: it navigates FORWARD and
+    // never pops the back stack (the back path above still pops).
+    var leaveGateRequest by remember { mutableStateOf<LeaveGateRequest?>(null) }
+    DisposableEffect(routineId) {
+        val editorRoutineId = routineId
+        val registration = object : RoutineEditorLeaveRegistration {
+            override val routineId: String = editorRoutineId
+
+            override fun isDirty(): Boolean = hasSnapshot && (
+                state.routineName != snapshotName ||
+                    state.exercises != snapshotExercises ||
+                    state.supersets != snapshotSupersets
+                )
+
+            override fun requestDiscard(onConfirmed: () -> Unit, onCancelled: () -> Unit) {
+                leaveGateRequest = LeaveGateRequest(onConfirmed, onCancelled)
+            }
+        }
+        RoutineEditorLeaveGate.register(registration)
+        onDispose {
+            leaveGateRequest = null
+            RoutineEditorLeaveGate.unregister(registration)
+        }
+    }
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -961,6 +995,24 @@ fun RoutineEditorScreen(
                 navController.popBackStack()
             },
             onDismiss = { showDiscardDialog = false },
+        )
+    }
+
+    // Leave-gate discard dialog (#1242): the same copy as the back guard, but Confirm runs the
+    // import's forward navigation (never popBackStack) and Cancel preserves the draft.
+    leaveGateRequest?.let { request ->
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.discard_changes_title),
+            message = stringResource(Res.string.discard_changes_message),
+            confirmText = stringResource(Res.string.action_discard),
+            onConfirm = {
+                leaveGateRequest = null
+                request.onConfirmed()
+            },
+            onDismiss = {
+                leaveGateRequest = null
+                request.onCancelled()
+            },
         )
     }
 

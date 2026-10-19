@@ -43,7 +43,18 @@ sealed interface RoutineCsvImportUiState {
         val replanningTo: RoutineCsvImportMode? = null,
     ) : RoutineCsvImportUiState
 
-    data class Imported(val routineCount: Int) : RoutineCsvImportUiState
+    /**
+     * The import was written. [routineIds] and [routineNames] are in file order, and
+     * [committedAfter] is a time no later than the commit, so a host can tell the committed
+     * routine from the copy it replaced (#1242).
+     */
+    data class Imported(
+        val routineCount: Int,
+        val profileId: String = "",
+        val routineIds: List<String> = emptyList(),
+        val routineNames: List<String> = emptyList(),
+        val committedAfter: Long = 0L,
+    ) : RoutineCsvImportUiState
 }
 
 /** Export state for one routine (#772). */
@@ -76,6 +87,9 @@ class RoutineCsvViewModel(
 
     /** The one parse or re-plan in flight; a newer request cancels it so only the latest lands. */
     private var planJob: Job? = null
+
+    /** Releases the shared-file delivery this instance is showing (#1242); null when none. */
+    private var releaseHeldDelivery: (() -> Unit)? = null
 
     /** Parses [content] and shows a preview for the active profile. */
     fun previewImport(content: String) {
@@ -143,6 +157,7 @@ class RoutineCsvViewModel(
                     _importState.value = RoutineCsvImportUiState.Preview(fresh, refreshed = true)
                     return@launch
                 }
+                val committedAfter = nowMs()
                 workoutRepository.commitRoutineCsvImport(
                     profileId = profileId,
                     newGroups = fresh.newGroups,
@@ -151,7 +166,13 @@ class RoutineCsvViewModel(
                 )
                 drafts = emptyList()
                 previewProfileId = null
-                _importState.value = RoutineCsvImportUiState.Imported(fresh.writes.size)
+                _importState.value = RoutineCsvImportUiState.Imported(
+                    routineCount = fresh.writes.size,
+                    profileId = profileId,
+                    routineIds = fresh.writes.map { it.id },
+                    routineNames = fresh.writes.map { it.name },
+                    committedAfter = committedAfter,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RoutineCsvImportConflictException) {
@@ -180,6 +201,26 @@ class RoutineCsvViewModel(
         drafts = emptyList()
         previewProfileId = null
         _importState.value = null
+    }
+
+    /**
+     * Ties a shared-file delivery (#1242) to this instance: [release] runs once, when the host
+     * finishes with it or when this ViewModel is cleared, whichever comes first.
+     */
+    fun holdSharedFileDelivery(release: () -> Unit) {
+        releaseSharedFileDelivery()
+        releaseHeldDelivery = release
+    }
+
+    fun releaseSharedFileDelivery() {
+        val release = releaseHeldDelivery ?: return
+        releaseHeldDelivery = null
+        release()
+    }
+
+    override fun onCleared() {
+        releaseSharedFileDelivery()
+        super.onCleared()
     }
 
     /** Builds the CSV for [routine], or the reasons it cannot be exported. */

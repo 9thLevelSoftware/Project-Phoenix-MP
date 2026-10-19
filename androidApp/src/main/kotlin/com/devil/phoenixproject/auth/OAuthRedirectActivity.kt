@@ -1,12 +1,12 @@
 package com.devil.phoenixproject.auth
 
-import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
 import com.devil.phoenixproject.data.auth.AndroidOAuthBridge
+import com.devil.phoenixproject.returnToApp
 
 /**
  * Transparent activity that catches the OAuth provider's final redirect
@@ -59,57 +59,9 @@ class OAuthRedirectActivity : ComponentActivity() {
     /**
      * Bring the app's existing task (and its [MainActivity]) to the front so
      * the user isn't stranded on the (just-finished) browser/Custom Tab
-     * surface after the OAuth callback completes.
-     *
-     * Flag choice rationale:
-     *  - `FLAG_ACTIVITY_NEW_TASK`: required because this redirect activity
-     *    has `taskAffinity=""` and therefore lives in its own transient
-     *    task. Without this flag, the system would try to launch
-     *    [MainActivity] into that same empty-affinity task, which is not
-     *    what we want — we want the original app task.
-     *  - `FLAG_ACTIVITY_REORDER_TO_FRONT`: if the existing [MainActivity]
-     *    instance is still in the app task, bring it forward without clearing
-     *    other app state. This preserves the user's link-account context while
-     *    still replacing the browser/redirect surface.
-     *  - `FLAG_ACTIVITY_SINGLE_TOP`: if [MainActivity] is already at the
-     *    top of its task, reuse that instance instead of creating a new
-     *    one. This avoids a duplicate stack and any side effects of a
-     *    second `onCreate`.
-     *
-     * `ACTION_MAIN` + `CATEGORY_LAUNCHER` mirror the launcher intent the
-     * system uses to start the app cold, which makes the routing behave
-     * consistently regardless of how the user originally launched the app.
+     * surface after the OAuth callback completes. This redirect activity has
+     * `taskAffinity=""` and therefore lives in its own transient task; see
+     * [returnToApp] for the flags.
      */
-    private fun routeBackToApp() {
-        val launchIntent = buildReturnToAppIntent()
-        try {
-            startActivity(launchIntent)
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
-        } catch (e: Exception) {
-            // Defensive: if for some reason the explicit intent can't be
-            // resolved (e.g. MainActivity was renamed / removed in a future
-            // build), don't crash the redirect handler — the callback has
-            // already been delivered, so the user is technically signed in
-            // even if they have to relaunch the app manually.
-            Logger.w(tag = "OAuthRedirectActivity") {
-                "Failed to route back to MainActivity after OAuth callback: ${e.message}"
-            }
-        }
-    }
-
-    /**
-     * Build the [Intent] used by [routeBackToApp] to foreground the app's
-     * existing task.
-     */
-    private fun buildReturnToAppIntent(): Intent = Intent(Intent.ACTION_MAIN).apply {
-        component = ComponentName(this@OAuthRedirectActivity, MainActivity::class.java)
-        addCategory(Intent.CATEGORY_LAUNCHER)
-        // See kdoc on [routeBackToApp] for why each flag is set.
-        addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP,
-        )
-    }
+    private fun routeBackToApp() = returnToApp(tag = "OAuthRedirectActivity")
 }

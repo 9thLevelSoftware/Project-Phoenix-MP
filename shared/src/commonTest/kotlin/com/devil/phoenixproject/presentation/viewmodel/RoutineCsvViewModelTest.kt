@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.devil.phoenixproject.domain.csv.RoutineCsvFormat
 import com.devil.phoenixproject.domain.csv.RoutineCsvImportAction
 import com.devil.phoenixproject.domain.csv.RoutineCsvImportMode
@@ -169,6 +173,55 @@ class RoutineCsvViewModelTest {
 
         viewModel.dismissImport()
         assertNull(viewModel.importState.value)
+    }
+
+    @Test
+    fun aWrittenImportNamesItsProfileRoutinesAndCommitTime() = runTest(dispatcher) {
+        workouts.addRoutine(existing("Push"))
+        viewModel.previewImport(csv(",Push,,,,bench-id,Bench Press,0,,,,,8,40,,,"))
+        advanceUntilIdle()
+        viewModel.selectMode(RoutineCsvImportMode.OVERWRITE_MATCHING)
+        advanceUntilIdle()
+        viewModel.confirmImport()
+        advanceUntilIdle()
+
+        // Issue #1242: the shared-file host opens exactly this routine, and only once the
+        // list holds a copy written no earlier than committedAfter.
+        val imported = assertIs<RoutineCsvImportUiState.Imported>(viewModel.importState.value)
+        assertEquals(profileId, imported.profileId)
+        assertEquals(listOf("existing-Push"), imported.routineIds)
+        assertEquals(listOf("Push"), imported.routineNames)
+        assertEquals(1_000L, imported.committedAfter)
+    }
+
+    @Test
+    fun aHeldSharedFileDeliveryIsReleasedExactlyOnce() {
+        var released = 0
+        viewModel.holdSharedFileDelivery { released++ }
+        viewModel.releaseSharedFileDelivery()
+        viewModel.releaseSharedFileDelivery()
+        assertEquals(1, released)
+
+        var first = 0
+        var second = 0
+        viewModel.holdSharedFileDelivery { first++ }
+        viewModel.holdSharedFileDelivery { second++ }
+        assertEquals(1, first, "a new delivery releases the one held before it")
+        assertEquals(0, second)
+    }
+
+    @Test
+    fun clearingTheViewModelReleasesItsSharedFileDelivery() {
+        // Issue #1242: a host that goes away for good (activity finished) must not leave the
+        // inbox busy, or every later shared file would be turned away.
+        val store = ViewModelStore()
+        val held = ViewModelProvider.create(store, viewModelFactory { initializer { viewModel } })[RoutineCsvViewModel::class]
+        var released = 0
+        held.holdSharedFileDelivery { released++ }
+
+        store.clear()
+
+        assertEquals(1, released)
     }
 
     @Test
