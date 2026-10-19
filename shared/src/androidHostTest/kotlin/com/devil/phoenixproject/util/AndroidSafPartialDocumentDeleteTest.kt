@@ -137,8 +137,35 @@ class AndroidSafPartialDocumentDeleteTest {
 
         val failure = result.exceptionOrNull()
         assertTrue(failure is FileNotFoundException)
-        assertEquals("disk full", failure?.message)
-        assertTrue(provider.deleteAttempts > 0)
+        assertEquals("disk full", failure.message)
+        assertTrue(
+            provider.deleteAttempts >= 2,
+            "deleteDocument throw should fall back to DocumentFile.delete, attempts=${provider.deleteAttempts}",
+        )
+    }
+
+    @Test
+    fun deleteDocumentThrowsOnce_fallsBackToDocumentFileDelete_andRemovesThePartial() = runBlocking {
+        provider = installProvider(
+            openFailure = FileNotFoundException("disk full"),
+            throwDeleteDocumentTimes = 1,
+        )
+        val treeUri = DocumentsContract.buildTreeDocumentUri(authority, "primary:Phoenix")
+
+        val result = AndroidBackupDestinationResolver(context).writeFile(
+            destination = BackupDestination.Custom(treeUri.toString(), "Phoenix"),
+            fileName = "backup.json",
+            tempFilePath = "unused.json",
+        )
+
+        val failure = result.exceptionOrNull()
+        assertTrue(failure is FileNotFoundException)
+        assertEquals("disk full", failure.message)
+        assertTrue(
+            provider.deleteAttempts >= 2,
+            "deleteDocument throw should fall back to DocumentFile.delete, attempts=${provider.deleteAttempts}",
+        )
+        assertEquals(listOf(provider.createdUri), provider.deletedUris)
     }
 
     private fun installProvider(
@@ -146,6 +173,7 @@ class AndroidSafPartialDocumentDeleteTest {
         returnNullStream: Boolean = false,
         failCreate: Boolean = false,
         failDelete: Boolean = false,
+        throwDeleteDocumentTimes: Int = 0,
     ): FakeSafDocumentsProvider {
         val info = android.content.pm.ProviderInfo().apply {
             authority = this@AndroidSafPartialDocumentDeleteTest.authority
@@ -157,6 +185,7 @@ class AndroidSafPartialDocumentDeleteTest {
         installed.returnNullStream = returnNullStream
         installed.failCreate = failCreate
         installed.failDelete = failDelete
+        installed.throwDeleteDocumentTimes = throwDeleteDocumentTimes
         return installed
     }
 }
@@ -166,6 +195,9 @@ class FakeSafDocumentsProvider : ContentProvider() {
     var returnNullStream: Boolean = false
     var failCreate: Boolean = false
     var failDelete: Boolean = false
+
+    /** Times [DocumentsContract.deleteDocument] throws before a later call can succeed. */
+    var throwDeleteDocumentTimes: Int = 0
     var createdUri: Uri? = null
     var deleteAttempts: Int = 0
     val deletedUris = mutableListOf<Uri>()
@@ -224,7 +256,10 @@ class FakeSafDocumentsProvider : ContentProvider() {
             }
             "android:deleteDocument" -> {
                 deleteAttempts += 1
-                if (failDelete) throw IllegalStateException("delete rejected")
+                if (failDelete || throwDeleteDocumentTimes > 0) {
+                    if (throwDeleteDocumentTimes > 0) throwDeleteDocumentTimes -= 1
+                    throw IllegalStateException("delete rejected")
+                }
                 val target = extras?.getParcelable("uri", Uri::class.java)
                     ?: error("deleteDocument missing uri extra: ${extras?.keySet()}")
                 deletedUris += target
