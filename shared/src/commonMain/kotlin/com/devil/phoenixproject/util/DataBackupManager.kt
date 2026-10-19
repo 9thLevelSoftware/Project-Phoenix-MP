@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.local.LegacyLabelSanitizer
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.RoutineIdentityResolver
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.database.CompletedSet
@@ -868,6 +869,8 @@ abstract class BaseDataBackupManager(
             var metricsSkipped = 0
             var routinesImported = 0
             var routinesSkipped = 0
+            // Profiles that received a new routine row (Issue #1162 maintenance below).
+            val restoredRoutineProfileIds = mutableSetOf<String>()
             var routineExercisesImported = 0
             var routineExercisesSkipped = 0
             var supersetsImported = 0
@@ -1759,6 +1762,7 @@ abstract class BaseDataBackupManager(
                                                     deletedAt = routine.deletedAt,
                                                 )
                                                 routinesImported++
+                                                restoredRoutineProfileIds += routineProfileId
                                                 recordParent("routine", routine.id, BackupParentStatus.INSERTED)
                                             } else {
                                                 val expected = routine.copy(profileId = routineProfileId, groupId = groupId)
@@ -2781,6 +2785,7 @@ abstract class BaseDataBackupManager(
             nav.endObject() // end root
 
             applyRestoredSessionSyncMarkers()
+            reconcileRestoredRoutineIdentities(restoredRoutineProfileIds)
 
             database.transaction {
                 normalizeImportedActiveIdentity(
@@ -3513,6 +3518,24 @@ abstract class BaseDataBackupManager(
                 null
             },
         )
+    }
+
+    /**
+     * Issue #1162: a restored routine row is matched by exact id, so another spelling of a
+     * local routine's UUID arrives as a second row of the same identity. The routine list
+     * runs identity maintenance once per launch, so collapse those rows now (full graphs
+     * retained for recovery first) instead of showing a duplicate until the next launch.
+     * A failure leaves the rows as restored and never fails the import.
+     */
+    private fun reconcileRestoredRoutineIdentities(profileIds: Set<String>) {
+        val resolver = RoutineIdentityResolver(queries)
+        for (profileId in profileIds) {
+            try {
+                database.transaction { resolver.reconcileProfile(profileId, source = "backup_restore") }
+            } catch (e: Exception) {
+                Logger.w(e) { "Routine identity maintenance after restore failed for profile=$profileId; rows left as restored" }
+            }
+        }
     }
 
     private suspend fun restoreDeferredProfileState(

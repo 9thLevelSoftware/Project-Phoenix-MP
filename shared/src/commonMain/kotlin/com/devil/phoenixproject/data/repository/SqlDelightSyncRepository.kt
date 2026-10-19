@@ -3259,7 +3259,7 @@ class SqlDelightSyncRepository(
             ?.takeIf { it.profile_id != profileId }
         if (foreignRow != null) {
             Logger.w("SyncRepository") {
-                "Routine '${portalRoutine.name}' ($localId) skipped: primary key belongs to " +
+                "Routine $localId skipped: primary key belongs to " +
                     "profile '${foreignRow.profile_id}', not '$profileId'"
             }
             return
@@ -3267,13 +3267,13 @@ class SqlDelightSyncRepository(
         val existing = identity.keptRow
         if (existing != null) {
             if (existing.deletedAt != null) {
-                Logger.d { "Routine '${portalRoutine.name}' skipped: deleted locally" }
+                Logger.d { "Routine $localId skipped: deleted locally" }
                 return
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
             if (!serverWins && localUpdatedAt > lastSync) {
                 hydrateUnknownRoutineDurations(portalRoutine, localId)
-                Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
+                Logger.d { "Routine $localId skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
             }
         }

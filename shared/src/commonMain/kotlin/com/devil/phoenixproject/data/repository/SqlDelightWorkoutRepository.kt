@@ -855,46 +855,8 @@ class SqlDelightWorkoutRepository(
             var result = RoutineIdentityMaintenanceResult()
             try {
                 db.transaction {
-                    val now = currentTimeMillis()
-                    routineRecoveryStore.pruneExpired(now)
-                    val rows = queries.selectAllRoutinesByProfileIncludingDeleted(profileId).executeAsList()
-                    val visited = mutableSetOf<String>()
-                    var components = 0
-                    var reconciled = 0
-                    var removed = 0
-                    var snapshots = 0
-                    var tombstones = 0
-                    for (row in rows) {
-                        if (row.id in visited) continue
-                        val candidates = routineIdentityResolver.findCandidates(
-                            incomingId = row.id,
-                            scopeProfileId = profileId,
-                        ) { it.profile_id == profileId }
-                        candidates.forEach { visited += it.id }
-                        if (candidates.size < 2) continue
-                        components++
-                        // The resolver retains the full source graph BEFORE the
-                        // destructive coalesce, in this same transaction (merge
-                        // gate R2). Failure throws and rolls everything back.
-                        val reconciliation = routineIdentityResolver
-                            .reconcileExistingComponent(candidates) ?: continue
-                        reconciled++
-                        snapshots++
-                        removed += reconciliation.removedIds.size
-                        if (reconciliation.tombstonePreserved) tombstones++
-                        Logger.d("RoutineIdentity") {
-                            "Issue #1162 maintenance (profile=$profileId): kept '${reconciliation.keeperId}', " +
-                                "removed aliases ${reconciliation.removedIds}, " +
-                                "tombstonePreserved=${reconciliation.tombstonePreserved}"
-                        }
-                    }
-                    result = RoutineIdentityMaintenanceResult(
-                        componentsScanned = components,
-                        componentsReconciled = reconciled,
-                        aliasesRemoved = removed,
-                        snapshotsRetained = snapshots,
-                        tombstoneComponents = tombstones,
-                    )
+                    routineRecoveryStore.pruneExpired(currentTimeMillis())
+                    result = routineIdentityResolver.reconcileProfile(profileId)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Collector cancellation must propagate: swallowing it here would
@@ -1029,7 +991,7 @@ class SqlDelightWorkoutRepository(
                 ?: RoutineIdentity.canonicalize(generateUUID())
 
             db.transaction {
-                val routineId = resolveWritableRoutineId(requestedId, routine.profileId, routine.name)
+                val routineId = resolveWritableRoutineId(requestedId, routine.profileId)
                     ?: return@transaction
                 writeRoutineRows(routine, routineId)
             }
@@ -1051,14 +1013,14 @@ class SqlDelightWorkoutRepository(
      * resolves to that row instead of creating a canonical alias. Returns null when the
      * write must be skipped. Must run inside a [db.transaction] block.
      */
-    private fun resolveWritableRoutineId(requestedId: String, profileId: String, routineName: String): String? {
+    private fun resolveWritableRoutineId(requestedId: String, profileId: String): String? {
         val ownerScope: (RoutineRow) -> Boolean = { it.profile_id == profileId }
         val tombstone = routineIdentityResolver
             .findCandidates(requestedId, scopeProfileId = profileId, scopeMatches = ownerScope)
             .firstOrNull { it.deletedAt != null }
         if (tombstone != null) {
             Logger.e("WorkoutRepository") {
-                "Skipping write of routine '$routineName': identity '$requestedId' is deleted locally " +
+                "Skipping routine write: identity '$requestedId' is deleted locally " +
                     "('${tombstone.id}'); a deleted identity is never resurrected by a write"
             }
             return null
@@ -1073,7 +1035,7 @@ class SqlDelightWorkoutRepository(
             ?.takeIf { it.profile_id != profileId }
         if (foreignRow != null) {
             Logger.e("WorkoutRepository") {
-                "Skipping write of routine '$routineName': primary key '${resolution.localId}' " +
+                "Skipping routine write: primary key '${resolution.localId}' " +
                     "belongs to profile '${foreignRow.profile_id}', not '$profileId'"
             }
             return null
@@ -1258,7 +1220,7 @@ class SqlDelightWorkoutRepository(
                     // another profile is never written, and a deleted identity is
                     // never silently resurrected. Each of those is an actionable
                     // import conflict, not a silent mutation.
-                    val routineId = resolveWritableRoutineId(routine.id, profileId, routine.name)
+                    val routineId = resolveWritableRoutineId(routine.id, profileId)
                         ?: throw RoutineCsvImportConflictException(routine.id)
                     writeRoutineRows(routine.copy(profileId = profileId), routineId)
                 }
@@ -1472,7 +1434,7 @@ class SqlDelightWorkoutRepository(
 
             db.transaction {
                 // Issue #1162: the update lands on the resolved owner-scoped primary key.
-                val routineId = resolveWritableRoutineId(requestedId, routine.profileId, routine.name)
+                val routineId = resolveWritableRoutineId(requestedId, routine.profileId)
                     ?: return@transaction
 
                 // Update the routine
@@ -1514,6 +1476,10 @@ class SqlDelightWorkoutRepository(
             queries.adoptRoutineProfile(profileId = targetProfileId, id = routineId)
             Logger.d { "Moved routine $routineId to profile $targetProfileId" }
         }
+        // Issue #1162: the target profile may already hold another spelling of this identity.
+        // Its list has run launch maintenance already, so collapse the pair now instead of
+        // showing it twice until the next launch.
+        runRoutineIdentityMaintenance(targetProfileId)
     }
 
     override suspend fun getRoutineById(routineId: String): Routine? {

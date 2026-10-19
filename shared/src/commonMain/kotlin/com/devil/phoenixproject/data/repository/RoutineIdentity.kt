@@ -195,6 +195,47 @@ internal class RoutineIdentityResolver(
     }
 
     /**
+     * Issue #1162 eager maintenance for one profile: every same-profile identity
+     * component with two or more rows is reconciled once through
+     * [reconcileExistingComponent]. Must run inside a database transaction; a
+     * failure throws so the caller's transaction rolls back and the original rows
+     * stay visible.
+     */
+    fun reconcileProfile(profileId: String, source: String = "identity_maintenance"): RoutineIdentityMaintenanceResult {
+        val rows = queries.selectAllRoutinesByProfileIncludingDeleted(profileId).executeAsList()
+        val visited = mutableSetOf<String>()
+        var components = 0
+        var reconciled = 0
+        var removed = 0
+        var tombstones = 0
+        for (row in rows) {
+            if (row.id in visited) continue
+            val candidates = findCandidates(incomingId = row.id, scopeProfileId = profileId) { it.profile_id == profileId }
+            candidates.forEach { visited += it.id }
+            if (candidates.size < 2) continue
+            components++
+            // The full source graph is retained BEFORE the destructive coalesce, in
+            // this same transaction (merge gate R2); failure throws and rolls back.
+            val reconciliation = reconcileExistingComponent(candidates, source) ?: continue
+            reconciled++
+            removed += reconciliation.removedIds.size
+            if (reconciliation.tombstonePreserved) tombstones++
+            Logger.d("RoutineIdentity") {
+                "Issue #1162 maintenance (profile=$profileId, source=$source): kept '${reconciliation.keeperId}', " +
+                    "removed aliases ${reconciliation.removedIds}, " +
+                    "tombstonePreserved=${reconciliation.tombstonePreserved}"
+            }
+        }
+        return RoutineIdentityMaintenanceResult(
+            componentsScanned = components,
+            componentsReconciled = reconciled,
+            aliasesRemoved = removed,
+            snapshotsRetained = reconciled,
+            tombstoneComponents = tombstones,
+        )
+    }
+
+    /**
      * Issue #1162 eager maintenance: reconcile one existing same-identity
      * component (already-split alias rows) without any incoming write. Must run
      * inside a database transaction, and the caller must retain the full source
@@ -249,7 +290,7 @@ internal class RoutineIdentityResolver(
                 ?.supabase_user_id ?: ""
             recoveryStore.retainRoutineGraphs(
                 rows = profileRows.sortedBy { it.id },
-                canonicalIdentity = componentCanonicalIdentity(profileRows),
+                canonicalIdentity = coalesceSnapshotKey(profileRows),
                 portalUserId = portalUserId,
                 profileId = profileId,
                 reason = RoutineRecoveryReasons.ALIAS_COALESCE,
@@ -259,6 +300,15 @@ internal class RoutineIdentityResolver(
             )
         }
     }
+
+    /**
+     * Recovery key of one coalesce. Insert-if-absent keeps a retried coalesce of the same
+     * rows to one snapshot, but a later coalesce of the same identity with a new alias
+     * row (a backup restore, a sync pull) removes a different graph, so the row ids are
+     * part of the key: that graph gets its own snapshot instead of being dropped.
+     */
+    private fun coalesceSnapshotKey(rows: List<RoutineRow>): String =
+        "${componentCanonicalIdentity(rows)}|${rows.map { it.id }.sorted().joinToString(",")}"
 
     /** Deterministic canonical identity of one equivalence component (Issue #1162). */
     private fun componentCanonicalIdentity(rows: List<RoutineRow>): String {

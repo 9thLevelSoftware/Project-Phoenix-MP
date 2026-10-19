@@ -43,6 +43,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -101,6 +102,24 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(1_700_000_000_000L, streaming.data.routines.first { it.id == "routine-deleted" }.deletedAt)
         assertEquals(listOf("routine-active-exercise-active", "routine-deleted-exercise-deleted"), streaming.data.routineExercises.map { it.id })
         File(streamingPath).delete()
+    }
+
+    @Test
+    fun `restoring another spelling of a local routine id leaves one routine`() = runTest {
+        // Issue #1162: restore matches routine ids exactly, so the same routine exported under
+        // another spelling of its UUID arrives as a second row. Launch maintenance has already
+        // run for this profile, so the restore itself must collapse the pair.
+        val lower = "abcdefab-1234-4abc-8def-abcdef123456"
+        workoutRepository.saveRoutine(buildRoutine(lower, "Push", "exercise-bench", "Bench Press"))
+        assertEquals(1, workoutRepository.getAllRoutines("default").first().size)
+        val variant = backupManager.exportToJson().replace(lower, lower.uppercase())
+
+        assertTrue(backupManager.importFromJson(variant).isSuccess)
+
+        val live = database.phoenixDatabaseQueries.selectAllRoutinesByProfileIncludingDeleted("default")
+            .executeAsList().filter { it.deletedAt == null }
+        assertEquals(1, live.size, "one routine, not a duplicate: ${live.map { it.id }}")
+        assertEquals(2, workoutRepository.getRoutineById(live.single().id)?.exercises?.size, "both exercise rows are kept")
     }
 
     @Test
