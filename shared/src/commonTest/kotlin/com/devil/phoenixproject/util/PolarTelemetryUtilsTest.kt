@@ -25,10 +25,10 @@ class PolarTelemetryUtilsTest {
 
     @Test
     fun fortyFiveDegreeForwardHingeProducesFortyFiveDegreesPitch() {
-        // 45° forward hinge: gravity splits between -X (707 mG) and +Z (707 mG)
+        // 45° forward hinge: gravity pulls along -X (707 mG) and -Z (707 mG)
         val x = -707.106
         val y = 0.0
-        val z = 707.106
+        val z = -707.106
 
         val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
 
@@ -38,11 +38,23 @@ class PolarTelemetryUtilsTest {
     }
 
     @Test
+    fun backwardLeanProducesNegativePitch() {
+        // Leaning backward: gravity pulls along +Z
+        val x = -707.106
+        val y = 0.0
+        val z = 707.106
+
+        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+
+        assertTrue(abs(metrics.pitchDeg - (-45.0)) < toleranceDeg, "Backward lean pitch should be ~ -45°, got ${metrics.pitchDeg}")
+    }
+
+    @Test
     fun horizontalHingeProducesNinetyDegreesPitch() {
-        // 90° horizontal bend (torso parallel to ground): gravity entirely along +Z
+        // 90° horizontal bend (torso parallel to ground): gravity entirely along -Z
         val x = 0.0
         val y = 0.0
-        val z = 1000.0
+        val z = -1000.0
 
         val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
 
@@ -80,7 +92,7 @@ class PolarTelemetryUtilsTest {
         // Sensor mounted with a natural 5° forward pitch when standing upright
         val initialRawX = -996.19
         val initialRawY = 0.0
-        val initialRawZ = 87.16 // ~5° angle
+        val initialRawZ = -87.16 // ~5° angle with inverted Z
 
         val initialPitch = PolarTelemetryUtils.calculateTorsoPitchDeg(initialRawX, initialRawY, initialRawZ, tarePitchDeg = 0.0)
         assertTrue(abs(initialPitch - 5.0) < toleranceDeg)

@@ -228,4 +228,48 @@ class PolarH10BleManagerTest {
 
         testScope.cancel()
     }
+
+    @Test
+    fun `concurrent getSessionSummary reading while HR callbacks append is thread-safe`() {
+        val testScope = CoroutineScope(Dispatchers.Default + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+        manager.startSessionRecording("session-stress", "WORKING_SET")
+
+        var exceptionThrown: Throwable? = null
+        val writeJob = testScope.launch {
+            for (i in 1..500) {
+                manager.processRrIntervals(
+                    PolarHrMeasurement(
+                        hr = 120 + (i % 30),
+                        contactDetected = true,
+                        rrIntervalsMs = listOf(800.0 + (i % 50)),
+                    )
+                )
+            }
+        }
+
+        val readJob = testScope.launch {
+            try {
+                for (i in 1..500) {
+                    val summary = manager.getSessionSummary("session-stress")
+                    if (summary?.avgHeartRateBpm != null) {
+                        assertTrue(summary.avgHeartRateBpm >= 120)
+                    }
+                }
+            } catch (e: Throwable) {
+                exceptionThrown = e
+            }
+        }
+
+        kotlinx.coroutines.runBlocking {
+            writeJob.join()
+            readJob.join()
+        }
+
+        assertNull(exceptionThrown, "Concurrent reading and writing should not throw ConcurrentModificationException: ${exceptionThrown?.message}")
+        val finalSummary = manager.getSessionSummary("session-stress")
+        assertTrue(finalSummary != null && finalSummary.avgHeartRateBpm != null)
+        testScope.cancel()
+    }
 }
+

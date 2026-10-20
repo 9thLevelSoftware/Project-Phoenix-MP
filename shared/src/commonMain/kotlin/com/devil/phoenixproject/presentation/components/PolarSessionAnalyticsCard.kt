@@ -73,8 +73,9 @@ fun PolarSessionAnalyticsCard(
     val cooldownStartHr by polarBleManager.cooldownStartHeartRate.collectAsState()
     val latestSummary by polarBleManager.latestSessionSummary.collectAsState()
     val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
+    val activeCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
 
-    val resolvedSessionId = sessionId ?: session?.id
+    val resolvedSessionId = sessionId ?: session?.id ?: activeCooldownSessionId ?: polarBleManager.currentRecordingSessionId
     val fallbackSummary = remember(session, resolvedSessionId) {
         session?.let { s ->
             if (s.avgHeartRateBpm != null || s.maxHeartRateBpm != null || s.minHeartRateBpm != null ||
@@ -160,6 +161,7 @@ fun PolarSessionAnalyticsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -188,12 +190,15 @@ fun PolarSessionAnalyticsCard(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                             letterSpacing = 1.sp,
+                            softWrap = false,
+                            maxLines = 1,
                         )
                         Text(
                             text = if (isCooldownActive) "Recovery Cooldown Active" else "Cardiac & Biomechanics Summary",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
                         )
                     }
                 }
@@ -215,6 +220,8 @@ fun PolarSessionAnalyticsCard(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
+                        softWrap = false,
+                        maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
@@ -413,16 +420,18 @@ fun PolarSessionAnalyticsCard(
                                 }
 
                                 dropSoFar?.let { drop ->
+                                    val isWarning = drop < 12 && cooldownSecondsRemaining <= 240
+                                    val tint = if (isWarning) Color(0xFFFF9800) else Color(0xFF4CAF50)
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFF4CAF50).copy(alpha = 0.15f),
-                                        border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.4f)),
+                                        color = tint.copy(alpha = 0.15f),
+                                        border = BorderStroke(1.dp, tint.copy(alpha = 0.4f)),
                                     ) {
                                         Text(
                                             text = "-$drop bpm",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF4CAF50),
+                                            color = tint,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         )
                                     }
@@ -501,13 +510,15 @@ fun PolarSessionAnalyticsCard(
                                         text = "Track vagal tone reactivation & recovery slope.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp),
                                     )
                                     FilledTonalButton(
                                         onClick = {
                                             resolvedSessionId?.let { polarBleManager.triggerCooldown(it) }
                                         },
                                         shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                        modifier = Modifier.wrapContentWidth(),
                                     ) {
                                         Icon(
                                             Icons.Default.PlayArrow,
@@ -519,6 +530,8 @@ fun PolarSessionAnalyticsCard(
                                             "Start Cooldown",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
+                                            softWrap = false,
+                                            maxLines = 1,
                                         )
                                     }
                                 }
@@ -618,17 +631,21 @@ private fun RecoveryChip(
     rating: String,
     modifier: Modifier = Modifier,
 ) {
+    val isWarning = drop < 12
+    val tint = if (isWarning) Color(0xFFFF9800) else Color(0xFF4CAF50)
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF4CAF50).copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.3f)),
+        color = tint.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.35f)),
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = false,
+                maxLines = 1,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -638,12 +655,14 @@ private fun RecoveryChip(
                     text = "-$drop bpm",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF4CAF50),
+                    color = tint,
                 )
                 Text(
                     text = "($rating)",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF4CAF50),
+                    color = tint,
+                    softWrap = false,
+                    maxLines = 1,
                 )
             }
         }
@@ -697,6 +716,7 @@ private fun ContinuousHeartRateTimelineChart(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -720,6 +740,8 @@ private fun ContinuousHeartRateTimelineChart(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    softWrap = false,
+                    maxLines = 1,
                 )
             }
 
@@ -962,6 +984,35 @@ private fun TorsoBiomechanicsVsCableChart(
         }
     }
 
+    // Dynamic Left Axis (Degrees):
+    // Collect all angles present, ensuring 0° is always included with padding
+    val pitchAngles = remember(biomechSamples) { biomechSamples.mapNotNull { it.torsoPitchDeg?.toFloat() } }
+    val rollAngles = remember(biomechSamples) { biomechSamples.mapNotNull { it.torsoRollDeg?.toFloat() } }
+    val allAngles = remember(pitchAngles, rollAngles) { pitchAngles + rollAngles }
+    val rawMinAngle = (allAngles.minOrNull() ?: 0f).coerceAtMost(0f)
+    val rawMaxAngle = (allAngles.maxOrNull() ?: 45f).coerceAtLeast(0f)
+    val minAngle = rawMinAngle - 5f
+    val maxAngle = (rawMaxAngle + 5f).coerceAtLeast(minAngle + 10f)
+    val angleRange = (maxAngle - minAngle).coerceAtLeast(1f)
+
+    // Dynamic Right Axis (Cable Position):
+    // Independent normalization to session's min/max active cable position (position + positionB) / 2f
+    val cablePositions = remember(biomechSamples) {
+        biomechSamples.mapNotNull { s ->
+            if (s.position != null && s.positionB != null) {
+                (s.position.toFloat() + s.positionB.toFloat()) / 2f
+            } else {
+                s.position?.toFloat() ?: s.positionB?.toFloat()
+            }
+        }
+    }
+    val rawMinPos = cablePositions.minOrNull() ?: 0f
+    val rawMaxPos = cablePositions.maxOrNull() ?: 1f
+    val posSpan = (rawMaxPos - rawMinPos).coerceAtLeast(0.05f)
+    val minPos = (rawMinPos - posSpan * 0.05f).coerceAtLeast(0f)
+    val maxPos = rawMaxPos + posSpan * 0.05f
+    val posRange = (maxPos - minPos).coerceAtLeast(0.01f)
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -978,6 +1029,7 @@ private fun TorsoBiomechanicsVsCableChart(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -1001,22 +1053,39 @@ private fun TorsoBiomechanicsVsCableChart(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    softWrap = false,
+                    maxLines = 1,
                 )
             }
 
-            // Legend Row
+            // Legend & Dynamic Axis Info Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PhaseLegendDot(color = Color(0xFFFF9800), label = "Hinge (Pitch°)")
                 PhaseLegendDot(color = Color(0xFF00BCD4), label = "Tilt (Roll°)")
                 PhaseLegendDot(color = Color(0xFFAB47BC), label = "Cable Pos", isLine = true)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "0° ref | ${minAngle.roundToInt()}°..${maxAngle.roundToInt()}°",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    softWrap = false,
+                    maxLines = 1,
+                )
             }
 
             // Scrub Info Bar
             if (selectedSample != null) {
+                val cablePos = if (selectedSample.position != null && selectedSample.positionB != null) {
+                    (selectedSample.position.toFloat() + selectedSample.positionB.toFloat()) / 2f
+                } else {
+                    selectedSample.position?.toFloat() ?: selectedSample.positionB?.toFloat()
+                }
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1041,7 +1110,7 @@ private fun TorsoBiomechanicsVsCableChart(
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF00BCD4),
                         )
-                        selectedSample.position?.let { pos ->
+                        cablePos?.let { pos ->
                             Text(
                                 text = "Cable: ${(pos * 100).roundToInt()}%",
                                 style = MaterialTheme.typography.labelSmall,
@@ -1087,27 +1156,41 @@ private fun TorsoBiomechanicsVsCableChart(
                     val w = size.width
                     val h = size.height
 
-                    // Center 0° baseline for roll/pitch reference
-                    val midY = h * 0.65f
+                    val padTop = 14f
+                    val padBottom = 14f
+                    val plotH = h - padTop - padBottom
+
+                    // Center 0° baseline for posture reference
+                    val zeroY = padTop + (1f - (0f - minAngle) / angleRange) * plotH
                     drawLine(
                         color = Color(0xFF1E3A5F),
-                        start = Offset(0f, midY),
-                        end = Offset(w, midY),
-                        strokeWidth = 1f,
+                        start = Offset(0f, zeroY),
+                        end = Offset(w, zeroY),
+                        strokeWidth = 1.2f,
                     )
 
-                    val maxPitch = 90f // 0° to 90° forward bend
-                    val maxRoll = 30f  // ±30° lateral tilt
+                    // Degree tick marker on left edge
+                    drawLine(
+                        color = Color(0xFF4A7DA5),
+                        start = Offset(0f, zeroY),
+                        end = Offset(10.dp.toPx(), zeroY),
+                        strokeWidth = 2f,
+                    )
 
                     val stepX = w / (sampleCount - 1).coerceAtLeast(1).toFloat()
 
-                    // 1. Cable Position (Dashed / fine purple line at top half)
+                    // 1. Cable Position (Purple line scaled independently across full height)
                     val cablePath = Path()
                     var cableStarted = false
                     biomechSamples.forEachIndexed { i, s ->
-                        s.position?.let { pos ->
+                        val pos = if (s.position != null && s.positionB != null) {
+                            (s.position.toFloat() + s.positionB.toFloat()) / 2f
+                        } else {
+                            s.position?.toFloat() ?: s.positionB?.toFloat()
+                        }
+                        if (pos != null) {
                             val x = i * stepX
-                            val y = (h * 0.45f) - (pos.toFloat().coerceIn(0f, 1f) * (h * 0.4f))
+                            val y = padTop + (1f - (pos - minPos) / posRange) * plotH
                             if (!cableStarted) {
                                 cablePath.moveTo(x, y)
                                 cableStarted = true
@@ -1119,18 +1202,22 @@ private fun TorsoBiomechanicsVsCableChart(
                     if (cableStarted) {
                         drawPath(
                             path = cablePath,
-                            color = Color(0xFFAB47BC).copy(alpha = 0.6f),
-                            style = Stroke(width = 1.5.dp.toPx()),
+                            color = Color(0xFFAB47BC).copy(alpha = 0.75f),
+                            style = Stroke(
+                                width = 1.8.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                            ),
                         )
                     }
 
-                    // 2. Torso Pitch (Hip Hinge, orange line)
+                    // 2. Torso Pitch (Hip Hinge, orange line scaled across angle range)
                     val pitchPath = Path()
                     var pitchStarted = false
                     biomechSamples.forEachIndexed { i, s ->
                         s.torsoPitchDeg?.let { pitch ->
                             val x = i * stepX
-                            val y = midY - (pitch.toFloat().coerceIn(0f, maxPitch) / maxPitch) * (midY - 10f)
+                            val y = padTop + (1f - (pitch.toFloat() - minAngle) / angleRange) * plotH
                             if (!pitchStarted) {
                                 pitchPath.moveTo(x, y)
                                 pitchStarted = true
@@ -1151,13 +1238,13 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     }
 
-                    // 3. Torso Roll (Lateral Tilt, cyan line)
+                    // 3. Torso Roll (Lateral Tilt, cyan line scaled across angle range)
                     val rollPath = Path()
                     var rollStarted = false
                     biomechSamples.forEachIndexed { i, s ->
                         s.torsoRollDeg?.let { roll ->
                             val x = i * stepX
-                            val y = midY - (roll.toFloat().coerceIn(-maxRoll, maxRoll) / maxRoll) * (h * 0.25f)
+                            val y = padTop + (1f - (roll.toFloat() - minAngle) / angleRange) * plotH
                             if (!rollStarted) {
                                 rollPath.moveTo(x, y)
                                 rollStarted = true
@@ -1178,7 +1265,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     }
 
-                    // 4. Scrubber Line
+                    // 4. Scrubber Line & Indicators
                     scrubFraction?.let { fraction ->
                         val scrubX = fraction * w
                         drawLine(
@@ -1187,6 +1274,21 @@ private fun TorsoBiomechanicsVsCableChart(
                             end = Offset(scrubX, h),
                             strokeWidth = 1.5.dp.toPx(),
                         )
+                        selectedSample?.torsoPitchDeg?.let { pitch ->
+                            val pitchY = padTop + (1f - (pitch.toFloat() - minAngle) / angleRange) * plotH
+                            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(scrubX, pitchY))
+                            drawCircle(color = Color(0xFFFF9800), radius = 2.5.dp.toPx(), center = Offset(scrubX, pitchY))
+                        }
+                        val selCablePos = if (selectedSample?.position != null && selectedSample?.positionB != null) {
+                            (selectedSample.position!!.toFloat() + selectedSample.positionB!!.toFloat()) / 2f
+                        } else {
+                            selectedSample?.position?.toFloat() ?: selectedSample?.positionB?.toFloat()
+                        }
+                        selCablePos?.let { pos ->
+                            val cableY = padTop + (1f - (pos - minPos) / posRange) * plotH
+                            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(scrubX, cableY))
+                            drawCircle(color = Color(0xFFAB47BC), radius = 2.5.dp.toPx(), center = Offset(scrubX, cableY))
+                        }
                     }
                 }
             }
@@ -1251,6 +1353,7 @@ private fun SavedEcgWaveformScrubber(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -1274,11 +1377,13 @@ private fun SavedEcgWaveformScrubber(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
                 ) {
                     Text(
-                        text = currentPhase,
+                        text = currentPhase.replace("_", " "),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
+                        softWrap = false,
+                        maxLines = 1,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
@@ -1299,12 +1404,15 @@ private fun SavedEcgWaveformScrubber(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
                 Text(
                     text = "${allSamples.size} samples @ 130 Hz",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    softWrap = false,
+                    maxLines = 1,
                 )
             }
 

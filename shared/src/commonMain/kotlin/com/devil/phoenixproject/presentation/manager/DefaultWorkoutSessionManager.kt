@@ -532,7 +532,10 @@ class DefaultWorkoutSessionManager(
                                 polarBleManager.updateSessionPhase(phase)
                             }
                             is WorkoutState.Completed, WorkoutState.RoutineComplete -> {
-                                polarBleManager.endSessionRecording()
+                                polarBleManager.endSessionRecording(coordinator.currentSessionId)
+                            }
+                            is WorkoutState.SetSummary -> {
+                                polarBleManager.endSessionRecording(state.sessionId ?: coordinator.currentSessionId)
                             }
                             else -> {}
                         }
@@ -540,6 +543,19 @@ class DefaultWorkoutSessionManager(
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     Logger.e(e) { "Error in Polar session phase collector" }
+                }
+            }
+
+            scope.launch {
+                try {
+                    coordinator.routineFlowState.collect { flowState ->
+                        if (flowState is RoutineFlowState.Complete) {
+                            polarBleManager.endSessionRecording(coordinator.currentSessionId)
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Logger.e(e) { "Error in Polar routine flow collector" }
                 }
             }
         }
