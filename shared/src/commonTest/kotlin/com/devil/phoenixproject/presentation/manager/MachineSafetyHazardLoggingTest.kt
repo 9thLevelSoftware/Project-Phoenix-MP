@@ -55,7 +55,7 @@ class MachineSafetyHazardLoggingTest {
     }
 
     @Test
-    fun `refused start, hide, and acknowledgement are written to the connection log`() = runTest {
+    fun `refused start then hide and acknowledgement are written to the connection log`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
         val logs = ConnectionLogRepository()
         val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"), logs)
