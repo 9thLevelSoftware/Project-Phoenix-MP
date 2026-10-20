@@ -367,6 +367,118 @@ class PolarH10BleManagerTest {
 
         manager.stopCooldown()
     }
+
+    // ==================== Signal Validity & Connection Gate Tests ====================
+
+    @Test
+    fun `isConnected state flow tracks connection and disconnection properly`() {
+        val manager = PolarH10BleManager()
+        assertFalse(manager.isConnected.value, "Initial state must be not connected")
+
+        manager.setConnectedForTesting(true)
+        assertTrue(manager.isConnected.value, "State must be connected after successful connect")
+        assertTrue(manager.connectionState.value is ConnectionState.Connected)
+
+        manager.setConnectedForTesting(false)
+        assertFalse(manager.isConnected.value, "State must be disconnected after disconnect")
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+    }
+
+    @Test
+    fun `strap removal or zero HR immediately clears cached telemetry and drops samples`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val collectJob = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        // 1. Valid telemetry packet arrives
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 135,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+        assertEquals(1, collectedBeats.size)
+        assertEquals(135, manager.hrMeasurement.value?.hr)
+        assertEquals(100_000L, manager.rrClockTimestampMs.value)
+
+        // 2. User removes strap (contactDetected = false, hr = 0)
+        simulatedTime += 1000L
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 0,
+                contactDetected = false,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+
+        // No new beat emitted, cached states cleared to null
+        assertEquals(1, collectedBeats.size, "Should not emit beats when strap is removed")
+        assertNull(manager.hrMeasurement.value, "hrMeasurement should be cleared upon strap removal")
+        assertNull(manager.rrClockTimestampMs.value, "rrClockTimestampMs should be cleared upon strap removal")
+
+        collectJob.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `strap removal or disconnection during cooldown immediately terminates recovery window`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-recovery", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 150, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("session-recovery")
+
+        assertTrue(manager.isCooldownActive.value, "Cooldown must be active")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        // User unhooks strap during recovery cooldown
+        manager.processRrIntervals(PolarHrMeasurement(hr = 0, contactDetected = false, rrIntervalsMs = emptyList()))
+
+        assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated upon strap removal")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // Reactivate cooldown and verify disconnection terminates it
+        manager.triggerCooldown("session-recovery", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value)
+
+        manager.setConnectedForTesting(false)
+        assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated upon disconnection")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `packet absence timeout exceeding 3 seconds clears telemetry and terminates cooldown`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-timeout", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("session-timeout")
+
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals(140, manager.hrMeasurement.value?.hr)
+
+        // Advance time by 4 seconds (gap > 3 seconds)
+        simulatedTime += 4000L
+        manager.checkPacketAbsenceTimeout(simulatedTime)
+
+        assertNull(manager.hrMeasurement.value, "Telemetry state must be cleared after >3s absence")
+        assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated after >3s packet absence")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
 }
 
 

@@ -547,6 +547,19 @@ class MainViewModel(
     private val polarBleManager: PolarH10BleManager? = null,
 ) : ViewModel() {
 
+    init {
+        polarBleManager?.let { polar ->
+            viewModelScope.launch {
+                polar.isConnected.collect { connected ->
+                    if (!connected && polar.isCooldownActive.value) {
+                        Logger.w { "Polar H10 disconnected during recovery cooldown: terminating recovery window" }
+                        polar.cancelCooldown()
+                    }
+                }
+            }
+        }
+    }
+
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
     private val _hapticEvents = MutableSharedFlow<HapticEvent>(
         extraBufferCapacity = 32,
@@ -836,6 +849,7 @@ class MainViewModel(
     val scannedDevices: StateFlow<List<ScannedDevice>> get() = bleConnectionManager.scannedDevices
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
+    val isPolarConnected: StateFlow<Boolean>? get() = polarBleManager?.isConnected
     val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
 
     fun startScanning() = bleConnectionManager.startScanning()
