@@ -36,6 +36,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.ble.PolarSessionSummary
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.util.PolarTelemetryUtils
 import com.devil.phoenixproject.database.MetricSample
 import com.devil.phoenixproject.database.PolarBeatSample
 import com.devil.phoenixproject.database.PolarEcgSegment
@@ -97,12 +98,34 @@ fun PolarSessionAnalyticsCard(
         } ?: resolvedSessionId?.let { polarBleManager.getSessionSummary(it) }
     }
 
-    val summary = latestSummary ?: fallbackSummary
+    val rawSummary = latestSummary ?: fallbackSummary
 
     // Historical samples queries for visualizations
     var beatSamples by remember(resolvedSessionId) { mutableStateOf<List<PolarBeatSample>>(emptyList()) }
     var ecgSegments by remember(resolvedSessionId) { mutableStateOf<List<PolarEcgSegment>>(emptyList()) }
     var metricSamples by remember(resolvedSessionId) { mutableStateOf<List<MetricSample>>(emptyList()) }
+
+    val computedRmssdFromBeats = remember(beatSamples) {
+        if (beatSamples.size >= 2) {
+            PolarTelemetryUtils.calculateRmssdMs(beatSamples.map { it.rrMs })?.toFloat()
+        } else null
+    }
+
+    val computedAvgRrFromBeats = remember(beatSamples) {
+        val validRrs = beatSamples.map { it.rrMs }.filter { it in 250.0..2500.0 }
+        if (validRrs.isNotEmpty()) validRrs.average().toFloat() else null
+    }
+
+    val summary = remember(rawSummary, computedRmssdFromBeats, computedAvgRrFromBeats) {
+        if (rawSummary == null && computedRmssdFromBeats == null && computedAvgRrFromBeats == null) null
+        else {
+            val base = rawSummary ?: PolarSessionSummary()
+            base.copy(
+                rmssdMs = computedRmssdFromBeats ?: rawSummary?.rmssdMs,
+                avgRrIntervalMs = computedAvgRrFromBeats ?: rawSummary?.avgRrIntervalMs,
+            )
+        }
+    }
 
     LaunchedEffect(resolvedSessionId) {
         if (resolvedSessionId != null) {

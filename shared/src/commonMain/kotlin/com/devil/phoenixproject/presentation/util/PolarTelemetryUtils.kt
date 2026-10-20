@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.util
 
 import com.devil.phoenixproject.domain.model.PolarRrBeat
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -9,9 +10,9 @@ import kotlin.math.sqrt
  * over a sliding time window (default 60 seconds, min 30 seconds recommended).
  *
  * Successive differences are computed on adjacent [PolarRrBeat] entries that fall within
- * [currentTimeMs - windowMs, currentTimeMs]. Beats separated by excessive time gaps (> 3500ms)
- * or with non-physiological intervals (< 250ms or > 2500ms) are excluded from difference pairs
- * to prevent dropped-beat artifact inflation.
+ * [currentTimeMs - windowMs, currentTimeMs]. Beats separated by excessive time gaps (> 3500ms),
+ * with non-physiological intervals (< 250ms or > 2500ms), or with relative RR-delta > 25% are
+ * excluded from difference pairs to prevent dropped-beat artifact inflation.
  *
  * @param beats Ordered list of [PolarRrBeat] events.
  * @param windowMs Time window in milliseconds (default 60,000ms = 60s).
@@ -47,7 +48,12 @@ fun computeRollingRmssd(
             continue
         }
 
-        val diff = b2.rrIntervalMs - b1.rrIntervalMs
+        val diff = abs(b2.rrIntervalMs - b1.rrIntervalMs)
+        // 25% relative RR-delta artifact filter
+        if (diff > maxOf(b1.rrIntervalMs, b2.rrIntervalMs) * 0.25) {
+            continue
+        }
+
         sumSquaredDiffs += diff * diff
         count++
     }

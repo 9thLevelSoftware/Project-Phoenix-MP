@@ -362,7 +362,8 @@ class PolarH10BleManager(
         val avgHr = if (snapshot.hrs.isNotEmpty()) snapshot.hrs.average().roundToInt() else null
         val maxHr = snapshot.hrs.maxOrNull()
         val minHr = snapshot.hrs.minOrNull()
-        val avgRr = if (snapshot.rrs.isNotEmpty()) snapshot.rrs.average().toFloat() else null
+        val validRrs = snapshot.rrs.filter { it in 250.0..2500.0 }
+        val avgRr = if (validRrs.isNotEmpty()) validRrs.average().toFloat() else null
         val rmssd = PolarTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
         return PolarSessionSummary(
             avgHeartRateBpm = avgHr,
@@ -1174,14 +1175,25 @@ class PolarH10BleManager(
         scanJob = null
         stateObserverJob?.cancel()
         stateObserverJob = null
-        cleanupSessionTelemetry()
         val p = peripheral
-        peripheral = null
         if (p != null) {
             scope.launch {
-                try { p.disconnect() } catch (_: Exception) {}
+                try {
+                    if (isEcgStreaming) {
+                        try { stopEcgStream() } catch (_: Exception) {}
+                    }
+                    if (isAccStreaming) {
+                        try { stopAccStream() } catch (_: Exception) {}
+                    }
+                    p.disconnect()
+                } catch (_: Exception) {}
             }
         }
+        cleanupExistingConnection()
+    }
+
+    suspend fun cleanup() {
+        disconnect()
     }
 
     internal fun isPolarH10Advertisement(adv: Advertisement): Boolean {

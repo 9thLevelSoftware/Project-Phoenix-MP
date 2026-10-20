@@ -253,12 +253,12 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                             }
                         }
                     }
-
-                    // Polar H10 Session Analytics & 5-minute recovery cooldown
-                    PolarSessionAnalyticsCard(
-                        modifier = Modifier.padding(top = Spacing.medium),
-                    )
                 }
+
+                // Polar H10 Session Analytics & 5-minute recovery cooldown
+                PolarSessionAnalyticsCard(
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             // Reserved Done footer — sibling of the scroll body, outside every

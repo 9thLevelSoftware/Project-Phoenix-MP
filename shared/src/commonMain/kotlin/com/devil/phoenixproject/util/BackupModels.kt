@@ -705,7 +705,7 @@ fun backupPrivacySummary(includesRawTelemetry: Boolean): String =
         "profiles, profile training preferences, training baselines, personal records, badges and stats, and notes. " +
         (
             if (includesRawTelemetry) {
-                "Includes raw per-sample force and position telemetry. "
+                "Includes raw per-sample force, position, heart rate, RR, ECG, and accelerometer telemetry. "
             } else {
                 "Does not include raw per-sample telemetry (turn on \"Include raw telemetry\" to add it). "
             }

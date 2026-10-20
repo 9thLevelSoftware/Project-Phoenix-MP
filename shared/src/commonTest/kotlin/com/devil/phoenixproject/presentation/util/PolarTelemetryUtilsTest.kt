@@ -64,4 +64,25 @@ class PolarTelemetryUtilsTest {
         // Only pair (820, 840) is within valid gap tolerance
         assertEquals(20.0, rmssd, 0.01)
     }
+
+    @Test
+    fun testDoubledRrIntervalArtifactIsRejected() {
+        val now = 100_000L
+        val beats = listOf(
+            PolarRrBeat(850.0, now - 3500, 71),
+            // Dropped R-peak / strap slip doubles the RR interval to 1700ms
+            PolarRrBeat(1700.0, now - 1800, 35),
+            // Recovery back to normal RR
+            PolarRrBeat(850.0, now - 950, 71),
+            // Next valid consecutive beat
+            PolarRrBeat(870.0, now - 80, 69),
+        )
+
+        val rmssd = computeRollingRmssd(beats, windowMs = 60_000L, currentTimeMs = now)
+        assertTrue(rmssd != null)
+        // (850, 1700) delta = 850 > 1700 * 0.25 (425) -> REJECTED
+        // (1700, 850) delta = 850 > 1700 * 0.25 (425) -> REJECTED
+        // Only (850, 870) delta = 20 <= 870 * 0.25 (217.5) -> ACCEPTED: sqrt(400) = 20.0
+        assertEquals(20.0, rmssd, 0.01)
+    }
 }
