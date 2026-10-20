@@ -200,6 +200,11 @@ object BleConstants {
             val STOP_ECG = byteArrayOf(0x03, 0x00)
             val STOP_ACC = byteArrayOf(0x03, 0x02)
         }
+
+        val PMD_START_ECG_CMD: ByteArray get() = Commands.START_ECG
+        val PMD_START_ACC_CMD: ByteArray get() = Commands.START_ACC
+        val PMD_STOP_ECG_CMD: ByteArray get() = Commands.STOP_ECG
+        val PMD_STOP_ACC_CMD: ByteArray get() = Commands.STOP_ACC
     }
 }
 

@@ -16,6 +16,19 @@ data class PolarHrMeasurement(
 )
 
 /**
+ * R-R interval heart beat event with accurate timestamp derived from the chained RR-interval clock.
+ *
+ * @param rrIntervalMs R-R interval duration in milliseconds.
+ * @param timestampMs Reconstructed beat timestamp in epoch milliseconds.
+ * @param hr Instantaneous heart rate in BPM at this beat.
+ */
+data class PolarRrBeat(
+    val rrIntervalMs: Double,
+    val timestampMs: Long,
+    val hr: Int = 0,
+)
+
+/**
  * Tri-axial acceleration sample in milli-G (mG).
  */
 data class PolarAccSample(
