@@ -298,7 +298,13 @@ class SqlDelightProfileRecoveryRepository(
                         routineIdsJson = encodeOwnershipIds(mutation.routineIds),
                         cycleIdsJson = encodeOwnershipIds(mutation.cycleIds),
                         personalRecordIdsJson = encodeOwnershipIds(mutation.personalRecordIds),
-                        createdAt = nextOwnershipTransferCreatedAt(owner),
+                        createdAt = nextOwnershipTransferCreatedAt(
+                            now = now(),
+                            latestCreatedAt = queries.selectAllOwnershipTransfers().executeAsList()
+                                .asSequence()
+                                .filter { it.owner_user_id == owner }
+                                .maxOfOrNull { it.created_at },
+                        ),
                     )
                 }
             }
@@ -329,16 +335,6 @@ class SqlDelightProfileRecoveryRepository(
                 expectedCountsJson = expectedCountsJson,
             ).value == 1L,
         ) { "Verified recovery group changed before its owner could be persisted" }
-    }
-
-    private fun nextOwnershipTransferCreatedAt(ownerUserId: String): Long {
-        val timestamp = now()
-        val latest = queries.selectAllOwnershipTransfers().executeAsList()
-            .asSequence()
-            .filter { it.owner_user_id == ownerUserId }
-            .maxOfOrNull { it.created_at }
-            ?: return timestamp
-        return maxOf(timestamp, latest + 1L)
     }
 
     private fun captureUnscopedOwnershipMutation(
