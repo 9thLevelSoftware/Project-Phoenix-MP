@@ -94,6 +94,8 @@ private fun PolarH10WorkoutStripContent(
 ) {
     val scope = rememberCoroutineScope()
     val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
+    val isContactDetected by polarBleManager.isContactDetected.collectAsState()
+    val hasContact = hrMeasurement?.contactDetected == true && isContactDetected
 
     // Sliding window of RR beats for RMSSD calculation
     val recentBeats = remember { mutableStateListOf<PolarRrBeat>() }
@@ -102,6 +104,16 @@ private fun PolarH10WorkoutStripContent(
 
     // Rolling ECG samples (µV)
     val ecgSamples = remember { mutableStateListOf<Int>() }
+
+    // Wipe display buffers cleanly when skin contact is lost
+    LaunchedEffect(hasContact) {
+        if (!hasContact) {
+            ecgSamples.clear()
+            recentBeats.clear()
+            latestRrMs = null
+            rollingRmssd = null
+        }
+    }
 
     // Latest accelerometer sample and filtered posture StateFlows
     val latestAcc by polarBleManager.latestAcc.collectAsState()
@@ -169,7 +181,6 @@ private fun PolarH10WorkoutStripContent(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(end = 8.dp),
             ) {
-                val hasContact = hrMeasurement?.contactDetected == true
                 Icon(
                     Icons.Default.Favorite,
                     contentDescription = "Polar Heart Rate",
