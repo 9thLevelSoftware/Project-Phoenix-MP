@@ -50,8 +50,6 @@ import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import com.devil.phoenixproject.util.KmpUtils
 
-// velocityZoneColor() now provided by shared utility from AccessibilityColors.kt
-
 /**
  * Human-readable label for a [StrengthProfile].
  */
@@ -61,8 +59,6 @@ private fun strengthProfileLabel(profile: StrengthProfile): String = when (profi
     StrengthProfile.BELL_SHAPED -> "Bell-shaped"
     StrengthProfile.FLAT -> "Flat"
 }
-
-// velocityZoneLabel() now provided by shared utility from AccessibilityColors.kt
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 1. Set-level summary ("at a glance")
