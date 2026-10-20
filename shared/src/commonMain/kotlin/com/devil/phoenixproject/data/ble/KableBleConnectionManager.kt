@@ -57,6 +57,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * @param onDiagnosticData Callback for diagnostic snapshots from one-shot diagnostic reads
  */
 @OptIn(ExperimentalUuidApi::class)
+private const val UNNAMED_SCAN_MATCH_LABEL = "Unnamed device"
+
 class KableBleConnectionManager(
     private val scope: CoroutineScope,
     private val logRepo: ConnectionLogRepository,
@@ -114,6 +116,16 @@ class KableBleConnectionManager(
 
     /** Discovered advertisements keyed by identifier for connection lookup. */
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
+
+    /**
+     * Scan-stop summary that separates named trainers from nameless service-UUID matches, so
+     * "Found 1 device" never means a far-away unrelated device advertising the vendor UUID.
+     */
+    private fun scanResultSummary(): String {
+        val named = discoveredAdvertisements.values.count { it.name != null }
+        val unnamed = discoveredAdvertisements.size - named
+        return "Found $named named Phoenix device(s), $unnamed unnamed service-UUID match(es)"
+    }
 
     /** Active scanning job reference. */
     private var scanJob: Job? = null
@@ -360,13 +372,26 @@ class KableBleConnectionManager(
                                 // Only log if this is a new device
                                 if (!discoveredAdvertisements.containsKey(identifier)) {
                                     log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
-                                    logRepo.info(
-                                        LogEventType.DEVICE_FOUND,
-                                        "Found Phoenix device",
-                                        name,
-                                        identifier,
-                                        "RSSI: ${advertisement.rssi} dBm",
-                                    )
+                                    if (advertisedName == null) {
+                                        // A nameless advertisement only matched by service UUID / FEF3
+                                        // data. 0xFEF3 is a generic vendor UUID, so this may be an
+                                        // unrelated device nearby; the log must not call it a trainer.
+                                        logRepo.info(
+                                            LogEventType.DEVICE_FOUND,
+                                            "Found unnamed device matching Phoenix service UUID",
+                                            UNNAMED_SCAN_MATCH_LABEL,
+                                            identifier,
+                                            "RSSI: ${advertisement.rssi} dBm; matched by service UUID only, no device name",
+                                        )
+                                    } else {
+                                        logRepo.info(
+                                            LogEventType.DEVICE_FOUND,
+                                            "Found Phoenix device",
+                                            name,
+                                            identifier,
+                                            "RSSI: ${advertisement.rssi} dBm",
+                                        )
+                                    }
                                 }
 
                                 // Store advertisement reference
@@ -415,7 +440,7 @@ class KableBleConnectionManager(
                         logRepo.info(
                             LogEventType.SCAN_STOP,
                             "Scan auto-stopped after timeout",
-                            details = "Found ${discoveredAdvertisements.size} device(s) in ${BleConstants.SCAN_TIMEOUT_MS}ms",
+                            details = "${scanResultSummary()} in ${BleConstants.SCAN_TIMEOUT_MS}ms",
                         )
                         reportConnectionState(ConnectionState.Disconnected)
                     }
@@ -446,7 +471,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.SCAN_STOP,
             "BLE scan stopped",
-            details = "Found ${discoveredAdvertisements.size} Phoenix device(s)",
+            details = scanResultSummary(),
         )
         scanJob?.cancel()
         scanJob = null

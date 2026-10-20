@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
 import com.devil.phoenixproject.data.repository.MachineSafetyPhysicalRelease
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
+import com.devil.phoenixproject.testutil.FakeMachineSafetyTransport
 import com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -26,7 +27,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `unexpected idle disconnect without a durable execution is ignored`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport(null))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport(null))
 
         assertFalse(coordinator.recordUnexpectedDisconnect("trainer-1", trainerName = "Vee_Test"))
         assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
@@ -36,7 +37,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `unexpected disconnect surfaces the exact durable armed execution`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         val armed = store.rows.getValue("trainer-1")
 
@@ -82,7 +83,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `stale recovery identity cannot control a different trainer at the same generation`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val transport = FakeSafetyTransport("trainer-2")
+        val transport = FakeMachineSafetyTransport("trainer-2")
         val coordinator = coordinator(store, transport)
         assertTrue(coordinator.recordTestConnectionLost("trainer-2"))
         val current = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
@@ -117,7 +118,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `acknowledgement waits for recovery to quiesce before clearing the start gate`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val transport = FakeSafetyTransport("trainer-1")
+        val transport = FakeMachineSafetyTransport("trainer-1")
         val coordinator = coordinator(store, transport)
         assertTrue(coordinator.recordTestConnectionLost("trainer-1"))
         val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
@@ -166,7 +167,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `matching recovery sends stop only and ack does not claim physical unload`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val transport = FakeSafetyTransport(connectedTrainerAddress = "trainer-1")
+        val transport = FakeMachineSafetyTransport(connectedTrainerAddress = "trainer-1")
         val coordinator = coordinator(store, transport)
         coordinator.recordTestConnectionLost("trainer-1")
         val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
@@ -185,7 +186,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `wrong trainer never sends stop or clears obligation`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val transport = FakeSafetyTransport(connectedTrainerAddress = "other")
+        val transport = FakeMachineSafetyTransport(connectedTrainerAddress = "other")
         val coordinator = coordinator(store, transport)
         coordinator.recordTestConnectionLost("trainer-1")
         val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
@@ -200,7 +201,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `machine command obligation blocks later starts until the armed execution is resolved`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
         assertFalse(coordinator.canStartMachine())
@@ -215,10 +216,10 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `unresolved arm row survives a relaunch and cannot be resolved by the new process`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val first = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val first = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(first.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
-        val restored = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val restored = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         restored.restoreOnStartup()
         assertIs<MachineSafetyUiState.Visible>(restored.uiState.value)
         assertFalse(restored.resolveArmedExecution(7L))
@@ -228,7 +229,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `stale execution id never clears a newer arm`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertTrue(coordinator.armBeforeMachineCommand(8L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
@@ -240,7 +241,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `resolve requires the armed trainer to still be connected`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val transport = FakeSafetyTransport("trainer-1")
+        val transport = FakeMachineSafetyTransport("trainer-1")
         val coordinator = coordinator(store, transport)
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
@@ -254,7 +255,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `direct resolve never clears a recorded connection loss even after it is dismissed`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertTrue(coordinator.recordTestConnectionLost("trainer-1", executionId = 7L))
         val loss = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document
@@ -269,7 +270,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `refused start can surface the stored hidden hazard`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
         coordinator.surfaceStoredHazard()
@@ -282,7 +283,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `refusal caused only by the live set's own arm row is not surfaced`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
         coordinator.surfaceStoredHazard(liveExecutionId = 7L)
@@ -297,7 +298,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `surfacing never replaces a warning that is already visible`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.recordTestConnectionLost("trainer-1"))
         val shown = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document
         store.rows["trainer-1"] = shown.copy(phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED)
@@ -309,7 +310,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `start gate waits for an in-flight resolve instead of reading the row it is clearing`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         val gate = CompletableDeferred<Unit>()
         store.beforeDelete = { gate.await() }
@@ -330,7 +331,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `a loss on another trainer keeps this trainer's arm resolvable`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertTrue(coordinator.recordTestConnectionLost("trainer-2"))
         coordinator.hideTemporarily()
@@ -342,7 +343,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `acknowledged loss row allows the next start`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(coordinator.recordTestConnectionLost("trainer-1"))
         assertFalse(coordinator.canStartMachine())
 
@@ -353,7 +354,7 @@ class MachineSafetyHazardCoordinatorTest {
         assertTrue(coordinator.canStartMachine())
     }
 
-    private fun TestScope.coordinator(store: InMemoryMachineSafetyHazardRepository, transport: FakeSafetyTransport = FakeSafetyTransport(null)) =
+    private fun TestScope.coordinator(store: InMemoryMachineSafetyHazardRepository, transport: FakeMachineSafetyTransport = FakeMachineSafetyTransport(null)) =
         MachineSafetyCoordinator(store, transport, CoroutineScope(SupervisorJob() + coroutineContext), { 1000L })
 
     private suspend fun MachineSafetyCoordinator.recordTestConnectionLost(
@@ -376,17 +377,4 @@ class MachineSafetyHazardCoordinatorTest {
         ),
         showRecoveryUi = true,
     )
-
-    private class FakeSafetyTransport(override var connectedTrainerAddress: String?) : MachineSafetyTransport {
-        var stopCalls = 0
-        var stopBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
-        override suspend fun connectMatchingTrainer(trainerAddress: String): Result<Unit> {
-            connectedTrainerAddress = trainerAddress
-            return Result.success(Unit)
-        }
-        override suspend fun stopWorkout(): Result<Unit> {
-            stopCalls++
-            return stopBlock()
-        }
-    }
 }

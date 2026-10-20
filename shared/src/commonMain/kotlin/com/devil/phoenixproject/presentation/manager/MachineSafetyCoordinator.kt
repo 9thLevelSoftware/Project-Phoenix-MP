@@ -1,6 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
+import com.devil.phoenixproject.data.repository.LogEventType
+import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.data.repository.MachineSafetyConnectResult
+import com.devil.phoenixproject.data.repository.MachineSafetyHazardCause
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardRepository
 import com.devil.phoenixproject.data.repository.MachineSafetyLoadResult
@@ -71,6 +75,8 @@ class MachineSafetyCoordinator(
     private val nowEpochMs: () -> Long,
     private val sessionIdFactory: () -> String = { "safety-${Random.nextLong()}" },
     private val persistMachineArming: Boolean = true,
+    /** Connection-log sink; every barrier decision is written here so a log export names the cause. */
+    private val logRepo: ConnectionLogRepository? = null,
 ) {
     private val mutex = Mutex()
     private val _uiState = MutableStateFlow<MachineSafetyUiState>(MachineSafetyUiState.Hidden)
@@ -110,7 +116,15 @@ class MachineSafetyCoordinator(
         val onlyLiveArm = liveExecutionId != null && armed != null && armed.executionId == liveExecutionId &&
             results.all { (it as? MachineSafetyLoadResult.Loaded)?.document?.generation == armed.generation }
         if (onlyLiveArm) return
-        records.maxByOrNull { it.updatedAtEpochMs }?.let { show(it, records.any { doc -> doc.sessionId.startsWith("rejected-") }) }
+        records.maxByOrNull { it.updatedAtEpochMs }?.let { newest ->
+            show(newest, records.any { doc -> doc.sessionId.startsWith("rejected-") })
+            logSafety(
+                LogLevel.WARNING,
+                "Stored machine-safety hazard shown; new sets stay blocked until the user confirms the trainer is at rest",
+                newest,
+                liveExecutionId?.let { "refusedExecutionId=$it" },
+            )
+        }
     }
 
     suspend fun recordMachineSessionArmed(
@@ -131,11 +145,15 @@ class MachineSafetyCoordinator(
             }
             if (showRecoveryUi) {
                 show(persisted)
+                logSafety(LogLevel.WARNING, "Machine-safety hazard recorded", persisted)
+            } else {
+                logSafety(LogLevel.DEBUG, "Machine set armed: durable safety obligation written before the load command", persisted)
             }
             true
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            logSafety(LogLevel.ERROR, "Machine-safety obligation could not be persisted", persisted, error.message)
             false
         }
     }
@@ -163,6 +181,7 @@ class MachineSafetyCoordinator(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.UNRESOLVED,
                 physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+                cause = MachineSafetyHazardCause.SET_END_UNCONFIRMED,
             ),
         )
     }
@@ -182,7 +201,10 @@ class MachineSafetyCoordinator(
             val stored = (repository.load(armed.trainerAddress) as? MachineSafetyLoadResult.Loaded)?.document
             if (stored == null || stored.generation != armed.generation || stored.executionId != executionId) return false
             repository.deleteIfGenerationMatches(armed.trainerAddress, armed.generation).also { deleted ->
-                if (deleted) armedDocument = null
+                if (deleted) {
+                    armedDocument = null
+                    logSafety(LogLevel.DEBUG, "Machine set ended with a confirmed stop; arm row resolved", armed)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -198,17 +220,27 @@ class MachineSafetyCoordinator(
     suspend fun canStartMachine(): Boolean = mutex.withLock { canStartMachineLocked() }
 
     private suspend fun canStartMachineLocked(): Boolean = try {
-        val hasUnresolvedHazard = repository.loadAll().any { result ->
-            when (result) {
-                is MachineSafetyLoadResult.Loaded -> true
-                is MachineSafetyLoadResult.Rejected -> true
-                MachineSafetyLoadResult.Missing -> false
-            }
+        val results = repository.loadAll()
+        val storedRows = results.count { it !is MachineSafetyLoadResult.Missing }
+        val visible = _uiState.value as? MachineSafetyUiState.Visible
+        val allowed = storedRows == 0 && visible == null
+        if (!allowed) {
+            val newestStored = results
+                .filterIsInstance<MachineSafetyLoadResult.Loaded>()
+                .maxByOrNull { it.document.updatedAtEpochMs }
+                ?.document
+            logSafety(
+                LogLevel.WARNING,
+                "Machine start refused: unresolved machine-safety hazard (no command sent to the trainer)",
+                visible?.document ?: newestStored,
+                "storedRows=$storedRows,warningVisible=${visible != null}",
+            )
         }
-        !hasUnresolvedHazard && _uiState.value !is MachineSafetyUiState.Visible
+        allowed
     } catch (cancelled: CancellationException) {
         throw cancelled
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+        logSafety(LogLevel.ERROR, "Machine start refused: machine-safety store unreadable", null, error.message)
         false
     }
 
@@ -217,7 +249,10 @@ class MachineSafetyCoordinator(
         trainerName: String? = null,
     ): Boolean = mutex.withLock {
         if (trainerAddress.isNullOrBlank()) return false
-        if (_uiState.value is MachineSafetyUiState.Visible) return true
+        (_uiState.value as? MachineSafetyUiState.Visible)?.let { visible ->
+            logSafety(LogLevel.DEBUG, "Unexpected disconnect while a machine-safety warning is already visible", visible.document)
+            return true
+        }
 
         val loadResult = try {
             repository.load(trainerAddress)
@@ -230,10 +265,20 @@ class MachineSafetyCoordinator(
             is MachineSafetyLoadResult.Loaded -> loadResult.document
             is MachineSafetyLoadResult.Rejected -> rejectedDocument(loadResult)
             MachineSafetyLoadResult.Missing -> armedDocument?.takeIf { it.trainerAddress == trainerAddress }
-        } ?: return false
+        } ?: run {
+            logRepo?.log(
+                LogLevel.DEBUG,
+                LogEventType.MACHINE_SAFETY,
+                "Unexpected disconnect with no armed set on this trainer; no hazard recorded",
+                trainerName,
+                trainerAddress,
+            )
+            return false
+        }
         val loss = durable.copy(
             trainerName = trainerName ?: durable.trainerName,
             updatedAtEpochMs = nowEpochMs(),
+            cause = MachineSafetyHazardCause.CONNECTION_LOST,
             phase = MachineSafetyPhase.UNRESOLVED,
             lastConnectResult = MachineSafetyConnectResult.NONE,
             lastWriteResult = MachineSafetyWriteResult.NONE,
@@ -248,6 +293,7 @@ class MachineSafetyCoordinator(
             // Keep the in-memory warning visible so the process remains fail closed.
         }
         show(loss, restoreWasRejected = loadResult is MachineSafetyLoadResult.Rejected)
+        logSafety(LogLevel.WARNING, "Connection lost with a machine obligation pending; hazard recorded and new sets blocked", loss)
         true
     }
 
@@ -280,6 +326,7 @@ class MachineSafetyCoordinator(
             document
         }
         val token = connecting.recoveryAttemptToken
+        logSafety(LogLevel.INFO, "Release recovery requested by user; looking for the hazard's trainer", connecting)
         val connected = transport.connectedTrainerAddress
         val connectResult = if (connected == identity.trainerAddress) {
             Result.success(Unit)
@@ -297,6 +344,12 @@ class MachineSafetyCoordinator(
                 lastWriteResult = MachineSafetyWriteResult.NOT_CONNECTED,
             )
             persistIfCurrent(identity, failure)
+            logSafety(
+                LogLevel.WARNING,
+                "Release recovery could not reach the hazard's trainer; no stop was requested",
+                failure,
+                connected?.let { "connectedTrainer=$it" },
+            )
             return
         }
         val write = try {
@@ -328,11 +381,17 @@ class MachineSafetyCoordinator(
             )
         }
         persistIfCurrent(identity, outcome)
+        if (outcome.phase == MachineSafetyPhase.RELEASE_REQUEST_SENT) {
+            logSafety(LogLevel.INFO, "Stop requested over Bluetooth and acknowledged by transport; physical load still unknown", outcome)
+        } else {
+            logSafety(LogLevel.WARNING, "Stop request failed; hazard remains", outcome, write.exceptionOrNull()?.message)
+        }
     }
 
     suspend fun hideTemporarily(): Unit = mutex.withLock {
-        if (_uiState.value is MachineSafetyUiState.Visible) {
+        (_uiState.value as? MachineSafetyUiState.Visible)?.let { visible ->
             _uiState.value = MachineSafetyUiState.Hidden
+            logSafety(LogLevel.DEBUG, "Machine-safety warning hidden until the next machine start; barrier stays in place", visible.document)
         }
     }
 
@@ -355,12 +414,16 @@ class MachineSafetyCoordinator(
                 ) {
                     if (armedDocument?.identity == identity) armedDocument = null
                     _uiState.value = MachineSafetyUiState.Hidden
+                    logSafety(LogLevel.INFO, "User confirmed handles at rest; machine-safety hazard cleared", visible.document)
+                } else {
+                    logSafety(LogLevel.WARNING, "Acknowledgement did not clear the hazard (record changed); warning stays", visible.document)
                 }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             // Keep the exact warning visible and the start gate closed.
+            logSafety(LogLevel.ERROR, "Acknowledgement failed to clear the hazard; warning stays", null, error.message)
         } finally {
             withContext(NonCancellable) {
                 recoveryToCancel?.cancelAndJoin()
@@ -427,4 +490,25 @@ class MachineSafetyCoordinator(
 
     private val MachineSafetyHazardDocument.identity: MachineSafetyHazardIdentity
         get() = MachineSafetyHazardIdentity(trainerAddress, generation)
+
+    private fun logSafety(
+        level: LogLevel,
+        message: String,
+        document: MachineSafetyHazardDocument?,
+        extraDetails: String? = null,
+    ) {
+        val sink = logRepo ?: return
+        val recordDetails = document?.let {
+            "generation=${it.generation},cause=${it.cause},phase=${it.phase}," +
+                "connect=${it.lastConnectResult},write=${it.lastWriteResult},kind=${it.workoutKind}"
+        }
+        sink.log(
+            level = level,
+            eventType = LogEventType.MACHINE_SAFETY,
+            message = message,
+            deviceName = document?.trainerName,
+            deviceAddress = document?.trainerAddress,
+            details = listOfNotNull(recordDetails, extraDetails).joinToString("; ").ifEmpty { null },
+        )
+    }
 }

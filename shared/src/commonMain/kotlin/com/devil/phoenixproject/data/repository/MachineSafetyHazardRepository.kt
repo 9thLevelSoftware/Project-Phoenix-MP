@@ -28,6 +28,11 @@ data class MachineSafetyHazardDocument(
     val lastWriteResult: MachineSafetyWriteResult = MachineSafetyWriteResult.NONE,
     val recoveryAttemptToken: Long = 0L,
     val physicalRelease: MachineSafetyPhysicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+    /**
+     * Why this record exists. Older rows decode as [MachineSafetyHazardCause.UNKNOWN]; the
+     * warning UI words its title from this instead of calling every hazard a connection loss.
+     */
+    val cause: MachineSafetyHazardCause = MachineSafetyHazardCause.UNKNOWN,
 ) {
     init {
         require(version == CURRENT_VERSION)
@@ -42,6 +47,14 @@ data class MachineSafetyHazardDocument(
 }
 
 enum class MachineSafetyWorkoutKind { JUST_LIFT, ROUTINE, UNKNOWN }
+
+/**
+ * [CONNECTION_LOST]: Bluetooth dropped while this trainer held a durable obligation.
+ * [SET_END_UNCONFIRMED]: a set was armed on this trainer and no successful RESET teardown
+ * resolved it (teardown failure, app killed mid-set, or an earlier process left it behind).
+ * [UNKNOWN]: pre-existing or unreadable rows.
+ */
+enum class MachineSafetyHazardCause { CONNECTION_LOST, SET_END_UNCONFIRMED, UNKNOWN }
 enum class MachineSafetyPhase { UNRESOLVED, CONNECTING, RELEASE_REQUEST_FAILED, RELEASE_REQUEST_SENT }
 enum class MachineSafetyConnectResult { NONE, MATCHING_READY, WRONG_TRAINER, TIMEOUT, FAILED, CANCELLED }
 enum class MachineSafetyWriteResult { NONE, NOT_CONNECTED, TRANSPORT_ACK, TRANSPORT_FAIL, DISCONNECTED_DURING_WRITE, CANCELLED, STALE_GENERATION }
