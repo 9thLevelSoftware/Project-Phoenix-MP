@@ -513,19 +513,13 @@ class AndroidDataBackupManager(
                 "${context.packageName}.fileprovider",
                 file,
             )
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/json"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Backup")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            val chooser = Intent.createChooser(shareIntent, "Share Backup").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(chooser)
+            context.launchFileProviderShareChooser(
+                uri = uri,
+                mimeType = "application/json",
+                chooserTitle = "Share Backup",
+                subject = "Project Phoenix Backup",
+                newTaskOnSendIntent = true,
+            )
         } catch (e: Exception) {
             Logger.e(e) { "Failed to share backup file: ${file.absolutePath}" }
             // Clean up cache file on sharing error

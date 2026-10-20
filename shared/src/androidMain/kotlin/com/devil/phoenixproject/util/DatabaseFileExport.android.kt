@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.util
 
-import android.content.Intent
 import androidx.core.content.FileProvider
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.DATABASE_QUARANTINE_DIRECTORY
@@ -57,16 +56,12 @@ internal actual suspend fun shareDatabaseFiles(): Boolean {
                 buildDatabaseArchive(databasesDir, context.cacheDir)
             } ?: return@withLock false
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archive)
-            val send = Intent(Intent.ACTION_SEND).apply {
-                type = "application/zip"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix database files")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(
-                Intent.createChooser(send, "Export database files").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
+            context.launchFileProviderShareChooser(
+                uri = uri,
+                mimeType = "application/zip",
+                chooserTitle = "Export database files",
+                subject = "Project Phoenix database files",
+                newTaskOnSendIntent = false,
             )
             true
         }
