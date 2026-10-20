@@ -9,7 +9,7 @@ import androidx.compose.animation.fadeOut
  *
  * Rule:
  *  - [tabFadeEnter] / [tabFadeExit] — used by bottom-tab-level destinations
- *    (Analytics, SmartInsights, Settings). Fade signals a peer-level switch.
+ *    (Analytics, SmartInsights, Profile, Settings). Fade signals a peer-level switch.
  *  - Drill-down slides are defined inline in [NavGraph] (slideIntoContainer is an
  *    extension on AnimatedContentTransitionScope and cannot be lifted here). They
  *    all use 300 ms symmetric left/right.
