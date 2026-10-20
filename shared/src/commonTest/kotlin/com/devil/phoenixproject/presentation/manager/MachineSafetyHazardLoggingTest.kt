@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardCause
 import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
+import com.devil.phoenixproject.testutil.FakeMachineSafetyTransport
 import com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +28,7 @@ class MachineSafetyHazardLoggingTest {
     @Test
     fun `armed set carries the set-end-unconfirmed cause and a loss rewrites it as connection lost`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
 
         assertTrue(coordinator.armBeforeMachineCommand(3L, "profile", MachineSafetyWorkoutKind.JUST_LIFT))
         assertEquals(MachineSafetyHazardCause.SET_END_UNCONFIRMED, store.rows.getValue("trainer-1").cause)
@@ -41,11 +42,11 @@ class MachineSafetyHazardLoggingTest {
     @Test
     fun `leftover arm row surfaced by a refused start keeps its set-end cause`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
-        val first = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val first = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertTrue(first.armBeforeMachineCommand(3L, "profile", MachineSafetyWorkoutKind.ROUTINE))
 
         // New process: the hidden arm row was never resolved.
-        val second = coordinator(store, FakeSafetyTransport("trainer-1"))
+        val second = coordinator(store, FakeMachineSafetyTransport("trainer-1"))
         assertFalse(second.canStartMachine())
         second.surfaceStoredHazard()
 
@@ -57,7 +58,7 @@ class MachineSafetyHazardLoggingTest {
     fun `refused start, hide, and acknowledgement are written to the connection log`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
         val logs = ConnectionLogRepository()
-        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"), logs)
+        val coordinator = coordinator(store, FakeMachineSafetyTransport("trainer-1"), logs)
         assertTrue(coordinator.armBeforeMachineCommand(3L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertTrue(coordinator.recordUnexpectedDisconnect("trainer-1", trainerName = "Vee_Test"))
         coordinator.hideTemporarily()
@@ -86,7 +87,7 @@ class MachineSafetyHazardLoggingTest {
     fun `release recovery outcomes are written to the connection log`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
         val logs = ConnectionLogRepository()
-        val transport = FakeSafetyTransport("trainer-1")
+        val transport = FakeMachineSafetyTransport("trainer-1")
         val coordinator = coordinator(store, transport, logs)
         assertTrue(coordinator.armBeforeMachineCommand(3L, "profile", MachineSafetyWorkoutKind.ROUTINE))
         assertTrue(coordinator.recordUnexpectedDisconnect("trainer-1"))
@@ -113,7 +114,7 @@ class MachineSafetyHazardLoggingTest {
     @Test
     fun `idle disconnect without an obligation logs that nothing was recorded`() = runTest {
         val logs = ConnectionLogRepository()
-        val coordinator = coordinator(InMemoryMachineSafetyHazardRepository(), FakeSafetyTransport(null), logs)
+        val coordinator = coordinator(InMemoryMachineSafetyHazardRepository(), FakeMachineSafetyTransport(null), logs)
 
         assertFalse(coordinator.recordUnexpectedDisconnect("trainer-1", trainerName = "Vee_Test"))
 
@@ -128,7 +129,7 @@ class MachineSafetyHazardLoggingTest {
 
     private fun TestScope.coordinator(
         store: InMemoryMachineSafetyHazardRepository,
-        transport: FakeSafetyTransport,
+        transport: FakeMachineSafetyTransport,
         logs: ConnectionLogRepository? = null,
     ) = MachineSafetyCoordinator(
         repository = store,
@@ -137,13 +138,4 @@ class MachineSafetyHazardLoggingTest {
         nowEpochMs = { 1000L },
         logRepo = logs,
     )
-
-    private class FakeSafetyTransport(override var connectedTrainerAddress: String?) : MachineSafetyTransport {
-        override suspend fun connectMatchingTrainer(trainerAddress: String): Result<Unit> {
-            connectedTrainerAddress = trainerAddress
-            return Result.success(Unit)
-        }
-
-        override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
-    }
 }
