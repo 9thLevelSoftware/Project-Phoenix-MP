@@ -315,9 +315,10 @@ actual class HealthIntegration : HealthWorkoutWriter {
                 log.i { "Skipping HealthKit calorie value for ${data.externalId}: optional active energy permission not granted" }
             }
 
-            // Build metadata for deduplication and display
+            // Build metadata for deduplication and display.
+            // HKMetadataKeyExternalUUID stores as "HKExternalUUID".
             val metadata = mutableMapOf<Any?, Any?>(
-                "HKExternalUUID" to data.externalId,
+                HKMetadataKeyExternalUUID to data.externalId,
             )
             metadata["title"] = data.title
 
