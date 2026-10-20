@@ -1,7 +1,8 @@
-package com.devil.phoenixproject.di
+﻿package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.csv.CsvImportInbox
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
@@ -169,4 +170,7 @@ val dataModule = module {
     single<ExternalExerciseTemplateRepository> { SqlDelightExternalExerciseTemplateRepository(get()) }
     single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
     single { HealthBackfillManager(get(), get(), get(), get()) }
+
+    // Polar H10 BLE Manager
+    single { PolarH10BleManager() } onClose { (it as? PolarH10BleManager)?.shutdown() }
 }
