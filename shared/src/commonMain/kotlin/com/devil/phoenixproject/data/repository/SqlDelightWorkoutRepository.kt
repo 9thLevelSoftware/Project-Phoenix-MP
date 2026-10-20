@@ -3,7 +3,10 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.database.MetricSample
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PolarBeatSample
+import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -1685,6 +1688,21 @@ class SqlDelightWorkoutRepository(
     override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
         withContext(Dispatchers.IO) {
             queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
+        }
+
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+        withContext(Dispatchers.IO) {
+            queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
+        }
+
+    override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =
+        withContext(Dispatchers.IO) {
+            queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+        }
+
+    override suspend fun getMetricSamplesBySession(sessionId: String): List<MetricSample> =
+        withContext(Dispatchers.IO) {
+            queries.selectMetricsBySession(sessionId).executeAsList()
         }
 }
 
