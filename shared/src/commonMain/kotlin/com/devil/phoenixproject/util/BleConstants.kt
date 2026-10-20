@@ -166,4 +166,40 @@ object BleConstants {
     val versionCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = VERSION_UUID)
     val modeCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = MODE_UUID)
     val firmwareRevisionCharacteristic = characteristicOf(service = DIS_SERVICE_UUID, characteristic = FIRMWARE_REVISION_UUID)
+
+    // -------------------------------------------------------------------------
+    // Polar H10 GATT constants & commands
+    // -------------------------------------------------------------------------
+    object Polar {
+        const val HR_SERVICE_UUID_STRING = "0000180d-0000-1000-8000-00805f9b34fb"
+        const val HR_MEASUREMENT_CHAR_UUID_STRING = "00002a37-0000-1000-8000-00805f9b34fb"
+        const val BATTERY_SERVICE_UUID_STRING = "0000180f-0000-1000-8000-00805f9b34fb"
+        const val BATTERY_LEVEL_CHAR_UUID_STRING = "00002a19-0000-1000-8000-00805f9b34fb"
+        const val PMD_SERVICE_UUID_STRING = "fb005c80-02e7-f387-1cad-8acd2d8df0c8"
+        const val PMD_CONTROL_POINT_CHAR_UUID_STRING = "fb005c81-02e7-f387-1cad-8acd2d8df0c8"
+        const val PMD_DATA_CHAR_UUID_STRING = "fb005c82-02e7-f387-1cad-8acd2d8df0c8"
+
+        val HR_SERVICE_UUID = Uuid.parse(HR_SERVICE_UUID_STRING)
+        val HR_MEASUREMENT_UUID = Uuid.parse(HR_MEASUREMENT_CHAR_UUID_STRING)
+        val BATTERY_SERVICE_UUID = Uuid.parse(BATTERY_SERVICE_UUID_STRING)
+        val BATTERY_LEVEL_UUID = Uuid.parse(BATTERY_LEVEL_CHAR_UUID_STRING)
+        val PMD_SERVICE_UUID = Uuid.parse(PMD_SERVICE_UUID_STRING)
+        val PMD_CONTROL_POINT_UUID = Uuid.parse(PMD_CONTROL_POINT_CHAR_UUID_STRING)
+        val PMD_DATA_UUID = Uuid.parse(PMD_DATA_CHAR_UUID_STRING)
+
+        val hrMeasurementCharacteristic = characteristicOf(service = HR_SERVICE_UUID, characteristic = HR_MEASUREMENT_UUID)
+        val batteryLevelCharacteristic = characteristicOf(service = BATTERY_SERVICE_UUID, characteristic = BATTERY_LEVEL_UUID)
+        val pmdControlPointCharacteristic = characteristicOf(service = PMD_SERVICE_UUID, characteristic = PMD_CONTROL_POINT_UUID)
+        val pmdDataCharacteristic = characteristicOf(service = PMD_SERVICE_UUID, characteristic = PMD_DATA_UUID)
+
+        const val DESIRED_PMD_MTU = 232
+
+        object Commands {
+            val START_ECG = byteArrayOf(0x02, 0x00, 0x00, 0x01, 0x82.toByte(), 0x00, 0x01, 0x01, 0x0E, 0x00)
+            val START_ACC = byteArrayOf(0x02, 0x02, 0x02, 0x01, 0x08, 0x00, 0x00, 0x01, 0x32, 0x00, 0x01, 0x01, 0x10, 0x00)
+            val STOP_ECG = byteArrayOf(0x03, 0x00)
+            val STOP_ACC = byteArrayOf(0x03, 0x02)
+        }
+    }
 }
+
