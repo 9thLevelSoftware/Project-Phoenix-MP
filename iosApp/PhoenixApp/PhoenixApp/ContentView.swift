@@ -18,7 +18,3 @@ struct ComposeView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
     }
 }
-
-#Preview {
-    ContentView()
-}
