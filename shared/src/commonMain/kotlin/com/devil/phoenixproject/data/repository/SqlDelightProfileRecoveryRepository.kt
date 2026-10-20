@@ -298,13 +298,7 @@ class SqlDelightProfileRecoveryRepository(
                         routineIdsJson = encodeOwnershipIds(mutation.routineIds),
                         cycleIdsJson = encodeOwnershipIds(mutation.cycleIds),
                         personalRecordIdsJson = encodeOwnershipIds(mutation.personalRecordIds),
-                        createdAt = nextOwnershipTransferCreatedAt(
-                            now = now(),
-                            latestCreatedAt = queries.selectAllOwnershipTransfers().executeAsList()
-                                .asSequence()
-                                .filter { it.owner_user_id == owner }
-                                .maxOfOrNull { it.created_at },
-                        ),
+                        createdAt = queries.nextOwnershipTransferCreatedAtFor(owner, now = now()),
                     )
                 }
             }

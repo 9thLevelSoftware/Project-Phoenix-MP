@@ -610,13 +610,7 @@ class SqlDelightUserProfileRepository(
                         routineIdsJson = encodeOwnershipIds(transfer.routineIds),
                         cycleIdsJson = encodeOwnershipIds(transfer.cycleIds),
                         personalRecordIdsJson = encodeOwnershipIds(transfer.personalRecordIds),
-                        createdAt = nextOwnershipTransferCreatedAt(
-                            now = currentTimeMillis(),
-                            latestCreatedAt = queries.selectAllOwnershipTransfers().executeAsList()
-                                .asSequence()
-                                .filter { it.owner_user_id == transfer.ownerUserId }
-                                .maxOfOrNull { it.created_at },
-                        ),
+                        createdAt = queries.nextOwnershipTransferCreatedAtFor(transfer.ownerUserId, now = currentTimeMillis()),
                     )
                 }
                 queries.deleteProfilePreferences(id)
