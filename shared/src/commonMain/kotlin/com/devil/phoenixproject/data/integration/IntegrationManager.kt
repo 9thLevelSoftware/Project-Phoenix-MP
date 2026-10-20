@@ -34,7 +34,7 @@ import com.devil.phoenixproject.domain.model.IntegrationSyncResult
 import com.devil.phoenixproject.domain.model.IntegrationSyncWarning
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 private const val MAX_SYNC_PAGES_PER_ENTITY = 50
 

@@ -962,7 +962,7 @@ class SyncManagerTest {
             PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         // Make pull succeed so we get full Success state
-        val expectedEpoch = kotlinx.datetime.Instant.parse(
+        val expectedEpoch = kotlin.time.Instant.parse(
             "2026-03-02T12:00:00Z",
         ).toEpochMilliseconds()
         fakeApi.pullResult = Result.success(
@@ -1963,7 +1963,7 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess, "Sync should succeed despite pull failure (push succeeded)")
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        val expectedEpoch = kotlin.time.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         val state = manager.syncState.value
         assertIs<SyncState.PartialSuccess>(state)
         assertTrue(state.pushSucceeded, "Push should have succeeded")
@@ -2034,7 +2034,7 @@ class SyncManagerTest {
     fun syncStoresPullCursorIndependentOfPushWatermark() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
-        val pullSyncTimeEpoch = kotlinx.datetime.Instant.parse(
+        val pullSyncTimeEpoch = kotlin.time.Instant.parse(
             "2026-03-02T13:00:00Z",
         ).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
@@ -2068,7 +2068,7 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess, "Result should be success (push succeeded)")
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        val expectedEpoch = kotlin.time.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         assertEquals(
             expectedEpoch,
             result.getOrThrow(),
