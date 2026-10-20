@@ -563,6 +563,7 @@ fun EnhancedMainScreen(
             // Show connection lost alert during workout (Issue #43)
             if (connectionLostDuringWorkout || machineSafetyUiState is MachineSafetyUiState.Visible) {
                 ConnectionLostDialog(
+                    hazard = (machineSafetyUiState as? MachineSafetyUiState.Visible)?.document,
                     onReconnect = {
                         viewModel.requestMachineSafetyRecovery(
                             (machineSafetyUiState as? MachineSafetyUiState.Visible)?.identity,

@@ -135,6 +135,7 @@ val dataModule = module {
             transport = get(),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             nowEpochMs = ::currentTimeMillis,
+            logRepo = ConnectionLogRepository.instance,
         )
     }
     single<EquipmentRackRepository> {
