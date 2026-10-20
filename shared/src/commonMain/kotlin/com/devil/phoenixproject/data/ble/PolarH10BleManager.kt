@@ -84,6 +84,8 @@ class PolarH10BleManager(
         const val KEY_POLAR_REMEMBERED_ADDRESS = "polar_h10_remembered_address"
         const val KEY_POLAR_REMEMBERED_NAME = "polar_h10_remembered_name"
         const val KEY_POLAR_AUTO_RECONNECT = "polar_h10_auto_reconnect_enabled"
+        const val CRITICAL_BATTERY_PERCENTAGE = 5
+        const val ECG_RAIL_THRESHOLD_UV = 15_000
     }
 
     // ===== Remembered Device & Auto-Reconnect =====
@@ -431,6 +433,27 @@ class PolarH10BleManager(
     val scannedDevices: StateFlow<List<ScannedDevice>> = _scannedDevices.asStateFlow()
 
     // ===== Telemetry State & Streams =====
+    private val _isContactDetected = MutableStateFlow(false)
+    val isContactDetected: StateFlow<Boolean> = _isContactDetected.asStateFlow()
+
+    fun isBatteryCritical(): Boolean =
+        _batteryLevel.value != null && _batteryLevel.value!! <= CRITICAL_BATTERY_PERCENTAGE
+
+    internal fun setContactDetectedForTesting(detected: Boolean) {
+        _isContactDetected.value = detected
+    }
+
+    internal fun setBatteryLevelForTesting(level: Int?) {
+        _batteryLevel.value = level
+        if (isBatteryCritical()) {
+            _isContactDetected.value = false
+            clearCachedTelemetry()
+            if (_isCooldownActive.value) {
+                cancelCooldown()
+            }
+        }
+    }
+
     private val _batteryLevel = MutableStateFlow<Int?>(null)
     val batteryLevel: StateFlow<Int?> = _batteryLevel.asStateFlow()
 
@@ -738,7 +761,17 @@ class PolarH10BleManager(
                     }
                     .collect { bytes ->
                         if (p.state.value !is State.Connected) return@collect
-                        parsePolarBatteryLevel(bytes)?.let { _batteryLevel.value = it }
+                        parsePolarBatteryLevel(bytes)?.let { level ->
+                            _batteryLevel.value = level
+                            if (level <= CRITICAL_BATTERY_PERCENTAGE) {
+                                log.w { "Polar H10 battery critical ($level%). Dropping telemetry." }
+                                _isContactDetected.value = false
+                                clearCachedTelemetry()
+                                if (_isCooldownActive.value) {
+                                    cancelCooldown()
+                                }
+                            }
+                        }
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
@@ -775,16 +808,18 @@ class PolarH10BleManager(
                     .collect { data ->
                         if (p.state.value !is State.Connected) return@collect
                         val measurement = parsePolarHrMeasurement(data) ?: return@collect
-                        if (!measurement.contactDetected || measurement.hr <= 0) {
-                            log.w { "Polar H10 strap removed or zero HR detected (contact=${measurement.contactDetected}, hr=${measurement.hr}). Dropping telemetry." }
+                        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+                            log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
+                            _isContactDetected.value = false
                             clearCachedTelemetry()
                             if (_isCooldownActive.value) {
-                                log.i { "Terminating recovery cooldown due to strap removal" }
+                                log.i { "Terminating recovery cooldown due to strap removal or critical battery" }
                                 cancelCooldown()
                             }
                             return@collect
                         }
 
+                        _isContactDetected.value = true
                         lastValidPacketTimestampMs = timeSource()
                         _hrMeasurement.value = measurement
                         _hrMeasurements.emit(measurement)
@@ -809,13 +844,15 @@ class PolarH10BleManager(
         if (peripheral != null && peripheral?.state?.value !is State.Connected) {
             return
         }
-        if (!measurement.contactDetected || measurement.hr <= 0) {
+        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+            _isContactDetected.value = false
             clearCachedTelemetry()
             if (_isCooldownActive.value) {
                 cancelCooldown()
             }
             return
         }
+        _isContactDetected.value = true
         lastValidPacketTimestampMs = timeSource()
         _hrMeasurement.value = measurement
         val rrs = measurement.rrIntervalsMs
@@ -932,69 +969,7 @@ class PolarH10BleManager(
                     .collect { data ->
                         if (p.state.value !is State.Connected) return@collect
                         val measurement = parsePolarPmdData(data) ?: return@collect
-                        when (measurement) {
-                            is PolarPmdMeasurement.Ecg -> {
-                                val samples = measurement.samplesMicrovolts
-                                val isFlatlineOrZero = samples.isEmpty() ||
-                                    samples.all { it == 0 } ||
-                                    (samples.isNotEmpty() && samples.all { it == samples[0] })
-                                if (isFlatlineOrZero) {
-                                    log.w { "Polar H10 ECG flatline or zero lead-off detected. Dropping ECG segment." }
-                                    _latestEcg.value = null
-                                    return@collect
-                                }
-                                lastValidPacketTimestampMs = timeSource()
-                                _pmdMeasurement.tryEmit(measurement)
-                                _latestEcg.value = measurement
-                                _ecgStream.tryEmit(measurement)
-                                val currentSid = activeSessionId
-                                if (currentSid != null && database != null) {
-                                    try {
-                                        val nowMs = timeSource()
-                                        val csv = measurement.samplesMicrovolts.joinToString(",")
-                                        database.phoenixDatabaseQueries.insertPolarEcgSegment(
-                                            sessionId = currentSid,
-                                            sensorTimestampNs = measurement.sensorTimestampNs,
-                                            wallClockTimestampMs = nowMs,
-                                            phase = currentPhase,
-                                            samplesUvCsv = csv,
-                                        )
-                                    } catch (e: Exception) {
-                                        log.w { "Failed to insert PolarEcgSegment: ${e.message}" }
-                                    }
-                                }
-                            }
-                            is PolarPmdMeasurement.Acc -> {
-                                if (measurement.samples.isEmpty()) return@collect
-                                lastValidPacketTimestampMs = timeSource()
-                                _pmdMeasurement.tryEmit(measurement)
-                                _latestAcc.value = measurement
-                                _accStream.tryEmit(measurement)
-                                for (s in measurement.samples) {
-                                    val bio = accFilter.processSample(s.xMg, s.yMg, s.zMg)
-                                    _torsoPitchDeg.value = bio.pitchDeg
-                                    _torsoRollDeg.value = bio.rollDeg
-                                    _dynamicAccMg.value = bio.dynamicAccMg
-                                    if (activeSessionId != null) {
-                                        sessionLock.withLock {
-                                            if (maxTorsoPitch == null) {
-                                                maxTorsoPitch = bio.pitchDeg
-                                            } else {
-                                                val currentMax = maxTorsoPitch!!
-                                                if (bio.pitchDeg > currentMax) {
-                                                    maxTorsoPitch = bio.pitchDeg
-                                                } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
-                                                    maxTorsoPitch = bio.pitchDeg
-                                                }
-                                            }
-                                            if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
-                                                maxTorsoRoll = bio.rollDeg
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        processPmdMeasurement(measurement)
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
@@ -1010,6 +985,83 @@ class PolarH10BleManager(
             dataSubscribed.await()
         }
         true
+    }
+
+    internal fun processPmdMeasurement(measurement: PolarPmdMeasurement) {
+        if (peripheral != null && peripheral?.state?.value !is State.Connected) {
+            return
+        }
+        if (!_isContactDetected.value || isBatteryCritical()) {
+            log.w { "Polar H10 PMD packet discarded: zero contact or critical battery (contact=${_isContactDetected.value}, batt=${_batteryLevel.value})" }
+            clearCachedTelemetry()
+            return
+        }
+
+        when (measurement) {
+            is PolarPmdMeasurement.Ecg -> {
+                val samples = measurement.samplesMicrovolts
+                val isFlatlineOrZero = samples.isEmpty() ||
+                    samples.all { it == 0 } ||
+                    (samples.isNotEmpty() && samples.all { it == samples[0] })
+                val isRailed = samples.any { abs(it) >= ECG_RAIL_THRESHOLD_UV }
+                if (isFlatlineOrZero || isRailed) {
+                    log.w { "Polar H10 ECG flatline/railing open-circuit noise detected (flatline=$isFlatlineOrZero, railed=$isRailed). Dropping ECG segment and clearing telemetry." }
+                    _isContactDetected.value = false
+                    clearCachedTelemetry()
+                    return
+                }
+                lastValidPacketTimestampMs = timeSource()
+                _pmdMeasurement.tryEmit(measurement)
+                _latestEcg.value = measurement
+                _ecgStream.tryEmit(measurement)
+                val currentSid = activeSessionId
+                if (currentSid != null && database != null) {
+                    try {
+                        val nowMs = timeSource()
+                        val csv = measurement.samplesMicrovolts.joinToString(",")
+                        database.phoenixDatabaseQueries.insertPolarEcgSegment(
+                            sessionId = currentSid,
+                            sensorTimestampNs = measurement.sensorTimestampNs,
+                            wallClockTimestampMs = nowMs,
+                            phase = currentPhase,
+                            samplesUvCsv = csv,
+                        )
+                    } catch (e: Exception) {
+                        log.w { "Failed to insert PolarEcgSegment: ${e.message}" }
+                    }
+                }
+            }
+            is PolarPmdMeasurement.Acc -> {
+                if (measurement.samples.isEmpty()) return
+                lastValidPacketTimestampMs = timeSource()
+                _pmdMeasurement.tryEmit(measurement)
+                _latestAcc.value = measurement
+                _accStream.tryEmit(measurement)
+                for (s in measurement.samples) {
+                    val bio = accFilter.processSample(s.xMg, s.yMg, s.zMg)
+                    _torsoPitchDeg.value = bio.pitchDeg
+                    _torsoRollDeg.value = bio.rollDeg
+                    _dynamicAccMg.value = bio.dynamicAccMg
+                    if (activeSessionId != null) {
+                        sessionLock.withLock {
+                            if (maxTorsoPitch == null) {
+                                maxTorsoPitch = bio.pitchDeg
+                            } else {
+                                val currentMax = maxTorsoPitch!!
+                                if (bio.pitchDeg > currentMax) {
+                                    maxTorsoPitch = bio.pitchDeg
+                                } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
+                                    maxTorsoPitch = bio.pitchDeg
+                                }
+                            }
+                            if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
+                                maxTorsoRoll = bio.rollDeg
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun sendPmdControlCommand(
@@ -1249,6 +1301,7 @@ class PolarH10BleManager(
         isAccStreaming = false
 
         _isConnected.value = false
+        _batteryLevel.value = null
         clearCachedTelemetry()
 
         if (_isCooldownActive.value) {
@@ -1257,8 +1310,8 @@ class PolarH10BleManager(
     }
 
     internal fun clearCachedTelemetry() {
+        _isContactDetected.value = false
         lastBeatTimestampMs = null
-        _batteryLevel.value = null
         _hrMeasurement.value = null
         _rrClockTimestampMs.value = null
         _latestEcg.value = null

@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.data.ble
 
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.PolarAccSample
 import com.devil.phoenixproject.domain.model.PolarHrMeasurement
+import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.util.BleConstants
 import com.juul.kable.Advertisement
@@ -10,6 +12,7 @@ import com.juul.kable.ManufacturerData
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.uuid.ExperimentalUuidApi
@@ -476,6 +479,129 @@ class PolarH10BleManagerTest {
         assertNull(manager.hrMeasurement.value, "Telemetry state must be cleared after >3s absence")
         assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated after >3s packet absence")
         assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    // ==================== Zero-Contact Telemetry & Noise Suppression Tests ====================
+
+    @Test
+    fun `lost electrode contact drops all incoming PMD ECG and ACC packets and emits zero telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // 1. Establish initial good skin contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value, "Contact should be true with good strap contact")
+
+        // 2. Deliver valid ECG & ACC
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 1_000_000L, samplesMicrovolts = listOf(100, 200, 300))
+        )
+        assertEquals(listOf(100, 200, 300), manager.latestEcg.value?.samplesMicrovolts)
+
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Acc(sensorTimestampNs = 1_000_000L, samples = listOf(PolarAccSample(10, 20, 1000)))
+        )
+        assertNotNull(manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+
+        // 3. User unclips pod / loses skin contact (contactDetected = false, hr = 0)
+        manager.processRrIntervals(PolarHrMeasurement(hr = 0, contactDetected = false, rrIntervalsMs = emptyList()))
+        assertFalse(manager.isContactDetected.value, "Contact state must drop to false")
+        assertNull(manager.hrMeasurement.value, "HR must be cleared to null on contact loss")
+        assertNull(manager.latestEcg.value, "ECG must be cleared to null on contact loss")
+        assertNull(manager.latestAcc.value, "ACC must be cleared to null on contact loss")
+        assertNull(manager.torsoPitchDeg.value, "Posture must be cleared to null on contact loss")
+        assertNull(manager.torsoRollDeg.value)
+        assertNull(manager.dynamicAccMg.value)
+
+        // 4. PMD packets continue streaming while strap is unclipped - verify they are completely dropped
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 2_000_000L, samplesMicrovolts = listOf(150, 250, 350))
+        )
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Acc(sensorTimestampNs = 2_000_000L, samples = listOf(PolarAccSample(30, 40, 990)))
+        )
+
+        assertNull(manager.latestEcg.value, "ECG packets must be discarded while contact is lost")
+        assertNull(manager.latestAcc.value, "ACC packets must be discarded while contact is lost")
+        assertNull(manager.torsoPitchDeg.value, "Posture must remain null while contact is lost")
+        assertNull(manager.dynamicAccMg.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `ECG railing beyond physiological threshold triggers contact loss and clears telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // Initial valid contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 70, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        // Deliver railed open-circuit noise (>= 15,000 uV)
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 3_000_000L,
+                samplesMicrovolts = listOf(100, 16_000, 200),
+            )
+        )
+
+        assertFalse(manager.isContactDetected.value, "Railed ECG must trip contact loss")
+        assertNull(manager.latestEcg.value, "Railed ECG must be discarded")
+        assertNull(manager.hrMeasurement.value, "Telemetry must be cleared upon ECG railing")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `ECG flatline triggers contact loss and drops packet`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // Initial valid contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 75, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        // Deliver zero flatline
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 4_000_000L,
+                samplesMicrovolts = listOf(0, 0, 0, 0),
+            )
+        )
+
+        assertFalse(manager.isContactDetected.value, "Flatline ECG must trip contact loss")
+        assertNull(manager.latestEcg.value, "Flatline ECG packet must be dropped")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `critical battery level triggers contact loss and suppresses all telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        // Battery drops to critical level (4% <= 5%)
+        manager.setBatteryLevelForTesting(4)
+        assertTrue(manager.isBatteryCritical(), "Battery must be flagged critical at 4%")
+        assertFalse(manager.isContactDetected.value, "Critical battery must revoke contact validation")
+        assertNull(manager.hrMeasurement.value, "Telemetry must be cleared upon critical battery")
+
+        // Attempting to deliver subsequent PMD and HR packets
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 5_000_000L, samplesMicrovolts = listOf(120, 220))
+        )
+        manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+
+        assertNull(manager.latestEcg.value, "ECG must not emit with critical battery")
+        assertNull(manager.hrMeasurement.value, "HR must not emit with critical battery")
+        assertFalse(manager.isContactDetected.value)
 
         testScope.cancel()
     }
