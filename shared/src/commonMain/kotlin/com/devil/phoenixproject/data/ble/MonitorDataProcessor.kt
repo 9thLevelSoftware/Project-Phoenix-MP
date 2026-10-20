@@ -62,7 +62,10 @@ class MonitorDataProcessor(
     private var lastGoodPosB = 0.0f
 
     // -------------------------------------------------------------------------
-    // Position tracking - velocity calculation
+    // Position-jump filter reference and poll clock
+    // lastPositionA/B: previous cable positions compared by the jump filter.
+    // lastTimestamp: poll clock of the last accepted sample; 0 skips the
+    // first jump check. Velocity comes from firmware (divided by 10).
     // -------------------------------------------------------------------------
     private var lastPositionA = 0.0f
     private var lastPositionB = 0.0f
