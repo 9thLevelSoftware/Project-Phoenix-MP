@@ -52,6 +52,7 @@ import com.devil.phoenixproject.presentation.util.formatRrMs
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import kotlin.math.roundToInt
 
 @Composable
 fun PolarH10SettingsCard(
@@ -66,6 +67,14 @@ fun PolarH10SettingsCard(
 
     val latestEcg by polarBleManager.latestEcg.collectAsState()
     val latestAcc by polarBleManager.latestAcc.collectAsState()
+
+    val rememberedAddress by polarBleManager.rememberedAddress.collectAsState()
+    val rememberedName by polarBleManager.rememberedName.collectAsState()
+    val isAutoReconnectEnabled by polarBleManager.isAutoReconnectEnabled.collectAsState()
+
+    val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
+    val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
+    val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
 
     var isEcgEnabled by remember { mutableStateOf(false) }
     var isAccEnabled by remember { mutableStateOf(false) }
@@ -169,13 +178,87 @@ fun PolarH10SettingsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(Spacing.medium))
+
+                    if (rememberedAddress != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainer,
+                                    MaterialTheme.shapes.small,
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Remembered Sensor",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        rememberedName ?: "Polar H10",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        rememberedAddress ?: "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(
+                                        onClick = { polarBleManager.forgetRememberedDevice() },
+                                    ) {
+                                        Text("Forget", color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Button(
+                                        onClick = { scope.launch { polarBleManager.autoReconnectIfRemembered() } },
+                                    ) {
+                                        Text("Reconnect")
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Auto-reconnect on workout",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        "Automatically connects when entering active workout",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = isAutoReconnectEnabled,
+                                    onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                    }
+
                     Button(
                         onClick = { scope.launch { polarBleManager.startScanning() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Scan for Polar H10")
+                        Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Polar H10")
                     }
                 }
 
@@ -320,6 +403,111 @@ fun PolarH10SettingsCard(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Auto-reconnect on workout",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "Remember this sensor for future sessions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = isAutoReconnectEnabled,
+                                onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
+                            )
+                        }
+
+                        if (rememberedAddress != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                OutlinedButton(
+                                    onClick = { polarBleManager.forgetRememberedDevice() },
+                                ) {
+                                    Text("Forget Sensor", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+
+                    // Torso Biomechanics Posture Section
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    Text(
+                        "Torso Biomechanics (50 Hz ACC)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainer,
+                                MaterialTheme.shapes.small,
+                            )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column {
+                                Text("Pitch", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = torsoPitchDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Column {
+                                Text("Roll", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = torsoRollDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Column {
+                                Text("Dynamic Acc", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = dynamicAccMg?.let { "$it mG" } ?: "—",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { polarBleManager.tareCurrentPosture() },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Tare Posture")
+                            }
+                            OutlinedButton(
+                                onClick = { polarBleManager.resetPostureTare() },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Reset Tare")
+                            }
                         }
                     }
 

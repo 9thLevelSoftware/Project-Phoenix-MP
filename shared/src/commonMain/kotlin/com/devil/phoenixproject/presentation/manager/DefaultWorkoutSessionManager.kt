@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -258,6 +259,7 @@ class DefaultWorkoutSessionManager(
     private val scope: CoroutineScope,
     private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
+    private val polarBleManager: PolarH10BleManager? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
@@ -431,6 +433,7 @@ class DefaultWorkoutSessionManager(
         healthExportCursorRepository = healthExportCursorRepository,
         elapsedRealtimeProvider = elapsedRealtimeProvider,
         wallClockMillisProvider = wallClockMillisProvider,
+        polarBleManager = polarBleManager,
     )
 
     companion object {
@@ -512,6 +515,32 @@ class DefaultWorkoutSessionManager(
                 }
             } finally {
                 profileRecoveryActivityTracker?.setWorkoutActive(false)
+            }
+        }
+
+        if (polarBleManager != null) {
+            scope.launch {
+                try {
+                    coordinator.workoutState.collect { state ->
+                        when (state) {
+                            is WorkoutState.Resting -> {
+                                polarBleManager.updateSessionPhase("REST")
+                            }
+                            is WorkoutState.Active -> {
+                                val repCount = coordinator.repCount.value
+                                val phase = if (repCount.warmupReps > 0 && !repCount.isWarmupComplete) "WARMUP" else "WORKING_SET"
+                                polarBleManager.updateSessionPhase(phase)
+                            }
+                            is WorkoutState.Completed, WorkoutState.RoutineComplete -> {
+                                polarBleManager.endSessionRecording()
+                            }
+                            else -> {}
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Logger.e(e) { "Error in Polar session phase collector" }
+                }
             }
         }
 

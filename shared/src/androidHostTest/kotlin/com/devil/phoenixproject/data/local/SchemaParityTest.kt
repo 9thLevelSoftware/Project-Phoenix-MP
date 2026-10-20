@@ -1302,6 +1302,32 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 58 adds Polar tables and columns to MetricSample and WorkoutSession`() {
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 58)
+            assertEquals(false, getTables(driver).contains("PolarBeatSample"), scenario)
+            assertEquals(false, getTables(driver).contains("PolarEcgSegment"), scenario)
+
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 58)
+                assertEquals(true, results.all { it.success }, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 58, 59)
+            }
+
+            assertEquals(true, getTables(driver).contains("PolarBeatSample"), scenario)
+            assertEquals(true, getTables(driver).contains("PolarEcgSegment"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "MetricSample", "heartRateBpm"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "MetricSample", "torsoPitchDeg"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "MetricSample", "chestAccXMg"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "avgHeartRateBpm"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "maxTorsoPitchDeg"), scenario)
+            assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "hrr60Bpm"), scenario)
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {

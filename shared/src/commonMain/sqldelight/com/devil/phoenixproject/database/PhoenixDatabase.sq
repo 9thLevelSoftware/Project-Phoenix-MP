@@ -122,7 +122,17 @@ CREATE TABLE WorkoutSession (
     -- first materialized from portal pull explicitly write 0/0.
     local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
     synced_sync_generation INTEGER NOT NULL DEFAULT 0
-        CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
+        CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation),
+    -- Polar H10 cardiac & torso biomechanics summary (added in migration 58)
+    avgHeartRateBpm INTEGER,
+    maxHeartRateBpm INTEGER,
+    minHeartRateBpm INTEGER,
+    avgRrIntervalMs REAL,
+    rmssdMs REAL,
+    hrr60Bpm INTEGER,
+    hrr300Bpm INTEGER,
+    maxTorsoPitchDeg REAL,
+    maxTorsoRollDeg REAL
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -151,10 +161,49 @@ CREATE TABLE MetricSample (
     loadB REAL,
     power REAL,
     status INTEGER NOT NULL DEFAULT 0,
+    -- Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 58)
+    heartRateBpm INTEGER,
+    rrIntervalMs REAL,
+    torsoPitchDeg REAL,
+    torsoRollDeg REAL,
+    dynamicAccMg INTEGER,
+    chestAccXMg INTEGER,
+    chestAccYMg INTEGER,
+    chestAccZMg INTEGER,
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_metric_sample_session ON MetricSample(sessionId);
+
+-- Continuous beat & recovery timeline (added in migration 58)
+CREATE TABLE PolarBeatSample (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    timestampMs INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    hrBpm INTEGER NOT NULL,
+    rrMs REAL NOT NULL,
+    rmssdMs REAL,
+    torsoPitchDeg REAL,
+    torsoRollDeg REAL,
+    dynamicAccMg INTEGER,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs);
+
+-- 130 Hz raw ECG trace storage (added in migration 58)
+CREATE TABLE PolarEcgSegment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    sensorTimestampNs INTEGER NOT NULL,
+    wallClockTimestampMs INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    samplesUvCsv TEXT NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs);
 
 -- Personal records
 -- Supports two PR types: MAX_WEIGHT (heaviest lift) and MAX_VOLUME (weight × reps)
@@ -1162,18 +1211,92 @@ insertMetric:
 INSERT INTO MetricSample (sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+insertMetricWithPolar:
+INSERT INTO MetricSample (
+    sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status,
+    heartRateBpm, rrIntervalMs, torsoPitchDeg, torsoRollDeg, dynamicAccMg, chestAccXMg, chestAccYMg, chestAccZMg
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 insertMetricRestoreIfAbsent:
 INSERT OR IGNORE INTO MetricSample(
     id, sessionId, timestamp, position, positionB, velocity, velocityB,
-    load, loadB, power, status
+    load, loadB, power, status,
+    heartRateBpm, rrIntervalMs, torsoPitchDeg, torsoRollDeg, dynamicAccMg, chestAccXMg, chestAccYMg, chestAccZMg
 )
 VALUES (
     :id, :sessionId, :timestamp, :position, :positionB, :velocity, :velocityB,
-    :load, :loadB, :power, :status
+    :load, :loadB, :power, :status,
+    :heartRateBpm, :rrIntervalMs, :torsoPitchDeg, :torsoRollDeg, :dynamicAccMg, :chestAccXMg, :chestAccYMg, :chestAccZMg
 );
 
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
+
+-- Polar Queries (added in migration 58)
+updateSessionPolarSummary:
+UPDATE WorkoutSession SET
+    avgHeartRateBpm = :avgHeartRateBpm,
+    maxHeartRateBpm = :maxHeartRateBpm,
+    minHeartRateBpm = :minHeartRateBpm,
+    avgRrIntervalMs = :avgRrIntervalMs,
+    rmssdMs = :rmssdMs,
+    hrr60Bpm = :hrr60Bpm,
+    hrr300Bpm = :hrr300Bpm,
+    maxTorsoPitchDeg = :maxTorsoPitchDeg,
+    maxTorsoRollDeg = :maxTorsoRollDeg
+WHERE id = :id;
+
+insertPolarBeatSample:
+INSERT INTO PolarBeatSample (
+    sessionId, timestampMs, phase, hrBpm, rrMs, rmssdMs,
+    torsoPitchDeg, torsoRollDeg, dynamicAccMg
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPolarBeatSamplesBySession:
+SELECT * FROM PolarBeatSample WHERE sessionId = ? ORDER BY timestampMs ASC;
+
+deletePolarBeatSamplesBySession:
+DELETE FROM PolarBeatSample WHERE sessionId = ?;
+
+countBackupPolarBeatSamples:
+SELECT COUNT(*) FROM PolarBeatSample WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
+
+selectAllBackupPolarBeatSamples:
+SELECT * FROM PolarBeatSample WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL) ORDER BY timestampMs ASC;
+
+insertPolarBeatSampleRestoreIfAbsent:
+INSERT OR IGNORE INTO PolarBeatSample (
+    id, sessionId, timestampMs, phase, hrBpm, rrMs, rmssdMs,
+    torsoPitchDeg, torsoRollDeg, dynamicAccMg
+) VALUES (
+    :id, :sessionId, :timestampMs, :phase, :hrBpm, :rrMs, :rmssdMs,
+    :torsoPitchDeg, :torsoRollDeg, :dynamicAccMg
+);
+
+insertPolarEcgSegment:
+INSERT INTO PolarEcgSegment (
+    sessionId, sensorTimestampNs, wallClockTimestampMs, phase, samplesUvCsv
+) VALUES (?, ?, ?, ?, ?);
+
+selectPolarEcgSegmentsBySession:
+SELECT * FROM PolarEcgSegment WHERE sessionId = ? ORDER BY wallClockTimestampMs ASC;
+
+deletePolarEcgSegmentsBySession:
+DELETE FROM PolarEcgSegment WHERE sessionId = ?;
+
+countBackupPolarEcgSegments:
+SELECT COUNT(*) FROM PolarEcgSegment WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
+
+selectAllBackupPolarEcgSegments:
+SELECT * FROM PolarEcgSegment WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL) ORDER BY wallClockTimestampMs ASC;
+
+insertPolarEcgSegmentRestoreIfAbsent:
+INSERT OR IGNORE INTO PolarEcgSegment (
+    id, sessionId, sensorTimestampNs, wallClockTimestampMs, phase, samplesUvCsv
+) VALUES (
+    :id, :sessionId, :sensorTimestampNs, :wallClockTimestampMs, :phase, :samplesUvCsv
+);
 
 -- Average set duration for a specific exercise (Issue #225: routine time estimation)
 -- Issue #586: only consider rows that look like an actual set (plausible duration

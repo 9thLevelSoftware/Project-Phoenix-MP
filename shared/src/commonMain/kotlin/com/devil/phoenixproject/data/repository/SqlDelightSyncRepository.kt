@@ -1522,6 +1522,15 @@ class SqlDelightSyncRepository(
         portalOrigin: Long,
         localSyncGeneration: Long,
         syncedSyncGeneration: Long,
+        avgHeartRateBpm: Long?,
+        maxHeartRateBpm: Long?,
+        minHeartRateBpm: Long?,
+        avgRrIntervalMs: Double?,
+        rmssdMs: Double?,
+        hrr60Bpm: Long?,
+        hrr300Bpm: Long?,
+        maxTorsoPitchDeg: Double?,
+        maxTorsoRollDeg: Double?,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -1575,6 +1584,15 @@ class SqlDelightSyncRepository(
         formScore = formScore?.toInt(),
         profileId = profileId,
         updatedAt = updatedAt,
+        avgHeartRateBpm = avgHeartRateBpm?.toInt(),
+        maxHeartRateBpm = maxHeartRateBpm?.toInt(),
+        minHeartRateBpm = minHeartRateBpm?.toInt(),
+        avgRrIntervalMs = avgRrIntervalMs?.toFloat(),
+        rmssdMs = rmssdMs?.toFloat(),
+        hrr60Bpm = hrr60Bpm?.toInt(),
+        hrr300Bpm = hrr300Bpm?.toInt(),
+        maxTorsoPitchDeg = maxTorsoPitchDeg?.toFloat(),
+        maxTorsoRollDeg = maxTorsoRollDeg?.toFloat(),
     )
 
     // === Extended Sync Methods (GAPs 1-9) ===
