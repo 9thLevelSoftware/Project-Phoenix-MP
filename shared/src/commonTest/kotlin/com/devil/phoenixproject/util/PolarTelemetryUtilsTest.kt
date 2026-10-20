@@ -131,4 +131,24 @@ class PolarTelemetryUtilsTest {
         val rmssd = PolarTelemetryUtils.calculateRmssdMs(rrs)
         assertTrue(rmssd != null && abs(rmssd - 17.32) < 0.05)
     }
+
+    @Test
+    fun rmssdCalculationRejectsDoubledRrAndArtifactSpikes() {
+        // Normal intervals with a single missed-beat / strap-slip spike (820 -> 1700 -> 810)
+        val rrsWithSpike = listOf(800.0, 820.0, 1700.0, 810.0, 830.0)
+        val rmssd = PolarTelemetryUtils.calculateRmssdMs(rrsWithSpike)
+        // Valid pairs: (800, 820) [diff 20], (810, 830) [diff 20]
+        // Mean squared diff: (400 + 400) / 2 = 400 -> sqrt = 20.0
+        assertTrue(rmssd != null)
+        assertEquals(20.0, rmssd, 0.01)
+    }
+
+    @Test
+    fun rmssdCalculationRejectsNonPhysiologicalIntervals() {
+        val nonPhysiological = listOf(100.0, 800.0, 820.0, 3000.0)
+        val rmssd = PolarTelemetryUtils.calculateRmssdMs(nonPhysiological)
+        // Only valid pair is (800, 820) [diff 20] -> sqrt(400 / 1) = 20.0
+        assertTrue(rmssd != null)
+        assertEquals(20.0, rmssd, 0.01)
+    }
 }

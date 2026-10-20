@@ -444,16 +444,22 @@ abstract class BaseDataBackupManager(
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
         // native SQLite driver handles large result sets.
         val metrics = mutableListOf<MetricSample>()
-        for (session in sessions) {
-            val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
-            if (includeRawTelemetryInBackups) {
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
                 metrics.addAll(sessionMetrics)
-            } else {
-                metrics.addAll(sessionMetrics.filter { it.heartRateBpm != null || it.chestAccXMg != null })
             }
         }
-        val polarBeatSamples = queries.selectAllBackupPolarBeatSamples().executeAsList()
-        val polarEcgSegments = queries.selectAllBackupPolarEcgSegments().executeAsList()
+        val polarBeatSamples = if (includeRawTelemetryInBackups) {
+            queries.selectAllBackupPolarBeatSamples().executeAsList()
+        } else {
+            emptyList()
+        }
+        val polarEcgSegments = if (includeRawTelemetryInBackups) {
+            queries.selectAllBackupPolarEcgSegments().executeAsList()
+        } else {
+            emptyList()
+        }
 
         // Full backups retain routine tombstones because historical telemetry keeps
         // foreign-key links to the original routine and routine exercise IDs.
@@ -3155,23 +3161,20 @@ abstract class BaseDataBackupManager(
         writer.write("\"metricSamples\":[")
         var metricIndex = 0L
         var firstMetric = true
-        // Raw telemetry is opt-in (F-033); but metrics with Polar data are always included.
-        for (session in sessions) {
-            val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
-            val filteredMetrics = if (includeRawTelemetryInBackups) {
-                sessionMetrics
-            } else {
-                sessionMetrics.filter { it.heartRateBpm != null || it.chestAccXMg != null }
-            }
-            for (metric in filteredMetrics) {
-                if (!firstMetric) writer.write(",")
-                firstMetric = false
-                writer.write(json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(metric)))
-                metricIndex++
-            }
-            if (filteredMetrics.isNotEmpty()) {
-                writer.flush()
-                onProgress(BackupProgress(BackupPhase.METRICS, metricIndex, metricCount))
+        // Raw telemetry is opt-in (F-033).
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
+                for (metric in sessionMetrics) {
+                    if (!firstMetric) writer.write(",")
+                    firstMetric = false
+                    writer.write(json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(metric)))
+                    metricIndex++
+                }
+                if (sessionMetrics.isNotEmpty()) {
+                    writer.flush()
+                    onProgress(BackupProgress(BackupPhase.METRICS, metricIndex, metricCount))
+                }
             }
         }
         writer.write("],")
@@ -3234,11 +3237,19 @@ abstract class BaseDataBackupManager(
         })
         writer.write(",")
 
-        val polarBeatSamples = queries.selectAllBackupPolarBeatSamples().executeAsList()
+        val polarBeatSamples = if (includeRawTelemetryInBackups) {
+            queries.selectAllBackupPolarBeatSamples().executeAsList()
+        } else {
+            emptyList()
+        }
         writeJsonArray(writer, "polarBeatSamples", polarBeatSamples.map { json.encodeToString(PolarBeatSampleBackup.serializer(), mapPolarBeatSampleToBackup(it)) })
         writer.write(",")
 
-        val polarEcgSegments = queries.selectAllBackupPolarEcgSegments().executeAsList()
+        val polarEcgSegments = if (includeRawTelemetryInBackups) {
+            queries.selectAllBackupPolarEcgSegments().executeAsList()
+        } else {
+            emptyList()
+        }
         writeJsonArray(writer, "polarEcgSegments", polarEcgSegments.map { json.encodeToString(PolarEcgSegmentBackup.serializer(), mapPolarEcgSegmentToBackup(it)) })
         writer.write(",")
 
@@ -4296,14 +4307,21 @@ abstract class BaseDataBackupManager(
             val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
                 ?: return@withContext Result.failure(Exception("Session not found: $sessionId"))
 
-            val sessionMetrics = queries.selectMetricsBySession(sessionId).executeAsList()
             val metrics = if (includeRawTelemetryInBackups) {
-                sessionMetrics
+                queries.selectMetricsBySession(sessionId).executeAsList()
             } else {
-                sessionMetrics.filter { it.heartRateBpm != null || it.chestAccXMg != null }
+                emptyList()
             }
-            val beatSamples = queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
-            val ecgSegments = queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+            val beatSamples = if (includeRawTelemetryInBackups) {
+                queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
+            } else {
+                emptyList()
+            }
+            val ecgSegments = if (includeRawTelemetryInBackups) {
+                queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+            } else {
+                emptyList()
+            }
             val completedSets = queries.selectCompletedSetsBySession(sessionId).executeAsList()
             val sessions = listOf(session)
 
@@ -4383,15 +4401,12 @@ abstract class BaseDataBackupManager(
             val allBeatSamples = mutableListOf<PolarBeatSample>()
             val allEcgSegments = mutableListOf<PolarEcgSegment>()
             for (session in sessions) {
-                val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
                 if (includeRawTelemetryInBackups) {
-                    allMetrics.addAll(sessionMetrics)
-                } else {
-                    allMetrics.addAll(sessionMetrics.filter { it.heartRateBpm != null || it.chestAccXMg != null })
+                    allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
+                    allBeatSamples.addAll(queries.selectPolarBeatSamplesBySession(session.id).executeAsList())
+                    allEcgSegments.addAll(queries.selectPolarEcgSegmentsBySession(session.id).executeAsList())
                 }
                 allCompletedSets.addAll(queries.selectCompletedSetsBySession(session.id).executeAsList())
-                allBeatSamples.addAll(queries.selectPolarBeatSamplesBySession(session.id).executeAsList())
-                allEcgSegments.addAll(queries.selectPolarEcgSegmentsBySession(session.id).executeAsList())
             }
 
             val routineNowMs = KmpUtils.currentTimeMillis()

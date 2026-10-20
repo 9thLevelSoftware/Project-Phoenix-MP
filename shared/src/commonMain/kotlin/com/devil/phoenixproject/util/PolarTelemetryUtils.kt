@@ -101,15 +101,24 @@ object PolarTelemetryUtils {
 
     /**
      * Compute Root Mean Square of Successive Differences (RMSSD) in milliseconds from R-R intervals.
+     * Applies physiological bounds (250.0..2500.0 ms) and a 25% relative RR-delta artifact filter
+     * (abs(rr2 - rr1) <= maxOf(rr1, rr2) * 0.25) to reject missed-beat spikes and noise.
      */
     fun calculateRmssdMs(rrs: List<Double>): Double? {
         if (rrs.size < 2) return null
         var sumSquares = 0.0
+        var validDiffs = 0
         for (i in 1 until rrs.size) {
-            val diff = rrs[i] - rrs[i - 1]
+            val rr1 = rrs[i - 1]
+            val rr2 = rrs[i]
+            if (rr1 !in 250.0..2500.0 || rr2 !in 250.0..2500.0) continue
+            val diff = abs(rr2 - rr1)
+            if (diff > maxOf(rr1, rr2) * 0.25) continue
             sumSquares += diff * diff
+            validDiffs++
         }
-        return sqrt(sumSquares / (rrs.size - 1))
+        if (validDiffs == 0) return null
+        return sqrt(sumSquares / validDiffs)
     }
 }
 

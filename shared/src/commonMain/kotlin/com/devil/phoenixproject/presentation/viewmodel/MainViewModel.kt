@@ -1461,6 +1461,12 @@ class MainViewModel(
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
             }
+            try {
+                polarBleManager?.disconnect()
+                Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
+            } catch (e: Exception) {
+                Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }
+            }
             Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
     }

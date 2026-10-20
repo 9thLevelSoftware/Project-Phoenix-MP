@@ -320,19 +320,17 @@ class DataBackupCompletenessTest {
         val exportedJson = source.manager.exportToJson()
         val backupData = testJson.decodeFromString<BackupData>(exportedJson)
 
-        assertEquals(1, backupData.data.polarBeatSamples.size)
-        assertEquals(1, backupData.data.polarEcgSegments.size)
-        // Metric samples: normal omitted, polar included
-        assertEquals(1, backupData.data.metricSamples.size)
-        assertEquals(145, backupData.data.metricSamples[0].heartRateBpm)
+        assertEquals(0, backupData.data.polarBeatSamples.size)
+        assertEquals(0, backupData.data.polarEcgSegments.size)
+        assertEquals(0, backupData.data.metricSamples.size)
 
         val target = Fixture(includeRawTelemetry = false)
         val result = target.manager.importFromJson(exportedJson).getOrThrow()
         assertEquals(0, result.entitiesWithErrors)
-        assertEquals(1, result.polarBeatSamplesImported)
-        assertEquals(1, result.polarEcgSegmentsImported)
+        assertEquals(0, result.polarBeatSamplesImported)
+        assertEquals(0, result.polarEcgSegmentsImported)
 
-        // Verify target database
+        // Verify target database has summary stats preserved
         val targetSession = target.queries.selectSessionById("session-polar-1").executeAsOne()
         assertEquals(142L, targetSession.avgHeartRateBpm)
         assertEquals(168L, targetSession.maxHeartRateBpm)
@@ -341,18 +339,60 @@ class DataBackupCompletenessTest {
         assertEquals(32.5f, targetSession.maxTorsoPitchDeg?.toFloat())
 
         val targetMetrics = target.queries.selectMetricsBySession("session-polar-1").executeAsList()
-        assertEquals(1, targetMetrics.size)
-        assertEquals(145L, targetMetrics[0].heartRateBpm)
-        assertEquals(100L, targetMetrics[0].chestAccXMg)
-
+        assertEquals(0, targetMetrics.size)
         val targetBeats = target.queries.selectPolarBeatSamplesBySession("session-polar-1").executeAsList()
-        assertEquals(1, targetBeats.size)
-        assertEquals(740.0, targetBeats[0].rrMs)
-        assertEquals(145L, targetBeats[0].hrBpm)
-
+        assertEquals(0, targetBeats.size)
         val targetEcgs = target.queries.selectPolarEcgSegmentsBySession("session-polar-1").executeAsList()
-        assertEquals(1, targetEcgs.size)
-        assertEquals("100,105,110", targetEcgs[0].samplesUvCsv)
+        assertEquals(0, targetEcgs.size)
+
+        // Export (with includeRawTelemetry = true)
+        val sourceWithTelemetry = Fixture(includeRawTelemetry = true)
+        sourceWithTelemetry.seedProfiles()
+        sourceWithTelemetry.saveSession("session-polar-2")
+        sourceWithTelemetry.queries.updateSessionPolarSummary(
+            id = "session-polar-2",
+            avgHeartRateBpm = 142L,
+            maxHeartRateBpm = 168L,
+            minHeartRateBpm = 95L,
+            avgRrIntervalMs = 740.0,
+            rmssdMs = 45.2,
+            hrr60Bpm = 25L,
+            hrr300Bpm = 50L,
+            maxTorsoPitchDeg = 32.5,
+            maxTorsoRollDeg = 12.0,
+        )
+        sourceWithTelemetry.insertMetric("session-polar-2")
+        sourceWithTelemetry.queries.insertPolarBeatSample(
+            sessionId = "session-polar-2",
+            timestampMs = 1_000L,
+            phase = "WORKING_SET",
+            hrBpm = 145L,
+            rrMs = 740.0,
+            rmssdMs = 45.2,
+            torsoPitchDeg = 32.5,
+            torsoRollDeg = 12.0,
+            dynamicAccMg = 150L,
+        )
+        sourceWithTelemetry.queries.insertPolarEcgSegment(
+            sessionId = "session-polar-2",
+            sensorTimestampNs = 1_000_000_000L,
+            wallClockTimestampMs = 1_700_000_000_000L,
+            phase = "WORKING_SET",
+            samplesUvCsv = "100,105,110",
+        )
+        val fullJson = sourceWithTelemetry.manager.exportToJson()
+        val fullData = testJson.decodeFromString<BackupData>(fullJson)
+        assertEquals(1, fullData.data.polarBeatSamples.size)
+        assertEquals(1, fullData.data.polarEcgSegments.size)
+        assertEquals(1, fullData.data.metricSamples.size)
+
+        val fullTarget = Fixture(includeRawTelemetry = false)
+        val fullResult = fullTarget.manager.importFromJson(fullJson).getOrThrow()
+        assertEquals(1, fullResult.polarBeatSamplesImported)
+        assertEquals(1, fullResult.polarEcgSegmentsImported)
+        assertEquals(1, fullTarget.queries.selectMetricsBySession("session-polar-2").executeAsList().size)
+        assertEquals(1, fullTarget.queries.selectPolarBeatSamplesBySession("session-polar-2").executeAsList().size)
+        assertEquals(1, fullTarget.queries.selectPolarEcgSegmentsBySession("session-polar-2").executeAsList().size)
     }
 
     // ---- restore resets settings-held sync state ----
