@@ -44,7 +44,10 @@ import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.util.KmpUtils
+import org.koin.compose.koinInject
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -108,9 +111,12 @@ fun SetSummaryCard(
     // summary preference, so this card's auto-continue countdown must be inert there.
     // An explicit tap (onContinue) still proceeds. Non-terminal summaries are unchanged.
     isTerminalSummary: Boolean = false,
+    polarBleManager: PolarH10BleManager = koinInject(),
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
+    val isCooldownActive by polarBleManager.isCooldownActive.collectAsState()
+    val effectiveHoldAutoContinue = holdAutoContinue || isCooldownActive
 
     // Issue #142: Use a unique key derived from the summary to ensure countdown resets for each new set.
     // Using durationMs and repCount as a composite identifier since these are unique per set completion.
@@ -123,7 +129,7 @@ fun SetSummaryCard(
                     autoplayEnabled = autoplayEnabled,
                     summaryCountdownSeconds = summaryCountdownSeconds,
                     isHistoryView = isHistoryView,
-                    holdAutoContinue = holdAutoContinue,
+                    holdAutoContinue = effectiveHoldAutoContinue,
                     isTerminalSummary = isTerminalSummary,
                 )
             ) {
@@ -141,12 +147,12 @@ fun SetSummaryCard(
     // Issue #1018: keyed on holdAutoContinue and inert while the hold is set, so opening
     // Add Exercise stops the countdown and a dialog dismiss never restarts it.
     // Issue #1226: also inert at the terminal routine summary (isTerminalSummary).
-    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds, holdAutoContinue, isTerminalSummary) {
+    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds, effectiveHoldAutoContinue, isTerminalSummary) {
         if (shouldAutoContinueSetSummary(
                 autoplayEnabled = autoplayEnabled,
                 summaryCountdownSeconds = summaryCountdownSeconds,
                 isHistoryView = isHistoryView,
-                holdAutoContinue = holdAutoContinue,
+                holdAutoContinue = effectiveHoldAutoContinue,
                 isTerminalSummary = isTerminalSummary,
             )
         ) {
@@ -426,6 +432,13 @@ fun SetSummaryCard(
                 }
             }
         }
+
+        // Polar H10 Session Analytics Card
+        PolarSessionAnalyticsCard(
+            sessionId = summary.sessionId,
+            polarBleManager = polarBleManager,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
 
         // Done/Continue button - only show in live view
         if (!isHistoryView) {

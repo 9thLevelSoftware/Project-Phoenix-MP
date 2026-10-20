@@ -40,6 +40,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -304,10 +305,17 @@ fun ActiveWorkoutScreen(
         }
         when {
             workoutState is WorkoutState.Completed -> {
-                Logger.d { "ActiveWorkoutScreen: Workout completed, navigating back in 2s" }
-                delay(2000)
-                hasNavigatedAway = true
-                navController.navigateUp()
+                val hasPolarActivity = polarBleManager.isCooldownActive.value ||
+                    polarBleManager.connectionState.value is ConnectionState.Connected ||
+                    polarBleManager.latestSessionSummary.value != null
+                if (!hasPolarActivity) {
+                    Logger.d { "ActiveWorkoutScreen: Workout completed (no Polar active), navigating back in 2s" }
+                    delay(2000)
+                    hasNavigatedAway = true
+                    navController.navigateUp()
+                } else {
+                    Logger.d { "ActiveWorkoutScreen: Workout completed with Polar telemetry/cooldown active; remaining on summary" }
+                }
             }
 
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {

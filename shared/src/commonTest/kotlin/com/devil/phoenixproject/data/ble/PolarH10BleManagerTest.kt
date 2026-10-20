@@ -186,4 +186,46 @@ class PolarH10BleManagerTest {
         manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = emptyList()))
         assertNull(manager.rrClockTimestampMs.value)
     }
+
+    // ==================== Session Recording & Cooldown Tests ====================
+
+    @Test
+    fun `session recording and cooldown lifecycle updates state flows properly`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        assertFalse(manager.isCooldownActive.value)
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // Start session recording
+        manager.startSessionRecording("session-123", "WARMUP")
+        assertEquals("session-123", manager.currentRecordingSessionId)
+
+        // Feed some beats
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 150,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+
+        val activeSummary = manager.getSessionSummary("session-123")
+        assertEquals(150, activeSummary?.avgHeartRateBpm)
+
+        // Trigger cooldown
+        manager.triggerCooldown("session-123")
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+        assertEquals(150, manager.cooldownStartHeartRate.value)
+        assertEquals("session-123", manager.activeCooldownSessionId.value)
+
+        // Stop cooldown early
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
 }
