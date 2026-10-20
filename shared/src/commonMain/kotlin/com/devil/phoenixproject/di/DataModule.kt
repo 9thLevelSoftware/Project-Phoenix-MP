@@ -172,5 +172,5 @@ val dataModule = module {
     single { HealthBackfillManager(get(), get(), get(), get()) }
 
     // Polar H10 BLE Manager
-    single { PolarH10BleManager() } onClose { (it as? PolarH10BleManager)?.shutdown() }
+    single { PolarH10BleManager(settings = get(), database = get()) } onClose { (it as? PolarH10BleManager)?.shutdown() }
 }

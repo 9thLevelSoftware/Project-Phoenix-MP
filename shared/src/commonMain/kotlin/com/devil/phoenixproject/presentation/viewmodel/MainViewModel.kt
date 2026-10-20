@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -543,6 +544,7 @@ class MainViewModel(
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
+    private val polarBleManager: PolarH10BleManager? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -732,6 +734,7 @@ class MainViewModel(
         machineSafetyCoordinator = machineSafetyCoordinator,
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
+        polarBleManager = polarBleManager,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===

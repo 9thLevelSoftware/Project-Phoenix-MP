@@ -241,6 +241,120 @@ class DataBackupCompletenessTest {
         assertEquals(150.0, target.queries.selectExerciseById("stock-press").executeAsOne().mvtOverrideMs, "local override wins")
     }
 
+    // ---- polar telemetry completeness ----
+
+    @Test
+    fun `polar summaries samples and ecg traces survive backup and restore even when raw telemetry is false`() = runTest {
+        val source = Fixture(includeRawTelemetry = false)
+        source.seedProfiles()
+        source.database.seedExercise("bench", "Bench Press")
+        source.saveSession("session-polar-1")
+        source.queries.updateSessionPolarSummary(
+            id = "session-polar-1",
+            avgHeartRateBpm = 142L,
+            maxHeartRateBpm = 168L,
+            minHeartRateBpm = 95L,
+            avgRrIntervalMs = 750.5,
+            rmssdMs = 45.2,
+            hrr60Bpm = 25L,
+            hrr300Bpm = 50L,
+            maxTorsoPitchDeg = 32.5,
+            maxTorsoRollDeg = 15.1,
+        )
+        // 1 normal sample (should be excluded because includeRawTelemetry = false and no polar fields)
+        source.queries.insertMetric(
+            sessionId = "session-polar-1",
+            timestamp = 1_700_000_001_000L,
+            position = 100.0,
+            positionB = 100.0,
+            velocity = 200.0,
+            velocityB = 200.0,
+            load = 25.0,
+            loadB = 25.0,
+            power = 50.0,
+            status = 0L,
+        )
+        // 1 sample WITH Polar data (must be included even when includeRawTelemetry = false)
+        source.queries.insertMetricWithPolar(
+            sessionId = "session-polar-1",
+            timestamp = 1_700_000_002_000L,
+            position = 100.0,
+            positionB = 100.0,
+            velocity = 200.0,
+            velocityB = 200.0,
+            load = 25.0,
+            loadB = 25.0,
+            power = 50.0,
+            status = 0L,
+            heartRateBpm = 145L,
+            rrIntervalMs = 740.0,
+            torsoPitchDeg = 30.0,
+            torsoRollDeg = 12.0,
+            dynamicAccMg = 150L,
+            chestAccXMg = 100L,
+            chestAccYMg = 200L,
+            chestAccZMg = 950L,
+        )
+        // Polar beat sample
+        source.queries.insertPolarBeatSample(
+            sessionId = "session-polar-1",
+            timestampMs = 1_700_000_002_500L,
+            phase = "WORKING_SET",
+            hrBpm = 145L,
+            rrMs = 740.0,
+            rmssdMs = 45.2,
+            torsoPitchDeg = 30.0,
+            torsoRollDeg = 12.0,
+            dynamicAccMg = 150L,
+        )
+        // Polar ECG segment
+        source.queries.insertPolarEcgSegment(
+            sessionId = "session-polar-1",
+            sensorTimestampNs = 1_000_000_000L,
+            wallClockTimestampMs = 1_700_000_000_000L,
+            phase = "WORKING_SET",
+            samplesUvCsv = "100,105,110",
+        )
+
+        // Export (with includeRawTelemetry = false)
+        val exportedJson = source.manager.exportToJson()
+        val backupData = testJson.decodeFromString<BackupData>(exportedJson)
+
+        assertEquals(1, backupData.data.polarBeatSamples.size)
+        assertEquals(1, backupData.data.polarEcgSegments.size)
+        // Metric samples: normal omitted, polar included
+        assertEquals(1, backupData.data.metricSamples.size)
+        assertEquals(145, backupData.data.metricSamples[0].heartRateBpm)
+
+        val target = Fixture(includeRawTelemetry = false)
+        val result = target.manager.importFromJson(exportedJson).getOrThrow()
+        assertEquals(0, result.entitiesWithErrors)
+        assertEquals(1, result.polarBeatSamplesImported)
+        assertEquals(1, result.polarEcgSegmentsImported)
+
+        // Verify target database
+        val targetSession = target.queries.selectSessionById("session-polar-1").executeAsOne()
+        assertEquals(142L, targetSession.avgHeartRateBpm)
+        assertEquals(168L, targetSession.maxHeartRateBpm)
+        assertEquals(95L, targetSession.minHeartRateBpm)
+        assertEquals(45.2f, targetSession.rmssdMs?.toFloat())
+        assertEquals(32.5f, targetSession.maxTorsoPitchDeg?.toFloat())
+
+        val targetMetrics = target.queries.selectMetricsBySession("session-polar-1").executeAsList()
+        assertEquals(1, targetMetrics.size)
+        assertEquals(145L, targetMetrics[0].heartRateBpm)
+        assertEquals(100L, targetMetrics[0].chestAccXMg)
+
+        val targetBeats = target.queries.selectPolarBeatSamplesBySession("session-polar-1").executeAsList()
+        assertEquals(1, targetBeats.size)
+        assertEquals(740.0, targetBeats[0].rrMs)
+        assertEquals(145L, targetBeats[0].hrBpm)
+
+        val targetEcgs = target.queries.selectPolarEcgSegmentsBySession("session-polar-1").executeAsList()
+        assertEquals(1, targetEcgs.size)
+        assertEquals("100,105,110", targetEcgs[0].samplesUvCsv)
+    }
+
     // ---- restore resets settings-held sync state ----
 
     @Test

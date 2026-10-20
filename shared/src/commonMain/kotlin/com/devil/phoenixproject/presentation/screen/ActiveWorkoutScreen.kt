@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -87,7 +88,12 @@ import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, exerciseRepository: ExerciseRepository) {
+fun ActiveWorkoutScreen(
+    navController: NavController,
+    viewModel: MainViewModel,
+    exerciseRepository: ExerciseRepository,
+    polarBleManager: PolarH10BleManager = koinInject(),
+) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
@@ -187,6 +193,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         onDispose {
             safeWordManager.stop()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        polarBleManager.autoReconnectIfRemembered()
     }
 
     LaunchedEffect(Unit) {

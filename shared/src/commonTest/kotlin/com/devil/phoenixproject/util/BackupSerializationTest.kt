@@ -442,4 +442,124 @@ class BackupSerializationTest {
         assertEquals(null, legacy.routineExerciseId)
         assertEquals(1, legacy.attemptNumber)
     }
+
+    @Test
+    fun polarTelemetryAndSamplesRoundTrip() {
+        val original = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-10-20T12:00:00Z",
+            appVersion = "1.0.4",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-polar-1",
+                        timestamp = 1700000000000L,
+                        mode = "OldSchool",
+                        targetReps = 8,
+                        weightPerCableKg = 30f,
+                        progressionKg = 0f,
+                        duration = 60000L,
+                        totalReps = 8,
+                        warmupReps = 0,
+                        workingReps = 8,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseName = "Bench Press",
+                        avgHeartRateBpm = 142,
+                        maxHeartRateBpm = 168,
+                        minHeartRateBpm = 95,
+                        avgRrIntervalMs = 750.5f,
+                        rmssdMs = 45.2f,
+                        hrr60Bpm = 25,
+                        hrr300Bpm = 50,
+                        maxTorsoPitchDeg = 32.5f,
+                        maxTorsoRollDeg = 15.1f,
+                    ),
+                ),
+                metricSamples = listOf(
+                    MetricSampleBackup(
+                        id = 1L,
+                        sessionId = "session-polar-1",
+                        timestamp = 1700000001000L,
+                        position = 100f,
+                        velocity = 200f,
+                        load = 30f,
+                        power = 60f,
+                        heartRateBpm = 145,
+                        rrIntervalMs = 740f,
+                        torsoPitchDeg = 30f,
+                        torsoRollDeg = 12f,
+                        dynamicAccMg = 150,
+                        chestAccXMg = 100,
+                        chestAccYMg = 200,
+                        chestAccZMg = 950,
+                    ),
+                ),
+                polarBeatSamples = listOf(
+                    PolarBeatSampleBackup(
+                        id = 1L,
+                        sessionId = "session-polar-1",
+                        timestampMs = 1700000002000L,
+                        phase = "WORKING_SET",
+                        hrBpm = 145,
+                        rrMs = 740.0f,
+                        rmssdMs = 45.2f,
+                        torsoPitchDeg = 30.0f,
+                        torsoRollDeg = 12.0f,
+                        dynamicAccMg = 150,
+                    ),
+                ),
+                polarEcgSegments = listOf(
+                    PolarEcgSegmentBackup(
+                        id = 1L,
+                        sessionId = "session-polar-1",
+                        sensorTimestampNs = 1000000000L,
+                        wallClockTimestampMs = 1700000000000L,
+                        phase = "WORKING_SET",
+                        samplesUvCsv = "100,105,110",
+                    ),
+                ),
+            ),
+        )
+
+        val jsonString = json.encodeToString(original)
+        val deserialized = json.decodeFromString<BackupData>(jsonString)
+
+        assertEquals(1, deserialized.data.workoutSessions.size)
+        val s = deserialized.data.workoutSessions[0]
+        assertEquals(142, s.avgHeartRateBpm)
+        assertEquals(168, s.maxHeartRateBpm)
+        assertEquals(95, s.minHeartRateBpm)
+        assertEquals(750.5f, s.avgRrIntervalMs)
+        assertEquals(45.2f, s.rmssdMs)
+        assertEquals(25, s.hrr60Bpm)
+        assertEquals(50, s.hrr300Bpm)
+        assertEquals(32.5f, s.maxTorsoPitchDeg)
+        assertEquals(15.1f, s.maxTorsoRollDeg)
+
+        assertEquals(1, deserialized.data.metricSamples.size)
+        val m = deserialized.data.metricSamples[0]
+        assertEquals(145, m.heartRateBpm)
+        assertEquals(740f, m.rrIntervalMs)
+        assertEquals(30f, m.torsoPitchDeg)
+        assertEquals(12f, m.torsoRollDeg)
+        assertEquals(150, m.dynamicAccMg)
+        assertEquals(100, m.chestAccXMg)
+        assertEquals(200, m.chestAccYMg)
+        assertEquals(950, m.chestAccZMg)
+
+        assertEquals(1, deserialized.data.polarBeatSamples.size)
+        val b = deserialized.data.polarBeatSamples[0]
+        assertEquals(1L, b.id)
+        assertEquals(740.0f, b.rrMs)
+        assertEquals(145, b.hrBpm)
+        assertEquals("WORKING_SET", b.phase)
+        assertEquals(45.2f, b.rmssdMs)
+
+        assertEquals(1, deserialized.data.polarEcgSegments.size)
+        val e = deserialized.data.polarEcgSegments[0]
+        assertEquals(1L, e.id)
+        assertEquals("100,105,110", e.samplesUvCsv)
+        assertEquals(1000000000L, e.sensorTimestampNs)
+    }
 }

@@ -121,6 +121,7 @@ actual val platformModule: Module = module {
             machineSafetyCoordinator = get(),
             profileRecoveryActivityTracker = get(),
             recentJustLiftExerciseStore = get(),
+            polarBleManager = getOrNull(),
         )
     }
 }

@@ -2,25 +2,33 @@ package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PolarHrMeasurement
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.PolarAccFilter
+import com.devil.phoenixproject.util.PolarTelemetryUtils
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
+import com.russhwolf.settings.Settings
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,12 +38,27 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.delay
+
+/**
+ * Summary metrics for a session recorded by Polar H10.
+ */
+data class PolarSessionSummary(
+    val avgHeartRateBpm: Int? = null,
+    val maxHeartRateBpm: Int? = null,
+    val minHeartRateBpm: Int? = null,
+    val avgRrIntervalMs: Float? = null,
+    val rmssdMs: Float? = null,
+    val hrr60Bpm: Int? = null,
+    val hrr300Bpm: Int? = null,
+    val maxTorsoPitchDeg: Float? = null,
+    val maxTorsoRollDeg: Float? = null,
+)
 
 /**
  * Multiplatform BLE Manager for Polar H10 heart rate sensors.
@@ -48,10 +71,182 @@ import kotlinx.coroutines.delay
  * without cross-peripheral interference.
  */
 class PolarH10BleManager(
+    private val settings: Settings? = null,
+    private val database: PhoenixDatabase? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val timeSource: () -> Long = ::currentTimeMillis,
 ) {
     private val log = Logger.withTag("PolarH10BleManager")
+
+    companion object {
+        const val KEY_POLAR_REMEMBERED_ADDRESS = "polar_h10_remembered_address"
+        const val KEY_POLAR_REMEMBERED_NAME = "polar_h10_remembered_name"
+        const val KEY_POLAR_AUTO_RECONNECT = "polar_h10_auto_reconnect_enabled"
+    }
+
+    // ===== Remembered Device & Auto-Reconnect =====
+    private val _rememberedAddress = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_ADDRESS))
+    val rememberedAddress: StateFlow<String?> = _rememberedAddress.asStateFlow()
+
+    private val _rememberedName = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_NAME))
+    val rememberedName: StateFlow<String?> = _rememberedName.asStateFlow()
+
+    private val _isAutoReconnectEnabled = MutableStateFlow<Boolean>(
+        settings?.getBoolean(KEY_POLAR_AUTO_RECONNECT, defaultValue = true) ?: true,
+    )
+    val isAutoReconnectEnabled: StateFlow<Boolean> = _isAutoReconnectEnabled.asStateFlow()
+
+    fun setAutoReconnectEnabled(enabled: Boolean) {
+        settings?.putBoolean(KEY_POLAR_AUTO_RECONNECT, enabled)
+        _isAutoReconnectEnabled.value = enabled
+    }
+
+    fun forgetRememberedDevice() {
+        settings?.remove(KEY_POLAR_REMEMBERED_ADDRESS)
+        settings?.remove(KEY_POLAR_REMEMBERED_NAME)
+        _rememberedAddress.value = null
+        _rememberedName.value = null
+    }
+
+    // ===== Torso Biomechanics Posture & Filtering =====
+    private val accFilter = PolarAccFilter()
+
+    private val _torsoPitchDeg = MutableStateFlow<Double?>(null)
+    val torsoPitchDeg: StateFlow<Double?> = _torsoPitchDeg.asStateFlow()
+
+    private val _torsoRollDeg = MutableStateFlow<Double?>(null)
+    val torsoRollDeg: StateFlow<Double?> = _torsoRollDeg.asStateFlow()
+
+    private val _dynamicAccMg = MutableStateFlow<Int?>(null)
+    val dynamicAccMg: StateFlow<Int?> = _dynamicAccMg.asStateFlow()
+
+    fun tareCurrentPosture() {
+        accFilter.tareCurrentPosture()
+    }
+
+    fun resetPostureTare() {
+        accFilter.tarePitchDeg = 0.0
+        accFilter.tareRollDeg = 0.0
+    }
+
+    // ===== Session Recording & Recovery State =====
+    private var activeSessionId: String? = null
+    private var currentPhase: String = "WARMUP"
+    private var cooldownJob: Job? = null
+    private val sessionHrs = mutableListOf<Int>()
+    private val sessionRrs = mutableListOf<Double>()
+    private val recentRrs = ArrayDeque<Double>()
+    private var maxTorsoPitch: Double? = null
+    private var maxTorsoRoll: Double? = null
+    private var endHeartRate: Int? = null
+    private var hrr60: Int? = null
+    private var hrr300: Int? = null
+
+    val currentRecordingSessionId: String? get() = activeSessionId
+
+    fun startSessionRecording(sessionId: String, phase: String = "WARMUP") {
+        cooldownJob?.cancel()
+        cooldownJob = null
+        activeSessionId = sessionId
+        currentPhase = phase
+        sessionHrs.clear()
+        sessionRrs.clear()
+        recentRrs.clear()
+        maxTorsoPitch = null
+        maxTorsoRoll = null
+        endHeartRate = null
+        hrr60 = null
+        hrr300 = null
+
+        if (_connectionState.value is ConnectionState.Connected) {
+            if (!isAccStreaming) scope.launch { startAccStream() }
+            if (!isEcgStreaming) scope.launch { startEcgStream() }
+        }
+    }
+
+    fun updateSessionPhase(phase: String) {
+        currentPhase = phase
+    }
+
+    fun endSessionRecording(sessionId: String? = null) {
+        val targetSessionId = sessionId ?: activeSessionId ?: return
+        if (activeSessionId == null) {
+            activeSessionId = targetSessionId
+        }
+        endHeartRate = _hrMeasurement.value?.hr ?: sessionHrs.lastOrNull()
+        currentPhase = "POST_WORKOUT_COOLDOWN"
+
+        cooldownJob?.cancel()
+        cooldownJob = scope.launch {
+            val cooldownStartMs = timeSource()
+            var hrr60Persisted = false
+            var hrr300Persisted = false
+            while (isActive && (timeSource() - cooldownStartMs) < 300_000L) {
+                delay(1000L)
+                val elapsedMs = timeSource() - cooldownStartMs
+                val curHr = _hrMeasurement.value?.hr
+                val endHr = endHeartRate
+                if (elapsedMs >= 60_000L && !hrr60Persisted && curHr != null && endHr != null) {
+                    hrr60 = (endHr - curHr).coerceAtLeast(0)
+                    hrr60Persisted = true
+                    persistPolarSummary(targetSessionId)
+                }
+                if (elapsedMs >= 300_000L && !hrr300Persisted && curHr != null && endHr != null) {
+                    hrr300 = (endHr - curHr).coerceAtLeast(0)
+                    hrr300Persisted = true
+                    persistPolarSummary(targetSessionId)
+                }
+            }
+            val finalHr = _hrMeasurement.value?.hr
+            if (!hrr300Persisted && finalHr != null && endHeartRate != null) {
+                hrr300 = (endHeartRate!! - finalHr).coerceAtLeast(0)
+                persistPolarSummary(targetSessionId)
+            }
+            if (activeSessionId == targetSessionId) {
+                activeSessionId = null
+            }
+        }
+    }
+
+    fun getSessionSummary(sessionId: String): PolarSessionSummary? {
+        if (activeSessionId != null && activeSessionId != sessionId) return null
+        val avgHr = if (sessionHrs.isNotEmpty()) sessionHrs.average().roundToInt() else null
+        val maxHr = sessionHrs.maxOrNull()
+        val minHr = sessionHrs.minOrNull()
+        val avgRr = if (sessionRrs.isNotEmpty()) sessionRrs.average().toFloat() else null
+        val rmssd = PolarTelemetryUtils.calculateRmssdMs(sessionRrs)?.toFloat()
+        return PolarSessionSummary(
+            avgHeartRateBpm = avgHr,
+            maxHeartRateBpm = maxHr,
+            minHeartRateBpm = minHr,
+            avgRrIntervalMs = avgRr,
+            rmssdMs = rmssd,
+            hrr60Bpm = hrr60,
+            hrr300Bpm = hrr300,
+            maxTorsoPitchDeg = maxTorsoPitch?.toFloat(),
+            maxTorsoRollDeg = maxTorsoRoll?.toFloat(),
+        )
+    }
+
+    private fun persistPolarSummary(sessionId: String) {
+        val summary = getSessionSummary(sessionId) ?: return
+        try {
+            database?.phoenixDatabaseQueries?.updateSessionPolarSummary(
+                id = sessionId,
+                avgHeartRateBpm = summary.avgHeartRateBpm?.toLong(),
+                maxHeartRateBpm = summary.maxHeartRateBpm?.toLong(),
+                minHeartRateBpm = summary.minHeartRateBpm?.toLong(),
+                avgRrIntervalMs = summary.avgRrIntervalMs?.toDouble(),
+                rmssdMs = summary.rmssdMs?.toDouble(),
+                hrr60Bpm = summary.hrr60Bpm?.toLong(),
+                hrr300Bpm = summary.hrr300Bpm?.toLong(),
+                maxTorsoPitchDeg = summary.maxTorsoPitchDeg?.toDouble(),
+                maxTorsoRollDeg = summary.maxTorsoRollDeg?.toDouble(),
+            )
+        } catch (e: Exception) {
+            log.w { "Failed to update session polar summary: ${e.message}" }
+        }
+    }
 
     // ===== Connection & Discovery State =====
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -210,6 +405,62 @@ class PolarH10BleManager(
         }
     }
 
+    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException()
+
+    /**
+     * Auto-reconnect to the remembered Polar H10 if one was previously connected
+     * and auto-reconnect is enabled.
+     */
+    suspend fun autoReconnectIfRemembered(timeoutMs: Long = 10000L): Result<Unit> {
+        if (_connectionState.value is ConnectionState.Connected || _connectionState.value is ConnectionState.Connecting) {
+            return Result.success(Unit)
+        }
+        if (!_isAutoReconnectEnabled.value) {
+            return Result.success(Unit)
+        }
+        val address = _rememberedAddress.value ?: return Result.success(Unit)
+        val name = _rememberedName.value ?: "Polar H10"
+        log.i { "Attempting auto-reconnect to remembered Polar H10: $name ($address)" }
+
+        val cachedAdv = discoveredAdvertisements[address]
+            ?: discoveredAdvertisements.values.firstOrNull { it.identifier.toString() == address }
+        if (cachedAdv != null) {
+            return connect(ScannedDevice(name = name, address = address))
+        }
+
+        return try {
+            val matchedDevice = withTimeoutOrNull(timeoutMs) {
+                var found: ScannedDevice? = null
+                try {
+                    Scanner {}
+                        .advertisements
+                        .filter { isPolarH10Advertisement(it) }
+                        .collect { adv ->
+                            val id = adv.identifier.toString()
+                            discoveredAdvertisements[id] = adv
+                            if (id.equals(address, ignoreCase = true) || (adv.name != null && adv.name == name)) {
+                                found = ScannedDevice(name = adv.name ?: name, address = id, rssi = adv.rssi)
+                                throw AutoReconnectMatchFound(found!!)
+                            }
+                        }
+                } catch (e: AutoReconnectMatchFound) {
+                    found = e.device
+                }
+                found
+            }
+
+            if (matchedDevice != null) {
+                connect(matchedDevice)
+            } else {
+                Result.failure(IllegalStateException("Timed out waiting for remembered Polar H10"))
+            }
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            log.w { "Auto-reconnect to Polar H10 failed: ${e.message}" }
+            Result.failure(e)
+        }
+    }
+
     /**
      * Connect to the selected Polar H10 device.
      */
@@ -240,6 +491,12 @@ class PolarH10BleManager(
                                 deviceName = device.name,
                                 deviceAddress = device.address,
                             )
+                            if (_isAutoReconnectEnabled.value) {
+                                settings?.putString(KEY_POLAR_REMEMBERED_ADDRESS, device.address)
+                                settings?.putString(KEY_POLAR_REMEMBERED_NAME, device.name)
+                                _rememberedAddress.value = device.address
+                                _rememberedName.value = device.name
+                            }
                             onDeviceConnected(p)
                         }
                         is State.Disconnecting -> {
@@ -373,6 +630,30 @@ class PolarH10BleManager(
                 hr = measurement.hr,
             )
             _rrBeats.tryEmit(beat)
+
+            val currentSid = activeSessionId
+            if (currentSid != null) {
+                sessionHrs.add(beat.hr)
+                sessionRrs.add(beat.rrIntervalMs)
+                recentRrs.addLast(beat.rrIntervalMs)
+                if (recentRrs.size > 30) recentRrs.removeFirst()
+                val currentRmssd = PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                try {
+                    database?.phoenixDatabaseQueries?.insertPolarBeatSample(
+                        sessionId = currentSid,
+                        timestampMs = beat.timestampMs,
+                        phase = currentPhase,
+                        hrBpm = beat.hr.toLong(),
+                        rrMs = beat.rrIntervalMs,
+                        rmssdMs = currentRmssd,
+                        torsoPitchDeg = _torsoPitchDeg.value,
+                        torsoRollDeg = _torsoRollDeg.value,
+                        dynamicAccMg = _dynamicAccMg.value?.toLong(),
+                    )
+                } catch (e: Exception) {
+                    log.w { "Failed to insert PolarBeatSample: ${e.message}" }
+                }
+            }
         }
 
         lastBeatTimestampMs = runningTs
@@ -432,10 +713,40 @@ class PolarH10BleManager(
                             is PolarPmdMeasurement.Ecg -> {
                                 _latestEcg.value = measurement
                                 _ecgStream.tryEmit(measurement)
+                                 val currentSid = activeSessionId
+                                if (currentSid != null && database != null) {
+                                    try {
+                                        val nowMs = timeSource()
+                                        val csv = measurement.samplesMicrovolts.joinToString(",")
+                                        database.phoenixDatabaseQueries.insertPolarEcgSegment(
+                                            sessionId = currentSid,
+                                            sensorTimestampNs = measurement.sensorTimestampNs,
+                                            wallClockTimestampMs = nowMs,
+                                            phase = currentPhase,
+                                            samplesUvCsv = csv,
+                                        )
+                                    } catch (e: Exception) {
+                                        log.w { "Failed to insert PolarEcgSegment: ${e.message}" }
+                                    }
+                                }
                             }
                             is PolarPmdMeasurement.Acc -> {
                                 _latestAcc.value = measurement
                                 _accStream.tryEmit(measurement)
+                                for (s in measurement.samples) {
+                                    val bio = accFilter.processSample(s.xMg, s.yMg, s.zMg)
+                                    _torsoPitchDeg.value = bio.pitchDeg
+                                    _torsoRollDeg.value = bio.rollDeg
+                                    _dynamicAccMg.value = bio.dynamicAccMg
+                                    if (activeSessionId != null) {
+                                        if (maxTorsoPitch == null || bio.pitchDeg > maxTorsoPitch!!) {
+                                            maxTorsoPitch = bio.pitchDeg
+                                        }
+                                        if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
+                                            maxTorsoRoll = bio.rollDeg
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -665,6 +976,13 @@ class PolarH10BleManager(
         _rrClockTimestampMs.value = null
         _latestEcg.value = null
         _latestAcc.value = null
+
+        cooldownJob?.cancel()
+        cooldownJob = null
+        accFilter.reset()
+        _torsoPitchDeg.value = null
+        _torsoRollDeg.value = null
+        _dynamicAccMg.value = null
     }
 
     private fun cleanupExistingConnection() {
