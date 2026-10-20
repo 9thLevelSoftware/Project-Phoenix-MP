@@ -817,8 +817,6 @@ private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unit
 
 // ===== Velocity Analysis Section =====
 
-// Zone color now provided by velocityZoneColor() from AccessibilityColors.kt
-
 /**
  * Format MCV from mm/s to an m/s display string (two decimal places) using integer arithmetic (KMP-safe).
  *
