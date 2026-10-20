@@ -87,6 +87,7 @@ import com.devil.phoenixproject.presentation.manager.actionIdentity
 import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
+import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -774,9 +775,7 @@ fun WorkoutTab(
  */
 @Composable
 private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
-    val minutes = secondsRemaining / 60
-    val seconds = secondsRemaining % 60
-    val timeText = if (minutes > 0) "$minutes:${seconds.toString().padStart(2, '0')}" else "${seconds}s"
+    val timeText = DurationFormatter.formatJustLiftRestClock(secondsRemaining.toLong() * 1000L)
 
     Surface(
         shape = MaterialTheme.shapes.large,
