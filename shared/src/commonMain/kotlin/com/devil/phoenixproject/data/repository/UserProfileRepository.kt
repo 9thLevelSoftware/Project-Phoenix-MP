@@ -610,7 +610,7 @@ class SqlDelightUserProfileRepository(
                         routineIdsJson = encodeOwnershipIds(transfer.routineIds),
                         cycleIdsJson = encodeOwnershipIds(transfer.cycleIds),
                         personalRecordIdsJson = encodeOwnershipIds(transfer.personalRecordIds),
-                        createdAt = nextOwnershipTransferCreatedAt(transfer.ownerUserId),
+                        createdAt = queries.nextOwnershipTransferCreatedAtFor(transfer.ownerUserId, now = currentTimeMillis()),
                     )
                 }
                 queries.deleteProfilePreferences(id)
@@ -663,17 +663,6 @@ class SqlDelightUserProfileRepository(
     private fun OwnershipTransferMutation.hasNamedEntities(): Boolean =
         workoutSessionIds.isNotEmpty() || routineIds.isNotEmpty() || cycleIds.isNotEmpty() ||
             personalRecordIds.isNotEmpty()
-
-    /** Keeps chained X -> source -> target transfers in a stable account-local order. */
-    private fun nextOwnershipTransferCreatedAt(ownerUserId: String): Long {
-        val now = currentTimeMillis()
-        val latest = queries.selectAllOwnershipTransfers().executeAsList()
-            .asSequence()
-            .filter { it.owner_user_id == ownerUserId }
-            .maxOfOrNull { it.created_at }
-            ?: return now
-        return maxOf(now, latest + 1L)
-    }
 
     override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         withProfileMutation {
