@@ -103,6 +103,7 @@ import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
@@ -1330,9 +1331,7 @@ private fun JustLiftSettingRow(
  */
 @Composable
 private fun JustLiftRestCountdownRow(secondsRemaining: Int) {
-    val minutes = secondsRemaining / 60
-    val seconds = secondsRemaining % 60
-    val timeText = if (minutes > 0) "$minutes:${seconds.toString().padStart(2, '0')}" else "${seconds}s"
+    val timeText = DurationFormatter.formatJustLiftRestClock(secondsRemaining.toLong() * 1000L)
 
     Row(
         modifier = Modifier
