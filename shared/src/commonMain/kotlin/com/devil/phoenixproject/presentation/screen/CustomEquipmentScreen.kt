@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -23,7 +22,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -58,7 +56,6 @@ import projectphoenix.shared.generated.resources.action_add
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_delete
 import projectphoenix.shared.generated.resources.action_save
-import projectphoenix.shared.generated.resources.cd_custom_equipment
 import projectphoenix.shared.generated.resources.custom_equipment_add_hint
 import projectphoenix.shared.generated.resources.custom_equipment_description
 import projectphoenix.shared.generated.resources.custom_equipment_empty
@@ -70,7 +67,6 @@ import projectphoenix.shared.generated.resources.custom_equipment_error_generic
 import projectphoenix.shared.generated.resources.custom_equipment_error_limit
 import projectphoenix.shared.generated.resources.custom_equipment_error_reserved
 import projectphoenix.shared.generated.resources.custom_equipment_error_too_long
-import projectphoenix.shared.generated.resources.custom_equipment_manage
 import projectphoenix.shared.generated.resources.custom_equipment_official_body
 import projectphoenix.shared.generated.resources.custom_equipment_official_title
 import projectphoenix.shared.generated.resources.custom_equipment_remove
