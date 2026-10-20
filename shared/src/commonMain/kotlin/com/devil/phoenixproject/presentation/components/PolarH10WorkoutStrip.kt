@@ -102,8 +102,9 @@ private fun PolarH10WorkoutStripContent(
     // Rolling ECG samples (µV)
     val ecgSamples = remember { mutableStateListOf<Int>() }
 
-    // Latest accelerometer sample
-    var latestAccSample by remember { mutableStateOf<PolarAccSample?>(null) }
+    // Latest accelerometer sample from dedicated StateFlow
+    val latestAcc by polarBleManager.latestAcc.collectAsState()
+    val latestAccSample = latestAcc?.samples?.lastOrNull()
 
     // 1. Auto-start ECG & ACC on enter, cleanly stop on dispose
     LaunchedEffect(Unit) {
@@ -135,17 +136,11 @@ private fun PolarH10WorkoutStripContent(
     }
 
     LaunchedEffect(Unit) {
-        polarBleManager.ecgStream.collectLatest { ecg ->
+        polarBleManager.ecgStream.collect { ecg ->
             ecgSamples.addAll(ecg.samplesMicrovolts)
             while (ecgSamples.size > MAX_ECG_DISPLAY_SAMPLES) {
                 ecgSamples.removeAt(0)
             }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        polarBleManager.accStream.collectLatest { acc ->
-            latestAccSample = acc.samples.lastOrNull()
         }
     }
 

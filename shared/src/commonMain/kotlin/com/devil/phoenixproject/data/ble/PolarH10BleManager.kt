@@ -35,6 +35,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 
 /**
  * Multiplatform BLE Manager for Polar H10 heart rate sensors.
@@ -94,6 +95,12 @@ class PolarH10BleManager(
     )
     val accStream: SharedFlow<PolarPmdMeasurement.Acc> = _accStream.asSharedFlow()
 
+    private val _latestEcg = MutableStateFlow<PolarPmdMeasurement.Ecg?>(null)
+    val latestEcg: StateFlow<PolarPmdMeasurement.Ecg?> = _latestEcg.asStateFlow()
+
+    private val _latestAcc = MutableStateFlow<PolarPmdMeasurement.Acc?>(null)
+    val latestAcc: StateFlow<PolarPmdMeasurement.Acc?> = _latestAcc.asStateFlow()
+
     private val _rrBeats = MutableSharedFlow<PolarRrBeat>(
         replay = 0,
         extraBufferCapacity = 64,
@@ -117,10 +124,14 @@ class PolarH10BleManager(
 
     // ===== PMD Stream Control =====
     private val pmdMutex = Mutex()
+    private val pmdControlPointMutex = Mutex()
+    private val pmdCpResponses = MutableSharedFlow<ByteArray>(
+        replay = 0,
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     private var pmdControlPointJob: Job? = null
     private var pmdDataJob: Job? = null
-    private var pmdCpSubscribed = CompletableDeferred<Unit>()
-    private var pmdDataSubscribed = CompletableDeferred<Unit>()
     private var isEcgStreaming = false
     private var isAccStreaming = false
 
@@ -298,6 +309,14 @@ class PolarH10BleManager(
 
         // 3. Subscribe to HR/RR notifications (0x2A37)
         startHrObservation(p)
+
+        // 4. Pre-subscribe to PMD Control Point & Data so observers are active and shared
+        try {
+            ensurePmdSubscribed(p)
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
+        }
     }
 
     private fun startHrObservation(p: Peripheral) {
@@ -368,28 +387,29 @@ class PolarH10BleManager(
         pmdControlPointJob?.cancel()
         pmdDataJob?.cancel()
 
-        pmdCpSubscribed = CompletableDeferred()
-        pmdDataSubscribed = CompletableDeferred()
+        val cpSubscribed = CompletableDeferred<Unit>()
+        val dataSubscribed = CompletableDeferred<Unit>()
 
         // 1. Subscribe to PMD Control Point (FB005C81)
         pmdControlPointJob = scope.launch {
             try {
                 p.observe(BleConstants.Polar.pmdControlPointCharacteristic, onSubscription = {
                     log.i { "PMD Control Point (FB005C81) subscribed" }
-                    pmdCpSubscribed.complete(Unit)
+                    cpSubscribed.complete(Unit)
                 })
                     .catch { e ->
                         e.rethrowIfCancellation()
                         log.w { "PMD CP observe error: ${e.message}" }
                     }
                     .collect { cpData ->
-                        log.d { "PMD CP response: ${cpData.size} bytes" }
+                        log.d { "PMD CP response: ${cpData.size} bytes: ${cpData.joinToString { (it.toInt() and 0xFF).toString(16) }}" }
+                        pmdCpResponses.tryEmit(cpData)
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.e(e) { "PMD CP observer failed: ${e.message}" }
-                if (!pmdCpSubscribed.isCompleted) {
-                    pmdCpSubscribed.completeExceptionally(e)
+                if (!cpSubscribed.isCompleted) {
+                    cpSubscribed.completeExceptionally(e)
                 }
             }
         }
@@ -399,7 +419,7 @@ class PolarH10BleManager(
             try {
                 p.observe(BleConstants.Polar.pmdDataCharacteristic, onSubscription = {
                     log.i { "PMD Data (FB005C82) subscribed" }
-                    pmdDataSubscribed.complete(Unit)
+                    dataSubscribed.complete(Unit)
                 })
                     .catch { e ->
                         e.rethrowIfCancellation()
@@ -409,24 +429,75 @@ class PolarH10BleManager(
                         val measurement = parsePolarPmdData(data) ?: return@collect
                         _pmdMeasurement.tryEmit(measurement)
                         when (measurement) {
-                            is PolarPmdMeasurement.Ecg -> _ecgStream.tryEmit(measurement)
-                            is PolarPmdMeasurement.Acc -> _accStream.tryEmit(measurement)
+                            is PolarPmdMeasurement.Ecg -> {
+                                _latestEcg.value = measurement
+                                _ecgStream.tryEmit(measurement)
+                            }
+                            is PolarPmdMeasurement.Acc -> {
+                                _latestAcc.value = measurement
+                                _accStream.tryEmit(measurement)
+                            }
                         }
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.e(e) { "PMD Data observer failed: ${e.message}" }
-                if (!pmdDataSubscribed.isCompleted) {
-                    pmdDataSubscribed.completeExceptionally(e)
+                if (!dataSubscribed.isCompleted) {
+                    dataSubscribed.completeExceptionally(e)
                 }
             }
         }
 
         withTimeout(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
-            pmdCpSubscribed.await()
-            pmdDataSubscribed.await()
+            cpSubscribed.await()
+            dataSubscribed.await()
         }
         true
+    }
+
+    private suspend fun sendPmdControlCommand(
+        p: Peripheral,
+        command: ByteArray,
+        opCode: Byte,
+        measurementType: Byte,
+        timeoutMs: Long = 2000L,
+    ): Result<Int> = pmdControlPointMutex.withLock {
+        ensurePmdSubscribed(p)
+        // Dwell 50ms before writing to ensure Android GATT queue is clean
+        delay(50L)
+
+        val responseDeferred = CompletableDeferred<Int>()
+        val responseListener = scope.launch {
+            pmdCpResponses
+                .filter { resp ->
+                    resp.size >= 4 &&
+                    (resp[0].toInt() and 0xFF) == 0xF0 &&
+                    resp[1] == opCode &&
+                    resp[2] == measurementType
+                }
+                .first()
+                .let { resp ->
+                    val status = resp[3].toInt() and 0xFF
+                    responseDeferred.complete(status)
+                }
+        }
+
+        try {
+            p.write(
+                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
+                data = command,
+                writeType = WriteType.WithResponse,
+            )
+            val status = withTimeoutOrNull(timeoutMs) {
+                responseDeferred.await()
+            } ?: 0 // If timeout waiting for indication, assume write succeeded
+            Result.success(status)
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            Result.failure(e)
+        } finally {
+            responseListener.cancel()
+        }
     }
 
     /**
@@ -437,12 +508,15 @@ class PolarH10BleManager(
         val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
         return try {
             log.i { "Starting Polar H10 ECG stream" }
-            ensurePmdSubscribed(p)
-            p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
-                data = BleConstants.Polar.PMD_START_ECG_CMD,
-                writeType = WriteType.WithResponse,
-            )
+            val status = sendPmdControlCommand(
+                p = p,
+                command = BleConstants.Polar.PMD_START_ECG_CMD,
+                opCode = 0x02,
+                measurementType = 0x00,
+            ).getOrThrow()
+            if (status != 0) {
+                log.w { "Polar H10 returned non-zero status $status starting ECG stream" }
+            }
             isEcgStreaming = true
             Result.success(Unit)
         } catch (e: Exception) {
@@ -459,10 +533,11 @@ class PolarH10BleManager(
         val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
         return try {
             log.i { "Stopping Polar H10 ECG stream" }
-            p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
-                data = BleConstants.Polar.PMD_STOP_ECG_CMD,
-                writeType = WriteType.WithResponse,
+            sendPmdControlCommand(
+                p = p,
+                command = BleConstants.Polar.PMD_STOP_ECG_CMD,
+                opCode = 0x03,
+                measurementType = 0x00,
             )
             isEcgStreaming = false
             Result.success(Unit)
@@ -476,17 +551,45 @@ class PolarH10BleManager(
     /**
      * Start the 50 Hz 16-bit ACC stream (±8G range).
      * Ensures PMD Control Point and Data notifications are active before sending command.
+     * Automatically retries with ascending TLV order or 25Hz/2G fallback if range-first TLV is rejected.
      */
     suspend fun startAccStream(): Result<Unit> {
         val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
         return try {
             log.i { "Starting Polar H10 ACC stream" }
-            ensurePmdSubscribed(p)
-            p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
-                data = BleConstants.Polar.PMD_START_ACC_CMD,
-                writeType = WriteType.WithResponse,
-            )
+            // Try 1: standard command (range-first)
+            var status = sendPmdControlCommand(
+                p = p,
+                command = BleConstants.Polar.PMD_START_ACC_CMD,
+                opCode = 0x02,
+                measurementType = 0x02,
+            ).getOrThrow()
+
+            if (status != 0) {
+                log.w { "Starting ACC with range-first TLV returned status $status. Retrying with ascending TLV (50Hz, 16-bit, 8G)..." }
+                status = sendPmdControlCommand(
+                    p = p,
+                    command = BleConstants.Polar.PMD_START_ACC_ASCENDING_CMD,
+                    opCode = 0x02,
+                    measurementType = 0x02,
+                ).getOrThrow()
+            }
+
+            if (status != 0) {
+                log.w { "Starting ACC with ascending TLV returned status $status. Retrying with 25Hz/2G fallback..." }
+                status = sendPmdControlCommand(
+                    p = p,
+                    command = BleConstants.Polar.PMD_START_ACC_FALLBACK_25HZ_CMD,
+                    opCode = 0x02,
+                    measurementType = 0x02,
+                ).getOrThrow()
+            }
+
+            if (status != 0) {
+                log.e { "Polar H10 rejected ACC start command with status $status" }
+                return Result.failure(IllegalStateException("Polar H10 rejected ACC start command: status $status"))
+            }
+
             isAccStreaming = true
             Result.success(Unit)
         } catch (e: Exception) {
@@ -503,10 +606,11 @@ class PolarH10BleManager(
         val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
         return try {
             log.i { "Stopping Polar H10 ACC stream" }
-            p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
-                data = BleConstants.Polar.PMD_STOP_ACC_CMD,
-                writeType = WriteType.WithResponse,
+            sendPmdControlCommand(
+                p = p,
+                command = BleConstants.Polar.PMD_STOP_ACC_CMD,
+                opCode = 0x03,
+                measurementType = 0x02,
             )
             isAccStreaming = false
             Result.success(Unit)
@@ -559,6 +663,8 @@ class PolarH10BleManager(
         _batteryLevel.value = null
         _hrMeasurement.value = null
         _rrClockTimestampMs.value = null
+        _latestEcg.value = null
+        _latestAcc.value = null
     }
 
     private fun cleanupExistingConnection() {

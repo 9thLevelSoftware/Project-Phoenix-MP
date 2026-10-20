@@ -163,62 +163,59 @@ private fun parseEcgFrame(data: ByteArray, timestampNs: Long): PolarPmdMeasureme
 }
 
 private fun parseAccFrame(data: ByteArray, timestampNs: Long, frameType: Int): PolarPmdMeasurement.Acc? {
-    return when (frameType) {
-        0x00 -> {
-            // Uncompressed 16-bit signed LE samples (6 bytes per sample)
-            val samples = mutableListOf<PolarAccSample>()
-            var offset = 10
-            while (offset + 6 <= data.size) {
-                val x = getInt16LE(data, offset)
-                val y = getInt16LE(data, offset + 2)
-                val z = getInt16LE(data, offset + 4)
-                samples.add(PolarAccSample(x, y, z))
-                offset += 6
-            }
-            PolarPmdMeasurement.Acc(
-                sensorTimestampNs = timestampNs,
-                samples = samples,
-            )
+    val isCompressed = (frameType and 0x80) != 0
+    return if (!isCompressed) {
+        // Uncompressed 16-bit signed LE samples (6 bytes per sample) - frameType 0x00, 0x01
+        val samples = mutableListOf<PolarAccSample>()
+        var offset = 10
+        while (offset + 6 <= data.size) {
+            val x = getInt16LE(data, offset)
+            val y = getInt16LE(data, offset + 2)
+            val z = getInt16LE(data, offset + 4)
+            samples.add(PolarAccSample(x, y, z))
+            offset += 6
         }
-        0x80 -> {
-            // Delta-compressed frame
-            if (data.size < 18) return null
-            var currentX = getInt16LE(data, 10)
-            var currentY = getInt16LE(data, 12)
-            var currentZ = getInt16LE(data, 14)
-            val deltaSizeBits = data[16].toInt() and 0xFF
-            val sampleCount = data[17].toInt() and 0xFF
+        PolarPmdMeasurement.Acc(
+            sensorTimestampNs = timestampNs,
+            samples = samples,
+        )
+    } else {
+        // Delta-compressed frame - frameType 0x80, 0x81
+        if (data.size < 18) return null
+        var currentX = getInt16LE(data, 10)
+        var currentY = getInt16LE(data, 12)
+        var currentZ = getInt16LE(data, 14)
+        val deltaSizeBits = data[16].toInt() and 0xFF
+        val sampleCount = data[17].toInt() and 0xFF
 
-            val samples = mutableListOf<PolarAccSample>()
-            // The baseline sample at index 10..15 is the initial reference sample
+        val samples = mutableListOf<PolarAccSample>()
+        // The baseline sample at index 10..15 is the initial reference sample
+        samples.add(PolarAccSample(currentX, currentY, currentZ))
+
+        if (deltaSizeBits == 0 || sampleCount == 0 || deltaSizeBits > 16) {
+            return PolarPmdMeasurement.Acc(timestampNs, samples)
+        }
+
+        val totalAvailableBits = (data.size - 18) * 8
+        var bitPos = 0
+        for (i in 0 until sampleCount) {
+            if (bitPos + (deltaSizeBits * 3) > totalAvailableBits) break
+            val deltaX = readSignedBits(data, 18, bitPos, deltaSizeBits)
+            bitPos += deltaSizeBits
+            val deltaY = readSignedBits(data, 18, bitPos, deltaSizeBits)
+            bitPos += deltaSizeBits
+            val deltaZ = readSignedBits(data, 18, bitPos, deltaSizeBits)
+            bitPos += deltaSizeBits
+
+            currentX += deltaX
+            currentY += deltaY
+            currentZ += deltaZ
             samples.add(PolarAccSample(currentX, currentY, currentZ))
-
-            if (deltaSizeBits == 0 || sampleCount == 0 || deltaSizeBits > 16) {
-                return PolarPmdMeasurement.Acc(timestampNs, samples)
-            }
-
-            val totalAvailableBits = (data.size - 18) * 8
-            var bitPos = 0
-            for (i in 0 until sampleCount) {
-                if (bitPos + (deltaSizeBits * 3) > totalAvailableBits) break
-                val deltaX = readSignedBits(data, 18, bitPos, deltaSizeBits)
-                bitPos += deltaSizeBits
-                val deltaY = readSignedBits(data, 18, bitPos, deltaSizeBits)
-                bitPos += deltaSizeBits
-                val deltaZ = readSignedBits(data, 18, bitPos, deltaSizeBits)
-                bitPos += deltaSizeBits
-
-                currentX += deltaX
-                currentY += deltaY
-                currentZ += deltaZ
-                samples.add(PolarAccSample(currentX, currentY, currentZ))
-            }
-
-            PolarPmdMeasurement.Acc(
-                sensorTimestampNs = timestampNs,
-                samples = samples,
-            )
         }
-        else -> null
+
+        PolarPmdMeasurement.Acc(
+            sensorTimestampNs = timestampNs,
+            samples = samples,
+        )
     }
 }

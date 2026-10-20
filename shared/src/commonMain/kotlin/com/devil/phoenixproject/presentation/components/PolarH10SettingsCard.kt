@@ -64,37 +64,22 @@ fun PolarH10SettingsCard(
     val batteryLevel by polarBleManager.batteryLevel.collectAsState()
     val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
 
+    val latestEcg by polarBleManager.latestEcg.collectAsState()
+    val latestAcc by polarBleManager.latestAcc.collectAsState()
+
     var isEcgEnabled by remember { mutableStateOf(false) }
     var isAccEnabled by remember { mutableStateOf(false) }
-    var latestEcgSampleUv by remember { mutableStateOf<Int?>(null) }
-    var latestAccSample by remember { mutableStateOf<PolarAccSample?>(null) }
 
-    // Sync switch states with manager status
+    // Sync switch states when connection is lost
     LaunchedEffect(connectionState) {
         if (connectionState !is ConnectionState.Connected) {
             isEcgEnabled = false
             isAccEnabled = false
-            latestEcgSampleUv = null
-            latestAccSample = null
         }
     }
 
-    // Collect preview samples when test toggles are active
-    LaunchedEffect(isEcgEnabled) {
-        if (isEcgEnabled) {
-            polarBleManager.ecgStream.collectLatest { ecg ->
-                latestEcgSampleUv = ecg.samplesMicrovolts.lastOrNull()
-            }
-        }
-    }
-
-    LaunchedEffect(isAccEnabled) {
-        if (isAccEnabled) {
-            polarBleManager.accStream.collectLatest { acc ->
-                latestAccSample = acc.samples.lastOrNull()
-            }
-        }
-    }
+    val latestEcgSampleUv = if (isEcgEnabled) latestEcg?.samplesMicrovolts?.lastOrNull() else null
+    val latestAccSample = if (isAccEnabled) latestAcc?.samples?.lastOrNull() else null
 
     Card(
         modifier = modifier
