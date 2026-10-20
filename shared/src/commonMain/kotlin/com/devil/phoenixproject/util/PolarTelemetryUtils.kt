@@ -40,7 +40,7 @@ object PolarTelemetryUtils {
         tarePitchDeg: Double = 0.0,
     ): Double {
         val planarNorm = sqrt(xMg * xMg + yMg * yMg)
-        val rawAngleRad = atan2(zMg, planarNorm)
+        val rawAngleRad = atan2(-zMg, planarNorm)
         val rawAngleDeg = rawAngleRad * (180.0 / PI)
         return rawAngleDeg - tarePitchDeg
     }

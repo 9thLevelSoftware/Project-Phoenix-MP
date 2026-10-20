@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -130,6 +132,7 @@ class PolarH10BleManager(
     }
 
     // ===== Session Recording & Recovery State =====
+    private val sessionLock = reentrantLock()
     private var activeSessionId: String? = null
     private var currentPhase: String = "WARMUP"
     private var cooldownJob: Job? = null
@@ -176,11 +179,13 @@ class PolarH10BleManager(
         _activeCooldownSessionId.value = null
         activeSessionId = sessionId
         currentPhase = phase
-        sessionHrs.clear()
-        sessionRrs.clear()
-        recentRrs.clear()
-        maxTorsoPitch = null
-        maxTorsoRoll = null
+        sessionLock.withLock {
+            sessionHrs.clear()
+            sessionRrs.clear()
+            recentRrs.clear()
+            maxTorsoPitch = null
+            maxTorsoRoll = null
+        }
         endHeartRate = null
         hrr60 = null
         hrr300 = null
@@ -198,6 +203,10 @@ class PolarH10BleManager(
 
     fun triggerCooldown(sessionId: String? = null) {
         endSessionRecording(sessionId)
+        if (_connectionState.value is ConnectionState.Connected) {
+            if (!isAccStreaming) scope.launch { startAccStream() }
+            if (!isEcgStreaming) scope.launch { startEcgStream() }
+        }
     }
 
     fun stopCooldown() {
@@ -226,12 +235,13 @@ class PolarH10BleManager(
     }
 
     fun endSessionRecording(sessionId: String? = null) {
-        val targetSessionId = sessionId ?: activeSessionId ?: return
+        val targetSessionId = sessionId ?: activeSessionId ?: _activeCooldownSessionId.value ?: return
         if (activeSessionId == null) {
             activeSessionId = targetSessionId
         }
         _activeCooldownSessionId.value = targetSessionId
-        endHeartRate = _hrMeasurement.value?.hr ?: sessionHrs.lastOrNull()
+        val lastHr = sessionLock.withLock { sessionHrs.lastOrNull() }
+        endHeartRate = _hrMeasurement.value?.hr ?: lastHr
         _cooldownStartHeartRate.value = endHeartRate
         currentPhase = "POST_WORKOUT_COOLDOWN"
         _isCooldownActive.value = true
@@ -283,13 +293,28 @@ class PolarH10BleManager(
         }
     }
 
+    private data class SessionSampleSnapshot(
+        val hrs: List<Int>,
+        val rrs: List<Double>,
+        val maxPitch: Double?,
+        val rollMax: Double?,
+    )
+
     fun getSessionSummary(sessionId: String): PolarSessionSummary? {
         if (activeSessionId != null && activeSessionId != sessionId) return null
-        val avgHr = if (sessionHrs.isNotEmpty()) sessionHrs.average().roundToInt() else null
-        val maxHr = sessionHrs.maxOrNull()
-        val minHr = sessionHrs.minOrNull()
-        val avgRr = if (sessionRrs.isNotEmpty()) sessionRrs.average().toFloat() else null
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(sessionRrs)?.toFloat()
+        val snapshot = sessionLock.withLock {
+            SessionSampleSnapshot(
+                hrs = sessionHrs.toList(),
+                rrs = sessionRrs.toList(),
+                maxPitch = maxTorsoPitch,
+                rollMax = maxTorsoRoll,
+            )
+        }
+        val avgHr = if (snapshot.hrs.isNotEmpty()) snapshot.hrs.average().roundToInt() else null
+        val maxHr = snapshot.hrs.maxOrNull()
+        val minHr = snapshot.hrs.minOrNull()
+        val avgRr = if (snapshot.rrs.isNotEmpty()) snapshot.rrs.average().toFloat() else null
+        val rmssd = PolarTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
         return PolarSessionSummary(
             avgHeartRateBpm = avgHr,
             maxHeartRateBpm = maxHr,
@@ -298,8 +323,8 @@ class PolarH10BleManager(
             rmssdMs = rmssd,
             hrr60Bpm = hrr60,
             hrr300Bpm = hrr300,
-            maxTorsoPitchDeg = maxTorsoPitch?.toFloat(),
-            maxTorsoRollDeg = maxTorsoRoll?.toFloat(),
+            maxTorsoPitchDeg = snapshot.maxPitch?.toFloat(),
+            maxTorsoRollDeg = snapshot.rollMax?.toFloat(),
         )
     }
 
@@ -649,6 +674,11 @@ class PolarH10BleManager(
             e.rethrowIfCancellation()
             log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
         }
+
+        if (activeSessionId != null) {
+            if (!isAccStreaming) scope.launch { startAccStream() }
+            if (!isEcgStreaming) scope.launch { startEcgStream() }
+        }
     }
 
     private fun startHrObservation(p: Peripheral) {
@@ -708,11 +738,13 @@ class PolarH10BleManager(
 
             val currentSid = activeSessionId
             if (currentSid != null) {
-                sessionHrs.add(beat.hr)
-                sessionRrs.add(beat.rrIntervalMs)
-                recentRrs.addLast(beat.rrIntervalMs)
-                if (recentRrs.size > 30) recentRrs.removeFirst()
-                val currentRmssd = PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                val currentRmssd = sessionLock.withLock {
+                    sessionHrs.add(beat.hr)
+                    sessionRrs.add(beat.rrIntervalMs)
+                    recentRrs.addLast(beat.rrIntervalMs)
+                    if (recentRrs.size > 30) recentRrs.removeFirst()
+                    PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                }
                 try {
                     database?.phoenixDatabaseQueries?.insertPolarBeatSample(
                         sessionId = currentSid,
@@ -814,11 +846,20 @@ class PolarH10BleManager(
                                     _torsoRollDeg.value = bio.rollDeg
                                     _dynamicAccMg.value = bio.dynamicAccMg
                                     if (activeSessionId != null) {
-                                        if (maxTorsoPitch == null || bio.pitchDeg > maxTorsoPitch!!) {
-                                            maxTorsoPitch = bio.pitchDeg
-                                        }
-                                        if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
-                                            maxTorsoRoll = bio.rollDeg
+                                        sessionLock.withLock {
+                                            if (maxTorsoPitch == null) {
+                                                maxTorsoPitch = bio.pitchDeg
+                                            } else {
+                                                val currentMax = maxTorsoPitch!!
+                                                if (bio.pitchDeg > currentMax) {
+                                                    maxTorsoPitch = bio.pitchDeg
+                                                } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
+                                                    maxTorsoPitch = bio.pitchDeg
+                                                }
+                                            }
+                                            if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
+                                                maxTorsoRoll = bio.rollDeg
+                                            }
                                         }
                                     }
                                 }
