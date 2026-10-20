@@ -5983,6 +5983,7 @@ class ActiveSessionEngine(
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
         val stampedMetric = polarBleManager?.let { polar ->
+            if (!polar.isConnected.value) return@let null
             val hr = polar.hrMeasurement.value
             val lastAcc = polar.latestAcc.value?.samples?.lastOrNull()
             metric.copy(
