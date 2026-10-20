@@ -75,6 +75,8 @@ class PolarH10BleManagerTest {
         assertNull(manager.batteryLevel.value)
         assertNull(manager.hrMeasurement.value)
         assertNull(manager.rrClockTimestampMs.value)
+        assertNull(manager.latestEcg.value)
+        assertNull(manager.latestAcc.value)
         assertFalse(manager.isEcgActive)
         assertFalse(manager.isAccActive)
     }
