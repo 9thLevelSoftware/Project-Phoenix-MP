@@ -186,7 +186,7 @@
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
-        <!-- FileProvider for sharing CSV exports -->
+        <!-- FileProvider for sharing CSV exports, JSON backups, and the database zip -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
