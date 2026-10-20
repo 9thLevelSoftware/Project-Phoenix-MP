@@ -1179,15 +1179,22 @@ private fun GroupedRoutineCard(
                         // Biomechanics Section per session (v0.5.0+, tier-gated)
                         BiomechanicsSection(session = session)
 
-                        // Polar H10 Cardiac & Biomechanics Telemetry Section
-                        PolarSessionAnalyticsCard(
-                            sessionId = session.id,
-                            session = session,
-                        )
-
                         if (index < groupedItem.sessions.size - 1) {
                             Spacer(modifier = Modifier.height(Spacing.medium))
                         }
+                    }
+
+                    // Polar H10 Cardiac & Biomechanics Telemetry Section (rendered below all exercises & rep details)
+                    val polarSession = groupedItem.sessions.find {
+                        it.avgHeartRateBpm != null || it.maxHeartRateBpm != null || it.hrr60Bpm != null
+                    } ?: groupedItem.sessions.lastOrNull() ?: groupedItem.sessions.firstOrNull()
+
+                    if (polarSession != null) {
+                        Spacer(modifier = Modifier.height(Spacing.medium))
+                        PolarSessionAnalyticsCard(
+                            sessionId = polarSession.id,
+                            session = polarSession,
+                        )
                     }
                 }
             }

@@ -20,6 +20,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 
 @OptIn(ExperimentalUuidApi::class)
 class PolarH10BleManagerTest {
@@ -271,5 +273,100 @@ class PolarH10BleManagerTest {
         assertTrue(finalSummary != null && finalSummary.avgHeartRateBpm != null)
         testScope.cancel()
     }
+
+    @Test
+    fun `routine intermediate sets update phase to REST while final completion triggers cooldown`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        // 1. Start routine set 1
+        manager.startSessionRecording("routine-session-1", "WARMUP")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 145, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.updateSessionPhase("WORKING_SET")
+
+        // 2. Set 1 finishes -> transitions to REST, NOT cooldown
+        manager.updateSessionPhase("REST")
+        assertFalse(manager.isCooldownActive.value, "Intermediate set summary must NOT activate cooldown")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // 3. Set 2 starts -> transitions to WORKING_SET
+        manager.updateSessionPhase("WORKING_SET")
+        assertFalse(manager.isCooldownActive.value)
+
+        // 4. Routine complete -> triggers cooldown
+        manager.endSessionRecording("routine-session-1")
+        assertTrue(manager.isCooldownActive.value, "Final routine completion must activate cooldown")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        // 5. User adds an exercise on the fly (resuming routine) -> WORKING_SET cleanly cancels cooldown
+        manager.updateSessionPhase("WORKING_SET")
+        assertFalse(manager.isCooldownActive.value, "Resuming routine with added exercise must cancel cooldown")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // 6. Routine completes again -> cooldown starts again
+        manager.endSessionRecording("routine-session-1")
+        assertTrue(manager.isCooldownActive.value, "Re-completing routine must reactivate cooldown")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `completed cooldown guards against wiping start HR unless forceRestart is true`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-guard", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 160, contactDetected = true, rrIntervalsMs = listOf(700.0)))
+
+        // Trigger cooldown and stop/complete it
+        manager.triggerCooldown("session-guard")
+        assertEquals(160, manager.cooldownStartHeartRate.value)
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+
+        // Re-entering screen triggers cooldown for same session with current HR lower
+        manager.processRrIntervals(PolarHrMeasurement(hr = 72, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        manager.triggerCooldown("session-guard") // without forceRestart
+        assertFalse(manager.isCooldownActive.value, "Should not restart completed cooldown without forceRestart")
+        assertEquals(160, manager.cooldownStartHeartRate.value, "Should not wipe cooldown start HR")
+
+        // Explicit tap on Restart Cooldown
+        manager.triggerCooldown("session-guard", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value, "Explicit restart must reactivate cooldown")
+        assertEquals(72, manager.cooldownStartHeartRate.value, "Restart re-anchors to current HR")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `cooldown anchors peak HR during first 30 seconds`() = runTest {
+        var simulatedTime = 100_000L
+        val manager = PolarH10BleManager(scope = this, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-peak", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+
+        // End session recording (start HR = 140)
+        manager.endSessionRecording("session-peak")
+        assertEquals(140, manager.cooldownStartHeartRate.value)
+
+        // 10 seconds in, HR peaks at 155
+        simulatedTime += 10_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 155, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+        testScheduler.advanceTimeBy(1000L)
+        assertEquals(155, manager.cooldownStartHeartRate.value, "Peak HR should be anchored within first 30 seconds")
+
+        // At 65 seconds, HR drops to 120 -> HRR60 measured from peak (155 - 120 = 35)
+        simulatedTime += 55_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        testScheduler.advanceTimeBy(1000L)
+        assertEquals(35, manager.cooldownHrr60.value, "HRR60 drop should be measured from peak HR (155 - 120 = 35)")
+
+        manager.stopCooldown()
+    }
 }
+
 

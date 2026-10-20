@@ -432,12 +432,15 @@ fun SetSummaryCard(
             }
         }
 
-        // Polar H10 Session Analytics Card
-        PolarSessionAnalyticsCard(
-            sessionId = summary.sessionId,
-            polarBleManager = polarBleManager,
-            modifier = Modifier.padding(bottom = 12.dp),
-        )
+        // Polar H10 Session Analytics Card (live view only; history renders at bottom below rep details)
+        if (!isHistoryView) {
+            PolarSessionAnalyticsCard(
+                sessionId = summary.sessionId,
+                polarBleManager = polarBleManager,
+                showCooldown = false,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
 
         // Done/Continue button - only show in live view
         if (!isHistoryView) {

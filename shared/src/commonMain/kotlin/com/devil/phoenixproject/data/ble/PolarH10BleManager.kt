@@ -144,6 +144,7 @@ class PolarH10BleManager(
     private var endHeartRate: Int? = null
     private var hrr60: Int? = null
     private var hrr300: Int? = null
+    private var cooldownStartTimestampMs: Long? = null
 
     private val _isCooldownActive = MutableStateFlow(false)
     val isCooldownActive: StateFlow<Boolean> = _isCooldownActive.asStateFlow()
@@ -166,17 +167,21 @@ class PolarH10BleManager(
     private val _latestSessionSummary = MutableStateFlow<PolarSessionSummary?>(null)
     val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
 
+    private val completedCooldownSessionIds = mutableSetOf<String>()
+
     val currentRecordingSessionId: String? get() = activeSessionId
 
     fun startSessionRecording(sessionId: String, phase: String = "WARMUP") {
         cooldownJob?.cancel()
         cooldownJob = null
+        cooldownStartTimestampMs = null
         _isCooldownActive.value = false
         _cooldownSecondsRemaining.value = 0
         _cooldownHrr60.value = null
         _cooldownHrr300.value = null
         _cooldownStartHeartRate.value = null
         _activeCooldownSessionId.value = null
+        completedCooldownSessionIds.remove(sessionId)
         activeSessionId = sessionId
         currentPhase = phase
         sessionLock.withLock {
@@ -198,11 +203,28 @@ class PolarH10BleManager(
     }
 
     fun updateSessionPhase(phase: String) {
+        if (phase == "WORKING_SET" || phase == "WARMUP") {
+            if (_isCooldownActive.value || currentPhase == "POST_WORKOUT_COOLDOWN") {
+                cancelCooldown()
+            }
+        }
         currentPhase = phase
     }
 
-    fun triggerCooldown(sessionId: String? = null) {
-        endSessionRecording(sessionId)
+    fun cancelCooldown() {
+        cooldownJob?.cancel()
+        cooldownJob = null
+        cooldownStartTimestampMs = null
+        _isCooldownActive.value = false
+        _cooldownSecondsRemaining.value = 0
+        val targetSessionId = activeSessionId ?: _activeCooldownSessionId.value
+        if (targetSessionId != null) {
+            completedCooldownSessionIds.remove(targetSessionId)
+        }
+    }
+
+    fun triggerCooldown(sessionId: String? = null, forceRestart: Boolean = false) {
+        endSessionRecording(sessionId, forceRestart = forceRestart)
         if (_connectionState.value is ConnectionState.Connected) {
             if (!isAccStreaming) scope.launch { startAccStream() }
             if (!isEcgStreaming) scope.launch { startEcgStream() }
@@ -213,6 +235,7 @@ class PolarH10BleManager(
         val targetSessionId = activeSessionId ?: _activeCooldownSessionId.value
         cooldownJob?.cancel()
         cooldownJob = null
+        cooldownStartTimestampMs = null
         val finalHr = _hrMeasurement.value?.hr
         val endHr = endHeartRate ?: _cooldownStartHeartRate.value
         if (finalHr != null && endHr != null) {
@@ -231,11 +254,23 @@ class PolarH10BleManager(
         if (targetSessionId != null) {
             persistPolarSummary(targetSessionId)
             _latestSessionSummary.value = getSessionSummary(targetSessionId)
+            completedCooldownSessionIds.add(targetSessionId)
         }
     }
 
-    fun endSessionRecording(sessionId: String? = null) {
+    fun endSessionRecording(sessionId: String? = null, forceRestart: Boolean = false) {
         val targetSessionId = sessionId ?: activeSessionId ?: _activeCooldownSessionId.value ?: return
+        if (!forceRestart && completedCooldownSessionIds.contains(targetSessionId)) {
+            Logger.d { "endSessionRecording: Cooldown already completed for session $targetSessionId; skipping" }
+            return
+        }
+        if (!forceRestart && _isCooldownActive.value && _activeCooldownSessionId.value == targetSessionId) {
+            Logger.d { "endSessionRecording: Cooldown already active for session $targetSessionId; skipping restart" }
+            return
+        }
+        if (forceRestart) {
+            completedCooldownSessionIds.remove(targetSessionId)
+        }
         if (activeSessionId == null) {
             activeSessionId = targetSessionId
         }
@@ -246,11 +281,16 @@ class PolarH10BleManager(
         currentPhase = "POST_WORKOUT_COOLDOWN"
         _isCooldownActive.value = true
         _cooldownSecondsRemaining.value = 300
+        _cooldownHrr60.value = null
+        _cooldownHrr300.value = null
+        hrr60 = null
+        hrr300 = null
         _latestSessionSummary.value = getSessionSummary(targetSessionId)
 
         cooldownJob?.cancel()
+        val cooldownStartMs = timeSource()
+        cooldownStartTimestampMs = cooldownStartMs
         cooldownJob = scope.launch {
-            val cooldownStartMs = timeSource()
             var hrr60Persisted = false
             var hrr300Persisted = false
             while (isActive && (timeSource() - cooldownStartMs) < 300_000L) {
@@ -260,6 +300,14 @@ class PolarH10BleManager(
                 _cooldownSecondsRemaining.value = remainingSec
 
                 val curHr = _hrMeasurement.value?.hr
+                // Bug C: Anchor peak HR during the first 30 seconds of cooldown
+                if (elapsedMs <= 30_000L && curHr != null) {
+                    val peak = maxOf(endHeartRate ?: curHr, curHr)
+                    if (endHeartRate != peak) {
+                        endHeartRate = peak
+                        _cooldownStartHeartRate.value = peak
+                    }
+                }
                 val endHr = endHeartRate
                 if (elapsedMs >= 60_000L && !hrr60Persisted && curHr != null && endHr != null) {
                     val drop = (endHr - curHr).coerceAtLeast(0)
@@ -284,6 +332,7 @@ class PolarH10BleManager(
                 _cooldownHrr300.value = drop
                 persistPolarSummary(targetSessionId)
             }
+            completedCooldownSessionIds.add(targetSessionId)
             _isCooldownActive.value = false
             _cooldownSecondsRemaining.value = 0
             _latestSessionSummary.value = getSessionSummary(targetSessionId)
@@ -713,10 +762,22 @@ class PolarH10BleManager(
      * if gaps or drift exceed 5 seconds.
      */
     internal fun processRrIntervals(measurement: PolarHrMeasurement) {
+        _hrMeasurement.value = measurement
         val rrs = measurement.rrIntervalsMs
-        if (rrs.isEmpty()) return
 
         val nowMs = timeSource()
+        if (_isCooldownActive.value) {
+            val startTs = cooldownStartTimestampMs
+            if (startTs != null && (nowMs - startTs) <= 30_000L) {
+                val peak = maxOf(endHeartRate ?: measurement.hr, measurement.hr)
+                if (endHeartRate != peak) {
+                    endHeartRate = peak
+                    _cooldownStartHeartRate.value = peak
+                }
+            }
+        }
+
+        if (rrs.isEmpty()) return
         val previousBeat = lastBeatTimestampMs
 
         val startingTs: Long = if (previousBeat == null || (nowMs - previousBeat) > 5000L || previousBeat > nowMs + 5000L) {

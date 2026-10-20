@@ -986,9 +986,6 @@ private fun CompletedCard(
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Polar H10 Session Analytics & Cooldown Protocol
-            PolarSessionAnalyticsCard(modifier = Modifier.padding(vertical = Spacing.small))
-
             // Check if this is a routine with more exercises
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
@@ -1030,32 +1027,35 @@ private fun CompletedCard(
                             style = MaterialTheme.typography.bodyMedium,
                             color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
-
-                        Spacer(Modifier.height(Spacing.medium))
-
-                        Button(
-                            onClick = onStartNextExercise,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            enabled = nextExerciseStartGate.startEnabled,
-                            shape = MaterialTheme.shapes.medium,
-                            elevation = ButtonDefaults.buttonElevation(
-                                defaultElevation = 4.dp,
-                                pressedElevation = 2.dp,
-                            ),
-                        ) {
-                            Text(
-                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
-                                    stringResource(Res.string.workout_teardown_finishing)
-                                } else {
-                                    "Start Next Exercise"
-                                },
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
                     }
+                }
+            }
+
+            // Polar H10 Session Analytics & Cooldown Protocol (rendered below exercise cards, above action button)
+            PolarSessionAnalyticsCard(modifier = Modifier.padding(vertical = Spacing.small))
+
+            if (hasMoreExercises && nextExercise != null) {
+                Button(
+                    onClick = onStartNextExercise,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    enabled = nextExerciseStartGate.startEnabled,
+                    shape = MaterialTheme.shapes.medium,
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 2.dp,
+                    ),
+                ) {
+                    Text(
+                        if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start Next Exercise"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             } else {
                 // Last exercise or not a routine - show "Start New Workout"
