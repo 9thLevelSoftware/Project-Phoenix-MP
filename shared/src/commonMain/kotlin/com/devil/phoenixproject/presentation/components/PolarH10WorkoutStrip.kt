@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -102,9 +103,12 @@ private fun PolarH10WorkoutStripContent(
     // Rolling ECG samples (µV)
     val ecgSamples = remember { mutableStateListOf<Int>() }
 
-    // Latest accelerometer sample from dedicated StateFlow
+    // Latest accelerometer sample and filtered posture StateFlows
     val latestAcc by polarBleManager.latestAcc.collectAsState()
     val latestAccSample = latestAcc?.samples?.lastOrNull()
+    val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
+    val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
+    val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
 
     // 1. Auto-start ECG & ACC on enter, cleanly stop on dispose
     LaunchedEffect(Unit) {
@@ -249,43 +253,77 @@ private fun PolarH10WorkoutStripContent(
                 )
             }
 
-            // Section 4: Live Chest Acceleration (mG)
-            Column(
-                modifier = Modifier.padding(start = 6.dp),
-                horizontalAlignment = Alignment.End,
+            // Section 4: Live Chest Acceleration & 3D Torso Posture with 1-Tap 0° Tare
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(start = 4.dp),
             ) {
-                val acc = latestAccSample
-                if (acc != null) {
-                    val magnitudeG = sqrt(
-                        (acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg),
-                    ) / 1000.0
+                Column(
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Hinge: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (torsoPitchDeg != null) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Tilt: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (torsoRollDeg != null) Color(0xFF00BCD4) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
-                        text = "${(magnitudeG * 100).roundToInt() / 100.0} G",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "ACC 50Hz",
+                        text = dynamicAccMg?.let { "$it mG" } ?: (latestAccSample?.let { acc ->
+                            val magnitudeG = sqrt((acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg)) / 1000.0
+                            "${(magnitudeG * 100).roundToInt() / 100.0} G"
+                        } ?: "—"),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    Text(
-                        text = "ACC",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "—",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                }
+
+                Surface(
+                    onClick = { polarBleManager.tareCurrentPosture() },
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "0° Tare",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
                 }
             }
         }

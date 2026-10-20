@@ -75,6 +75,7 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.WorkoutHistoryCardSkeleton
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
@@ -561,6 +562,12 @@ private fun WorkoutHistoryCard(
 
                     // Biomechanics Section (v0.5.0+, tier-gated)
                     BiomechanicsSection(session = session)
+
+                    // Polar H10 Cardiac & Biomechanics Telemetry Section
+                    PolarSessionAnalyticsCard(
+                        sessionId = session.id,
+                        session = session,
+                    )
                 }
             }
 
@@ -1171,6 +1178,12 @@ private fun GroupedRoutineCard(
 
                         // Biomechanics Section per session (v0.5.0+, tier-gated)
                         BiomechanicsSection(session = session)
+
+                        // Polar H10 Cardiac & Biomechanics Telemetry Section
+                        PolarSessionAnalyticsCard(
+                            sessionId = session.id,
+                            session = session,
+                        )
 
                         if (index < groupedItem.sessions.size - 1) {
                             Spacer(modifier = Modifier.height(Spacing.medium))

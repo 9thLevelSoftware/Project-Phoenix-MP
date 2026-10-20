@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.database.MetricSample
+import com.devil.phoenixproject.database.PolarBeatSample
+import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
@@ -393,4 +396,16 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
         .map { it.exerciseId!! }
         .distinct()
+
+    var polarBeatSamplesBySession: (String) -> List<PolarBeatSample> = { emptyList() }
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+        polarBeatSamplesBySession(sessionId)
+
+    var polarEcgSegmentsBySession: (String) -> List<PolarEcgSegment> = { emptyList() }
+    override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =
+        polarEcgSegmentsBySession(sessionId)
+
+    var metricSamplesBySession: (String) -> List<MetricSample> = { emptyList() }
+    override suspend fun getMetricSamplesBySession(sessionId: String): List<MetricSample> =
+        metricSamplesBySession(sessionId)
 }
