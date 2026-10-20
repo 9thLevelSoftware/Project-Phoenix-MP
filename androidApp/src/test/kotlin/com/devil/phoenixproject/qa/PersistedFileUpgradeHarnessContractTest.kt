@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.qa
 
+import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +16,7 @@ class PersistedFileUpgradeHarnessContractTest {
         assertTrue("Missing persisted-file upgrade harness", script.isFile)
 
         val text = script.readText().replace("\r\n", "\n")
+        val schemaHead = PhoenixDatabase.Schema.version
         listOf(
             "ValidateSet('Fresh', 'Upgrade', 'InterruptedStaging', 'CorruptSource', 'DualDatabase', 'LowStorage')",
             "ro.kernel.qemu",
@@ -33,12 +35,39 @@ class PersistedFileUpgradeHarnessContractTest {
             "svc data disable",
             "fallocate",
             "Invoke-RetryAction",
-            "[int] \$ExpectedSchemaVersion = 58",
+            "[int] \$ExpectedSchemaVersion = $schemaHead",
         ).forEach { required ->
             assertTrue("Harness is missing contract marker: $required", text.contains(required))
         }
         assertFalse("Harness must never clear app data mid-upgrade", text.contains("pm clear"))
         assertFalse("Harness must never use a broad recursive delete", text.contains("Remove-Item -Recurse"))
+    }
+
+    @Test
+    fun persistedFileDocsExpectTheCurrentSchemaHead() {
+        val schemaHead = PhoenixDatabase.Schema.version.toString()
+        val root = findRepoRoot()
+        val upgradeGuide = File(root, "docs/qa/persisted-file-upgrade.md").readText()
+        assertTrue(
+            "persisted-file upgrade guide must name schema $schemaHead",
+            upgradeGuide.contains(
+                "The harness default `-ExpectedSchemaVersion` is $schemaHead, the current database `user_version`",
+            ),
+        )
+
+        val fixtureGuide = File(root, "docs/qa/profile-schema42-fixture.md")
+            .readText()
+            .replace("\r\n", "\n")
+        listOf(
+            "`PRAGMA user_version` must be $schemaHead (highest migration file + 1).",
+            "if (\$userVersion -ne '$schemaHead') { throw \"Expected user_version $schemaHead after upgrade, got \$userVersion\" }",
+            "The host `sqlite3` query must report `user_version` $schemaHead,",
+        ).forEach { required ->
+            assertTrue(
+                "schema-42 fixture guide is missing current schema head marker: $required",
+                fixtureGuide.contains(required),
+            )
+        }
     }
 
     @Test
