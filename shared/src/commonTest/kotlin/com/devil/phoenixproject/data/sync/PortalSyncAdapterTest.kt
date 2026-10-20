@@ -417,7 +417,7 @@ class PortalSyncAdapterTest {
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
 
-        // Should be ISO 8601 format - kotlinx.datetime.Instant.toString()
+        // Should be ISO 8601 format - kotlin.time.Instant.toString()
         // 1700000000000 = 2023-11-14T22:13:20Z
         assertTrue(
             result[0].startedAt.contains("2023-11-14"),

@@ -321,13 +321,7 @@ object PortalPullAdapter {
         resolvedExerciseId: String? = null,
     ): PersonalRecordSyncDto {
         val now = currentTimeMillis()
-        fun parseTimestamp(value: String?): Long? = value?.let {
-            try {
-                kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
-            } catch (_: Exception) {
-                null
-            }
-        }
+        fun parseTimestamp(value: String?): Long? = parseIso8601EpochMillis(value)
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
