@@ -535,7 +535,7 @@ class DefaultWorkoutSessionManager(
                                 polarBleManager.endSessionRecording(coordinator.currentSessionId)
                             }
                             is WorkoutState.SetSummary -> {
-                                polarBleManager.endSessionRecording(state.sessionId ?: coordinator.currentSessionId)
+                                polarBleManager.updateSessionPhase("REST")
                             }
                             else -> {}
                         }

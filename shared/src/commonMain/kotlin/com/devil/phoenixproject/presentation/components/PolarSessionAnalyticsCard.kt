@@ -61,6 +61,7 @@ import kotlin.math.roundToInt
 fun PolarSessionAnalyticsCard(
     sessionId: String? = null,
     session: WorkoutSession? = null,
+    showCooldown: Boolean = true,
     modifier: Modifier = Modifier,
     polarBleManager: PolarH10BleManager = koinInject(),
     workoutRepository: WorkoutRepository = koinInject(),
@@ -329,7 +330,7 @@ fun PolarSessionAnalyticsCard(
 
             // Section 4: 5-Minute Heart Rate Recovery (HRR) Protocol Card
             val hasRecoveryData = summary?.hrr60Bpm != null || summary?.hrr300Bpm != null || isCooldownActive
-            if (hasRecoveryData || isConnected) {
+            if (showCooldown && (hasRecoveryData || isConnected)) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -498,6 +499,30 @@ fun PolarSessionAnalyticsCard(
                                             },
                                             modifier = Modifier.weight(1f),
                                         )
+                                    }
+                                }
+                                if (isConnected) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                    ) {
+                                        TextButton(
+                                            onClick = {
+                                                resolvedSessionId?.let { polarBleManager.triggerCooldown(it, forceRestart = true) }
+                                            },
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Refresh,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                "Restart Cooldown",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                        }
                                     }
                                 }
                             } else if (isConnected) {
@@ -768,7 +793,7 @@ private fun ContinuousHeartRateTimelineChart(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -778,14 +803,22 @@ private fun ContinuousHeartRateTimelineChart(
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
+                            softWrap = false,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f, fill = false).padding(end = 6.dp),
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
                                 text = "HR: ${selectedSample.hrBpm} bpm",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFFF5252),
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                softWrap = false,
+                                maxLines = 1,
                             )
                             selectedSample.rmssdMs?.let { rmssd ->
                                 Text(
@@ -794,6 +827,8 @@ private fun ContinuousHeartRateTimelineChart(
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF00E676),
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    softWrap = false,
+                                    maxLines = 1,
                                 )
                             }
                         }
@@ -1111,12 +1146,15 @@ private fun TorsoBiomechanicsVsCableChart(
                             color = Color(0xFF00BCD4),
                         )
                         cablePos?.let { pos ->
+                            val romPercent = ((pos - minPos) / posRange * 100f).roundToInt().coerceIn(0, 100)
                             Text(
-                                text = "Cable: ${(pos * 100).roundToInt()}%",
+                                text = "Cable: ${romPercent}%",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFAB47BC),
+                                softWrap = false,
+                                maxLines = 1,
                             )
                         }
                     }
