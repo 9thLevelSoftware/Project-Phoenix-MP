@@ -48,6 +48,7 @@ import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
+import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
@@ -528,6 +529,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
+
+            // Polar H10 Live Telemetry Strip (visible when connected)
+            PolarH10WorkoutStrip()
+
             WorkoutTab(
                 state = workoutUiState,
                 actions = workoutActions,

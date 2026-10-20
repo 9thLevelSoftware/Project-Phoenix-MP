@@ -1,0 +1,414 @@
+package com.devil.phoenixproject.presentation.components
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.PolarAccSample
+import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.presentation.util.formatRmssdMs
+import com.devil.phoenixproject.presentation.util.formatRrMs
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+
+@Composable
+fun PolarH10SettingsCard(
+    modifier: Modifier = Modifier,
+    polarBleManager: PolarH10BleManager = koinInject(),
+) {
+    val scope = rememberCoroutineScope()
+    val connectionState by polarBleManager.connectionState.collectAsState()
+    val scannedDevices by polarBleManager.scannedDevices.collectAsState()
+    val batteryLevel by polarBleManager.batteryLevel.collectAsState()
+    val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
+
+    var isEcgEnabled by remember { mutableStateOf(false) }
+    var isAccEnabled by remember { mutableStateOf(false) }
+    var latestEcgSampleUv by remember { mutableStateOf<Int?>(null) }
+    var latestAccSample by remember { mutableStateOf<PolarAccSample?>(null) }
+
+    // Sync switch states with manager status
+    LaunchedEffect(connectionState) {
+        if (connectionState !is ConnectionState.Connected) {
+            isEcgEnabled = false
+            isAccEnabled = false
+            latestEcgSampleUv = null
+            latestAccSample = null
+        }
+    }
+
+    // Collect preview samples when test toggles are active
+    LaunchedEffect(isEcgEnabled) {
+        if (isEcgEnabled) {
+            polarBleManager.ecgStream.collectLatest { ecg ->
+                latestEcgSampleUv = ecg.samplesMicrovolts.lastOrNull()
+            }
+        }
+    }
+
+    LaunchedEffect(isAccEnabled) {
+        if (isAccEnabled) {
+            polarBleManager.accStream.collectLatest { acc ->
+                latestAccSample = acc.samples.lastOrNull()
+            }
+        }
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(8.dp, MaterialTheme.shapes.medium),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFFE53935), Color(0xFFD81B60)),
+                                ),
+                                MaterialTheme.shapes.medium,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Favorite,
+                            contentDescription = "Polar H10",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Column {
+                        Text(
+                            "Polar H10 Sensor",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            when (connectionState) {
+                                is ConnectionState.Connected -> "Connected"
+                                is ConnectionState.Connecting -> "Connecting..."
+                                is ConnectionState.Scanning -> "Scanning for sensors..."
+                                is ConnectionState.Error -> "Connection error"
+                                is ConnectionState.Disconnected -> "Disconnected"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when (connectionState) {
+                                is ConnectionState.Connected -> Color(0xFF00C853)
+                                is ConnectionState.Scanning, is ConnectionState.Connecting -> MaterialTheme.colorScheme.primary
+                                is ConnectionState.Error -> MaterialTheme.colorScheme.error
+                                is ConnectionState.Disconnected -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+
+                // Header status badge / action
+                if (connectionState is ConnectionState.Connected) {
+                    OutlinedButton(
+                        onClick = { scope.launch { polarBleManager.disconnect() } },
+                    ) {
+                        Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            // Body based on ConnectionState
+            when (val state = connectionState) {
+                is ConnectionState.Disconnected, is ConnectionState.Error -> {
+                    Text(
+                        "Connect your Polar H10 chest strap for real-time heart rate, R-R HRV intervals, 130 Hz ECG trace, and 50 Hz chest acceleration telemetry.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.medium))
+                    Button(
+                        onClick = { scope.launch { polarBleManager.startScanning() } },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Scan for Polar H10")
+                    }
+                }
+
+                is ConnectionState.Scanning -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "Looking for nearby Polar devices...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { scope.launch { polarBleManager.stopScanning() } },
+                        ) {
+                            Text("Stop")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    if (scannedDevices.isEmpty()) {
+                        Text(
+                            "Ensure your Polar H10 strap is moistened and worn firmly on your chest.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            scannedDevices.forEach { device ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceContainer,
+                                            MaterialTheme.shapes.small,
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text(
+                                            device.name.ifBlank { "Polar H10" },
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            device.address,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { scope.launch { polarBleManager.connect(device) } },
+                                    ) {
+                                        Text("Connect")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                is ConnectionState.Connecting -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Establishing secure BLE connection...",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+
+                is ConnectionState.Connected -> {
+                    // Device info & metrics grid
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainer,
+                                MaterialTheme.shapes.small,
+                            )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // Device Name & Address
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                "Device: ${state.deviceName}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Battery: ${batteryLevel?.let { "$it%" } ?: "—"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if ((batteryLevel ?: 100) < 20) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            )
+                        }
+
+                        // Skin contact & live HR
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val contact = hrMeasurement?.contactDetected == true
+                                Icon(
+                                    if (contact) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = if (contact) Color(0xFF00C853) else Color(0xFFFFB300),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    if (contact) "Skin Contact OK" else "Poor Skin Contact",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (contact) Color(0xFF00C853) else Color(0xFFFFB300),
+                                )
+                            }
+
+                            Text(
+                                "Live HR: ${hrMeasurement?.hr?.let { "$it BPM" } ?: "—"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    // Stream Testing Toggles
+                    Text(
+                        "Live Telemetry Streams (Testing)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 130 Hz ECG toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("130 Hz ECG Stream", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (isEcgEnabled && latestEcgSampleUv != null) {
+                                    "Active: ${latestEcgSampleUv} µV"
+                                } else {
+                                    "14-bit microvolt voltage stream"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isEcgEnabled) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = isEcgEnabled,
+                            onCheckedChange = { enable ->
+                                isEcgEnabled = enable
+                                scope.launch {
+                                    if (enable) polarBleManager.startEcgStream() else polarBleManager.stopEcgStream()
+                                }
+                            },
+                        )
+                    }
+
+                    // 50 Hz ACC toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("50 Hz Chest ACC Stream", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (isAccEnabled && latestAccSample != null) {
+                                    "X: ${latestAccSample?.xMg} Y: ${latestAccSample?.yMg} Z: ${latestAccSample?.zMg} mG"
+                                } else {
+                                    "16-bit ±8G tri-axial chest acceleration"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isAccEnabled) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = isAccEnabled,
+                            onCheckedChange = { enable ->
+                                isAccEnabled = enable
+                                scope.launch {
+                                    if (enable) polarBleManager.startAccStream() else polarBleManager.stopAccStream()
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
