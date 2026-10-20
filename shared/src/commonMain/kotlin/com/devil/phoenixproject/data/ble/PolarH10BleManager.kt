@@ -142,11 +142,38 @@ class PolarH10BleManager(
     private var hrr60: Int? = null
     private var hrr300: Int? = null
 
+    private val _isCooldownActive = MutableStateFlow(false)
+    val isCooldownActive: StateFlow<Boolean> = _isCooldownActive.asStateFlow()
+
+    private val _cooldownSecondsRemaining = MutableStateFlow(0)
+    val cooldownSecondsRemaining: StateFlow<Int> = _cooldownSecondsRemaining.asStateFlow()
+
+    private val _cooldownHrr60 = MutableStateFlow<Int?>(null)
+    val cooldownHrr60: StateFlow<Int?> = _cooldownHrr60.asStateFlow()
+
+    private val _cooldownHrr300 = MutableStateFlow<Int?>(null)
+    val cooldownHrr300: StateFlow<Int?> = _cooldownHrr300.asStateFlow()
+
+    private val _cooldownStartHeartRate = MutableStateFlow<Int?>(null)
+    val cooldownStartHeartRate: StateFlow<Int?> = _cooldownStartHeartRate.asStateFlow()
+
+    private val _activeCooldownSessionId = MutableStateFlow<String?>(null)
+    val activeCooldownSessionId: StateFlow<String?> = _activeCooldownSessionId.asStateFlow()
+
+    private val _latestSessionSummary = MutableStateFlow<PolarSessionSummary?>(null)
+    val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
+
     val currentRecordingSessionId: String? get() = activeSessionId
 
     fun startSessionRecording(sessionId: String, phase: String = "WARMUP") {
         cooldownJob?.cancel()
         cooldownJob = null
+        _isCooldownActive.value = false
+        _cooldownSecondsRemaining.value = 0
+        _cooldownHrr60.value = null
+        _cooldownHrr300.value = null
+        _cooldownStartHeartRate.value = null
+        _activeCooldownSessionId.value = null
         activeSessionId = sessionId
         currentPhase = phase
         sessionHrs.clear()
@@ -157,6 +184,7 @@ class PolarH10BleManager(
         endHeartRate = null
         hrr60 = null
         hrr300 = null
+        _latestSessionSummary.value = null
 
         if (_connectionState.value is ConnectionState.Connected) {
             if (!isAccStreaming) scope.launch { startAccStream() }
@@ -168,13 +196,47 @@ class PolarH10BleManager(
         currentPhase = phase
     }
 
+    fun triggerCooldown(sessionId: String? = null) {
+        endSessionRecording(sessionId)
+    }
+
+    fun stopCooldown() {
+        val targetSessionId = activeSessionId ?: _activeCooldownSessionId.value
+        cooldownJob?.cancel()
+        cooldownJob = null
+        val finalHr = _hrMeasurement.value?.hr
+        val endHr = endHeartRate ?: _cooldownStartHeartRate.value
+        if (finalHr != null && endHr != null) {
+            val drop = (endHr - finalHr).coerceAtLeast(0)
+            if (hrr60 == null) {
+                hrr60 = drop
+                _cooldownHrr60.value = drop
+            }
+            if (hrr300 == null) {
+                hrr300 = drop
+                _cooldownHrr300.value = drop
+            }
+        }
+        _isCooldownActive.value = false
+        _cooldownSecondsRemaining.value = 0
+        if (targetSessionId != null) {
+            persistPolarSummary(targetSessionId)
+            _latestSessionSummary.value = getSessionSummary(targetSessionId)
+        }
+    }
+
     fun endSessionRecording(sessionId: String? = null) {
         val targetSessionId = sessionId ?: activeSessionId ?: return
         if (activeSessionId == null) {
             activeSessionId = targetSessionId
         }
+        _activeCooldownSessionId.value = targetSessionId
         endHeartRate = _hrMeasurement.value?.hr ?: sessionHrs.lastOrNull()
+        _cooldownStartHeartRate.value = endHeartRate
         currentPhase = "POST_WORKOUT_COOLDOWN"
+        _isCooldownActive.value = true
+        _cooldownSecondsRemaining.value = 300
+        _latestSessionSummary.value = getSessionSummary(targetSessionId)
 
         cooldownJob?.cancel()
         cooldownJob = scope.launch {
@@ -184,24 +246,37 @@ class PolarH10BleManager(
             while (isActive && (timeSource() - cooldownStartMs) < 300_000L) {
                 delay(1000L)
                 val elapsedMs = timeSource() - cooldownStartMs
+                val remainingSec = (300 - (elapsedMs / 1000)).toInt().coerceAtLeast(0)
+                _cooldownSecondsRemaining.value = remainingSec
+
                 val curHr = _hrMeasurement.value?.hr
                 val endHr = endHeartRate
                 if (elapsedMs >= 60_000L && !hrr60Persisted && curHr != null && endHr != null) {
-                    hrr60 = (endHr - curHr).coerceAtLeast(0)
+                    val drop = (endHr - curHr).coerceAtLeast(0)
+                    hrr60 = drop
+                    _cooldownHrr60.value = drop
                     hrr60Persisted = true
                     persistPolarSummary(targetSessionId)
                 }
                 if (elapsedMs >= 300_000L && !hrr300Persisted && curHr != null && endHr != null) {
-                    hrr300 = (endHr - curHr).coerceAtLeast(0)
+                    val drop = (endHr - curHr).coerceAtLeast(0)
+                    hrr300 = drop
+                    _cooldownHrr300.value = drop
                     hrr300Persisted = true
                     persistPolarSummary(targetSessionId)
                 }
+                _latestSessionSummary.value = getSessionSummary(targetSessionId)
             }
             val finalHr = _hrMeasurement.value?.hr
             if (!hrr300Persisted && finalHr != null && endHeartRate != null) {
-                hrr300 = (endHeartRate!! - finalHr).coerceAtLeast(0)
+                val drop = (endHeartRate!! - finalHr).coerceAtLeast(0)
+                hrr300 = drop
+                _cooldownHrr300.value = drop
                 persistPolarSummary(targetSessionId)
             }
+            _isCooldownActive.value = false
+            _cooldownSecondsRemaining.value = 0
+            _latestSessionSummary.value = getSessionSummary(targetSessionId)
             if (activeSessionId == targetSessionId) {
                 activeSessionId = null
             }

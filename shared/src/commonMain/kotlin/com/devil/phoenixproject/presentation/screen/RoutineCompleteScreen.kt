@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -252,6 +253,11 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                             }
                         }
                     }
+
+                    // Polar H10 Session Analytics & 5-minute recovery cooldown
+                    PolarSessionAnalyticsCard(
+                        modifier = Modifier.padding(top = Spacing.medium),
+                    )
                 }
             }
 

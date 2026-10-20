@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -984,6 +985,9 @@ private fun CompletedCard(
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
+
+            // Polar H10 Session Analytics & Cooldown Protocol
+            PolarSessionAnalyticsCard(modifier = Modifier.padding(vertical = Spacing.small))
 
             // Check if this is a routine with more exercises
             val hasMoreExercises = loadedRoutine != null &&
