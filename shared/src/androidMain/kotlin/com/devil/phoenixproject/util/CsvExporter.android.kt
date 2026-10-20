@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -62,19 +61,13 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 "${context.packageName}.fileprovider",
                 file,
             )
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Export: $fileName")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            val chooser = Intent.createChooser(shareIntent, "Share CSV").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(chooser)
+            context.launchFileProviderShareChooser(
+                uri = uri,
+                mimeType = "text/csv",
+                chooserTitle = "Share CSV",
+                subject = "Project Phoenix Export: $fileName",
+                newTaskOnSendIntent = true,
+            )
         } catch (e: Exception) {
             android.util.Log.e("CsvExporter", "Failed to share CSV: ${e.message}", e)
         }
