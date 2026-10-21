@@ -1694,28 +1694,7 @@ class SqlDelightWorkoutRepository(
 
     override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
         withContext(Dispatchers.IO) {
-            val samples = queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
-            if (samples.size >= 2) {
-                val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
-                if (session != null && session.rmssdMs != null && session.rmssdMs > 80.0) {
-                    val filteredRmssd = PolarTelemetryUtils.calculateRmssdMs(samples.map { it.rrMs })
-                    if (filteredRmssd != null && abs(session.rmssdMs - filteredRmssd) > 1.0) {
-                        queries.updateSessionPolarSummary(
-                            id = session.id,
-                            avgHeartRateBpm = session.avgHeartRateBpm,
-                            maxHeartRateBpm = session.maxHeartRateBpm,
-                            minHeartRateBpm = session.minHeartRateBpm,
-                            avgRrIntervalMs = session.avgRrIntervalMs,
-                            rmssdMs = filteredRmssd,
-                            hrr60Bpm = session.hrr60Bpm,
-                            hrr300Bpm = session.hrr300Bpm,
-                            maxTorsoPitchDeg = session.maxTorsoPitchDeg,
-                            maxTorsoRollDeg = session.maxTorsoRollDeg,
-                        )
-                    }
-                }
-            }
-            samples
+            queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
         }
 
     override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =

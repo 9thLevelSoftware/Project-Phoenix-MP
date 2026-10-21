@@ -1187,7 +1187,7 @@ private fun GroupedRoutineCard(
                     // Polar H10 Cardiac & Biomechanics Telemetry Section (rendered below all exercises & rep details)
                     val polarSession = groupedItem.sessions.find {
                         it.avgHeartRateBpm != null || it.maxHeartRateBpm != null || it.hrr60Bpm != null
-                    } ?: groupedItem.sessions.lastOrNull() ?: groupedItem.sessions.firstOrNull()
+                    }
 
                     if (polarSession != null) {
                         Spacer(modifier = Modifier.height(Spacing.medium))

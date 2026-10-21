@@ -2637,9 +2637,14 @@ abstract class BaseDataBackupManager(
                                                     torsoRollDeg = beat.torsoRollDeg?.toDouble(),
                                                     dynamicAccMg = beat.dynamicAccMg?.toLong(),
                                                 )
-                                                queries.markWorkoutComponentDirty(beat.sessionId)
-                                                holdGroupOfRestoredChild(beat.sessionId)
-                                                polarBeatSamplesImported++
+                                                val inserted = queries.selectChangedRowCount().executeAsOne() > 0L
+                                                if (inserted) {
+                                                    queries.markWorkoutComponentDirty(beat.sessionId)
+                                                    holdGroupOfRestoredChild(beat.sessionId)
+                                                    polarBeatSamplesImported++
+                                                } else {
+                                                    polarBeatSamplesSkipped++
+                                                }
                                             }
                                         }
                                         nav.endArray()
@@ -2670,9 +2675,14 @@ abstract class BaseDataBackupManager(
                                                     phase = segment.phase,
                                                     samplesUvCsv = segment.samplesUvCsv,
                                                 )
-                                                queries.markWorkoutComponentDirty(segment.sessionId)
-                                                holdGroupOfRestoredChild(segment.sessionId)
-                                                polarEcgSegmentsImported++
+                                                val inserted = queries.selectChangedRowCount().executeAsOne() > 0L
+                                                if (inserted) {
+                                                    queries.markWorkoutComponentDirty(segment.sessionId)
+                                                    holdGroupOfRestoredChild(segment.sessionId)
+                                                    polarEcgSegmentsImported++
+                                                } else {
+                                                    polarEcgSegmentsSkipped++
+                                                }
                                             }
                                         }
                                         nav.endArray()

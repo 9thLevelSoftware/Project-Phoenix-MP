@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class PolarTelemetryUtilsTest {
+class PolarRollingTelemetryUtilsTest {
 
     @Test
     fun testEmptyOrSingleBeatReturnsNull() {

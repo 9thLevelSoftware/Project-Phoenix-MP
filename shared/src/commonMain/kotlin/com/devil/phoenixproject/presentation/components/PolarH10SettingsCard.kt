@@ -225,29 +225,6 @@ fun PolarH10SettingsCard(
                                     }
                                 }
                             }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "Auto-reconnect on workout",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                    Text(
-                                        "Automatically connects when entering active workout",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Switch(
-                                    checked = isAutoReconnectEnabled,
-                                    onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
-                                )
-                            }
                         }
                         Spacer(modifier = Modifier.height(Spacing.small))
                     }
@@ -426,19 +403,6 @@ fun PolarH10SettingsCard(
                                 checked = isAutoReconnectEnabled,
                                 onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
                             )
-                        }
-
-                        if (rememberedAddress != null) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                            ) {
-                                OutlinedButton(
-                                    onClick = { polarBleManager.forgetRememberedDevice() },
-                                ) {
-                                    Text("Forget Sensor", color = MaterialTheme.colorScheme.error)
-                                }
-                            }
                         }
                     }
 

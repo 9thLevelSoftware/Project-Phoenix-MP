@@ -130,10 +130,7 @@ private fun PolarH10WorkoutStripContent(
 
     DisposableEffect(Unit) {
         onDispose {
-            scope.launch {
-                polarBleManager.stopEcgStream()
-                polarBleManager.stopAccStream()
-            }
+            polarBleManager.stopTelemetryStreamsAsync()
         }
     }
 

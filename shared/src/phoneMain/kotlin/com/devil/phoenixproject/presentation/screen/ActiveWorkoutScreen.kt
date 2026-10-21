@@ -128,6 +128,8 @@ fun ActiveWorkoutScreen(
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
     val isRestPaused by viewModel.isRestPaused.collectAsState()
+    val isPolarCooldownActive by polarBleManager.isCooldownActive.collectAsState()
+    val activePolarCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     // Issue #113: Just Lift visual rest countdown
@@ -296,7 +298,7 @@ fun ActiveWorkoutScreen(
     // Watch for workout completion and navigate back
     // For Just Lift, navigate back when state becomes Idle (after auto-reset)
     // Key only on workoutState to avoid re-triggering on workoutParameters changes
-    LaunchedEffect(workoutState) {
+    LaunchedEffect(workoutState, isPolarCooldownActive, activePolarCooldownSessionId) {
         // Guard against double navigation
         if (hasNavigatedAway) return@LaunchedEffect
 
@@ -305,16 +307,14 @@ fun ActiveWorkoutScreen(
         }
         when {
             workoutState is WorkoutState.Completed -> {
-                val hasPolarActivity = polarBleManager.isCooldownActive.value ||
-                    polarBleManager.connectionState.value is ConnectionState.Connected ||
-                    polarBleManager.latestSessionSummary.value != null
-                if (!hasPolarActivity) {
-                    Logger.d { "ActiveWorkoutScreen: Workout completed (no Polar active), navigating back in 2s" }
+                val isCooldownRunning = isPolarCooldownActive || activePolarCooldownSessionId != null
+                if (!isCooldownRunning) {
+                    Logger.d { "ActiveWorkoutScreen: Workout completed (no Polar cooldown active), navigating back in 2s" }
                     delay(2000)
                     hasNavigatedAway = true
                     navController.navigateUp()
                 } else {
-                    Logger.d { "ActiveWorkoutScreen: Workout completed with Polar telemetry/cooldown active; remaining on summary" }
+                    Logger.d { "ActiveWorkoutScreen: Workout completed with Polar cooldown active; remaining on summary" }
                 }
             }
 

@@ -44,6 +44,8 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.koin.compose.koinInject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -84,6 +86,7 @@ fun PolarSessionAnalyticsCard(
                 s.avgRrIntervalMs != null || s.rmssdMs != null || s.hrr60Bpm != null ||
                 s.hrr300Bpm != null || s.maxTorsoPitchDeg != null || s.maxTorsoRollDeg != null) {
                 PolarSessionSummary(
+                    sessionId = s.id,
                     avgHeartRateBpm = s.avgHeartRateBpm,
                     maxHeartRateBpm = s.maxHeartRateBpm,
                     minHeartRateBpm = s.minHeartRateBpm,
@@ -98,7 +101,11 @@ fun PolarSessionAnalyticsCard(
         } ?: resolvedSessionId?.let { polarBleManager.getSessionSummary(it) }
     }
 
-    val rawSummary = latestSummary ?: fallbackSummary
+    val rawSummary = if (resolvedSessionId != null && latestSummary?.sessionId == resolvedSessionId) {
+        latestSummary
+    } else {
+        fallbackSummary
+    }
 
     // Historical samples queries for visualizations
     var beatSamples by remember(resolvedSessionId) { mutableStateOf<List<PolarBeatSample>>(emptyList()) }
@@ -1155,14 +1162,14 @@ private fun TorsoBiomechanicsVsCableChart(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Hinge: ${(selectedSample.torsoPitchDeg?.let { (it * 10).roundToInt() / 10.0 } ?: 0.0)}°",
+                            text = "Hinge: ${selectedSample.torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFFF9800),
                         )
                         Text(
-                            text = "Tilt: ${(selectedSample.torsoRollDeg?.let { (it * 10).roundToInt() / 10.0 } ?: 0.0)}°",
+                            text = "Tilt: ${selectedSample.torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -1368,29 +1375,23 @@ private fun SavedEcgWaveformScrubber(
 ) {
     if (segments.isEmpty()) return
 
-    val allSamples = remember(segments) {
-        val list = mutableListOf<Int>()
-        for (seg in segments) {
-            val parts = seg.samplesUvCsv.split(',')
-            for (p in parts) {
-                p.trim().toIntOrNull()?.let { list.add(it) }
-            }
-        }
-        list
+    val segmentCounts = remember(segments) {
+        segments.map { seg -> if (seg.samplesUvCsv.isEmpty()) 0 else seg.samplesUvCsv.count { it == ',' } + 1 }
     }
-    if (allSamples.size < 10) return
+    val totalSamples = remember(segmentCounts) { segmentCounts.sum() }
+    if (totalSamples < 10) return
 
     val windowSize = 260 // 2.0 seconds at 130 Hz
     var windowStart by remember { mutableStateOf(0) }
-    val maxStart = (allSamples.size - windowSize).coerceAtLeast(0)
+    val maxStart = (totalSamples - windowSize).coerceAtLeast(0)
 
-    val currentPhase = remember(windowStart, segments) {
+    val currentPhase = remember(windowStart, segments, segmentCounts) {
         var accum = 0
         var phase = segments.first().phase
-        for (seg in segments) {
-            val count = seg.samplesUvCsv.count { it == ',' } + 1
+        for (i in segments.indices) {
+            val count = segmentCounts.getOrElse(i) { 0 }
             if (windowStart in accum until (accum + count)) {
-                phase = seg.phase
+                phase = segments[i].phase
                 break
             }
             accum += count
@@ -1452,8 +1453,8 @@ private fun SavedEcgWaveformScrubber(
 
             // Window details and slider
             val startSec = (windowStart / 130.0 * 10).roundToInt() / 10.0
-            val endSec = (((windowStart + windowSize).coerceAtMost(allSamples.size)) / 130.0 * 10).roundToInt() / 10.0
-            val totalSec = (allSamples.size / 130.0 * 10).roundToInt() / 10.0
+            val endSec = (((windowStart + windowSize).coerceAtMost(totalSamples)) / 130.0 * 10).roundToInt() / 10.0
+            val totalSec = (totalSamples / 130.0 * 10).roundToInt() / 10.0
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1468,7 +1469,7 @@ private fun SavedEcgWaveformScrubber(
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
                 Text(
-                    text = "${allSamples.size} samples @ 130 Hz",
+                    text = "$totalSamples samples @ 130 Hz",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -1497,8 +1498,33 @@ private fun SavedEcgWaveformScrubber(
                     .background(Color(0xFF081422))
                     .border(0.5.dp, Color(0xFF1B3A5A), RoundedCornerShape(8.dp)),
             ) {
-                val windowSlice = remember(windowStart, allSamples) {
-                    allSamples.subList(windowStart, (windowStart + windowSize).coerceAtMost(allSamples.size))
+                val windowSlice by produceState<List<Int>>(
+                    initialValue = emptyList(),
+                    key1 = segments,
+                    key2 = windowStart,
+                ) {
+                    value = withContext(Dispatchers.Default) {
+                        val result = mutableListOf<Int>()
+                        var currentOffset = 0
+                        val targetEnd = (windowStart + windowSize).coerceAtMost(totalSamples)
+                        for (i in segments.indices) {
+                            val seg = segments[i]
+                            val count = segmentCounts.getOrElse(i) { 0 }
+                            val segStart = currentOffset
+                            val segEnd = currentOffset + count
+                            if (segEnd > windowStart && segStart < targetEnd) {
+                                val segSamples = seg.samplesUvCsv.split(',').mapNotNull { it.trim().toIntOrNull() }
+                                val startInSeg = (windowStart - segStart).coerceAtLeast(0)
+                                val endInSeg = (targetEnd - segStart).coerceAtMost(segSamples.size)
+                                if (startInSeg < endInSeg && startInSeg < segSamples.size) {
+                                    result.addAll(segSamples.subList(startInSeg, endInSeg))
+                                }
+                            }
+                            currentOffset += count
+                            if (currentOffset >= targetEnd) break
+                        }
+                        result
+                    }
                 }
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
