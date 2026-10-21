@@ -20,6 +20,7 @@ import com.juul.kable.WriteType
 import com.russhwolf.settings.Settings
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Summary metrics for a session recorded by Polar H10.
  */
 data class PolarSessionSummary(
+    val sessionId: String? = null,
     val avgHeartRateBpm: Int? = null,
     val maxHeartRateBpm: Int? = null,
     val minHeartRateBpm: Int? = null,
@@ -76,17 +78,25 @@ class PolarH10BleManager(
     private val settings: Settings? = null,
     private val database: PhoenixDatabase? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    private val timeSource: () -> Long = ::currentTimeMillis,
+    private val timeSource: () -> Long = DEFAULT_WALL_CLOCK,
+    monotonicTimeSource: (() -> Long)? = null,
 ) {
     private val log = Logger.withTag("PolarH10BleManager")
 
     companion object {
+        private val monotonicOrigin = TimeSource.Monotonic.markNow()
+        val DEFAULT_MONOTONIC_CLOCK: () -> Long = { monotonicOrigin.elapsedNow().inWholeMilliseconds }
+        val DEFAULT_WALL_CLOCK: () -> Long = ::currentTimeMillis
         const val KEY_POLAR_REMEMBERED_ADDRESS = "polar_h10_remembered_address"
         const val KEY_POLAR_REMEMBERED_NAME = "polar_h10_remembered_name"
         const val KEY_POLAR_AUTO_RECONNECT = "polar_h10_auto_reconnect_enabled"
         const val CRITICAL_BATTERY_PERCENTAGE = 5
         const val ECG_RAIL_THRESHOLD_UV = 15_000
     }
+
+    private val monotonicClock: () -> Long = monotonicTimeSource
+        ?: if (timeSource === DEFAULT_WALL_CLOCK) DEFAULT_MONOTONIC_CLOCK else timeSource
+    private val wallClock: () -> Long = timeSource
 
     // ===== Remembered Device & Auto-Reconnect =====
     private val _rememberedAddress = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_ADDRESS))
@@ -134,6 +144,26 @@ class PolarH10BleManager(
     }
 
     // ===== Session Recording & Recovery State =====
+    internal data class BufferedBeatSample(
+        val sessionId: String,
+        val timestampMs: Long,
+        val phase: String,
+        val hrBpm: Long,
+        val rrMs: Double,
+        val rmssdMs: Double?,
+        val torsoPitchDeg: Double?,
+        val torsoRollDeg: Double?,
+        val dynamicAccMg: Long?,
+    )
+
+    internal data class BufferedEcgSegment(
+        val sessionId: String,
+        val sensorTimestampNs: Long,
+        val wallClockTimestampMs: Long,
+        val phase: String,
+        val samplesUvCsv: String,
+    )
+
     private val sessionLock = reentrantLock()
     private var activeSessionId: String? = null
     private var currentPhase: String = "WARMUP"
@@ -141,12 +171,16 @@ class PolarH10BleManager(
     private val sessionHrs = mutableListOf<Int>()
     private val sessionRrs = mutableListOf<Double>()
     private val recentRrs = ArrayDeque<Double>()
+    private val bufferedBeatSamples = mutableListOf<BufferedBeatSample>()
+    private val bufferedEcgSegments = mutableListOf<BufferedEcgSegment>()
+    private val committedSessionIds = mutableSetOf<String>()
     private var maxTorsoPitch: Double? = null
     private var maxTorsoRoll: Double? = null
     private var endHeartRate: Int? = null
     private var hrr60: Int? = null
     private var hrr300: Int? = null
     private var cooldownStartTimestampMs: Long? = null
+    private var lastBeatMonotonicMs: Long? = null
 
     private val _isCooldownActive = MutableStateFlow(false)
     val isCooldownActive: StateFlow<Boolean> = _isCooldownActive.asStateFlow()
@@ -187,12 +221,16 @@ class PolarH10BleManager(
         activeSessionId = sessionId
         currentPhase = phase
         sessionLock.withLock {
+            bufferedBeatSamples.clear()
+            bufferedEcgSegments.clear()
+            committedSessionIds.remove(sessionId)
             sessionHrs.clear()
             sessionRrs.clear()
             recentRrs.clear()
             maxTorsoPitch = null
             maxTorsoRoll = null
         }
+        lastBeatMonotonicMs = null
         endHeartRate = null
         hrr60 = null
         hrr300 = null
@@ -203,6 +241,86 @@ class PolarH10BleManager(
             if (!isEcgStreaming) scope.launch { startEcgStream() }
         }
     }
+
+    /**
+     * Flush buffered telemetry records to the database within a transaction once the parent
+     * [WorkoutSession] row is committed. Subsequent records will insert directly into SQLite.
+     */
+    fun flushSessionTelemetry(sessionId: String, fallbackSessionId: String? = null) {
+        val (beatsToFlush, ecgsToFlush) = sessionLock.withLock {
+            committedSessionIds.add(sessionId)
+            if (fallbackSessionId != null) {
+                committedSessionIds.add(fallbackSessionId)
+            }
+            activeSessionId = sessionId
+            val beats = bufferedBeatSamples.toList()
+            bufferedBeatSamples.clear()
+            val ecgs = bufferedEcgSegments.toList()
+            bufferedEcgSegments.clear()
+            Pair(beats, ecgs)
+        }
+
+        if (database != null && (beatsToFlush.isNotEmpty() || ecgsToFlush.isNotEmpty())) {
+            try {
+                database.transaction {
+                    for (b in beatsToFlush) {
+                        database.phoenixDatabaseQueries.insertPolarBeatSample(
+                            sessionId = sessionId,
+                            timestampMs = b.timestampMs,
+                            phase = b.phase,
+                            hrBpm = b.hrBpm,
+                            rrMs = b.rrMs,
+                            rmssdMs = b.rmssdMs,
+                            torsoPitchDeg = b.torsoPitchDeg,
+                            torsoRollDeg = b.torsoRollDeg,
+                            dynamicAccMg = b.dynamicAccMg,
+                        )
+                    }
+                    for (seg in ecgsToFlush) {
+                        database.phoenixDatabaseQueries.insertPolarEcgSegment(
+                            sessionId = sessionId,
+                            sensorTimestampNs = seg.sensorTimestampNs,
+                            wallClockTimestampMs = seg.wallClockTimestampMs,
+                            phase = seg.phase,
+                            samplesUvCsv = seg.samplesUvCsv,
+                        )
+                    }
+                }
+                log.i { "Flushed ${beatsToFlush.size} beat samples and ${ecgsToFlush.size} ECG segments for session $sessionId" }
+            } catch (e: Exception) {
+                log.e(e) { "Failed to flush buffered Polar telemetry for session $sessionId: ${e.message}" }
+            }
+        }
+    }
+
+    /**
+     * Cleanly discards active recording buffers and resets session tracking if a set is cancelled.
+     */
+    fun discardActiveRecording() {
+        sessionLock.withLock {
+            bufferedBeatSamples.clear()
+            bufferedEcgSegments.clear()
+            sessionHrs.clear()
+            sessionRrs.clear()
+            recentRrs.clear()
+            maxTorsoPitch = null
+            maxTorsoRoll = null
+        }
+        val targetSessionId = activeSessionId
+        if (targetSessionId != null) {
+            committedSessionIds.remove(targetSessionId)
+        }
+        lastBeatMonotonicMs = null
+        activeSessionId = null
+        currentPhase = "WARMUP"
+        _latestSessionSummary.value = null
+    }
+
+    internal fun getBufferedBeatSamplesForTesting(): List<BufferedBeatSample> =
+        sessionLock.withLock { bufferedBeatSamples.toList() }
+
+    internal fun getBufferedEcgSegmentsForTesting(): List<BufferedEcgSegment> =
+        sessionLock.withLock { bufferedEcgSegments.toList() }
 
     fun updateSessionPhase(phase: String) {
         if (phase == "WORKING_SET" || phase == "WARMUP") {
@@ -290,23 +408,23 @@ class PolarH10BleManager(
         _latestSessionSummary.value = getSessionSummary(targetSessionId)
 
         cooldownJob?.cancel()
-        val cooldownStartMs = timeSource()
+        val cooldownStartMs = monotonicClock()
         cooldownStartTimestampMs = cooldownStartMs
         cooldownJob = scope.launch {
             var hrr60Persisted = false
             var hrr300Persisted = false
-            while (isActive && (timeSource() - cooldownStartMs) < 300_000L) {
+            while (isActive && (monotonicClock() - cooldownStartMs) < 300_000L) {
                 delay(1000L)
                 if (peripheral != null && !_isConnected.value) {
                     log.i { "Polar H10 disconnected during recovery cooldown: terminating recovery window" }
                     cancelCooldown()
                     break
                 }
-                checkPacketAbsenceTimeout(timeSource())
+                checkPacketAbsenceTimeout(monotonicClock())
                 if (!_isCooldownActive.value) {
                     break
                 }
-                val elapsedMs = timeSource() - cooldownStartMs
+                val elapsedMs = monotonicClock() - cooldownStartMs
                 val remainingSec = (300 - (elapsedMs / 1000)).toInt().coerceAtLeast(0)
                 _cooldownSecondsRemaining.value = remainingSec
 
@@ -380,6 +498,7 @@ class PolarH10BleManager(
         val avgRr = if (validRrs.isNotEmpty()) validRrs.average().toFloat() else null
         val rmssd = PolarTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
         return PolarSessionSummary(
+            sessionId = sessionId,
             avgHeartRateBpm = avgHr,
             maxHeartRateBpm = maxHr,
             minHeartRateBpm = minHr,
@@ -679,6 +798,10 @@ class PolarH10BleManager(
 
             stateObserverJob = scope.launch {
                 p.state.collect { state ->
+                    if (peripheral !== p) {
+                        log.d { "Ignoring state change ($state) for stale peripheral $p" }
+                        return@collect
+                    }
                     log.d { "Polar H10 state: $state" }
                     when (state) {
                         is State.Connecting -> {
@@ -820,7 +943,7 @@ class PolarH10BleManager(
                         }
 
                         _isContactDetected.value = true
-                        lastValidPacketTimestampMs = timeSource()
+                        lastValidPacketTimestampMs = monotonicClock()
                         _hrMeasurement.value = measurement
                         _hrMeasurements.emit(measurement)
 
@@ -853,14 +976,15 @@ class PolarH10BleManager(
             return
         }
         _isContactDetected.value = true
-        lastValidPacketTimestampMs = timeSource()
+        lastValidPacketTimestampMs = monotonicClock()
         _hrMeasurement.value = measurement
         val rrs = measurement.rrIntervalsMs
 
-        val nowMs = timeSource()
+        val nowMonoMs = monotonicClock()
+        val nowWallMs = wallClock()
         if (_isCooldownActive.value) {
             val startTs = cooldownStartTimestampMs
-            if (startTs != null && (nowMs - startTs) <= 30_000L) {
+            if (startTs != null && (nowMonoMs - startTs) <= 30_000L) {
                 val peak = maxOf(endHeartRate ?: measurement.hr, measurement.hr)
                 if (endHeartRate != peak) {
                     endHeartRate = peak
@@ -871,10 +995,11 @@ class PolarH10BleManager(
 
         if (rrs.isEmpty()) return
         val previousBeat = lastBeatTimestampMs
+        val previousBeatMono = lastBeatMonotonicMs
 
-        val startingTs: Long = if (previousBeat == null || (nowMs - previousBeat) > 5000L || previousBeat > nowMs + 5000L) {
+        val startingTs: Long = if (previousBeat == null || previousBeatMono == null || (nowMonoMs - previousBeatMono) > 5000L || (nowMonoMs - previousBeatMono) < -5000L) {
             val totalRrDurationMs = rrs.sum().toLong()
-            nowMs - totalRrDurationMs
+            nowWallMs - totalRrDurationMs
         } else {
             previousBeat
         }
@@ -898,25 +1023,45 @@ class PolarH10BleManager(
                     if (recentRrs.size > 30) recentRrs.removeFirst()
                     PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
                 }
-                try {
-                    database?.phoenixDatabaseQueries?.insertPolarBeatSample(
-                        sessionId = currentSid,
-                        timestampMs = beat.timestampMs,
-                        phase = currentPhase,
-                        hrBpm = beat.hr.toLong(),
-                        rrMs = beat.rrIntervalMs,
-                        rmssdMs = currentRmssd,
-                        torsoPitchDeg = _torsoPitchDeg.value,
-                        torsoRollDeg = _torsoRollDeg.value,
-                        dynamicAccMg = _dynamicAccMg.value?.toLong(),
-                    )
-                } catch (e: Exception) {
-                    log.w { "Failed to insert PolarBeatSample: ${e.message}" }
+                val isCommitted = sessionLock.withLock { committedSessionIds.contains(currentSid) }
+                if (isCommitted) {
+                    try {
+                        database?.phoenixDatabaseQueries?.insertPolarBeatSample(
+                            sessionId = currentSid,
+                            timestampMs = beat.timestampMs,
+                            phase = currentPhase,
+                            hrBpm = beat.hr.toLong(),
+                            rrMs = beat.rrIntervalMs,
+                            rmssdMs = currentRmssd,
+                            torsoPitchDeg = _torsoPitchDeg.value,
+                            torsoRollDeg = _torsoRollDeg.value,
+                            dynamicAccMg = _dynamicAccMg.value?.toLong(),
+                        )
+                    } catch (e: Exception) {
+                        log.e(e) { "Failed to insert PolarBeatSample for session $currentSid: ${e.message}" }
+                    }
+                } else {
+                    sessionLock.withLock {
+                        bufferedBeatSamples.add(
+                            BufferedBeatSample(
+                                sessionId = currentSid,
+                                timestampMs = beat.timestampMs,
+                                phase = currentPhase,
+                                hrBpm = beat.hr.toLong(),
+                                rrMs = beat.rrIntervalMs,
+                                rmssdMs = currentRmssd,
+                                torsoPitchDeg = _torsoPitchDeg.value,
+                                torsoRollDeg = _torsoRollDeg.value,
+                                dynamicAccMg = _dynamicAccMg.value?.toLong(),
+                            )
+                        )
+                    }
                 }
             }
         }
 
         lastBeatTimestampMs = runningTs
+        lastBeatMonotonicMs = nowMonoMs
         _rrClockTimestampMs.value = runningTs
     }
 
@@ -1010,30 +1155,47 @@ class PolarH10BleManager(
                     clearCachedTelemetry()
                     return
                 }
-                lastValidPacketTimestampMs = timeSource()
+                lastValidPacketTimestampMs = monotonicClock()
                 _pmdMeasurement.tryEmit(measurement)
                 _latestEcg.value = measurement
                 _ecgStream.tryEmit(measurement)
                 val currentSid = activeSessionId
-                if (currentSid != null && database != null) {
-                    try {
-                        val nowMs = timeSource()
-                        val csv = measurement.samplesMicrovolts.joinToString(",")
-                        database.phoenixDatabaseQueries.insertPolarEcgSegment(
-                            sessionId = currentSid,
-                            sensorTimestampNs = measurement.sensorTimestampNs,
-                            wallClockTimestampMs = nowMs,
-                            phase = currentPhase,
-                            samplesUvCsv = csv,
-                        )
-                    } catch (e: Exception) {
-                        log.w { "Failed to insert PolarEcgSegment: ${e.message}" }
+                if (currentSid != null) {
+                    val nowMs = wallClock()
+                    val csv = measurement.samplesMicrovolts.joinToString(",")
+                    val isCommitted = sessionLock.withLock { committedSessionIds.contains(currentSid) }
+                    if (isCommitted) {
+                        if (database != null) {
+                            try {
+                                database.phoenixDatabaseQueries.insertPolarEcgSegment(
+                                    sessionId = currentSid,
+                                    sensorTimestampNs = measurement.sensorTimestampNs,
+                                    wallClockTimestampMs = nowMs,
+                                    phase = currentPhase,
+                                    samplesUvCsv = csv,
+                                )
+                            } catch (e: Exception) {
+                                log.e(e) { "Failed to insert PolarEcgSegment for session $currentSid: ${e.message}" }
+                            }
+                        }
+                    } else {
+                        sessionLock.withLock {
+                            bufferedEcgSegments.add(
+                                BufferedEcgSegment(
+                                    sessionId = currentSid,
+                                    sensorTimestampNs = measurement.sensorTimestampNs,
+                                    wallClockTimestampMs = nowMs,
+                                    phase = currentPhase,
+                                    samplesUvCsv = csv,
+                                )
+                            )
+                        }
                     }
                 }
             }
             is PolarPmdMeasurement.Acc -> {
                 if (measurement.samples.isEmpty()) return
-                lastValidPacketTimestampMs = timeSource()
+                lastValidPacketTimestampMs = monotonicClock()
                 _pmdMeasurement.tryEmit(measurement)
                 _latestAcc.value = measurement
                 _accStream.tryEmit(measurement)
@@ -1230,11 +1392,32 @@ class PolarH10BleManager(
         }
     }
 
+    /**
+     * Non-suspending helper to stop ECG and ACC streams asynchronously on the manager's scope.
+     * Safe to invoke from [DisposableEffect.onDispose].
+     */
+    fun stopTelemetryStreamsAsync() {
+        scope.launch {
+            try {
+                stopEcgStream()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w(e) { "Failed to stop ECG stream asynchronously: ${e.message}" }
+            }
+            try {
+                stopAccStream()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w(e) { "Failed to stop ACC stream asynchronously: ${e.message}" }
+            }
+        }
+    }
+
     // ===== Watchdog for Packet Absence (> 3s) =====
     private var watchdogJob: Job? = null
     private var lastValidPacketTimestampMs: Long = 0L
 
-    internal fun checkPacketAbsenceTimeout(currentTimestampMs: Long = timeSource()) {
+    internal fun checkPacketAbsenceTimeout(currentTimestampMs: Long = monotonicClock()) {
         if (lastValidPacketTimestampMs > 0L && (currentTimestampMs - lastValidPacketTimestampMs) > 3000L) {
             if (_hrMeasurement.value != null || _latestEcg.value != null || _latestAcc.value != null || _torsoPitchDeg.value != null) {
                 log.w { "Polar H10 packet absence timeout (>3s). Clearing telemetry streams." }
@@ -1249,11 +1432,11 @@ class PolarH10BleManager(
 
     private fun startWatchdog() {
         watchdogJob?.cancel()
-        lastValidPacketTimestampMs = timeSource()
+        lastValidPacketTimestampMs = monotonicClock()
         watchdogJob = scope.launch {
             while (isActive && _isConnected.value) {
                 delay(500L)
-                checkPacketAbsenceTimeout(timeSource())
+                checkPacketAbsenceTimeout(monotonicClock())
             }
         }
     }
@@ -1312,6 +1495,7 @@ class PolarH10BleManager(
     internal fun clearCachedTelemetry() {
         _isContactDetected.value = false
         lastBeatTimestampMs = null
+        lastBeatMonotonicMs = null
         _hrMeasurement.value = null
         _rrClockTimestampMs.value = null
         _latestEcg.value = null

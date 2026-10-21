@@ -194,7 +194,7 @@ object BleConstants {
 
         const val DESIRED_PMD_MTU = 232
 
-        object Commands {
+        private object Commands {
             val START_ECG = byteArrayOf(0x02, 0x00, 0x00, 0x01, 0x82.toByte(), 0x00, 0x01, 0x01, 0x0E, 0x00)
             val START_ACC = byteArrayOf(0x02, 0x02, 0x02, 0x01, 0x08, 0x00, 0x00, 0x01, 0x32, 0x00, 0x01, 0x01, 0x10, 0x00)
             val START_ACC_ASCENDING = byteArrayOf(0x02, 0x02, 0x00, 0x01, 0x32, 0x00, 0x01, 0x01, 0x10, 0x00, 0x02, 0x01, 0x08, 0x00)
@@ -203,12 +203,12 @@ object BleConstants {
             val STOP_ACC = byteArrayOf(0x03, 0x02)
         }
 
-        val PMD_START_ECG_CMD: ByteArray get() = Commands.START_ECG
-        val PMD_START_ACC_CMD: ByteArray get() = Commands.START_ACC
-        val PMD_START_ACC_ASCENDING_CMD: ByteArray get() = Commands.START_ACC_ASCENDING
-        val PMD_START_ACC_FALLBACK_25HZ_CMD: ByteArray get() = Commands.START_ACC_FALLBACK_25HZ
-        val PMD_STOP_ECG_CMD: ByteArray get() = Commands.STOP_ECG
-        val PMD_STOP_ACC_CMD: ByteArray get() = Commands.STOP_ACC
+        val PMD_START_ECG_CMD: ByteArray get() = Commands.START_ECG.copyOf()
+        val PMD_START_ACC_CMD: ByteArray get() = Commands.START_ACC.copyOf()
+        val PMD_START_ACC_ASCENDING_CMD: ByteArray get() = Commands.START_ACC_ASCENDING.copyOf()
+        val PMD_START_ACC_FALLBACK_25HZ_CMD: ByteArray get() = Commands.START_ACC_FALLBACK_25HZ.copyOf()
+        val PMD_STOP_ECG_CMD: ByteArray get() = Commands.STOP_ECG.copyOf()
+        val PMD_STOP_ACC_CMD: ByteArray get() = Commands.STOP_ACC.copyOf()
     }
 }
 

@@ -539,6 +539,11 @@ class DefaultWorkoutSessionManager(
                             is WorkoutState.SetSummary -> {
                                 polarBleManager.updateSessionPhase("REST")
                             }
+                            is WorkoutState.Idle -> {
+                                if (!polarBleManager.isCooldownActive.value) {
+                                    polarBleManager.discardActiveRecording()
+                                }
+                            }
                             else -> {}
                         }
                     }

@@ -9567,6 +9567,7 @@ class ActiveSessionEngine(
                 repMetrics = snapshot.repMetrics,
                 repBiomechanics = snapshot.biomechanicsRepResults,
             )
+            polarBleManager?.flushSessionTelemetry(sessionId)
             // Issue #869: the set is durable; Set Summary may now appear.
             commitSettled?.complete(Unit)
             snapshot.singleExerciseDefaults?.let { defaults ->
@@ -10839,6 +10840,7 @@ class ActiveSessionEngine(
                     repMetrics = emptyList(),
                     repBiomechanics = emptyList(),
                 )
+                polarBleManager?.flushSessionTelemetry(session.id, fallbackSessionId = coordinator.currentSessionId)
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {
                     Logger.d(

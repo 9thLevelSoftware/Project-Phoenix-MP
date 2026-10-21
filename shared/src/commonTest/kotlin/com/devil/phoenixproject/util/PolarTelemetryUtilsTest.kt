@@ -12,11 +12,11 @@ class PolarTelemetryUtilsTest {
     @Test
     fun standingUprightProducesNearZeroPitchAndRollAndZeroDynamicAcc() {
         // Upright: 1G pointing straight down along -X
-        val x = -1000.0
-        val y = 0.0
-        val z = 0.0
+        val x = -1000
+        val y = 0
+        val z = 0
 
-        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+        val metrics = PolarAccFilter().processSample(x, y, z)
 
         assertTrue(abs(metrics.pitchDeg) < toleranceDeg, "Standing upright pitch should be ~0°, got ${metrics.pitchDeg}")
         assertTrue(abs(metrics.rollDeg) < toleranceDeg, "Standing upright roll should be ~0°, got ${metrics.rollDeg}")
@@ -26,11 +26,11 @@ class PolarTelemetryUtilsTest {
     @Test
     fun fortyFiveDegreeForwardHingeProducesFortyFiveDegreesPitch() {
         // 45° forward hinge: gravity pulls along -X (707 mG) and -Z (707 mG)
-        val x = -707.106
-        val y = 0.0
-        val z = -707.106
+        val x = -707
+        val y = 0
+        val z = -707
 
-        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+        val metrics = PolarAccFilter().processSample(x, y, z)
 
         assertTrue(abs(metrics.pitchDeg - 45.0) < toleranceDeg, "45° forward hinge pitch should be ~45°, got ${metrics.pitchDeg}")
         assertTrue(abs(metrics.rollDeg) < toleranceDeg, "45° forward hinge roll should be ~0°, got ${metrics.rollDeg}")
@@ -40,11 +40,11 @@ class PolarTelemetryUtilsTest {
     @Test
     fun backwardLeanProducesNegativePitch() {
         // Leaning backward: gravity pulls along +Z
-        val x = -707.106
-        val y = 0.0
-        val z = 707.106
+        val x = -707
+        val y = 0
+        val z = 707
 
-        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+        val metrics = PolarAccFilter().processSample(x, y, z)
 
         assertTrue(abs(metrics.pitchDeg - (-45.0)) < toleranceDeg, "Backward lean pitch should be ~ -45°, got ${metrics.pitchDeg}")
     }
@@ -52,11 +52,11 @@ class PolarTelemetryUtilsTest {
     @Test
     fun horizontalHingeProducesNinetyDegreesPitch() {
         // 90° horizontal bend (torso parallel to ground): gravity entirely along -Z
-        val x = 0.0
-        val y = 0.0
-        val z = -1000.0
+        val x = 0
+        val y = 0
+        val z = -1000
 
-        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+        val metrics = PolarAccFilter().processSample(x, y, z)
 
         assertTrue(abs(metrics.pitchDeg - 90.0) < toleranceDeg, "Horizontal hinge pitch should be ~90°, got ${metrics.pitchDeg}")
         assertTrue(abs(metrics.rollDeg) < toleranceDeg, "Horizontal hinge roll should be ~0°, got ${metrics.rollDeg}")
@@ -65,11 +65,11 @@ class PolarTelemetryUtilsTest {
     @Test
     fun lateralTiltProducesAccurateRoll() {
         // 30° lateral tilt to right: Y = 500 mG, X = -866 mG, Z = 0
-        val x = -866.025
-        val y = 500.0
-        val z = 0.0
+        val x = -866
+        val y = 500
+        val z = 0
 
-        val metrics = PolarTelemetryUtils.computeTorsoBiomechanics(x, y, z)
+        val metrics = PolarAccFilter().processSample(x, y, z)
 
         assertTrue(abs(metrics.rollDeg - 30.0) < toleranceDeg, "Lateral tilt roll should be ~30°, got ${metrics.rollDeg}")
         assertTrue(abs(metrics.pitchDeg) < toleranceDeg, "Lateral tilt pitch should be ~0°, got ${metrics.pitchDeg}")

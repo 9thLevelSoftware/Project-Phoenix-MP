@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.domain.model.PolarRrBeat
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -77,41 +78,27 @@ object PolarTelemetryUtils {
     }
 
     /**
-     * Compute all torso biomechanics metrics for a single 3D ACC sample.
-     */
-    fun computeTorsoBiomechanics(
-        xMg: Double,
-        yMg: Double,
-        zMg: Double,
-        tarePitchDeg: Double = 0.0,
-        tareRollDeg: Double = 0.0,
-    ): PolarTorsoBiomechanics {
-        val pitch = calculateTorsoPitchDeg(xMg, yMg, zMg, tarePitchDeg)
-        val roll = calculateTorsoRollDeg(xMg, yMg, zMg, tareRollDeg)
-        val dynamicAcc = calculateDynamicAccMg(xMg, yMg, zMg)
-        return PolarTorsoBiomechanics(
-            pitchDeg = pitch,
-            rollDeg = roll,
-            dynamicAccMg = dynamicAcc,
-            filteredXMg = xMg,
-            filteredYMg = yMg,
-            filteredZMg = zMg,
-        )
-    }
-
-    /**
      * Compute Root Mean Square of Successive Differences (RMSSD) in milliseconds from R-R intervals.
-     * Applies physiological bounds (250.0..2500.0 ms) and a 25% relative RR-delta artifact filter
-     * (abs(rr2 - rr1) <= maxOf(rr1, rr2) * 0.25) to reject missed-beat spikes and noise.
+     * Applies physiological bounds (250.0..2500.0 ms), an optional inter-beat time gap check (200..3500 ms),
+     * and a 25% relative RR-delta artifact filter (abs(rr2 - rr1) <= maxOf(rr1, rr2) * 0.25)
+     * to reject missed-beat spikes and noise.
      */
-    fun calculateRmssdMs(rrs: List<Double>): Double? {
+    fun calculateRmssdMs(
+        rrs: List<Double>,
+        timestampsMs: List<Long>? = null,
+    ): Double? {
         if (rrs.size < 2) return null
+        if (timestampsMs != null && timestampsMs.size != rrs.size) return null
         var sumSquares = 0.0
         var validDiffs = 0
         for (i in 1 until rrs.size) {
             val rr1 = rrs[i - 1]
             val rr2 = rrs[i]
             if (rr1 !in 250.0..2500.0 || rr2 !in 250.0..2500.0) continue
+            if (timestampsMs != null) {
+                val timeGap = timestampsMs[i] - timestampsMs[i - 1]
+                if (timeGap !in 200..3500) continue
+            }
             val diff = abs(rr2 - rr1)
             if (diff > maxOf(rr1, rr2) * 0.25) continue
             sumSquares += diff * diff
@@ -120,6 +107,24 @@ object PolarTelemetryUtils {
         if (validDiffs == 0) return null
         return sqrt(sumSquares / validDiffs)
     }
+
+    /**
+     * Compute RMSSD directly from PolarRrBeat list with contiguous timestamp validation.
+     */
+    fun calculateRmssdFromBeats(beats: List<PolarRrBeat>): Double? {
+        if (beats.size < 2) return null
+        return calculateRmssdMs(
+            rrs = beats.map { it.rrIntervalMs },
+            timestampsMs = beats.map { it.timestampMs },
+        )
+    }
+
+    /**
+     * Format milliseconds to a clean integer string representation.
+     */
+    fun formatMs(ms: Double?): String = ms?.let { "${it.roundToInt()} ms" } ?: "—"
+    fun formatRrMs(rrMs: Double?): String = formatMs(rrMs)
+    fun formatRmssdMs(rmssd: Double?): String = formatMs(rmssd)
 }
 
 /**
