@@ -3,6 +3,7 @@ package com.devil.phoenixproject.util
 import android.content.Context
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.java.KoinJavaComponent.getKoin
@@ -20,6 +21,8 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
         openUriOrPath(uriOrPath)?.use { stream ->
             stream.bufferedReader().readText()
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         log.e(e) { "Failed to read URI content: $uriOrPath" }
         null
@@ -29,6 +32,8 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
 actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): BoundedUriContent = withContext(Dispatchers.IO) {
     try {
         openUriOrPath(uriOrPath)?.use { stream -> readUpTo(stream, maxBytes) } ?: BoundedUriContent.Unreadable
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         log.e(e) { "Failed to read URI content: $uriOrPath" }
         BoundedUriContent.Unreadable
