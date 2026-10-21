@@ -106,6 +106,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -797,6 +798,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                 weightUnit = weightUnit,
                 kgToDisplay = viewModel::kgToDisplay,
                 weightStepKg = userPreferences.effectiveWeightIncrementKg,
+                planningMaxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                    userPreferences.lastConnectedModel,
+                ),
                 onConfirm = { exerciseConfigs ->
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {

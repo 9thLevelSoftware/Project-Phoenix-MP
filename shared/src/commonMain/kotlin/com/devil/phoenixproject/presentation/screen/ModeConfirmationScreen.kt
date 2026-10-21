@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.presentation.util.programModeShortLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
@@ -54,6 +55,9 @@ fun ModeConfirmationScreen(
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
+    // Same offline ceiling as the routine/exercise editors. The caller passes
+    // CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel).
+    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -205,6 +209,7 @@ fun ModeConfirmationScreen(
                                 )
                             },
                             weightStepKg = weightStepKg,
+                            planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                         )
                     }
                 }
@@ -276,6 +281,7 @@ private fun ConfigurableExerciseCard(
     },
     onConfigUpdated: (ExerciseConfig) -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266
+    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
@@ -373,6 +379,7 @@ private fun ConfigurableExerciseCard(
             },
             onDismiss = { showConfigModal = false },
             weightStepKg = weightStepKg,
+            planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
         )
     }
 }
