@@ -657,7 +657,12 @@ internal class WorkoutExecutionGuard(
             return@withPlatformLock false
         }
         restoredTeardownJob = null
-        _machineTeardownState.value = MachineTeardownState.RecoveryRequired(owner.seed.sourceExecutionId)
+        recordRecoveryRequiredLocked(
+            executionId = owner.seed.sourceExecutionId,
+            sessionId = owner.seed.sourceStableSessionId,
+            reason = reason,
+            attempt = state.attempt,
+        )
         true
     }
 
@@ -675,6 +680,11 @@ internal class WorkoutExecutionGuard(
         val attempt = record.attempt + 1
         restoredTeardownRecord = record.copy(attempt = attempt)
         _machineTeardownState.value = MachineTeardownState.TearingDown(owner.seed.sourceExecutionId, attempt)
+        logRecoveryAttemptLocked(
+            executionId = owner.seed.sourceExecutionId,
+            sessionId = owner.seed.sourceStableSessionId,
+            attempt = attempt,
+        )
         RestoredRecoveryAttempt(owner, attempt)
     }
 
@@ -1203,11 +1213,11 @@ internal class WorkoutExecutionGuard(
         if (state !is MachineTeardownState.TearingDown || !sameIdentity(teardownLease, lease)) {
             return@withPlatformLock false
         }
-        teardownFailureReason = reason
-        _machineTeardownState.value = MachineTeardownState.RecoveryRequired(lease.executionId)
-        log(
-            LogEventType.WORKOUT_TEARDOWN,
-            "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_required,reason=$reason,attempt=${state.attempt}",
+        recordRecoveryRequiredLocked(
+            executionId = lease.executionId,
+            sessionId = lease.sessionId,
+            reason = reason,
+            attempt = state.attempt,
         )
         true
     }
@@ -1222,9 +1232,10 @@ internal class WorkoutExecutionGuard(
         val attempt = teardownAttempt + 1
         teardownAttempt = attempt
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
-        log(
-            LogEventType.WORKOUT_TEARDOWN,
-            "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_attempt,attempt=$attempt,previousReason=$teardownFailureReason",
+        logRecoveryAttemptLocked(
+            executionId = lease.executionId,
+            sessionId = lease.sessionId,
+            attempt = attempt,
         )
         RecoveryAttempt(lease, attempt)
     }
@@ -1292,6 +1303,27 @@ internal class WorkoutExecutionGuard(
     }
 
     private fun sameIdentity(first: ExecutionLease?, second: ExecutionLease): Boolean = first?.executionId == second.executionId && first.sessionId == second.sessionId
+
+    private fun recordRecoveryRequiredLocked(
+        executionId: Long,
+        sessionId: String,
+        reason: TeardownFailureReason,
+        attempt: Int,
+    ) {
+        teardownFailureReason = reason
+        _machineTeardownState.value = MachineTeardownState.RecoveryRequired(executionId)
+        log(
+            LogEventType.WORKOUT_TEARDOWN,
+            "executionId=$executionId,sessionId=$sessionId,transition=recovery_required,reason=$reason,attempt=$attempt",
+        )
+    }
+
+    private fun logRecoveryAttemptLocked(executionId: Long, sessionId: String, attempt: Int) {
+        log(
+            LogEventType.WORKOUT_TEARDOWN,
+            "executionId=$executionId,sessionId=$sessionId,transition=recovery_attempt,attempt=$attempt,previousReason=$teardownFailureReason",
+        )
+    }
 
     private fun log(eventType: String, details: String) {
         try {

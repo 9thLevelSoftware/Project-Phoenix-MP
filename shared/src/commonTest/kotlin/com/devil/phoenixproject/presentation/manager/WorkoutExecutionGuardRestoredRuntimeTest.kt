@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.LogEventType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,6 +53,36 @@ class WorkoutExecutionGuardRestoredRuntimeTest {
         assertFalse(guard.markRestoredTeardownReady(owner))
         assertNull(guard.beginRestoredRecoveryAttempt(owner))
         assertTrue(guard.beginRestoredSuccessorExecution(owner, executionSeed()) { true }.isFailure)
+    }
+
+    @Test
+    fun `restored recovery keeps the teardown failure reason for the next attempt`() {
+        val events = mutableListOf<Pair<String, String>>()
+        val guard = WorkoutExecutionGuard { eventType, details -> events += eventType to details }
+        val owner = guard.publishRestoredOwner()
+        val wrongOwner = owner.copy(id = owner.id + 1L)
+
+        assertFalse(guard.markRestoredRecoveryRequired(wrongOwner, TeardownFailureReason.RESET_FAILED))
+        assertTrue(guard.markRestoredRecoveryRequired(owner, TeardownFailureReason.DISCONNECTED))
+        assertFalse(guard.markRestoredRecoveryRequired(wrongOwner, TeardownFailureReason.TIMED_OUT))
+
+        val recoveryRequired =
+            "executionId=${owner.seed.sourceExecutionId},sessionId=${owner.seed.sourceStableSessionId}," +
+                "transition=recovery_required,reason=DISCONNECTED,attempt=1"
+        assertEquals(listOf(LogEventType.WORKOUT_TEARDOWN to recoveryRequired), events.toList())
+
+        val retry = assertNotNull(guard.beginRestoredRecoveryAttempt(owner))
+        assertEquals(2, retry.attempt)
+        val recoveryAttempt =
+            "executionId=${owner.seed.sourceExecutionId},sessionId=${owner.seed.sourceStableSessionId}," +
+                "transition=recovery_attempt,attempt=2,previousReason=DISCONNECTED"
+        assertEquals(
+            listOf(
+                LogEventType.WORKOUT_TEARDOWN to recoveryRequired,
+                LogEventType.WORKOUT_TEARDOWN to recoveryAttempt,
+            ),
+            events.toList(),
+        )
     }
 
     @Test
