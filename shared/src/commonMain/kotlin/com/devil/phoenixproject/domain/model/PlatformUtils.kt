@@ -10,6 +10,9 @@ package com.devil.phoenixproject.domain.model
 expect fun currentTimeMillis(): Long
 
 /**
- * Get a monotonic elapsed time in milliseconds suitable for interval timing.
+ * Milliseconds since boot on a monotonic clock, including time spent in sleep.
+ *
+ * Matches Android `SystemClock.elapsedRealtime()`. Rest deadlines are armed on
+ * this clock, so both platforms must keep counting while the device is asleep.
  */
 expect fun elapsedRealtimeMillis(): Long
