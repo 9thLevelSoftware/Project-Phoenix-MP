@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class HandleStateDetectorTest {
@@ -802,5 +803,27 @@ class HandleStateDetectorTest {
         detector.processMetric(metric(posA = 2.0f, posB = 20.0f))
         assertEquals(2.0, detector.minPositionSeen)
         assertEquals(20.0, detector.maxPositionSeen)
+    }
+
+    @Test
+    fun `position range stays unobserved until a sample leaves both sentinels`() {
+        val detector = createDetector()
+        assertEquals(HandleStateDetector.UNSET_MIN_POSITION_MM, detector.minPositionSeen)
+        assertEquals(-Double.MAX_VALUE, detector.maxPositionSeen)
+        assertEquals(HandleStateDetector.UNSET_MAX_POSITION_MM, detector.maxPositionSeen)
+        assertNotEquals(Double.MIN_VALUE, detector.maxPositionSeen)
+        assertFalse(detector.hasObservedPositionRange())
+
+        detector.enable(autoStart = false)
+        assertFalse(detector.hasObservedPositionRange())
+
+        detector.processMetric(metric(posA = -30.0f, posB = -8.0f))
+        assertEquals(-30.0, detector.minPositionSeen)
+        assertEquals(-8.0, detector.maxPositionSeen)
+        assertTrue(detector.hasObservedPositionRange())
+
+        detector.reset()
+        assertEquals(HandleStateDetector.UNSET_MAX_POSITION_MM, detector.maxPositionSeen)
+        assertFalse(detector.hasObservedPositionRange())
     }
 }

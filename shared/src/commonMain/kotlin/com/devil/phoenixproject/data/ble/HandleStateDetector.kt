@@ -35,6 +35,15 @@ class HandleStateDetector(
     companion object {
         /** Position threshold (mm) for simple left/right handle detection booleans */
         private const val SIMPLE_DETECTION_THRESHOLD = 50.0f
+
+        /** [minPositionSeen] before any sample. */
+        internal const val UNSET_MIN_POSITION_MM = Double.MAX_VALUE
+
+        /**
+         * [maxPositionSeen] before any sample.
+         * [Double.MIN_VALUE] is the smallest positive double, so it is not an unset maximum.
+         */
+        internal const val UNSET_MAX_POSITION_MM = -Double.MAX_VALUE
     }
 
     // State flows
@@ -65,14 +74,15 @@ class HandleStateDetector(
     private var restBaselinePosA: Double? = null
     private var restBaselinePosB: Double? = null
 
-    // Position range diagnostics
-    var minPositionSeen: Double = Double.MAX_VALUE
+    // Position range diagnostics. Unset values are UNSET_MIN_POSITION_MM and UNSET_MAX_POSITION_MM.
+    var minPositionSeen: Double = UNSET_MIN_POSITION_MM
         private set
-    // F091: Double.MIN_VALUE is the smallest POSITIVE double, not the most
-    // negative, so an all-negative position stream would never update this and
-    // report a bogus ~0 maximum. Use -Double.MAX_VALUE as the sentinel.
-    var maxPositionSeen: Double = -Double.MAX_VALUE
+    var maxPositionSeen: Double = UNSET_MAX_POSITION_MM
         private set
+
+    /** Both extremes have moved off [UNSET_MIN_POSITION_MM] and [UNSET_MAX_POSITION_MM]. */
+    internal fun hasObservedPositionRange(): Boolean =
+        minPositionSeen != UNSET_MIN_POSITION_MM && maxPositionSeen != UNSET_MAX_POSITION_MM
 
     // Periodic logging counter
     private var logCounter = 0L
@@ -159,8 +169,8 @@ class HandleStateDetector(
      * Reset all internal state variables (timers, baselines, diagnostics).
      */
     private fun resetInternalState() {
-        minPositionSeen = Double.MAX_VALUE
-        maxPositionSeen = -Double.MAX_VALUE // F091: most-negative sentinel (see field decl)
+        minPositionSeen = UNSET_MIN_POSITION_MM
+        maxPositionSeen = UNSET_MAX_POSITION_MM
         pendingGrabbedStartTime = null
         pendingReleasedStartTime = null
         activeHandlesMask = 0
