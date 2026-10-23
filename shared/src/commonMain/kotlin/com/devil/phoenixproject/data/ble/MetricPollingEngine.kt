@@ -23,8 +23,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Manages the 4 BLE polling loops and their lifecycle for MetricPollingEngine extraction (Phase 11).
  *
  * Polling loops:
- * - Monitor: 10-20Hz (no delay on success, BLE response time rate-limits)
- * - Diagnostic: 1Hz (500ms interval) for keep-alive and fault detection
+ * - Monitor: no fixed delay on success; BLE response time rate-limits (~10-20ms)
+ * - Diagnostic: 2Hz (500ms interval) for keep-alive and fault detection
  * - Heuristic: 4Hz (250ms interval) for force telemetry
  * - Heartbeat: 0.5Hz (2000ms interval) for connection keep-alive
  *
@@ -444,10 +444,8 @@ class MetricPollingEngine(
                 "heartbeat=${heartbeatJob?.isActive}"
         }
 
-        // Log workout analysis (position range from HandleStateDetector)
-        if (handleDetector.minPositionSeen != Double.MAX_VALUE &&
-            handleDetector.maxPositionSeen != Double.MIN_VALUE
-        ) {
+        // Log workout analysis once both extremes have left their unset sentinels.
+        if (handleDetector.hasObservedPositionRange()) {
             log.i { "========== WORKOUT ANALYSIS ==========" }
             log.i { "Position range: min=${handleDetector.minPositionSeen}, max=${handleDetector.maxPositionSeen}" }
             log.i { "Detection thresholds (auto-start mode uses lower velocity):" }
