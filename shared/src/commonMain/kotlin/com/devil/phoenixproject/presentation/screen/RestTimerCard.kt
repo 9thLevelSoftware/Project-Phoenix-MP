@@ -74,6 +74,7 @@ import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
@@ -520,10 +521,8 @@ fun RestTimerCard(
                     ) {
                         Text(
                             stringResource(Res.string.rest_next_set_config),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = labelAllCaps.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
                         )
 
                         // Reps adjuster with hybrid slider (shown for all modes)
