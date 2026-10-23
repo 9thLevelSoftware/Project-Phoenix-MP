@@ -90,8 +90,8 @@ actual class HealthIntegration : HealthWorkoutWriter {
      *
      * Delegates to [HKHealthStore.isHealthDataAvailable] and returns false if
      * that check throws. HealthKit reports data as available on iPhone and on
-     * iPad running iPadOS 17 or later, and unavailable on earlier iPadOS.
-     * A restricted or otherwise unsupported device also returns false.
+     * iPad running iPadOS 17 or later, and unavailable on earlier iPadOS and
+     * on other devices that do not support HealthKit.
      */
     actual override suspend fun isAvailable(): Boolean = try {
         HKHealthStore.isHealthDataAvailable()
