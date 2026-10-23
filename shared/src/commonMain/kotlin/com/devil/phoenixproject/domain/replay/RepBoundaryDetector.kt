@@ -60,7 +60,7 @@ class RepBoundaryDetector {
         if (valleys.size < 2) return emptyList()
 
         // Build rep boundaries from valley pairs
-        return buildRepBoundaries(positions, smoothed, valleys)
+        return buildRepBoundaries(positions, valleys)
     }
 
     /**
@@ -151,7 +151,7 @@ class RepBoundaryDetector {
     /**
      * Build RepBoundary objects from detected valleys.
      */
-    private fun buildRepBoundaries(rawPositions: FloatArray, smoothed: FloatArray, valleys: List<Int>): List<RepBoundary> {
+    private fun buildRepBoundaries(rawPositions: FloatArray, valleys: List<Int>): List<RepBoundary> {
         val boundaries = mutableListOf<RepBoundary>()
 
         for (i in 0 until valleys.size - 1) {
