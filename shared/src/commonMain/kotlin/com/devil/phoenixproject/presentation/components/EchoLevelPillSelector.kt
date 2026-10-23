@@ -25,10 +25,10 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.rest_echo_level
@@ -58,9 +58,8 @@ fun EchoLevelPillSelector(
     Column(modifier = modifier) {
         Text(
             text = stringResource(Res.string.rest_echo_level),
-            style = MaterialTheme.typography.labelSmall,
+            style = labelSmallAllCaps,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
