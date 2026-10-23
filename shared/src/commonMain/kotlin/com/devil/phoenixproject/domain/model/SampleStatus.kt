@@ -2,9 +2,7 @@ package com.devil.phoenixproject.domain.model
 
 /**
  * Represents the machine's status flags parsed from bytes 16-17 of the Monitor characteristic.
- * Bit flags from bytes 16-17 of the Monitor characteristic.
  */
-@Suppress("unused") // Protocol reference class - used for machine status parsing
 data class SampleStatus(val raw: Int) {
 
     fun isRepTopReady(): Boolean = (raw and REP_TOP_READY) != 0
