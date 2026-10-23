@@ -55,7 +55,7 @@ class CsvImportActivity : ComponentActivity() {
 
             is CsvImportPayload.InlineText -> deliver(deliveryId, CsvImportDeliveryResult.Read(payload.text))
             CsvImportPayload.TooLarge -> deliver(deliveryId, CsvImportDeliveryResult.TooLarge)
-            CsvImportPayload.Unreadable, CsvImportPayload.Ignore -> deliver(deliveryId, CsvImportDeliveryResult.Unreadable)
+            CsvImportPayload.Unreadable -> deliver(deliveryId, CsvImportDeliveryResult.Unreadable)
         }
     }
 
