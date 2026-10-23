@@ -423,7 +423,7 @@ class RoutineFlowManager(
     /**
      * Determine the previous step (Exercise Index, Set Index) in the workout sequence.
      */
-    internal fun getPreviousStep(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
+    private fun getPreviousStep(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
         val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
         val skippedIndices = coordinator._skippedExercises.value
 
