@@ -1,7 +1,9 @@
 name: Release Tests
 
 # Unit-test gate that every release/store workflow runs before building or uploading.
-# release-all*.yml run it once up front and pass skip: true to the platform workflows they call.
+# release-all*.yml run it once up front and leave skip at its default (false), so the tests run.
+# They pass skip_tests: true to the platform workflows they call. Those workflows map that
+# input onto this workflow's skip input: skip: ${{ inputs.skip_tests || false }}.
 
 on:
   workflow_call:
