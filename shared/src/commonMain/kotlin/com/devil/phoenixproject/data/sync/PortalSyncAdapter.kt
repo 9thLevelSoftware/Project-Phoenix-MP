@@ -1012,13 +1012,17 @@ object PortalSyncAdapter {
     // ─── Utility ────────────────────────────────────────────────────
 
     /**
-     * Convert epoch millis to ISO 8601 string.
-     * Uses a simple manual approach (no platform-specific formatter needed).
+     * Formats [epochMs] (milliseconds since 1970-01-01T00:00:00Z) with
+     * `kotlin.time.Instant.toString()`.
+     *
+     * The result is a UTC ISO-8601 instant and always ends in `Z`. A whole
+     * number of seconds omits the fraction (`2023-11-14T22:13:20Z`). Any other
+     * millisecond keeps exactly three fractional digits, including trailing
+     * zeros (`2023-11-14T22:13:20.100Z`).
      */
     private fun epochToIso8601(epochMs: Long): String {
-        // Use kotlinx-datetime for proper formatting
         val instant = kotlin.time.Instant.fromEpochMilliseconds(epochMs)
-        return instant.toString() // ISO 8601 format
+        return instant.toString()
     }
 
     /**
