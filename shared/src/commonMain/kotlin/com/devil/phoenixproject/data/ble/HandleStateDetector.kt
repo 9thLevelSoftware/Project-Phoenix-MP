@@ -89,7 +89,7 @@ class HandleStateDetector(
 
     /**
      * Process a workout metric and update handle state.
-     * Called from parseMonitorData and parseRxMetrics in KableBleRepository.
+     * Called from MetricPollingEngine.parseMonitorData().
      */
     fun processMetric(metric: WorkoutMetric) {
         if (!isEnabled) return
