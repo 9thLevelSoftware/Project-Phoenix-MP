@@ -63,7 +63,7 @@ internal object EquipmentVocabulary {
  * (renamed entry removed, or another profile's row). Splits the slug on "_"; short
  * fragments (<= 2 chars, e.g. "EZ") stay uppercase, longer words are title-cased.
  */
-internal fun humanizeCustomEquipmentToken(token: String): String =
+private fun humanizeCustomEquipmentToken(token: String): String =
     token.trim()
         .removePrefix(EquipmentVocabulary.CUSTOM_EQUIPMENT_PREFIX)
         .split("_")
