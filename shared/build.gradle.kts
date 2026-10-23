@@ -184,7 +184,8 @@ kotlin {
                 // Preview annotations for @Preview in shared Android sources.
                 implementation(libs.cmp.ui.tooling.preview)
 
-                // Activity Compose (for file picker Activity Result APIs)
+                // Activity Compose: BackHandler, plus activity-result launchers for the
+                // file picker, directory picker, BLE permissions, and Health Connect.
                 implementation(libs.androidx.activity.compose)
 
                 // Android browser integrations for Custom Tabs OAuth handoff
@@ -193,7 +194,8 @@ kotlin {
                 // Encrypted SharedPreferences for secure token storage
                 implementation(libs.androidx.security.crypto)
 
-                // DocumentFile for directory picker display name extraction
+                // DocumentFile: directory-picker display names, SAF tree create/delete,
+                // and CreateDocument cleanup.
                 implementation(libs.androidx.documentfile)
 
                 // Health Connect (Google Health)
