@@ -416,7 +416,6 @@ private fun HudBottomBar(
     }
 }
 
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun ExecutionPage(
     metric: WorkoutMetric?,
@@ -437,9 +436,6 @@ private fun ExecutionPage(
     onResetExerciseTimer: () -> Unit = {},
     currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
 ) {
-    // Issue #192: Check if this is a timed exercise
-    val isTimedExercise = timedExerciseRemainingSeconds != null
-
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -489,6 +485,7 @@ private fun ExecutionPage(
         }
 
         // Issue #192: Show countdown timer for timed exercises, rep counter for normal exercises
+        val timedRemainingSeconds = timedExerciseRemainingSeconds
         if (isCurrentExerciseBodyweight) {
             Text(
                 "TIME",
@@ -517,10 +514,7 @@ private fun ExecutionPage(
                     onReset = onResetExerciseTimer,
                 )
             }
-        } else if (isTimedExercise && timedExerciseRemainingSeconds != null) {
-            // timedExerciseRemainingSeconds != null is logically redundant (implied by isTimedExercise)
-            // but required for Kotlin smart-cast so timedExerciseRemainingSeconds can be used as non-null below
-            val remainingSeconds = timedExerciseRemainingSeconds
+        } else if (timedRemainingSeconds != null) {
             Text(
                 "TIME",
                 style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
@@ -529,9 +523,9 @@ private fun ExecutionPage(
 
             // Large countdown display
             Text(
-                text = "${remainingSeconds}s",
+                text = "${timedRemainingSeconds}s",
                 style = workoutCounterStyle,
-                color = if (remainingSeconds <= 5) {
+                color = if (timedRemainingSeconds <= 5) {
                     MaterialTheme.colorScheme.error // Highlight last 5 seconds
                 } else {
                     MaterialTheme.colorScheme.primary
