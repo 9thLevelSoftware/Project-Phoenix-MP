@@ -14,6 +14,10 @@ actual fun currentTimeMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).t
  * Milliseconds from Darwin `CLOCK_MONOTONIC_RAW`, which follows `mach_continuous_time`
  * and keeps counting through sleep. `NSProcessInfo.systemUptime` stops while the
  * device is asleep, so rest armed on that clock under-counted on a locked phone.
+ *
+ * Darwin clock ids are not Linux ones. Apple Libc `gen/clock_gettime.c` reads
+ * `CLOCK_MONOTONIC_RAW` from `mach_continuous_time()` (counts while asleep) and
+ * `CLOCK_UPTIME_RAW` from `mach_absolute_time()` (stops while asleep).
  */
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 actual fun elapsedRealtimeMillis(): Long =
