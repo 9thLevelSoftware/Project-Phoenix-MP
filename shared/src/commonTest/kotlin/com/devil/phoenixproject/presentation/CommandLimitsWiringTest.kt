@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -68,6 +69,33 @@ class CommandLimitsWiringTest {
         assertTrue(
             editor.contains("kgToDisplay(CommandLimits.MAX_PROGRESSION_KG, weightUnit)"),
             "The editor progression slider range must come from CommandLimits, not a literal 10.",
+        )
+    }
+
+    @Test
+    fun cycleModeConfirmationStepperUsesThePlanningCeiling() {
+        val cycles = read("presentation/screen/TrainingCyclesScreen.kt")
+        assertTrue(
+            Regex("""CommandLimits\.planningMaxWeightPerCableKg\(\s*userPreferences\.lastConnectedModel\s*,?\s*\)""")
+                .containsMatchIn(cycles),
+            "TrainingCyclesScreen must pass the last connected model's planning ceiling into mode confirmation.",
+        )
+
+        val confirmation = read("presentation/screen/ModeConfirmationScreen.kt")
+        assertEquals(
+            2,
+            confirmation.split("planningMaxWeightPerCableKg = planningMaxWeightPerCableKg").size - 1,
+            "Mode confirmation must forward the planning ceiling through the exercise card into ExerciseConfigModal.",
+        )
+
+        val modal = read("presentation/components/ExerciseConfigModal.kt")
+        val stepperCalls = modal.split("WeightStepper(").size - 1
+        val boundedSteppers = modal.split("maxWeight = planningMaxWeightPerCableKg").size - 1
+        assertTrue(stepperCalls > 0, "ExerciseConfigModal should own the cycle mode-confirmation steppers.")
+        assertEquals(
+            stepperCalls,
+            boundedSteppers,
+            "Every WeightStepper in ExerciseConfigModal must receive the planning ceiling, not the 100 kg default.",
         )
     }
 

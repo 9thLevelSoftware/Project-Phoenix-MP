@@ -54,6 +54,10 @@ fun ModeConfirmationScreen(
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
+    // Same offline ceiling as the routine/exercise editors. The caller passes
+    // CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel).
+    // No default, so a new caller cannot fall back to the widest (Trainer+) ceiling.
+    planningMaxWeightPerCableKg: Float,
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -205,6 +209,7 @@ fun ModeConfirmationScreen(
                                 )
                             },
                             weightStepKg = weightStepKg,
+                            planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                         )
                     }
                 }
@@ -276,6 +281,7 @@ private fun ConfigurableExerciseCard(
     },
     onConfigUpdated: (ExerciseConfig) -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266
+    planningMaxWeightPerCableKg: Float,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
@@ -373,6 +379,7 @@ private fun ConfigurableExerciseCard(
             },
             onDismiss = { showConfigModal = false },
             weightStepKg = weightStepKg,
+            planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
         )
     }
 }

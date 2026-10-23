@@ -35,6 +35,9 @@ import projectphoenix.shared.generated.resources.Res
  * @param initialConfig Initial exercise configuration to edit
  * @param onConfirm Callback when user confirms the configuration
  * @param onDismiss Callback when user dismisses the modal
+ * @param planningMaxWeightPerCableKg Per-cable ceiling for the weight stepper, in kg.
+ *   Callers supply [com.devil.phoenixproject.util.CommandLimits.planningMaxWeightPerCableKg]
+ *   for the last connected trainer. Nothing is commanded from this modal.
  */
 @Composable
 fun ExerciseConfigModal(
@@ -47,6 +50,8 @@ fun ExerciseConfigModal(
     onConfirm: (ExerciseConfig) -> Unit,
     onDismiss: () -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
+    // No default: a caller that forgot it would silently get the widest (Trainer+) ceiling.
+    planningMaxWeightPerCableKg: Float,
 ) {
     var config by remember { mutableStateOf(initialConfig) }
 
@@ -108,6 +113,7 @@ fun ExerciseConfigModal(
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
+                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                             )
 
                             ProgramMode.TUT -> TutConfigPanel(
@@ -121,6 +127,7 @@ fun ExerciseConfigModal(
                                 },
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
+                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                             )
 
                             ProgramMode.Pump -> PumpConfigPanel(
@@ -128,6 +135,7 @@ fun ExerciseConfigModal(
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
+                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                             )
 
                             ProgramMode.EccentricOnly -> EccentricConfigPanel(
@@ -137,6 +145,7 @@ fun ExerciseConfigModal(
                                 onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
+                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
                             )
 
                             ProgramMode.Echo -> EchoConfigPanel(
@@ -232,13 +241,20 @@ private fun MetaChip(label: String, value: String) {
 // ==================== MODE-SPECIFIC PANELS ====================
 
 @Composable
-private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
+private fun OldSchoolConfigPanel(
+    weight: Float,
+    onWeightChange: (Float) -> Unit,
+    planningMaxWeightPerCableKg: Float,
+    prWeight: Float? = null,
+    stepKg: Float = 2.5f,
+) {
     WeightStepper(
         weight = weight,
         onWeightChange = onWeightChange,
         label = stringResource(Res.string.starting_weight),
         prWeight = prWeight,
         step = stepKg,
+        maxWeight = planningMaxWeightPerCableKg,
     )
     ModeInfoCard(
         title = stringResource(Res.string.mode_old_school),
@@ -252,10 +268,18 @@ private fun TutConfigPanel(
     onWeightChange: (Float) -> Unit,
     isBeastMode: Boolean,
     onBeastModeChange: (Boolean) -> Unit,
+    planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+        maxWeight = planningMaxWeightPerCableKg,
+    )
 
     // Beast Mode Toggle
     Row(
@@ -311,8 +335,21 @@ private fun TutConfigPanel(
 }
 
 @Composable
-private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+private fun PumpConfigPanel(
+    weight: Float,
+    onWeightChange: (Float) -> Unit,
+    planningMaxWeightPerCableKg: Float,
+    prWeight: Float? = null,
+    stepKg: Float = 2.5f,
+) {
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+        maxWeight = planningMaxWeightPerCableKg,
+    )
     ModeInfoCard(
         title = stringResource(Res.string.config_mode_pump_title),
         description = stringResource(Res.string.config_mode_pump_desc),
@@ -325,10 +362,18 @@ private fun EccentricConfigPanel(
     onWeightChange: (Float) -> Unit,
     eccentricPercent: Int,
     onEccentricPercentChange: (Int) -> Unit,
+    planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+        maxWeight = planningMaxWeightPerCableKg,
+    )
     EccentricSlider(
         percent = eccentricPercent,
         onPercentChange = onEccentricPercentChange,
