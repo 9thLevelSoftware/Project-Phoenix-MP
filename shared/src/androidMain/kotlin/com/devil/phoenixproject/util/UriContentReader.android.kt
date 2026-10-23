@@ -3,8 +3,9 @@ package com.devil.phoenixproject.util
 import android.content.Context
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import org.koin.java.KoinJavaComponent.getKoin
 import java.io.ByteArrayOutputStream
@@ -15,11 +16,13 @@ private val log = Logger.withTag("UriContentReader")
 /**
  * Android implementation: reads content from a `content://` URI or a plain file path.
  * Uses the Application [Context] retrieved from Koin (registered by the Android platform module).
+ * Cancelling the caller interrupts the reading thread, so a stream that honours interrupts
+ * stops early, and the cancellation is rethrown rather than mapped to null / Unreadable.
  */
 actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Dispatchers.IO) {
     try {
         openUriOrPath(uriOrPath)?.use { stream ->
-            stream.bufferedReader().readText()
+            runInterruptible { stream.bufferedReader().readText() }
         }
     } catch (e: CancellationException) {
         throw e
@@ -31,7 +34,7 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
 
 actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): BoundedUriContent = withContext(Dispatchers.IO) {
     try {
-        openUriOrPath(uriOrPath)?.use { stream -> readUpTo(stream, maxBytes) } ?: BoundedUriContent.Unreadable
+        openUriOrPath(uriOrPath)?.use { stream -> runInterruptible { readUpTo(stream, maxBytes) } } ?: BoundedUriContent.Unreadable
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
