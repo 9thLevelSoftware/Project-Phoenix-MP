@@ -395,22 +395,203 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
-    fun `issue 764 a recovery or staging file beside the conflict blocks the recovery before probing`() {
-        listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.STAGING).forEach { extra ->
+    fun `issue 764 a staging file beside the conflict blocks the recovery before probing`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.STAGING),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+            ),
+        )
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> {
+            DatabaseFileMigrationCoordinator(operations).prepareTarget()
+        }
+
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertTrue(operations.calls.none { it.startsWith("probe") || it.startsWith("quarantine") })
+        assertEquals(
+            setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.STAGING),
+            operations.artifacts(),
+        )
+    }
+
+    @Test
+    fun `issue 1343 a leftover recovery file stays with the kept target while an empty legacy file is set aside`() {
+        // The reported layout: a launch migrated vitruvian.db to phoenix.db and kept the recovery
+        // snapshot because post-open validation failed, then an older build recreated an empty
+        // vitruvian.db beside both.
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+            ),
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val preparation = coordinator.prepareTarget()
+
+        assertFalse(preparation.migratedThisLaunch)
+        assertTrue(preparation.recoveryCleanupDue)
+        assertEquals(listOf(DatabaseArtifact.LEGACY), operations.quarantined)
+        assertEquals(setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY), operations.artifacts())
+        assertEquals(
+            listOf(
+                "lock:start", "inspect", "probe:LEGACY", "probe:TARGET", "quarantine:LEGACY", "inspect",
+                "validate:TARGET", "lock:end",
+            ),
+            operations.calls,
+        )
+
+        // The ordinary target-plus-recovery launch then removes the recovery once the target validated.
+        coordinator.targetValidated(preparation)
+        assertEquals(setOf(DatabaseArtifact.TARGET), operations.artifacts())
+        assertTrue(operations.calls.contains("delete:RECOVERY"))
+    }
+
+    @Test
+    fun `issue 1343 two empty candidates beside a leftover recovery keep the target and its recovery`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+            ),
+        )
+
+        val preparation = DatabaseFileMigrationCoordinator(operations).prepareTarget()
+
+        assertTrue(preparation.recoveryCleanupDue)
+        assertEquals(listOf(DatabaseArtifact.LEGACY), operations.quarantined)
+        assertEquals(setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY), operations.artifacts())
+        assertFalse(operations.calls.contains("probe:RECOVERY"))
+    }
+
+    @Test
+    fun `issue 1343 an empty target and its empty recovery are set aside before a legacy database with data migrates`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+                DatabaseArtifact.RECOVERY to CandidateContent.EMPTY,
+            ),
+        )
+
+        val preparation = DatabaseFileMigrationCoordinator(operations).prepareTarget()
+
+        assertTrue(preparation.migratedThisLaunch)
+        // The recovery moves before the target: a target left behind by a failure is resolved again
+        // on the next launch, while a recovery left beside the legacy file would fail that file's
+        // migration fingerprint check on every launch.
+        assertEquals(listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.TARGET), operations.quarantined)
+        val firstMutation = operations.calls.indexOfFirst { it.startsWith("quarantine") }
+        assertTrue(operations.calls.indexOf("probe:LEGACY") < firstMutation)
+        assertTrue(operations.calls.indexOf("probe:TARGET") < firstMutation)
+        assertTrue(operations.calls.indexOf("probe:RECOVERY") < firstMutation)
+        assertTrue(operations.calls.contains("move:LEGACY:TARGET"))
+        // The legacy migration created a fresh recovery copy of its own.
+        assertEquals(setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY), operations.artifacts())
+    }
+
+    @Test
+    fun `issue 1343 a recovery file that is not provably empty keeps an empty target conflict fail closed`() {
+        listOf(CandidateContent.HAS_USER_DATA, CandidateContent.UNINSPECTABLE).forEach { recovery ->
             val operations = FakeDatabaseFileOperations(
-                artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, extra),
+                artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
                 contents = mapOf(
-                    DatabaseArtifact.LEGACY to CandidateContent.EMPTY,
-                    DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+                    DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                    DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+                    DatabaseArtifact.RECOVERY to recovery,
                 ),
             )
 
-            assertFailsWith<DatabaseFileMigrationException> {
+            val failure = assertFailsWith<DatabaseFileMigrationException> {
                 DatabaseFileMigrationCoordinator(operations).prepareTarget()
             }
 
-            assertTrue(operations.calls.none { it.startsWith("probe") || it.startsWith("quarantine") })
+            assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code, "$recovery")
+            assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET, failure.diagnosticReason)
+            assertTrue(operations.quarantined.isEmpty(), "$recovery moved a file")
+            assertEquals(
+                setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+                operations.artifacts(),
+            )
         }
+    }
+
+    @Test
+    fun `issue 1343 a leftover recovery file is not probed when both candidates hold data`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.TARGET to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.RECOVERY to CandidateContent.EMPTY,
+            ),
+        )
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> {
+            DatabaseFileMigrationCoordinator(operations).prepareTarget()
+        }
+
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertFalse(operations.calls.contains("probe:RECOVERY"))
+        assertTrue(operations.quarantined.isEmpty())
+        assertEquals(
+            setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            operations.artifacts(),
+        )
+    }
+
+    @Test
+    fun `issue 1343 a failed recovery set-aside keeps the fail-closed error and the next launch finishes it`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            failOnceAt = "quarantine:RECOVERY",
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+                DatabaseArtifact.RECOVERY to CandidateContent.EMPTY,
+            ),
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> { coordinator.prepareTarget() }
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertEquals(
+            setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            operations.artifacts(),
+        )
+
+        val preparation = coordinator.prepareTarget()
+        assertTrue(preparation.migratedThisLaunch)
+        assertEquals(listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.TARGET), operations.quarantined)
+    }
+
+    @Test
+    fun `issue 1343 a target set-aside that fails after its recovery moved is resolved again on the next launch`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            failOnceAt = "quarantine:TARGET",
+            contents = mapOf(
+                DatabaseArtifact.LEGACY to CandidateContent.HAS_USER_DATA,
+                DatabaseArtifact.TARGET to CandidateContent.EMPTY,
+                DatabaseArtifact.RECOVERY to CandidateContent.EMPTY,
+            ),
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> { coordinator.prepareTarget() }
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        // Only the recovery moved; the legacy/target pair is a conflict the next launch resolves.
+        assertEquals(setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET), operations.artifacts())
+
+        val preparation = coordinator.prepareTarget()
+        assertTrue(preparation.migratedThisLaunch)
+        assertEquals(listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.TARGET), operations.quarantined)
+        assertTrue(operations.calls.contains("move:LEGACY:TARGET"))
     }
 
     @Test
