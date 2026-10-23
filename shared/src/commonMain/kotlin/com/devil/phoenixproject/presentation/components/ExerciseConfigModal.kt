@@ -19,7 +19,6 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -51,8 +50,8 @@ fun ExerciseConfigModal(
     onConfirm: (ExerciseConfig) -> Unit,
     onDismiss: () -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
-    // Same offline ceiling as ExerciseEditBottomSheet: widest hardware until a model is known.
-    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    // No default: a caller that forgot it would silently get the widest (Trainer+) ceiling.
+    planningMaxWeightPerCableKg: Float,
 ) {
     var config by remember { mutableStateOf(initialConfig) }
 

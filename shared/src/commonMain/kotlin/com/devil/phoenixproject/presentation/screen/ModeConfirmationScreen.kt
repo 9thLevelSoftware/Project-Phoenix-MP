@@ -19,7 +19,6 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.presentation.util.programModeShortLabel
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
@@ -57,7 +56,8 @@ fun ModeConfirmationScreen(
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
     // Same offline ceiling as the routine/exercise editors. The caller passes
     // CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel).
-    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    // No default, so a new caller cannot fall back to the widest (Trainer+) ceiling.
+    planningMaxWeightPerCableKg: Float,
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -281,7 +281,7 @@ private fun ConfigurableExerciseCard(
     },
     onConfigUpdated: (ExerciseConfig) -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266
-    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    planningMaxWeightPerCableKg: Float,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
