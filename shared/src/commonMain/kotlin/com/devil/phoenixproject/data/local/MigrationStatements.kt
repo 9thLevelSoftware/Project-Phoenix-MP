@@ -1300,14 +1300,18 @@ WHERE gs.rowid = (
         "CREATE INDEX IF NOT EXISTS idx_routine_recovery_profile ON RoutineRecovery(profile_id, expires_at)",
     )
 
-    // Migration 58: profile-scoped custom equipment names (Issue #1227) and
-    // Polar H10 multi-tier telemetry persistence. Mirrors 58.sqm exactly.
+    // Migration 58: profile-scoped custom equipment names (Issue #1227).
+    // Mirrors 58.sqm exactly.
     58 -> listOf(
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_json TEXT NOT NULL DEFAULT '{\"version\":1,\"items\":[]}'",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_updated_at INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_local_generation INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_server_revision INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_dirty INTEGER NOT NULL DEFAULT 0",
+    )
+
+    // Migration 59: Polar H10 multi-tier telemetry persistence. Mirrors 59.sqm exactly.
+    59 -> listOf(
         "ALTER TABLE MetricSample ADD COLUMN heartRateBpm INTEGER",
         "ALTER TABLE MetricSample ADD COLUMN rrIntervalMs REAL",
         "ALTER TABLE MetricSample ADD COLUMN torsoPitchDeg REAL",

@@ -155,7 +155,7 @@ class PolarH10PersistenceTest {
         assertEquals(123456789L, ecgSeg.sensorTimestampNs)
         assertEquals("150,250,350,450", ecgSeg.samplesUvCsv)
 
-        // 7. Post-workout cooldown: subsequent beats insert directly to DB without buffering
+        // 7. Post-workout cooldown: subsequent beats are buffered in memory to prevent autocommit storm and flushed when cooldown ends
         manager.triggerCooldown(sessionId)
         val cooldownBeat = PolarHrMeasurement(
             hr = 130,
@@ -164,7 +164,10 @@ class PolarH10PersistenceTest {
         )
         manager.processRrIntervals(cooldownBeat)
 
+        assertEquals(1, manager.getBufferedBeatSamplesForTesting().size)
+        manager.stopCooldown()
         assertEquals(0, manager.getBufferedBeatSamplesForTesting().size)
+
         val beatRowsDuringCooldown = database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
         assertEquals(3, beatRowsDuringCooldown.size)
         assertEquals(130L, beatRowsDuringCooldown[2].hrBpm)

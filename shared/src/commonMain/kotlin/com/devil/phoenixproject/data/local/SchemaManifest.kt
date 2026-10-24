@@ -1131,7 +1131,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // MetricSample -- initial schema, full shape with Polar telemetry (migration 58)
+    // MetricSample -- initial schema, full shape with Polar telemetry (migration 59)
     SchemaTableOperation(
         table = "MetricSample",
         createSql = """
@@ -1160,7 +1160,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // PolarBeatSample -- migration 58
+    // PolarBeatSample -- migration 59
     SchemaTableOperation(
         table = "PolarBeatSample",
         createSql = """
@@ -1180,7 +1180,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // PolarEcgSegment -- migration 58
+    // PolarEcgSegment -- migration 59
     SchemaTableOperation(
         table = "PolarEcgSegment",
         createSql = """
@@ -2008,10 +2008,10 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
 
-    // ── PolarBeatSample (migration 58) ──────────────────────────────────
+    // ── PolarBeatSample (migration 59) ──────────────────────────────────
     SchemaIndexOperation("idx_polar_beat_sample_session_ts", "CREATE INDEX IF NOT EXISTS idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs)"),
 
-    // ── PolarEcgSegment (migration 58) ──────────────────────────────────
+    // ── PolarEcgSegment (migration 59) ──────────────────────────────────
     SchemaIndexOperation("idx_polar_ecg_segment_session_wall", "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs)"),
 
     // ── PersonalRecord ──────────────────────────────────────────────────

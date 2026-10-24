@@ -47,8 +47,6 @@ import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PolarAccSample
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.presentation.util.formatRmssdMs
-import com.devil.phoenixproject.presentation.util.formatRrMs
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -76,19 +74,7 @@ fun PolarH10SettingsCard(
     val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
     val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
 
-    var isEcgEnabled by remember { mutableStateOf(false) }
-    var isAccEnabled by remember { mutableStateOf(false) }
 
-    // Sync switch states when connection is lost
-    LaunchedEffect(connectionState) {
-        if (connectionState !is ConnectionState.Connected) {
-            isEcgEnabled = false
-            isAccEnabled = false
-        }
-    }
-
-    val latestEcgSampleUv = if (isEcgEnabled) latestEcg?.samplesMicrovolts?.lastOrNull() else null
-    val latestAccSample = if (isAccEnabled) latestAcc?.samples?.lastOrNull() else null
 
     Card(
         modifier = modifier
@@ -126,7 +112,7 @@ fun PolarH10SettingsCard(
                         Icon(
                             Icons.Default.Favorite,
                             contentDescription = "Polar H10",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -472,79 +458,9 @@ fun PolarH10SettingsCard(
                             ) {
                                 Text("Reset Tare")
                             }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(Spacing.small))
-
-                    // Stream Testing Toggles
-                    Text(
-                        "Live Telemetry Streams (Testing)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // 130 Hz ECG toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("130 Hz ECG Stream", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text(
-                                if (isEcgEnabled && latestEcgSampleUv != null) {
-                                    "Active: ${latestEcgSampleUv} µV"
-                                } else {
-                                    "14-bit microvolt voltage stream"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isEcgEnabled) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = isEcgEnabled,
-                            onCheckedChange = { enable ->
-                                isEcgEnabled = enable
-                                scope.launch {
-                                    if (enable) polarBleManager.startEcgStream() else polarBleManager.stopEcgStream()
-                                }
-                            },
-                        )
-                    }
-
-                    // 50 Hz ACC toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("50 Hz Chest ACC Stream", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text(
-                                if (isAccEnabled && latestAccSample != null) {
-                                    "X: ${latestAccSample?.xMg} Y: ${latestAccSample?.yMg} Z: ${latestAccSample?.zMg} mG"
-                                } else {
-                                    "16-bit ±8G tri-axial chest acceleration"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isAccEnabled) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = isAccEnabled,
-                            onCheckedChange = { enable ->
-                                isAccEnabled = enable
-                                scope.launch {
-                                    if (enable) polarBleManager.startAccStream() else polarBleManager.stopAccStream()
-                                }
-                            },
-                        )
-                    }
+                                   }
                 }
+            }
             }
         }
     }

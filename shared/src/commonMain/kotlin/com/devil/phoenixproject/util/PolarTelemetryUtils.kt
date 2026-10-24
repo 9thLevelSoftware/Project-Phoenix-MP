@@ -120,12 +120,36 @@ object PolarTelemetryUtils {
     }
 
     /**
+     * Computes rolling RMSSD (Root Mean Square of Successive Differences) in milliseconds
+     * over a sliding time window (default 60 seconds).
+     * Filters beats by the sliding window and delegates to canonical [calculateRmssdFromBeats].
+     */
+    fun computeRollingRmssd(
+        beats: List<PolarRrBeat>,
+        windowMs: Long = 60_000L,
+        currentTimeMs: Long,
+    ): Double? {
+        if (beats.size < 2) return null
+        val windowStart = currentTimeMs - windowMs
+        val windowBeats = beats.filter { it.timestampMs in windowStart..currentTimeMs }
+        return calculateRmssdFromBeats(windowBeats)
+    }
+
+    /**
      * Format milliseconds to a clean integer string representation.
      */
     fun formatMs(ms: Double?): String = ms?.let { "${it.roundToInt()} ms" } ?: "—"
-    fun formatRrMs(rrMs: Double?): String = formatMs(rrMs)
-    fun formatRmssdMs(rmssd: Double?): String = formatMs(rmssd)
 }
+
+/**
+ * Computes rolling RMSSD (Root Mean Square of Successive Differences) in milliseconds
+ * over a sliding time window (default 60 seconds).
+ */
+fun computeRollingRmssd(
+    beats: List<PolarRrBeat>,
+    windowMs: Long = 60_000L,
+    currentTimeMs: Long,
+): Double? = PolarTelemetryUtils.computeRollingRmssd(beats, windowMs, currentTimeMs)
 
 /**
  * Stateful exponential moving average (EMA) low-pass filter for 50 Hz Polar ACC stream.

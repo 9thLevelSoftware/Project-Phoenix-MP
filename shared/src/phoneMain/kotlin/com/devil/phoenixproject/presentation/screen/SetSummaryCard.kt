@@ -47,7 +47,6 @@ import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.util.KmpUtils
-import org.koin.compose.koinInject
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -111,11 +110,11 @@ fun SetSummaryCard(
     // summary preference, so this card's auto-continue countdown must be inert there.
     // An explicit tap (onContinue) still proceeds. Non-terminal summaries are unchanged.
     isTerminalSummary: Boolean = false,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    polarBleManager: PolarH10BleManager? = null,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
-    val isCooldownActive by polarBleManager.isCooldownActive.collectAsState()
+    val isCooldownActive = polarBleManager?.isCooldownActive?.collectAsState()?.value ?: false
     val effectiveHoldAutoContinue = holdAutoContinue || isCooldownActive
 
     // Issue #142: Use a unique key derived from the summary to ensure countdown resets for each new set.
@@ -1040,7 +1039,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
-                                        .background(velocityZoneColor(zone), RoundedCornerShape(2.dp)),
+                                        .background(velocityZoneColor(zone), MaterialTheme.shapes.extraSmall),
                                 )
                                 Text(
                                     "${velocityZoneLabel(zone)}: $count",

@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -143,6 +144,7 @@ fun WorkoutTab(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs. The host
     // passes the active profile's overlay; the empty default is for previews/tests only.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
+    polarBleManager: PolarH10BleManager? = null,
 ) {
     val connectionState = state.connectionState
     val workoutState = state.workoutState
@@ -298,6 +300,7 @@ fun WorkoutTab(
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
                             machineTeardownState = machineTeardownState,
+                            polarBleManager = polarBleManager,
                         )
                     }
 
@@ -424,6 +427,7 @@ fun WorkoutTab(
                             workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
+                            polarBleManager = polarBleManager,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
                                 // Just Lift set. If the user already decided, or the set isn't a
@@ -942,6 +946,7 @@ private fun CompletedCard(
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
     machineTeardownState: MachineTeardownState,
+    polarBleManager: PolarH10BleManager? = null,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1032,7 +1037,10 @@ private fun CompletedCard(
             }
 
             // Polar H10 Session Analytics & Cooldown Protocol (rendered below exercise cards, above action button)
-            PolarSessionAnalyticsCard(modifier = Modifier.padding(vertical = Spacing.small))
+            PolarSessionAnalyticsCard(
+                modifier = Modifier.padding(vertical = Spacing.small),
+                polarBleManager = polarBleManager,
+            )
 
             if (hasMoreExercises && nextExercise != null) {
                 Button(

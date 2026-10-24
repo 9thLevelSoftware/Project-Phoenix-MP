@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -133,6 +134,7 @@ fun HistoryTab(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
+    polarBleManager: PolarH10BleManager? = null,
     modifier: Modifier = Modifier,
 ) {
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
@@ -229,6 +231,7 @@ fun HistoryTab(
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
+                                polarBleManager = polarBleManager,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
@@ -245,6 +248,7 @@ fun HistoryTab(
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
+                                polarBleManager = polarBleManager,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
                                 // History "Delete All Sets" path also
@@ -275,6 +279,7 @@ private fun WorkoutHistoryCard(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
+    polarBleManager: PolarH10BleManager? = null,
     onDelete: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -497,6 +502,7 @@ private fun WorkoutHistoryCard(
                             summaryCountdownSeconds = 0, // History view - no auto-continue
                             isHistoryView = true,
                             savedRpe = session.rpe,
+                            polarBleManager = polarBleManager,
                             // #972: the tag section doubles as the label editor on History —
                             // it shows the stored name with Change/Clear once a segment is
                             // labeled, and the Tag prompt when it is not.
@@ -567,6 +573,8 @@ private fun WorkoutHistoryCard(
                     PolarSessionAnalyticsCard(
                         sessionId = session.id,
                         session = session,
+                        polarBleManager = polarBleManager,
+                        showCooldown = false,
                     )
                 }
             }
@@ -833,6 +841,7 @@ private fun GroupedRoutineCard(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
+    polarBleManager: PolarH10BleManager? = null,
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
     // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
@@ -1117,6 +1126,7 @@ private fun GroupedRoutineCard(
                                 summaryCountdownSeconds = 0, // History view - no auto-continue
                                 isHistoryView = true,
                                 savedRpe = session.rpe,
+                                polarBleManager = polarBleManager,
                                 // #972: label editing, same treatment as the single-session card.
                                 isJustLiftTaggingEnabled = canEditJustLiftLabel,
                                 taggedExerciseName = session.exerciseName,
@@ -1194,6 +1204,8 @@ private fun GroupedRoutineCard(
                         PolarSessionAnalyticsCard(
                             sessionId = polarSession.id,
                             session = polarSession,
+                            polarBleManager = polarBleManager,
+                            showCooldown = false,
                         )
                     }
                 }

@@ -549,7 +549,7 @@ fun ActiveWorkoutScreen(
             }
 
             // Polar H10 Live Telemetry Strip (visible when connected)
-            PolarH10WorkoutStrip()
+            PolarH10WorkoutStrip(polarBleManager = viewModel.polarBleManager)
 
             WorkoutTab(
                 state = workoutUiState,
@@ -561,6 +561,7 @@ fun ActiveWorkoutScreen(
                 personalRecordRepository = viewModel.personalRecordRepository,
                 userPreferences = userPreferences,
                 customEquipmentOverlay = customEquipmentOverlay,
+                polarBleManager = viewModel.polarBleManager,
             )
         }
     }

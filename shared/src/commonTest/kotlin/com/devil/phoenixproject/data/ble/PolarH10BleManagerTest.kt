@@ -79,11 +79,8 @@ class PolarH10BleManagerTest {
         assertTrue(manager.scannedDevices.value.isEmpty())
         assertNull(manager.batteryLevel.value)
         assertNull(manager.hrMeasurement.value)
-        assertNull(manager.rrClockTimestampMs.value)
         assertNull(manager.latestEcg.value)
         assertNull(manager.latestAcc.value)
-        assertFalse(manager.isEcgActive)
-        assertFalse(manager.isAccActive)
     }
 
     // ==================== Chained RR-Interval Clock Tests ====================
@@ -120,7 +117,6 @@ class PolarH10BleManagerTest {
         assertEquals(850.0, collectedBeats[1].rrIntervalMs)
         assertEquals(100_000L, collectedBeats[1].timestampMs)
         assertEquals(72, collectedBeats[1].hr)
-        assertEquals(100_000L, manager.rrClockTimestampMs.value)
 
         // Packet 2 arrives at t = 100,920 ms (packet transport delayed by 20ms jitter)
         // Previous beat was at 100,000 ms.
@@ -138,7 +134,6 @@ class PolarH10BleManagerTest {
         assertEquals(900.0, collectedBeats[2].rrIntervalMs)
         assertEquals(100_900L, collectedBeats[2].timestampMs)
         assertEquals(70, collectedBeats[2].hr)
-        assertEquals(100_900L, manager.rrClockTimestampMs.value)
 
         collectJob.cancel()
         testScope.cancel()
@@ -179,17 +174,19 @@ class PolarH10BleManagerTest {
         // Since gap (65,000 - 50,000 = 15,000 ms) > 5,000 ms, clock re-anchors to 65,000 ms
         assertEquals(2, collectedBeats.size)
         assertEquals(65_000L, collectedBeats[1].timestampMs)
-        assertEquals(65_000L, manager.rrClockTimestampMs.value)
 
         collectJob.cancel()
         testScope.cancel()
     }
 
     @Test
-    fun `processRrIntervals ignores empty RR lists without modifying clock`() {
+    fun `processRrIntervals ignores empty RR lists without modifying clock`() = kotlinx.coroutines.test.runTest {
         val manager = PolarH10BleManager()
+        val beats = mutableListOf<com.devil.phoenixproject.domain.model.PolarRrBeat>()
+        val job = launch { manager.rrBeats.collect { beats.add(it) } }
         manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = emptyList()))
-        assertNull(manager.rrClockTimestampMs.value)
+        assertTrue(beats.isEmpty())
+        job.cancel()
     }
 
     // ==================== Session Recording & Cooldown Tests ====================
@@ -408,7 +405,6 @@ class PolarH10BleManagerTest {
         )
         assertEquals(1, collectedBeats.size)
         assertEquals(135, manager.hrMeasurement.value?.hr)
-        assertEquals(100_000L, manager.rrClockTimestampMs.value)
 
         // 2. User removes strap (contactDetected = false, hr = 0)
         simulatedTime += 1000L
@@ -423,7 +419,6 @@ class PolarH10BleManagerTest {
         // No new beat emitted, cached states cleared to null
         assertEquals(1, collectedBeats.size, "Should not emit beats when strap is removed")
         assertNull(manager.hrMeasurement.value, "hrMeasurement should be cleared upon strap removal")
-        assertNull(manager.rrClockTimestampMs.value, "rrClockTimestampMs should be cleared upon strap removal")
 
         collectJob.cancel()
         testScope.cancel()
@@ -449,6 +444,7 @@ class PolarH10BleManagerTest {
         assertEquals(0, manager.cooldownSecondsRemaining.value)
 
         // Reactivate cooldown and verify disconnection terminates it
+        manager.startSessionRecording("session-recovery", "WORKING_SET")
         manager.triggerCooldown("session-recovery", forceRestart = true)
         assertTrue(manager.isCooldownActive.value)
 
@@ -602,6 +598,49 @@ class PolarH10BleManagerTest {
         assertNull(manager.latestEcg.value, "ECG must not emit with critical battery")
         assertNull(manager.hrMeasurement.value, "HR must not emit with critical battery")
         assertFalse(manager.isContactDetected.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `recordedSessionId isolation rejects mismatches and cooldown end clears state`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        // Without starting recording, all actions should reject
+        manager.triggerCooldown("session-unrecorded")
+        assertFalse(manager.isCooldownActive.value)
+        manager.endSessionRecording("session-unrecorded")
+        assertFalse(manager.isCooldownActive.value)
+        assertNull(manager.getSessionSummary("session-unrecorded"))
+
+        // Start recording session-A
+        manager.startSessionRecording("session-A", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+
+        // session-B should be rejected
+        assertNull(manager.getSessionSummary("session-B"))
+        manager.triggerCooldown("session-B")
+        assertFalse(manager.isCooldownActive.value)
+        manager.endSessionRecording("session-B")
+        assertFalse(manager.isCooldownActive.value)
+
+        // session-A should succeed
+        val summaryA = manager.getSessionSummary("session-A")
+        assertEquals(140, summaryA?.avgHeartRateBpm)
+
+        manager.triggerCooldown("session-A")
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals("session-A", manager.activeCooldownSessionId.value)
+
+        // Ending cooldown clears state
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+        assertNull(manager.activeCooldownSessionId.value)
+        assertNull(manager.currentRecordingSessionId)
+
+        // Once cooldown ended, further queries reject
+        assertNull(manager.getSessionSummary("session-A"))
 
         testScope.cancel()
     }

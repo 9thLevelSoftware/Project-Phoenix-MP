@@ -24,6 +24,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
@@ -47,7 +48,11 @@ import projectphoenix.shared.generated.resources.Res
  * only guaranteed exit.
  */
 @Composable
-fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel) {
+fun RoutineCompleteScreen(
+    navController: NavController,
+    viewModel: MainViewModel,
+    polarBleManager: PolarH10BleManager? = viewModel.polarBleManager,
+) {
     val routineFlowState by viewModel.routineFlowState.collectAsState()
 
     val completeState = routineFlowState as? RoutineFlowState.Complete
@@ -258,6 +263,8 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                 // Polar H10 Session Analytics & 5-minute recovery cooldown
                 PolarSessionAnalyticsCard(
                     modifier = Modifier.fillMaxWidth(),
+                    polarBleManager = polarBleManager,
+                    workoutRepository = viewModel.workoutRepository,
                 )
             }
 

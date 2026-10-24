@@ -502,7 +502,7 @@ internal fun routineResumeDiscardUiDecision(
 
 class MainViewModel(
     private val bleRepository: BleRepository,
-    private val workoutRepository: WorkoutRepository,
+    val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
     val personalRecordRepository: PersonalRecordRepository,
     private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
@@ -544,21 +544,8 @@ class MainViewModel(
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
-    private val polarBleManager: PolarH10BleManager? = null,
+    val polarBleManager: PolarH10BleManager? = null,
 ) : ViewModel() {
-
-    init {
-        polarBleManager?.let { polar ->
-            viewModelScope.launch {
-                polar.isConnected.collect { connected ->
-                    if (!connected && polar.isCooldownActive.value) {
-                        Logger.w { "Polar H10 disconnected during recovery cooldown: terminating recovery window" }
-                        polar.cancelCooldown()
-                    }
-                }
-            }
-        }
-    }
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
     private val _hapticEvents = MutableSharedFlow<HapticEvent>(

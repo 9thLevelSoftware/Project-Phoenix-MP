@@ -444,21 +444,15 @@ abstract class BaseDataBackupManager(
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
         // native SQLite driver handles large result sets.
         val metrics = mutableListOf<MetricSample>()
+        val polarBeatSamples = mutableListOf<com.devil.phoenixproject.database.PolarBeatSample>()
+        val polarEcgSegments = mutableListOf<com.devil.phoenixproject.database.PolarEcgSegment>()
         if (includeRawTelemetryInBackups) {
             for (session in sessions) {
                 val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
                 metrics.addAll(sessionMetrics)
+                polarBeatSamples.addAll(queries.selectPolarBeatSamplesBySession(session.id).executeAsList())
+                polarEcgSegments.addAll(queries.selectPolarEcgSegmentsBySession(session.id).executeAsList())
             }
-        }
-        val polarBeatSamples = if (includeRawTelemetryInBackups) {
-            queries.selectAllBackupPolarBeatSamples().executeAsList()
-        } else {
-            emptyList()
-        }
-        val polarEcgSegments = if (includeRawTelemetryInBackups) {
-            queries.selectAllBackupPolarEcgSegments().executeAsList()
-        } else {
-            emptyList()
         }
 
         // Full backups retain routine tombstones because historical telemetry keeps
@@ -3247,21 +3241,41 @@ abstract class BaseDataBackupManager(
         })
         writer.write(",")
 
-        val polarBeatSamples = if (includeRawTelemetryInBackups) {
-            queries.selectAllBackupPolarBeatSamples().executeAsList()
-        } else {
-            emptyList()
+        writer.write("\"polarBeatSamples\":[")
+        var firstBeat = true
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionBeats = queries.selectPolarBeatSamplesBySession(session.id).executeAsList()
+                for (beat in sessionBeats) {
+                    if (!firstBeat) writer.write(",")
+                    firstBeat = false
+                    writer.write(json.encodeToString(PolarBeatSampleBackup.serializer(), mapPolarBeatSampleToBackup(beat)))
+                }
+                if (sessionBeats.isNotEmpty()) {
+                    writer.flush()
+                }
+            }
         }
-        writeJsonArray(writer, "polarBeatSamples", polarBeatSamples.map { json.encodeToString(PolarBeatSampleBackup.serializer(), mapPolarBeatSampleToBackup(it)) })
-        writer.write(",")
+        writer.write("],")
+        writer.flush()
 
-        val polarEcgSegments = if (includeRawTelemetryInBackups) {
-            queries.selectAllBackupPolarEcgSegments().executeAsList()
-        } else {
-            emptyList()
+        writer.write("\"polarEcgSegments\":[")
+        var firstEcg = true
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionEcgs = queries.selectPolarEcgSegmentsBySession(session.id).executeAsList()
+                for (ecg in sessionEcgs) {
+                    if (!firstEcg) writer.write(",")
+                    firstEcg = false
+                    writer.write(json.encodeToString(PolarEcgSegmentBackup.serializer(), mapPolarEcgSegmentToBackup(ecg)))
+                }
+                if (sessionEcgs.isNotEmpty()) {
+                    writer.flush()
+                }
+            }
         }
-        writeJsonArray(writer, "polarEcgSegments", polarEcgSegments.map { json.encodeToString(PolarEcgSegmentBackup.serializer(), mapPolarEcgSegmentToBackup(it)) })
-        writer.write(",")
+        writer.write("],")
+        writer.flush()
 
         val progressionEvents = queries.selectAllProgressionEventsSync().executeAsList()
         writeJsonArray(writer, "progressionEvents", progressionEvents.map { json.encodeToString(ProgressionEventBackup.serializer(), mapProgressionEventToBackup(it)) })

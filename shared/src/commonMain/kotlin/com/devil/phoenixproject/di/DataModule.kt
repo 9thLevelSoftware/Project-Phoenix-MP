@@ -1,4 +1,4 @@
-﻿package com.devil.phoenixproject.di
+package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.csv.CsvImportInbox

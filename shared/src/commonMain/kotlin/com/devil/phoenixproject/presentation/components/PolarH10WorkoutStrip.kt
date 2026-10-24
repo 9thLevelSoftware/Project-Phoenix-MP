@@ -56,12 +56,10 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PolarAccSample
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.presentation.util.computeRollingRmssd
-import com.devil.phoenixproject.presentation.util.formatRmssdMs
-import com.devil.phoenixproject.presentation.util.formatRrMs
+import com.devil.phoenixproject.util.PolarTelemetryUtils
+import com.devil.phoenixproject.util.computeRollingRmssd
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -70,8 +68,9 @@ private const val MAX_ECG_DISPLAY_SAMPLES = 260 // ~2 seconds at 130 Hz
 @Composable
 fun PolarH10WorkoutStrip(
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    polarBleManager: PolarH10BleManager? = null,
 ) {
+    if (polarBleManager == null) return
     val connectionState by polarBleManager.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
 
@@ -162,7 +161,7 @@ private fun PolarH10WorkoutStripContent(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         tonalElevation = 4.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
@@ -215,7 +214,7 @@ private fun PolarH10WorkoutStripContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = formatRrMs(latestRrMs),
+                        text = PolarTelemetryUtils.formatMs(latestRrMs),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -231,7 +230,7 @@ private fun PolarH10WorkoutStripContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = formatRmssdMs(rollingRmssd),
+                        text = PolarTelemetryUtils.formatMs(rollingRmssd),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -247,9 +246,9 @@ private fun PolarH10WorkoutStripContent(
                     .weight(1f)
                     .height(38.dp)
                     .padding(horizontal = 6.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(Color(0xFF0D1B2A))
-                    .border(0.5.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp)),
+                    .border(0.5.dp, Color(0xFF1E3A5F), MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 EcgWaveformCanvas(
@@ -316,7 +315,7 @@ private fun PolarH10WorkoutStripContent(
 
                 Surface(
                     onClick = { polarBleManager.tareCurrentPosture() },
-                    shape = RoundedCornerShape(6.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
                 ) {

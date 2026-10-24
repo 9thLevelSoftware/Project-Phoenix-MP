@@ -1303,18 +1303,18 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `migration 58 adds Polar tables and columns to MetricSample and WorkoutSession`() {
+    fun `migration 59 adds Polar tables and columns to MetricSample and WorkoutSession`() {
         listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-            buildSchemaAtVersion(driver, 58)
+            buildSchemaAtVersion(driver, 59)
             assertEquals(false, getTables(driver).contains("PolarBeatSample"), scenario)
             assertEquals(false, getTables(driver).contains("PolarEcgSegment"), scenario)
 
             if (fallback) {
-                val results = applyMigrationResilient(driver, 58)
+                val results = applyMigrationResilient(driver, 59)
                 assertEquals(true, results.all { it.success }, scenario)
             } else {
-                PhoenixDatabase.Schema.migrate(driver, 58, 59)
+                PhoenixDatabase.Schema.migrate(driver, 59, 60)
             }
 
             assertEquals(true, getTables(driver).contains("PolarBeatSample"), scenario)
@@ -1331,7 +1331,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 59L
+        private const val EXPECTED_SCHEMA_VERSION = 60L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each

@@ -43,7 +43,6 @@ import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.Spacing
-import org.koin.compose.koinInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -66,20 +65,20 @@ fun PolarSessionAnalyticsCard(
     session: WorkoutSession? = null,
     showCooldown: Boolean = true,
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager = koinInject(),
-    workoutRepository: WorkoutRepository = koinInject(),
+    polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
-    val connectionState by polarBleManager.connectionState.collectAsState()
-    val isCooldownActive by polarBleManager.isCooldownActive.collectAsState()
-    val cooldownSecondsRemaining by polarBleManager.cooldownSecondsRemaining.collectAsState()
-    val cooldownHrr60 by polarBleManager.cooldownHrr60.collectAsState()
-    val cooldownHrr300 by polarBleManager.cooldownHrr300.collectAsState()
-    val cooldownStartHr by polarBleManager.cooldownStartHeartRate.collectAsState()
-    val latestSummary by polarBleManager.latestSessionSummary.collectAsState()
-    val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
-    val activeCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
+    val connectionState = polarBleManager?.connectionState?.collectAsState()?.value ?: ConnectionState.Disconnected
+    val isCooldownActive = polarBleManager?.isCooldownActive?.collectAsState()?.value ?: false
+    val cooldownSecondsRemaining = polarBleManager?.cooldownSecondsRemaining?.collectAsState()?.value ?: 0
+    val cooldownHrr60 = polarBleManager?.cooldownHrr60?.collectAsState()?.value
+    val cooldownHrr300 = polarBleManager?.cooldownHrr300?.collectAsState()?.value
+    val cooldownStartHr = polarBleManager?.cooldownStartHeartRate?.collectAsState()?.value
+    val latestSummary = polarBleManager?.latestSessionSummary?.collectAsState()?.value
+    val hrMeasurement = polarBleManager?.hrMeasurement?.collectAsState()?.value
+    val activeCooldownSessionId = polarBleManager?.activeCooldownSessionId?.collectAsState()?.value
 
-    val resolvedSessionId = sessionId ?: session?.id ?: activeCooldownSessionId ?: polarBleManager.currentRecordingSessionId
+    val resolvedSessionId = sessionId ?: session?.id ?: activeCooldownSessionId ?: polarBleManager?.currentRecordingSessionId
     val fallbackSummary = remember(session, resolvedSessionId) {
         session?.let { s ->
             if (s.avgHeartRateBpm != null || s.maxHeartRateBpm != null || s.minHeartRateBpm != null ||
@@ -98,7 +97,7 @@ fun PolarSessionAnalyticsCard(
                     maxTorsoRollDeg = s.maxTorsoRollDeg,
                 )
             } else null
-        } ?: resolvedSessionId?.let { polarBleManager.getSessionSummary(it) }
+        } ?: resolvedSessionId?.let { polarBleManager?.getSessionSummary(it) }
     }
 
     val rawSummary = if (resolvedSessionId != null && latestSummary?.sessionId == resolvedSessionId) {
@@ -134,8 +133,8 @@ fun PolarSessionAnalyticsCard(
         }
     }
 
-    LaunchedEffect(resolvedSessionId) {
-        if (resolvedSessionId != null) {
+    LaunchedEffect(resolvedSessionId, workoutRepository) {
+        if (resolvedSessionId != null && workoutRepository != null) {
             try {
                 beatSamples = workoutRepository.getPolarBeatSamplesBySession(resolvedSessionId)
             } catch (e: Exception) {
@@ -165,7 +164,7 @@ fun PolarSessionAnalyticsCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -210,7 +209,7 @@ fun PolarSessionAnalyticsCard(
                         Icon(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = "Polar H10",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -235,7 +234,7 @@ fun PolarSessionAnalyticsCard(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = if (isConnected) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
@@ -363,7 +362,7 @@ fun PolarSessionAnalyticsCard(
             if (showCooldown && (hasRecoveryData || isConnected)) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(
                         containerColor = if (isCooldownActive) {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -410,7 +409,7 @@ fun PolarSessionAnalyticsCard(
                                 val mins = cooldownSecondsRemaining / 60
                                 val secs = cooldownSecondsRemaining % 60
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     color = MaterialTheme.colorScheme.primary,
                                 ) {
                                     Text(
@@ -454,7 +453,7 @@ fun PolarSessionAnalyticsCard(
                                     val isWarning = drop < 12 && cooldownSecondsRemaining <= 240
                                     val tint = if (isWarning) Color(0xFFFF9800) else Color(0xFF4CAF50)
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = MaterialTheme.shapes.small,
                                         color = tint.copy(alpha = 0.15f),
                                         border = BorderStroke(1.dp, tint.copy(alpha = 0.4f)),
                                     ) {
@@ -476,7 +475,7 @@ fun PolarSessionAnalyticsCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
+                                    .clip(MaterialTheme.shapes.extraSmall),
                                 color = MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                             )
@@ -487,7 +486,7 @@ fun PolarSessionAnalyticsCard(
                                 horizontalArrangement = Arrangement.End,
                             ) {
                                 TextButton(
-                                    onClick = { polarBleManager.stopCooldown() },
+                                    onClick = { polarBleManager?.stopCooldown() },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                 ) {
                                     Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -538,7 +537,7 @@ fun PolarSessionAnalyticsCard(
                                     ) {
                                         TextButton(
                                             onClick = {
-                                                resolvedSessionId?.let { polarBleManager.triggerCooldown(it, forceRestart = true) }
+                                                resolvedSessionId?.let { polarBleManager?.triggerCooldown(it, forceRestart = true) }
                                             },
                                         ) {
                                             Icon(
@@ -569,9 +568,9 @@ fun PolarSessionAnalyticsCard(
                                     )
                                     FilledTonalButton(
                                         onClick = {
-                                            resolvedSessionId?.let { polarBleManager.triggerCooldown(it) }
+                                            resolvedSessionId?.let { polarBleManager?.triggerCooldown(it) }
                                         },
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = MaterialTheme.shapes.small,
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                                         modifier = Modifier.wrapContentWidth(),
                                     ) {
@@ -624,7 +623,7 @@ private fun MetricTile(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
@@ -690,7 +689,7 @@ private fun RecoveryChip(
     val tint = if (isWarning) Color(0xFFFF9800) else Color(0xFF4CAF50)
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.small,
         color = tint.copy(alpha = 0.12f),
         border = BorderStroke(1.dp, tint.copy(alpha = 0.35f)),
     ) {
@@ -757,7 +756,7 @@ private fun ContinuousHeartRateTimelineChart(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
@@ -818,7 +817,7 @@ private fun ContinuousHeartRateTimelineChart(
             if (selectedSample != null) {
                 val elapsedSec = ((selectedSample.timestampMs - minTs) / 1000).coerceAtLeast(0)
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -871,7 +870,7 @@ private fun ContinuousHeartRateTimelineChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(150.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(Color(0xFF0F172A))
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -895,6 +894,8 @@ private fun ContinuousHeartRateTimelineChart(
                         )
                     },
             ) {
+                val scrubberLineColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                val scrubberDotColor = MaterialTheme.colorScheme.surface
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -1008,14 +1009,14 @@ private fun ContinuousHeartRateTimelineChart(
                     scrubFraction?.let { fraction ->
                         val scrubX = fraction * w
                         drawLine(
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = scrubberLineColor,
                             start = Offset(scrubX, 0f),
                             end = Offset(scrubX, h),
                             strokeWidth = 1.5.dp.toPx(),
                         )
                         selectedSample?.hrBpm?.let { hr ->
                             val dotY = h - ((hr.toInt() - minHr) / hrRange) * h
-                            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(scrubX, dotY))
+                            drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, dotY))
                             drawCircle(color = Color(0xFFFF5252), radius = 2.5.dp.toPx(), center = Offset(scrubX, dotY))
                         }
                     }
@@ -1080,7 +1081,7 @@ private fun TorsoBiomechanicsVsCableChart(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
@@ -1152,7 +1153,7 @@ private fun TorsoBiomechanicsVsCableChart(
                     selectedSample.position?.toFloat() ?: selectedSample.positionB?.toFloat()
                 }
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1196,7 +1197,7 @@ private fun TorsoBiomechanicsVsCableChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(150.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(Color(0xFF0D1B2A))
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -1220,6 +1221,8 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     },
             ) {
+                val scrubberLineColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                val scrubberDotColor = MaterialTheme.colorScheme.surface
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -1337,14 +1340,14 @@ private fun TorsoBiomechanicsVsCableChart(
                     scrubFraction?.let { fraction ->
                         val scrubX = fraction * w
                         drawLine(
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = scrubberLineColor,
                             start = Offset(scrubX, 0f),
                             end = Offset(scrubX, h),
                             strokeWidth = 1.5.dp.toPx(),
                         )
                         selectedSample?.torsoPitchDeg?.let { pitch ->
                             val pitchY = padTop + (1f - (pitch.toFloat() - minAngle) / angleRange) * plotH
-                            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(scrubX, pitchY))
+                            drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, pitchY))
                             drawCircle(color = Color(0xFFFF9800), radius = 2.5.dp.toPx(), center = Offset(scrubX, pitchY))
                         }
                         val selCablePos = if (selectedSample?.position != null && selectedSample?.positionB != null) {
@@ -1354,7 +1357,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         }
                         selCablePos?.let { pos ->
                             val cableY = padTop + (1f - (pos - minPos) / posRange) * plotH
-                            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(scrubX, cableY))
+                            drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, cableY))
                             drawCircle(color = Color(0xFFAB47BC), radius = 2.5.dp.toPx(), center = Offset(scrubX, cableY))
                         }
                     }
@@ -1401,7 +1404,7 @@ private fun SavedEcgWaveformScrubber(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
@@ -1435,7 +1438,7 @@ private fun SavedEcgWaveformScrubber(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(4.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
                 ) {
                     Text(
@@ -1494,9 +1497,9 @@ private fun SavedEcgWaveformScrubber(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(140.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(Color(0xFF081422))
-                    .border(0.5.dp, Color(0xFF1B3A5A), RoundedCornerShape(8.dp)),
+                    .border(0.5.dp, Color(0xFF1B3A5A), MaterialTheme.shapes.small),
             ) {
                 val windowSlice by produceState<List<Int>>(
                     initialValue = emptyList(),

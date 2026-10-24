@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.util
 
 import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.util.PolarTelemetryUtils
+import com.devil.phoenixproject.util.computeRollingRmssd
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -29,7 +31,7 @@ class PolarRollingTelemetryUtilsTest {
         val rmssd = computeRollingRmssd(beats, windowMs = 60_000L, currentTimeMs = now)
         assertTrue(rmssd != null)
         assertEquals(41.23, rmssd, 0.01)
-        assertEquals("41 ms", formatRmssdMs(rmssd))
+        assertEquals("41 ms", PolarTelemetryUtils.formatMs(rmssd))
     }
 
     @Test
