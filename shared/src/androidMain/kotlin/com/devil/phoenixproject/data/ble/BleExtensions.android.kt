@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.AndroidPeripheral
 import com.juul.kable.Peripheral
 import kotlinx.coroutines.delay
@@ -27,6 +28,7 @@ actual suspend fun Peripheral.requestHighPriority() {
             Logger.w("BleExtensions") { "⚠️ Connection priority request returned false" }
         }
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         Logger.w("BleExtensions") { "❌ Failed to request high connection priority: ${e.message}" }
     }
 }
@@ -44,6 +46,7 @@ actual suspend fun Peripheral.requestMtuIfSupported(mtu: Int): Int? {
         Logger.i("BleExtensions") { "✅ MTU negotiated: $negotiatedMtu bytes (requested: $mtu)" }
         negotiatedMtu
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         Logger.w("BleExtensions") { "❌ MTU negotiation failed: ${e.message}" }
         null
     }
