@@ -103,6 +103,8 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
         val PARENT_KEYS = mapOf(
             "metricSamples" to ("session" to "sessionId"),
             "completedSets" to ("session" to "sessionId"),
+            "polarBeatSamples" to ("session" to "sessionId"),
+            "polarEcgSegments" to ("session" to "sessionId"),
             "routineExercises" to ("routine" to "routineId"),
             "supersets" to ("routine" to "routineId"),
             "plannedSets" to ("routineExercise" to "routineExerciseId"),

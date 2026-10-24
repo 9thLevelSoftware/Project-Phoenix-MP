@@ -35,10 +35,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -48,6 +50,7 @@ import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
+import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
@@ -86,7 +89,12 @@ import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, exerciseRepository: ExerciseRepository) {
+fun ActiveWorkoutScreen(
+    navController: NavController,
+    viewModel: MainViewModel,
+    exerciseRepository: ExerciseRepository,
+    polarBleManager: PolarH10BleManager = koinInject(),
+) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
@@ -120,6 +128,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
     val isRestPaused by viewModel.isRestPaused.collectAsState()
+    val isPolarCooldownActive by polarBleManager.isCooldownActive.collectAsState()
+    val activePolarCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     // Issue #113: Just Lift visual rest countdown
@@ -186,6 +196,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         onDispose {
             safeWordManager.stop()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        polarBleManager.autoReconnectIfRemembered()
     }
 
     LaunchedEffect(Unit) {
@@ -284,7 +298,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Watch for workout completion and navigate back
     // For Just Lift, navigate back when state becomes Idle (after auto-reset)
     // Key only on workoutState to avoid re-triggering on workoutParameters changes
-    LaunchedEffect(workoutState) {
+    LaunchedEffect(workoutState, isPolarCooldownActive, activePolarCooldownSessionId) {
         // Guard against double navigation
         if (hasNavigatedAway) return@LaunchedEffect
 
@@ -293,10 +307,15 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
         when {
             workoutState is WorkoutState.Completed -> {
-                Logger.d { "ActiveWorkoutScreen: Workout completed, navigating back in 2s" }
-                delay(2000)
-                hasNavigatedAway = true
-                navController.navigateUp()
+                val isCooldownRunning = isPolarCooldownActive || activePolarCooldownSessionId != null
+                if (!isCooldownRunning) {
+                    Logger.d { "ActiveWorkoutScreen: Workout completed (no Polar cooldown active), navigating back in 2s" }
+                    delay(2000)
+                    hasNavigatedAway = true
+                    navController.navigateUp()
+                } else {
+                    Logger.d { "ActiveWorkoutScreen: Workout completed with Polar cooldown active; remaining on summary" }
+                }
             }
 
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
@@ -528,6 +547,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
+
+            // Polar H10 Live Telemetry Strip (visible when connected)
+            PolarH10WorkoutStrip()
+
             WorkoutTab(
                 state = workoutUiState,
                 actions = workoutActions,

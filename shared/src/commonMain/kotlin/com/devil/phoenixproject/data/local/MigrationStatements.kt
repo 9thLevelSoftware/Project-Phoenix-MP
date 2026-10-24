@@ -1300,15 +1300,57 @@ WHERE gs.rowid = (
         "CREATE INDEX IF NOT EXISTS idx_routine_recovery_profile ON RoutineRecovery(profile_id, expires_at)",
     )
 
-    // Migration 58: profile-scoped custom equipment names (Issue #1227). Mirrors
-    // 58.sqm exactly: the CUSTOM_EQUIPMENT section columns on UserProfilePreferences.
+    // Migration 58: profile-scoped custom equipment names (Issue #1227) and
+    // Polar H10 multi-tier telemetry persistence. Mirrors 58.sqm exactly.
     58 -> listOf(
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_json TEXT NOT NULL DEFAULT '{\"version\":1,\"items\":[]}'",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_updated_at INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_local_generation INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_server_revision INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_dirty INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE MetricSample ADD COLUMN heartRateBpm INTEGER",
+        "ALTER TABLE MetricSample ADD COLUMN rrIntervalMs REAL",
+        "ALTER TABLE MetricSample ADD COLUMN torsoPitchDeg REAL",
+        "ALTER TABLE MetricSample ADD COLUMN torsoRollDeg REAL",
+        "ALTER TABLE MetricSample ADD COLUMN dynamicAccMg INTEGER",
+        "ALTER TABLE MetricSample ADD COLUMN chestAccXMg INTEGER",
+        "ALTER TABLE MetricSample ADD COLUMN chestAccYMg INTEGER",
+        "ALTER TABLE MetricSample ADD COLUMN chestAccZMg INTEGER",
+        """CREATE TABLE IF NOT EXISTS PolarBeatSample (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            timestampMs INTEGER NOT NULL,
+            phase TEXT NOT NULL,
+            hrBpm INTEGER NOT NULL,
+            rrMs REAL NOT NULL,
+            rmssdMs REAL,
+            torsoPitchDeg REAL,
+            torsoRollDeg REAL,
+            dynamicAccMg INTEGER,
+            FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs)",
+        """CREATE TABLE IF NOT EXISTS PolarEcgSegment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            sensorTimestampNs INTEGER NOT NULL,
+            wallClockTimestampMs INTEGER NOT NULL,
+            phase TEXT NOT NULL,
+            samplesUvCsv TEXT NOT NULL,
+            FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs)",
+        "ALTER TABLE WorkoutSession ADD COLUMN avgHeartRateBpm INTEGER",
+        "ALTER TABLE WorkoutSession ADD COLUMN maxHeartRateBpm INTEGER",
+        "ALTER TABLE WorkoutSession ADD COLUMN minHeartRateBpm INTEGER",
+        "ALTER TABLE WorkoutSession ADD COLUMN avgRrIntervalMs REAL",
+        "ALTER TABLE WorkoutSession ADD COLUMN rmssdMs REAL",
+        "ALTER TABLE WorkoutSession ADD COLUMN hrr60Bpm INTEGER",
+        "ALTER TABLE WorkoutSession ADD COLUMN hrr300Bpm INTEGER",
+        "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoPitchDeg REAL",
+        "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL",
     )
 
     else -> emptyList()
 }
+

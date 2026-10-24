@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -543,7 +544,21 @@ class MainViewModel(
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
+    private val polarBleManager: PolarH10BleManager? = null,
 ) : ViewModel() {
+
+    init {
+        polarBleManager?.let { polar ->
+            viewModelScope.launch {
+                polar.isConnected.collect { connected ->
+                    if (!connected && polar.isCooldownActive.value) {
+                        Logger.w { "Polar H10 disconnected during recovery cooldown: terminating recovery window" }
+                        polar.cancelCooldown()
+                    }
+                }
+            }
+        }
+    }
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
     private val _hapticEvents = MutableSharedFlow<HapticEvent>(
@@ -732,6 +747,7 @@ class MainViewModel(
         machineSafetyCoordinator = machineSafetyCoordinator,
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
+        polarBleManager = polarBleManager,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -833,6 +849,7 @@ class MainViewModel(
     val scannedDevices: StateFlow<List<ScannedDevice>> get() = bleConnectionManager.scannedDevices
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
+    val isPolarConnected: StateFlow<Boolean>? get() = polarBleManager?.isConnected
     val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
 
     fun startScanning() = bleConnectionManager.startScanning()
@@ -1457,6 +1474,12 @@ class MainViewModel(
                 Logger.i { "BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
+            }
+            try {
+                polarBleManager?.disconnect()
+                Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
+            } catch (e: Exception) {
+                Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }
             }
             Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }

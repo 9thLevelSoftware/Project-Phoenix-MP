@@ -3,7 +3,10 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.database.MetricSample
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PolarBeatSample
+import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -19,6 +22,8 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
+import com.devil.phoenixproject.util.PolarTelemetryUtils
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -122,6 +127,15 @@ class SqlDelightWorkoutRepository(
         portalOrigin: Long,
         localSyncGeneration: Long,
         syncedSyncGeneration: Long,
+        avgHeartRateBpm: Long?,
+        maxHeartRateBpm: Long?,
+        minHeartRateBpm: Long?,
+        avgRrIntervalMs: Double?,
+        rmssdMs: Double?,
+        hrr60Bpm: Long?,
+        hrr300Bpm: Long?,
+        maxTorsoPitchDeg: Double?,
+        maxTorsoRollDeg: Double?,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -180,6 +194,15 @@ class SqlDelightWorkoutRepository(
         counterweightKg = counterweightKg.toFloat(),
         rackItemsJson = rackItemsJson,
         updatedAt = updatedAt,
+        avgHeartRateBpm = avgHeartRateBpm?.toInt(),
+        maxHeartRateBpm = maxHeartRateBpm?.toInt(),
+        minHeartRateBpm = minHeartRateBpm?.toInt(),
+        avgRrIntervalMs = avgRrIntervalMs?.toFloat(),
+        rmssdMs = rmssdMs?.toFloat(),
+        hrr60Bpm = hrr60Bpm?.toInt(),
+        hrr300Bpm = hrr300Bpm?.toInt(),
+        maxTorsoPitchDeg = maxTorsoPitchDeg?.toFloat(),
+        maxTorsoRollDeg = maxTorsoRollDeg?.toFloat(),
     )
 
     private fun mapToRoutineBasic(
@@ -633,23 +656,68 @@ class SqlDelightWorkoutRepository(
             counterweightKg = session.counterweightKg.toDouble(),
             rackItemsJson = session.rackItemsJson,
         )
+        if (session.avgHeartRateBpm != null || session.maxHeartRateBpm != null ||
+            session.minHeartRateBpm != null || session.avgRrIntervalMs != null ||
+            session.rmssdMs != null || session.hrr60Bpm != null ||
+            session.hrr300Bpm != null || session.maxTorsoPitchDeg != null ||
+            session.maxTorsoRollDeg != null
+        ) {
+            queries.updateSessionPolarSummary(
+                id = session.id,
+                avgHeartRateBpm = session.avgHeartRateBpm?.toLong(),
+                maxHeartRateBpm = session.maxHeartRateBpm?.toLong(),
+                minHeartRateBpm = session.minHeartRateBpm?.toLong(),
+                avgRrIntervalMs = session.avgRrIntervalMs?.toDouble(),
+                rmssdMs = session.rmssdMs?.toDouble(),
+                hrr60Bpm = session.hrr60Bpm?.toLong(),
+                hrr300Bpm = session.hrr300Bpm?.toLong(),
+                maxTorsoPitchDeg = session.maxTorsoPitchDeg?.toDouble(),
+                maxTorsoRollDeg = session.maxTorsoRollDeg?.toDouble(),
+            )
+        }
     }
 
     private fun insertMetricRow(sessionId: String, metric: com.devil.phoenixproject.domain.model.WorkoutMetric) {
         // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
         val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-        queries.insertMetric(
-            sessionId = sessionId,
-            timestamp = metric.timestamp,
-            position = metric.positionA.toDouble(),
-            positionB = metric.positionB.toDouble(),
-            velocity = metric.velocityA,
-            velocityB = metric.velocityB,
-            load = metric.loadA.toDouble(),
-            loadB = metric.loadB.toDouble(),
-            power = power.toDouble(),
-            status = metric.status.toLong(),
-        )
+        if (metric.heartRateBpm != null || metric.rrIntervalMs != null || metric.torsoPitchDeg != null ||
+            metric.torsoRollDeg != null || metric.dynamicAccMg != null || metric.chestAccXMg != null ||
+            metric.chestAccYMg != null || metric.chestAccZMg != null
+        ) {
+            queries.insertMetricWithPolar(
+                sessionId = sessionId,
+                timestamp = metric.timestamp,
+                position = metric.positionA.toDouble(),
+                positionB = metric.positionB.toDouble(),
+                velocity = metric.velocityA,
+                velocityB = metric.velocityB,
+                load = metric.loadA.toDouble(),
+                loadB = metric.loadB.toDouble(),
+                power = power.toDouble(),
+                status = metric.status.toLong(),
+                heartRateBpm = metric.heartRateBpm?.toLong(),
+                rrIntervalMs = metric.rrIntervalMs?.toDouble(),
+                torsoPitchDeg = metric.torsoPitchDeg?.toDouble(),
+                torsoRollDeg = metric.torsoRollDeg?.toDouble(),
+                dynamicAccMg = metric.dynamicAccMg?.toLong(),
+                chestAccXMg = metric.chestAccXMg?.toLong(),
+                chestAccYMg = metric.chestAccYMg?.toLong(),
+                chestAccZMg = metric.chestAccZMg?.toLong(),
+            )
+        } else {
+            queries.insertMetric(
+                sessionId = sessionId,
+                timestamp = metric.timestamp,
+                position = metric.positionA.toDouble(),
+                positionB = metric.positionB.toDouble(),
+                velocity = metric.velocityA,
+                velocityB = metric.velocityB,
+                load = metric.loadA.toDouble(),
+                loadB = metric.loadB.toDouble(),
+                power = power.toDouble(),
+                status = metric.status.toLong(),
+            )
+        }
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
@@ -1622,6 +1690,21 @@ class SqlDelightWorkoutRepository(
     override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
         withContext(Dispatchers.IO) {
             queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
+        }
+
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+        withContext(Dispatchers.IO) {
+            queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
+        }
+
+    override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =
+        withContext(Dispatchers.IO) {
+            queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+        }
+
+    override suspend fun getMetricSamplesBySession(sessionId: String): List<MetricSample> =
+        withContext(Dispatchers.IO) {
+            queries.selectMetricsBySession(sessionId).executeAsList()
         }
 }
 
