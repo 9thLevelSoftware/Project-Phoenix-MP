@@ -188,8 +188,15 @@ internal class DatabaseFileMigrationCoordinator(
      * recreated the legacy file). Set one aside only when that is provably lossless: it holds no
      * user data and the other one either does or holds none either. Probes run on scratch copies
      * before anything moves; the loser is moved, never deleted. Every other case - both hold data,
-     * either cannot be inspected, or a recovery/staging file is part of the picture - throws the
-     * same fail-closed DUAL_DATABASES as before.
+     * either cannot be inspected, or a staging file is part of the picture - throws the same
+     * fail-closed DUAL_DATABASES as before.
+     *
+     * Issue #1343: a leftover `phoenix-recovery.db` does not block this. It is only ever created as
+     * the verified copy of a legacy file that the same step then moves to the target, so beside a
+     * target it is that target's cutover snapshot, never a copy of the legacy file next to it. It
+     * stays with a kept target, where the ordinary target-plus-recovery launch validates the target
+     * and then removes it, and it is set aside together with an empty target only once it has been
+     * proven empty itself.
      */
     private fun resolveCanonicalConflict(
         layout: DatabaseFileLayout,
@@ -203,21 +210,32 @@ internal class DatabaseFileMigrationCoordinator(
             presenceSnapshot = presenceSnapshot,
         )
 
-        // A recovery or staging file means a migration was mid-flight; its fingerprints tie it to
-        // one of the candidates, so neither may be moved.
-        if (layout.recoveryExists || layout.stagingExists) throw conflict()
+        // A staging file is a copy that was mid-flight, and which candidate it came from is not
+        // known here, so neither may be moved.
+        if (layout.stagingExists) throw conflict()
 
         val legacy = probe(DatabaseArtifact.LEGACY)
         if (legacy == CandidateContent.UNINSPECTABLE) throw conflict()
         val target = probe(DatabaseArtifact.TARGET)
         val setAside = when {
-            legacy == CandidateContent.EMPTY && target != CandidateContent.UNINSPECTABLE -> DatabaseArtifact.LEGACY
-            legacy == CandidateContent.HAS_USER_DATA && target == CandidateContent.EMPTY -> DatabaseArtifact.TARGET
+            legacy == CandidateContent.EMPTY && target != CandidateContent.UNINSPECTABLE -> listOf(DatabaseArtifact.LEGACY)
+            legacy == CandidateContent.HAS_USER_DATA && target == CandidateContent.EMPTY -> when {
+                !layout.recoveryExists -> listOf(DatabaseArtifact.TARGET)
+                // The recovery goes with its target: left beside the legacy file it would fail that
+                // file's migration fingerprint check on every launch. It moves first, because a
+                // target left behind by a failure here is resolved again on the next launch, while
+                // a recovery left behind without its target would not be.
+                probe(DatabaseArtifact.RECOVERY) == CandidateContent.EMPTY ->
+                    listOf(DatabaseArtifact.RECOVERY, DatabaseArtifact.TARGET)
+                else -> throw conflict()
+            }
             else -> throw conflict()
         }
 
         try {
-            operations.quarantine(setAside, DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET)
+            for (artifact in setAside) {
+                operations.quarantine(artifact, DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET)
+            }
         } catch (failure: Throwable) {
             throw conflict(failure)
         }

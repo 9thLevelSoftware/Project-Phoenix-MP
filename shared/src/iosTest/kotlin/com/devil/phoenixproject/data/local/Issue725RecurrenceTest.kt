@@ -317,6 +317,55 @@ class Issue725RecurrenceTest {
     }
 
     @Test
+    fun issue1343EmptyLegacyBesideTargetWithLeftoverRecoveryOpensTargetAndDropsRecovery() {
+        // The reported layout: phoenix.db and the phoenix-recovery.db snapshot a failed launch left
+        // behind, plus an empty vitruvian.db an older build recreated beside them.
+        createDatabase(DatabaseFileNames.TARGET, profileName = "Phoenix")
+        val target = DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)
+        val recovery = DatabaseFileContext.databasePath(DatabaseFileNames.RECOVERY, null)
+        copyArtifact(target, recovery)
+        createDatabase(DatabaseFileNames.LEGACY, profileName = null)
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Phoenix", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'test-profile'"))
+        } finally {
+            driver.close()
+        }
+
+        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)))
+        assertTrue(fileManager.fileExistsAtPath(target))
+        assertFalse(fileManager.fileExistsAtPath(recovery))
+        val quarantined = quarantinedFiles()
+        assertTrue(quarantined.any { it.endsWith("/${DatabaseFileNames.LEGACY}") }, "quarantined: $quarantined")
+        assertFalse(quarantined.any { it.endsWith("/${DatabaseFileNames.RECOVERY}") }, "quarantined: $quarantined")
+        assertTrue(probeScratchFiles().isEmpty())
+    }
+
+    @Test
+    fun issue1343EmptyTargetAndItsRecoveryAreSetAsideBeforeLegacyWithUserDataMigrates() {
+        createDatabase(DatabaseFileNames.TARGET, profileName = null)
+        val target = DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)
+        val recovery = DatabaseFileContext.databasePath(DatabaseFileNames.RECOVERY, null)
+        copyArtifact(target, recovery)
+        createDatabase(DatabaseFileNames.LEGACY, profileName = "Legacy")
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Legacy", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'test-profile'"))
+        } finally {
+            driver.close()
+        }
+
+        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)))
+        assertTrue(fileManager.fileExistsAtPath(target))
+        val quarantined = quarantinedFiles()
+        assertTrue(quarantined.any { it.endsWith("/${DatabaseFileNames.TARGET}") }, "quarantined: $quarantined")
+        assertTrue(quarantined.any { it.endsWith("/${DatabaseFileNames.RECOVERY}") }, "quarantined: $quarantined")
+        assertTrue(probeScratchFiles().isEmpty())
+    }
+
+    @Test
     fun legacyAndPhoenixDatabasesWithUserDataStillBlockWithoutMutation() {
         createDatabase(DatabaseFileNames.TARGET, profileName = "Phoenix")
         createDatabase(DatabaseFileNames.LEGACY, profileName = "Legacy")
@@ -550,6 +599,21 @@ class Issue725RecurrenceTest {
             parameters = 0,
         )
         return value
+    }
+
+    private fun copyArtifact(from: String, to: String) {
+        check(fileManager.copyItemAtPath(from, toPath = to, error = null)) {
+            "Could not copy test database from $from to $to"
+        }
+        for (suffix in SIDECAR_SUFFIXES) {
+            val source = "$from$suffix"
+            val destination = "$to$suffix"
+            if (fileManager.fileExistsAtPath(source)) {
+                check(fileManager.copyItemAtPath(source, toPath = destination, error = null)) {
+                    "Could not copy test database sidecar from $source to $destination"
+                }
+            }
+        }
     }
 
     private fun moveArtifact(from: String, to: String) {
