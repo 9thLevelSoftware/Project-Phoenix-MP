@@ -51,56 +51,29 @@ private val rpeScale = listOf(
 /**
  * Compact RPE indicator that shows current RPE or "Add RPE" button.
  * Tapping expands to show the full slider.
+ *
+ * [leadingContent] sits in the same row, before the button; give it `Modifier.weight(1f)`.
+ * Issue #1345: the slider expands below that row at the full width of [modifier], so a
+ * caller must not place this composable beside other content in its own Row, where the
+ * slider would only get the leftover width.
  */
 @Composable
-fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun RpeIndicator(
+    currentRpe: Int?,
+    onRpeChanged: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    leadingContent: @Composable RowScope.() -> Unit = {},
+) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
-        // Collapsed state - shows current RPE or "Add" button
-        if (currentRpe != null) {
-            val rpeInfo = rpeScale.find { it.value == currentRpe } ?: rpeScale.last()
-            Surface(
-                onClick = { expanded = !expanded },
-                shape = MaterialTheme.shapes.small,
-                color = getRpeColor(currentRpe).copy(alpha = 0.2f),
-                modifier = Modifier.height(40.dp),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = rpeInfo.emoji,
-                        fontSize = 18.sp,
-                    )
-                    Text(
-                        text = "RPE $currentRpe",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = getRpeColor(currentRpe),
-                    )
-                }
-            }
-        } else {
-            OutlinedButton(
-                onClick = { expanded = true },
-                shape = MaterialTheme.shapes.small,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp),
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "Log RPE",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            leadingContent()
+            RpeButton(currentRpe = currentRpe, onClick = { expanded = !expanded })
         }
 
         // Expanded slider
@@ -117,6 +90,57 @@ fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifi
                 },
                 onDismiss = { expanded = false },
                 modifier = Modifier.padding(top = Spacing.small),
+            )
+        }
+    }
+}
+
+/**
+ * Collapsed state - shows current RPE or "Add" button.
+ */
+@Composable
+private fun RpeButton(currentRpe: Int?, onClick: () -> Unit) {
+    if (currentRpe != null) {
+        val rpeInfo = rpeScale.find { it.value == currentRpe } ?: rpeScale.last()
+        Surface(
+            onClick = onClick,
+            shape = MaterialTheme.shapes.small,
+            color = getRpeColor(currentRpe).copy(alpha = 0.2f),
+            modifier = Modifier.height(40.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = rpeInfo.emoji,
+                    fontSize = 18.sp,
+                )
+                Text(
+                    text = "RPE $currentRpe",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = getRpeColor(currentRpe),
+                )
+            }
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            shape = MaterialTheme.shapes.small,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.height(40.dp),
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = "Log RPE",
+                style = MaterialTheme.typography.labelMedium,
             )
         }
     }
