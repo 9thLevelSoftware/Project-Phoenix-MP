@@ -569,7 +569,6 @@ private fun ExerciseTagSection(
 /**
  * Individual stat card for the summary grid
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryStatCard(
     label: String,
@@ -640,7 +639,6 @@ private fun SummaryStatCard(
 /**
  * Force card showing concentric (up arrow) and eccentric (down arrow) values
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryForceCard(label: String, concentricValue: Float, eccentricValue: Float, modifier: Modifier = Modifier) {
     Card(

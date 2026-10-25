@@ -10,7 +10,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -98,8 +97,9 @@ class SetSummaryCardTextLayoutRuntimeTest {
         rule.waitForIdle()
     }
 
-    /** Every rendered text node whose lines break inside a word, with its line starts. */
-    private fun midWordBreaks(): List<String> {
+
+    /** The layout of every rendered text node, keyed by its text. */
+    private fun renderedTextLayouts(): List<Pair<String, TextLayoutResult>> {
         val nodes = rule.onAllNodes(
             SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
             useUnmergedTree = true,
@@ -108,79 +108,72 @@ class SetSummaryCardTextLayoutRuntimeTest {
             val results = mutableListOf<TextLayoutResult>()
             node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
             val layout = results.firstOrNull() ?: return@mapNotNull null
-            val text = layout.layoutInput.text.text
-            val badStarts = (1 until layout.lineCount)
-                .map { layout.getLineStart(it) }
-                .filter { start ->
-                    start in 1 until text.length &&
-                        !text[start - 1].isWhitespace() &&
-                        !text[start].isWhitespace() &&
-                        text[start - 1] !in BREAK_AFTER
-                }
-            if (badStarts.isEmpty()) {
-                null
-            } else {
-                val label = node.config.getOrNull(SemanticsProperties.Text)?.joinToString() ?: text
-                "\"$label\" (${layout.lineCount} lines, mid-word breaks at $badStarts)"
-            }
+            layout.layoutInput.text.text to layout
         }
     }
 
-    private fun assertNoMidWordBreaks(context: String) {
-        val broken = midWordBreaks()
-        assertTrue(
-            "$context: text must not break between characters (#1345): $broken",
-            broken.isEmpty(),
-        )
-    }
+    /** Line starts that fall inside a word: not after whitespace or a break-friendly separator. */
+    private fun midWordBreaks(text: String, layout: TextLayoutResult): List<Int> = (1 until layout.lineCount)
+        .map { layout.getLineStart(it) }
+        .filter { start ->
+            start in 1 until text.length &&
+                !text[start - 1].isWhitespace() &&
+                !text[start].isWhitespace() &&
+                text[start - 1] !in BREAK_AFTER
+        }
 
-    @Test
-    fun metricsGrid_keepsWordsWhole_atDefaultTextSize() {
-        render(fontScale = 1f)
-        assertNoMidWordBreaks("metrics grid, fontScale 1.0")
-    }
-
-    @Test
-    fun metricsGrid_keepsWordsWhole_atLargeTextSize() {
-        render(fontScale = 1.3f)
-        assertNoMidWordBreaks("metrics grid, fontScale 1.3")
-    }
-
-    @Test
-    fun metricsGrid_keepsWordsWhole_atAccessibilityTextSize() {
-        render(fontScale = 2f)
-        assertNoMidWordBreaks("metrics grid, fontScale 2.0")
-    }
-
-    @Test
-    fun expandedRpeSlider_keepsWordsWhole_atDefaultTextSize() {
-        render(fontScale = 1f)
+    /** Opens the RPE slider, then checks the whole card: collapsed rows plus the slider. */
+    private fun assertTextStaysWhole(fontScale: Float) {
+        render(fontScale)
         rule.onNodeWithText("Log RPE").performScrollTo().performClick()
         rule.waitForIdle()
         rule.onNodeWithText("RPE 8").assertExists()
-        assertNoMidWordBreaks("expanded RPE slider, fontScale 1.0")
+
+        val context = "fontScale $fontScale"
+        val layouts = renderedTextLayouts()
+        val rendered = layouts.map { it.first }
+        val missing = SINGLE_LINE.filterNot { it in rendered }
+        assertTrue("$context: expected texts were not inspected: $missing (saw $rendered)", missing.isEmpty())
+
+        val split = layouts
+            .filter { (text, layout) -> text in SINGLE_LINE && layout.lineCount > 1 }
+            .map { (text, layout) -> "\"$text\" (${layout.lineCount} lines)" }
+        assertTrue("$context: these must render on one line (#1345): $split", split.isEmpty())
+
+        val broken = layouts.mapNotNull { (text, layout) ->
+            midWordBreaks(text, layout).takeIf { it.isNotEmpty() }
+                ?.let { "\"$text\" (${layout.lineCount} lines, mid-word breaks at $it)" }
+        }
+        assertTrue("$context: text must not break between characters (#1345): $broken", broken.isEmpty())
     }
 
     @Test
-    fun expandedRpeSlider_keepsWordsWhole_atLargeTextSize() {
-        render(fontScale = 1.3f)
-        rule.onNodeWithText("Log RPE").performScrollTo().performClick()
-        rule.waitForIdle()
-        rule.onNodeWithText("RPE 8").assertExists()
-        assertNoMidWordBreaks("expanded RPE slider, fontScale 1.3")
-    }
+    fun setSummaryText_staysWhole_atDefaultTextSize() = assertTextStaysWhole(fontScale = 1f)
 
     @Test
-    fun expandedRpeSlider_keepsWordsWhole_atAccessibilityTextSize() {
-        render(fontScale = 2f)
-        rule.onNodeWithText("Log RPE").performScrollTo().performClick()
-        rule.waitForIdle()
-        rule.onNodeWithText("RPE 8").assertExists()
-        assertNoMidWordBreaks("expanded RPE slider, fontScale 2.0")
-    }
+    fun setSummaryText_staysWhole_atLargeTextSize() = assertTextStaysWhole(fontScale = 1.3f)
+
+    @Test
+    fun setSummaryText_staysWhole_atAccessibilityTextSize() = assertTextStaysWhole(fontScale = 2f)
 
     private companion object {
         /** Characters a line may legitimately break after inside a run of text. */
         val BREAK_AFTER = setOf('-', '/', '•', '—')
+
+        /**
+         * Short tokens that must never wrap at these scales, even at a legal break such as the
+         * '/' in the unit: the values and units from the report, and the RPE controls. The force
+         * values ("30.0 ↑") may wrap at the space before the arrow, so the mid-word check covers them.
+         */
+        val SINGLE_LINE = listOf(
+            "30.0",
+            "(lbs/cable)",
+            "0:42",
+            "(kCal)",
+            "Log RPE",
+            "RPE 8",
+            "Cancel",
+            "Confirm",
+        )
     }
 }
