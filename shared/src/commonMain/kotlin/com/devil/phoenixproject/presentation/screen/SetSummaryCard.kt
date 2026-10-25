@@ -22,8 +22,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
@@ -394,14 +397,19 @@ fun SetSummaryCard(
                     ),
                     shape = MaterialTheme.shapes.medium,
                 ) {
-                    Row(
+                    // Issue #1345: the prompt is RpeIndicator's leading content, not a Row
+                    // sibling, so the expanded slider gets the card's full width.
+                    RpeIndicator(
+                        currentRpe = loggedRpe,
+                        onRpeChanged = { rpe ->
+                            loggedRpe = rpe
+                            onRpeLogged(rpe)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp), // Reduced from 16dp to fit more content
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 "How hard was that?",
                                 style = MaterialTheme.typography.titleSmall,
@@ -414,13 +422,6 @@ fun SetSummaryCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        RpeIndicator(
-                            currentRpe = loggedRpe,
-                            onRpeChanged = { rpe ->
-                                loggedRpe = rpe
-                                onRpeLogged(rpe)
-                            },
-                        )
                     }
                 }
             }
@@ -568,6 +569,7 @@ private fun ExerciseTagSection(
 /**
  * Individual stat card for the summary grid
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryStatCard(
     label: String,
@@ -593,10 +595,12 @@ private fun SummaryStatCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Issue #1345: weighted so the label wraps by word and the icon keeps its size.
                 Text(
                     label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
                 )
                 icon?.let {
                     Icon(
@@ -608,8 +612,10 @@ private fun SummaryStatCard(
                 }
             }
             Spacer(modifier = Modifier.height(4.dp)) // Reduced from 8dp to fit more content
-            Row(
-                verticalAlignment = Alignment.Bottom,
+            // Issue #1345: a FlowRow, not a Row, so a unit that does not fit beside the value
+            // moves below it whole instead of being squeezed to one character per line.
+            FlowRow(
+                itemVerticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -634,6 +640,7 @@ private fun SummaryStatCard(
 /**
  * Force card showing concentric (up arrow) and eccentric (down arrow) values
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryForceCard(label: String, concentricValue: Float, eccentricValue: Float, modifier: Modifier = Modifier) {
     Card(
@@ -654,41 +661,49 @@ private fun SummaryForceCard(label: String, concentricValue: Float, eccentricVal
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(4.dp)) // Reduced from 8dp to fit more content
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            // Issue #1345: a FlowRow so the eccentric value moves to the next line when both
+            // do not fit, and each value is one Text with its arrow so neither is squeezed.
+            FlowRow(
+                itemVerticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Concentric (lifting) with up arrow
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        WeightDisplayFormatter.formatDisplayNumber(concentricValue),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        " \u2191", // Up arrow
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                ForceValueText(
+                    value = WeightDisplayFormatter.formatDisplayNumber(concentricValue),
+                    arrow = "\u2191",
+                    arrowColor = MaterialTheme.colorScheme.primary,
+                )
                 // Eccentric (lowering) with down arrow
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        WeightDisplayFormatter.formatDisplayNumber(eccentricValue),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        " \u2193", // Down arrow
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
+                ForceValueText(
+                    value = WeightDisplayFormatter.formatDisplayNumber(eccentricValue),
+                    arrow = "\u2193",
+                    arrowColor = MaterialTheme.colorScheme.secondary,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun ForceValueText(value: String, arrow: String, arrowColor: Color) {
+    val arrowStyle = MaterialTheme.typography.titleMedium
+    Text(
+        buildAnnotatedString {
+            append(value)
+            withStyle(
+                SpanStyle(
+                    color = arrowColor,
+                    fontSize = arrowStyle.fontSize,
+                    fontWeight = arrowStyle.fontWeight,
+                ),
+            ) {
+                append(" $arrow")
+            }
+        },
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
 }
 
 /**
