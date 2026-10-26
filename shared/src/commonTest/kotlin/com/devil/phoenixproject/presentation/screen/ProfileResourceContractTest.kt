@@ -208,8 +208,10 @@ class ProfileResourceContractTest {
             ),
         )
 
-        assertContains(androidReader, """File(dir, "shared/${'$'}relativePath")""")
-        assertContains(iosReader, """candidates.add("${'$'}dir/shared/${'$'}relativePath")""")
+        assertContains(androidReader, "\"src/commonMain/kotlin/\"")
+        assertContains(androidReader, "\"src/phoneMain/kotlin/\"")
+        assertContains(iosReader, "\"src/commonMain/kotlin/\"")
+        assertContains(iosReader, "\"src/phoneMain/kotlin/\"")
     }
 
     private fun resourceValue(source: String, key: String, path: String): String =

@@ -19,16 +19,25 @@ import platform.Foundation.stringWithContentsOfFile
 actual fun readProjectFile(relativePath: String): String? {
     val fm = NSFileManager.defaultManager
     val cwd = fm.currentDirectoryPath
+    val phoneSourcePath = relativePath.replaceFirst(
+        "src/commonMain/kotlin/",
+        "src/phoneMain/kotlin/",
+    )
+    val sourcePaths = if (phoneSourcePath == relativePath) {
+        listOf(relativePath)
+    } else {
+        listOf(relativePath, phoneSourcePath)
+    }
 
     // Build the candidate list: cwd, then up to 6 parent directories.
     val candidates = mutableListOf<String>()
-    candidates.add("$cwd/$relativePath")
+    sourcePaths.forEach { candidates.add("$cwd/$it") }
     var dir: String? = cwd
     repeat(6) {
         if (dir == null) return@repeat
-        candidates.add("$dir/shared/$relativePath")
+        sourcePaths.forEach { candidates.add("$dir/shared/$it") }
         if (fm.fileExistsAtPath("$dir/.git") || fm.fileExistsAtPath("$dir/settings.gradle.kts")) {
-            candidates.add("$dir/$relativePath")
+            sourcePaths.forEach { candidates.add("$dir/$it") }
         }
         val parent = dir.substringBeforeLast('/', missingDelimiterValue = "")
         if (parent.isEmpty() || parent == dir) return@repeat

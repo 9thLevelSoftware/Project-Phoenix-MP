@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class PhantomBleRepositoryTest {
@@ -2241,10 +2243,16 @@ class PhantomBleRepositoryTest {
                 assertEquals(1, first.repsSetCount)
                 assertEquals(2, second.repsSetCount)
                 assertEquals(2, second.repsSetTotal)
-                assertTrue(
-                    logRepo.getLogsByEventType(LogEventType.COMMAND_RESPONSE)
-                        .any { it.message == "Phantom target reps reached" },
-                )
+                withContext(Dispatchers.Default) {
+                    withTimeout(1_000L) {
+                        logRepo.logs.first { logs ->
+                            logs.any { log ->
+                                log.eventType == LogEventType.COMMAND_RESPONSE &&
+                                    log.message == "Phantom target reps reached"
+                            }
+                        }
+                    }
+                }
 
                 withContext(Dispatchers.Default) { delay(250L) }
                 expectNoEvents()
@@ -2694,16 +2702,25 @@ class PhantomBleRepositoryTest {
 
         try {
             repository.reconnectionRequested.test {
-                val timedOut = async(Dispatchers.Default) {
+                val timedOut = async {
                     repository.scanAndConnect(timeoutMs = 250L)
                 }
-                repository.connectionState.first { it == ConnectionState.Connecting }
+                runCurrent()
+                advanceTimeBy(150L)
+                runCurrent()
+                assertEquals(ConnectionState.Connecting, repository.connectionState.value)
 
                 repository.stopScanning()
-                val newerScan = async(Dispatchers.Default) { repository.startScanning() }
-                repository.connectionState.first { it == ConnectionState.Scanning }
+                val newerScan = async { repository.startScanning() }
+                runCurrent()
+                assertEquals(ConnectionState.Scanning, repository.connectionState.value)
 
+                advanceTimeBy(100L)
+                runCurrent()
                 assertTrue(timedOut.await().isFailure)
+
+                advanceTimeBy(50L)
+                runCurrent()
                 assertTrue(newerScan.await().isSuccess)
                 assertTrue(repository.scannedDevices.value.isNotEmpty())
                 assertEquals(ConnectionState.Scanning, repository.connectionState.value)

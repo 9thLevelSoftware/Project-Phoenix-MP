@@ -34,7 +34,7 @@ class EchoLevelEditorLocalizationGuardTest {
     @Test
     fun configModalEchoPanelDelegatesToLocalizedPillSelector() {
         val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ExerciseConfigModal.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/ExerciseConfigModal.kt",
         )
 
         assertTrue(
@@ -54,7 +54,7 @@ class EchoLevelEditorLocalizationGuardTest {
     @Test
     fun bottomSheetEchoSelectorUsesResourceTitleAndLocalizedChipText() {
         val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseEditBottomSheet.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseEditBottomSheet.kt",
         )
         val selector = source.substringAfter("fun EchoLevelSelector(")
             .substringBefore("\n/**")

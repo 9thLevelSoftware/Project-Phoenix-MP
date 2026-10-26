@@ -14,14 +14,14 @@ import kotlin.test.assertTrue
 class ProfileSwitchSessionGuardSourceTest {
     private val root: File by lazy {
         var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
+        while (!File(dir, "shared/src/phoneMain").exists()) {
             dir = dir.parentFile ?: break
         }
         dir
     }
 
     private fun read(path: String) =
-        File(root, "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/$path").readText()
+        File(root, "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/$path").readText()
 
     private val source: String by lazy { read("screen/EnhancedMainScreen.kt") }
 

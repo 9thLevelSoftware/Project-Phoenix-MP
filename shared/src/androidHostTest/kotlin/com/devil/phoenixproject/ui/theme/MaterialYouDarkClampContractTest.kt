@@ -32,7 +32,7 @@ class MaterialYouDarkClampContractTest {
         File(projectRoot, relativePath).readText()
 
     private val themeKt: String by lazy {
-        read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
+        read("shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
     }
 
     @Test
@@ -70,12 +70,12 @@ class MaterialYouDarkClampContractTest {
         // into a non-theme package, surface the failure here and re-document.
         val helper = File(
             projectRoot,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
         )
         assertTrue(
             helper.exists(),
             "ClampedDynamicDarkScheme.kt must live in " +
-                "shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/ " +
+                "shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/ " +
                 "alongside Theme.kt so the surface family token list is discoverable " +
                 "from the theme module. Found missing at ${helper.absolutePath}.",
         )
@@ -104,7 +104,7 @@ class MaterialYouDarkClampContractTest {
         // `surfaceTint` to elevated surface containers, so pin that to fallback too
         // and prevent bright/saturated wallpaper tints from reintroducing chrome drift.
         val helper = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
         )
         assertTrue(
             helper.contains("inverseSurface = fallback.inverseSurface") &&

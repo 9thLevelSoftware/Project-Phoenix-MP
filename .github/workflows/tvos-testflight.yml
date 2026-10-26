@@ -1,0 +1,242 @@
+name: tvOS standalone TestFlight beta
+
+# Intentionally independent of release-all and phone CI. No push/PR/schedule triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Full reviewed source SHA; must match the workflow revision selected for this run'
+        required: true
+        type: string
+      review_pr:
+        description: 'PR with trusted current-revision approval or automated reviewer attestation'
+        required: true
+        type: string
+      review_accepted:
+        description: 'Independent review and beta acceptance complete (not a substitute for the checked PR approval)'
+        type: boolean
+        default: false
+      upload:
+        description: 'Upload exported TV IPA to ASC and verify TV_OS processing; false is archive-only'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      review_pr:
+        required: true
+        type: string
+      review_accepted:
+        type: boolean
+        default: false
+      upload:
+        type: boolean
+        default: false
+    secrets:
+      BUILD_CERTIFICATE_BASE64:
+        required: true
+      P12_PASSWORD:
+        required: true
+      KEYCHAIN_PASSWORD:
+        required: true
+      TEAM_ID:
+        required: true
+      TVOS_PROVISION_PROFILE_BASE64:
+        required: true
+      TVOS_PROVISIONING_PROFILE_NAME:
+        required: true
+      SUPABASE_URL:
+        required: true
+      SUPABASE_ANON_KEY:
+        required: true
+      APPSTORE_API_KEY:
+        required: true
+      APPSTORE_API_KEY_ID:
+        required: true
+      APPSTORE_ISSUER_ID:
+        required: true
+      APP_APPLE_ID:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+
+concurrency:
+  group: tvos-testflight
+  cancel-in-progress: false
+
+# User inputs are passed as data, never interpolated into shell commands or checkout refs.
+# The review gate validates the SHA/PR syntax and binds them to github.sha.
+env:
+  TVOS_SOURCE_SHA: ${{ inputs.source_sha }}
+  TVOS_REVIEW_PR: ${{ inputs.review_pr }}
+  TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  acceptance:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Require independent approval of exact source and workflow revision
+        run: python3 .github/scripts/tvos-release.py review
+      - name: Fail closed before any native build or signing secrets
+        run: |
+          python3 .github/scripts/tvos-release.py preflight
+          python3 .agents/skills/update-phoenix-version/scripts/test_update_version.py
+          python3 .github/scripts/tvos-tooling-tests.py
+          bash -n .github/scripts/tvos-framework.sh
+          plutil -lint tvosApp/PhoenixTV.xcodeproj/project.pbxproj tvosApp/PhoenixTV/Info.plist
+          xmllint --noout tvosApp/PhoenixTV.xcodeproj/xcshareddata/xcschemes/PhoenixTV.xcscheme
+
+  simulator-tests:
+    needs: acceptance
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      # Match the unsigned TV runner's bounds; never alter phone heap defaults.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx2g
+        -Dorg.gradle.workers.max=1
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx4g
+        -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Select the same SDK toolchain as the archive
+        run: |
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      - name: Create a fresh deterministic TV simulator
+        run: |
+          python3 .github/scripts/tvos-simulator.py create
+      - name: Unsigned real and explicit Phantom UI paths
+        env:
+          TVOS_DERIVED_DATA: ${{ runner.temp }}/tvos-simulator-derived
+        run: |
+          python3 .github/scripts/tvos-release.py local test \
+            --simulator "$TVOS_SIMULATOR_UDID" \
+            --result-bundle "$RUNNER_TEMP/tvos-tests.xcresult"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: tvos-simulator-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tvos-tests.xcresult
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Delete only this run's simulator
+        if: always()
+        run: python3 .github/scripts/tvos-simulator.py delete
+
+  archive:
+    needs: simulator-tests
+    # Reuse the phone's archive runner/SDK, but TV signing and artifacts are separate.
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    env:
+      # KGP 2.4.0 runs Kotlin/Native linking in the Gradle JVM by default;
+      # kotlin.native.jvmArgs only sizes a separate exec-mode JVM. Use one 10 GiB
+      # compiler JVM and retain headroom on the standard 14 GB x64 runner.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx10g
+        -Dorg.gradle.workers.max=1
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.project.kotlin.native.disableCompilerDaemon=false
+        -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      - name: Signed TV archive and export (never phone profile)
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          TVOS_PROVISION_PROFILE_BASE64: ${{ secrets.TVOS_PROVISION_PROFILE_BASE64 }}
+          TVOS_PROVISIONING_PROFILE_NAME: ${{ secrets.TVOS_PROVISIONING_PROFILE_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APP_APPLE_ID: ${{ secrets.APP_APPLE_ID }}
+        run: |
+          # Phone convention: date + run number. Include attempt to avoid rerun collisions.
+          test "$GITHUB_RUN_ATTEMPT" -lt 1000
+          build_number="$(date -u +%Y%m%d)${GITHUB_RUN_NUMBER}$(printf '%03d' "$GITHUB_RUN_ATTEMPT")"
+          python3 .github/scripts/tvos-release.py archive \
+            --build-number "$build_number" \
+            --output "$RUNNER_TEMP/tvos-release" \
+            --derived-data "$RUNNER_TEMP/tvos-archive-derived"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # Stable across upload-only retries; a rerun archive replaces this run's IPA.
+          name: tvos-testflight-ipa-${{ github.run_id }}
+          overwrite: true
+          path: |
+            ${{ runner.temp }}/tvos-release/export/PhoenixTV.ipa
+            ${{ runner.temp }}/tvos-release/export/release.json
+          if-no-files-found: error
+          retention-days: 1
+
+  upload:
+    needs: archive
+    if: ${{ inputs.upload }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tvos-testflight-ipa-${{ github.run_id }}
+          path: ${{ runner.temp }}/tvos-export
+      - name: Reuse phone's separately verified upload toolchain
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'cryptography==44.0.3'
+      - name: Upload and require exact TV_OS app/version/build processing evidence
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APP_APPLE_ID: ${{ secrets.APP_APPLE_ID }}
+        run: python3 .github/scripts/tvos-release.py upload --input "$RUNNER_TEMP/tvos-export"

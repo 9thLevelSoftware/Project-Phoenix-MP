@@ -1,0 +1,273 @@
+name: tvOS unsigned build and native tests
+
+# Separate from phone CI and from signed TestFlight delivery. Fork PRs need no secrets.
+on:
+  pull_request:
+    paths:
+      - 'tvosApp/**'
+      - 'shared-tvos/**'
+      - 'shared/**'
+      - 'third_party/kable-core-tvos/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'buildSrc/**'
+      - 'build-logic/**'
+      - 'androidApp/build.gradle.kts'
+      - 'iosApp/PhoenixApp/Config/SupabaseBase.xcconfig'
+      - 'iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png'
+      - '.agents/skills/update-phoenix-version/**'
+      - '.github/scripts/tvos-*'
+      - '.github/workflows/tvos-build.yml'
+      - '.github/workflows/tvos-testflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-unsigned-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-tv:
+    runs-on: macos-26
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      # Apply to the framework phase's Gradle subprocess too, without editing the
+      # shared gradle.properties (whose phone release heaps exceed this runner).
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx2g
+        -Dorg.gradle.workers.max=1
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx4g
+        -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
+      CODE_SIGNING_ALLOWED: 'NO'
+      CODE_SIGNING_REQUIRED: 'NO'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Prepare explicit temporary scratch and evidence directories
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/phoenix-tv-tmp"
+          mkdir -p "$scratch" "$RUNNER_TEMP/tvos-evidence"
+          # runner.temp is not an allowed expression context in job-level env.
+          # GITHUB_ENV makes these explicit paths available to every later step.
+          {
+            printf 'TMPDIR=%s\nTMP=%s\nTEMP=%s\n' "$scratch" "$scratch" "$scratch"
+            printf 'JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=%s\n' "$scratch"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+      - name: Verify the established TV toolchain (no global Xcode selection)
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcrun --sdk appletvos --show-sdk-version | tee "$RUNNER_TEMP/tvos-evidence/sdk-version.log"
+          python3 .github/scripts/tvos-release.py local --help
+          python3 .github/scripts/tvos-simulator.py --help
+      - name: Verify deterministic branding and compile Apple TV catalogs
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/tvos-assets-venv"
+          "$RUNNER_TEMP/tvos-assets-venv/bin/python" -m pip install 'Pillow==12.3.0'
+          "$RUNNER_TEMP/tvos-assets-venv/bin/python" .github/scripts/tvos-assets.py --check \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/assets-check.log"
+          for sdk in appletvos appletvsimulator; do
+            output="$RUNNER_TEMP/tvos-evidence/actool-$sdk"
+            mkdir -p "$output"
+            xcrun --sdk "$sdk" actool tvosApp/PhoenixTV/Assets.xcassets \
+              --compile "$output" --platform "$sdk" --minimum-deployment-target 17.0 \
+              --target-device tv --app-icon AppIcon --output-format human-readable-text \
+              --warnings --errors --notices --output-partial-info-plist "$output/asset-info.plist" \
+              2>&1 | tee "$RUNNER_TEMP/tvos-evidence/actool-$sdk.log"
+            test -s "$output/Assets.car"
+          done
+      - name: Offline tooling checks (not native unit or UI tests)
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-tooling-tests.py 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/tooling-tests.log"
+          python3 .agents/skills/update-phoenix-version/scripts/test_update_version.py 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/version-tests.log"
+          bash -n .github/scripts/tvos-framework.sh
+          plutil -lint tvosApp/PhoenixTV.xcodeproj/project.pbxproj tvosApp/PhoenixTV/Info.plist
+          xmllint --noout tvosApp/PhoenixTV.xcodeproj/xcshareddata/xcschemes/PhoenixTV.xcscheme
+      - name: Create this job's fresh Apple TV simulator
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-simulator.py create 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/simulator-create.log"
+      - name: Run Kotlin native TV unit tests, including selected shared commonTest policies
+        run: |
+          set -euo pipefail
+          # Test inclusion is versioned in shared-tvos; bind the runner-owned device.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          script = Path(os.environ['RUNNER_TEMP']) / 'tvos-native-tests.init.gradle'
+          script.write_text('''
+          gradle.afterProject { project, state ->
+              if (project.path == ':shared-tvos') {
+                  project.tasks.named('tvosSimulatorArm64Test').configure {
+                      device.set(System.getenv('TVOS_SIMULATOR_UDID'))
+                  }
+              }
+          }
+          ''')
+          PY
+          ./gradlew --no-daemon --console=plain --no-parallel --max-workers=1 \
+            --no-configuration-cache -Pskip.supabase.check=true \
+            --init-script "$RUNNER_TEMP/tvos-native-tests.init.gradle" \
+            :shared-tvos:tvosSimulatorArm64Test \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/native-unit-tests.log"
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          reports = list(Path('shared-tvos/build/test-results/tvosSimulatorArm64Test').glob('TEST-*.xml'))
+          assert reports, 'Native TV test task produced no XML reports'
+          cases = [case for path in reports for case in ET.parse(path).getroot().iter('testcase')]
+          assert cases, 'Native TV test reports contain no executed tests'
+          assert not any(case.find('failure') is not None or case.find('error') is not None or case.find('skipped') is not None for case in cases)
+          for name in ('CommandLimitsTest', 'WorkoutCommandValidatorTest', 'PortalWirePlatformTest',
+                       'TvAppBridgeBoundaryTest', 'TvDiagnosticsStartupTest', 'TvTelemetryWatchdogTest',
+                       'TvosGattCompositionTest', 'TvosParsedProgramTelemetryTest', 'PhantomBleRepositoryTest'):
+              executed = [case for case in cases if name in case.get('classname', '') and case.find('skipped') is None]
+              assert executed, f'Required native test class did not execute: {name}'
+          print(f'Native TV XML evidence: {len(cases)} test cases; required classes executed, no failures/errors')
+          PY
+      - name: Compile simulator app and execute real remote-control XCUITests
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-release.py local test --sdk appletvsimulator --configuration Debug \
+            --simulator "$TVOS_SIMULATOR_UDID" \
+            --derived-data "$RUNNER_TEMP/tvos-simulator-derived" \
+            --result-bundle "$RUNNER_TEMP/tvos-evidence/tvos-ui-tests.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/simulator-ui-tests.log"
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/tvos-evidence/tvos-ui-tests.xcresult" \
+            > "$RUNNER_TEMP/tvos-evidence/ui-test-summary.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          summary = json.loads((Path(os.environ['RUNNER_TEMP']) / 'tvos-evidence/ui-test-summary.json').read_text())
+          assert summary['result'] == 'Passed', summary['result']
+          assert summary['totalTestCount'] > 0, 'No XCUITests executed'
+          assert summary['passedTests'] == summary['totalTestCount'], 'Not every XCUITest passed'
+          assert summary['failedTests'] == 0 and summary['skippedTests'] == 0
+          print(f"Real XCUITest evidence: {summary['passedTests']} passed, no failures or skips")
+          PY
+      - name: Delete only this job's simulator
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-simulator.py delete 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/simulator-delete.log"
+      - name: Preserve native results and logs even on failure
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: tvos-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/tvos-evidence/
+            ${{ runner.temp }}/tvos-native-tests.init.gradle
+            ${{ runner.temp }}/tvos-device-derived/Logs/
+            ${{ runner.temp }}/tvos-simulator-derived/Logs/
+            shared-tvos/build/test-results/
+            shared-tvos/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 7
+
+  native-tv-device:
+    runs-on: macos-26-intel
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      # Kotlin/Native linking uses the Gradle JVM by default with KGP 2.4.0;
+      # kotlin.native.jvmArgs only sizes a separate exec-mode JVM. Give the one
+      # compiler JVM 10 GiB and retain headroom on the standard 14 GB x64 runner.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx10g
+        -Dorg.gradle.workers.max=1
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.project.kotlin.native.disableCompilerDaemon=false
+        -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
+      CODE_SIGNING_ALLOWED: 'NO'
+      CODE_SIGNING_REQUIRED: 'NO'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Prepare explicit temporary scratch and evidence directories
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/phoenix-tv-device-tmp"
+          mkdir -p "$scratch" "$RUNNER_TEMP/tvos-evidence"
+          {
+            printf 'TMPDIR=%s\nTMP=%s\nTEMP=%s\n' "$scratch" "$scratch" "$scratch"
+            printf 'JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=%s\n' "$scratch"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+      - name: Verify the established TV device toolchain (no global Xcode selection)
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcrun --sdk appletvos --show-sdk-version | tee "$RUNNER_TEMP/tvos-evidence/sdk-version.log"
+          python3 .github/scripts/tvos-release.py local --help
+      - name: Offline tooling and source preflight (no secrets)
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-release.py preflight \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/preflight.log"
+          python3 .github/scripts/tvos-tooling-tests.py \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/tooling-tests.log"
+          python3 .agents/skills/update-phoenix-version/scripts/test_update_version.py \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/version-tests.log"
+          bash -n .github/scripts/tvos-framework.sh
+          plutil -lint tvosApp/PhoenixTV.xcodeproj/project.pbxproj tvosApp/PhoenixTV/Info.plist
+          xmllint --noout tvosApp/PhoenixTV.xcodeproj/xcshareddata/xcschemes/PhoenixTV.xcscheme
+      - name: Compile unsigned Release TV device app
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tvos-release.py local build --sdk appletvos --configuration Release \
+            --derived-data "$RUNNER_TEMP/tvos-device-derived" \
+            2>&1 | tee "$RUNNER_TEMP/tvos-evidence/device-build.log"
+      - name: Preserve device build diagnostics and logs even on failure
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: tvos-device-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/tvos-evidence/
+            ${{ runner.temp }}/tvos-device-derived/Logs/
+          if-no-files-found: warn
+          retention-days: 7

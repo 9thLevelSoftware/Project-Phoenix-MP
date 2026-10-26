@@ -56,6 +56,8 @@ data class PhantomBleConfig(
     val repDelayMs: Long = 750L,
     val autoCompleteFixedRepSets: Boolean = true,
     val defaultEchoLoadKg: Float = 20f,
+    // Opt-in for standalone simulator fixtures; phone scenarios inject their own rep stream.
+    val simulateParsedProgramReps: Boolean = false,
 ) {
     init {
         require(loadScale > 0f) { "loadScale must be > 0" }
@@ -130,6 +132,8 @@ class PhantomBleRepository(
     private var workoutParams: WorkoutParameters? = null
     private var workoutConnectionGeneration: Long? = null
     private var currentWorkoutProgram: PhantomWorkoutProgram? = null
+    // A parsed CONFIG can be consumed once, and only by the connection that received it.
+    private var pendingProgramConnectionGeneration: Long? = null
     internal val currentProgram: PhantomWorkoutProgram?
         get() = currentWorkoutProgram
     private val _config = MutableStateFlow(initialConfig)
@@ -381,6 +385,7 @@ class PhantomBleRepository(
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            val expectedRepGeneration = repGeneration
             logRepo.info(
                 LogEventType.COMMAND_SENT,
                 "Phantom received raw workout command",
@@ -391,8 +396,18 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            if (_config.value.simulateParsedProgramReps && repGeneration != expectedRepGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout command invalidated"))
+            }
             decodeWorkoutProgram(command)?.let { program ->
                 currentWorkoutProgram = program
+                if (_config.value.simulateParsedProgramReps && repGeneration == expectedRepGeneration) {
+                    repGeneration += 1
+                    repJob?.cancel()
+                    pendingProgramConnectionGeneration = expectedConnectionGeneration.takeIf {
+                        _connectionState.value is ConnectionState.Connected
+                    }
+                }
                 logRepo.info(
                     LogEventType.COMMAND_SENT,
                     "Phantom parsed workout command",
@@ -657,6 +672,8 @@ class PhantomBleRepository(
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            val expectedRepGeneration = repGeneration
+            val parsedProgram = currentWorkoutProgram
             activePollingConnectionGeneration = expectedConnectionGeneration
             workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
@@ -692,6 +709,18 @@ class PhantomBleRepository(
             ) {
                 return@withLock
             }
+            if (_config.value.simulateParsedProgramReps &&
+                pendingProgramConnectionGeneration == expectedConnectionGeneration &&
+                repGeneration == expectedRepGeneration &&
+                parsedProgram != null &&
+                (parsedProgram.workingReps == null || parsedProgram.workingReps > 0) &&
+                currentConnectedProducerOwnsConnection(expectedConnectionGeneration, metricsJob) &&
+                currentConnectedProducerOwnsConnection(expectedConnectionGeneration, heuristicJob)
+            ) {
+                // Consume before launch: polling restarts and completed/cancelled sets cannot replay.
+                pendingProgramConnectionGeneration = null
+                startRepSimulation(parsedProgram, expectedConnectionGeneration)
+            }
         }
     }
 
@@ -700,6 +729,7 @@ class PhantomBleRepository(
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock
             }
+            pendingProgramConnectionGeneration = null
             metricsGeneration += 1
             heuristicGeneration += 1
             repGeneration += 1
@@ -1579,6 +1609,70 @@ class PhantomBleRepository(
         return requireNotNull(monitorProcessor)
     }
 
+    /**
+     * Standalone simulator telemetry, not a wire encoder or a workout completion shortcut.
+     * Keep the phone's simulator-local WorkoutParameters replay below unchanged.
+     */
+    private fun startRepSimulation(
+        program: PhantomWorkoutProgram,
+        expectedConnectionGeneration: Long,
+    ) {
+        val expectedGeneration = ++repGeneration
+        repJob?.cancel()
+        repJob = scope.launch {
+            // A delayed clean baseline supplies freshness evidence even for a one-rep set.
+            var rep = 0
+            while (isActive) {
+                delay(_config.value.repDelayMs)
+                var finished = false
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedRepGeneration = expectedGeneration,
+                    ) {
+                        if (!_config.value.simulateParsedProgramReps) {
+                            finished = true
+                        } else {
+                            val workingCount = (rep - program.warmupReps).coerceAtLeast(0)
+                            val target = program.workingReps
+                            finished = target != null && workingCount >= target &&
+                                _config.value.autoCompleteFixedRepSets
+                            _repEvents.tryEmit(
+                                RepNotification(
+                                    topCounter = rep,
+                                    completeCounter = rep,
+                                    repsRomCount = minOf(rep, program.warmupReps),
+                                    repsRomTotal = program.warmupReps,
+                                    repsSetCount = target?.let { minOf(workingCount, it) } ?: workingCount,
+                                    // The machine reports an unlimited command (0xFF) as target 252.
+                                    repsSetTotal = target ?: 252,
+                                    rangeTop = 650f,
+                                    rangeBottom = 0f,
+                                    rawData = byteArrayOf(), // Synthetic event, not captured BLE bytes.
+                                    timestamp = Clock.System.now().toEpochMilliseconds(),
+                                ),
+                            )
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                                repGeneration == expectedGeneration
+                            ) {
+                                logRepo.info(
+                                    LogEventType.REP_RECEIVED,
+                                    "SIMULATED Phantom parsed-program rep (NO REAL BLUETOOTH)",
+                                    PHANTOM_DEVICE_NAME,
+                                    PHANTOM_DEVICE_ADDRESS,
+                                    "warmup=${minOf(rep, program.warmupReps)}/${program.warmupReps}; working=$workingCount/$target",
+                                )
+                            }
+                        }
+                    } || finished
+                ) {
+                    break
+                }
+                rep += 1
+            }
+        }
+    }
+
     private fun startRepSimulation(
         params: WorkoutParameters,
         expectedConnectionGeneration: Long,
@@ -1738,6 +1832,7 @@ class PhantomBleRepository(
     }
 
     private fun stopJobs() {
+        pendingProgramConnectionGeneration = null
         metricsGeneration += 1
         heuristicGeneration += 1
         repGeneration += 1

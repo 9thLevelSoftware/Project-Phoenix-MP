@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "filename": "image@1x.png",
+      "idiom": "tv",
+      "scale": "1x"
+    },
+    {
+      "filename": "image@2x.png",
+      "idiom": "tv",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "com.devil.phoenixproject.projectphoenix",
+    "version": 1
+  }
+}

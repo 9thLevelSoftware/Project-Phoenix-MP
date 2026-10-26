@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.sync.SyncState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,20 +59,30 @@ class LinkAccountViewModel(
     val authEvents = syncManager.authEvents
 
     fun login(email: String, password: String) {
-        scope.launch {
+        loginTracked(email, password)
+    }
+
+    /** Completion handle for hosts that must reserve admission across the entire shared operation. */
+    internal fun loginTracked(
+        email: String,
+        password: String,
+        afterSuccessfulLogin: (suspend () -> Unit)? = null,
+    ): Job {
+        return scope.launch {
             try {
                 _uiState.value = LinkAccountUiState.Loading(provider = null)
 
-                syncManager.login(email, password)
-                    .onSuccess {
-                        // Logged-in UI reads SyncManager.isAuthenticated / currentUser.
-                        _uiState.value = LinkAccountUiState.Initial
-                    }
-                    .onFailure { error ->
-                        _uiState.value = LinkAccountUiState.Error(
-                            error.message ?: "Login failed",
-                        )
-                    }
+                val result = syncManager.login(email, password)
+                if (result.isSuccess) {
+                    // Logged-in UI reads SyncManager.isAuthenticated / currentUser.
+                    _uiState.value = LinkAccountUiState.Initial
+                    afterSuccessfulLogin?.invoke()
+                } else {
+                    val error = result.exceptionOrNull()
+                    _uiState.value = LinkAccountUiState.Error(
+                        error?.message ?: "Login failed",
+                    )
+                }
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
@@ -166,7 +177,11 @@ class LinkAccountViewModel(
     }
 
     fun logout() {
-        scope.launch {
+        logoutTracked()
+    }
+
+    internal fun logoutTracked(): Job {
+        return scope.launch {
             try {
                 syncManager.logout()
                 _uiState.value = LinkAccountUiState.Initial
@@ -180,15 +195,24 @@ class LinkAccountViewModel(
     }
 
     fun sync() {
-        scope.launch {
-            try {
-                syncManager.sync()
-            } catch (e: CancellationException) {
-                // Coroutine cancelled during clear() - preserve original cancellation
-                throw e
-            } catch (e: Exception) {
-                _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
-            }
+        syncTracked()
+    }
+
+    internal fun syncTracked(): Job {
+        return scope.launch {
+            syncInCurrentOperation()
+        }
+    }
+
+    /** Run the shared sync inline when it must remain part of a tracked operation. */
+    internal suspend fun syncInCurrentOperation() {
+        try {
+            syncManager.sync()
+        } catch (e: CancellationException) {
+            // Coroutine cancelled during clear() - preserve original cancellation
+            throw e
+        } catch (e: Exception) {
+            _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
         }
     }
 
@@ -214,7 +238,11 @@ class LinkAccountViewModel(
      * profile to the new account and record which pre-switch rows must not be uploaded.
      */
     fun resolveAccountMismatch(choice: AccountSwitchChoice) {
-        scope.launch {
+        resolveAccountMismatchTracked(choice)
+    }
+
+    internal fun resolveAccountMismatchTracked(choice: AccountSwitchChoice): Job {
+        return scope.launch {
             try {
                 _uiState.value = LinkAccountUiState.Loading(provider = null)
                 syncManager.resolveAccountMismatch(choice).fold(

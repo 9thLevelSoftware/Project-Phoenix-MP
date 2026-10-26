@@ -38,7 +38,7 @@ class TargetResult:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Update Project Phoenix Android, iOS, and Settings app version metadata.",
+        description="Update Project Phoenix Android, iOS, tvOS, and Settings app version metadata.",
     )
     parser.add_argument(
         "--version",
@@ -61,6 +61,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional iOS CURRENT_PROJECT_VERSION build number for the Xcode project.",
     )
     parser.add_argument(
+        "--tvos-build",
+        help="Optional tvOS CURRENT_PROJECT_VERSION; does not change the iOS build number.",
+    )
+    parser.add_argument(
         "--repo-root",
         type=Path,
         help="Repository root. Defaults to the current directory or an ancestor of this script.",
@@ -79,6 +83,9 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if args.ios_build is not None and not re.fullmatch(r"[1-9]\d*", args.ios_build):
         raise ValueError("--ios-build must be a positive integer string.")
+
+    if args.tvos_build is not None and not re.fullmatch(r"[1-9]\d*", args.tvos_build):
+        raise ValueError("--tvos-build must be a positive integer string.")
 
     if args.dry_run and args.check:
         raise ValueError("Use either --dry-run or --check, not both.")
@@ -137,6 +144,13 @@ def make_targets(args: argparse.Namespace) -> list[Target]:
             expected_matches=2,
             replacement_value=version,
         ),
+        Target(
+            label="tvOS MARKETING_VERSION",
+            relative_path=Path("tvosApp/PhoenixTV.xcodeproj/project.pbxproj"),
+            pattern=re.compile(r"^(\s*MARKETING_VERSION\s*=\s*)([^;]+)(;.*)$", re.MULTILINE),
+            expected_matches=2,
+            replacement_value=version,
+        ),
     ]
 
     if args.android_code is not None:
@@ -161,6 +175,17 @@ def make_targets(args: argparse.Namespace) -> list[Target]:
                 pattern=re.compile(r"^(\s*CURRENT_PROJECT_VERSION\s*=\s*)([0-9]+)(;.*)$", re.MULTILINE),
                 expected_matches=2,
                 replacement_value=args.ios_build,
+            ),
+        )
+
+    if args.tvos_build is not None:
+        targets.append(
+            Target(
+                label="tvOS CURRENT_PROJECT_VERSION",
+                relative_path=Path("tvosApp/PhoenixTV.xcodeproj/project.pbxproj"),
+                pattern=re.compile(r"^(\s*CURRENT_PROJECT_VERSION\s*=\s*)([0-9]+)(;.*)$", re.MULTILINE),
+                expected_matches=2,
+                replacement_value=args.tvos_build,
             ),
         )
 
