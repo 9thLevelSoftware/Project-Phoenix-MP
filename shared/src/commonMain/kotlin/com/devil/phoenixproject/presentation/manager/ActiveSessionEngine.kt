@@ -8290,7 +8290,11 @@ class ActiveSessionEngine(
                         programmedBaseWeightPerCableKg = programmedBaseWeight,
                         configuredStartWeightPerCableKg = retryRequest?.expectedWeightPerCableKg ?: baseParams.weightPerCableKg,
                         progressionKg = baseParams.progressionRegressionKg,
-                        targetReps = if (semanticAmrap || isTimedCableAtStart || isBodyweightAtStart) null else leaseTarget,
+                        // Command reps=0 is valid for open-ended Just Lift without AMRAP.
+                        // Completion metadata uses null for that sentinel, as the fallback does.
+                        targetReps = leaseTarget.takeIf {
+                            it > 0 && !semanticAmrap && !isTimedCableAtStart && !isBodyweightAtStart
+                        },
                         isWarmup = warmupSetIndexAtStart >= 0,
                         isEcho = baseParams.isEchoMode,
                         isJustLift = isJustLiftMode || baseParams.isJustLift,
@@ -10513,9 +10517,25 @@ class ActiveSessionEngine(
         }?.also(::ownStopWorkoutCleanupTarget)
 
         val lease = executionGuard.currentLease
-        val requestedCompletion = lease?.let { currentLease ->
-            bodyweightCompletionGate.pendingFor(currentLease)
-                ?: completionFor(currentLease, SetEndReason.USER_STOPPED)
+        val requestedCompletion = try {
+            lease?.let { currentLease ->
+                bodyweightCompletionGate.pendingFor(currentLease)
+                    ?: completionFor(currentLease, SetEndReason.USER_STOPPED)
+            }
+        } catch (error: IllegalArgumentException) {
+            // Invalid completion metadata must remain an error, but cannot prevent RESET.
+            // Keep the stop guard latched: repeated Stop must not issue another teardown
+            // or manufacture a successful completion/save from the rejected facts.
+            if (lease != null && executionGuard.isCurrent(lease)) {
+                beginMachineTeardown(
+                    lease,
+                    if (exitingWorkout) TeardownReason.END_WORKOUT else TeardownReason.MANUAL_STOP,
+                )
+                bodyweightCompletionGate.invalidate(lease)
+                clearDangerZoneCountdownOverride(lease)
+                cancelSetOwnedPresentationJobs(lease)
+            }
+            throw error
         }
         val completion = when (val claim = requestedCompletion?.let(executionGuard::claimCompletion)) {
             is CompletionClaimResult.Claimed -> claim.completion.also { claimed ->
