@@ -11,3 +11,11 @@ actual suspend fun Peripheral.requestMtuIfSupported(mtu: Int): Int? {
     // No explicit API to request MTU - returns null to indicate "use system default"
     return null
 }
+
+actual fun Peripheral.closePeripheral() {
+    try {
+        (this as? AutoCloseable)?.close()
+    } catch (_: Exception) {
+        // Ignored on iOS
+    }
+}

@@ -20,6 +20,7 @@ import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
 import com.russhwolf.settings.Settings
+import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.TimeSource
@@ -83,6 +84,7 @@ class PolarH10BleManager(
     private val timeSource: () -> Long = DEFAULT_WALL_CLOCK,
     monotonicTimeSource: (() -> Long)? = null,
     private val logRepo: ConnectionLogRepository = ConnectionLogRepository.instance,
+    internal var autoReconnectRunner: (suspend () -> Result<Unit>)? = null,
 ) {
     private val log = Logger.withTag("PolarH10BleManager")
 
@@ -123,6 +125,8 @@ class PolarH10BleManager(
         settings?.remove(KEY_POLAR_REMEMBERED_NAME)
         _rememberedAddress.value = null
         _rememberedName.value = null
+        reconnectJob?.cancel()
+        reconnectJob = null
     }
 
     // ===== Torso Biomechanics Posture & Filtering =====
@@ -252,6 +256,9 @@ class PolarH10BleManager(
                 if (!_isEcgStreaming.value) startEcgStream()
                 if (!_isAccStreaming.value) startAccStream()
             }
+        } else if (_rememberedAddress.value != null && _isAutoReconnectEnabled.value) {
+            log.i { "Workout recording started without active Polar connection; triggering auto-reconnect" }
+            ensureConnectedOrReconnect()
         }
     }
 
@@ -615,8 +622,11 @@ class PolarH10BleManager(
     internal fun setConnectedForTesting(connected: Boolean) {
         _isConnected.value = connected
         if (connected) {
+            wasEverConnected = true
+            isExplicitDisconnect = false
             _connectionState.value = ConnectionState.Connected("Polar H10", "00:11:22:33:44:55")
         } else {
+            wasEverConnected = false
             _connectionState.value = ConnectionState.Disconnected
             cleanupSessionTelemetry()
         }
@@ -697,9 +707,21 @@ class PolarH10BleManager(
     val rrBeats: SharedFlow<PolarRrBeat> = _rrBeats.asSharedFlow()
 
     // ===== Internal Connection References =====
+    @Volatile
     private var peripheral: Peripheral? = null
 
+    @Volatile
+    private var wasEverConnected = false
+
+    @Volatile
+    private var isExplicitDisconnect = false
+
+    internal val wasEverConnectedForTesting: Boolean get() = wasEverConnected
+    internal val isExplicitDisconnectForTesting: Boolean get() = isExplicitDisconnect
+    internal val isReconnectJobActiveForTesting: Boolean get() = reconnectJob?.isActive == true
+
     private var scanJob: Job? = null
+    private var reconnectJob: Job? = null
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
 
     private var stateObserverJob: Job? = null
@@ -751,6 +773,8 @@ class PolarH10BleManager(
                 message = "[HRM] Scanning for Polar H10 devices",
                 tag = "HRM",
             )
+            reconnectJob?.cancel()
+            reconnectJob = null
             scanJob?.cancel()
             scanJob = null
             _scannedDevices.value = emptyList()
@@ -826,6 +850,25 @@ class PolarH10BleManager(
     private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException()
 
     /**
+     * Resets explicit disconnect suppression and triggers an immediate auto-reconnect attempt
+     * to a remembered Polar sensor.
+     */
+    fun ensureConnectedOrReconnect(): Job {
+        isExplicitDisconnect = false
+        reconnectJob?.cancel()
+        val job = scope.launch {
+            val runner = autoReconnectRunner
+            if (runner != null) {
+                runner.invoke()
+            } else {
+                autoReconnectIfRemembered()
+            }
+        }
+        reconnectJob = job
+        return job
+    }
+
+    /**
      * Auto-reconnect to the remembered Polar H10 if one was previously connected
      * and auto-reconnect is enabled.
      */
@@ -836,6 +879,10 @@ class PolarH10BleManager(
         if (!_isAutoReconnectEnabled.value) {
             return Result.success(Unit)
         }
+        if (isExplicitDisconnect) {
+            log.d { "Auto-reconnect suppressed due to explicit disconnect" }
+            return Result.success(Unit)
+        }
         val address = _rememberedAddress.value ?: return Result.success(Unit)
         val name = _rememberedName.value ?: "Polar H10"
         log.i { "Attempting auto-reconnect to remembered Polar H10: $name ($address)" }
@@ -843,7 +890,11 @@ class PolarH10BleManager(
         val cachedAdv = discoveredAdvertisements[address]
             ?: discoveredAdvertisements.values.firstOrNull { it.identifier.toString() == address }
         if (cachedAdv != null) {
-            return connect(ScannedDevice(name = name, address = address))
+            val connectResult = connect(ScannedDevice(name = name, address = address))
+            if (connectResult.isSuccess) {
+                return connectResult
+            }
+            log.w { "Direct connection with cached advertisement failed, falling back to targeted scan for $name ($address)" }
         }
 
         return try {
@@ -870,6 +921,7 @@ class PolarH10BleManager(
             if (matchedDevice != null) {
                 connect(matchedDevice)
             } else {
+                log.w { "Timed out waiting for remembered Polar H10 ($address)" }
                 Result.failure(IllegalStateException("Timed out waiting for remembered Polar H10"))
             }
         } catch (e: Exception) {
@@ -884,15 +936,32 @@ class PolarH10BleManager(
      */
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         log.i { "Connecting to Polar H10: ${device.name} (${device.address})" }
+        reconnectJob?.cancel()
+        reconnectJob = null
+
+        val wasScanning = scanJob?.isActive == true || _connectionState.value is ConnectionState.Scanning
         stopScanning()
+        if (wasScanning) {
+            delay(150)
+        }
 
         val advertisement = discoveredAdvertisements[device.address]
             ?: discoveredAdvertisements.values.firstOrNull { it.identifier.toString() == device.address }
             ?: return Result.failure(IllegalStateException("Polar device ${device.address} not found in scanned cache"))
 
+        logRepo.info(
+            eventType = LogEventType.CONNECT_START,
+            message = "[HRM] Connecting to Polar H10: ${device.name}",
+            deviceName = device.name,
+            deviceAddress = device.address,
+            tag = "HRM",
+        )
+
         return try {
             cleanupExistingConnection()
             _connectionState.value = ConnectionState.Connecting
+            isExplicitDisconnect = false
+            wasEverConnected = false
 
             val p = Peripheral(advertisement)
             peripheral = p
@@ -910,6 +979,7 @@ class PolarH10BleManager(
                             _connectionState.value = ConnectionState.Connecting
                         }
                         is State.Connected -> {
+                            wasEverConnected = true
                             _isConnected.value = true
                             _connectionState.value = ConnectionState.Connected(
                                 deviceName = device.name,
@@ -934,6 +1004,11 @@ class PolarH10BleManager(
                             _isConnected.value = false
                         }
                         is State.Disconnected -> {
+                            if (!wasEverConnected) {
+                                log.d { "Polar H10 initial state: Disconnected (awaiting connect() call)" }
+                                return@collect
+                            }
+                            wasEverConnected = false
                             _isConnected.value = false
                             _connectionState.value = ConnectionState.Disconnected
                             logRepo.info(
@@ -1703,6 +1778,10 @@ class PolarH10BleManager(
      */
     suspend fun disconnect() {
         _isConnected.value = false
+        isExplicitDisconnect = true
+        reconnectJob?.cancel()
+        reconnectJob = null
+
         val p = peripheral
         if (p != null) {
             log.i { "Disconnecting Polar H10" }
@@ -1722,6 +1801,12 @@ class PolarH10BleManager(
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Error during Polar disconnect: ${e.message}" }
+            }
+            try {
+                p.closePeripheral()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w { "Error during Polar close: ${e.message}" }
             }
         }
         cleanupExistingConnection()
@@ -1776,20 +1861,43 @@ class PolarH10BleManager(
         _dynamicAccMg.value = null
     }
 
-    private fun cleanupExistingConnection() {
+    private suspend fun cleanupExistingConnection() {
         stateObserverJob?.cancel()
         stateObserverJob = null
         cleanupSessionTelemetry()
+        val p = peripheral
         peripheral = null
+        if (p != null) {
+            try {
+                p.disconnect()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
+            }
+            try {
+                p.closePeripheral()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w { "Cleanup close error (non-fatal): ${e.message}" }
+            }
+        }
+        wasEverConnected = false
     }
 
     fun shutdown() {
         _isConnected.value = false
+        isExplicitDisconnect = true
         scanJob?.cancel()
         scanJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         stateObserverJob?.cancel()
         stateObserverJob = null
         val p = peripheral
+        peripheral = null
+        wasEverConnected = false
+        cleanupSessionTelemetry()
+        _connectionState.value = ConnectionState.Disconnected
         if (p != null) {
             scope.launch {
                 try {
@@ -1801,9 +1909,11 @@ class PolarH10BleManager(
                     }
                     p.disconnect()
                 } catch (_: Exception) {}
+                try {
+                    p.closePeripheral()
+                } catch (_: Exception) {}
             }
         }
-        cleanupExistingConnection()
     }
 
     internal fun isPolarH10Advertisement(adv: Advertisement): Boolean {

@@ -9,6 +9,7 @@ import com.devil.phoenixproject.util.BleConstants
 import com.juul.kable.Advertisement
 import com.juul.kable.Identifier
 import com.juul.kable.ManufacturerData
+import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -791,6 +793,127 @@ class PolarH10BleManagerTest {
         assertNotNull(manager.dynamicAccMg.value)
 
         job.cancel()
+        testScope.cancel()
+    }
+
+    // ==================== Connection Lifecycle & Auto-Reconnect Tests ====================
+
+    @Test
+    fun `initial State Disconnected does not trigger premature disconnect cleanup or log disconnect`() {
+        val manager = PolarH10BleManager()
+
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertFalse(manager.wasEverConnectedForTesting)
+        assertFalse(manager.isExplicitDisconnectForTesting)
+    }
+
+    @Test
+    fun `disconnect sets isExplicitDisconnect and cleans up connection state`() = runTest {
+        val manager = PolarH10BleManager()
+        manager.setConnectedForTesting(true)
+
+        assertTrue(manager.isConnected.value)
+        assertTrue(manager.wasEverConnectedForTesting)
+        assertFalse(manager.isExplicitDisconnectForTesting)
+
+        manager.disconnect()
+
+        assertFalse(manager.isConnected.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertTrue(manager.isExplicitDisconnectForTesting)
+        assertFalse(manager.wasEverConnectedForTesting)
+    }
+
+    @Test
+    fun `startSessionRecording resets isExplicitDisconnect and auto-reconnects to remembered sensor`() {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_NAME, "Polar H10 12345678")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(
+            settings = settings,
+            scope = testScope,
+            autoReconnectRunner = {
+                delay(Long.MAX_VALUE)
+                Result.success(Unit)
+            },
+        )
+
+        runTest {
+            manager.disconnect()
+        }
+        assertTrue(manager.isExplicitDisconnectForTesting)
+
+        // Starting a workout should clear the explicit disconnect suppression and trigger auto-reconnect
+        manager.startSessionRecording("session-123", "WORKING_SET")
+
+        assertFalse(manager.isExplicitDisconnectForTesting)
+        assertTrue(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `forgetRememberedDevice clears settings and cancels pending reconnectJob`() {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(
+            settings = settings,
+            scope = testScope,
+            autoReconnectRunner = {
+                delay(Long.MAX_VALUE)
+                Result.success(Unit)
+            },
+        )
+
+        manager.ensureConnectedOrReconnect()
+        assertTrue(manager.isReconnectJobActiveForTesting)
+
+        manager.forgetRememberedDevice()
+
+        assertNull(manager.rememberedAddress.value)
+        assertNull(settings.getStringOrNull(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS))
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `autoReconnectIfRemembered is suppressed when auto-reconnect is disabled`() = runTest {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+        settings.putBoolean(PolarH10BleManager.KEY_POLAR_AUTO_RECONNECT, false)
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(settings = settings, scope = testScope)
+
+        val result = manager.autoReconnectIfRemembered()
+
+        assertTrue(result.isSuccess)
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `autoReconnectIfRemembered is suppressed after explicit manual disconnect`() = runTest {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(settings = settings, scope = testScope)
+
+        manager.disconnect()
+        assertTrue(manager.isExplicitDisconnectForTesting)
+
+        val result = manager.autoReconnectIfRemembered()
+
+        assertTrue(result.isSuccess)
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
         testScope.cancel()
     }
 }
