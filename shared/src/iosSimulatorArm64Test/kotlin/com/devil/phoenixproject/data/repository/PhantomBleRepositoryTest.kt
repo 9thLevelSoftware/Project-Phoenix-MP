@@ -2243,10 +2243,16 @@ class PhantomBleRepositoryTest {
                 assertEquals(1, first.repsSetCount)
                 assertEquals(2, second.repsSetCount)
                 assertEquals(2, second.repsSetTotal)
-                assertTrue(
-                    logRepo.getLogsByEventType(LogEventType.COMMAND_RESPONSE)
-                        .any { it.message == "Phantom target reps reached" },
-                )
+                withContext(Dispatchers.Default) {
+                    withTimeout(1_000L) {
+                        logRepo.logs.first { logs ->
+                            logs.any { log ->
+                                log.eventType == LogEventType.COMMAND_RESPONSE &&
+                                    log.message == "Phantom target reps reached"
+                            }
+                        }
+                    }
+                }
 
                 withContext(Dispatchers.Default) { delay(250L) }
                 expectNoEvents()
