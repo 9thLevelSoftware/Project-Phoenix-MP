@@ -1,0 +1,14 @@
+{
+  "layers": [
+    {
+      "filename": "Front.imagestacklayer"
+    },
+    {
+      "filename": "Back.imagestacklayer"
+    }
+  ],
+  "info": {
+    "author": "com.devil.phoenixproject.projectphoenix",
+    "version": 1
+  }
+}
