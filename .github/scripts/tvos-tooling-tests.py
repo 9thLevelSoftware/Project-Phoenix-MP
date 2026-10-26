@@ -15,6 +15,8 @@ import sys
 import tempfile
 import unittest
 import uuid
+from typing import Callable, cast
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -153,6 +155,91 @@ class ToolingTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError) as caught:
             release.run(["/bin/sh", "-c", "exit 37"], "fixture failure")
         self.assertEqual(caught.exception.returncode, 37)
+
+    def export_ipa_fixture(self, path, *, changes=None, extra_app=False):
+        info = {"CFBundleIdentifier": release.BUNDLE, "CFBundleShortVersionString": "2.3.4",
+                "CFBundleVersion": "456", "DTPlatformName": "appletvos", "UIDeviceFamily": [3]}
+        info.update(changes or {})
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as ipa:
+            ipa.writestr("Payload/Phoenix TV.app/Info.plist", plistlib.dumps(info))
+            if extra_app:
+                ipa.writestr("Payload/Another.app/Info.plist", plistlib.dumps(info))
+
+    def test_export_normalizes_display_name_ipa_after_metadata_validation(self):
+        export = self.root / "export"
+        export.mkdir()
+        source = export / "Phoenix TV.ipa"
+        self.export_ipa_fixture(source)
+        normalize = getattr(release, "normalize_exported_ipa", None)
+        if not callable(normalize):
+            self.fail("Expected the tvOS IPA normalization helper")
+        normalize = cast(Callable[[Path, dict[str, str], str], Path], normalize)
+
+        result = normalize(export, {"marketing": "2.3.4"}, "456")
+
+        self.assertEqual(result, export / "PhoenixTV.ipa")
+        self.assertTrue(result.is_file())
+        self.assertFalse(source.exists())
+        self.assertTrue(zipfile.is_zipfile(result))
+
+    def test_export_preserves_already_stable_ipa_name(self):
+        export = self.root / "export"
+        export.mkdir()
+        stable = export / "PhoenixTV.ipa"
+        self.export_ipa_fixture(stable)
+
+        result = release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+
+        self.assertEqual(result, stable)
+        self.assertTrue(stable.is_file())
+
+    def test_export_requires_exactly_one_ipa_candidate(self):
+        for names in ((), ("one.ipa", "two.ipa")):
+            with self.subTest(names=names):
+                export = self.root / ("export-" + str(len(names)))
+                export.mkdir()
+                for name in names:
+                    self.export_ipa_fixture(export / name)
+                with self.assertRaisesRegex(ValueError, "exactly one"):
+                    release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+
+    def test_export_rejects_malformed_zip_and_multiple_payload_apps(self):
+        export = self.root / "export"
+        export.mkdir()
+        malformed = export / "broken.ipa"
+        malformed.write_bytes(b"not a zip archive")
+        with self.assertRaisesRegex(ValueError, "ZIP"):
+            release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+
+        malformed.unlink()
+        with zipfile.ZipFile(malformed, "w", compression=zipfile.ZIP_DEFLATED) as ipa:
+            ipa.writestr("Payload/Phoenix TV.app/Info.plist", b'<?xml version="1.0"?><plist><dict>')
+        with self.assertRaises(Exception) as caught:
+            release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+        self.assertIsInstance(caught.exception, ValueError)
+        self.assertRegex(str(caught.exception), "Info.plist")
+
+        malformed.unlink()
+        ambiguous = export / "ambiguous.ipa"
+        self.export_ipa_fixture(ambiguous, extra_app=True)
+        with self.assertRaisesRegex(ValueError, "exactly one.*app"):
+            release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+
+    def test_export_rejects_mismatched_payload_identity(self):
+        cases = (({"CFBundleIdentifier": "com.example.other"}, "bundle"),
+                 ({"DTPlatformName": "iphoneos", "UIDeviceFamily": [1]}, "platform"),
+                 ({"CFBundleShortVersionString": "9.9.9"}, "version"),
+                 ({"CFBundleVersion": "999"}, "build"))
+        for changes, identity in cases:
+            with self.subTest(identity=identity):
+                export = self.root / ("export-" + identity)
+                export.mkdir()
+                source = export / "Phoenix TV.ipa"
+                self.export_ipa_fixture(source, changes=changes)
+                with self.assertRaisesRegex(ValueError, identity):
+                    release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+                self.assertTrue(source.is_file())
+                self.assertFalse((export / "PhoenixTV.ipa").exists())
 
     def offline_cli(self, output, *, code=65, action="build", env=None):
         """Replace only the forbidden native executable; run a real child and CLI."""
