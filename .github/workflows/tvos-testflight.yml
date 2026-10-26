@@ -155,6 +155,15 @@ jobs:
     # Reuse the phone's archive runner/SDK, but TV signing and artifacts are separate.
     runs-on: macos-26-intel
     timeout-minutes: 90
+    env:
+      # Match the unsigned device lane's serialized 2 GiB Gradle / 12 GiB K/N
+      # release profile. This belongs to the archive only, not simulator or upload.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx2g
+        -Dorg.gradle.workers.max=1
+        -Dorg.gradle.parallel=false
+        -Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g
+        -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

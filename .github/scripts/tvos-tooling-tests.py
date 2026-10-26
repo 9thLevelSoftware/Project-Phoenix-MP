@@ -216,7 +216,9 @@ class ToolingTests(unittest.TestCase):
         # Generate a synthetic canary; no credential-shaped literal is committed.
         generic = uuid.uuid4().hex
         pem_line = uuid.uuid4().hex
-        short_secret = uuid.uuid4().hex[:2]
+        # A bare random hex pair can occur in boilerplate (e.g. ff in Offline).
+        # Keep two-character coverage without making the absence assertion flaky.
+        short_secret = "q" + uuid.uuid4().hex[0]
         file_credential = uuid.uuid4().hex
         file_password = uuid.uuid4().hex
         url_password = uuid.uuid4().hex
@@ -252,7 +254,7 @@ class ToolingTests(unittest.TestCase):
         annotation = uuid.uuid4().hex
         workflow_annotation = uuid.uuid4().hex
         lines = ["::error::" + annotation, "export KEY=RAW_DUMP_CANARY",
-                 f"/src/Workflow.swift:12:9: error: ::error::{workflow_annotation}",
+                 f"::error::/src/Workflow.swift:12:9: error: {workflow_annotation}",
                  "error: first diagnostic\x1b[31m\x1b[0m\x00"]
         lines += [f"error: diagnostic {index} " + "z" * 2000 for index in range(100)]
         result, output = self.offline_cli("\n".join(lines).encode())
@@ -260,7 +262,7 @@ class ToolingTests(unittest.TestCase):
         self.assertIn("first diagnostic", output)
         self.assertNotIn(annotation, output)
         self.assertNotIn("RAW_DUMP_CANARY", output)
-        self.assertIn(f"native: /src/Workflow.swift:12:9: error: ::error::{workflow_annotation}", output)
+        self.assertIn(f"native: ::error::/src/Workflow.swift:12:9: error: {workflow_annotation}", output)
         self.assertNotIn("\x1b", output)
         self.assertNotIn("\x00", output)
         self.assertLess(len(output), 23000)
@@ -669,7 +671,7 @@ class WorkflowContractTests(unittest.TestCase):
         return match.group(1)
 
     def artifact_step(self, job, action):
-        matches = re.findall(r"(?ms)^      - uses: actions/" + re.escape(action) +
+        matches = re.findall(r"(?ms)^      - (?:name: [^\n]*\n        )?uses: actions/" + re.escape(action) +
                              r"@[0-9a-f]{40}[^\n]*\n(.*?)(?=^      - |\Z)", job)
         self.assertEqual(len(matches), 1, f"Expected exactly one {action} step in job")
         return matches[0]
@@ -741,6 +743,92 @@ class WorkflowContractTests(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertRegex(body, r"(?m)^          python3 " + re.escape(script) +
                                  r' 2>&1 \| tee "\$RUNNER_TEMP/tvos-evidence/' + re.escape(log) + r'"$')
+
+
+    def assert_serial_release_heap(self, job):
+        for setting in ("-Dorg.gradle.jvmargs=-Xmx2g", "-Dorg.gradle.workers.max=1",
+                        "-Dorg.gradle.parallel=false", "-Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g",
+                        "-Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process"):
+            with self.subTest(setting=setting):
+                self.assertIn(setting, job)
+
+    def test_unsigned_release_device_job_is_separate_standard_runner_cross_compile(self):
+        text = self.workflow("tvos-build.yml")
+        device = self.job(text, "native-tv-device")
+        self.assertRegex(device, r"(?m)^    runs-on: macos-26-intel$")
+        self.assertNotRegex(device, r"(?m)^    needs:")
+        self.assertIn("DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer", device)
+        self.assertIn('test -d "$DEVELOPER_DIR"', device)
+        self.assertIn("xcrun --sdk appletvos --show-sdk-version", device)
+        self.assertNotIn('test "$(uname -m)" = arm64', device)
+        self.assert_serial_release_heap(device)
+        self.assertIn("tvos-release.py preflight", device)
+        self.assertIn("tvos-tooling-tests.py", device)
+        self.assertIn("test_update_version.py", device)
+        self.assertIn("tvos-release.py local build --sdk appletvos --configuration Release", device)
+        self.assertIn("tvos-device-derived", device)
+        self.assertIn("device-build.log", device)
+        self.assertIn("CODE_SIGNING_ALLOWED: 'NO'", device)
+        self.assertIn("CODE_SIGNING_REQUIRED: 'NO'", device)
+        self.assertIn("persist-credentials: false", device)
+        self.assertIn('scratch="$RUNNER_TEMP/phoenix-tv-device-tmp"', device)
+        self.assertIn("TMPDIR=%s", device)
+        self.assertIn("JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=%s", device)
+        self.assertIn("pull_request:", text)
+        self.assertIn("permissions:", text)
+        self.assertRegex(text, r"(?m)^  contents: read$")
+        self.assertNotIn("${{ secrets.", text)
+        self.assertNotIn("tvosSimulatorArm64Test", device)
+        self.assertNotIn("--sdk appletvsimulator", device)
+        artifact = self.artifact_step(device, "upload-artifact")
+        self.assertIn("if: always()", artifact)
+        self.assertIn("${{ runner.temp }}/tvos-evidence/", artifact)
+        self.assertIn("${{ runner.temp }}/tvos-device-derived/Logs/", artifact)
+        self.assertIn("if-no-files-found: warn", artifact)
+
+    def test_native_tests_and_ui_remain_on_arm64_runner_without_device_release(self):
+        text = self.workflow("tvos-build.yml")
+        native = self.job(text, "native-tv")
+        self.assertRegex(native, r"(?m)^    runs-on: macos-26$")
+        self.assertIn('test "$(uname -m)" = arm64', native)
+        self.assertIn("-Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx4g", native)
+        self.assertIn('scratch="$RUNNER_TEMP/phoenix-tv-tmp"', native)
+        self.assertIn("TMPDIR=%s", native)
+        self.assertIn("JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=%s", native)
+        self.assertIn(":shared-tvos:tvosSimulatorArm64Test", native)
+        self.assertIn("tvos-release.py local test --sdk appletvsimulator --configuration Debug", native)
+        self.assertNotIn("tvos-release.py local build --sdk appletvos --configuration Release", native)
+        self.assertIn("tvos-simulator-derived", native)
+        artifact = self.artifact_step(native, "upload-artifact")
+        self.assertIn("if: always()", artifact)
+        self.assertIn("${{ runner.temp }}/tvos-evidence/", artifact)
+
+    def test_signed_archive_uses_matching_heap_without_weakening_review_signing_or_upload_gates(self):
+        text = self.workflow("tvos-testflight.yml")
+        archive = self.job(text, "archive")
+        self.assertRegex(archive, r"(?m)^    runs-on: macos-26-intel$")
+        self.assert_serial_release_heap(archive)
+        self.assertIn("sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer", archive)
+        self.assertIn("tvos-release.py archive", archive)
+        self.assertIn("BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}", archive)
+        self.assertIn("TVOS_PROVISION_PROFILE_BASE64: ${{ secrets.TVOS_PROVISION_PROFILE_BASE64 }}", archive)
+
+        acceptance = self.job(text, "acceptance")
+        self.assertIn("run: python3 .github/scripts/tvos-release.py review", acceptance)
+        self.assertIn("python3 .github/scripts/tvos-release.py preflight", acceptance)
+        self.assertIn("ref: ${{ github.sha }}", acceptance)
+        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha }}", text)
+        self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}", text)
+
+        simulator = self.job(text, "simulator-tests")
+        self.assertRegex(simulator, r"(?m)^    runs-on: macos-26$")
+        self.assertIn('test "$(uname -m)" = arm64', simulator)
+        self.assertIn("-Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx4g", simulator)
+        upload = self.job(text, "upload")
+        self.assertIn("if: ${{ inputs.upload }}", upload)
+        self.assertRegex(upload, r"(?m)^    runs-on: macos-15$")
+        self.assertIn("needs: archive", upload)
+        self.assertIn("tvos-release.py upload", upload)
 
 
 if __name__ == "__main__":
