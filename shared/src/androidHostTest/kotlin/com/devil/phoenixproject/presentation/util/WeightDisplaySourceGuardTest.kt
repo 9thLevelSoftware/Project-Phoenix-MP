@@ -35,8 +35,10 @@ class WeightDisplaySourceGuardTest {
         get() = File(projectRoot, "shared/src/commonMain/kotlin")
 
     private fun readSourceFile(relativePath: String): String? {
-        val file = File(commonMainRoot, relativePath)
-        return if (file.exists()) file.readText() else null
+        val commonFile = File(commonMainRoot, relativePath)
+        if (commonFile.exists()) return commonFile.readText()
+        val phoneFile = File(projectRoot, "shared/src/phoneMain/kotlin/$relativePath")
+        return if (phoneFile.exists()) phoneFile.readText() else null
     }
 
     private fun assertNoFormatterImport(source: String, fileName: String) {

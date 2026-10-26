@@ -31,10 +31,10 @@ class RoutineOverviewLocalizationGuardTest {
         // The three verbatim copies were unified into EchoLevelPillSelector (task 3.3).
         // Localization assertions now target the shared component rather than RoutineOverviewScreen.
         val componentSource = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EchoLevelPillSelector.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/EchoLevelPillSelector.kt",
         )
         val overviewSource = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
         )
 
         assertTrue(
@@ -69,12 +69,12 @@ class RoutineOverviewLocalizationGuardTest {
         // The three verbatim copies were unified into EccentricLoadSlider.
         // Localization assertions target the shared component; each caller only delegates.
         val componentSource = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EccentricLoadSlider.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/EccentricLoadSlider.kt",
         )
         val callers = listOf(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RestTimerCard.kt",
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SetReadyScreen.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/RestTimerCard.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/SetReadyScreen.kt",
         ).map { read(it) }
 
         assertTrue(

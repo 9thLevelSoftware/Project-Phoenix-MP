@@ -1,12 +1,6 @@
 package com.devil.phoenixproject.domain.model
 
-import androidx.compose.runtime.Composable
-import org.jetbrains.compose.resources.stringResource
-import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.echo_level_epic
-import projectphoenix.shared.generated.resources.echo_level_hard
-import projectphoenix.shared.generated.resources.echo_level_harder
-import projectphoenix.shared.generated.resources.echo_level_hardest
+
 
 /**
  * Locale-aware label helpers for percentage UI, including the Echo-mode block
@@ -24,9 +18,8 @@ import projectphoenix.shared.generated.resources.echo_level_hardest
  * The pure formatter [formatPercent] is `internal` so the unit test in
  * `commonTest` can exercise the per-locale behaviour without needing a
  * Compose runtime or a platform-specific locale implementation. The
- * `@Composable` [percentLabel] wrapper uses the expect/actual
- * [currentLanguageCode] helper to get the active app locale without pulling
- * in any Compose-Multiplatform-specific locale API.
+ * UI wrappers that resolve resources are kept in the phone source set; this
+ * file owns only the platform-neutral formatter used by shared tests.
  */
 
 /**
@@ -51,33 +44,3 @@ internal fun formatPercent(value: Number, language: String): String = if (langua
 }
 
 private fun String.isItalianLanguage(): Boolean = substringBefore('-').substringBefore('_').equals("it", ignoreCase = true)
-
-/**
- * Composable wrapper that resolves the active language code via
- * [currentLanguageCode] and delegates to [formatPercent]. No
- * Compose-Multiplatform-specific locale API is required, so this helper
- * compiles cleanly for both the Android and iOS targets.
- *
- * Returns a locale-formatted percentage for predefined eccentric-load dropdown
- * values and arbitrary progression/rest-timer percentages.
- */
-@Composable
-fun percentLabel(value: Number): String = formatPercent(value, currentLanguageCode())
-
-@Composable
-fun eccentricLoadLabel(load: EccentricLoad): String = percentLabel(load.percentage)
-
-/**
- * Returns the [EchoLevel] label via the [stringResource] lookup so the
- * FilterChip and SegmentedButton rows pick up the per-locale translation.
- *
- * Resource key convention: `echo_level_<lowercase name>` -> `echo_level_hard`,
- * `echo_level_harder`, `echo_level_hardest`, `echo_level_epic`.
- */
-@Composable
-fun echoLevelLabel(level: EchoLevel): String = when (level) {
-    EchoLevel.HARD -> stringResource(Res.string.echo_level_hard)
-    EchoLevel.HARDER -> stringResource(Res.string.echo_level_harder)
-    EchoLevel.HARDEST -> stringResource(Res.string.echo_level_hardest)
-    EchoLevel.EPIC -> stringResource(Res.string.echo_level_epic)
-}

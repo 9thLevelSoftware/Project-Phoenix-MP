@@ -81,7 +81,7 @@ class HealthConnectReenableGuardTest {
     fun integrationsScreen_retriesAfterReturningFromHealthConnectSettings() {
         val screen = File(
             projectRoot,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/IntegrationsScreen.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/IntegrationsScreen.kt",
         ).readText()
 
         assertTrue(

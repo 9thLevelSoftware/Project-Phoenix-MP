@@ -126,15 +126,15 @@ class RoutinesChromeLuminanceContractTest {
         }
         val workoutTab = File(
             dir,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
         ).readText()
         val workoutHud = File(
             dir,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt",
         ).readText()
         val connectionChip = File(
             dir,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
         ).readText()
             .substringAfter("private fun ConnectionStatusIndicator(")
             .substringBefore("private fun isSingleExerciseRoute")

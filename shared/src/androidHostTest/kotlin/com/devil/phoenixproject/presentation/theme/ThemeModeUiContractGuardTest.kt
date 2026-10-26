@@ -19,7 +19,7 @@ class ThemeModeUiContractGuardTest {
 
     @Test
     fun settingsTab_editsThemeModeInsteadOfBooleanDarkMode() {
-        val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt")
+        val source = read("shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt")
 
         assertTrue(
             source.contains("themeMode: ThemeMode"),
@@ -41,7 +41,7 @@ class ThemeModeUiContractGuardTest {
 
     @Test
     fun navGraph_passesThemeModeThroughSettingsWithoutBooleanCoercion() {
-        val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt")
+        val source = read("shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt")
 
         assertFalse(
             source.contains("darkModeEnabled = themeMode == ThemeMode.DARK"),
@@ -63,7 +63,7 @@ class ThemeModeUiContractGuardTest {
 
     @Test
     fun commonTheme_mapsSystemThroughResolver() {
-        val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
+        val source = read("shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
         assertTrue(
             source.contains("resolveUseDarkColors(") &&
                 source.contains("rememberPlatformSystemDark()"),

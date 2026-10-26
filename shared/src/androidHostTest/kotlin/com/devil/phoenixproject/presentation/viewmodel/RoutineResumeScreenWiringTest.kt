@@ -11,7 +11,7 @@ class RoutineResumeScreenWiringTest {
     @Test
     fun `all resume entry screens delegate to the shared dialog host without direct BLE or mutable-id loading`() {
         val screenRoot = findWorkspaceRoot().resolve(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen",
+            "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen",
         )
         val host = screenRoot.resolve("RoutineResumeDialogHost.kt").readText()
         assertTrue("runRoutineResumeUiOperation(" in host)
@@ -87,7 +87,7 @@ class RoutineResumeScreenWiringTest {
     private fun findWorkspaceRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         repeat(8) {
-            if (Files.isDirectory(current.resolve("shared/src/commonMain"))) return current
+            if (Files.isDirectory(current.resolve("shared/src/phoneMain"))) return current
             current = current.parent ?: return@repeat
         }
         error("Could not locate workspace root from ${System.getProperty("user.dir")}")

@@ -15,8 +15,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.jetbrains.compose.resources.ExperimentalResourceApi
-import projectphoenix.shared.generated.resources.Res
 
 @Serializable
 data class FreeExerciseJson(
@@ -79,6 +77,8 @@ private data class WgerLicense(
     @SerialName("short_name") val shortName: String? = null,
 )
 
+internal expect suspend fun readBundledExerciseCatalogue(): ByteArray
+
 /**
  * Imports the bundled free-exercise-db catalogue and optionally merges wger rows.
  */
@@ -95,11 +95,10 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
      * Imports the bundled free-exercise-db catalogue plus the issue #883 supplemental seed
      * rows (see [SupplementalCatalogSeed]), which the upstream asset cannot express.
      */
-    @OptIn(ExperimentalResourceApi::class)
     suspend fun importExercises(): Result<Int> = withContext(Dispatchers.IO) {
         try {
             Logger.d { "Starting exercise import from bundled free-exercise-db JSON..." }
-            val jsonBytes = Res.readBytes("files/exercises.json")
+            val jsonBytes = readBundledExerciseCatalogue()
             val bundled = json.decodeFromString<List<FreeExerciseJson>>(jsonBytes.decodeToString())
             importRows(mergedCatalogueRows(bundled))
         } catch (e: Exception) {

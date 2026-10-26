@@ -9,6 +9,10 @@ plugins {
     alias(libs.plugins.sqldelight)
 }
 
+compose.resources {
+    generateResClass = always
+}
+
 kotlin {
     // Global opt-ins for experimental APIs
     sourceSets.all {
@@ -79,21 +83,9 @@ kotlin {
             dependencies {
                 // Compose Multiplatform
                 implementation(libs.cmp.runtime)
-                implementation(libs.cmp.foundation)
-                implementation(libs.cmp.material3)
-                implementation(libs.cmp.material.icons.extended)
-                implementation(libs.cmp.ui)
+                // Generated commonMain resource accessors need their API here.
+                // :shared-tvos has an independent dependency graph and no accessors.
                 implementation(libs.cmp.components.resources)
-
-                // Lifecycle ViewModel for Compose
-                implementation(libs.androidx.lifecycle.viewmodel.compose)
-                implementation(libs.androidx.lifecycle.runtime.compose)
-
-                // Navigation Compose (Multiplatform)
-                implementation(libs.androidx.navigation.compose)
-
-                // SavedState
-                implementation(libs.androidx.savedstate)
 
                 // Kotlinx
                 implementation(libs.kotlinx.coroutines.core)
@@ -103,8 +95,7 @@ kotlin {
 
                 // DI - Koin
                 implementation(libs.koin.core)
-                implementation(libs.koin.compose)
-                implementation(libs.koin.compose.viewmodel)
+                implementation(libs.koin.core.viewmodel)
 
                 // Database - SQLDelight
                 implementation(libs.sqldelight.runtime)
@@ -117,22 +108,33 @@ kotlin {
                 // Logging
                 implementation(libs.kermit)
 
-                // Image Loading - Coil 3 (Multiplatform)
-                implementation(libs.coil.compose)
-                implementation(libs.coil.network.ktor)
-
                 // Ktor Client (for Coil network and HTTP API)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json)
 
-                // BLE - Kable (Multiplatform)
+                // BLE - the phone module uses the supported Android/iOS artifact.
                 implementation(libs.kable.core)
+            }
+        }
 
-                // Drag and Drop
+        val phoneMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation(libs.cmp.runtime)
+                implementation(libs.cmp.foundation)
+                implementation(libs.cmp.material3)
+                implementation(libs.cmp.ui)
+                implementation(libs.cmp.material.icons.extended)
+                implementation(libs.androidx.lifecycle.viewmodel.compose)
+                implementation(libs.androidx.lifecycle.runtime.compose)
+                implementation(libs.androidx.navigation.compose)
+                implementation(libs.androidx.savedstate)
+                implementation(libs.koin.compose)
+                implementation(libs.koin.compose.viewmodel)
+                implementation(libs.coil.compose)
+                implementation(libs.coil.network.ktor)
                 api(libs.reorderable)
-
-                // Lottie Animations (Compose Multiplatform)
                 implementation(libs.compottie)
                 implementation(libs.compottie.resources)
             }
@@ -168,7 +170,9 @@ kotlin {
         }
 
         getByName("androidMain") {
+            dependsOn(phoneMain)
             dependencies {
+                implementation(libs.cmp.runtime)
                 // Android-specific Coroutines
                 implementation(libs.kotlinx.coroutines.android)
 
@@ -208,9 +212,10 @@ kotlin {
         val iosSimulatorArm64Main by getting
         val iosSimulatorArm64Test by getting
 
+
         @Suppress("UNUSED_VARIABLE")
         val iosMain by creating {
-            dependsOn(commonMain)
+            dependsOn(phoneMain)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)
 
@@ -222,6 +227,7 @@ kotlin {
                 implementation(libs.ktor.client.darwin)
             }
         }
+
 
         @Suppress("UNUSED_VARIABLE")
         val iosTest by creating {

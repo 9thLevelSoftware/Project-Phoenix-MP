@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 class WorkoutSaveFailureCollectorGuardTest {
     private val projectRoot: File by lazy {
         var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
+        while (!File(dir, "shared/src/phoneMain").exists()) {
             dir = dir.parentFile ?: break
         }
         dir
@@ -24,7 +24,7 @@ class WorkoutSaveFailureCollectorGuardTest {
 
     private fun screen(name: String): String = File(
         projectRoot,
-        "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/$name",
+        "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/$name",
     ).readText()
 
     @Test
