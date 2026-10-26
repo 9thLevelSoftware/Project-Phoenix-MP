@@ -22,6 +22,8 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import zipfile
+import zlib
 from xml.parsers.expat import ExpatError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -368,6 +370,40 @@ def verify_app(app, versions, build, *, production):
                 "Simulator-only telemetry fixture leaked into device binary")
 
 
+def normalize_exported_ipa(export_root, versions, build):
+    """Validate the sole exported TV IPA and give downstream upload a stable name."""
+    export_root = Path(export_root)
+    require(export_root.is_dir(), "TV IPA export directory is missing")
+    candidates = sorted(export_root.glob("*.ipa"))
+    require(len(candidates) == 1, f"Expected exactly one TV IPA export; found {len(candidates)}")
+    source = candidates[0]
+    require(source.is_file() and not source.is_symlink(), "TV IPA export is not a regular file")
+
+    try:
+        with zipfile.ZipFile(source) as ipa:
+            app_infos = [name for name in ipa.namelist()
+                         if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)]
+            require(len(app_infos) == 1, "TV IPA must contain exactly one Payload app Info.plist")
+            info_data = ipa.read(app_infos[0])
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError, EOFError, zlib.error):
+        raise ValueError("Exported TV IPA is not a readable ZIP archive") from None
+
+    try:
+        info = plistlib.loads(info_data)
+    except (ValueError, TypeError, plistlib.InvalidFileException, ExpatError):
+        raise ValueError("Exported TV IPA app Info.plist is invalid") from None
+    require(isinstance(info, dict), "Exported TV IPA app Info.plist must contain a dictionary")
+    require(info.get("CFBundleIdentifier") == BUNDLE, "Exported IPA bundle ID mismatch")
+    require(info.get("DTPlatformName") == "appletvos" and info.get("UIDeviceFamily") == [3],
+            "Exported IPA platform mismatch")
+    require(info.get("CFBundleShortVersionString") == versions["marketing"] and
+            info.get("CFBundleVersion") == build, "Exported IPA version/build mismatch")
+
+    stable = export_root / "PhoenixTV.ipa"
+    source.replace(stable)
+    return stable
+
+
 def local(args):
     require(args.sdk == "appletvsimulator" or args.action == "build", "Tests require an Apple TV simulator")
     require(args.configuration == "Debug" or args.action == "build", "Phantom UI tests require Debug")
@@ -466,7 +502,7 @@ def archive(args):
                 "uploadSymbols": True, "provisioningProfiles": {BUNDLE: env["TVOS_PROVISIONING_PROFILE_NAME"]}}))
             run(["xcodebuild", "-quiet", "-exportArchive", "-archivePath", archive_path,
                  "-exportPath", output / "export", "-exportOptionsPlist", options], "Export TV IPA", sensitive=True)
-            require((output / "export/PhoenixTV.ipa").is_file(), "TV IPA export missing")
+            normalize_exported_ipa(output / "export", versions, args.build_number)
             (output / "export/release.json").write_text(json.dumps({"source_sha": env["TVOS_SOURCE_SHA"], "bundle": BUNDLE,
                 "platform": "TV_OS", "marketing": versions["marketing"], "build": args.build_number}, indent=2) + "\n")
         finally:
