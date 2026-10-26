@@ -164,7 +164,10 @@ class TvSessionControllerTest {
         try {
             h.fakeBleRepo.simulateConnect("Vee_Test")
             h.dwsm.updateWorkoutParameters(WorkoutParameters(programMode = com.devil.phoenixproject.domain.model.ProgramMode.OldSchool, reps = 0, weightPerCableKg = 20f, selectedExerciseId = "cable", isJustLift = true, warmupReps = 0))
-            val tv = controller(h)
+            val admission = TvActivityAdmission()
+            val tv = TvSessionController(h.dwsm, h.bleConnectionManager, h.workoutScope,
+                admitTraining = admission::tryTraining, releaseTraining = admission::releaseTraining,
+            ) { h.setActiveSummaryCountdownSeconds(0); h.settingsManager.autoplayEnabled.first { !it } }
             tv.startJustLift()
             advanceUntilIdle()
             h.fakeBleRepo.stopWorkoutBlock = { stop.await(); Result.success(Unit) }
@@ -174,12 +177,16 @@ class TvSessionControllerTest {
             runCurrent()
             assertFalse(tv.exitConfirmationPending)
             assertFalse(tv.confirmExit())
+            assertFalse(admission.tryAccountMutation(), "Pending physical stop still owns training")
             stop.complete(Unit)
             advanceUntilIdle()
             assertTrue(tv.exitConfirmationPending)
+            assertFalse(admission.tryAccountMutation(), "Ready is not yet confirmed session exit")
             assertTrue(tv.confirmExit())
             advanceUntilIdle()
             assertFalse(tv.sessionOpen)
+            assertTrue(admission.tryAccountMutation())
+            admission.releaseAccountMutation()
         } finally { stop.complete(Unit); h.cleanup() }
     }
 
@@ -324,11 +331,62 @@ class TvSessionControllerTest {
         } finally { h.cleanup() }
     }
 
-    private fun controller(h: DWSMTestHarness) = TvSessionController(
-        h.dwsm, h.bleConnectionManager, h.workoutScope,
-        prepareManualStarts = {
+    @Test
+    fun failedOrCancelledPreparationWithoutCoreSessionReleasesReservation() = runTest {
+        for (mode in listOf("failure", "cancel", "cancel-before-launch")) {
+            val h = DWSMTestHarness(this)
+            val admission = TvActivityAdmission()
+            val release = CompletableDeferred<Unit>()
+            try {
+                val tv = TvSessionController(h.dwsm, h.bleConnectionManager, h.workoutScope,
+                    admitTraining = admission::tryTraining, releaseTraining = admission::releaseTraining,
+                ) {
+                    if (mode == "failure") error("settings unavailable") else release.await()
+                }
+                assertTrue(tv.beginRoutine(tvBodyweightRoutine()))
+                assertFalse(admission.tryAccountMutation())
+                if (mode == "cancel-before-launch") tv.onBackground()
+                runCurrent()
+                if (mode == "cancel") tv.onBackground()
+                runCurrent()
+                assertFalse(tv.sessionOpen)
+                assertTrue(admission.tryAccountMutation())
+                admission.releaseAccountMutation()
+                assertTrue(h.fakeBleRepo.programCommands.isEmpty())
+            } finally { release.complete(Unit); h.cleanup() }
+        }
+    }
+
+    @Test
+    fun routineSetCannotBypassAnAccountReservationEvenWithCoreSetReady() = runTest {
+        val h = DWSMTestHarness(this)
+        val admission = TvActivityAdmission()
+        try {
             h.setActiveSummaryCountdownSeconds(0)
-            h.settingsManager.autoplayEnabled.first { !it }
-        },
-    )
+            assertTrue(h.dwsm.loadRoutineAsync(tvBodyweightRoutine()))
+            h.dwsm.enterSetReady(0, 0)
+            val tv = TvSessionController(h.dwsm, h.bleConnectionManager, h.workoutScope,
+                admitTraining = admission::tryTraining, releaseTraining = admission::releaseTraining,
+            ) {}
+            runCurrent()
+            assertTrue(tv.routineReadyToStart)
+            assertTrue(admission.tryAccountMutation())
+            assertFalse(tv.startRoutineSet())
+            admission.releaseAccountMutation()
+            assertTrue(tv.startRoutineSet())
+        } finally { h.cleanup() }
+    }
+
+    private fun controller(h: DWSMTestHarness): TvSessionController {
+        val admission = TvActivityAdmission()
+        return TvSessionController(
+            h.dwsm, h.bleConnectionManager, h.workoutScope,
+            admitTraining = admission::tryTraining,
+            releaseTraining = admission::releaseTraining,
+            prepareManualStarts = {
+                h.setActiveSummaryCountdownSeconds(0)
+                h.settingsManager.autoplayEnabled.first { !it }
+            },
+        )
+    }
 }

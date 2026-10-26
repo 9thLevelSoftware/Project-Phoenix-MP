@@ -66,6 +66,12 @@ kotlin {
             }
         }
 
+        val tvosSimulatorArm64Test by getting {
+            // Re-run the original phone Phantom contracts against the same native
+            // fixture source, so TV's opt-in replay cannot silently change defaults.
+            kotlin.srcDir("../shared/src/iosSimulatorArm64Test/kotlin")
+            dependencies { implementation(libs.turbine) }
+        }
         val tvosArm64Main by getting
         val tvosSimulatorArm64Main by getting {
             // Reuse the deterministic Phantom BLE transport only in the simulator target.

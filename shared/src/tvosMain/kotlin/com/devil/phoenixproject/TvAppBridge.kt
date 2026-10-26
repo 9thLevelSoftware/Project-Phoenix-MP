@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.presentation.tv.TvSessionController
 import com.devil.phoenixproject.presentation.tv.createTvMainViewModel
 import com.devil.phoenixproject.presentation.tv.TvAccountHooks
+import com.devil.phoenixproject.presentation.tv.TvActivityAdmission
 import com.devil.phoenixproject.util.ConnectivityChecker
 import kotlinx.coroutines.CancellationException
 import com.devil.phoenixproject.data.sync.AccountSwitchChoice
@@ -127,6 +128,7 @@ class TvAppBridge {
     private var cachedExercises: List<Exercise> = emptyList()
     private var selectedRoutineId: String? = null
     private var controller: TvSessionController? = null
+    private val activityAdmission = TvActivityAdmission()
     private var foregroundPending = false
     private var isForeground = true
     private var koinReady = false
@@ -179,6 +181,7 @@ class TvAppBridge {
                         isOnline = koin.get<ConnectivityChecker>()::isOnline,
                         migrations = startup.migrations,
                         sessionOpen = { controller?.sessionOpen == true },
+                        admission = activityAdmission,
                     ) else null
                     TvosAppDependencies(
                         main = createTvMainViewModel(koin, scope, account?.syncTrigger
@@ -195,7 +198,10 @@ class TvAppBridge {
                         cachedExercises = result.dependencies.exercises.getAllExercises().first()
                         deps = result.dependencies
                         val main = result.dependencies.main
-                        controller = TvSessionController(main.workoutSessionManager, main.bleConnectionManager, scope) {
+                        controller = TvSessionController(main.workoutSessionManager, main.bleConnectionManager, scope,
+                            admitTraining = activityAdmission::tryTraining,
+                            releaseTraining = activityAdmission::releaseTraining,
+                        ) {
                             // The TV-only runtime view is manual regardless of cloud preference updates.
                             // Never rewrite the user's synced autoplay settings.
                             combine(main.userPreferences, main.autoplayEnabled) { prefs, autoplay ->

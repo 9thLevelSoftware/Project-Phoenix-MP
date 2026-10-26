@@ -19,8 +19,18 @@ class TvSessionController(
     private val session: DefaultWorkoutSessionManager,
     private val connection: BleConnectionManager,
     private val scope: CoroutineScope,
+    private val admitTraining: () -> Boolean = { true },
+    private val releaseTraining: () -> Unit = {},
     private val prepareManualStarts: suspend () -> Unit,
 ) {
+    // Preserve the original four-positional-argument form as well as trailing lambdas.
+    constructor(
+        session: DefaultWorkoutSessionManager,
+        connection: BleConnectionManager,
+        scope: CoroutineScope,
+        prepareManualStarts: suspend () -> Unit,
+    ) : this(session, connection, scope, { true }, {}, prepareManualStarts)
+
     private val coordinator get() = session.coordinator
     private var preparation: Job? = null
     private var exitWait: Job? = null
@@ -135,6 +145,10 @@ class TvSessionController(
         }
         if (session.machineTeardownState.value !is MachineTeardownState.Ready) return fail("Complete safe stop recovery before starting.")
         if (requiresTrainer && connection.connectionState.value !is ConnectionState.Connected) return fail("Connect to a selected trainer before starting.")
+        if (!admitTraining()) return fail("Wait for the account operation to finish before training.")
+        val alreadyOpen = sessionOpen
+        var actionStarted = false
+        var preparationFailed = false
         opened = true
         preparing = true
         stopRequested = false
@@ -147,15 +161,28 @@ class TvSessionController(
                 prepareManualStarts()
                 if (!foreground) return@launch
                 disableHandleAutoStart()
+                actionStarted = true
                 action()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                preparationFailed = true
                 error = failure.message ?: "Phoenix could not prepare the set."
                 // Never turn a failed start into a UI-only error while load may be applied.
-                completionAction { session.stopWorkout(exitingWorkout = false) }
-            } finally {
+                if (actionStarted) completionAction { session.stopWorkout(exitingWorkout = false) }
+            }
+        }.also { pending ->
+            pending.invokeOnCompletion { cause ->
                 preparing = false
+                // A cancelled/pre-failed launch may never enter its body. Release only
+                // a new reservation with no surviving core session and confirmed Ready.
+                if (!alreadyOpen && (cause != null || preparationFailed || !actionStarted) &&
+                    coordinator.loadedRoutine.value == null && coordinator.workoutState.value is WorkoutState.Idle &&
+                    session.machineTeardownState.value is MachineTeardownState.Ready
+                ) {
+                    opened = false
+                    releaseTraining()
+                }
             }
         }
         return true
@@ -178,8 +205,8 @@ class TvSessionController(
     /** Idempotent at the TV boundary; the core owns cancellation and the durable stop invariant. */
     fun stopSet() {
         preparation?.cancel()
-        preparation = null
-        preparing = false
+        // Keep preparation visible until cancellation actually completes; a start
+        // continuation must not outlive confirmed exit and its admission release.
         disableHandleAutoStart()
         session.cancelSummaryAutoAdvance()
         if (stopRequested || !coordinator.workoutState.value.tvNeedsStop()) return
@@ -218,10 +245,14 @@ class TvSessionController(
         if ((completionFailed || !coordinator.workoutState.value.tvNeedsStop()) && session.machineTeardownState.value is MachineTeardownState.Ready) {
             session.exitRoutineFlow()
         }
+        if (coordinator.loadedRoutine.value != null || coordinator.workoutState.value !is WorkoutState.Idle ||
+            session.machineTeardownState.value !is MachineTeardownState.Ready
+        ) return fail("Wait for Phoenix to finish the session exit and confirm a safe stop.")
         opened = false
         exitConfirmationPending = false
         completionFailed = false
         error = null
+        releaseTraining()
         return true
     }
 
