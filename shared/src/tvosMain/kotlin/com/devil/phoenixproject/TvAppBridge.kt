@@ -31,11 +31,14 @@ import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -45,6 +48,10 @@ import platform.Foundation.NSBundle
 import platform.Foundation.NSLog
 
 private data class TvosStartupDependencies(val migrations: MigrationManager, val exercises: ExerciseRepository)
+private class TvosExerciseLibraryFailure(cause: Exception) : Exception(cause), StartupDiagnosticFailure {
+    override val startupDiagnosticCode = "EXERCISE_LIBRARY_UNAVAILABLE"
+    override val startupRetryAllowed = true
+}
 private data class TvosAppDependencies(
     val main: MainViewModel,
     val eula: EulaViewModel,
@@ -116,8 +123,15 @@ data class TvAppSnapshot(
 )
 
 /** Native SwiftUI boundary. Shared Kotlin remains authoritative for all domain and machine commands. */
-class TvAppBridge {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+class TvAppBridge internal constructor(
+    private val scope: CoroutineScope,
+    private val initializeKoin: () -> Unit = ::doInitTvosKoin,
+    private val getKoin: () -> org.koin.core.Koin = { KoinPlatform.getKoin() },
+    private val mainFactory: (org.koin.core.Koin, CoroutineScope, SyncTriggerManager) -> MainViewModel = ::createTvMainViewModel,
+    private val startupLog: (String) -> Unit = { NSLog("%@", it) },
+    private val blockingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+) {
+    constructor() : this(CoroutineScope(SupervisorJob() + Dispatchers.Main))
     private var deps: TvosAppDependencies? = null
     private var eulaViewModel: EulaViewModel? = null
     private var started = false
@@ -150,21 +164,24 @@ class TvAppBridge {
         scope.launch {
             try {
                 if (!koinReady) {
-                    doInitTvosKoin()
+                    initializeKoin()
                     koinReady = true
                     fixtureStorageInstalled = installTvosIsolatedFixture()
                     if (fixtureStorageInstalled) cloudConfigured = false
                 }
-                eulaViewModel = KoinPlatform.getKoin().get()
+                eulaViewModel = getKoin().get()
                 eulaReady = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Throwable) {
                 startupState = "failed"
                 startupError = "KOIN_INITIALIZATION_FAILED"
                 return@launch
             }
+            var initialExercises: List<Exercise> = emptyList()
             when (val result = prepareAppHostDependencies(
                 resolveStartupOnly = {
-                    val koin = KoinPlatform.getKoin()
+                    val koin = getKoin()
                     koin.get<PersistedFileStartupPrerequisite>()
                     TvosStartupDependencies(koin.get(), koin.get())
                 },
@@ -173,9 +190,17 @@ class TvAppBridge {
                     startup.migrations.awaitRequiredMigrations()
                     startup.exercises.importExercises().getOrThrow()
                     if (fixtureStorageInstalled) seedTvosFixtureRoutine()
+                    // A catalog retry must not strand a MainViewModel or its eager profile overlay.
+                    initialExercises = try {
+                        startup.exercises.getAllExercises().first()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        throw TvosExerciseLibraryFailure(failure)
+                    }
                 },
                 resolveFeatures = { startup ->
-                    val koin = KoinPlatform.getKoin()
+                    val koin = getKoin()
                     val account = if (cloudConfigured) TvAccountHooks(
                         link = koin.get(), syncManager = koin.get(),
                         isOnline = koin.get<ConnectivityChecker>()::isOnline,
@@ -184,18 +209,18 @@ class TvAppBridge {
                         admission = activityAdmission,
                     ) else null
                     TvosAppDependencies(
-                        main = createTvMainViewModel(koin, scope, account?.syncTrigger
+                        main = mainFactory(koin, scope, account?.syncTrigger
                             ?: SyncTriggerManager(koin.get<com.devil.phoenixproject.data.sync.SyncManager>(), { false })),
                         eula = koin.get(),
                         exercises = startup.exercises,
                         account = account,
                     )
                 },
-                blockingDispatcher = Dispatchers.Default,
+                blockingDispatcher = blockingDispatcher,
             )) {
                 is StartupDependencyResolution.Ready -> {
                     try {
-                        cachedExercises = result.dependencies.exercises.getAllExercises().first()
+                        cachedExercises = initialExercises
                         deps = result.dependencies
                         val main = result.dependencies.main
                         controller = TvSessionController(main.workoutSessionManager, main.bleConnectionManager, scope,
@@ -212,13 +237,18 @@ class TvAppBridge {
                         startupState = "ready"
                         startTelemetryWatchdog(main)
                         if (foregroundPending && isForeground) onForeground()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (_: Throwable) {
                         startupState = "failed"
                         startupError = "EXERCISE_LIBRARY_UNAVAILABLE"
                     }
                 }
                 is StartupDependencyResolution.Failed -> {
-                    result.cause.stackTraceToString().lineSequence().forEach { NSLog("tvOS dependency startup: $it") }
+                    startupLog(
+                        "tvOS dependency startup: code=${result.diagnosticCode}, support=${result.supportCode ?: "none"}, " +
+                            "presence=${result.presenceSnapshot?.safeSummary() ?: "unavailable"}",
+                    )
                     startupState = "failed"
                     startupError = result.diagnosticCode
                 }
@@ -393,25 +423,33 @@ class TvAppBridge {
         val exerciseId = exercise.id ?: return fail("That exercise cannot be selected because Phoenix has no saved exercise id.")
         exerciseSelectionJob?.cancel()
         exerciseSelectionJob = scope.launch {
-            val saved = main.getSingleExerciseDefaults(exerciseId)
-            val defaults = main.getJustLiftDefaults()
-            val params = main.workoutParameters.value.copy(
-                programMode = saved?.toProgramMode() ?: ProgramMode.fromModeValue(defaults.workoutModeId),
-                reps = saved?.setReps?.firstOrNull() ?: 0,
-                weightPerCableKg = saved?.weightPerCableKg ?: defaults.weightPerCableKg,
-                isJustLift = true,
-                useAutoStart = false,
-                selectedExerciseId = exerciseId,
-                stallDetectionEnabled = defaults.stallDetectionEnabled,
-                repCountTiming = runCatching { RepCountTiming.valueOf(defaults.repCountTimingName) }.getOrDefault(RepCountTiming.TOP),
-                eccentricLoad = saved?.getEccentricLoad() ?: EccentricLoad.LOAD_100,
-                echoLevel = saved?.getEchoLevel() ?: EchoLevel.HARDER,
-                justLiftRestSeconds = saved?.setRestSeconds?.firstOrNull() ?: defaults.restSeconds,
-            )
-            selectedJustLiftExerciseId = exerciseId
-            main.updateWorkoutParameters(params)
-            main.adjustWeight(params.weightPerCableKg, sendToMachine = false)
-            actionError = null
+            try {
+                val saved = main.getSingleExerciseDefaults(exerciseId)
+                val defaults = main.getJustLiftDefaults()
+                val params = main.workoutParameters.value.copy(
+                    programMode = saved?.toProgramMode() ?: ProgramMode.fromModeValue(defaults.workoutModeId),
+                    reps = saved?.setReps?.firstOrNull() ?: 0,
+                    weightPerCableKg = saved?.weightPerCableKg ?: defaults.weightPerCableKg,
+                    isJustLift = true,
+                    useAutoStart = false,
+                    selectedExerciseId = exerciseId,
+                    stallDetectionEnabled = defaults.stallDetectionEnabled,
+                    repCountTiming = runCatching { RepCountTiming.valueOf(defaults.repCountTimingName) }.getOrDefault(RepCountTiming.TOP),
+                    eccentricLoad = saved?.getEccentricLoad() ?: EccentricLoad.LOAD_100,
+                    echoLevel = saved?.getEchoLevel() ?: EchoLevel.HARDER,
+                    justLiftRestSeconds = saved?.setRestSeconds?.firstOrNull() ?: defaults.restSeconds,
+                )
+                // Publish only after both reads succeeded and this selection still owns its job.
+                currentCoroutineContext().ensureActive()
+                selectedJustLiftExerciseId = exerciseId
+                main.updateWorkoutParameters(params)
+                main.adjustWeight(params.weightPerCableKg, sendToMachine = false)
+                actionError = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                fail("Phoenix could not load exercise defaults. Please retry selecting the exercise.")
+            }
         }
     }
 
@@ -482,7 +520,8 @@ class TvAppBridge {
     fun retryWorkoutSave() {
         val main = deps?.main ?: return
         val offer = main.workoutSaveFailureOffer.value ?: return
-        if (!main.retryWorkoutSave(offer.sessionId)) fail("The save could not be retried. Keep this session open and try again.")
+        if (main.retryWorkoutSave(offer.sessionId)) actionError = null
+        else fail("The save could not be retried. Keep this session open and try again.")
     }
 
     fun tagJustLiftSet() {
@@ -508,7 +547,16 @@ class TvAppBridge {
     }
 
     fun cancelSessionExit() { controller?.cancelExit(); actionError = null }
-    fun retrySafeStopRecovery() { deps?.main?.retryWorkoutTeardown() ?: fail("Phoenix core is unavailable.") }
+    fun retrySafeStopRecovery() {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        val before = main.machineTeardownState.value
+        main.retryWorkoutTeardown()
+        // The shared guard changes the attempt synchronously on admission. That is
+        // not a successful RESET; the authoritative teardown state still owns safety.
+        if (before is MachineTeardownState.RecoveryRequired && main.machineTeardownState.value != before) {
+            actionError = null
+        }
+    }
     fun handlePlayPause() { controller?.handleRemote(TvRemoteInput.PLAY_PAUSE) }
     fun handleBackDuringSession() { controller?.handleRemote(TvRemoteInput.MENU) }
 

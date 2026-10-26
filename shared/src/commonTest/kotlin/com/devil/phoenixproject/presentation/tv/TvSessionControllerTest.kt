@@ -377,6 +377,97 @@ class TvSessionControllerTest {
         } finally { h.cleanup() }
     }
 
+    @Test
+    fun backgroundAbandonsMenuExitIntentWhileLateResetStillFinishes() = runTest {
+        verifyBackgroundAbandonsExitIntent(resetFailsFirst = false)
+    }
+
+    @Test
+    fun backgroundAbandonsFailedResetExitIntentWithoutReleasingRecoveryOrTraining() = runTest {
+        verifyBackgroundAbandonsExitIntent(resetFailsFirst = true)
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.verifyBackgroundAbandonsExitIntent(resetFailsFirst: Boolean) {
+        val h = DWSMTestHarness(this)
+        val reset = CompletableDeferred<Unit>()
+        val admission = TvActivityAdmission()
+        try {
+            h.fakeBleRepo.simulateConnect("Vee_Test")
+            h.dwsm.updateWorkoutParameters(WorkoutParameters(
+                programMode = com.devil.phoenixproject.domain.model.ProgramMode.OldSchool,
+                reps = 0, weightPerCableKg = 20f, selectedExerciseId = "cable", isJustLift = true, warmupReps = 0,
+            ))
+            val tv = TvSessionController(h.dwsm, h.bleConnectionManager, h.workoutScope,
+                admitTraining = admission::tryTraining, releaseTraining = admission::releaseTraining,
+            ) { h.setActiveSummaryCountdownSeconds(0); h.settingsManager.autoplayEnabled.first { !it } }
+            assertTrue(tv.startJustLift())
+            advanceUntilIdle()
+            assertIs<WorkoutState.Active>(h.coordinator.workoutState.value)
+            val programs = h.fakeBleRepo.programCommands.size
+            h.fakeBleRepo.stopWorkoutBlock = {
+                if (resetFailsFirst) Result.failure(IllegalStateException("RESET unavailable"))
+                else { reset.await(); Result.success(Unit) }
+            }
+            tv.handleRemote(TvRemoteInput.MENU)
+            runCurrent()
+            assertFalse(tv.exitConfirmationPending)
+            assertFalse(tv.confirmExit(), "Premature confirmation must not make stop safe")
+            assertFalse(admission.tryAccountMutation())
+            if (resetFailsFirst) assertIs<MachineTeardownState.RecoveryRequired>(h.dwsm.machineTeardownState.value)
+            else assertIs<MachineTeardownState.TearingDown>(h.dwsm.machineTeardownState.value)
+
+            tv.onBackground()
+            runCurrent()
+            assertFalse(tv.exitConfirmationPending)
+            assertFalse(admission.tryAccountMutation(), "Background abandons navigation, not training ownership")
+            if (resetFailsFirst) {
+                tv.onForeground()
+                assertIs<MachineTeardownState.RecoveryRequired>(h.dwsm.machineTeardownState.value)
+                h.fakeBleRepo.stopWorkoutBlock = { reset.await(); Result.success(Unit) }
+                h.dwsm.retryMachineTeardown()
+                runCurrent()
+                assertIs<MachineTeardownState.TearingDown>(h.dwsm.machineTeardownState.value)
+            }
+            reset.complete(Unit)
+            advanceUntilIdle()
+            assertIs<MachineTeardownState.Ready>(h.dwsm.machineTeardownState.value)
+            assertFalse(tv.exitConfirmationPending, "Late RESET must not resurrect abandoned navigation")
+            assertFalse(tv.confirmExit(), "A fresh explicit exit request is required")
+            assertFalse(admission.tryAccountMutation(), "Confirmed RESET alone does not release training")
+            tv.onForeground()
+            runCurrent()
+            assertEquals(programs, h.fakeBleRepo.programCommands.size, "Foreground must not resume load")
+            tv.requestExit()
+            runCurrent()
+            assertTrue(tv.exitConfirmationPending)
+            assertTrue(tv.confirmExit())
+            advanceUntilIdle()
+            assertFalse(tv.sessionOpen)
+            assertTrue(admission.tryAccountMutation())
+            admission.releaseAccountMutation()
+        } finally { reset.complete(Unit); h.cleanup() }
+    }
+
+    @Test
+    fun backgroundClearsAnAlreadyPresentedExitPrompt() = runTest {
+        val h = DWSMTestHarness(this)
+        try {
+            val tv = controller(h)
+            assertTrue(tv.beginRoutine(tvBodyweightRoutine()))
+            advanceUntilIdle()
+            tv.requestExit()
+            runCurrent()
+            assertTrue(tv.exitConfirmationPending)
+            tv.onBackground()
+            runCurrent()
+            assertFalse(tv.exitConfirmationPending)
+            assertTrue(tv.sessionOpen)
+            tv.onForeground()
+            runCurrent()
+            assertFalse(tv.exitConfirmationPending)
+        } finally { h.cleanup() }
+    }
+
     private fun controller(h: DWSMTestHarness): TvSessionController {
         val admission = TvActivityAdmission()
         return TvSessionController(

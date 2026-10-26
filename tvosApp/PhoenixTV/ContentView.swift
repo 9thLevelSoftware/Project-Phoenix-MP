@@ -9,16 +9,22 @@ private enum TvScreen: String, Hashable {
 private final class TvAppModel: ObservableObject {
     let bridge = TvAppBridge()
     @Published var snapshot: TvAppSnapshot?
+    private var refreshTimer: Timer?
 
     init() {
         bridge.start()
         refresh()
-        Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
 
-    func refresh() { snapshot = bridge.snapshot() }
+    deinit { refreshTimer?.invalidate() }
+
+    func refresh() {
+        let next = bridge.snapshot()
+        if snapshot?.isEqual(next) != true { snapshot = next }
+    }
 }
 
 struct ContentView: View {

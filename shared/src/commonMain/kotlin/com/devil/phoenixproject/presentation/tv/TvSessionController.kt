@@ -249,16 +249,25 @@ class TvSessionController(
             session.machineTeardownState.value !is MachineTeardownState.Ready
         ) return fail("Wait for Phoenix to finish the session exit and confirm a safe stop.")
         opened = false
-        exitConfirmationPending = false
+        cancelExit()
         completionFailed = false
         error = null
         releaseTraining()
         return true
     }
 
-    fun cancelExit() { exitWait?.cancel(); exitConfirmationPending = false }
+    fun cancelExit() {
+        exitWait?.cancel()
+        exitWait = null
+        exitConfirmationPending = false
+    }
     fun onForeground() { foreground = true } // Deliberately no resume/start.
-    fun onBackground() { foreground = false; stopSet() }
+    fun onBackground() {
+        foreground = false
+        // Background abandons navigation intent, not the engine's RESET/recovery ownership.
+        cancelExit()
+        stopSet()
+    }
 
     /** Called by the native host's watchdog; a repeated or backwards timestamp is not fresh telemetry. */
     fun checkTelemetry(nowMs: Long) {

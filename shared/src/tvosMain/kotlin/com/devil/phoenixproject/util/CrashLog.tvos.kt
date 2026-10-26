@@ -53,13 +53,12 @@ internal actual fun platformCrashLogStore(): CrashLogStore? = libraryCrashLogPat
 private var crashHookInstalled = false
 
 /**
- * Idempotent iOS diagnostics setup, called from both doInitKoin() and MainViewController()
- * so it is in place as early as possible:
+ * Idempotent tvOS diagnostics setup, called before Koin and startup logging:
  * - release binaries log at Warn (Debug in debug binaries), mirroring Android;
  * - an uncaught Kotlin exception's stack trace is written to Library/crash-last.txt.
  *   The runtime still terminates the process after the hook returns.
  */
-internal fun installIosDiagnostics() {
+internal fun installTvosDiagnostics() {
     Logger.mutableConfig.minSeverity = if (DeviceInfo.isDebugBuild) Severity.Debug else Severity.Warn
     if (crashHookInstalled) return
     crashHookInstalled = true
@@ -67,7 +66,7 @@ internal fun installIosDiagnostics() {
     // Resolve on the calling (main) thread; the hook may run on any thread.
     val build = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleVersion") as? String
     val appVersion = if (build != null) "${DeviceInfo.appVersionName} ($build)" else DeviceInfo.appVersionName
-    val platformName = "iOS ${UIDevice.currentDevice.systemVersion}, ${UIDevice.currentDevice.model}"
+    val platformName = "tvOS ${UIDevice.currentDevice.systemVersion}, ${UIDevice.currentDevice.model}"
     var previous: ReportUnhandledExceptionHook? = null
     previous = setUnhandledExceptionHook { throwable ->
         CrashLog.record(

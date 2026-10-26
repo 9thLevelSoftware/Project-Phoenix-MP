@@ -21,6 +21,11 @@ kotlin {
             baseName = "PhoenixTvCore"
             isStatic = true
         }
+        // Native bridge composition tests use the real in-memory SQLDelight driver.
+        // Unlike the Xcode app target, test executables must link system SQLite here.
+        binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable>().configureEach {
+            linkerOpts("-lsqlite3")
+        }
     }
 
     sourceSets {
