@@ -40,6 +40,9 @@ python3 .github/scripts/tvos-release.py preflight
 Tests use temporary repositories, fake command executables and synthetic
 provisioning/build metadata. They never invoke Gradle, xcodebuild, signing,
 upload or a network API. These are tooling tests, not passing native app tests.
+Both Python suites run in the unsigned `tvos-build.yml` offline-check step;
+changes under `.agents/skills/update-phoenix-version/**` trigger that PR workflow.
+Phone `ci-tests.yml` is unchanged.
 
 `preflight` is offline and read-only. It fails closed unless Android
 `versionName`, shared `Constants.APP_VERSION`, and both iOS/TV marketing
@@ -175,6 +178,20 @@ are not native packaging proof: rebuild and inspect the actual app, archive,
 and exported IPA. App Store Connect processing/acceptance remains an unverified
 external gate; this change is neither a submission nor release approval.
 
+## Export-compliance declaration
+
+The TV `Info.plist` declares `ITSAppUsesNonExemptEncryption` as boolean `false`,
+matching the phone's reviewed standard-HTTPS/shared crypto usage. This closes a
+packaging/compliance gap; it is not a claim about a particular upload error code
+or proof that App Store Connect has accepted a build.
+
+Both `verify_app()` (including the pre-export archive check) and the unsigned
+`local()` runner inspect the **built app's** `Info.plist`, not just the source.
+They reject an absent declaration, boolean `true`, string `"false"`, or integer
+`0`; only plist boolean `false` matches this policy. Offline tests cover XML and
+binary plists and the local/device verification paths without running native
+commands. Reassess the declaration if the app's encryption usage changes.
+
 ## Signed archive / TestFlight workflow
 
 Do not execute until independent review and beta acceptance are complete.
@@ -253,6 +270,15 @@ the reviewed source SHA, platform, bundle, marketing version and build. Only the
 IPA and release manifest are retained for one day, not keychains, configs,
 profiles, DerivedData or archive build logs. Simulator results are separate and
 use the blank/offline cloud configuration.
+
+The archive upload and uploader download use the same run-stable artifact name,
+`tvos-testflight-ipa-${{ github.run_id }}`. An upload-only failed-job retry can
+therefore consume the retained archive from an earlier attempt, within its
+retention window. Re-running the archive replaces that artifact (`overwrite:
+true`) while still assigning a unique attempt-suffixed build number. Source-SHA,
+release metadata, and independent-review gates are unchanged. Artifact lookup
+recovery alone does not prove that repeating an already accepted ASC upload is
+idempotent; exact build processing still needs verification.
 
 Upload uses `altool --type appletvos`. Exit zero alone is insufficient: the
 script queries ASC for the exact app, TV_OS platform, marketing version and

@@ -20,6 +20,8 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Phoenix uses Bluetooth to connect to your selected Vitruvian trainer and read workout telemetry.</string>
     <key>SUPABASE_URL</key>

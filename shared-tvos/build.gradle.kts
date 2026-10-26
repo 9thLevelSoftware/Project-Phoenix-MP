@@ -51,7 +51,7 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
-                implementation(libs.atomicfu)
+                implementation(libs.kable.atomicfu.runtime)
                 implementation(libs.koin.core)
                 implementation(libs.koin.core.viewmodel)
                 implementation(libs.sqldelight.runtime)

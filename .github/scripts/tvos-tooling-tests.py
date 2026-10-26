@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -214,7 +215,8 @@ class ToolingTests(unittest.TestCase):
         (app / "exercises.json").write_bytes(catalog.read_bytes())
         info = {"CFBundleIdentifier": release.BUNDLE, "CFBundleShortVersionString": "2.3.4",
                 "CFBundleVersion": "456", "MinimumOSVersion": "17.0", "UIDeviceFamily": [3],
-                "DTPlatformName": "appletvos", "SUPABASE_URL": "https://fixture.supabase.co",
+                "DTPlatformName": "appletvos", "ITSAppUsesNonExemptEncryption": False,
+                "SUPABASE_URL": "https://fixture.supabase.co",
                 "SUPABASE_ANON_KEY": "sb_publishable_fixture"}
         (app / "Info.plist").write_bytes(plistlib.dumps(info))
         (app / "PhoenixTV").write_bytes(b"offline fixture, not a compiled executable")
@@ -223,6 +225,52 @@ class ToolingTests(unittest.TestCase):
             context.start()
             self.addCleanup(context.stop)
         return app
+
+    def test_tv_source_declares_only_exempt_encryption(self):
+        info = plistlib.loads((ROOT / "tvosApp/PhoenixTV/Info.plist").read_bytes())
+        self.assertIs(info.get("ITSAppUsesNonExemptEncryption"), False)
+
+    def test_verify_app_requires_boolean_false_export_compliance_local_and_archive(self):
+        app = self.privacy_app_fixture()
+        (app / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps(self.privacy_fixture()))
+        info = plistlib.loads((app / "Info.plist").read_bytes())
+        for fmt in (plistlib.FMT_XML, plistlib.FMT_BINARY):
+            for value in (None, True, "false", 0, False):
+                candidate = dict(info)
+                if value is None:
+                    candidate.pop("ITSAppUsesNonExemptEncryption")
+                else:
+                    candidate["ITSAppUsesNonExemptEncryption"] = value
+                (app / "Info.plist").write_bytes(plistlib.dumps(candidate, fmt=fmt))
+                for production in (False, True):
+                    with self.subTest(fmt=fmt, value=value, production=production):
+                        if value is False:
+                            release.verify_app(app, {"marketing": "2.3.4"}, "456", production=production)
+                        else:
+                            with self.assertRaisesRegex(ValueError, "ITSAppUsesNonExemptEncryption"):
+                                release.verify_app(app, {"marketing": "2.3.4"}, "456", production=production)
+
+    def test_local_runner_checks_built_export_compliance_after_native_command(self):
+        app = self.privacy_app_fixture()
+        (app / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps(self.privacy_fixture()))
+        for sdk, configuration in (("appletvsimulator", "Debug"), ("appletvos", "Release")):
+            destination = self.root / f"Build/Products/{configuration}-{sdk}/PhoenixTV.app"
+            destination.parent.mkdir(parents=True)
+            app = app.rename(destination)
+            args = type("Args", (), {"sdk": sdk, "action": "build", "configuration": configuration,
+                                    "simulator": None, "derived_data": str(self.root),
+                                    "result_bundle": str(self.root / "tests.xcresult")})()
+            with patch.object(release, "source_guard"), patch.object(release, "read_versions", return_value={}), \
+                    patch.object(release, "run"), contextlib.redirect_stdout(io.StringIO()):
+                for value in (None, True, "false", 0, False):
+                    info = {} if value is None else {"ITSAppUsesNonExemptEncryption": value}
+                    (app / "Info.plist").write_bytes(plistlib.dumps(info))
+                    with self.subTest(sdk=sdk, value=value):
+                        if value is False:
+                            release.local(args)
+                        else:
+                            with self.assertRaisesRegex(ValueError, "ITSAppUsesNonExemptEncryption"):
+                                release.local(args)
 
     def test_verify_app_rejects_missing_privacy_manifest_local_and_archive(self):
         app = self.privacy_app_fixture()
@@ -280,6 +328,7 @@ class ToolingTests(unittest.TestCase):
         app = self.root / "Build/Products/Debug-appletvsimulator/PhoenixTV.app"
         app.mkdir(parents=True)
         (app / "exercises.json").write_bytes((ROOT / release.EXERCISES).read_bytes())
+        (app / "Info.plist").write_bytes(plistlib.dumps({"ITSAppUsesNonExemptEncryption": False}))
         args = type("Args", (), {"sdk": "appletvsimulator", "action": "build", "configuration": "Debug",
                                 "simulator": None, "derived_data": str(self.root), "result_bundle": str(self.root / "tests.xcresult")})()
         with patch.object(release, "source_guard"), patch.object(release, "read_versions", return_value={}), \
@@ -320,6 +369,7 @@ class ToolingTests(unittest.TestCase):
         (app / "exercises.json").write_bytes(catalog.read_bytes())
         info = {"CFBundleIdentifier": release.BUNDLE, "CFBundleShortVersionString": "2.3.4", "CFBundleVersion": "456",
                 "MinimumOSVersion": "17.0", "UIDeviceFamily": [3], "DTPlatformName": "appletvos",
+                "ITSAppUsesNonExemptEncryption": False,
                 "SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_fixture"}
         (app / "Info.plist").write_bytes(plistlib.dumps(info))
         (app / "PhoenixTV").write_bytes(b"real transport fixture")
@@ -410,6 +460,90 @@ class ToolingTests(unittest.TestCase):
         env = os.environ | {"SRCROOT": str(self.root), "PLATFORM_NAME": "iphoneos", "CONFIGURATION": "Release"}
         result = subprocess.run(["bash", str(ROOT / ".github/scripts/tvos-framework.sh")], env=env, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
+
+
+class WorkflowContractTests(unittest.TestCase):
+    def workflow(self, name):
+        return (ROOT / ".github/workflows" / name).read_text()
+
+    def job(self, text, name):
+        match = re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", text)
+        assert match is not None, f"Missing workflow job: {name}"
+        return match.group(1)
+
+    def artifact_step(self, job, action):
+        matches = re.findall(r"(?ms)^      - uses: actions/" + re.escape(action) +
+                             r"@[0-9a-f]{40}[^\n]*\n(.*?)(?=^      - |\Z)", job)
+        self.assertEqual(len(matches), 1, f"Expected exactly one {action} step in job")
+        return matches[0]
+
+    def artifact_names(self):
+        text = self.workflow("tvos-testflight.yml")
+        names = []
+        for job, action in (("archive", "upload-artifact"), ("upload", "download-artifact")):
+            step = self.artifact_step(self.job(text, job), action)
+            matches = re.findall(r"(?m)^          name: (.+)$", step)
+            self.assertEqual(len(matches), 1)
+            names.append(matches[0])
+        return names
+
+    def test_archive_and_download_use_exact_run_stable_ipa_name(self):
+        for job, name in zip(("archive", "upload"), self.artifact_names()):
+            with self.subTest(job=job):
+                self.assertEqual(name, "tvos-testflight-ipa-${{ github.run_id }}")
+
+    def test_upload_only_rerun_finds_original_archive_artifact(self):
+        archive, download = self.artifact_names()
+        # Render the actual workflow expressions for a retained attempt-1 archive
+        # and an attempt-2 uploader; equality in a single attempt misses this bug.
+        def render(name, attempt):
+            return name.replace("${{ github.run_id }}", "123456").replace("${{ github.run_attempt }}", str(attempt))
+        self.assertEqual(render(archive, 1), render(download, 2))
+        self.assertEqual(render(archive, 2), render(download, 2))
+
+    def test_rerun_archive_overwrites_only_the_ipa_artifact(self):
+        archive = self.job(self.workflow("tvos-testflight.yml"), "archive")
+        step = self.artifact_step(archive, "upload-artifact")
+        self.assertRegex(step, r"(?m)^          overwrite: true$")
+        self.assertIn("${{ runner.temp }}/tvos-release/export/PhoenixTV.ipa", step)
+        self.assertIn("${{ runner.temp }}/tvos-release/export/release.json", step)
+        self.assertRegex(step, r"(?m)^          if-no-files-found: error$")
+
+    def test_archive_build_number_keeps_attempt_uniqueness_and_review_gates(self):
+        text = self.workflow("tvos-testflight.yml")
+        archive = self.job(text, "archive")
+        self.assertIn('test "$GITHUB_RUN_ATTEMPT" -lt 1000', archive)
+        self.assertIn('${GITHUB_RUN_NUMBER}$(printf \'%03d\' "$GITHUB_RUN_ATTEMPT")', archive)
+        for job, dependency in (("simulator-tests", "acceptance"), ("archive", "simulator-tests"), ("upload", "archive")):
+            body = self.job(text, job)
+            self.assertRegex(body, r"(?m)^    needs: " + dependency + r"$")
+            self.assertIn("ref: ${{ github.sha }}", body)
+        acceptance = self.job(text, "acceptance")
+        self.assertIn("ref: ${{ github.sha }}", acceptance)
+        self.assertIn("run: python3 .github/scripts/tvos-release.py review", acceptance)
+        self.assertIn("python3 .github/scripts/tvos-release.py preflight", acceptance)
+        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha }}", text)
+        self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}", text)
+
+    def test_unsigned_pr_paths_include_version_helper_changes(self):
+        text = self.workflow("tvos-build.yml")
+        trigger = re.search(r"(?ms)^  pull_request:\n(.*?)(?=^  [a-z_]+:|\Z)", text)
+        assert trigger is not None, "Missing pull_request trigger"
+        paths = re.findall(r"(?m)^      - '([^']+)'$", trigger.group(1))
+        self.assertIn(".agents/skills/update-phoenix-version/**", paths)
+
+    def test_unsigned_offline_step_runs_both_python_suites_fail_closed(self):
+        native = self.job(self.workflow("tvos-build.yml"), "native-tv")
+        step = re.search(r"(?ms)^      - name: Offline tooling checks[^\n]*\n(.*?)(?=^      - |\Z)", native)
+        assert step is not None, "Missing unsigned offline-check step"
+        body = step.group(1)
+        self.assertIn("set -euo pipefail", body)
+        self.assertNotIn("continue-on-error", body)
+        for script, log in ((".github/scripts/tvos-tooling-tests.py", "tooling-tests.log"),
+                            (".agents/skills/update-phoenix-version/scripts/test_update_version.py", "version-tests.log")):
+            with self.subTest(script=script):
+                self.assertRegex(body, r"(?m)^          python3 " + re.escape(script) +
+                                 r' 2>&1 \| tee "\$RUNNER_TEMP/tvos-evidence/' + re.escape(log) + r'"$')
 
 
 if __name__ == "__main__":

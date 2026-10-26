@@ -19,6 +19,7 @@ on:
       - 'androidApp/build.gradle.kts'
       - 'iosApp/PhoenixApp/Config/SupabaseBase.xcconfig'
       - 'iosApp/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png'
+      - '.agents/skills/update-phoenix-version/**'
       - '.github/scripts/tvos-*'
       - '.github/workflows/tvos-build.yml'
       - '.github/workflows/tvos-testflight.yml'
@@ -105,6 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/tvos-tooling-tests.py 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/tooling-tests.log"
+          python3 .agents/skills/update-phoenix-version/scripts/test_update_version.py 2>&1 | tee "$RUNNER_TEMP/tvos-evidence/version-tests.log"
           bash -n .github/scripts/tvos-framework.sh
           plutil -lint tvosApp/PhoenixTV.xcodeproj/project.pbxproj tvosApp/PhoenixTV/Info.plist
           xmllint --noout tvosApp/PhoenixTV.xcodeproj/xcshareddata/xcschemes/PhoenixTV.xcscheme

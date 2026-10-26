@@ -237,9 +237,15 @@ def verify_privacy_manifest(app):
     require(declared == PRIVACY_REASONS, f"{name} does not match the reviewed TV required-reason policy")
 
 
+def verify_export_compliance(info):
+    require(info.get("ITSAppUsesNonExemptEncryption") is False,
+            "Built app ITSAppUsesNonExemptEncryption must be boolean false for the reviewed exempt-encryption policy")
+
+
 def verify_app(app, versions, build, *, production):
     verify_privacy_manifest(app)
     info = plistlib.loads((app / "Info.plist").read_bytes())
+    verify_export_compliance(info)
     require(info.get("CFBundleIdentifier") == BUNDLE, "Built app bundle ID mismatch")
     require(info.get("CFBundleShortVersionString") == versions["marketing"] and
             info.get("CFBundleVersion") == build, "Built app version mismatch")
@@ -285,6 +291,7 @@ def local(args):
         app = derived / f"Build/Products/{args.configuration}-{args.sdk}/PhoenixTV.app"
         require((app / "exercises.json").read_bytes() == (ROOT / EXERCISES).read_bytes(), "Exercise resource not copied into local app")
         verify_privacy_manifest(app)
+        verify_export_compliance(plistlib.loads((app / "Info.plist").read_bytes()))
         print(f"Unsigned app: {app}")
         if args.action == "test":
             print(f"Native test evidence: {results}")

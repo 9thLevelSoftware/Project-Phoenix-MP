@@ -194,7 +194,9 @@ jobs:
             --derived-data "$RUNNER_TEMP/tvos-archive-derived"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: tvos-testflight-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          # Stable across upload-only retries; a rerun archive replaces this run's IPA.
+          name: tvos-testflight-ipa-${{ github.run_id }}
+          overwrite: true
           path: |
             ${{ runner.temp }}/tvos-release/export/PhoenixTV.ipa
             ${{ runner.temp }}/tvos-release/export/release.json
@@ -213,7 +215,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tvos-testflight-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          name: tvos-testflight-ipa-${{ github.run_id }}
           path: ${{ runner.temp }}/tvos-export
       - name: Reuse phone's separately verified upload toolchain
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
