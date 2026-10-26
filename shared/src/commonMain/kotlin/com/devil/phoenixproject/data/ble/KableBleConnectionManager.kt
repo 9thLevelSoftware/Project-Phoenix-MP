@@ -23,14 +23,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -73,6 +76,9 @@ class KableBleConnectionManager(
     // Callbacks for notification data routing
     private val onRepEventFromCharacteristic: (ByteArray) -> Unit,
     private val onDiagnosticData: (DiagnosticPacket) -> Unit = {},
+    // Construction-only seams: lifecycle and all GATT I/O still use Kable's API.
+    private val advertisements: () -> Flow<Advertisement> = { Scanner {}.advertisements },
+    private val createPeripheral: (Advertisement) -> Peripheral = { Peripheral(it) },
 ) {
     private val log = Logger.withTag("KableBleConnectionManager")
 
@@ -280,10 +286,7 @@ class KableBleConnectionManager(
             scanJob = scope.launch {
                 try {
                     withTimeoutOrNull(BleConstants.SCAN_TIMEOUT_MS) {
-                        Scanner {
-                            // No specific filters - we'll filter manually
-                        }
-                            .advertisements
+                        advertisements()
                             .onEach { advertisement ->
                                 // Debug logging for all advertisements
                                 log.d {
@@ -528,8 +531,7 @@ class KableBleConnectionManager(
         return try {
             // Find first Phoenix device with a real name
             val advertisement = withTimeoutOrNull(timeoutMs) {
-                Scanner {}
-                    .advertisements
+                advertisements()
                     .filter { adv ->
                         val name = adv.name
                         name != null && (
@@ -618,7 +620,7 @@ class KableBleConnectionManager(
             // Note: MTU negotiation is handled in onDeviceReady() via expect/actual
             // pattern (requestMtuIfSupported) since Kable's requestMtu requires
             // platform-specific AndroidPeripheral cast
-            peripheral = Peripheral(advertisement)
+            peripheral = createPeripheral(advertisement)
 
             // Cancel any stale state observer before launching a new one (H2 fix)
             stateObserverJob?.cancel()
@@ -861,6 +863,26 @@ class KableBleConnectionManager(
             cleanupExistingConnection()
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
+        } catch (e: CancellationException) {
+            // The caller's job does not own the observer/ready-up jobs on scope.
+            // Tear those down before propagating cancellation, otherwise a cancelled
+            // selection can leave a live peripheral and later publish Connected.
+            stateObserverJob?.cancel()
+            stateObserverJob = null
+            deviceReadyJob?.cancel()
+            deviceReadyJob = null
+            pollingEngine.stopAll()
+            withContext(NonCancellable) {
+                try {
+                    withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        cleanupExistingConnection()
+                    }
+                } finally {
+                    clearConnectionState()
+                    reportConnectionState(ConnectionState.Disconnected)
+                }
+            }
+            throw e
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             // Finding [48]: cancel stateObserverJob in the outer catch so ghost callbacks

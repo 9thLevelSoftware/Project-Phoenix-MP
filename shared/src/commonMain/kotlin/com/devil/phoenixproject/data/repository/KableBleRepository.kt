@@ -20,8 +20,12 @@ import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.rethrowIfCancellation
+import com.juul.kable.Advertisement
+import com.juul.kable.Peripheral
+import com.juul.kable.Scanner
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,13 +51,22 @@ import kotlinx.coroutines.launch
  * [disconnect] remains the normal user-facing action. [shutdown] is terminal and cancels
  * repository-owned jobs, scanning, observers, polling, and transient connection-facing state.
  */
-class KableBleRepository : BleRepository {
+class KableBleRepository internal constructor(
+    dispatcher: CoroutineDispatcher,
+    advertisements: () -> Flow<Advertisement>,
+    createPeripheral: (Advertisement) -> Peripheral,
+) : BleRepository {
+    constructor() : this(
+        dispatcher = Dispatchers.Default,
+        advertisements = { Scanner {}.advertisements },
+        createPeripheral = { Peripheral(it) },
+    )
 
     private val log = Logger.withTag("KableBleRepository")
     private val logRepo = ConnectionLogRepository.instance
 
     private val repositoryJob = SupervisorJob()
-    private val scope = CoroutineScope(repositoryJob + Dispatchers.Default)
+    private val scope = CoroutineScope(repositoryJob + dispatcher)
     internal val isRepositoryScopeActiveForTest: Boolean get() = repositoryJob.isActive
 
     // ===== State flows =====
@@ -161,6 +174,8 @@ class KableBleRepository : BleRepository {
         },
         onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
         onDiagnosticData = { packet -> publishDiagnostics(packet) },
+        advertisements = advertisements,
+        createPeripheral = createPeripheral,
     )
 
     // ===== Connection lifecycle delegations =====
