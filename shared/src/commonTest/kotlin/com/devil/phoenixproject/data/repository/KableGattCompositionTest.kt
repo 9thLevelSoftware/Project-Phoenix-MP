@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.ble.CompositionGattFake
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.CommandLimits
 import com.juul.kable.Advertisement
@@ -521,6 +522,226 @@ abstract class KableGattCompositionContract {
                 cleanupReturn.complete(Unit)
                 a.cancelAndJoin()
                 b.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun explicitDisconnectInvalidatesQueuedConnect() = runTest {
+        assertExplicitTeardownInvalidatesQueuedConnect(cancel = false)
+    }
+
+    @Test
+    fun explicitCancelInvalidatesQueuedConnect() = runTest {
+        assertExplicitTeardownInvalidatesQueuedConnect(cancel = true)
+    }
+
+    private suspend fun TestScope.assertExplicitTeardownInvalidatesQueuedConnect(cancel: Boolean) {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            f.connectGate = CompletableDeferred()
+            val owner = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val old = f.peripherals.single()
+            f.connectGate = null
+            val waiter = async { f.repository.connect(chosenSelection) }
+            val states = mutableListOf<ConnectionState>()
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.connectionState.collect { states += it } }
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            try {
+                runCurrent()
+                assertFalse(owner.isCompleted)
+                assertFalse(waiter.isCompleted)
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+                if (cancel) f.repository.cancelConnection() else f.repository.disconnect()
+                runCurrent()
+                assertTrue(owner.isCancelled, "Explicit teardown must interrupt the pending physical connect")
+                assertEquals(listOf<Advertisement>(first), f.constructed, "Pre-teardown waiter must never construct a Peripheral")
+                assertTrue(waiter.await().isFailure, "Queued request must fail instead of undoing explicit teardown")
+                advanceTimeBy(BleConstants.CONNECTION_TIMEOUT_MS)
+                runCurrent()
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+                assertTrue(states.none { it is ConnectionState.Connected })
+                assertTrue(requests.isEmpty())
+                assertTrue(old.writes.isEmpty())
+                assertTrue(f.repository.sendWorkoutCommand(loadCommand()).isFailure)
+
+                assertTrue(f.repository.connect(chosenSelection).isSuccess, "Only a fresh explicit request may connect")
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen), f.constructed)
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+            } finally {
+                owner.cancelAndJoin()
+                waiter.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun explicitDisconnectInvalidatesAdmittedReplacementAfterEntryCleanup() = runTest {
+        assertTeardownInvalidatesReplacementAfterEntryCleanup(cancel = false)
+    }
+
+    @Test
+    fun explicitCancelInvalidatesAdmittedReplacementAfterEntryCleanup() = runTest {
+        assertTeardownInvalidatesReplacementAfterEntryCleanup(cancel = true)
+    }
+
+    private suspend fun TestScope.assertTeardownInvalidatesReplacementAfterEntryCleanup(cancel: Boolean) {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            assertTrue(f.repository.connect(firstSelection).isSuccess)
+            runCurrent()
+            val old = f.peripherals.single()
+            assertEquals(first.identifier.toString(), assertIs<ConnectionState.Connected>(f.repository.connectionState.value).deviceAddress)
+
+            val states = mutableListOf<ConnectionState>()
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.connectionState.collect { states += it } }
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            runCurrent()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            val replacement = async { f.repository.connect(chosenSelection) }
+            try {
+                runCurrent()
+                assertEquals(1, old.disconnectCalls, "Replacement must be admitted and parked in old-peripheral cleanup")
+                assertFalse(replacement.isCompleted)
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+                states.clear()
+
+                if (cancel) f.repository.cancelConnection() else f.repository.disconnect()
+                runCurrent()
+                assertEquals(2, old.disconnectCalls, "Public teardown must complete its own old-peripheral disconnect")
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+                assertFalse(replacement.isCompleted, "Teardown returns while admitted entry cleanup remains parked")
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+
+                cleanupReturn.complete(Unit)
+                val staleResult = replacement.await()
+                assertTrue(staleResult.isFailure, "Teardown must invalidate a replacement already admitted in cleanup")
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first), f.constructed, "Invalidated replacement must not construct a Peripheral")
+                assertEquals(1, old.connectCalls)
+                assertTrue(states.none { it is ConnectionState.Connected }, "Stale replacement must not republish Connected")
+                assertTrue(requests.isEmpty(), "Explicit teardown and stale cleanup must not request reconnect")
+                assertTrue(f.repository.sendWorkoutCommand(loadCommand()).isFailure)
+
+                assertTrue(f.repository.connect(chosenSelection).isSuccess, "A genuinely fresh request must remain admissible")
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen), f.constructed)
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(old.writes.isEmpty(), "Fresh RESET must reach only the chosen peripheral")
+            } finally {
+                cleanupReturn.complete(Unit)
+                replacement.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun freshConnectAfterDisconnectWaitsForCleanupWhileStaleWaiterIsRejected() = runTest {
+        assertFreshConnectAfterTeardownDuringCleanup(cancel = false)
+    }
+
+    @Test
+    fun freshConnectAfterCancelWaitsForCleanupWhileStaleWaiterIsRejected() = runTest {
+        assertFreshConnectAfterTeardownDuringCleanup(cancel = true)
+    }
+
+    private suspend fun TestScope.assertFreshConnectAfterTeardownDuringCleanup(cancel: Boolean) {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            f.connectGate = CompletableDeferred()
+            val owner = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val old = f.peripherals.single()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            owner.cancel()
+            runCurrent()
+            assertEquals(1, old.disconnectCalls)
+            assertFalse(owner.isCompleted, "Cancelled owner must still hold admission during noncancellable cleanup")
+            f.connectGate = null
+            val stale = async { f.repository.connect(chosenSelection) }
+            runCurrent()
+            assertFalse(stale.isCompleted)
+            if (cancel) f.repository.cancelConnection() else f.repository.disconnect()
+            val fresh = async { f.repository.connect(chosenSelection) }
+            try {
+                runCurrent()
+                assertFalse(owner.isCompleted)
+                assertFalse(fresh.isCompleted, "Post-teardown request must still wait for the old owner's cleanup")
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+                cleanupReturn.complete(Unit)
+                owner.join()
+                assertTrue(stale.await().isFailure, "Teardown must invalidate requests queued before it, not after it")
+                assertTrue(fresh.await().isSuccess)
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen), f.constructed, "Only the fresh request may construct a Peripheral")
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(old.writes.isEmpty())
+            } finally {
+                cleanupReturn.complete(Unit)
+                owner.cancelAndJoin()
+                stale.cancelAndJoin()
+                fresh.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun admissionWaitTimesOutWithoutCleaningOwnerAndDoesNotRunLater() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            assertTrue(f.repository.connect(firstSelection).isSuccess)
+            runCurrent()
+            val old = f.peripherals.single()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            // Hold a real replacement inside entry cleanup, beyond the admission
+            // bound, without depending on its independent physical-connect retry timer.
+            val owner = async { f.repository.connect(chosenSelection) }
+            runCurrent()
+            assertEquals(1, old.disconnectCalls)
+            assertFalse(owner.isCompleted)
+            val stateBeforeWait = f.repository.connectionState.value
+            val waiter = async { f.repository.connect(firstSelection) }
+            try {
+                runCurrent()
+                advanceTimeBy(BleConstants.CONNECTION_TIMEOUT_MS - 1)
+                runCurrent()
+                assertFalse(waiter.isCompleted, "Admission should wait up to the existing connection timeout")
+                advanceTimeBy(1)
+                runCurrent()
+                assertTrue(waiter.isCompleted, "Admission must time out at the existing connection timeout")
+                assertTrue(waiter.await().isFailure)
+                assertFalse(owner.isCompleted, "Wait timeout must not cancel the admitted owner")
+                assertEquals(1, old.disconnectCalls, "Wait timeout must not run connection cleanup")
+                assertEquals(stateBeforeWait, f.repository.connectionState.value, "Wait timeout owns no connection-state publication")
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+                cleanupReturn.complete(Unit)
+                assertTrue(owner.await().isSuccess)
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen), f.constructed, "Expired waiter must be removed, never admitted later")
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(f.repository.connect(firstSelection).isSuccess, "Timeout must not leak the admission mutex")
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen, first), f.constructed)
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), first)
+            } finally {
+                cleanupReturn.complete(Unit)
+                owner.cancelAndJoin()
+                waiter.cancelAndJoin()
             }
         }
     }

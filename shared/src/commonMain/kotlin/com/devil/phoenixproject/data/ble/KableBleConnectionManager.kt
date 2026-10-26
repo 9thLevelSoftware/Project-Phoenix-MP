@@ -19,6 +19,7 @@ import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +37,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -140,6 +140,10 @@ class KableBleConnectionManager(
     // Serializes connect callers through their final cleanup, not public teardown:
     // disconnect/cancelConnection must still interrupt pending radio work.
     private val connectAdmission = Mutex()
+
+    // Public teardown does not acquire admission. Atomic read/increment keeps
+    // invalidation visible across caller dispatchers on JVM and Kotlin/Native.
+    private val teardownEpoch = atomic(0L)
 
     /** Active scanning job reference. */
     private var scanJob: Job? = null
@@ -581,13 +585,33 @@ class KableBleConnectionManager(
     // 4. connect()
     // -------------------------------------------------------------------------
 
-    suspend fun connect(device: ScannedDevice): Result<Unit> = connectAdmission.withLock {
-        // Cancellation is caught only AFTER admission. A cancelled waiter owns
-        // nothing and must never clean up the connection holding this mutex.
-        connectAdmitted(device)
+    suspend fun connect(device: ScannedDevice): Result<Unit> {
+        val requestEpoch = teardownEpoch.value
+        var admitted = false
+        try {
+            val acquired = withTimeoutOrNull(BleConstants.CONNECTION_TIMEOUT_MS) {
+                connectAdmission.lock()
+                // Record ownership inside the timeout: cancellation can race its
+                // return after lock acquisition, and finally must still unlock.
+                admitted = true
+                true
+            } ?: false
+            if (!acquired) {
+                return Result.failure(IllegalStateException("Connection admission timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms"))
+            }
+            currentCoroutineContext().ensureActive()
+            if (requestEpoch != teardownEpoch.value) {
+                return Result.failure(IllegalStateException("Connection request superseded by explicit teardown"))
+            }
+            // Only an admitted, current request may perform connection cleanup.
+            // A cancelled, expired or invalidated waiter owns no connection state.
+            return connectAdmitted(device, requestEpoch)
+        } finally {
+            if (admitted) connectAdmission.unlock()
+        }
     }
 
-    private suspend fun connectAdmitted(device: ScannedDevice): Result<Unit> {
+    private suspend fun connectAdmitted(device: ScannedDevice, requestEpoch: Long): Result<Unit> {
         return try {
             log.i { "Connecting to device: ${device.name}" }
             logRepo.info(
@@ -599,6 +623,10 @@ class KableBleConnectionManager(
 
             // Entry cleanup can suspend too: keep it inside owned cancellation handling.
             cleanupExistingConnection()
+            currentCoroutineContext().ensureActive()
+            if (requestEpoch != teardownEpoch.value) {
+                return Result.failure(IllegalStateException("Connection request superseded by explicit teardown"))
+            }
 
             // A prior explicit teardown must not suppress this connection's reconnect.
             isExplicitDisconnect = false
@@ -1340,6 +1368,7 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     suspend fun disconnect() {
+        teardownEpoch.incrementAndGet()
         log.i { "Disconnecting (explicit)" }
         isExplicitDisconnect = true // Mark as explicit disconnect to prevent auto-reconnect
 
@@ -1366,6 +1395,7 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     suspend fun cancelConnection() {
+        teardownEpoch.incrementAndGet()
         log.i { "Cancelling in-progress connection" }
         isExplicitDisconnect = true // Prevent auto-reconnect
         // Issue #333: stop an in-flight ready-up so it cannot publish Connected
