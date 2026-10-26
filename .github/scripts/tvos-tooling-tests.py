@@ -15,7 +15,6 @@ import sys
 import tempfile
 import unittest
 import uuid
-from typing import Callable, cast
 import zipfile
 from unittest.mock import patch
 
@@ -170,12 +169,7 @@ class ToolingTests(unittest.TestCase):
         export.mkdir()
         source = export / "Phoenix TV.ipa"
         self.export_ipa_fixture(source)
-        normalize = getattr(release, "normalize_exported_ipa", None)
-        if not callable(normalize):
-            self.fail("Expected the tvOS IPA normalization helper")
-        normalize = cast(Callable[[Path, dict[str, str], str], Path], normalize)
-
-        result = normalize(export, {"marketing": "2.3.4"}, "456")
+        result = release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
 
         self.assertEqual(result, export / "PhoenixTV.ipa")
         self.assertTrue(result.is_file())
@@ -192,6 +186,28 @@ class ToolingTests(unittest.TestCase):
 
         self.assertEqual(result, stable)
         self.assertTrue(stable.is_file())
+
+    def test_export_normalizes_case_variant_name_on_filesystem(self):
+        export = self.root / "export"
+        export.mkdir()
+        self.export_ipa_fixture(export / "phoenixTV.ipa")
+
+        result = release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
+
+        self.assertEqual(result, export / "PhoenixTV.ipa")
+        self.assertTrue(result.is_file())
+        self.assertTrue(zipfile.is_zipfile(result))
+        self.assertEqual([path.name for path in export.glob("*.ipa")], ["PhoenixTV.ipa"])
+
+    def test_export_rejects_symlink_ipa_candidate(self):
+        export = self.root / "export"
+        export.mkdir()
+        target = export / "actual.zip"
+        self.export_ipa_fixture(target)
+        (export / "linked.ipa").symlink_to(target)
+
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
 
     def test_export_requires_exactly_one_ipa_candidate(self):
         for names in ((), ("one.ipa", "two.ipa")):
@@ -214,10 +230,8 @@ class ToolingTests(unittest.TestCase):
         malformed.unlink()
         with zipfile.ZipFile(malformed, "w", compression=zipfile.ZIP_DEFLATED) as ipa:
             ipa.writestr("Payload/Phoenix TV.app/Info.plist", b'<?xml version="1.0"?><plist><dict>')
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaisesRegex(ValueError, "Info.plist"):
             release.normalize_exported_ipa(export, {"marketing": "2.3.4"}, "456")
-        self.assertIsInstance(caught.exception, ValueError)
-        self.assertRegex(str(caught.exception), "Info.plist")
 
         malformed.unlink()
         ambiguous = export / "ambiguous.ipa"

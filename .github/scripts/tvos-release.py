@@ -400,9 +400,7 @@ def normalize_exported_ipa(export_root, versions, build):
             info.get("CFBundleVersion") == build, "Exported IPA version/build mismatch")
 
     stable = export_root / "PhoenixTV.ipa"
-    if source != stable:
-        require(not stable.exists(), "Stable TV IPA destination already exists")
-        source.replace(stable)
+    source.replace(stable)
     return stable
 
 
