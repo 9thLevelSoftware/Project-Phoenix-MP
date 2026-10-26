@@ -280,15 +280,25 @@ class ToolingTests(unittest.TestCase):
         self.assertNotIn(short_secret, diagnostic)
 
     def test_github_runner_values_preserve_four_digit_diagnostic_anchors(self):
-        for name, value in (("CI", "true"), ("GITHUB_ACTIONS", "true"),
-                            ("GITHUB_RUN_NUMBER", "1234")):
-            with self.subTest(name=name):
-                result, output = self.offline_cli(
-                    f"/src/Error.swift:1234:5678: error: runner value {value}".encode(),
-                    env={name: value})
-                self.assertEqual(result, 65)
-                self.assertIn(
-                    f"native: /src/Error.swift:1234:5678: error: runner value {value}", output)
+        runner_booleans = {"CI": "true", "GITHUB_ACTIONS": "true",
+                           "GITHUB_REF_PROTECTED": "true"}
+        boolean_diagnostic = "/src/Error.swift:1234:5678: error: runner values true true true"
+        result, output = self.offline_cli(boolean_diagnostic.encode(), env=runner_booleans)
+        self.assertEqual(result, 65)
+        self.assertIn("native: " + boolean_diagnostic, output)
+
+        result, output = self.offline_cli(
+            boolean_diagnostic.encode(), env=runner_booleans | {"SECRET": "true"})
+        self.assertEqual(result, 65)
+        self.assertIn(
+            "native: /src/Error.swift:1234:5678: error: runner values [redacted] [redacted] [redacted]",
+            output)
+        self.assertNotIn("runner values true true true", output)
+
+        result, output = self.offline_cli(
+            b"/src/Error.swift:1234:5678: error: runner value 1234", env={"GITHUB_RUN_NUMBER": "1234"})
+        self.assertEqual(result, 65)
+        self.assertIn("native: /src/Error.swift:1234:5678: error: runner value 1234", output)
 
         long_number = "20261026"
         result, output = self.offline_cli(
@@ -299,7 +309,7 @@ class ToolingTests(unittest.TestCase):
             f"native: /src/Error.swift:{long_number}:5678: error: runner value {long_number}", output)
 
         # An exact GitHub key does not exempt arbitrary values from canary protection.
-        canary = uuid.uuid4().hex
+        canary = "z" + uuid.uuid4().hex
         result, output = self.offline_cli(
             f"/src/Error.swift:1234:5678: error: invalid runner value {canary}".encode(),
             env={"GITHUB_RUN_NUMBER": canary})

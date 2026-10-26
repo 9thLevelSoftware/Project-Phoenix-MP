@@ -43,6 +43,7 @@ SENSITIVE_SETTING_NAME = re.compile(
 NON_SENSITIVE_RUNNER_VALUES = {
     "CI": re.compile(r"(?:true|false)"),
     "GITHUB_ACTIONS": re.compile(r"(?:true|false)"),
+    "GITHUB_REF_PROTECTED": re.compile(r"(?:true|false)"),
     "GITHUB_RUN_NUMBER": re.compile(r"[0-9]+"),
 }
 
@@ -62,10 +63,11 @@ def print_offline_build_diagnostics(output, env):
 
     Redact all values from credential-named variables (even short or multiline values)
     and generic inherited values of at least four characters. Only exact boolean CI /
-    GITHUB_ACTIONS settings and numeric GITHUB_RUN_NUMBER values are excluded from that
-    generic rule to preserve ordinary diagnostic text and anchors. A value also present under
-    a credential-named variable remains redacted. Bare credential keywords still suppress
-    their full line as a deliberate privacy tradeoff; no general secret parser is claimed.
+    GITHUB_ACTIONS / GITHUB_REF_PROTECTED settings and numeric GITHUB_RUN_NUMBER values
+    are excluded from that generic rule to preserve ordinary diagnostic text and anchors. A
+    value also present under a credential-named variable remains redacted. Bare credential
+    keywords still suppress their full line as a deliberate privacy tradeoff; no general secret
+    parser is claimed.
     Known credential-bearing local config files suppress this optional excerpt in run().
     """
     def clean(text):
