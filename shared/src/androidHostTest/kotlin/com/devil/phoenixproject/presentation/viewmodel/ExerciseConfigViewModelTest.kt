@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
@@ -27,8 +28,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Test
 
 class ExerciseConfigViewModelTest {
@@ -250,42 +256,51 @@ class ExerciseConfigViewModelTest {
     fun `global PR percent preserves custom per-set percentages`() = runTest {
         val repository = FakePersonalRecordRepository()
         repository.addRecord(weightPR(weight = 50f))
-        val viewModel = createViewModel(personalRecordRepository = repository)
-        val exercise = benchRoutineExercise(
-            id = "rex-pr-custom",
-            setReps = listOf(10, 10, 10),
-            weightPerCableKg = 5f,
-            setWeightsPerCableKg = listOf(5f, 5f, 5f),
-            usePercentOfPR = true,
-            weightPercentOfPR = 80,
-            setWeightsPercentOfPR = listOf(80, 80, 80),
-        )
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val viewModel = createViewModel(personalRecordRepository = repository)
+            try {
+                val exercise = benchRoutineExercise(
+                    id = "rex-pr-custom",
+                    setReps = listOf(10, 10, 10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f, 5f, 5f),
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    setWeightsPercentOfPR = listOf(80, 80, 80),
+                )
 
-        viewModel.initialize(
-            exercise = exercise,
-            unit = WeightUnit.KG,
-            toDisplay = { value, _ -> value },
-            toKg = { value, _ -> value },
-        )
-        advanceUntilIdle()
-        waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(40f, 40f, 40f) }
+                viewModel.initialize(
+                    exercise = exercise,
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(40f, 40f, 40f) }
 
-        viewModel.updateWeight(viewModel.sets.value.first().id, 45f)
-        assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+                viewModel.updateWeight(viewModel.sets.value.first().id, 45f)
+                assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
 
-        viewModel.onWeightPercentOfPRChange(85)
-        assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+                viewModel.onWeightPercentOfPRChange(85)
+                assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
 
-        viewModel.addSet()
-        assertEquals(listOf(45f, 40f, 40f, 42.5f), viewModel.sets.value.map { it.weightPerCable })
+                viewModel.addSet()
+                assertEquals(listOf(45f, 40f, 40f, 42.5f), viewModel.sets.value.map { it.weightPerCable })
 
-        var saved: RoutineExercise? = null
-        viewModel.onSave { updated -> saved = updated }
+                var saved: RoutineExercise? = null
+                viewModel.onSave { updated -> saved = updated }
 
-        assertNotNull(saved)
-        assertEquals(85, saved.weightPercentOfPR)
-        assertEquals(listOf(90, 80, 80, 85), saved.setWeightsPercentOfPR)
-        assertEquals(listOf(45f, 40f, 40f, 42.5f), saved.setWeightsPerCableKg)
+                assertNotNull(saved)
+                assertEquals(85, saved.weightPercentOfPR)
+                assertEquals(listOf(90, 80, 80, 85), saved.setWeightsPercentOfPR)
+                assertEquals(listOf(45f, 40f, 40f, 42.5f), saved.setWeightsPerCableKg)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test
