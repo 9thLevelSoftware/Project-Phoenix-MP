@@ -50,12 +50,63 @@ def required_env(env, names):
     require(not missing, "Missing configuration: " + ", ".join(missing))
 
 
-def run(command, label, *, sensitive=False, env=None, cwd=ROOT):
+def print_offline_build_diagnostics(output, env):
+    """Lossy public excerpt for unsigned/offline builds only; never a raw log.
+
+    Allow diagnostic lines, not command echoes, source excerpts or environment dumps.
+    Redact every inherited value (including multiline fragments), not just known key
+    names. This intentionally over-redacts short values and paths. It is not a safe
+    logger for signing, API responses, or builds using credential-bearing config files.
+    """
+    def clean(text):
+        text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+        return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
+
+    values = {clean(part) for value in env.values() for part in (value, *value.splitlines())}
+    values.discard("")
+    redactions = re.compile("|".join(re.escape(value) for value in sorted(values, key=len, reverse=True))) if values else None
+    diagnostic = re.compile(
+        r"^(?:.*\.(?:swift|kt|m|mm|c|h|cpp):\d+(?::\d+)?: (?:fatal )?error:|"
+        r"e: |(?:xcodebuild|clang): error:|ld: |error: |Undefined symbols for architecture |"
+        r"Execution failed for task |FAILURE: Build failed|Caused by: |"
+        r"Command \w+ failed with a nonzero exit code|\*\* BUILD FAILED \*\*)")
+    credential = re.compile(
+        r"password|passwd|secret|token|authorization|private[ _-]?key|https?://\S+@|"
+        r"eyJ[\w-]+\.[\w-]+\.[\w-]+|sb_(?:secret|publishable)_", re.I)
+    lines = []
+    truncated = False
+    for line in clean(output).splitlines():
+        line = line.strip()
+        if not diagnostic.match(line):
+            continue
+        if len(lines) == 40:
+            truncated = True
+            break
+        if credential.search(line):
+            line = "[redacted credential-like diagnostic]"
+        elif redactions:
+            line = redactions.sub("[redacted]", line)
+        if len(line) > 500:
+            line = line[:500] + " [truncated]"
+            truncated = True
+        lines.append(line)
+    print("Offline native failure diagnostics (sanitized; other output withheld):", flush=True)
+    for line in lines:
+        print("native: " + line, flush=True)  # Never emit GitHub workflow commands.
+    if not lines:
+        print("native: No publishable diagnostic lines; raw output withheld.", flush=True)
+    if truncated:
+        print("native: Diagnostic excerpt truncated (40 lines / 500 characters per line).", flush=True)
+
+
+def run(command, label, *, sensitive=False, env=None, cwd=ROOT, offline_build_diagnostics=False):
     """Never print command arguments: signing passwords and paths can be sensitive."""
     result = subprocess.run([str(part) for part in command], cwd=cwd, env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if not sensitive and result.stdout:
         print(result.stdout, end="", flush=True)
+    elif result.returncode and offline_build_diagnostics:
+        print_offline_build_diagnostics(result.stdout, os.environ if env is None else env)
     print(f"{label}: exit {result.returncode}", flush=True)
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, label)
@@ -287,7 +338,10 @@ def local(args):
             # Keep normal xcresult logs/screenshots without a ten-minute host sysdiagnose.
             command += ["-resultBundlePath", str(results), "-parallel-testing-enabled", "NO",
                         "-maximum-concurrent-test-simulator-destinations", "1", "-collect-test-diagnostics", "never"]
-        run(command, "Unsigned tvOS " + args.action, sensitive=True)
+        # Only this unsigned build path uses a deterministic, empty cloud config.
+        # Tests and all signing/API/security calls retain full output suppression.
+        run(command, "Unsigned tvOS " + args.action, sensitive=True,
+            offline_build_diagnostics=args.action == "build")
         app = derived / f"Build/Products/{args.configuration}-{args.sdk}/PhoenixTV.app"
         require((app / "exercises.json").read_bytes() == (ROOT / EXERCISES).read_bytes(), "Exercise resource not copied into local app")
         verify_privacy_manifest(app)

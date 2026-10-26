@@ -11,6 +11,8 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import uuid
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -150,6 +152,135 @@ class ToolingTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError) as caught:
             release.run(["/bin/sh", "-c", "exit 37"], "fixture failure")
         self.assertEqual(caught.exception.returncode, 37)
+
+    def offline_cli(self, output, *, code=65, action="build", env=None):
+        """Replace only the forbidden native executable; run a real child and CLI."""
+        def child(sdk, configuration, derived, config, native_action, destination):
+            program = (
+                "import os, pathlib, stat, sys\n"
+                f"config = pathlib.Path({str(config)!r})\n"
+                "assert config.read_text() == 'SUPABASE_URL =\\nSUPABASE_ANON_KEY =\\n'\n"
+                "assert stat.S_IMODE(config.stat().st_mode) == 0o600\n"
+                "assert 'CODE_SIGNING_ALLOWED=NO' in sys.argv\n"
+                "assert 'CODE_SIGNING_REQUIRED=NO' in sys.argv\n"
+                f"sys.stdout.buffer.write({output!r}); sys.stdout.flush()\n"
+                "sys.stderr.write('xcodebuild: error: fixture stderr diagnostic\\n')\n"
+                f"sys.exit({code})\n"
+            )
+            return [sys.executable, "-c", program, "ARGUMENT_CANARY_NEVER_LOG"]
+
+        argv = [str(SCRIPT), "local", action, "--sdk",
+                "appletvos" if action == "build" else "appletvsimulator",
+                "--configuration", "Release" if action == "build" else "Debug",
+                "--derived-data", str(self.root), "--result-bundle", str(self.root / "tests.xcresult")]
+        if action == "test":
+            argv += ["--simulator", "fixture-udid"]
+        buffer = io.StringIO()
+        # Controlled env: real user secrets never appear in fixture output.
+        with patch.dict(os.environ, {"PATH": os.defpath} | (env or {}), clear=True), \
+                patch.object(sys, "argv", argv), patch.object(release, "xcode_command", side_effect=child), \
+                contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            result = release.main()
+        return result, buffer.getvalue()
+
+    def test_offline_build_failure_exposes_real_stdout_and_stderr_diagnostics(self):
+        result, output = self.offline_cli(
+            b"/src/ContentView.swift:42:9: error: cannot find 'bridge' in scope\n"
+            b"e: file:///src/Bridge.kt:58:12 Unresolved reference 'snapshot'.\n"
+            b"ld: library not found for -lFixture\n"
+            b"Execution failed for task ':shared-tvos:linkReleaseFrameworkTvosArm64'.\n"
+            b"Command PhaseScriptExecution failed with a nonzero exit code\n"
+            b"** BUILD FAILED **\n"
+            b"COMMAND_ECHO_MUST_NOT_APPEAR fixture-argument\n")
+        self.assertEqual(result, 65)
+        for diagnostic in ("ContentView.swift:42:9: error:", "Unresolved reference 'snapshot'",
+                           "ld: library not found", "Execution failed for task",
+                           "Command PhaseScriptExecution failed", "fixture stderr diagnostic"):
+            self.assertIn(diagnostic, output)
+        self.assertNotIn("COMMAND_ECHO_MUST_NOT_APPEAR", output)
+        self.assertNotIn("ARGUMENT_CANARY_NEVER_LOG", output)
+        self.assertNotIn("Unsigned app:", output)
+        self.assertIn("ERROR: Unsigned tvOS build exited 65", output)
+
+    def test_offline_build_diagnostics_redact_inherited_values_before_truncation(self):
+        env = {"P12_PASSWORD": uuid.uuid4().hex, "GH_TOKEN": "GH_CANARY_NOT_PUBLIC",
+               "SUPABASE_ANON_KEY": "CLOUD_CANARY_NOT_PUBLIC",
+               "UNCLASSIFIED_SETTING": "ARBITRARY_CANARY_NOT_PUBLIC",
+               "APPSTORE_API_KEY": "-----BEGIN PRIVATE KEY-----\nPEM_CANARY_LINE_ONE\nPEM_CANARY_LINE_TWO\n-----END PRIVATE KEY-----",
+               "SHORT_SECRET": "xy"}
+        lines = ["error: value=" + value for value in env.values()]
+        lines += ["error: " + line for line in env["APPSTORE_API_KEY"].splitlines()]
+        lines += ["error: " + "a" * 490 + env["GH_TOKEN"],
+                  "error: Authorization: Bearer FILE_ONLY_CREDENTIAL_CANARY",
+                  "error: password=FILE_ONLY_PASSWORD_CANARY",
+                  "error: https://user:FILE_ONLY_URL_CANARY@example.invalid/path",
+                  "error: GH_\x1b[31mCANARY_NOT_PUBLIC\x1b[0m"]
+        result, output = self.offline_cli("\n".join(lines).encode(), env=env)
+        self.assertEqual(result, 65)
+        for value in env.values():
+            for fragment in value.splitlines():
+                self.assertNotIn(fragment, output)
+        for fragment in ("FILE_ONLY_CREDENTIAL_CANARY", "FILE_ONLY_PASSWORD_CANARY", "FILE_ONLY_URL_CANARY",
+                         "GH_CANARY", "ARGUMENT_CANARY_NEVER_LOG"):
+            self.assertNotIn(fragment, output)
+        self.assertIn("[redacted]", output)
+        self.assertIn("fixture stderr diagnostic", output)
+
+    def test_offline_build_diagnostics_are_bounded_and_not_workflow_commands(self):
+        lines = ["::error::ANNOTATION_CANARY", "export KEY=RAW_DUMP_CANARY",
+                 "error: first diagnostic\x1b[31m\x1b[0m\x00"]
+        lines += [f"error: diagnostic {index} " + "z" * 2000 for index in range(100)]
+        result, output = self.offline_cli("\n".join(lines).encode())
+        self.assertEqual(result, 65)
+        self.assertIn("first diagnostic", output)
+        self.assertNotIn("ANNOTATION_CANARY", output)
+        self.assertNotIn("RAW_DUMP_CANARY", output)
+        self.assertNotIn("\x1b", output)
+        self.assertNotIn("\x00", output)
+        self.assertLess(len(output), 23000)
+        self.assertIn("truncated", output)
+        self.assertTrue(all(not line.startswith("::") for line in output.splitlines()))
+
+    def test_offline_build_success_stays_quiet_and_checks_real_resources(self):
+        app = self.root / "Build/Products/Release-appletvos/PhoenixTV.app"
+        app.mkdir(parents=True)
+        (app / "exercises.json").write_bytes((ROOT / release.EXERCISES).read_bytes())
+        (app / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps(self.privacy_fixture()))
+        (app / "Info.plist").write_bytes(plistlib.dumps({"ITSAppUsesNonExemptEncryption": False}))
+        result, output = self.offline_cli(b"error: SUCCESS_OUTPUT_CANARY\n", code=0)
+        self.assertEqual(result, 0)
+        self.assertNotIn("SUCCESS_OUTPUT_CANARY", output)
+        self.assertNotIn("fixture stderr diagnostic", output)
+        self.assertIn("Unsigned app:", output)
+        (app / "exercises.json").unlink()
+        result, output = self.offline_cli(b"", code=0)
+        self.assertEqual(result, 1)
+        self.assertNotIn("Unsigned app:", output)
+
+    def test_offline_failure_without_publishable_lines_keeps_exit_and_withholds_raw_output(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), self.assertRaises(subprocess.CalledProcessError) as caught:
+            release.run([sys.executable, "-c", "print('RAW_OUTPUT_CANARY'); raise SystemExit(71)"],
+                        "offline fixture", sensitive=True, offline_build_diagnostics=True, env={"PATH": os.defpath})
+        self.assertEqual(caught.exception.returncode, 71)
+        self.assertIsNone(caught.exception.output)
+        self.assertIn("No publishable diagnostic lines", buffer.getvalue())
+        self.assertNotIn("RAW_OUTPUT_CANARY", buffer.getvalue())
+
+    def test_local_test_action_does_not_opt_into_offline_build_diagnostics(self):
+        result, output = self.offline_cli(b"error: TEST_ACTION_CANARY\n", action="test")
+        self.assertEqual(result, 65)
+        self.assertNotIn("TEST_ACTION_CANARY", output)
+        self.assertNotIn("fixture stderr diagnostic", output)
+
+    def test_sensitive_command_success_returns_output_without_logging_it(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            result = release.run([sys.executable, "-c", "print('PRIVATE_SUCCESS_CANARY')"],
+                                 "private success fixture", sensitive=True)
+        self.assertEqual(result, "PRIVATE_SUCCESS_CANARY\n")
+        self.assertNotIn("PRIVATE_SUCCESS_CANARY", buffer.getvalue())
+        self.assertIn("private success fixture: exit 0", buffer.getvalue())
 
     def test_framework_phase_selects_release_device_and_serial_gradle(self):
         self.framework_case("appletvos", "Release", "TvosArm64", "release")
@@ -408,10 +539,12 @@ class ToolingTests(unittest.TestCase):
     def test_sensitive_command_output_is_not_logged_even_on_failure(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), self.assertRaises(subprocess.CalledProcessError) as caught:
-            release.run(["/bin/sh", "-c", "printf 'TEST_SECRET_SENTINEL'; exit 37"], "private fixture", sensitive=True)
+            release.run(["/bin/sh", "-c", "printf 'error: TEST_SECRET_SENTINEL\\n'; exit 37"], "private fixture", sensitive=True)
         self.assertEqual(caught.exception.returncode, 37)
-        self.assertNotIn("TEST_SECRET_SENTINEL", buffer.getvalue())
+        self.assertEqual(buffer.getvalue(), "private fixture: exit 37\n")
         self.assertNotIn("TEST_SECRET_SENTINEL", str(caught.exception))
+        self.assertIsNone(caught.exception.output)
+        self.assertIsNone(caught.exception.stderr)
 
     def test_anon_jwt_allowed_but_service_role_rejected(self):
         for role in ["anon", "service_role"]:
