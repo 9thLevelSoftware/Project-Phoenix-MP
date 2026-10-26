@@ -40,6 +40,11 @@ SIGNING = ("BUILD_CERTIFICATE_BASE64", "P12_PASSWORD", "KEYCHAIN_PASSWORD", "TEA
 ASC = ("APPSTORE_API_KEY", "APPSTORE_API_KEY_ID", "APPSTORE_ISSUER_ID", "APP_APPLE_ID")
 SENSITIVE_SETTING_NAME = re.compile(
     r"pass(?:word|wd|phrase)|secret|token|authorization|credential|private[._ -]?key|api[._ -]?key|supabase", re.I)
+NON_SENSITIVE_RUNNER_VALUES = {
+    "CI": re.compile(r"(?:true|false)"),
+    "GITHUB_ACTIONS": re.compile(r"(?:true|false)"),
+    "GITHUB_RUN_NUMBER": re.compile(r"[0-9]+"),
+}
 
 
 def require(condition, message):
@@ -56,8 +61,10 @@ def print_offline_build_diagnostics(output, env):
     """Lossy public excerpt for unsigned/offline builds only; never a raw log.
 
     Redact all values from credential-named variables (even short or multiline values)
-    and generic inherited values of at least four characters. The floor protects ordinary
-    anchors from ambient CI variables such as CI=1. Bare credential keywords still suppress
+    and generic inherited values of at least four characters. Only exact boolean CI /
+    GITHUB_ACTIONS settings and numeric GITHUB_RUN_NUMBER values are excluded from that
+    generic rule to preserve ordinary diagnostic text and anchors. A value also present under
+    a credential-named variable remains redacted. Bare credential keywords still suppress
     their full line as a deliberate privacy tradeoff; no general secret parser is claimed.
     Known credential-bearing local config files suppress this optional excerpt in run().
     """
@@ -67,7 +74,11 @@ def print_offline_build_diagnostics(output, env):
 
     values = set()
     for name, value in env.items():
-        if not value or (len(value) < 4 and not SENSITIVE_SETTING_NAME.search(name)):
+        sensitive_name = SENSITIVE_SETTING_NAME.search(name) is not None
+        if not value or (len(value) < 4 and not sensitive_name):
+            continue
+        runner_pattern = NON_SENSITIVE_RUNNER_VALUES.get(name)
+        if not sensitive_name and runner_pattern and runner_pattern.fullmatch(value):
             continue
         values.update(clean(part) for part in (value, *value.splitlines()))
     values.discard("")
@@ -107,12 +118,16 @@ def print_offline_build_diagnostics(output, env):
 
 
 def credential_bearing_local_config(root):
-    """Check only known build-config files; never return or print config values."""
+    """Check explicit known build-config files, including repo Supabase.xcconfig.
+
+    Never return or print config values; do not recursively scan the repository.
+    """
     root = Path(root)
     candidates = (
         root / "local.properties",
         root / "gradle.properties",
         root / "iosApp/PhoenixApp/Config/SupabaseBase.xcconfig",
+        root / "iosApp/PhoenixApp/Config/Supabase.xcconfig",
         Path.home() / ".gradle/gradle.properties",
         Path.home() / ".xcconfig",
     )

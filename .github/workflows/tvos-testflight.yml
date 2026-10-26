@@ -156,13 +156,14 @@ jobs:
     runs-on: macos-26-intel
     timeout-minutes: 90
     env:
-      # Match the unsigned device lane's serialized 2 GiB Gradle / 12 GiB K/N
-      # release profile. This belongs to the archive only, not simulator or upload.
+      # KGP 2.4.0 runs Kotlin/Native linking in the Gradle JVM by default;
+      # kotlin.native.jvmArgs only sizes a separate exec-mode JVM. Use one 10 GiB
+      # compiler JVM and retain headroom on the standard 14 GB x64 runner.
       GRADLE_OPTS: >-
-        -Dorg.gradle.jvmargs=-Xmx2g
+        -Dorg.gradle.jvmargs=-Xmx10g
         -Dorg.gradle.workers.max=1
         -Dorg.gradle.parallel=false
-        -Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g
+        -Dorg.gradle.project.kotlin.native.disableCompilerDaemon=false
         -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

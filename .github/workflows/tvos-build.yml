@@ -202,13 +202,14 @@ jobs:
         shell: bash
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      # Release linking exceeds the ARM64 runner's 7 GB; isolate it on the
-      # standard 14 GB x64 image without changing shared phone build defaults.
+      # Kotlin/Native linking uses the Gradle JVM by default with KGP 2.4.0;
+      # kotlin.native.jvmArgs only sizes a separate exec-mode JVM. Give the one
+      # compiler JVM 10 GiB and retain headroom on the standard 14 GB x64 runner.
       GRADLE_OPTS: >-
-        -Dorg.gradle.jvmargs=-Xmx2g
+        -Dorg.gradle.jvmargs=-Xmx10g
         -Dorg.gradle.workers.max=1
         -Dorg.gradle.parallel=false
-        -Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g
+        -Dorg.gradle.project.kotlin.native.disableCompilerDaemon=false
         -Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process
       CODE_SIGNING_ALLOWED: 'NO'
       CODE_SIGNING_REQUIRED: 'NO'

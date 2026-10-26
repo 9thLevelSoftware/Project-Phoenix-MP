@@ -279,21 +279,73 @@ class ToolingTests(unittest.TestCase):
         self.assertIn("native: /src/Error1.swift:17:27: error: failure [redacted]", diagnostic)
         self.assertNotIn(short_secret, diagnostic)
 
+    def test_github_runner_values_preserve_four_digit_diagnostic_anchors(self):
+        for name, value in (("CI", "true"), ("GITHUB_ACTIONS", "true"),
+                            ("GITHUB_RUN_NUMBER", "1234")):
+            with self.subTest(name=name):
+                result, output = self.offline_cli(
+                    f"/src/Error.swift:1234:5678: error: runner value {value}".encode(),
+                    env={name: value})
+                self.assertEqual(result, 65)
+                self.assertIn(
+                    f"native: /src/Error.swift:1234:5678: error: runner value {value}", output)
+
+        long_number = "20261026"
+        result, output = self.offline_cli(
+            f"/src/Error.swift:{long_number}:5678: error: runner value {long_number}".encode(),
+            env={"GITHUB_RUN_NUMBER": long_number})
+        self.assertEqual(result, 65)
+        self.assertIn(
+            f"native: /src/Error.swift:{long_number}:5678: error: runner value {long_number}", output)
+
+        # An exact GitHub key does not exempt arbitrary values from canary protection.
+        canary = uuid.uuid4().hex
+        result, output = self.offline_cli(
+            f"/src/Error.swift:1234:5678: error: invalid runner value {canary}".encode(),
+            env={"GITHUB_RUN_NUMBER": canary})
+        self.assertEqual(result, 65)
+        self.assertNotIn(canary, output)
+        self.assertIn("[redacted]", output)
+
+    def test_runner_values_remain_redacted_when_reused_by_secret_named_variables(self):
+        cases = (("CI", "true", "SECRET"),
+                 ("GITHUB_RUN_NUMBER", "1234", "PASSWORD"))
+        for runner_name, value, secret_name in cases:
+            with self.subTest(secret_name=secret_name):
+                result, output = self.offline_cli(
+                    f"/src/Error.swift:6789:5678: error: reused value {value}".encode(),
+                    env={runner_name: value, secret_name: value})
+                self.assertEqual(result, 65)
+                self.assertIn(
+                    "native: /src/Error.swift:6789:5678: error: reused value [redacted]", output)
+                self.assertNotIn(f"reused value {value}", output)
+
     def test_credentials_in_supported_local_config_paths_withhold_diagnostics(self):
         cases = (("local.properties", "supabase.anon.key"),
+                 ("gradle.properties", "signingPassword"),
+                 ("iosApp/PhoenixApp/Config/SupabaseBase.xcconfig", "SUPABASE_ANON_KEY"),
+                 ("iosApp/PhoenixApp/Config/Supabase.xcconfig", "SUPABASE_ANON_KEY"),
                  ("home/.gradle/gradle.properties", "signingPassword"),
                  ("home/.xcconfig", "SUPABASE_ANON_KEY"))
+        candidates = [self.root / path for path, _ in cases]
         for relative, key in cases:
             with self.subTest(path=relative):
+                # Each candidate must independently trigger withholding; a previous
+                # iteration must not leave a credential-bearing shadow config behind.
+                for candidate in candidates:
+                    candidate.unlink(missing_ok=True)
                 config = self.root / relative
                 config.parent.mkdir(parents=True, exist_ok=True)
                 config_value = uuid.uuid4().hex
                 config.write_text(f"{key} = {config_value}\n")
-                result, output = self.offline_cli(
-                    f"/src/Config.swift:21:3: error: {config_value}\n".encode())
-                self.assertEqual(result, 65)
-                self.assertNotIn(config_value, output)
-                self.assertIn("credential-bearing local build config detected", output)
+                try:
+                    result, output = self.offline_cli(
+                        f"/src/Config.swift:21:3: error: {config_value}\n".encode())
+                    self.assertEqual(result, 65)
+                    self.assertNotIn(config_value, output)
+                    self.assertIn("credential-bearing local build config detected", output)
+                finally:
+                    config.unlink(missing_ok=True)
 
     def test_benign_repo_gradle_properties_do_not_suppress_diagnostics(self):
         (self.root / "gradle.properties").write_text("org.gradle.jvmargs=-Xmx1g\n")
@@ -746,11 +798,15 @@ class WorkflowContractTests(unittest.TestCase):
 
 
     def assert_serial_release_heap(self, job):
-        for setting in ("-Dorg.gradle.jvmargs=-Xmx2g", "-Dorg.gradle.workers.max=1",
-                        "-Dorg.gradle.parallel=false", "-Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g",
+        # KGP 2.4.0 runs Kotlin/Native link in the Gradle JVM by default;
+        # kotlin.native.jvmArgs only sizes a separate exec-mode JVM.
+        for setting in ("-Dorg.gradle.jvmargs=-Xmx10g", "-Dorg.gradle.workers.max=1",
+                        "-Dorg.gradle.parallel=false",
+                        "-Dorg.gradle.project.kotlin.native.disableCompilerDaemon=false",
                         "-Dorg.gradle.project.kotlin.compiler.execution.strategy=in-process"):
             with self.subTest(setting=setting):
                 self.assertIn(setting, job)
+        self.assertNotIn("-Dorg.gradle.project.kotlin.native.jvmArgs=-Xmx12g", job)
 
     def test_unsigned_release_device_job_is_separate_standard_runner_cross_compile(self):
         text = self.workflow("tvos-build.yml")
