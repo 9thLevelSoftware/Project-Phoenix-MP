@@ -38,15 +38,30 @@ class PolarProtocolParserTest {
 
     @Test
     fun `parsePolarHrMeasurement handles contact status correctly`() {
-        // Flags: 0x04 (contact supported but NOT detected)
+        // Flags: 0x04 (contact supported but NOT detected -> bits 1..2 = 2)
         val notDetected = parsePolarHrMeasurement(byteArrayOf(0x04, 60))
         assertNotNull(notDetected)
         assertFalse(notDetected.contactDetected)
 
-        // Flags: 0x00 (contact not supported)
-        val notSupported = parsePolarHrMeasurement(byteArrayOf(0x00, 60))
-        assertNotNull(notSupported)
-        assertFalse(notSupported.contactDetected)
+        // Flags: 0x00 (contact not supported -> bits 1..2 = 0, but hr = 60 > 0 -> contact OK)
+        val notSupportedWithHr = parsePolarHrMeasurement(byteArrayOf(0x00, 60))
+        assertNotNull(notSupportedWithHr)
+        assertTrue(notSupportedWithHr.contactDetected)
+
+        // Flags: 0x00 (contact not supported, hr = 0 -> contact false)
+        val notSupportedZeroHr = parsePolarHrMeasurement(byteArrayOf(0x00, 0))
+        assertNotNull(notSupportedZeroHr)
+        assertFalse(notSupportedZeroHr.contactDetected)
+
+        // Flags: 0x02 (contact not supported -> bits 1..2 = 1, hr = 75 > 0 -> contact OK)
+        val altNotSupportedWithHr = parsePolarHrMeasurement(byteArrayOf(0x02, 75))
+        assertNotNull(altNotSupportedWithHr)
+        assertTrue(altNotSupportedWithHr.contactDetected)
+
+        // Flags: 0x06 (contact supported and detected -> bits 1..2 = 3)
+        val detected = parsePolarHrMeasurement(byteArrayOf(0x06, 60))
+        assertNotNull(detected)
+        assertTrue(detected.contactDetected)
     }
 
     @Test

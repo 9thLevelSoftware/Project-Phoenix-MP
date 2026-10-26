@@ -341,7 +341,7 @@ private fun PolarH10WorkoutStripContent(
  * Real-time hardware-accelerated Canvas waveform plotting 130 Hz ECG samples (µV).
  */
 @Composable
-private fun EcgWaveformCanvas(
+internal fun EcgWaveformCanvas(
     samples: List<Int>,
     modifier: Modifier = Modifier,
 ) {

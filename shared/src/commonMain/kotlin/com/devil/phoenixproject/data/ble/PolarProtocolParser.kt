@@ -70,7 +70,6 @@ fun parsePolarHrMeasurement(data: ByteArray): PolarHrMeasurement? {
 
     val flags = data[0].toInt() and 0xFF
     val hrFormat16Bit = (flags and 0x01) != 0
-    val contactDetected = (flags and 0x06) == 0x06
     val energyPresent = (flags and 0x08) != 0
     val rrPresent = (flags and 0x10) != 0
 
@@ -84,6 +83,17 @@ fun parsePolarHrMeasurement(data: ByteArray): PolarHrMeasurement? {
         if (data.size < offset + 1) return null
         hr = data[offset].toInt() and 0xFF
         offset += 1
+    }
+
+    // Bits 1..2 of flags:
+    // 0 or 1: Contact sensor not supported -> treated as contact OK (true) if hr > 0
+    // 2 (0b10): Contact supported, NOT detected -> false (poor skin contact)
+    // 3 (0b11): Contact supported and detected -> true (good skin contact)
+    val contactStatus = (flags shr 1) and 0x03
+    val contactDetected = when (contactStatus) {
+        2 -> false
+        3 -> true
+        else -> hr > 0
     }
 
     var energyExpendedKj: Int? = null

@@ -77,8 +77,14 @@ fun PolarSessionAnalyticsCard(
     val latestSummary = polarBleManager?.latestSessionSummary?.collectAsState()?.value
     val hrMeasurement = polarBleManager?.hrMeasurement?.collectAsState()?.value
     val activeCooldownSessionId = polarBleManager?.activeCooldownSessionId?.collectAsState()?.value
+    val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
 
-    val resolvedSessionId = sessionId ?: session?.id ?: activeCooldownSessionId ?: polarBleManager?.currentRecordingSessionId
+    val resolvedSessionId = sessionId
+        ?: session?.id
+        ?: activeCooldownSessionId
+        ?: polarBleManager?.currentRecordingSessionId
+        ?: latestSummary?.sessionId
+        ?: lastRecordedSessionId
     val fallbackSummary = remember(session, resolvedSessionId) {
         session?.let { s ->
             if (s.avgHeartRateBpm != null || s.maxHeartRateBpm != null || s.minHeartRateBpm != null ||
@@ -568,7 +574,12 @@ fun PolarSessionAnalyticsCard(
                                     )
                                     FilledTonalButton(
                                         onClick = {
-                                            resolvedSessionId?.let { polarBleManager?.triggerCooldown(it) }
+                                            val targetId = resolvedSessionId
+                                                ?: polarBleManager?.lastRecordedSessionId?.value
+                                                ?: polarBleManager?.latestSessionSummary?.value?.sessionId
+                                            if (targetId != null) {
+                                                polarBleManager?.triggerCooldown(targetId)
+                                            }
                                         },
                                         shape = MaterialTheme.shapes.small,
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),

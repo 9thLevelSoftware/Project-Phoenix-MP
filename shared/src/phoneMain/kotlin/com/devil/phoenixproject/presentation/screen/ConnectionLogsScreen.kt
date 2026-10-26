@@ -209,6 +209,11 @@ fun ConnectionLogsScreen(
                         count = logs.count { it.level == LogLevel.ERROR.name },
                         onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
                     )
+                    FilterChip(
+                        selected = filter.hrmOnly,
+                        onClick = { logsViewModel.toggleHrmOnly() },
+                        label = { Text("HRM") },
+                    )
                 }
             } else {
                 Row(
@@ -241,6 +246,11 @@ fun ConnectionLogsScreen(
                         selected = filter.showError,
                         count = logs.count { it.level == LogLevel.ERROR.name },
                         onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
+                    )
+                    FilterChip(
+                        selected = filter.hrmOnly,
+                        onClick = { logsViewModel.toggleHrmOnly() },
+                        label = { Text("HRM") },
                     )
                 }
             }
@@ -550,6 +560,20 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                         fontWeight = FontWeight.Bold,
                         color = levelColor,
                     )
+                    if (log.tag != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = MaterialTheme.shapes.extraSmall,
+                        ) {
+                            Text(
+                                text = log.tag,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
                 }
 
                 // Timestamp

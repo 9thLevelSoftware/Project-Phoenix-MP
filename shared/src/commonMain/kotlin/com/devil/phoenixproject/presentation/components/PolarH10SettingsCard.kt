@@ -42,7 +42,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PolarAccSample
@@ -73,6 +78,23 @@ fun PolarH10SettingsCard(
     val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
     val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
     val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
+    val isContactDetected by polarBleManager.isContactDetected.collectAsState()
+    val isAccStreaming by polarBleManager.isAccStreaming.collectAsState()
+    val isEcgStreaming by polarBleManager.isEcgStreaming.collectAsState()
+
+    val ecgSamples = remember { mutableStateListOf<Int>() }
+    LaunchedEffect(isEcgStreaming) {
+        if (!isEcgStreaming) {
+            ecgSamples.clear()
+        } else {
+            polarBleManager.ecgStream.collect { ecg ->
+                ecgSamples.addAll(ecg.samplesMicrovolts)
+                while (ecgSamples.size > 260) {
+                    ecgSamples.removeAt(0)
+                }
+            }
+        }
+    }
 
 
 
@@ -345,7 +367,7 @@ fun PolarH10SettingsCard(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                val contact = hrMeasurement?.contactDetected == true
+                                val contact = isContactDetected
                                 Icon(
                                     if (contact) Icons.Default.CheckCircle else Icons.Default.Warning,
                                     contentDescription = null,
@@ -389,6 +411,94 @@ fun PolarH10SettingsCard(
                                 checked = isAutoReconnectEnabled,
                                 onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
                             )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "50 Hz ACC Stream",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "Stream live chest accelerometer & posture",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = isAccStreaming,
+                                onCheckedChange = { enable ->
+                                    scope.launch {
+                                        if (enable) polarBleManager.startAccStream() else polarBleManager.stopAccStream()
+                                    }
+                                },
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "130 Hz ECG Stream",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "Stream live single-lead electrocardiogram trace",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = isEcgStreaming,
+                                onCheckedChange = { enable ->
+                                    scope.launch {
+                                        if (enable) polarBleManager.startEcgStream() else polarBleManager.stopEcgStream()
+                                    }
+                                },
+                            )
+                        }
+
+                        AnimatedVisibility(visible = isEcgStreaming) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(72.dp)
+                                        .clip(MaterialTheme.shapes.small)
+                                        .background(Color(0xFF0D1B2A))
+                                        .border(1.dp, Color(0xFF1E3A5F), MaterialTheme.shapes.small),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (ecgSamples.isEmpty()) {
+                                        Text(
+                                            text = if (isContactDetected) "Waiting for ECG signal..." else "Ensure strap electrodes are moist and snug against skin",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                    EcgWaveformCanvas(
+                                        samples = ecgSamples,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight()
+                                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
                         }
                     }
 

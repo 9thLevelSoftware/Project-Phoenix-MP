@@ -262,6 +262,7 @@ fun RoutineCompleteScreen(
 
                 // Polar H10 Session Analytics & 5-minute recovery cooldown
                 PolarSessionAnalyticsCard(
+                    sessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value,
                     modifier = Modifier.fillMaxWidth(),
                     polarBleManager = polarBleManager,
                     workoutRepository = viewModel.workoutRepository,

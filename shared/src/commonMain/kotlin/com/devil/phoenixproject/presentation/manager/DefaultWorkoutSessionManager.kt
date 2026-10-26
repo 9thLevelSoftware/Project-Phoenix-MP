@@ -540,7 +540,8 @@ class DefaultWorkoutSessionManager(
                                 polarBleManager.updateSessionPhase("REST")
                             }
                             is WorkoutState.Idle -> {
-                                if (!polarBleManager.isCooldownActive.value) {
+                                if (!polarBleManager.isCooldownActive.value &&
+                                    coordinator.routineFlowState.value !is RoutineFlowState.Complete) {
                                     polarBleManager.discardActiveRecording()
                                 }
                             }

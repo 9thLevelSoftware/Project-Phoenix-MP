@@ -529,13 +529,14 @@ class PolarH10BleManagerTest {
     }
 
     @Test
-    fun `ECG railing beyond physiological threshold triggers contact loss and clears telemetry`() {
+    fun `ECG railing beyond physiological threshold drops transient frame without revoking contact`() {
         val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
         val manager = PolarH10BleManager(scope = testScope)
 
         // Initial valid contact
         manager.processRrIntervals(PolarHrMeasurement(hr = 70, contactDetected = true, rrIntervalsMs = listOf(850.0)))
         assertTrue(manager.isContactDetected.value)
+        assertEquals(70, manager.hrMeasurement.value?.hr)
 
         // Deliver railed open-circuit noise (>= 15,000 uV)
         manager.processPmdMeasurement(
@@ -545,15 +546,25 @@ class PolarH10BleManagerTest {
             )
         )
 
-        assertFalse(manager.isContactDetected.value, "Railed ECG must trip contact loss")
-        assertNull(manager.latestEcg.value, "Railed ECG must be discarded")
-        assertNull(manager.hrMeasurement.value, "Telemetry must be cleared upon ECG railing")
+        // Frame is dropped, but skin contact is NOT revoked
+        assertNull(manager.latestEcg.value, "Railed ECG frame must be discarded")
+        assertTrue(manager.isContactDetected.value, "Contact state must be preserved during transient ECG railing")
+        assertEquals(70, manager.hrMeasurement.value?.hr, "HR telemetry must not be cleared by transient ECG railing")
+
+        // Next valid frame arrives and is processed normally
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 3_500_000L,
+                samplesMicrovolts = listOf(150, 250, 350),
+            )
+        )
+        assertEquals(listOf(150, 250, 350), manager.latestEcg.value?.samplesMicrovolts)
 
         testScope.cancel()
     }
 
     @Test
-    fun `ECG flatline triggers contact loss and drops packet`() {
+    fun `ECG flatline drops transient frame without revoking contact`() {
         val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
         val manager = PolarH10BleManager(scope = testScope)
 
@@ -569,8 +580,51 @@ class PolarH10BleManagerTest {
             )
         )
 
-        assertFalse(manager.isContactDetected.value, "Flatline ECG must trip contact loss")
         assertNull(manager.latestEcg.value, "Flatline ECG packet must be dropped")
+        assertTrue(manager.isContactDetected.value, "Contact state must be preserved during transient flatline")
+
+        // Next valid frame arrives and is processed normally
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 4_500_000L,
+                samplesMicrovolts = listOf(200, 300, 400),
+            )
+        )
+        assertEquals(listOf(200, 300, 400), manager.latestEcg.value?.samplesMicrovolts)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `post-workout HR recovery cooldown triggers immediately and resolves session from lastRecordedSessionId`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        // 1. Session completes recording for session-post-workout
+        manager.startSessionRecording("session-post-workout", "WORKING_SET")
+        assertEquals("session-post-workout", manager.lastRecordedSessionId.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 160, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertEquals(160, manager.hrMeasurement.value?.hr)
+
+        // Telemetry is flushed when set committed
+        manager.flushSessionTelemetry("session-post-workout")
+        assertEquals("session-post-workout", manager.lastRecordedSessionId.value)
+
+        // 2. User clicks "Start Cooldown" on summary card without explicitly providing ID
+        manager.triggerCooldown()
+
+        assertTrue(manager.isCooldownActive.value, "Cooldown must become active immediately on click")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+        assertEquals("session-post-workout", manager.activeCooldownSessionId.value)
+        assertEquals(160, manager.cooldownStartHeartRate.value)
+
+        // Cooldown summary is available
+        val summary = manager.getSessionSummary("session-post-workout")
+        assertNotNull(summary)
+        assertEquals("session-post-workout", summary.sessionId)
+        assertEquals(160, summary.avgHeartRateBpm)
 
         testScope.cancel()
     }
@@ -642,6 +696,101 @@ class PolarH10BleManagerTest {
         // Once cooldown ended, further queries reject
         assertNull(manager.getSessionSummary("session-A"))
 
+        testScope.cancel()
+    }
+
+    @Test
+    fun `standard HR packets with ECG OFF report isContactDetected true and emit HR and RR telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        assertFalse(manager.isContactDetected.value)
+        assertFalse(manager.isEcgStreaming.value)
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val job = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        val measurement = PolarHrMeasurement(hr = 135, contactDetected = true, rrIntervalsMs = listOf(820.0, 830.0))
+        manager.processRrIntervals(measurement)
+
+        assertTrue(manager.isContactDetected.value)
+        assertEquals(135, manager.hrMeasurement.value?.hr)
+        assertEquals(2, collectedBeats.size)
+        assertEquals(820.0, collectedBeats[0].rrIntervalMs)
+        assertEquals(830.0, collectedBeats[1].rrIntervalMs)
+
+        job.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `turning ECG ON and then OFF does not break isContactDetected or stop HR or ACC telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setEcgStreamingForTesting(true)
+        assertTrue(manager.isEcgStreaming.value)
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setEcgStreamingForTesting(false)
+        assertFalse(manager.isEcgStreaming.value)
+        assertTrue(manager.isContactDetected.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 125, contactDetected = true, rrIntervalsMs = listOf(790.0)))
+        assertTrue(manager.isContactDetected.value)
+        assertEquals(125, manager.hrMeasurement.value?.hr)
+
+        val accMeasurement = PolarPmdMeasurement.Acc(
+            sensorTimestampNs = 123456789L,
+            samples = listOf(PolarAccSample(xMg = 100, yMg = 200, zMg = 980)),
+        )
+        manager.processPmdMeasurement(accMeasurement)
+        assertEquals(accMeasurement, manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `starting ACC alone with ECG OFF emits ACC samples without requiring ECG`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        assertFalse(manager.isEcgStreaming.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 130, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setAccStreamingForTesting(true)
+        assertTrue(manager.isAccStreaming.value)
+        assertFalse(manager.isEcgStreaming.value)
+
+        val collectedAcc = mutableListOf<PolarPmdMeasurement.Acc>()
+        val job = testScope.launch {
+            manager.accStream.collect { collectedAcc.add(it) }
+        }
+
+        val accMeasurement = PolarPmdMeasurement.Acc(
+            sensorTimestampNs = 987654321L,
+            samples = listOf(
+                PolarAccSample(xMg = 150, yMg = 250, zMg = 950),
+                PolarAccSample(xMg = 155, yMg = 255, zMg = 945),
+            ),
+        )
+        manager.processPmdMeasurement(accMeasurement)
+
+        assertEquals(1, collectedAcc.size)
+        assertEquals(accMeasurement, manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+        assertNotNull(manager.torsoRollDeg.value)
+        assertNotNull(manager.dynamicAccMg.value)
+
+        job.cancel()
         testScope.cancel()
     }
 }
