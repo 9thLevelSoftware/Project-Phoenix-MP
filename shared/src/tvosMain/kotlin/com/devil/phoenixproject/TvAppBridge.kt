@@ -130,6 +130,7 @@ class TvAppBridge internal constructor(
     private val mainFactory: (org.koin.core.Koin, CoroutineScope, SyncTriggerManager) -> MainViewModel = ::createTvMainViewModel,
     private val startupLog: (String) -> Unit = { NSLog("%@", it) },
     private val blockingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val controllerFactory: (() -> TvSessionController) -> TvSessionController = { construct -> construct() },
 ) {
     constructor() : this(CoroutineScope(SupervisorJob() + Dispatchers.Main))
     private var deps: TvosAppDependencies? = null
@@ -223,15 +224,17 @@ class TvAppBridge internal constructor(
                         cachedExercises = initialExercises
                         deps = result.dependencies
                         val main = result.dependencies.main
-                        controller = TvSessionController(main.workoutSessionManager, main.bleConnectionManager, scope,
-                            admitTraining = activityAdmission::tryTraining,
-                            releaseTraining = activityAdmission::releaseTraining,
-                        ) {
-                            // The TV-only runtime view is manual regardless of cloud preference updates.
-                            // Never rewrite the user's synced autoplay settings.
-                            combine(main.userPreferences, main.autoplayEnabled) { prefs, autoplay ->
-                                !autoplay && prefs.summaryCountdownSeconds == 0 && !prefs.autoStartRoutine && !prefs.motionStartEnabled
-                            }.first { it }
+                        controller = controllerFactory {
+                            TvSessionController(main.workoutSessionManager, main.bleConnectionManager, scope,
+                                admitTraining = activityAdmission::tryTraining,
+                                releaseTraining = activityAdmission::releaseTraining,
+                            ) {
+                                // The TV-only runtime view is manual regardless of cloud preference updates.
+                                // Never rewrite the user's synced autoplay settings.
+                                combine(main.userPreferences, main.autoplayEnabled) { prefs, autoplay ->
+                                    !autoplay && prefs.summaryCountdownSeconds == 0 && !prefs.autoStartRoutine && !prefs.motionStartEnabled
+                                }.first { it }
+                            }
                         }
                         if (!isForeground) controller?.onBackground()
                         startupState = "ready"
@@ -241,7 +244,7 @@ class TvAppBridge internal constructor(
                         throw cancelled
                     } catch (_: Throwable) {
                         startupState = "failed"
-                        startupError = "EXERCISE_LIBRARY_UNAVAILABLE"
+                        startupError = "APP_HOST_READY_FAILED"
                     }
                 }
                 is StartupDependencyResolution.Failed -> {

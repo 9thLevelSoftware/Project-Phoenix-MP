@@ -13,8 +13,11 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.di.PersistedFileStartupPrerequisite
 import com.devil.phoenixproject.di.SecureSettingsQualifier
 import com.devil.phoenixproject.di.appModule
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
@@ -26,6 +29,7 @@ import com.russhwolf.settings.NSUserDefaultsSettings
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.*
 import org.koin.dsl.koinApplication
@@ -110,6 +114,8 @@ class TvAppBridgeBoundaryTest {
             f.bridge.start()
             runCurrent()
             assertEquals("failed", f.bridge.snapshot().startupState)
+            assertEquals("EXERCISE_LIBRARY_UNAVAILABLE", f.bridge.snapshot().startupErrorCode)
+            assertEquals(0, f.commands)
             assertEquals(0, f.mains.size, "A failed catalog attempt must not construct long-lived consumers")
             assertTrue(f.bridge.snapshot().exercises.isEmpty())
             f.catalogFailure = false
@@ -123,6 +129,171 @@ class TvAppBridgeBoundaryTest {
             assertEquals(1, f.mains.size)
             assertFalse(f.bridge.snapshot().cloudConfigured)
             assertEquals(0, f.commands)
+        }
+    }
+
+    @Test
+    fun hostReadyConstructionFailureHasDistinctSafeDiagnosticAfterCatalogAndFeaturesSucceed() = runTest {
+        withBridge { f ->
+            f.controllerFailure = IllegalStateException("secret@example.com Bearer sentinel-secret /private/host-store")
+            f.bridge.start()
+            runCurrent()
+            val snapshot = f.bridge.snapshot()
+            assertEquals(1, f.mains.size, "Feature resolution must succeed before this fault")
+            assertEquals(1, f.controllerConstructions, "Fail synchronously inside the actual Ready branch")
+            assertEquals(listOf("cable", "other"), snapshot.exercises.map { it.id })
+            assertEquals("failed", snapshot.startupState)
+            assertEquals(0, f.commands)
+            assertTrue(f.uncaught.isEmpty())
+            val output = snapshot.toString() + f.startupMessages.joinToString("\n")
+            for (secret in listOf("secret@example.com", "sentinel-secret", "/private/host-store", "IllegalStateException")) {
+                assertFalse(output.contains(secret), "Host-ready failure leaked $secret")
+            }
+            assertEquals("APP_HOST_READY_FAILED", snapshot.startupErrorCode)
+        }
+    }
+
+    @Test
+    fun hostReadyConstructionCancellationIsNotTranslatedToStartupFailure() = runTest {
+        withBridge { f ->
+            val cancellation = CancellationException("cancelled host construction")
+            f.controllerFailure = cancellation
+            val startup = f.launchStartup()
+            var completion: Throwable? = null
+            startup.invokeOnCompletion { completion = it }
+            runCurrent()
+            assertTrue(startup.isCancelled)
+            assertSame(cancellation, completion, "The Ready-branch catch must rethrow cancellation")
+            assertEquals(1, f.mains.size)
+            assertEquals(1, f.controllerConstructions)
+            assertEquals(listOf("cable", "other"), f.bridge.snapshot().exercises.map { it.id })
+            assertEquals("initializing", f.bridge.snapshot().startupState)
+            assertNull(f.bridge.snapshot().startupErrorCode)
+            assertTrue(f.startupMessages.isEmpty())
+            assertTrue(f.uncaught.isEmpty())
+            assertEquals(0, f.commands)
+        }
+    }
+
+    @Test
+    fun admittedRetryClearsTransientFeedbackButFailedAndTimedOutResetKeepSnapshotRecovery() = runTest {
+        withBridge { f ->
+            f.startCableSet()
+            f.stopResult = { Result.failure(IllegalStateException("initial RESET failed")) }
+            f.bridge.stopActiveSet()
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState)
+            assertEquals(1, f.stopCalls)
+            val programs = f.programCommands.size
+
+            val failedReset = CompletableDeferred<Result<Unit>>()
+            f.stopResult = { failedReset.await() }
+            f.bridge.selectJustLiftExercise("not-in-library")
+            assertEquals(LIBRARY_SELECTION_ERROR, f.bridge.snapshot().actionError)
+            f.bridge.retrySafeStopRecovery()
+            assertEquals("stopping", f.bridge.snapshot().teardownState, "Admission is not RESET success")
+            assertNull(f.bridge.snapshot().actionError, "Only stale action feedback clears on admission")
+            runCurrent()
+            assertEquals(2, f.stopCalls)
+            assertTrue(f.bridge.snapshot().sessionOpen)
+            assertFalse(f.bridge.snapshot().exitConfirmationPending)
+            assertEquals(programs, f.programCommands.size)
+            failedReset.complete(Result.failure(IllegalStateException("retry RESET failed")))
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState)
+            assertNull(f.bridge.snapshot().actionError, "Recovery authority must not depend on actionError")
+
+            val timedOutReset = CompletableDeferred<Result<Unit>>()
+            f.stopResult = { timedOutReset.await() }
+            f.bridge.selectJustLiftExercise("not-in-library")
+            f.bridge.retrySafeStopRecovery()
+            assertEquals("stopping", f.bridge.snapshot().teardownState)
+            assertNull(f.bridge.snapshot().actionError)
+            runCurrent()
+            assertEquals(3, f.stopCalls)
+            advanceTimeBy(com.devil.phoenixproject.util.BleConstants.GATT_OPERATION_TIMEOUT_MS)
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState)
+            assertNull(f.bridge.snapshot().actionError)
+            assertTrue(f.bridge.snapshot().sessionOpen)
+            assertEquals(programs, f.programCommands.size)
+
+            val successfulReset = CompletableDeferred<Result<Unit>>()
+            f.stopResult = { successfulReset.await() }
+            f.bridge.retrySafeStopRecovery()
+            assertEquals("stopping", f.bridge.snapshot().teardownState)
+            runCurrent()
+            assertEquals(4, f.stopCalls)
+            successfulReset.complete(Result.success(Unit))
+            f.awaitStopped()
+            assertEquals("ready", f.bridge.snapshot().teardownState)
+            assertTrue(f.bridge.snapshot().sessionOpen, "Successful explicit recovery does not exit the session")
+            assertFalse(f.bridge.snapshot().exitConfirmationPending)
+            assertNotEquals("active", f.bridge.snapshot().workoutState)
+            assertEquals(programs, f.programCommands.size, "Successful recovery must not automatically apply load")
+            assertTrue(f.uncaught.isEmpty())
+        }
+    }
+
+    @Test
+    fun disconnectedAndDuplicateRetryCannotBypassSafetyOrRearmAbandonedExitConsent() = runTest {
+        withBridge { f ->
+            f.startCableSet()
+            f.stopResult = { Result.failure(IllegalStateException("initial RESET failed")) }
+            f.bridge.stopActiveSet()
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState)
+            val programs = f.programCommands.size
+            f.connection.value = ConnectionState.Disconnected
+            runCurrent()
+            f.bridge.selectJustLiftExercise("not-in-library")
+            f.bridge.retrySafeStopRecovery()
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState)
+            assertEquals(LIBRARY_SELECTION_ERROR, f.bridge.snapshot().actionError)
+            assertEquals(1, f.stopCalls, "Disconnected retry must not issue RESET")
+
+            f.connection.value = ConnectionState.Connected("Vee_Boundary", "boundary")
+            runCurrent()
+            assertEquals("recovery_required", f.bridge.snapshot().teardownState, "Reconnect alone is not recovery")
+            val reset = CompletableDeferred<Result<Unit>>()
+            f.stopResult = { reset.await() }
+            f.bridge.retrySafeStopRecovery()
+            assertEquals("stopping", f.bridge.snapshot().teardownState)
+            assertNull(f.bridge.snapshot().actionError)
+            f.bridge.retrySafeStopRecovery()
+            runCurrent()
+            f.bridge.retrySafeStopRecovery()
+            runCurrent()
+            assertEquals(2, f.stopCalls, "Repeated retry must not duplicate an in-flight RESET")
+
+            f.bridge.startNextJustLiftSet()
+            f.bridge.confirmSessionExit()
+            runCurrent()
+            assertEquals(programs, f.programCommands.size, "Start must remain blocked until RESET succeeds")
+            assertTrue(f.bridge.snapshot().sessionOpen, "Confirmed exit cannot bypass teardown")
+            assertEquals("stopping", f.bridge.snapshot().teardownState)
+            val safetyError = assertNotNull(f.bridge.snapshot().actionError)
+            f.bridge.handleBackDuringSession()
+            runCurrent()
+            assertFalse(f.bridge.snapshot().exitConfirmationPending)
+            f.bridge.onBackground()
+            f.bridge.onForeground()
+            runCurrent()
+            reset.complete(Result.success(Unit))
+            f.awaitStopped()
+            assertEquals("ready", f.bridge.snapshot().teardownState)
+            assertEquals(safetyError, f.bridge.snapshot().actionError, "Recovery must not erase controller feedback")
+            assertTrue(f.bridge.snapshot().sessionOpen)
+            assertFalse(f.bridge.snapshot().exitConfirmationPending, "Foreground/Ready must not rearm abandoned consent")
+            assertEquals(programs, f.programCommands.size)
+            assertNotEquals("active", f.bridge.snapshot().workoutState)
+            f.bridge.handleBackDuringSession()
+            runCurrent()
+            assertTrue(f.bridge.snapshot().exitConfirmationPending, "A fresh explicit Menu request is still allowed")
+            assertTrue(f.bridge.snapshot().sessionOpen)
+            assertEquals(2, f.stopCalls)
+            assertTrue(f.uncaught.isEmpty())
         }
     }
 
@@ -167,6 +338,7 @@ class TvAppBridgeBoundaryTest {
     }
 
     companion object {
+        private const val LIBRARY_SELECTION_ERROR = "Choose an exercise from Phoenix's library."
         private const val SELECTION_ERROR = "Phoenix could not load exercise defaults. Please retry selecting the exercise."
     }
 }
@@ -186,17 +358,32 @@ private class BridgeFixture(private val test: TestScope) {
             extendedConfig = DatabaseConfiguration.Extended(foreignKeyConstraints = true))
     })
     private val phantom = PhantomBleRepository()
-    var commands = 0
+    val connection = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val programCommands = mutableListOf<ByteArray>()
+    var stopCalls = 0
+        private set
+    val commands get() = programCommands.size + stopCalls
+    var stopResult: suspend () -> Result<Unit> = { Result.success(Unit) }
     private val ble = object : BleRepository by phantom {
+        override val connectionState = connection
+        override val scannedDevices = MutableStateFlow(listOf(ScannedDevice("Vee_Boundary", "boundary", -40)))
+        override suspend fun connect(device: ScannedDevice): Result<Unit> {
+            connection.value = ConnectionState.Connected(device.name, device.address)
+            return Result.success(Unit)
+        }
+        override suspend fun setColorScheme(schemeIndex: Int) = Result.success(Unit)
+        override fun startActiveWorkoutPolling() = Unit
         override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-            commands++
+            programCommands += command.copyOf()
             return Result.success(Unit)
         }
         override suspend fun stopWorkout(): Result<Unit> {
-            commands++
-            return Result.success(Unit)
+            stopCalls++
+            return stopResult()
         }
     }
+    var controllerFailure: Throwable? = null
+    var controllerConstructions = 0
     var catalogFailure = false
     var defaultsFailure: Throwable? = null
     val context = MutableStateFlow<ActiveProfileContext>(ActiveProfileContext.Switching(null))
@@ -250,6 +437,11 @@ private class BridgeFixture(private val test: TestScope) {
         },
         startupLog = { startupMessages += it },
         blockingDispatcher = dispatcher,
+        controllerFactory = { construct ->
+            controllerConstructions++
+            controllerFailure?.let { throw it }
+            construct()
+        },
     )
 
     suspend fun prepare() {
@@ -267,10 +459,48 @@ private class BridgeFixture(private val test: TestScope) {
         ))
     }
 
+    fun launchStartup(): Job {
+        val before = owner.children.toSet()
+        bridge.start()
+        return (owner.children.toSet() - before).single()
+    }
+
     fun startReady() {
         bridge.start()
         test.runCurrent()
         assertEquals("ready", bridge.snapshot().startupState, bridge.snapshot().startupErrorCode)
+    }
+
+    suspend fun startCableSet() {
+        startReady()
+        bridge.connectSelectedTrainer("boundary")
+        test.runCurrent()
+        assertEquals("connected", bridge.snapshot().connectionState)
+        bridge.selectJustLiftExercise("cable")
+        test.runCurrent()
+        assertEquals("cable", bridge.snapshot().selectedExerciseId)
+        bridge.adjustJustLiftWeight(20f)
+        bridge.startJustLift()
+        // The production safety store uses Dispatchers.IO; runCurrent alone cannot drain it.
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) { main.workoutState.first { it is WorkoutState.Active } }
+        }
+        test.runCurrent()
+        assertEquals("active", bridge.snapshot().workoutState, bridge.snapshot().toString())
+        assertTrue(bridge.snapshot().sessionOpen)
+        assertEquals(1, programCommands.size, "Start through the bridge must reach the real engine's CONFIG write")
+        assertEquals(0, stopCalls)
+    }
+
+    suspend fun awaitStopped() {
+        // Await real arm-row cleanup and completion persistence without advancing a fake IO clock.
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                main.machineTeardownState.first { it is MachineTeardownState.Ready }
+                main.workoutState.first { it is WorkoutState.SetSummary }
+            }
+        }
+        test.runCurrent()
     }
 
     suspend fun close() {

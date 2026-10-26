@@ -11,7 +11,16 @@ import kotlinx.coroutines.flow.stateIn
 /**
  * A runtime-only view for TV workout composition, NOT a replacement in the sync container.
  * Cloud/phone preferences stay intact. Every incoming profile publication (including sync)
- * is manual-start-only before SettingsManager or ActiveSessionEngine can observe it.
+ * is manual-start-only before SettingsManager or ActiveSessionEngine can observe it:
+ * summaryCountdownSeconds = 0, autoStartRoutine = false, and motionStartEnabled = false.
+ * These runtime values do not replace the original stored/cloud controls.
+ *
+ * Both [updateWorkout] and [mutateWorkout] ignore submitted changes to those three protected
+ * fields without reporting an error for the policy override. The [mutateWorkout] transform
+ * receives masked current values, not the stored controls; other fields it derives from those
+ * inputs are therefore derived from the TV/manual values. Other accepted changes persist through
+ * the source repository, preserving the latest stored controls inside its identity-checked
+ * mutation. Normal source validation, failure, and cancellation behavior still applies.
  */
 class TvManualStartProfileRepository(
     private val source: UserProfileRepository,
