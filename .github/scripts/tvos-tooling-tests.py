@@ -11,10 +11,10 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
-import uuid
 import sys
 import tempfile
 import unittest
+import uuid
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +31,7 @@ class ToolingTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="tvos-tooling-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.catalog_fixture = b'[{"id":"offline-tooling-fixture"}]\n'
 
     def versions_fixture(self):
         for path, text in {
@@ -73,7 +74,7 @@ class ToolingTests(unittest.TestCase):
         for change in [{"SUPABASE_URL": ""}, {"SUPABASE_ANON_KEY": ""},
                        {"SUPABASE_URL": "http://localhost"}, {"SUPABASE_URL": "$(URL)"},
                        {"SUPABASE_ANON_KEY": "x\nOTHER=bad"}, {"SUPABASE_ANON_KEY": "$(KEY)"},
-                       {"SUPABASE_ANON_KEY": "sb_secret_bad"}, {"SUPABASE_ANON_KEY": "placeholder"}]:
+                       {"SUPABASE_ANON_KEY": "sb_secret_" + uuid.uuid4().hex}, {"SUPABASE_ANON_KEY": "placeholder"}]:
             with self.subTest(change=change), self.assertRaises(ValueError):
                 release.cloud_config(env | change, required=True)
 
@@ -175,76 +176,137 @@ class ToolingTests(unittest.TestCase):
                 "--derived-data", str(self.root), "--result-bundle", str(self.root / "tests.xcresult")]
         if action == "test":
             argv += ["--simulator", "fixture-udid"]
+        catalog = self.root / release.EXERCISES
+        catalog.parent.mkdir(parents=True, exist_ok=True)
+        catalog.write_bytes(self.catalog_fixture)
+        home = self.root / "home"
+        home.mkdir(exist_ok=True)
         buffer = io.StringIO()
-        # Controlled env: real user secrets never appear in fixture output.
-        with patch.dict(os.environ, {"PATH": os.defpath} | (env or {}), clear=True), \
+        # Controlled env and repo fixtures: no live checkout or real user config.
+        with patch.object(release, "ROOT", self.root), patch.object(release, "source_guard"), \
+                patch.object(release, "read_versions", return_value={}), \
+                patch.dict(os.environ, {"PATH": os.defpath, "HOME": str(home)} | (env or {}), clear=True), \
                 patch.object(sys, "argv", argv), patch.object(release, "xcode_command", side_effect=child), \
                 contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
             result = release.main()
         return result, buffer.getvalue()
 
     def test_offline_build_failure_exposes_real_stdout_and_stderr_diagnostics(self):
+        command_echo = uuid.uuid4().hex
         result, output = self.offline_cli(
             b"/src/ContentView.swift:42:9: error: cannot find 'bridge' in scope\n"
             b"e: file:///src/Bridge.kt:58:12 Unresolved reference 'snapshot'.\n"
             b"ld: library not found for -lFixture\n"
             b"Execution failed for task ':shared-tvos:linkReleaseFrameworkTvosArm64'.\n"
             b"Command PhaseScriptExecution failed with a nonzero exit code\n"
-            b"** BUILD FAILED **\n"
-            b"COMMAND_ECHO_MUST_NOT_APPEAR fixture-argument\n")
+            b"** BUILD FAILED **\n" +
+            f"COMMAND_ECHO_MUST_NOT_APPEAR {command_echo}\n".encode())
         self.assertEqual(result, 65)
         for diagnostic in ("ContentView.swift:42:9: error:", "Unresolved reference 'snapshot'",
                            "ld: library not found", "Execution failed for task",
                            "Command PhaseScriptExecution failed", "fixture stderr diagnostic"):
             self.assertIn(diagnostic, output)
         self.assertNotIn("COMMAND_ECHO_MUST_NOT_APPEAR", output)
+        self.assertNotIn(command_echo, output)
         self.assertNotIn("ARGUMENT_CANARY_NEVER_LOG", output)
         self.assertNotIn("Unsigned app:", output)
         self.assertIn("ERROR: Unsigned tvOS build exited 65", output)
 
     def test_offline_build_diagnostics_redact_inherited_values_before_truncation(self):
-        env = {"P12_PASSWORD": uuid.uuid4().hex, "GH_TOKEN": "GH_CANARY_NOT_PUBLIC",
-               "SUPABASE_ANON_KEY": "CLOUD_CANARY_NOT_PUBLIC",
-               "UNCLASSIFIED_SETTING": "ARBITRARY_CANARY_NOT_PUBLIC",
-               "APPSTORE_API_KEY": "-----BEGIN PRIVATE KEY-----\nPEM_CANARY_LINE_ONE\nPEM_CANARY_LINE_TWO\n-----END PRIVATE KEY-----",
-               "SHORT_SECRET": "xy"}
+        # Generate a synthetic canary; no credential-shaped literal is committed.
+        generic = uuid.uuid4().hex
+        pem_line = uuid.uuid4().hex
+        short_secret = uuid.uuid4().hex[:2]
+        file_credential = uuid.uuid4().hex
+        file_password = uuid.uuid4().hex
+        url_password = uuid.uuid4().hex
+        ansi_canary = uuid.uuid4().hex
+        boundary_canary = "boundary_" + uuid.uuid4().hex * 24
+        env = {"P12_PASSWORD": uuid.uuid4().hex, "GH_TOKEN": uuid.uuid4().hex,
+               "SUPABASE_ANON_KEY": uuid.uuid4().hex,
+               "UNCLASSIFIED_SETTING": generic,
+               "APPSTORE_API_KEY": f"BEGIN PRIVATE KEY {pem_line}\n{pem_line}\n{pem_line}",
+               "SHORT_SECRET": short_secret, "BOUNDARY_TOKEN": boundary_canary,
+               "ANSI_TOKEN": ansi_canary}
         lines = ["error: value=" + value for value in env.values()]
         lines += ["error: " + line for line in env["APPSTORE_API_KEY"].splitlines()]
-        lines += ["error: " + "a" * 490 + env["GH_TOKEN"],
-                  "error: Authorization: Bearer FILE_ONLY_CREDENTIAL_CANARY",
-                  "error: password=FILE_ONLY_PASSWORD_CANARY",
-                  "error: https://user:FILE_ONLY_URL_CANARY@example.invalid/path",
-                  "error: GH_\x1b[31mCANARY_NOT_PUBLIC\x1b[0m"]
+        boundary_filler = "a" * 480
+        lines += ["error: " + boundary_filler + boundary_canary,
+                  "error: Authorization: Bearer " + file_credential,
+                  "error: password=" + file_password,
+                  "error: https://user:" + url_password + "@example.invalid/path",
+                  "error: " + ansi_canary[:8] + "\x1b[31m" + ansi_canary[8:] + "\x1b[0m"]
         result, output = self.offline_cli("\n".join(lines).encode(), env=env)
         self.assertEqual(result, 65)
         for value in env.values():
             for fragment in value.splitlines():
                 self.assertNotIn(fragment, output)
-        for fragment in ("FILE_ONLY_CREDENTIAL_CANARY", "FILE_ONLY_PASSWORD_CANARY", "FILE_ONLY_URL_CANARY",
-                         "GH_CANARY", "ARGUMENT_CANARY_NEVER_LOG"):
+        exposed_boundary_prefix = boundary_canary[:13]
+        for fragment in (file_credential, file_password, url_password, exposed_boundary_prefix,
+                         "ARGUMENT_CANARY_NEVER_LOG"):
             self.assertNotIn(fragment, output)
         self.assertIn("[redacted]", output)
         self.assertIn("fixture stderr diagnostic", output)
 
     def test_offline_build_diagnostics_are_bounded_and_not_workflow_commands(self):
-        lines = ["::error::ANNOTATION_CANARY", "export KEY=RAW_DUMP_CANARY",
+        annotation = uuid.uuid4().hex
+        workflow_annotation = uuid.uuid4().hex
+        lines = ["::error::" + annotation, "export KEY=RAW_DUMP_CANARY",
+                 f"/src/Workflow.swift:12:9: error: ::error::{workflow_annotation}",
                  "error: first diagnostic\x1b[31m\x1b[0m\x00"]
         lines += [f"error: diagnostic {index} " + "z" * 2000 for index in range(100)]
         result, output = self.offline_cli("\n".join(lines).encode())
         self.assertEqual(result, 65)
         self.assertIn("first diagnostic", output)
-        self.assertNotIn("ANNOTATION_CANARY", output)
+        self.assertNotIn(annotation, output)
         self.assertNotIn("RAW_DUMP_CANARY", output)
+        self.assertIn(f"native: /src/Workflow.swift:12:9: error: ::error::{workflow_annotation}", output)
         self.assertNotIn("\x1b", output)
         self.assertNotIn("\x00", output)
         self.assertLess(len(output), 23000)
         self.assertIn("truncated", output)
         self.assertTrue(all(not line.startswith("::") for line in output.splitlines()))
 
+    def test_short_ambient_values_do_not_destroy_diagnostic_anchors(self):
+        short_secret = "q" + uuid.uuid4().hex[0]
+        result, output = self.offline_cli(
+            f"/src/Error1.swift:17:27: error: failure {short_secret}".encode(),
+            env={"CI": "1", "SHLVL": "1", "P12_PASSWORD": short_secret})
+        self.assertEqual(result, 65)
+        diagnostic = next(line for line in output.splitlines() if line.startswith("native: /src/Error1.swift"))
+        self.assertIn("native: /src/Error1.swift:17:27: error: failure [redacted]", diagnostic)
+        self.assertNotIn(short_secret, diagnostic)
+
+    def test_credentials_in_supported_local_config_paths_withhold_diagnostics(self):
+        cases = (("local.properties", "supabase.anon.key"),
+                 ("home/.gradle/gradle.properties", "signingPassword"),
+                 ("home/.xcconfig", "SUPABASE_ANON_KEY"))
+        for relative, key in cases:
+            with self.subTest(path=relative):
+                config = self.root / relative
+                config.parent.mkdir(parents=True, exist_ok=True)
+                config_value = uuid.uuid4().hex
+                config.write_text(f"{key} = {config_value}\n")
+                result, output = self.offline_cli(
+                    f"/src/Config.swift:21:3: error: {config_value}\n".encode())
+                self.assertEqual(result, 65)
+                self.assertNotIn(config_value, output)
+                self.assertIn("credential-bearing local build config detected", output)
+
+    def test_benign_repo_gradle_properties_do_not_suppress_diagnostics(self):
+        (self.root / "gradle.properties").write_text("org.gradle.jvmargs=-Xmx1g\n")
+        xconfig = self.root / "iosApp/PhoenixApp/Config/SupabaseBase.xcconfig"
+        xconfig.parent.mkdir(parents=True, exist_ok=True)
+        xconfig.write_text("SUPABASE_URL =\nSUPABASE_ANON_KEY =\n")
+        result, output = self.offline_cli(b"/src/Build.swift:6:2: error: benign-config-check\n")
+        self.assertEqual(result, 65)
+        self.assertIn("native: /src/Build.swift:6:2: error: benign-config-check", output)
+        self.assertNotIn("credential-bearing local build config detected", output)
+
     def test_offline_build_success_stays_quiet_and_checks_real_resources(self):
         app = self.root / "Build/Products/Release-appletvos/PhoenixTV.app"
         app.mkdir(parents=True)
-        (app / "exercises.json").write_bytes((ROOT / release.EXERCISES).read_bytes())
+        (app / "exercises.json").write_bytes(self.catalog_fixture)
         (app / "PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps(self.privacy_fixture()))
         (app / "Info.plist").write_bytes(plistlib.dumps({"ITSAppUsesNonExemptEncryption": False}))
         result, output = self.offline_cli(b"error: SUCCESS_OUTPUT_CANARY\n", code=0)
@@ -537,12 +599,13 @@ class ToolingTests(unittest.TestCase):
                 release.ci_release_guard()
 
     def test_sensitive_command_output_is_not_logged_even_on_failure(self):
+        output_canary = uuid.uuid4().hex
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), self.assertRaises(subprocess.CalledProcessError) as caught:
-            release.run(["/bin/sh", "-c", "printf 'error: TEST_SECRET_SENTINEL\\n'; exit 37"], "private fixture", sensitive=True)
+            release.run(["/bin/sh", "-c", f"printf 'error: {output_canary}\\n'; exit 37"], "private fixture", sensitive=True)
         self.assertEqual(caught.exception.returncode, 37)
         self.assertEqual(buffer.getvalue(), "private fixture: exit 37\n")
-        self.assertNotIn("TEST_SECRET_SENTINEL", str(caught.exception))
+        self.assertNotIn(output_canary, str(caught.exception))
         self.assertIsNone(caught.exception.output)
         self.assertIsNone(caught.exception.stderr)
 
@@ -557,10 +620,11 @@ class ToolingTests(unittest.TestCase):
                     release.cloud_config(env, required=True)
 
     def test_missing_signing_config_names_fields_not_values(self):
+        password = uuid.uuid4().hex
         with self.assertRaises(ValueError) as error:
-            release.required_env({"P12_PASSWORD": "TEST_SECRET_SENTINEL"}, release.SIGNING)
+            release.required_env({"P12_PASSWORD": password}, release.SIGNING)
         self.assertIn("TVOS_PROVISION_PROFILE_BASE64", str(error.exception))
-        self.assertNotIn("TEST_SECRET_SENTINEL", str(error.exception))
+        self.assertNotIn(password, str(error.exception))
 
     def test_production_source_guard_rejects_fake_factory(self):
         paths = [release.TV_PROJECT, release.EXERCISES, Path("shared-tvos/build.gradle.kts"),

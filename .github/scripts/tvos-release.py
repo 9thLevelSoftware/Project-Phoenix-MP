@@ -38,6 +38,8 @@ PRIVACY_REASONS = {
 SIGNING = ("BUILD_CERTIFICATE_BASE64", "P12_PASSWORD", "KEYCHAIN_PASSWORD", "TEAM_ID",
            "TVOS_PROVISION_PROFILE_BASE64", "TVOS_PROVISIONING_PROFILE_NAME")
 ASC = ("APPSTORE_API_KEY", "APPSTORE_API_KEY_ID", "APPSTORE_ISSUER_ID", "APP_APPLE_ID")
+SENSITIVE_SETTING_NAME = re.compile(
+    r"pass(?:word|wd|phrase)|secret|token|authorization|credential|private[._ -]?key|api[._ -]?key|supabase", re.I)
 
 
 def require(condition, message):
@@ -53,16 +55,21 @@ def required_env(env, names):
 def print_offline_build_diagnostics(output, env):
     """Lossy public excerpt for unsigned/offline builds only; never a raw log.
 
-    Allow diagnostic lines, not command echoes, source excerpts or environment dumps.
-    Redact every inherited value (including multiline fragments), not just known key
-    names. This intentionally over-redacts short values and paths. It is not a safe
-    logger for signing, API responses, or builds using credential-bearing config files.
+    Redact all values from credential-named variables (even short or multiline values)
+    and generic inherited values of at least four characters. The floor protects ordinary
+    anchors from ambient CI variables such as CI=1. Bare credential keywords still suppress
+    their full line as a deliberate privacy tradeoff; no general secret parser is claimed.
+    Known credential-bearing local config files suppress this optional excerpt in run().
     """
     def clean(text):
         text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
         return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
 
-    values = {clean(part) for value in env.values() for part in (value, *value.splitlines())}
+    values = set()
+    for name, value in env.items():
+        if not value or (len(value) < 4 and not SENSITIVE_SETTING_NAME.search(name)):
+            continue
+        values.update(clean(part) for part in (value, *value.splitlines()))
     values.discard("")
     redactions = re.compile("|".join(re.escape(value) for value in sorted(values, key=len, reverse=True))) if values else None
     diagnostic = re.compile(
@@ -99,6 +106,36 @@ def print_offline_build_diagnostics(output, env):
         print("native: Diagnostic excerpt truncated (40 lines / 500 characters per line).", flush=True)
 
 
+def credential_bearing_local_config(root):
+    """Check only known build-config files; never return or print config values."""
+    root = Path(root)
+    candidates = (
+        root / "local.properties",
+        root / "gradle.properties",
+        root / "iosApp/PhoenixApp/Config/SupabaseBase.xcconfig",
+        Path.home() / ".gradle/gradle.properties",
+        Path.home() / ".xcconfig",
+    )
+    for path in candidates:
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            # If a known local config exists but cannot be inspected, withhold excerpts.
+            if path.exists():
+                return True
+            continue
+        for line in lines:
+            setting = line.strip()
+            if not setting or setting.startswith(("#", ";", "//")):
+                continue
+            match = re.match(r"([^:=]+?)\s*[:=]\s*(.*)$", setting)
+            if match and match.group(2).strip() and SENSITIVE_SETTING_NAME.search(match.group(1)):
+                return True
+    return False
+
+
 def run(command, label, *, sensitive=False, env=None, cwd=ROOT, offline_build_diagnostics=False):
     """Never print command arguments: signing passwords and paths can be sensitive."""
     result = subprocess.run([str(part) for part in command], cwd=cwd, env=env,
@@ -106,7 +143,10 @@ def run(command, label, *, sensitive=False, env=None, cwd=ROOT, offline_build_di
     if not sensitive and result.stdout:
         print(result.stdout, end="", flush=True)
     elif result.returncode and offline_build_diagnostics:
-        print_offline_build_diagnostics(result.stdout, os.environ if env is None else env)
+        if credential_bearing_local_config(cwd):
+            print("Offline native diagnostics withheld (credential-bearing local build config detected).", flush=True)
+        else:
+            print_offline_build_diagnostics(result.stdout, os.environ if env is None else env)
     print(f"{label}: exit {result.returncode}", flush=True)
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, label)
@@ -341,7 +381,7 @@ def local(args):
         # Only this unsigned build path uses a deterministic, empty cloud config.
         # Tests and all signing/API/security calls retain full output suppression.
         run(command, "Unsigned tvOS " + args.action, sensitive=True,
-            offline_build_diagnostics=args.action == "build")
+            cwd=ROOT, offline_build_diagnostics=args.action == "build")
         app = derived / f"Build/Products/{args.configuration}-{args.sdk}/PhoenixTV.app"
         require((app / "exercises.json").read_bytes() == (ROOT / EXERCISES).read_bytes(), "Exercise resource not copied into local app")
         verify_privacy_manifest(app)
