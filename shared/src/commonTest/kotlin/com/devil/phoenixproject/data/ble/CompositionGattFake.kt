@@ -62,6 +62,8 @@ internal class CompositionGattFake(
     private val dispatcher = dispatcher
 
     var connectGate: CompletableDeferred<Unit>? = null
+    // Optional first-call return barrier: physical teardown has already completed.
+    var disconnectReturnGate: CompletableDeferred<Unit>? = null
     var readGate: CompletableDeferred<Unit>? = null
     var writeFailure: Exception? = null
     var connectCalls = 0
@@ -117,6 +119,7 @@ internal class CompositionGattFake(
         disconnectCalls++
         connectGate?.cancel()
         dropConnection()
+        if (disconnectCalls == 1) disconnectReturnGate?.await()
     }
 
     fun dropConnection() {

@@ -20,6 +20,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -273,6 +274,254 @@ abstract class KableGattCompositionContract {
             runCurrent()
             assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
             assertTrue(p.writes.isEmpty())
+        }
+    }
+
+    private suspend fun TestScope.assertConnectionUsefulThenDrops(
+        f: Fixture,
+        p: CompositionGattFake,
+        selection: Advertisement,
+    ) {
+        assertEquals(selection.identifier.toString(), assertIs<ConnectionState.Connected>(f.repository.connectionState.value).deviceAddress)
+        assertSame(selection, f.constructed.last())
+        assertEquals(0, p.disconnectCalls)
+        assertTrue(p.writes.isEmpty(), "Connecting must not replay any command")
+        val reps = mutableListOf<RepNotification>()
+        val requests = mutableListOf<ReconnectionRequest>()
+        backgroundScope.launch { f.repository.repEvents.collect { reps += it } }
+        backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+        val monitorUuid = "90e991a6-c548-44ed-969b-eb541014eae3"
+        val readsBefore = p.reads.count { it.characteristicUuid.toString() == monitorUuid }
+        advanceTimeBy(100)
+        runCurrent()
+        assertTrue(p.reads.count { it.characteristicUuid.toString() == monitorUuid } > readsBefore)
+        val packet = ByteArray(24).also { it[0] = 4; it[4] = 3; it[20] = 3; it[22] = 10 }
+        p.notifyReps(packet)
+        runCurrent()
+        assertEquals(4, reps.single().topCounter)
+        assertContentEquals(packet, reps.single().rawData)
+        val reset = BlePacketFactory.createResetCommand()
+        assertTrue(f.repository.sendWorkoutCommand(reset).isSuccess)
+        val write = p.writes.single()
+        assertEquals(WriteType.WithResponse, write.type)
+        assertEquals("6e400002-b5a3-f393-e0a9-e50e24dcca9e", write.characteristic.characteristicUuid.toString())
+        assertContentEquals(reset, write.bytes)
+        assertEquals(selection.identifier.toString(), assertIs<ConnectionState.Connected>(f.repository.connectionState.value).deviceAddress)
+        assertTrue(requests.isEmpty(), "Cancelled predecessor must not request reconnect")
+        val constructedBeforeDrop = f.constructed.size
+        p.dropConnection()
+        runCurrent()
+        assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+        assertEquals(selection.identifier.toString(), requests.single().deviceAddress)
+        assertEquals(constructedBeforeDrop, f.constructed.size, "A reconnect request must not auto-connect or replay a load")
+        assertEquals(1, p.writes.size)
+    }
+
+    @Test
+    fun cancellationDuringReplacementEntryCleanupClearsConnectedState() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            assertTrue(f.repository.connect(firstSelection).isSuccess)
+            runCurrent()
+            val old = f.peripherals.single()
+            assertEquals(first.identifier.toString(), assertIs<ConnectionState.Connected>(f.repository.connectionState.value).deviceAddress)
+            assertEquals(1, old.connectCalls)
+            val states = mutableListOf<ConnectionState>()
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.connectionState.collect { states += it } }
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            runCurrent()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            var propagatedCancellation: CancellationException? = null
+            val replacement = async {
+                try {
+                    f.repository.connect(chosenSelection)
+                } catch (e: CancellationException) {
+                    propagatedCancellation = e
+                    throw e
+                }
+            }
+            try {
+                runCurrent()
+                assertEquals(1, old.disconnectCalls, "Replacement must be in entry cleanup of the ready first connection")
+                assertFalse(replacement.isCompleted)
+                assertEquals(listOf<Advertisement>(first), f.constructed, "Entry cleanup must finish before constructing a replacement")
+                assertEquals(1, f.peripherals.size)
+                states.clear()
+                replacement.cancelAndJoin()
+                runCurrent()
+                assertTrue(replacement.isCancelled)
+                assertNotNull(propagatedCancellation, "Facade connect must throw cancellation, not return a Result")
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value, "Cancelled entry cleanup must not leave stale Connected")
+                assertTrue(f.repository.sendWorkoutCommand(loadCommand()).isFailure)
+                cleanupReturn.complete(Unit)
+                advanceTimeBy(20000)
+                runCurrent()
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+                assertTrue(states.none { it is ConnectionState.Connected }, "Cancelled replacement must not publish Connected later")
+                assertTrue(requests.isEmpty(), "Entry cleanup cancellation must not request reconnect")
+                assertEquals(listOf<Advertisement>(first), f.constructed)
+                assertEquals(1, f.peripherals.size)
+                assertTrue(old.writes.isEmpty())
+
+                assertTrue(f.repository.connect(chosenSelection).isSuccess)
+                runCurrent()
+                assertEquals(listOf<Advertisement>(first, chosen), f.constructed)
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(old.writes.isEmpty(), "Explicit RESET must reach chosen, never the old connection")
+            } finally {
+                cleanupReturn.complete(Unit)
+                replacement.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun cancelledConnectCannotTearDownQueuedReplacement() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            f.connectGate = CompletableDeferred()
+            val a = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val old = f.peripherals.single()
+            assertEquals(ConnectionState.Connecting, f.repository.connectionState.value)
+            f.connectGate = null
+            val b = async { f.repository.connect(chosenSelection) }
+            // Queue B BEFORE A's cancelled continuation, without yielding. Explicit
+            // caller cancellation avoids depending on the double's disconnect semantics.
+            a.cancel()
+            try {
+                runCurrent()
+                a.join()
+                assertTrue(a.isCancelled)
+                assertEquals(2, f.peripherals.size)
+                val replacement = f.peripherals.last()
+                assertEquals(0, replacement.disconnectCalls, "A's cancellation must not disconnect B")
+                assertTrue(b.await().isSuccess)
+                assertEquals(1, old.disconnectCalls)
+                assertConnectionUsefulThenDrops(f, replacement, chosen)
+                assertTrue(old.writes.isEmpty(), "RESET must reach B, never A")
+            } finally {
+                a.cancelAndJoin()
+                b.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun replacementWaitsForCancelledConnectCleanupToFinish() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            f.connectGate = CompletableDeferred()
+            val a = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val old = f.peripherals.single()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            a.cancel()
+            runCurrent()
+            assertEquals(1, old.disconnectCalls)
+            assertFalse(a.isCompleted, "A must be parked inside NonCancellable cleanup")
+            f.connectGate = null
+            val b = async { f.repository.connect(chosenSelection) }
+            try {
+                runCurrent()
+                assertEquals(1, f.peripherals.size, "B must wait until A's cleanup returns")
+                assertFalse(b.isCompleted)
+                assertFalse(f.repository.connectionState.value is ConnectionState.Connected)
+                cleanupReturn.complete(Unit)
+                a.join()
+                assertTrue(a.isCancelled)
+                assertTrue(b.await().isSuccess)
+                runCurrent()
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(old.writes.isEmpty())
+            } finally {
+                cleanupReturn.complete(Unit)
+                a.cancelAndJoin()
+                b.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun cancellingWaitingConnectDoesNotAffectAdmissionOwner() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            val physicalConnect = CompletableDeferred<Unit>()
+            f.connectGate = physicalConnect
+            val a = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val owner = f.peripherals.single()
+            f.connectGate = null
+            val waiter = async { f.repository.connect(chosenSelection) }
+            try {
+                runCurrent()
+                assertFalse(waiter.isCompleted)
+                waiter.cancelAndJoin()
+                runCurrent()
+                assertTrue(waiter.isCancelled)
+                assertEquals(1, f.peripherals.size, "Cancelled waiter must not construct a peripheral")
+                assertEquals(0, owner.disconnectCalls, "Cancelled waiter must not clean the admission owner")
+                assertFalse(a.isCompleted)
+                assertEquals(ConnectionState.Connecting, f.repository.connectionState.value)
+                physicalConnect.complete(Unit)
+                assertTrue(a.await().isSuccess)
+                runCurrent()
+                assertConnectionUsefulThenDrops(f, owner, first)
+            } finally {
+                a.cancelAndJoin()
+                waiter.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun cancelledConnectCleanupReleasesAdmissionAfterFiveSecondBound() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            f.connectGate = CompletableDeferred()
+            val a = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val old = f.peripherals.single()
+            val cleanupReturn = CompletableDeferred<Unit>()
+            old.disconnectReturnGate = cleanupReturn
+            a.cancel()
+            runCurrent()
+            f.connectGate = null
+            val b = async { f.repository.connect(chosenSelection) }
+            try {
+                runCurrent()
+                advanceTimeBy(4999)
+                runCurrent()
+                assertFalse(a.isCompleted)
+                assertFalse(b.isCompleted)
+                assertEquals(1, f.peripherals.size)
+                advanceTimeBy(1)
+                runCurrent()
+                assertTrue(a.isCompleted, "Cancellation cleanup must retain its 5-second bound")
+                assertTrue(a.isCancelled)
+                assertTrue(b.await().isSuccess)
+                cleanupReturn.complete(Unit)
+                runCurrent()
+                assertConnectionUsefulThenDrops(f, f.peripherals.last(), chosen)
+                assertTrue(old.writes.isEmpty())
+            } finally {
+                cleanupReturn.complete(Unit)
+                a.cancelAndJoin()
+                b.cancelAndJoin()
+            }
         }
     }
 

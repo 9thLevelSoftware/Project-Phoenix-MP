@@ -25,7 +25,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
@@ -33,6 +35,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -132,6 +136,10 @@ class KableBleConnectionManager(
         val unnamed = discoveredAdvertisements.size - named
         return "Found $named named Phoenix device(s), $unnamed unnamed service-UUID match(es)"
     }
+
+    // Serializes connect callers through their final cleanup, not public teardown:
+    // disconnect/cancelConnection must still interrupt pending radio work.
+    private val connectAdmission = Mutex()
 
     /** Active scanning job reference. */
     private var scanJob: Job? = null
@@ -573,64 +581,62 @@ class KableBleConnectionManager(
     // 4. connect()
     // -------------------------------------------------------------------------
 
-    suspend fun connect(device: ScannedDevice): Result<Unit> {
-        log.i { "Connecting to device: ${device.name}" }
-        logRepo.info(
-            LogEventType.CONNECT_START,
-            "Connecting to device",
-            device.name,
-            device.address,
-        )
+    suspend fun connect(device: ScannedDevice): Result<Unit> = connectAdmission.withLock {
+        // Cancellation is caught only AFTER admission. A cancelled waiter owns
+        // nothing and must never clean up the connection holding this mutex.
+        connectAdmitted(device)
+    }
 
-        // Clean up any existing connection first (matches parent repo)
-        // Prevents "dangling GATT connections" on Android 16/Pixel 7
-        cleanupExistingConnection()
-
-        // F005: start every new connection lifecycle with a clean
-        // explicit-disconnect flag. A prior disconnect/cancel sets this true, and
-        // if that teardown did not flow through the State.Disconnected handler that
-        // resets it, the flag could leak into this new connection and suppress
-        // auto-reconnect on the next genuine unexpected drop.
-        isExplicitDisconnect = false
-
-        reportConnectionState(ConnectionState.Connecting)
-
-        val advertisement = discoveredAdvertisements[device.address]
-        if (advertisement == null) {
-            log.e { "Advertisement not found for device: ${device.address}" }
-            logRepo.error(
-                LogEventType.CONNECT_FAIL,
-                "Device not found in scanned list",
+    private suspend fun connectAdmitted(device: ScannedDevice): Result<Unit> {
+        return try {
+            log.i { "Connecting to device: ${device.name}" }
+            logRepo.info(
+                LogEventType.CONNECT_START,
+                "Connecting to device",
                 device.name,
                 device.address,
             )
-            // Return to Disconnected - device may have gone out of range, user can retry
-            reportConnectionState(ConnectionState.Disconnected)
-            return Result.failure(IllegalStateException("Device not found in scanned list"))
-        }
 
-        // Store device info for logging
-        connectedDeviceName = device.name
-        connectedDeviceAddress = device.address
+            // Entry cleanup can suspend too: keep it inside owned cancellation handling.
+            cleanupExistingConnection()
 
-        return try {
+            // A prior explicit teardown must not suppress this connection's reconnect.
+            isExplicitDisconnect = false
+            reportConnectionState(ConnectionState.Connecting)
+
+            val advertisement = discoveredAdvertisements[device.address]
+            if (advertisement == null) {
+                log.e { "Advertisement not found for device: ${device.address}" }
+                logRepo.error(
+                    LogEventType.CONNECT_FAIL,
+                    "Device not found in scanned list",
+                    device.name,
+                    device.address,
+                )
+                reportConnectionState(ConnectionState.Disconnected)
+                return Result.failure(IllegalStateException("Device not found in scanned list"))
+            }
+
+            connectedDeviceName = device.name
+            connectedDeviceAddress = device.address
             stopScanning()
 
             // Create peripheral
             // Note: MTU negotiation is handled in onDeviceReady() via expect/actual
             // pattern (requestMtuIfSupported) since Kable's requestMtu requires
             // platform-specific AndroidPeripheral cast
-            peripheral = createPeripheral(advertisement)
+            val attemptPeripheral = createPeripheral(advertisement)
+            peripheral = attemptPeripheral
 
-            // Cancel any stale state observer before launching a new one (H2 fix)
-            stateObserverJob?.cancel()
-            deviceReadyJob?.cancel()
-            deviceReadyJob = null
+            // Entry cleanup settled the previous observer/ready-up before replacement.
             readyGate = CompletableDeferred()
 
-            // Observe connection state
-            stateObserverJob = peripheral?.state
-                ?.onEach { state ->
+            // The observer is independently scoped; never consume a late old-peripheral event.
+            stateObserverJob = attemptPeripheral.state
+                .onEach { state ->
+                    currentCoroutineContext().ensureActive()
+                    if (peripheral !== attemptPeripheral) return@onEach
+                    val observerGate = readyGate
                     when (state) {
                         is State.Connecting -> {
                             reportConnectionState(ConnectionState.Connecting)
@@ -662,17 +668,11 @@ class KableBleConnectionManager(
                                 deviceReadyJob = scope.launch {
                                     try {
                                         withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
-                                            onDeviceReady()
+                                            onDeviceReady(attemptPeripheral, gate)
                                         }
-                                        // Explicit disconnect/cancel may have torn the
-                                        // connection down while ready-up was in flight —
-                                        // don't resurrect Connected over a Disconnected UI.
-                                        if (peripheral == null || isExplicitDisconnect) {
-                                            gate.completeExceptionally(
-                                                BleDeviceInitializationException("Connection torn down during initialization"),
-                                            )
-                                            return@launch
-                                        }
+                                        // Check exact ownership AFTER ready-up suspensions,
+                                        // including a ready job that outlived bounded cleanup.
+                                        requireReadyAttempt(attemptPeripheral, gate)
                                         reportConnectionState(
                                             ConnectionState.Connected(
                                                 deviceName = device.name,
@@ -774,6 +774,7 @@ class KableBleConnectionManager(
                             if (hadConnection && !isExplicitDisconnect && deviceAddress.isNotEmpty()) {
                                 log.i { "Requesting auto-reconnect to $deviceName ($deviceAddress)" }
                                 scope.launch {
+                                    if (readyGate !== observerGate) return@launch
                                     onReconnectionRequested(
                                         ReconnectionRequest(
                                             deviceName = deviceName,
@@ -791,7 +792,7 @@ class KableBleConnectionManager(
                         }
                     }
                 }
-                ?.launchIn(scope)
+                .launchIn(scope)
 
             // Connection with retry logic and timeout protection
             var lastException: Exception? = null
@@ -851,44 +852,16 @@ class KableBleConnectionManager(
                 }
             }
 
-            // All retries failed - cleanup and return to disconnected state.
-            // cleanupExistingConnection() swallows disconnect errors, so peripheral
-            // is always released and Disconnected always reported (PR #621 review).
-            // Finding [48]: cleanupExistingConnection() early-returns when peripheral
-            // is already null (set by the State.Disconnected handler during retries),
-            // leaving stateObserverJob alive and subscribed to a dead Peripheral.
-            // Cancel it explicitly here to guarantee no ghost callbacks after throw.
-            stateObserverJob?.cancel()
-            stateObserverJob = null
-            cleanupExistingConnection()
-            reportConnectionState(ConnectionState.Disconnected)
+            // Failure cleanup, like cancellation, must finish before admission releases.
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
         } catch (e: CancellationException) {
-            // The caller's job does not own the observer/ready-up jobs on scope.
-            // Tear those down before propagating cancellation, otherwise a cancelled
-            // selection can leave a live peripheral and later publish Connected.
-            stateObserverJob?.cancel()
-            stateObserverJob = null
-            deviceReadyJob?.cancel()
-            deviceReadyJob = null
-            pollingEngine.stopAll()
-            withContext(NonCancellable) {
-                try {
-                    withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
-                        cleanupExistingConnection()
-                    }
-                } finally {
-                    clearConnectionState()
-                    reportConnectionState(ConnectionState.Disconnected)
-                }
-            }
+            cleanupFailedConnection()
             throw e
         } catch (e: Exception) {
             e.rethrowIfCancellation()
-            // Finding [48]: cancel stateObserverJob in the outer catch so ghost callbacks
-            // cannot fire on a half-torn-down Peripheral after an unexpected exception.
-            stateObserverJob?.cancel()
-            stateObserverJob = null
+            cleanupFailedConnection()
+            // A cancellation arriving during NonCancellable failure cleanup still propagates.
+            currentCoroutineContext().ensureActive()
             log.e { "Connection failed: ${e.message}" }
             logRepo.error(
                 LogEventType.CONNECT_FAIL,
@@ -897,12 +870,21 @@ class KableBleConnectionManager(
                 device.address,
                 e.message,
             )
-            // Return to Disconnected instead of Error - connection failures are retryable
-            reportConnectionState(ConnectionState.Disconnected)
-            peripheral = null
-            connectedDeviceName = ""
-            connectedDeviceAddress = ""
             Result.failure(e)
+        }
+    }
+
+    /** Called only by the admitted connect caller; includes job settlement in the bound. */
+    private suspend fun cleanupFailedConnection() {
+        withContext(NonCancellable) {
+            try {
+                withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                    cleanupExistingConnection()
+                }
+            } finally {
+                clearConnectionState()
+                reportConnectionState(ConnectionState.Disconnected)
+            }
         }
     }
 
@@ -914,8 +896,15 @@ class KableBleConnectionManager(
      * Called when the device is connected and ready.
      * Requests MTU, starts observing notifications, and starts heartbeat.
      */
-    private suspend fun onDeviceReady() {
-        val p = peripheral ?: return
+    private suspend fun requireReadyAttempt(p: Peripheral, gate: CompletableDeferred<Unit>) {
+        currentCoroutineContext().ensureActive()
+        if (peripheral !== p || readyGate !== gate || isExplicitDisconnect) {
+            throw BleDeviceInitializationException("Connection torn down during initialization")
+        }
+    }
+
+    private suspend fun onDeviceReady(p: Peripheral, gate: CompletableDeferred<Unit>) {
+        requireReadyAttempt(p, gate)
         compatibilityPathActive = BleCompatibilityMode.isActive()
         val useCompatibilityPath = compatibilityPathActive
 
@@ -954,11 +943,13 @@ class KableBleConnectionManager(
             // Request High Connection Priority (Android only - via expect/actual extension)
             // Critical for maintaining ~20Hz polling rate without lag
             p.requestHighPriority()
+            requireReadyAttempt(p, gate)
 
             // Request MTU negotiation (Android only - iOS handles automatically)
             // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
             // Phoenix commands require up to 96 bytes for activation frames
             val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
+            requireReadyAttempt(p, gate)
             if (mtu != null) {
                 negotiatedMtu = mtu
                 log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
@@ -978,6 +969,7 @@ class KableBleConnectionManager(
             }
         }
 
+        requireReadyAttempt(p, gate)
         // Verify services are discovered and log GATT structure
         try {
             // p.services is a StateFlow<List<DiscoveredService>?> - access .value
@@ -1063,6 +1055,7 @@ class KableBleConnectionManager(
             // service discovery — matching the tested v14 choreography, which keeps
             // the ready-up window quiet until discovery completes.
             p.requestHighPriority()
+            requireReadyAttempt(p, gate)
             log.i { "[#333 compat] High connection priority requested after service discovery" }
             logRepo.debug(
                 LogEventType.SERVICE_DISCOVERED,
@@ -1083,15 +1076,15 @@ class KableBleConnectionManager(
             connectedDeviceAddress,
         )
 
-        startObservingNotifications()
+        startObservingNotifications(p, gate)
     }
 
     // -------------------------------------------------------------------------
     // 6. startObservingNotifications()
     // -------------------------------------------------------------------------
 
-    private suspend fun startObservingNotifications() {
-        val p = peripheral ?: return
+    private suspend fun startObservingNotifications(p: Peripheral, gate: CompletableDeferred<Unit>) {
+        requireReadyAttempt(p, gate)
 
         logRepo.info(
             LogEventType.NOTIFICATION,
@@ -1130,7 +1123,7 @@ class KableBleConnectionManager(
         withTimeoutOrNull(BleConstants.Timing.REPS_SUBSCRIBE_READY_TIMEOUT_MS) {
             repsReady.await()
         }
-        if (peripheral !== p) return // disconnected/replaced while we waited
+        requireReadyAttempt(p, gate)
 
         if (!compatibilityPathActive) {
             // Firmware/version reads (best effort, diagnostic only) — own coroutine so
@@ -1401,34 +1394,43 @@ class KableBleConnectionManager(
      * This is idempotent - safe to call even if no connection exists.
      */
     private suspend fun cleanupExistingConnection() {
-        val existingPeripheral = peripheral ?: return
-
-        log.d { "Cleaning up existing connection before new connection attempt" }
-        logRepo.info(
-            LogEventType.DISCONNECT,
-            "Cleaning up existing connection (pre-connect)",
-            connectedDeviceName,
-            connectedDeviceAddress,
-        )
-
-        // Cancel stale state observer to prevent ghost callbacks (H2 fix)
-        stateObserverJob?.cancel()
+        val existingPeripheral = peripheral
+        val observer = stateObserverJob
+        val ready = deviceReadyJob
+        // Revoke the exact ready attempt BEFORE cancellation/suspension. If a job
+        // exceeds the settlement bound, its post-suspension checks still reject it.
+        readyGate = CompletableDeferred()
         stateObserverJob = null
-        deviceReadyJob?.cancel()
         deviceReadyJob = null
-
-        // Cancel all polling jobs (matches disconnect() behavior)
+        observer?.cancel()
+        ready?.cancel()
         pollingEngine.stopAll()
 
-        // Disconnect and release the peripheral
-        try {
-            isExplicitDisconnect = true
-            existingPeripheral.disconnect()
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
+        if (existingPeripheral != null) {
+            log.d { "Cleaning up existing connection before new connection attempt" }
+            logRepo.info(
+                LogEventType.DISCONNECT,
+                "Cleaning up existing connection (pre-connect)",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+
+            // Interrupt radio work before waiting for independent jobs to settle.
+            try {
+                isExplicitDisconnect = true
+                existingPeripheral.disconnect()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
+            }
         }
 
+        // Only admitted connect callers reach this helper, never either joined job.
+        // The cancellation/failure caller wraps ALL cleanup in the same 5s bound.
+        withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+            observer?.join()
+            ready?.join()
+        }
         peripheral = null
         // The state observer was cancelled above, so the State.Disconnected
         // handler that normally resets this flag never runs. Left true, the
