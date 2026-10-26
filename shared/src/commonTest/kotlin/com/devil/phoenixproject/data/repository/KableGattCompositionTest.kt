@@ -12,6 +12,7 @@ import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.CommandLimits
 import com.juul.kable.Advertisement
+import com.juul.kable.State
 import com.juul.kable.WriteType
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -698,6 +699,148 @@ abstract class KableGattCompositionContract {
     }
 
     @Test
+    fun explicitDisconnectSupersedesInFlightConnectThatReturnsLate() = runTest {
+        withFixture { f ->
+            discover(f, chosen)
+            val selection = f.repository.scannedDevices.value.single()
+            val physicalConnect = CompletableDeferred<Unit>()
+            f.connectGate = physicalConnect
+            val owner = async { f.repository.connect(selection) }
+            runCurrent()
+            val p = f.peripherals.single()
+            p.cancelConnectGateOnDisconnect = false
+            assertEquals(1, p.connectCalls)
+
+            f.repository.disconnect()
+            runCurrent()
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+            assertFalse(owner.isCompleted, "The fake transport keeps the physical attempt in flight")
+
+            physicalConnect.complete(Unit)
+            runCurrent()
+            assertTrue(owner.isCompleted, "A superseded physical completion must fail without waiting for the ready timeout")
+            assertTrue(owner.await().isFailure)
+            assertEquals(1, p.connectCalls, "A stale physical completion must not retry")
+            assertEquals(2, p.disconnectCalls, "The late physical connection must be torn down after explicit disconnect")
+            assertIs<State.Disconnected>(p.state.value)
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+        }
+    }
+
+    @Test
+    fun cancellationDuringSupersededPeripheralCleanupDisconnectsExactAttemptBeforeAdmissionRelease() = runTest {
+        withFixture { f ->
+            discover(f, first, chosen)
+            val firstSelection = f.repository.scannedDevices.value.single { it.address == first.identifier.toString() }
+            val chosenSelection = f.repository.scannedDevices.value.single { it.address == chosen.identifier.toString() }
+            val physicalConnect = CompletableDeferred<Unit>()
+            f.connectGate = physicalConnect
+            val owner = async { f.repository.connect(firstSelection) }
+            runCurrent()
+            val p = f.peripherals.single()
+            p.cancelConnectGateOnDisconnect = false
+            val supersededDisconnect = CompletableDeferred<Unit>()
+            p.disconnectGateOnCalls = setOf(2)
+            p.disconnectGate = supersededDisconnect
+
+            f.repository.disconnect()
+            runCurrent()
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+            physicalConnect.complete(Unit)
+            runCurrent()
+            assertEquals(2, p.disconnectCalls, "Late P must enter its exact-peripheral superseded cleanup")
+            assertFalse(owner.isCompleted, "The superseded disconnect barrier must hold the admitted owner")
+            assertIs<State.Connected>(p.state.value)
+
+            owner.cancel()
+            runCurrent()
+            assertFalse(owner.isCompleted, "Captured-P cleanup must remain inside the NonCancellable admission lease")
+            val fresh = async { f.repository.connect(chosenSelection) }
+            runCurrent()
+            assertFalse(fresh.isCompleted, "B must wait until exact-P cleanup settles")
+            assertEquals(listOf<Advertisement>(first), f.constructed, "B must not be constructed during P cleanup")
+
+            supersededDisconnect.complete(Unit)
+            runCurrent()
+            assertTrue(owner.isCompleted, "The owner must settle only after P cleanup finishes")
+            assertTrue(owner.isCancelled, "Caller cancellation must still propagate after cleanup settles")
+            assertEquals(2, p.disconnectCalls, "NonCancellable cleanup must disconnect captured P")
+            assertIs<State.Disconnected>(p.state.value, "Captured P must be disconnected before admission is released")
+
+            f.connectGate = null
+            assertTrue(fresh.await().isSuccess, "B may connect after P cleanup settles")
+            runCurrent()
+            assertEquals(listOf<Advertisement>(first, chosen), f.constructed)
+            assertEquals(2, p.disconnectCalls, "B connection must not clean P again")
+            assertEquals(1, f.peripherals.last().connectCalls, "B must connect only after P's cleanup is done")
+        }
+    }
+
+    @Test
+    fun disconnectAfterReadyGateCompletionRejectsSupersededConnectResult() = runTest {
+        withFixture { f ->
+            discover(f, chosen)
+            val selection = f.repository.scannedDevices.value.single()
+            val physicalConnect = CompletableDeferred<Unit>()
+            f.connectGate = physicalConnect
+            val owner = async { f.repository.connect(selection) }
+            runCurrent()
+            val p = f.peripherals.single()
+            var teardownRanAfterReady = false
+            p.afterRepsSubscription = {
+                backgroundScope.launch {
+                    teardownRanAfterReady = f.repository.connectionState.value is ConnectionState.Connected
+                    f.repository.disconnect()
+                }
+            }
+
+            physicalConnect.complete(Unit)
+            runCurrent()
+            assertTrue(teardownRanAfterReady, "The deterministic fake must tear down after ready-up published Connected")
+            assertTrue(owner.isCompleted, "The connect caller must settle after post-ready teardown")
+            assertTrue(owner.await().isFailure, "A completed ready gate cannot make a superseded connect succeed")
+            assertEquals(1, p.connectCalls)
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+        }
+    }
+
+    @Test
+    fun teardownDuringFailedConnectCleanupSkipsRetryDelay() = runTest {
+        withFixture { f ->
+            discover(f, chosen)
+            val selection = f.repository.scannedDevices.value.single()
+            val physicalConnect = CompletableDeferred<Unit>()
+            f.connectGate = physicalConnect
+            val owner = async { f.repository.connect(selection) }
+            runCurrent()
+            val p = f.peripherals.single()
+            val retryCleanupReturn = CompletableDeferred<Unit>()
+            p.disconnectReturnGate = retryCleanupReturn
+
+            physicalConnect.completeExceptionally(IllegalStateException("controlled physical-connect failure"))
+            runCurrent()
+            assertEquals(1, p.connectCalls)
+            assertEquals(1, p.disconnectCalls, "The failed attempt must be parked in retry cleanup")
+            assertFalse(owner.isCompleted)
+
+            f.repository.disconnect()
+            runCurrent()
+            assertEquals(2, p.disconnectCalls)
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+
+            retryCleanupReturn.complete(Unit)
+            runCurrent()
+            assertTrue(owner.isCompleted, "A superseded failure must not enter the retry delay")
+            assertEquals(
+                "Connection request superseded by explicit teardown",
+                owner.await().exceptionOrNull()?.message,
+            )
+            assertEquals(1, p.connectCalls, "Teardown during retry cleanup must prevent the next physical attempt")
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+        }
+    }
+
+    @Test
     fun admissionWaitTimesOutWithoutCleaningOwnerAndDoesNotRunLater() = runTest {
         withFixture { f ->
             discover(f, first, chosen)
@@ -725,6 +868,11 @@ abstract class KableGattCompositionContract {
                 runCurrent()
                 assertTrue(waiter.isCompleted, "Admission must time out at the existing connection timeout")
                 assertTrue(waiter.await().isFailure)
+                assertEquals(
+                    "Another connection attempt is in progress. Please wait and try again.",
+                    waiter.await().exceptionOrNull()?.message,
+                    "Admission rejection must be suitable for the user-facing connection error",
+                )
                 assertFalse(owner.isCompleted, "Wait timeout must not cancel the admitted owner")
                 assertEquals(1, old.disconnectCalls, "Wait timeout must not run connection cleanup")
                 assertEquals(stateBeforeWait, f.repository.connectionState.value, "Wait timeout owns no connection-state publication")

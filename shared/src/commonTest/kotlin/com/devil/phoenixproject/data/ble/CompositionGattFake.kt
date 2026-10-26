@@ -62,6 +62,11 @@ internal class CompositionGattFake(
     private val dispatcher = dispatcher
 
     var connectGate: CompletableDeferred<Unit>? = null
+    var cancelConnectGateOnDisconnect = true
+    var afterRepsSubscription: (() -> Unit)? = null
+    // Optional pre-physical-disconnect barrier for exact call(s).
+    var disconnectGateOnCalls: Set<Int> = emptySet()
+    var disconnectGate: CompletableDeferred<Unit>? = null
     // Optional first-call return barrier: physical teardown has already completed.
     var disconnectReturnGate: CompletableDeferred<Unit>? = null
     var readGate: CompletableDeferred<Unit>? = null
@@ -117,7 +122,8 @@ internal class CompositionGattFake(
 
     override suspend fun disconnect() {
         disconnectCalls++
-        connectGate?.cancel()
+        if (disconnectCalls in disconnectGateOnCalls) disconnectGate?.await()
+        if (cancelConnectGateOnDisconnect) connectGate?.cancel()
         dropConnection()
         if (disconnectCalls == 1) disconnectReturnGate?.await()
     }
@@ -194,7 +200,12 @@ internal class CompositionGattFake(
             // Kable observe flows survive disconnect and wait for a later reconnect.
             emitAll(
                 notifications.getOrPut(characteristic.characteristicUuid) { MutableSharedFlow() }
-                    .onSubscription { onSubscription() }
+                    .onSubscription {
+                        onSubscription()
+                        if (characteristic.characteristicUuid == BleConstants.REPS_UUID) {
+                            afterRepsSubscription?.invoke()
+                        }
+                    }
                     .filter { state.value is State.Connected },
             )
         } finally {
