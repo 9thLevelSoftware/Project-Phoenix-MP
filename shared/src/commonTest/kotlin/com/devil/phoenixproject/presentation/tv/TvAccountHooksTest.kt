@@ -17,6 +17,76 @@ import kotlin.test.*
 @OptIn(ExperimentalCoroutinesApi::class)
 class TvAccountHooksTest {
     @Test
+    fun successfulTvLoginPushesLocalWorkoutAndPullsBeforeReleasingAdmission() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val h = AccountFixture(owner = "owner-b")
+        val signIn = CompletableDeferred<Result<GoTrueAuthResponse>>()
+        val pullEntered = CompletableDeferred<Unit>()
+        val pullRelease = CompletableDeferred<Unit>()
+        h.signInResponse = signIn
+        h.pullEntered = pullEntered
+        h.pullRelease = pullRelease
+        h.repository.workoutSessionsToReturn = listOf(WorkoutSession(id = "local-before-login"))
+        try {
+            assertTrue(h.tv.login("b@example.com", "test-password"))
+            runCurrent()
+            assertEquals(1, h.api.signInCallCount)
+            assertEquals(0, h.api.pullCallCount, "Sync must wait for successful authentication")
+            assertFalse(h.admission.tryTraining(), "Admission remains held during authentication")
+
+            signIn.complete(h.api.signInResult!!)
+            runCurrent()
+            assertTrue(pullEntered.isCompleted, "Successful sign-in must start the existing sync")
+            assertTrue(h.api.pushCallCount > 0, "Post-login sync must push local workouts")
+            assertTrue(h.api.lastPushPayload?.sessions?.any { it.id == "local-before-login" } == true)
+            assertFalse(h.admission.tryTraining(), "Admission remains held until post-login sync completes")
+
+            pullRelease.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(h.link.lastSyncTime.value > 0)
+            assertIs<SyncState.Success>(h.link.syncState.value)
+            assertTrue(h.admission.tryTraining(), "Post-login sync completion releases admission")
+            h.admission.releaseTraining()
+        } finally {
+            pullRelease.complete(Unit)
+            h.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun cancelledPostLoginSyncKeepsAdmissionUntilSyncCleanupCompletes() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val h = AccountFixture(owner = "owner-b")
+        val pullEntered = CompletableDeferred<Unit>()
+        val pullRelease = CompletableDeferred<Unit>()
+        val pullCleanup = CompletableDeferred<Unit>()
+        h.pullEntered = pullEntered
+        h.pullRelease = pullRelease
+        h.pullCleanup = pullCleanup
+        try {
+            assertTrue(h.tv.login("b@example.com", "test-password"))
+            runCurrent()
+            assertTrue(pullEntered.isCompleted, "Successful login must enter its post-login sync")
+
+            h.link.clear()
+            runCurrent()
+            assertFalse(h.admission.tryTraining(), "Cancellation cannot release admission before sync cleanup")
+            assertFalse(h.tv.syncNow(), "A second account operation remains excluded during cleanup")
+
+            pullCleanup.complete(Unit)
+            runCurrent()
+            assertTrue(h.admission.tryTraining(), "Admission releases after the cancelled sync job completes")
+            h.admission.releaseTraining()
+        } finally {
+            pullRelease.complete(Unit)
+            pullCleanup.complete(Unit)
+            h.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun deferredSignInBlocksTrainingUntilActualSharedLoginCompletes() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val h = AccountFixture(owner = "owner-b")
@@ -70,19 +140,30 @@ class TvAccountHooksTest {
                 val caseJob = Job(backgroundScope.coroutineContext[Job])
                 val caseScope = CoroutineScope(backgroundScope.coroutineContext + caseJob)
                 val h = AccountFixture(owner = "owner-b")
-                h.signInResponse = CompletableDeferred()
                 val fixture = TvCoreFixture(caseScope, h.tv.syncTrigger, h.profiles)
                 val main = createTvMainViewModel(fixture.koin.koin, caseScope, h.tv.syncTrigger)
                 val tv = h.controller(main, caseScope)
                 try {
                     runCurrent()
                     assertTrue(h.tv.login("b@example.com", "test-password"))
+                    advanceUntilIdle()
+                    val priorPulls = h.api.pullCallCount
+                    val priorPushes = h.api.pushCallCount
+                    h.signInResponse = CompletableDeferred()
+                    assertTrue(h.tv.login("b@example.com", "test-password"))
                     runCurrent()
                     assertFalse(tv.beginRoutine(tvBodyweightRoutine()))
                     if (cancel) h.link.clear()
                     else h.signInResponse!!.complete(Result.failure(PortalApiException("rejected")))
                     runCurrent()
-                    assertFalse(h.link.isAuthenticated.value)
+                    assertTrue(h.link.isAuthenticated.value, "The previous session remains persisted after relogin failure/cancellation")
+                    assertEquals(priorPulls, h.api.pullCallCount, "Failed/cancelled relogin must not sync as the prior identity")
+                    assertEquals(priorPushes, h.api.pushCallCount, "Failed/cancelled relogin must not push as the prior identity")
+                    h.tv.onForeground()
+                    h.tv.syncTrigger.onWorkoutCompleted()
+                    runCurrent()
+                    assertEquals(priorPulls, h.api.pullCallCount, "Automatic sync remains revoked until identity is re-established")
+                    assertEquals(priorPushes, h.api.pushCallCount)
                     assertTrue(tv.beginRoutine(tvBodyweightRoutine()))
                     runCurrent()
                     assertNotNull(main.loadedRoutine.value, "cancel=$cancel: accepted training must actually load; preparing=${tv.preparing}, error=${tv.error}")
@@ -281,24 +362,50 @@ class TvAccountHooksTest {
     }
 
     @Test
-    fun reloginRequiresExplicitFirstSyncEvenWhenSameAccountHasPriorSyncTimestamp() = runTest {
+    fun successfulLoginDefersSyncForOwnershipConflictUntilExplicitRecovery() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val h = AccountFixture(owner = "owner-b")
+        h.storage.setOwnershipConflict("owner-b", "ownership refusal requires recovery")
+        try {
+            assertTrue(h.tv.login("b@example.com", "test-password"))
+            advanceUntilIdle()
+            assertIs<SyncState.OwnershipConflict>(h.link.syncState.value)
+            assertEquals(0, h.api.pushCallCount, "Unresolved ownership conflict must block pushes")
+            assertEquals(0, h.api.pullCallCount, "Unresolved ownership conflict must block pulls")
+            assertFalse(h.tv.syncNow(), "Sync Now remains blocked until explicit conflict recovery")
+
+            h.link.stopUploadingPreSwitchData()
+            advanceUntilIdle()
+            assertFalse(h.link.syncState.value is SyncState.OwnershipConflict)
+            assertTrue(h.tv.syncNow(), "Explicit recovery allows a separately requested sync")
+            advanceUntilIdle()
+            assertTrue(h.api.pushCallCount > 0)
+            assertTrue(h.api.pullCallCount > 0)
+        } finally { h.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun reloginSyncsImmediatelyAndKeepsAutomaticRefreshIdentityGuarded() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val h = AccountFixture(owner = "owner-b")
         try {
             assertTrue(h.tv.login("b@example.com", "test-password"))
             advanceUntilIdle()
+            assertTrue(h.api.pullCallCount > 0, "Successful TV sign-in performs its initial sync")
             assertTrue(h.tv.syncNow())
             advanceUntilIdle()
             assertTrue(h.manager.lastSyncTime.value > 0)
+            val pullsBeforeRelogin = h.api.pullCallCount
             assertTrue(h.tv.login("b@example.com", "test-password"))
             advanceUntilIdle()
-            val pulls = h.api.pullCallCount
+            val pullsAfterRelogin = h.api.pullCallCount
+            assertTrue(pullsAfterRelogin > pullsBeforeRelogin, "Relogin must sync before returning")
             h.tv.onForeground()
             h.tv.syncTrigger.onWorkoutCompleted()
-            assertEquals(pulls, h.api.pullCallCount)
+            assertTrue(h.api.pullCallCount > pullsAfterRelogin, "A completed same-identity sync enables guarded automatic refresh")
             assertTrue(h.tv.syncNow())
             advanceUntilIdle()
-            assertTrue(h.api.pullCallCount > pulls)
+            assertTrue(h.api.pullCallCount > pullsAfterRelogin)
             h.training = true
             assertFalse(h.tv.login("other@example.com", "test-password"))
             assertFalse(h.tv.syncNow())
@@ -350,6 +457,9 @@ private class AccountFixture(owner: String = "owner-a") {
     val storage = PortalTokenStorage(MapSettings())
     var signInResponse: CompletableDeferred<Result<GoTrueAuthResponse>>? = null
     var signInCleanup: CompletableDeferred<Unit>? = null
+    var pullEntered: CompletableDeferred<Unit>? = null
+    var pullRelease: CompletableDeferred<Unit>? = null
+    var pullCleanup: CompletableDeferred<Unit>? = null
     var entitlementRelease: CompletableDeferred<Unit>? = null
     val barrier = ProfileMutationBarrier()
     val admission = TvActivityAdmission()
@@ -367,6 +477,22 @@ private class AccountFixture(owner: String = "owner-a") {
             entitlementRelease?.await()
             return Result.success(SubscriptionEntitlement(true, "premium"))
         }
+        override suspend fun pullPortalPayload(
+            knownEntityIds: KnownEntityIds,
+            deviceId: String,
+            profileId: String?,
+            cursor: String?,
+            pageSize: Int?,
+            lastSync: Long,
+        ): Result<PortalSyncPullResponse> {
+            pullEntered?.complete(Unit)
+            try {
+                pullRelease?.await()
+            } finally {
+                pullCleanup?.let { cleanup -> withContext(NonCancellable) { cleanup.await() } }
+            }
+            return super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize, lastSync)
+        }
     }.apply {
         signInResult = Result.success(GoTrueAuthResponse(accessToken = "test-access", tokenType = "bearer", expiresIn = 3600,
             expiresAt = currentTimeMillis() / 1000 + 3600, refreshToken = "test-refresh", user = GoTrueUser("owner-b", "b@example.com")))
@@ -379,7 +505,8 @@ private class AccountFixture(owner: String = "owner-a") {
     var pending = false
     var acknowledgedOwner: String? = null
     var training = false
-    val manager = SyncManager(api, storage, FakeSyncRepository(), FakeGamificationRepository(), FakeRepMetricRepository(), profiles,
+    val repository = FakeSyncRepository()
+    val manager = SyncManager(api, storage, repository, FakeGamificationRepository(), FakeRepMetricRepository(), profiles,
         FakeProfilePreferenceSyncRepository(), FakeExternalActivityRepository(), FakeVelocityOneRepMaxRepository(),
         profileMutationBarrier = barrier,
         isProfilePreferenceMigrationReady = { migrations.requiredMigrationState.value is RequiredMigrationState.Ready },

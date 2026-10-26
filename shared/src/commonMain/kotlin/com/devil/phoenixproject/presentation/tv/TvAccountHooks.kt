@@ -36,7 +36,9 @@ internal class TvAccountHooks(
         if (sessionOpen()) return fail("End training before changing account identity.")
         return accountOperation {
             explicitAccountId = null
-            link.loginTracked(email.trim(), password)
+            link.loginTracked(email.trim(), password) {
+                syncAfterLogin()
+            }
         }
     }
 
@@ -91,6 +93,22 @@ internal class TvAccountHooks(
         }
         error = null
         return true
+    }
+
+    private suspend fun syncAfterLogin() {
+        if (!migrationsReady || !identityReady) return
+        val accountId = link.currentUser.value?.id ?: return
+
+        syncTrigger.clearError()
+        link.syncInCurrentOperation()
+
+        // Login's one-shot sync is not permission to keep syncing a different,
+        // unresolved, or no-longer-current identity in the background.
+        if (migrationsReady && identityReady && link.currentUser.value?.id == accountId &&
+            link.syncState.value is SyncState.Success
+        ) {
+            explicitAccountId = accountId
+        }
     }
 
     private fun fail(message: String): Boolean { error = message; return false }

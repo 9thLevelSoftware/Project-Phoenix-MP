@@ -63,21 +63,26 @@ class LinkAccountViewModel(
     }
 
     /** Completion handle for hosts that must reserve admission across the entire shared operation. */
-    internal fun loginTracked(email: String, password: String): Job {
+    internal fun loginTracked(
+        email: String,
+        password: String,
+        afterSuccessfulLogin: (suspend () -> Unit)? = null,
+    ): Job {
         return scope.launch {
             try {
                 _uiState.value = LinkAccountUiState.Loading(provider = null)
 
-                syncManager.login(email, password)
-                    .onSuccess {
-                        // Logged-in UI reads SyncManager.isAuthenticated / currentUser.
-                        _uiState.value = LinkAccountUiState.Initial
-                    }
-                    .onFailure { error ->
-                        _uiState.value = LinkAccountUiState.Error(
-                            error.message ?: "Login failed",
-                        )
-                    }
+                val result = syncManager.login(email, password)
+                if (result.isSuccess) {
+                    // Logged-in UI reads SyncManager.isAuthenticated / currentUser.
+                    _uiState.value = LinkAccountUiState.Initial
+                    afterSuccessfulLogin?.invoke()
+                } else {
+                    val error = result.exceptionOrNull()
+                    _uiState.value = LinkAccountUiState.Error(
+                        error?.message ?: "Login failed",
+                    )
+                }
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
@@ -195,14 +200,19 @@ class LinkAccountViewModel(
 
     internal fun syncTracked(): Job {
         return scope.launch {
-            try {
-                syncManager.sync()
-            } catch (e: CancellationException) {
-                // Coroutine cancelled during clear() - preserve original cancellation
-                throw e
-            } catch (e: Exception) {
-                _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
-            }
+            syncInCurrentOperation()
+        }
+    }
+
+    /** Run the shared sync inline when it must remain part of a tracked operation. */
+    internal suspend fun syncInCurrentOperation() {
+        try {
+            syncManager.sync()
+        } catch (e: CancellationException) {
+            // Coroutine cancelled during clear() - preserve original cancellation
+            throw e
+        } catch (e: Exception) {
+            _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
         }
     }
 
