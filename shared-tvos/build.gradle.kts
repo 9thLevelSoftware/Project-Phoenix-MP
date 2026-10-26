@@ -43,8 +43,6 @@ kotlin {
                 "com/devil/phoenixproject/data/sync/PortalWirePlatformTest.kt",
                 "com/devil/phoenixproject/data/ble/CompositionGattFake.kt",
                 "com/devil/phoenixproject/data/repository/KableGattCompositionTest.kt",
-                "com/devil/phoenixproject/presentation/tv/TvSessionExitPolicyTest.kt",
-                "com/devil/phoenixproject/presentation/tv/TvRemoteControlPolicyTest.kt",
                 "com/devil/phoenixproject/presentation/tv/TvTelemetryWatchdogTest.kt",
                 "com/devil/phoenixproject/tvnative/**",
             )

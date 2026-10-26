@@ -146,7 +146,7 @@ jobs:
           assert cases, 'Native TV test reports contain no executed tests'
           assert not any(case.find('failure') is not None or case.find('error') is not None or case.find('skipped') is not None for case in cases)
           for name in ('CommandLimitsTest', 'WorkoutCommandValidatorTest', 'PortalWirePlatformTest',
-                       'TvRemoteControlPolicyTest', 'TvSessionExitPolicyTest', 'TvTelemetryWatchdogTest',
+                       'TvAppBridgeBoundaryTest', 'TvDiagnosticsStartupTest', 'TvTelemetryWatchdogTest',
                        'TvosGattCompositionTest', 'TvosParsedProgramTelemetryTest', 'PhantomBleRepositoryTest'):
               executed = [case for case in cases if name in case.get('classname', '') and case.find('skipped') is None]
               assert executed, f'Required native test class did not execute: {name}'
