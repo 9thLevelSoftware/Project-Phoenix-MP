@@ -4634,21 +4634,7 @@ class SyncManager(
         _serverDeletionNotice.update { current -> if (current == notice) null else current }
     }
 
-    private fun getPlatformName(): String {
-        // Guaranteed non-empty. The server's normalizeSyncPlatform rejects
-        // anything that doesn't trim-lowercase-contain "android"/"ios", so
-        // if the Platform actual ever returned an empty or odd string we'd
-        // log a server-side "defaulting to unknown" warning. Fall back on
-        // the compile-time isIosPlatform flag, then on "android" as the
-        // most common device, so the wire value is never blank.
-        val raw = getPlatform().name.lowercase().trim()
-        return when {
-            raw.contains("android") -> "android"
-            raw.contains("ios") -> "ios"
-            isIosPlatform -> "ios"
-            else -> "android"
-        }
-    }
+    private fun getPlatformName(): String = portalWirePlatform(getPlatform().name, isIosPlatform)
 
     private fun dedupeWorkoutSessionsById(
         sessions: List<WorkoutSession>,

@@ -21,5 +21,7 @@ dependencyResolutionManagement {
 rootProject.name = "ProjectPhoenix"
 
 include(":shared")
+include(":shared-tvos")
 include(":androidApp")
 include(":third_party:kable-core-android-patched")
+include(":third_party:kable-core-tvos")
