@@ -37,6 +37,7 @@ import com.devil.phoenixproject.util.CsvImportResult
 import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.rememberFilePicker
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -812,6 +813,7 @@ fun AnalyticsScreen(
                         importResult = result
                         showImportResultDialog = true
                     } catch (e: Exception) {
+                        e.rethrowIfCancellation()
                         importResult = CsvImportResult(
                             imported = 0,
                             skipped = 0,

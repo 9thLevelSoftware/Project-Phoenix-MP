@@ -68,6 +68,9 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                         existingKeys.add(key) // Track intra-file duplicates
                         imported++
                     } catch (e: Exception) {
+                        // CancellationException extends Exception. Rethrow it so a cancelled
+                        // import stops instead of recording a failed row and writing the rest.
+                        e.rethrowIfCancellation()
                         Logger.w("CsvImporter") { "Failed to save row: ${e.message}" }
                         if (e.message?.contains("UNIQUE", ignoreCase = true) == true) {
                             skipped++
@@ -89,6 +92,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                     errors = importErrors,
                 )
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.e("CsvImporter", e) { "Import failed" }
                 CsvImportResult(
                     imported = 0,
