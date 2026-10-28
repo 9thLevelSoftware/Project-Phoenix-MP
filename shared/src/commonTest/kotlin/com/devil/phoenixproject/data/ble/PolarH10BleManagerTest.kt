@@ -6,9 +6,6 @@ import com.devil.phoenixproject.domain.model.PolarHrMeasurement
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.util.BleConstants
-import com.juul.kable.Advertisement
-import com.juul.kable.Identifier
-import com.juul.kable.ManufacturerData
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,7 +14,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,36 +30,19 @@ import kotlinx.coroutines.test.runTest
 @OptIn(ExperimentalUuidApi::class)
 class PolarH10BleManagerTest {
 
-    private class FakeAdvertisement(
-        id: String = "00000000-0000-0000-0000-001122334455",
-        override val name: String? = null,
-        override val uuids: List<Uuid> = emptyList(),
-        override val rssi: Int = -60,
-    ) : Advertisement {
-        private val uuid: Any = Uuid.parse(id)
-        @Suppress("USELESS_CAST")
-        override val identifier: Identifier = if (uuid is Identifier) uuid else id as Identifier
-        override val peripheralName: String? get() = name
-        override val isConnectable: Boolean get() = true
-        override val txPower: Int? get() = null
-        override val manufacturerData: ManufacturerData? get() = null
-        override fun serviceData(uuid: Uuid): ByteArray? = null
-        override fun manufacturerData(companyIdentifierCode: Int): ByteArray? = null
-    }
-
     // ==================== Advertisement Filter Tests ====================
 
     @Test
     fun `isPolarH10Advertisement matches Polar H10 device names case-insensitively`() {
         val manager = PolarH10BleManager()
 
-        assertTrue(manager.isPolarH10Advertisement(FakeAdvertisement(name = "Polar H10 12345678")))
-        assertTrue(manager.isPolarH10Advertisement(FakeAdvertisement(name = "polar h10 9999")))
-        assertTrue(manager.isPolarH10Advertisement(FakeAdvertisement(name = "POLAR H10")))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H10 12345678", uuids = emptyList())))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "polar h10 9999", uuids = emptyList())))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "POLAR H10", uuids = emptyList())))
 
-        assertFalse(manager.isPolarH10Advertisement(FakeAdvertisement(name = "Vee_Trainer")))
-        assertFalse(manager.isPolarH10Advertisement(FakeAdvertisement(name = "VIT-200")))
-        assertFalse(manager.isPolarH10Advertisement(FakeAdvertisement(name = null)))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Vee_Trainer", uuids = emptyList())))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "VIT-200", uuids = emptyList())))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = emptyList())))
     }
 
     @Test
@@ -71,10 +50,10 @@ class PolarH10BleManagerTest {
         val manager = PolarH10BleManager()
 
         val hrUuid = BleConstants.Polar.HR_SERVICE_UUID
-        assertTrue(manager.isPolarH10Advertisement(FakeAdvertisement(name = null, uuids = listOf(hrUuid))))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = listOf(hrUuid))))
 
         val nusUuid = BleConstants.NUS_SERVICE_UUID
-        assertFalse(manager.isPolarH10Advertisement(FakeAdvertisement(name = "Unknown", uuids = listOf(nusUuid))))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Unknown", uuids = listOf(nusUuid))))
     }
 
     // ==================== Initial State Tests ====================
@@ -841,7 +820,7 @@ class PolarH10BleManagerTest {
 
     @Test
     fun `startSessionRecording resets isExplicitDisconnect and auto-reconnects to remembered sensor`() {
-        val fakeAd = FakeAdvertisement(
+        val fakeAd = CompositionAdvertisement(
             id = "00000000-0000-0000-0000-24acac0e5b59",
             name = "Polar H10 12345678",
             uuids = listOf(BleConstants.Polar.HR_SERVICE_UUID),
@@ -1033,6 +1012,10 @@ class PolarH10BleManagerTest {
         val summaryAfterIdle = manager.getSessionSummary(set2Id)
         assertNotNull(summaryAfterIdle, "Set 2 summary must survive Idle discardActiveRecording")
         assertEquals(165, summaryAfterIdle.avgHeartRateBpm)
+
+        // Verify an earlier set ID (set1Id) is rejected so Set 1's summary cannot be overwritten by Set 2's in-memory sessionHrs
+        manager.triggerCooldown(set1Id, forceRestart = true)
+        assertFalse(manager.isCooldownActive.value, "triggerCooldown for an earlier set ID must be rejected")
 
         // 4. User clicks "Start Cooldown" on RoutineCompleteScreen
         manager.triggerCooldown(manager.lastRecordedSessionId.value, forceRestart = true)

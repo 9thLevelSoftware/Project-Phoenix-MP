@@ -215,7 +215,6 @@ class PolarH10BleManager(
     val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
 
     private val completedCooldownSessionIds = mutableSetOf<String>()
-    private val committedSessionIds = mutableSetOf<String>()
     private var completedCooldownSessionId: String? = null
 
     val currentRecordingSessionId: String? get() = activeSessionId
@@ -231,7 +230,6 @@ class PolarH10BleManager(
         _cooldownStartHeartRate.value = null
         _activeCooldownSessionId.value = null
         completedCooldownSessionIds.remove(sessionId)
-        committedSessionIds.remove(sessionId)
         completedCooldownSessionId = null
         activeSessionId = sessionId
         recordedSessionId = sessionId
@@ -269,11 +267,8 @@ class PolarH10BleManager(
      */
     fun flushSessionTelemetry(sessionId: String) {
         val (beatsToFlush, ecgsToFlush) = sessionLock.withLock {
-            committedSessionIds.add(sessionId)
-            activeSessionId = if (_isCooldownActive.value && _activeCooldownSessionId.value == sessionId) {
-                sessionId
-            } else {
-                null
+            if (!_isCooldownActive.value) {
+                activeSessionId = null
             }
             recordedSessionId = sessionId
             _lastRecordedSessionId.value = sessionId
@@ -325,7 +320,7 @@ class PolarH10BleManager(
      */
     fun discardActiveRecording() {
         val targetSessionId = activeSessionId ?: return
-        if (_isCooldownActive.value || committedSessionIds.contains(targetSessionId)) return
+        if (_isCooldownActive.value) return
         sessionLock.withLock {
             bufferedBeatSamples.clear()
             bufferedEcgSegments.clear()
@@ -394,17 +389,9 @@ class PolarH10BleManager(
     }
 
     fun triggerCooldown(sessionId: String? = null, forceRestart: Boolean = false) {
-        val knownRecordedId = recordedSessionId ?: _lastRecordedSessionId.value
-        val candidateId: String = sessionId
-            ?: knownRecordedId
-            ?: (if (forceRestart) completedCooldownSessionId else null)
-            ?: return
-        val targetId: String = when {
-            candidateId == knownRecordedId -> candidateId
-            forceRestart && candidateId == completedCooldownSessionId -> candidateId
-            committedSessionIds.contains(candidateId) -> knownRecordedId ?: candidateId
-            else -> return
-        }
+        val knownRecordedId = _lastRecordedSessionId.value ?: recordedSessionId ?: completedCooldownSessionId
+        val targetId: String = sessionId ?: knownRecordedId ?: return
+        if (targetId != knownRecordedId) return
         if (forceRestart) {
             completedCooldownSessionIds.remove(targetId)
         }
@@ -457,20 +444,9 @@ class PolarH10BleManager(
     }
 
     fun endSessionRecording(sessionId: String? = null, forceRestart: Boolean = false) {
-        val knownRecordedId = recordedSessionId ?: _lastRecordedSessionId.value
-        val candidateId: String = sessionId
-            ?: knownRecordedId
-            ?: (if (forceRestart) completedCooldownSessionId else null)
-            ?: return
-        val targetSessionId: String = when {
-            candidateId == knownRecordedId -> candidateId
-            forceRestart && candidateId == completedCooldownSessionId -> candidateId
-            committedSessionIds.contains(candidateId) -> knownRecordedId ?: candidateId
-            else -> return
-        }
-        if (forceRestart && targetSessionId == completedCooldownSessionId) {
-            completedCooldownSessionIds.remove(targetSessionId)
-        }
+        val knownRecordedId = _lastRecordedSessionId.value ?: recordedSessionId ?: completedCooldownSessionId
+        val targetSessionId: String = sessionId ?: knownRecordedId ?: return
+        if (targetSessionId != knownRecordedId) return
         if (!forceRestart && completedCooldownSessionIds.contains(targetSessionId)) {
             Logger.d { "endSessionRecording: Cooldown already completed for session $targetSessionId; skipping" }
             return
@@ -735,6 +711,8 @@ class PolarH10BleManager(
     internal val isReconnectJobActiveForTesting: Boolean get() = reconnectJob?.isActive == true
 
     private var scanJob: Job? = null
+
+    @Volatile
     private var reconnectJob: Job? = null
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
 
@@ -874,9 +852,8 @@ class PolarH10BleManager(
         if (reconnectJob?.isActive == true) {
             return
         }
-        reconnectJob = scope.launch {
-            autoReconnectIfRemembered()
-        }
+        reconnectJob = scope.launch { autoReconnectIfRemembered() }
+            .also { job -> job.invokeOnCompletion { if (reconnectJob === job) reconnectJob = null } }
     }
 
     /**
@@ -949,7 +926,6 @@ class PolarH10BleManager(
         val currentJob = currentCoroutineContext()[Job]
         if (reconnectJob !== currentJob) {
             reconnectJob?.cancel()
-            reconnectJob = null
         }
 
         val wasScanning = scanJob?.isActive == true || _connectionState.value is ConnectionState.Scanning
@@ -1149,7 +1125,8 @@ class PolarH10BleManager(
                         val measurement = parsePolarHrMeasurement(data) ?: return@collect
                         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
                             log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-                            if (previousContactDetected == true) {
+                            val hadContact = previousContactDetected == true
+                            if (previousContactDetected != false) {
                                 previousContactDetected = false
                                 if (!measurement.contactDetected) {
                                     logRepo.warning(
@@ -1158,11 +1135,13 @@ class PolarH10BleManager(
                                         tag = "HRM",
                                     )
                                 }
-                                logRepo.debug(
-                                    eventType = LogEventType.DIAGNOSTIC,
-                                    message = "[HRM] Contact lost (contact: true -> false)",
-                                    tag = "HRM",
-                                )
+                                if (hadContact) {
+                                    logRepo.debug(
+                                        eventType = LogEventType.DIAGNOSTIC,
+                                        message = "[HRM] Contact lost (contact: true -> false)",
+                                        tag = "HRM",
+                                    )
+                                }
                             }
                             _isContactDetected.value = false
                             clearCachedTelemetry()
@@ -1207,7 +1186,8 @@ class PolarH10BleManager(
             return
         }
         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-            if (previousContactDetected == true) {
+            val hadContact = previousContactDetected == true
+            if (previousContactDetected != false) {
                 previousContactDetected = false
                 if (!measurement.contactDetected) {
                     logRepo.warning(
@@ -1216,11 +1196,13 @@ class PolarH10BleManager(
                         tag = "HRM",
                     )
                 }
-                logRepo.debug(
-                    eventType = LogEventType.DIAGNOSTIC,
-                    message = "[HRM] Contact lost (contact: true -> false)",
-                    tag = "HRM",
-                )
+                if (hadContact) {
+                    logRepo.debug(
+                        eventType = LogEventType.DIAGNOSTIC,
+                        message = "[HRM] Contact lost (contact: true -> false)",
+                        tag = "HRM",
+                    )
+                }
             }
             _isContactDetected.value = false
             clearCachedTelemetry()
@@ -1811,7 +1793,6 @@ class PolarH10BleManager(
                 peripheral = null
                 p.disconnect()
             } catch (e: Exception) {
-                peripheral = null
                 e.rethrowIfCancellation()
                 log.w { "Error during Polar disconnect: ${e.message}" }
             }
