@@ -534,7 +534,7 @@ class DefaultWorkoutSessionManager(
                             is WorkoutState.Completed, WorkoutState.RoutineComplete -> {
                                 if (polarBleManager.isConnected.value) {
                                     polarBleManager.endSessionRecording(
-                                        coordinator.currentSessionId ?: polarBleManager.lastRecordedSessionId.value,
+                                        polarBleManager.lastRecordedSessionId.value ?: coordinator.currentSessionId,
                                     )
                                 }
                             }
@@ -542,8 +542,7 @@ class DefaultWorkoutSessionManager(
                                 polarBleManager.updateSessionPhase("REST")
                             }
                             is WorkoutState.Idle -> {
-                                if (polarBleManager.currentRecordingSessionId != null &&
-                                    !polarBleManager.isCooldownActive.value &&
+                                if (!polarBleManager.isCooldownActive.value &&
                                     coordinator.routineFlowState.value !is RoutineFlowState.Complete) {
                                     polarBleManager.discardActiveRecording()
                                 }
@@ -563,7 +562,7 @@ class DefaultWorkoutSessionManager(
                         if (flowState is RoutineFlowState.Complete) {
                             if (polarBleManager.isConnected.value) {
                                 polarBleManager.endSessionRecording(
-                                    coordinator.currentSessionId ?: polarBleManager.lastRecordedSessionId.value,
+                                    polarBleManager.lastRecordedSessionId.value ?: coordinator.currentSessionId,
                                 )
                             }
                         }

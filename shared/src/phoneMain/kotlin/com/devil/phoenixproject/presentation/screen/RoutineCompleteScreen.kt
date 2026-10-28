@@ -264,14 +264,10 @@ fun RoutineCompleteScreen(
                 val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
                 val workoutHistory by viewModel.workoutHistory.collectAsState()
                 val latestCompletedSession = remember(lastRecordedSessionId, workoutHistory) {
-                    if (lastRecordedSessionId != null) {
-                        workoutHistory.firstOrNull { it.id == lastRecordedSessionId }
-                    } else {
-                        workoutHistory.maxByOrNull { it.timestamp }
-                    }
+                    lastRecordedSessionId?.let { id -> workoutHistory.firstOrNull { it.id == id } }
                 }
                 PolarSessionAnalyticsCard(
-                    sessionId = lastRecordedSessionId ?: latestCompletedSession?.id,
+                    sessionId = lastRecordedSessionId,
                     session = latestCompletedSession,
                     modifier = Modifier.fillMaxWidth(),
                     polarBleManager = polarBleManager,

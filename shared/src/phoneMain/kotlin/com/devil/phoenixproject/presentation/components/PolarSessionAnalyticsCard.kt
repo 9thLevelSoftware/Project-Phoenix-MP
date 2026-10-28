@@ -552,9 +552,10 @@ fun PolarSessionAnalyticsCard(
                                     ) {
                                         TextButton(
                                             onClick = {
-                                                val targetId = polarBleManager?.lastRecordedSessionId?.value
-                                                    ?: resolvedSessionId
-                                                polarBleManager?.triggerCooldown(targetId, forceRestart = true)
+                                                polarBleManager?.triggerCooldown(
+                                                    polarBleManager.lastRecordedSessionId.value,
+                                                    forceRestart = true,
+                                                )
                                             },
                                         ) {
                                             Icon(
@@ -585,10 +586,10 @@ fun PolarSessionAnalyticsCard(
                                     )
                                     FilledTonalButton(
                                         onClick = {
-                                            val targetId = polarBleManager?.lastRecordedSessionId?.value
-                                                ?: resolvedSessionId
-                                                ?: polarBleManager?.latestSessionSummary?.value?.sessionId
-                                            polarBleManager?.triggerCooldown(targetId, forceRestart = true)
+                                            polarBleManager?.triggerCooldown(
+                                                polarBleManager.lastRecordedSessionId.value,
+                                                forceRestart = true,
+                                            )
                                         },
                                         shape = MaterialTheme.shapes.small,
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),

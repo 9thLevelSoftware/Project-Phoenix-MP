@@ -392,12 +392,6 @@ class PolarH10BleManager(
         val knownRecordedId = _lastRecordedSessionId.value ?: recordedSessionId ?: completedCooldownSessionId
         val targetId: String = sessionId ?: knownRecordedId ?: return
         if (targetId != knownRecordedId) return
-        if (forceRestart) {
-            completedCooldownSessionIds.remove(targetId)
-        }
-        recordedSessionId = targetId
-        activeSessionId = targetId
-        _lastRecordedSessionId.value = targetId
         endSessionRecording(targetId, forceRestart = forceRestart)
         if (_connectionState.value is ConnectionState.Connected) {
             scope.launch {
@@ -1125,30 +1119,7 @@ class PolarH10BleManager(
                         val measurement = parsePolarHrMeasurement(data) ?: return@collect
                         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
                             log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-                            val hadContact = previousContactDetected == true
-                            if (previousContactDetected != false) {
-                                previousContactDetected = false
-                                if (!measurement.contactDetected) {
-                                    logRepo.warning(
-                                        eventType = LogEventType.DIAGNOSTIC,
-                                        message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
-                                        tag = "HRM",
-                                    )
-                                }
-                                if (hadContact) {
-                                    logRepo.debug(
-                                        eventType = LogEventType.DIAGNOSTIC,
-                                        message = "[HRM] Contact lost (contact: true -> false)",
-                                        tag = "HRM",
-                                    )
-                                }
-                            }
-                            _isContactDetected.value = false
-                            clearCachedTelemetry()
-                            if (_isCooldownActive.value) {
-                                log.i { "Terminating recovery cooldown due to strap removal or critical battery" }
-                                cancelCooldown()
-                            }
+                            handleNoContact(measurement)
                             return@collect
                         }
 
@@ -1176,6 +1147,33 @@ class PolarH10BleManager(
         }
     }
 
+    private fun handleNoContact(measurement: PolarHrMeasurement) {
+        val hadContact = previousContactDetected == true
+        if (previousContactDetected != false) {
+            previousContactDetected = false
+            if (!measurement.contactDetected) {
+                logRepo.warning(
+                    eventType = LogEventType.DIAGNOSTIC,
+                    message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
+                    tag = "HRM",
+                )
+            }
+            if (hadContact) {
+                logRepo.debug(
+                    eventType = LogEventType.DIAGNOSTIC,
+                    message = "[HRM] Contact lost (contact: true -> false)",
+                    tag = "HRM",
+                )
+            }
+        }
+        _isContactDetected.value = false
+        clearCachedTelemetry()
+        if (_isCooldownActive.value) {
+            log.i { "Terminating recovery cooldown due to strap removal or critical battery" }
+            cancelCooldown()
+        }
+    }
+
     /**
      * Reconstructs accurate R-wave beat timestamps by chaining RR intervals together,
      * eliminating packet jitter across connection intervals. Automatically re-anchors
@@ -1186,29 +1184,7 @@ class PolarH10BleManager(
             return
         }
         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-            val hadContact = previousContactDetected == true
-            if (previousContactDetected != false) {
-                previousContactDetected = false
-                if (!measurement.contactDetected) {
-                    logRepo.warning(
-                        eventType = LogEventType.DIAGNOSTIC,
-                        message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
-                        tag = "HRM",
-                    )
-                }
-                if (hadContact) {
-                    logRepo.debug(
-                        eventType = LogEventType.DIAGNOSTIC,
-                        message = "[HRM] Contact lost (contact: true -> false)",
-                        tag = "HRM",
-                    )
-                }
-            }
-            _isContactDetected.value = false
-            clearCachedTelemetry()
-            if (_isCooldownActive.value) {
-                cancelCooldown()
-            }
+            handleNoContact(measurement)
             return
         }
         if (previousContactDetected != true) {

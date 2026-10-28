@@ -1,10 +1,13 @@
 package com.devil.phoenixproject.data.ble
 
+import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.PolarAccSample
 import com.devil.phoenixproject.domain.model.PolarHrMeasurement
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.util.BleConstants
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
@@ -930,67 +933,12 @@ class PolarH10BleManagerTest {
 
         val set1Id = "ea838be2-3983-4ec3-8eb4-c8a75fdd52a2"
         val set2Id = "9615342a-142c-4cd7-838e-5cf38ab9b7f7"
-
-        fun insertSessionRow(id: String, ts: Long) {
-            database.phoenixDatabaseQueries.insertSession(
-                id = id,
-                timestamp = ts,
-                mode = "OldSchool",
-                targetReps = 10L,
-                weightPerCableKg = 20.0,
-                progressionKg = 0.0,
-                duration = 30_000L,
-                totalReps = 10L,
-                warmupReps = 0L,
-                workingReps = 10L,
-                isJustLift = 0L,
-                stopAtTop = 0L,
-                eccentricLoad = 100L,
-                echoLevel = 1L,
-                exerciseId = null,
-                exerciseName = "Bench Press",
-                routineSessionId = "c1b268f6-6402-4a07-b50d-48ed76a023bc",
-                routineName = "Test Routine",
-                safetyFlags = 0L,
-                deloadWarningCount = 0L,
-                romViolationCount = 0L,
-                spotterActivations = 0L,
-                peakForceConcentricA = null,
-                peakForceConcentricB = null,
-                peakForceEccentricA = null,
-                peakForceEccentricB = null,
-                avgForceConcentricA = null,
-                avgForceConcentricB = null,
-                avgForceEccentricA = null,
-                avgForceEccentricB = null,
-                heaviestLiftKg = null,
-                totalVolumeKg = null,
-                cableCount = null,
-                estimatedCalories = null,
-                warmupAvgWeightKg = null,
-                workingAvgWeightKg = null,
-                burnoutAvgWeightKg = null,
-                peakWeightKg = null,
-                rpe = null,
-                routineId = null,
-                avgMcvMmS = null,
-                avgAsymmetryPercent = null,
-                totalVelocityLossPercent = null,
-                dominantSide = null,
-                strengthProfile = null,
-                formScore = null,
-                profile_id = "default",
-                display_multiplier = null,
-                externalAddedLoadKg = 0.0,
-                counterweightKg = 0.0,
-                rackItemsJson = "[]",
-            )
-        }
+        val workoutRepo = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
 
         // 1. Set 1 recording & flush
         manager.startSessionRecording(set1Id, "WORKING_SET")
         manager.processRrIntervals(PolarHrMeasurement(hr = 148, contactDetected = true, rrIntervalsMs = listOf(800.0)))
-        insertSessionRow(set1Id, simulatedTime)
+        workoutRepo.saveSession(WorkoutSession(id = set1Id, timestamp = simulatedTime))
         manager.flushSessionTelemetry(set1Id)
         assertNull(manager.currentRecordingSessionId, "flushSessionTelemetry must clear activeSessionId once committed")
         assertEquals(set1Id, manager.lastRecordedSessionId.value)
@@ -999,7 +947,7 @@ class PolarH10BleManagerTest {
         simulatedTime += 60_000L
         manager.startSessionRecording(set2Id, "WORKING_SET")
         manager.processRrIntervals(PolarHrMeasurement(hr = 165, contactDetected = true, rrIntervalsMs = listOf(720.0)))
-        insertSessionRow(set2Id, simulatedTime)
+        workoutRepo.saveSession(WorkoutSession(id = set2Id, timestamp = simulatedTime))
         manager.flushSessionTelemetry(set2Id)
         assertNull(manager.currentRecordingSessionId)
         assertEquals(set2Id, manager.lastRecordedSessionId.value)
