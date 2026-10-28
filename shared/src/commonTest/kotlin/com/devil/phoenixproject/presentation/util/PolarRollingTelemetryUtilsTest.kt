@@ -2,7 +2,7 @@ package com.devil.phoenixproject.presentation.util
 
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.util.PolarTelemetryUtils
-import com.devil.phoenixproject.util.computeRollingRmssd
+import com.devil.phoenixproject.util.PolarTelemetryUtils.computeRollingRmssd
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

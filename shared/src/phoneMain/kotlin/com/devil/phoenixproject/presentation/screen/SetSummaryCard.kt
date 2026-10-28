@@ -45,6 +45,7 @@ import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.cos
@@ -111,6 +112,7 @@ fun SetSummaryCard(
     // An explicit tap (onContinue) still proceeds. Non-terminal summaries are unchanged.
     isTerminalSummary: Boolean = false,
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -437,6 +439,7 @@ fun SetSummaryCard(
             PolarSessionAnalyticsCard(
                 sessionId = summary.sessionId,
                 polarBleManager = polarBleManager,
+                workoutRepository = workoutRepository,
                 showCooldown = false,
                 modifier = Modifier.padding(bottom = 12.dp),
             )

@@ -21,8 +21,11 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -32,12 +35,15 @@ import kotlinx.coroutines.test.runTest
 class PolarH10BleManagerTest {
 
     private class FakeAdvertisement(
+        id: String = "00000000-0000-0000-0000-001122334455",
         override val name: String? = null,
         override val uuids: List<Uuid> = emptyList(),
         override val rssi: Int = -60,
     ) : Advertisement {
+        private val uuid: Any = Uuid.parse(id)
+        @Suppress("USELESS_CAST")
+        override val identifier: Identifier = if (uuid is Identifier) uuid else id as Identifier
         override val peripheralName: String? get() = name
-        override val identifier: Identifier get() = "00:11:22:33:44:55"
         override val isConnectable: Boolean get() = true
         override val txPower: Int? get() = null
         override val manufacturerData: ManufacturerData? get() = null
@@ -689,14 +695,23 @@ class PolarH10BleManagerTest {
         assertTrue(manager.isCooldownActive.value)
         assertEquals("session-A", manager.activeCooldownSessionId.value)
 
-        // Ending cooldown clears state
+        // Ending cooldown clears active recording state, while preserving lastRecordedSessionId
+        // so the post-workout summary "Start Cooldown" button can restart cooldown for session-A
         manager.stopCooldown()
         assertFalse(manager.isCooldownActive.value)
         assertNull(manager.activeCooldownSessionId.value)
         assertNull(manager.currentRecordingSessionId)
+        assertEquals("session-A", manager.lastRecordedSessionId.value)
 
-        // Once cooldown ended, further queries reject
+        // Once cooldown ended, summary queries reject, arbitrary sessions reject cooldown,
+        // but the just-finished session-A can explicitly restart cooldown via forceRestart
         assertNull(manager.getSessionSummary("session-A"))
+        manager.triggerCooldown("session-B", forceRestart = true)
+        assertFalse(manager.isCooldownActive.value)
+        manager.triggerCooldown("session-A", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals("session-A", manager.activeCooldownSessionId.value)
+        manager.stopCooldown()
 
         testScope.cancel()
     }
@@ -826,18 +841,22 @@ class PolarH10BleManagerTest {
 
     @Test
     fun `startSessionRecording resets isExplicitDisconnect and auto-reconnects to remembered sensor`() {
+        val fakeAd = FakeAdvertisement(
+            id = "00000000-0000-0000-0000-24acac0e5b59",
+            name = "Polar H10 12345678",
+            uuids = listOf(BleConstants.Polar.HR_SERVICE_UUID),
+        )
+        val rememberedId = fakeAd.identifier.toString()
         val settings = MapSettings()
-        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, rememberedId)
         settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_NAME, "Polar H10 12345678")
 
         val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
         val manager = PolarH10BleManager(
             settings = settings,
             scope = testScope,
-            autoReconnectRunner = {
-                delay(Long.MAX_VALUE)
-                Result.success(Unit)
-            },
+            advertisements = { flowOf(fakeAd) },
+            createPeripheral = { ad -> CompositionGattFake(ad, Dispatchers.Unconfined) },
         )
 
         runTest {
@@ -845,11 +864,16 @@ class PolarH10BleManagerTest {
         }
         assertTrue(manager.isExplicitDisconnectForTesting)
 
-        // Starting a workout should clear the explicit disconnect suppression and trigger auto-reconnect
+        // Starting a workout should clear the explicit disconnect suppression and complete auto-reconnect
+        // through connect() without self-cancelling reconnectJob
         manager.startSessionRecording("session-123", "WORKING_SET")
 
         assertFalse(manager.isExplicitDisconnectForTesting)
-        assertTrue(manager.isReconnectJobActiveForTesting)
+        assertTrue(manager.isConnected.value)
+        assertEquals(
+            ConnectionState.Connected("Polar H10 12345678", rememberedId),
+            manager.connectionState.value,
+        )
 
         testScope.cancel()
     }
@@ -863,10 +887,7 @@ class PolarH10BleManagerTest {
         val manager = PolarH10BleManager(
             settings = settings,
             scope = testScope,
-            autoReconnectRunner = {
-                delay(Long.MAX_VALUE)
-                Result.success(Unit)
-            },
+            advertisements = { flow { awaitCancellation() } },
         )
 
         manager.ensureConnectedOrReconnect()

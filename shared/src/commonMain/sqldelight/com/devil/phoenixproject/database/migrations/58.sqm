@@ -14,4 +14,3 @@ ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_local_generation 
 ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_server_revision INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE UserProfilePreferences ADD COLUMN custom_equipment_dirty INTEGER NOT NULL DEFAULT 0;
-

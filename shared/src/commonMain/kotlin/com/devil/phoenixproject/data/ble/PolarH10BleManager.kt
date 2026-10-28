@@ -32,7 +32,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -84,7 +86,8 @@ class PolarH10BleManager(
     private val timeSource: () -> Long = DEFAULT_WALL_CLOCK,
     monotonicTimeSource: (() -> Long)? = null,
     private val logRepo: ConnectionLogRepository = ConnectionLogRepository.instance,
-    internal var autoReconnectRunner: (suspend () -> Result<Unit>)? = null,
+    private val advertisements: () -> Flow<Advertisement> = { Scanner {}.advertisements },
+    private val createPeripheral: (Advertisement) -> Peripheral = { Peripheral(it) },
 ) {
     private val log = Logger.withTag("PolarH10BleManager")
 
@@ -152,7 +155,6 @@ class PolarH10BleManager(
 
     // ===== Session Recording & Recovery State =====
     internal data class BufferedBeatSample(
-        val sessionId: String,
         val timestampMs: Long,
         val phase: String,
         val hrBpm: Long,
@@ -164,7 +166,6 @@ class PolarH10BleManager(
     )
 
     internal data class BufferedEcgSegment(
-        val sessionId: String,
         val sensorTimestampNs: Long,
         val wallClockTimestampMs: Long,
         val phase: String,
@@ -181,7 +182,6 @@ class PolarH10BleManager(
     private val recentRrs = ArrayDeque<Double>()
     private val bufferedBeatSamples = mutableListOf<BufferedBeatSample>()
     private val bufferedEcgSegments = mutableListOf<BufferedEcgSegment>()
-    private val committedSessionIds = mutableSetOf<String>()
     private var maxTorsoPitch: Double? = null
     private var maxTorsoRoll: Double? = null
     private var endHeartRate: Int? = null
@@ -238,7 +238,6 @@ class PolarH10BleManager(
         sessionLock.withLock {
             bufferedBeatSamples.clear()
             bufferedEcgSegments.clear()
-            committedSessionIds.remove(sessionId)
             sessionHrs.clear()
             sessionRrs.clear()
             recentRrs.clear()
@@ -266,12 +265,8 @@ class PolarH10BleManager(
      * Flush buffered telemetry records to the database within a transaction once the parent
      * [WorkoutSession] row is committed. Subsequent records will insert directly into SQLite.
      */
-    fun flushSessionTelemetry(sessionId: String, fallbackSessionId: String? = null) {
+    fun flushSessionTelemetry(sessionId: String) {
         val (beatsToFlush, ecgsToFlush) = sessionLock.withLock {
-            committedSessionIds.add(sessionId)
-            if (fallbackSessionId != null) {
-                committedSessionIds.add(fallbackSessionId)
-            }
             activeSessionId = sessionId
             recordedSessionId = sessionId
             _lastRecordedSessionId.value = sessionId
@@ -329,8 +324,8 @@ class PolarH10BleManager(
             maxTorsoRoll = null
         }
         val targetSessionId = activeSessionId
-        if (targetSessionId != null) {
-            committedSessionIds.remove(targetSessionId)
+        if (targetSessionId != null && _lastRecordedSessionId.value == targetSessionId) {
+            _lastRecordedSessionId.value = null
         }
         lastBeatMonotonicMs = null
         activeSessionId = null
@@ -439,7 +434,6 @@ class PolarH10BleManager(
         activeSessionId = null
         _activeCooldownSessionId.value = null
         recordedSessionId = null
-        _lastRecordedSessionId.value = null
         scope.launch {
             stopEcgStream()
             stopAccStream()
@@ -549,7 +543,6 @@ class PolarH10BleManager(
             activeSessionId = null
             _activeCooldownSessionId.value = null
             recordedSessionId = null
-            _lastRecordedSessionId.value = null
             stopEcgStream()
             stopAccStream()
         }
@@ -787,8 +780,7 @@ class PolarH10BleManager(
             scanJob = scope.launch {
                 try {
                     withTimeoutOrNull(BleConstants.SCAN_TIMEOUT_MS) {
-                        Scanner {}
-                            .advertisements
+                        advertisements()
                             .filter { adv -> isPolarH10Advertisement(adv) }
                             .collect { adv ->
                                 val identifier = adv.identifier.toString()
@@ -851,21 +843,19 @@ class PolarH10BleManager(
 
     /**
      * Resets explicit disconnect suppression and triggers an immediate auto-reconnect attempt
-     * to a remembered Polar sensor.
+     * to a remembered Polar sensor if not already connecting or reconnecting.
      */
-    fun ensureConnectedOrReconnect(): Job {
+    fun ensureConnectedOrReconnect() {
         isExplicitDisconnect = false
-        reconnectJob?.cancel()
-        val job = scope.launch {
-            val runner = autoReconnectRunner
-            if (runner != null) {
-                runner.invoke()
-            } else {
-                autoReconnectIfRemembered()
-            }
+        if (_connectionState.value is ConnectionState.Connected || _connectionState.value is ConnectionState.Connecting) {
+            return
         }
-        reconnectJob = job
-        return job
+        if (reconnectJob?.isActive == true) {
+            return
+        }
+        reconnectJob = scope.launch {
+            autoReconnectIfRemembered()
+        }
     }
 
     /**
@@ -901,8 +891,7 @@ class PolarH10BleManager(
             val matchedDevice = withTimeoutOrNull(timeoutMs) {
                 var found: ScannedDevice? = null
                 try {
-                    Scanner {}
-                        .advertisements
+                    advertisements()
                         .filter { isPolarH10Advertisement(it) }
                         .collect { adv ->
                             val id = adv.identifier.toString()
@@ -936,8 +925,11 @@ class PolarH10BleManager(
      */
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         log.i { "Connecting to Polar H10: ${device.name} (${device.address})" }
-        reconnectJob?.cancel()
-        reconnectJob = null
+        val currentJob = currentCoroutineContext()[Job]
+        if (reconnectJob !== currentJob) {
+            reconnectJob?.cancel()
+            reconnectJob = null
+        }
 
         val wasScanning = scanJob?.isActive == true || _connectionState.value is ConnectionState.Scanning
         stopScanning()
@@ -963,7 +955,7 @@ class PolarH10BleManager(
             isExplicitDisconnect = false
             wasEverConnected = false
 
-            val p = Peripheral(advertisement)
+            val p = createPeripheral(advertisement)
             peripheral = p
 
             stateObserverJob = scope.launch {
@@ -1136,15 +1128,15 @@ class PolarH10BleManager(
                         val measurement = parsePolarHrMeasurement(data) ?: return@collect
                         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
                             log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-                            if (!measurement.contactDetected) {
-                                logRepo.warning(
-                                    eventType = LogEventType.DIAGNOSTIC,
-                                    message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
-                                    tag = "HRM",
-                                )
-                            }
                             if (previousContactDetected == true) {
                                 previousContactDetected = false
+                                if (!measurement.contactDetected) {
+                                    logRepo.warning(
+                                        eventType = LogEventType.DIAGNOSTIC,
+                                        message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
+                                        tag = "HRM",
+                                    )
+                                }
                                 logRepo.debug(
                                     eventType = LogEventType.DIAGNOSTIC,
                                     message = "[HRM] Contact lost (contact: true -> false)",
@@ -1194,15 +1186,15 @@ class PolarH10BleManager(
             return
         }
         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-            if (!measurement.contactDetected) {
-                logRepo.warning(
-                    eventType = LogEventType.DIAGNOSTIC,
-                    message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
-                    tag = "HRM",
-                )
-            }
             if (previousContactDetected == true) {
                 previousContactDetected = false
+                if (!measurement.contactDetected) {
+                    logRepo.warning(
+                        eventType = LogEventType.DIAGNOSTIC,
+                        message = "[HRM] Poor skin contact detected (contact=${measurement.contactDetected}, hr=${measurement.hr})",
+                        tag = "HRM",
+                    )
+                }
                 logRepo.debug(
                     eventType = LogEventType.DIAGNOSTIC,
                     message = "[HRM] Contact lost (contact: true -> false)",
@@ -1275,7 +1267,6 @@ class PolarH10BleManager(
                 sessionLock.withLock {
                     bufferedBeatSamples.add(
                         BufferedBeatSample(
-                            sessionId = currentSid,
                             timestampMs = beat.timestampMs,
                             phase = currentPhase,
                             hrBpm = beat.hr.toLong(),
@@ -1400,7 +1391,6 @@ class PolarH10BleManager(
                     sessionLock.withLock {
                         bufferedEcgSegments.add(
                             BufferedEcgSegment(
-                                sessionId = currentSid,
                                 sensorTimestampNs = measurement.sensorTimestampNs,
                                 wallClockTimestampMs = nowMs,
                                 phase = currentPhase,
@@ -1797,13 +1787,15 @@ class PolarH10BleManager(
                 if (_isAccStreaming.value) {
                     try { stopAccStream() } catch (_: Exception) {}
                 }
+                peripheral = null
                 p.disconnect()
             } catch (e: Exception) {
+                peripheral = null
                 e.rethrowIfCancellation()
                 log.w { "Error during Polar disconnect: ${e.message}" }
             }
             try {
-                p.closePeripheral()
+                p.close()
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Error during Polar close: ${e.message}" }
@@ -1875,7 +1867,7 @@ class PolarH10BleManager(
                 log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
             }
             try {
-                p.closePeripheral()
+                p.close()
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Cleanup close error (non-fatal): ${e.message}" }
@@ -1910,7 +1902,7 @@ class PolarH10BleManager(
                     p.disconnect()
                 } catch (_: Exception) {}
                 try {
-                    p.closePeripheral()
+                    p.close()
                 } catch (_: Exception) {}
             }
         }

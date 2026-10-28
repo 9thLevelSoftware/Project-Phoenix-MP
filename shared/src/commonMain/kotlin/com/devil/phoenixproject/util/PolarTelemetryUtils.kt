@@ -142,16 +142,6 @@ object PolarTelemetryUtils {
 }
 
 /**
- * Computes rolling RMSSD (Root Mean Square of Successive Differences) in milliseconds
- * over a sliding time window (default 60 seconds).
- */
-fun computeRollingRmssd(
-    beats: List<PolarRrBeat>,
-    windowMs: Long = 60_000L,
-    currentTimeMs: Long,
-): Double? = PolarTelemetryUtils.computeRollingRmssd(beats, windowMs, currentTimeMs)
-
-/**
  * Stateful exponential moving average (EMA) low-pass filter for 50 Hz Polar ACC stream.
  */
 class PolarAccFilter(

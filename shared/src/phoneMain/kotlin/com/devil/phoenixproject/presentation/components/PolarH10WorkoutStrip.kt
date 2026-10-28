@@ -57,7 +57,7 @@ import com.devil.phoenixproject.domain.model.PolarAccSample
 import com.devil.phoenixproject.domain.model.PolarRrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.PolarTelemetryUtils
-import com.devil.phoenixproject.util.computeRollingRmssd
+import com.devil.phoenixproject.util.PolarTelemetryUtils.computeRollingRmssd
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt

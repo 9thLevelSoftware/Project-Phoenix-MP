@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -145,6 +146,7 @@ fun WorkoutTab(
     // passes the active profile's overlay; the empty default is for previews/tests only.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
     val connectionState = state.connectionState
     val workoutState = state.workoutState
@@ -301,6 +303,7 @@ fun WorkoutTab(
                             onResetForNewWorkout = onResetForNewWorkout,
                             machineTeardownState = machineTeardownState,
                             polarBleManager = polarBleManager,
+                            workoutRepository = workoutRepository,
                         )
                     }
 
@@ -428,6 +431,7 @@ fun WorkoutTab(
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             polarBleManager = polarBleManager,
+                            workoutRepository = workoutRepository,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
                                 // Just Lift set. If the user already decided, or the set isn't a
@@ -947,6 +951,7 @@ private fun CompletedCard(
     onResetForNewWorkout: () -> Unit,
     machineTeardownState: MachineTeardownState,
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1040,6 +1045,7 @@ private fun CompletedCard(
             PolarSessionAnalyticsCard(
                 modifier = Modifier.padding(vertical = Spacing.small),
                 polarBleManager = polarBleManager,
+                workoutRepository = workoutRepository,
             )
 
             if (hasMoreExercises && nextExercise != null) {

@@ -199,7 +199,7 @@ fun ActiveWorkoutScreen(
     }
 
     LaunchedEffect(Unit) {
-        polarBleManager.autoReconnectIfRemembered()
+        polarBleManager.ensureConnectedOrReconnect()
     }
 
     LaunchedEffect(Unit) {
@@ -562,6 +562,7 @@ fun ActiveWorkoutScreen(
                 userPreferences = userPreferences,
                 customEquipmentOverlay = customEquipmentOverlay,
                 polarBleManager = viewModel.polarBleManager,
+                workoutRepository = viewModel.workoutRepository,
             )
         }
     }

@@ -45,6 +45,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.koin.mp.KoinPlatformTools
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -66,7 +67,9 @@ fun PolarSessionAnalyticsCard(
     showCooldown: Boolean = true,
     modifier: Modifier = Modifier,
     polarBleManager: PolarH10BleManager? = null,
-    workoutRepository: WorkoutRepository? = null,
+    workoutRepository: WorkoutRepository? = remember {
+        KoinPlatformTools.defaultContext().getOrNull()?.getOrNull<WorkoutRepository>()
+    },
 ) {
     val connectionState = polarBleManager?.connectionState?.collectAsState()?.value ?: ConnectionState.Disconnected
     val isCooldownActive = polarBleManager?.isCooldownActive?.collectAsState()?.value ?: false
@@ -578,7 +581,7 @@ fun PolarSessionAnalyticsCard(
                                                 ?: polarBleManager?.lastRecordedSessionId?.value
                                                 ?: polarBleManager?.latestSessionSummary?.value?.sessionId
                                             if (targetId != null) {
-                                                polarBleManager?.triggerCooldown(targetId)
+                                                polarBleManager?.triggerCooldown(targetId, forceRestart = true)
                                             }
                                         },
                                         shape = MaterialTheme.shapes.small,

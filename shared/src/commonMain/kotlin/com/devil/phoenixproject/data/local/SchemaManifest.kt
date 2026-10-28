@@ -1772,7 +1772,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
         "synced_sync_generation",
         "ALTER TABLE WorkoutSession ADD COLUMN synced_sync_generation INTEGER NOT NULL DEFAULT 0 CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)",
     ),
-    // Migration 58: Polar H10 cardiac & torso biomechanics summary
+    // Migration 59: Polar H10 cardiac & torso biomechanics summary
     SchemaHealOperation("WorkoutSession", "avgHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN avgHeartRateBpm INTEGER"),
     SchemaHealOperation("WorkoutSession", "maxHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN maxHeartRateBpm INTEGER"),
     SchemaHealOperation("WorkoutSession", "minHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN minHeartRateBpm INTEGER"),
@@ -1784,7 +1784,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "maxTorsoRollDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL"),
 
     // ── MetricSample (8 columns) ─────────────────────────────────────────
-    // Migration 58: Polar H10 intra-set synchronized telemetry & torso biomechanics
+    // Migration 59: Polar H10 intra-set synchronized telemetry & torso biomechanics
     SchemaHealOperation("MetricSample", "heartRateBpm", "ALTER TABLE MetricSample ADD COLUMN heartRateBpm INTEGER"),
     SchemaHealOperation("MetricSample", "rrIntervalMs", "ALTER TABLE MetricSample ADD COLUMN rrIntervalMs REAL"),
     SchemaHealOperation("MetricSample", "torsoPitchDeg", "ALTER TABLE MetricSample ADD COLUMN torsoPitchDeg REAL"),

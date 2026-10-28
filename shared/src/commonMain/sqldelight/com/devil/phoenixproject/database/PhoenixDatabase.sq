@@ -123,7 +123,7 @@ CREATE TABLE WorkoutSession (
     local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
     synced_sync_generation INTEGER NOT NULL DEFAULT 0
         CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation),
-    -- Polar H10 cardiac & torso biomechanics summary (added in migration 58)
+    -- Polar H10 cardiac & torso biomechanics summary (added in migration 59)
     avgHeartRateBpm INTEGER,
     maxHeartRateBpm INTEGER,
     minHeartRateBpm INTEGER,
@@ -161,7 +161,7 @@ CREATE TABLE MetricSample (
     loadB REAL,
     power REAL,
     status INTEGER NOT NULL DEFAULT 0,
-    -- Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 58)
+    -- Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 59)
     heartRateBpm INTEGER,
     rrIntervalMs REAL,
     torsoPitchDeg REAL,
@@ -175,7 +175,7 @@ CREATE TABLE MetricSample (
 
 CREATE INDEX idx_metric_sample_session ON MetricSample(sessionId);
 
--- Continuous beat & recovery timeline (added in migration 58)
+-- Continuous beat & recovery timeline (added in migration 59)
 CREATE TABLE PolarBeatSample (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sessionId TEXT NOT NULL,
@@ -192,7 +192,7 @@ CREATE TABLE PolarBeatSample (
 
 CREATE INDEX idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs);
 
--- 130 Hz raw ECG trace storage (added in migration 58)
+-- 130 Hz raw ECG trace storage (added in migration 59)
 CREATE TABLE PolarEcgSegment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sessionId TEXT NOT NULL,
@@ -1233,7 +1233,7 @@ VALUES (
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
 
--- Polar Queries (added in migration 58)
+-- Polar Queries (added in migration 59)
 updateSessionPolarSummary:
 UPDATE WorkoutSession SET
     avgHeartRateBpm = :avgHeartRateBpm,
@@ -1262,9 +1262,6 @@ DELETE FROM PolarBeatSample WHERE sessionId = ?;
 countBackupPolarBeatSamples:
 SELECT COUNT(*) FROM PolarBeatSample WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
 
-selectAllBackupPolarBeatSamples:
-SELECT * FROM PolarBeatSample WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL) ORDER BY timestampMs ASC;
-
 insertPolarBeatSampleRestoreIfAbsent:
 INSERT OR IGNORE INTO PolarBeatSample (
     id, sessionId, timestampMs, phase, hrBpm, rrMs, rmssdMs,
@@ -1287,9 +1284,6 @@ DELETE FROM PolarEcgSegment WHERE sessionId = ?;
 
 countBackupPolarEcgSegments:
 SELECT COUNT(*) FROM PolarEcgSegment WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
-
-selectAllBackupPolarEcgSegments:
-SELECT * FROM PolarEcgSegment WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL) ORDER BY wallClockTimestampMs ASC;
 
 insertPolarEcgSegmentRestoreIfAbsent:
 INSERT OR IGNORE INTO PolarEcgSegment (

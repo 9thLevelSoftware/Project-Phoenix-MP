@@ -48,12 +48,3 @@ actual suspend fun Peripheral.requestMtuIfSupported(mtu: Int): Int? {
         null
     }
 }
-
-actual fun Peripheral.closePeripheral() {
-    try {
-        Logger.i("BleExtensions") { "🔌 Closing peripheral and releasing GATT resources" }
-        (this as? AutoCloseable)?.close()
-    } catch (e: Exception) {
-        Logger.w("BleExtensions") { "Failed to close peripheral: ${e.message}" }
-    }
-}

@@ -57,6 +57,7 @@ import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
@@ -135,6 +136,7 @@ fun HistoryTab(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
     modifier: Modifier = Modifier,
 ) {
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
@@ -232,6 +234,7 @@ fun HistoryTab(
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
                                 polarBleManager = polarBleManager,
+                                workoutRepository = workoutRepository,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
@@ -249,6 +252,7 @@ fun HistoryTab(
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
                                 polarBleManager = polarBleManager,
+                                workoutRepository = workoutRepository,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
                                 // History "Delete All Sets" path also
@@ -280,6 +284,7 @@ private fun WorkoutHistoryCard(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
     onDelete: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -574,6 +579,7 @@ private fun WorkoutHistoryCard(
                         sessionId = session.id,
                         session = session,
                         polarBleManager = polarBleManager,
+                        workoutRepository = workoutRepository,
                         showCooldown = false,
                     )
                 }
@@ -842,6 +848,7 @@ private fun GroupedRoutineCard(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
     polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
     // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
@@ -1205,6 +1212,7 @@ private fun GroupedRoutineCard(
                             sessionId = polarSession.id,
                             session = polarSession,
                             polarBleManager = polarBleManager,
+                            workoutRepository = workoutRepository,
                             showCooldown = false,
                         )
                     }

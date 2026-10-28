@@ -10860,7 +10860,7 @@ class ActiveSessionEngine(
                     repMetrics = emptyList(),
                     repBiomechanics = emptyList(),
                 )
-                polarBleManager?.flushSessionTelemetry(session.id, fallbackSessionId = coordinator.currentSessionId)
+                polarBleManager?.flushSessionTelemetry(session.id)
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {
                     Logger.d(

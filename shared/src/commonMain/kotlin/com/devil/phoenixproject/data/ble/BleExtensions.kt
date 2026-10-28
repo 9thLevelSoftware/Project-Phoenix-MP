@@ -16,8 +16,3 @@ expect suspend fun Peripheral.requestHighPriority()
  * @return The negotiated MTU, or null on iOS/failure
  */
 expect suspend fun Peripheral.requestMtuIfSupported(mtu: Int): Int?
-
-/**
- * Releases and disposes of the peripheral's underlying GATT connection and resources.
- */
-expect fun Peripheral.closePeripheral()
