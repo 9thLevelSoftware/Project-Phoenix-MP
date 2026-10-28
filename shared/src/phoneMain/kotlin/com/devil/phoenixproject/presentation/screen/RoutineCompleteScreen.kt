@@ -261,8 +261,18 @@ fun RoutineCompleteScreen(
                 }
 
                 // Polar H10 Session Analytics & 5-minute recovery cooldown
+                val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
+                val workoutHistory by viewModel.workoutHistory.collectAsState()
+                val latestCompletedSession = remember(lastRecordedSessionId, workoutHistory) {
+                    if (lastRecordedSessionId != null) {
+                        workoutHistory.firstOrNull { it.id == lastRecordedSessionId }
+                    } else {
+                        workoutHistory.maxByOrNull { it.timestamp }
+                    }
+                }
                 PolarSessionAnalyticsCard(
-                    sessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value,
+                    sessionId = lastRecordedSessionId ?: latestCompletedSession?.id,
+                    session = latestCompletedSession,
                     modifier = Modifier.fillMaxWidth(),
                     polarBleManager = polarBleManager,
                     workoutRepository = viewModel.workoutRepository,

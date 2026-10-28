@@ -215,6 +215,7 @@ class PolarH10BleManager(
     val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
 
     private val completedCooldownSessionIds = mutableSetOf<String>()
+    private val committedSessionIds = mutableSetOf<String>()
     private var completedCooldownSessionId: String? = null
 
     val currentRecordingSessionId: String? get() = activeSessionId
@@ -230,6 +231,7 @@ class PolarH10BleManager(
         _cooldownStartHeartRate.value = null
         _activeCooldownSessionId.value = null
         completedCooldownSessionIds.remove(sessionId)
+        committedSessionIds.remove(sessionId)
         completedCooldownSessionId = null
         activeSessionId = sessionId
         recordedSessionId = sessionId
@@ -267,7 +269,12 @@ class PolarH10BleManager(
      */
     fun flushSessionTelemetry(sessionId: String) {
         val (beatsToFlush, ecgsToFlush) = sessionLock.withLock {
-            activeSessionId = sessionId
+            committedSessionIds.add(sessionId)
+            activeSessionId = if (_isCooldownActive.value && _activeCooldownSessionId.value == sessionId) {
+                sessionId
+            } else {
+                null
+            }
             recordedSessionId = sessionId
             _lastRecordedSessionId.value = sessionId
             val beats = bufferedBeatSamples.toList()
@@ -276,6 +283,7 @@ class PolarH10BleManager(
             bufferedEcgSegments.clear()
             Pair(beats, ecgs)
         }
+        _latestSessionSummary.value = getSessionSummary(sessionId)
 
         if (database != null && (beatsToFlush.isNotEmpty() || ecgsToFlush.isNotEmpty())) {
             try {
@@ -312,8 +320,12 @@ class PolarH10BleManager(
 
     /**
      * Cleanly discards active recording buffers and resets session tracking if a set is cancelled.
+     * If [activeSessionId] is already null (meaning the set recording was committed/flushed or ended),
+     * this is a strict no-op so it never wipes [_lastRecordedSessionId], [sessionHrs], or a post-workout cooldown.
      */
     fun discardActiveRecording() {
+        val targetSessionId = activeSessionId ?: return
+        if (_isCooldownActive.value || committedSessionIds.contains(targetSessionId)) return
         sessionLock.withLock {
             bufferedBeatSamples.clear()
             bufferedEcgSegments.clear()
@@ -323,8 +335,7 @@ class PolarH10BleManager(
             maxTorsoPitch = null
             maxTorsoRoll = null
         }
-        val targetSessionId = activeSessionId
-        if (targetSessionId != null && _lastRecordedSessionId.value == targetSessionId) {
+        if (_lastRecordedSessionId.value == targetSessionId) {
             _lastRecordedSessionId.value = null
         }
         lastBeatMonotonicMs = null
@@ -384,12 +395,17 @@ class PolarH10BleManager(
 
     fun triggerCooldown(sessionId: String? = null, forceRestart: Boolean = false) {
         val knownRecordedId = recordedSessionId ?: _lastRecordedSessionId.value
-        val targetId: String = sessionId
+        val candidateId: String = sessionId
             ?: knownRecordedId
             ?: (if (forceRestart) completedCooldownSessionId else null)
             ?: return
-        if (targetId != knownRecordedId && (!forceRestart || targetId != completedCooldownSessionId)) return
-        if (forceRestart && targetId == completedCooldownSessionId) {
+        val targetId: String = when {
+            candidateId == knownRecordedId -> candidateId
+            forceRestart && candidateId == completedCooldownSessionId -> candidateId
+            committedSessionIds.contains(candidateId) -> knownRecordedId ?: candidateId
+            else -> return
+        }
+        if (forceRestart) {
             completedCooldownSessionIds.remove(targetId)
         }
         recordedSessionId = targetId
@@ -442,11 +458,16 @@ class PolarH10BleManager(
 
     fun endSessionRecording(sessionId: String? = null, forceRestart: Boolean = false) {
         val knownRecordedId = recordedSessionId ?: _lastRecordedSessionId.value
-        val targetSessionId: String = sessionId
+        val candidateId: String = sessionId
             ?: knownRecordedId
             ?: (if (forceRestart) completedCooldownSessionId else null)
             ?: return
-        if (targetSessionId != knownRecordedId && (!forceRestart || targetSessionId != completedCooldownSessionId)) return
+        val targetSessionId: String = when {
+            candidateId == knownRecordedId -> candidateId
+            forceRestart && candidateId == completedCooldownSessionId -> candidateId
+            committedSessionIds.contains(candidateId) -> knownRecordedId ?: candidateId
+            else -> return
+        }
         if (forceRestart && targetSessionId == completedCooldownSessionId) {
             completedCooldownSessionIds.remove(targetSessionId)
         }

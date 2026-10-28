@@ -82,12 +82,21 @@ fun PolarSessionAnalyticsCard(
     val activeCooldownSessionId = polarBleManager?.activeCooldownSessionId?.collectAsState()?.value
     val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
 
-    val resolvedSessionId = sessionId
-        ?: session?.id
-        ?: activeCooldownSessionId
-        ?: polarBleManager?.currentRecordingSessionId
-        ?: latestSummary?.sessionId
-        ?: lastRecordedSessionId
+    val resolvedSessionId = if (showCooldown) {
+        activeCooldownSessionId
+            ?: lastRecordedSessionId
+            ?: sessionId
+            ?: session?.id
+            ?: polarBleManager?.currentRecordingSessionId
+            ?: latestSummary?.sessionId
+    } else {
+        sessionId
+            ?: session?.id
+            ?: activeCooldownSessionId
+            ?: polarBleManager?.currentRecordingSessionId
+            ?: latestSummary?.sessionId
+            ?: lastRecordedSessionId
+    }
     val fallbackSummary = remember(session, resolvedSessionId) {
         session?.let { s ->
             if (s.avgHeartRateBpm != null || s.maxHeartRateBpm != null || s.minHeartRateBpm != null ||
@@ -546,7 +555,9 @@ fun PolarSessionAnalyticsCard(
                                     ) {
                                         TextButton(
                                             onClick = {
-                                                resolvedSessionId?.let { polarBleManager?.triggerCooldown(it, forceRestart = true) }
+                                                val targetId = polarBleManager?.lastRecordedSessionId?.value
+                                                    ?: resolvedSessionId
+                                                polarBleManager?.triggerCooldown(targetId, forceRestart = true)
                                             },
                                         ) {
                                             Icon(
@@ -577,12 +588,10 @@ fun PolarSessionAnalyticsCard(
                                     )
                                     FilledTonalButton(
                                         onClick = {
-                                            val targetId = resolvedSessionId
-                                                ?: polarBleManager?.lastRecordedSessionId?.value
+                                            val targetId = polarBleManager?.lastRecordedSessionId?.value
+                                                ?: resolvedSessionId
                                                 ?: polarBleManager?.latestSessionSummary?.value?.sessionId
-                                            if (targetId != null) {
-                                                polarBleManager?.triggerCooldown(targetId, forceRestart = true)
-                                            }
+                                            polarBleManager?.triggerCooldown(targetId, forceRestart = true)
                                         },
                                         shape = MaterialTheme.shapes.small,
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),

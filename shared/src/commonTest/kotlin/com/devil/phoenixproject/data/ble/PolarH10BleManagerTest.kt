@@ -937,6 +937,130 @@ class PolarH10BleManagerTest {
 
         testScope.cancel()
     }
+
+    @Test
+    fun `multi-set routine preserves lastRecordedSessionId across Idle discardActiveRecording and persists cooldown HRR to final set`() = runTest {
+        var simulatedTime = 100_000L
+        val database = com.devil.phoenixproject.testutil.createTestDatabase()
+        val manager = PolarH10BleManager(
+            database = database,
+            scope = this,
+            timeSource = { simulatedTime },
+        )
+        manager.setConnectedForTesting(true)
+
+        val set1Id = "ea838be2-3983-4ec3-8eb4-c8a75fdd52a2"
+        val set2Id = "9615342a-142c-4cd7-838e-5cf38ab9b7f7"
+
+        fun insertSessionRow(id: String, ts: Long) {
+            database.phoenixDatabaseQueries.insertSession(
+                id = id,
+                timestamp = ts,
+                mode = "OldSchool",
+                targetReps = 10L,
+                weightPerCableKg = 20.0,
+                progressionKg = 0.0,
+                duration = 30_000L,
+                totalReps = 10L,
+                warmupReps = 0L,
+                workingReps = 10L,
+                isJustLift = 0L,
+                stopAtTop = 0L,
+                eccentricLoad = 100L,
+                echoLevel = 1L,
+                exerciseId = null,
+                exerciseName = "Bench Press",
+                routineSessionId = "c1b268f6-6402-4a07-b50d-48ed76a023bc",
+                routineName = "Test Routine",
+                safetyFlags = 0L,
+                deloadWarningCount = 0L,
+                romViolationCount = 0L,
+                spotterActivations = 0L,
+                peakForceConcentricA = null,
+                peakForceConcentricB = null,
+                peakForceEccentricA = null,
+                peakForceEccentricB = null,
+                avgForceConcentricA = null,
+                avgForceConcentricB = null,
+                avgForceEccentricA = null,
+                avgForceEccentricB = null,
+                heaviestLiftKg = null,
+                totalVolumeKg = null,
+                cableCount = null,
+                estimatedCalories = null,
+                warmupAvgWeightKg = null,
+                workingAvgWeightKg = null,
+                burnoutAvgWeightKg = null,
+                peakWeightKg = null,
+                rpe = null,
+                routineId = null,
+                avgMcvMmS = null,
+                avgAsymmetryPercent = null,
+                totalVelocityLossPercent = null,
+                dominantSide = null,
+                strengthProfile = null,
+                formScore = null,
+                profile_id = "default",
+                display_multiplier = null,
+                externalAddedLoadKg = 0.0,
+                counterweightKg = 0.0,
+                rackItemsJson = "[]",
+            )
+        }
+
+        // 1. Set 1 recording & flush
+        manager.startSessionRecording(set1Id, "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 148, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        insertSessionRow(set1Id, simulatedTime)
+        manager.flushSessionTelemetry(set1Id)
+        assertNull(manager.currentRecordingSessionId, "flushSessionTelemetry must clear activeSessionId once committed")
+        assertEquals(set1Id, manager.lastRecordedSessionId.value)
+
+        // 2. Set 2 recording & flush
+        simulatedTime += 60_000L
+        manager.startSessionRecording(set2Id, "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 165, contactDetected = true, rrIntervalsMs = listOf(720.0)))
+        insertSessionRow(set2Id, simulatedTime)
+        manager.flushSessionTelemetry(set2Id)
+        assertNull(manager.currentRecordingSessionId)
+        assertEquals(set2Id, manager.lastRecordedSessionId.value)
+
+        // 3. Routine teardown transitions to Idle before RoutineComplete -> calls discardActiveRecording()
+        manager.discardActiveRecording()
+
+        // Verify _lastRecordedSessionId and Set 2 summary were NOT wiped!
+        assertEquals(set2Id, manager.lastRecordedSessionId.value, "discardActiveRecording after flush must not wipe lastRecordedSessionId")
+        val summaryAfterIdle = manager.getSessionSummary(set2Id)
+        assertNotNull(summaryAfterIdle, "Set 2 summary must survive Idle discardActiveRecording")
+        assertEquals(165, summaryAfterIdle.avgHeartRateBpm)
+
+        // 4. User clicks "Start Cooldown" on RoutineCompleteScreen
+        manager.triggerCooldown(manager.lastRecordedSessionId.value, forceRestart = true)
+        testScheduler.runCurrent()
+        assertTrue(manager.isCooldownActive.value, "Cooldown must be active after clicking Start Cooldown")
+        assertEquals(set2Id, manager.activeCooldownSessionId.value)
+        assertEquals(165, manager.cooldownStartHeartRate.value)
+
+        // 5. Feed POST_WORKOUT_COOLDOWN beats at 65s and 300s
+        simulatedTime += 65_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 135, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        testScheduler.advanceTimeBy(1500L)
+        assertEquals(30, manager.cooldownHrr60.value, "HRR60 should be 165 - 135 = 30 bpm")
+
+        simulatedTime += 240_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 110, contactDetected = true, rrIntervalsMs = listOf(920.0)))
+        testScheduler.advanceTimeBy(1500L)
+
+        assertFalse(manager.isCooldownActive.value, "Cooldown should complete at 300s")
+        assertEquals(55, manager.cooldownHrr300.value, "HRR300 should be 165 - 110 = 55 bpm")
+
+        // Verify POST_WORKOUT_COOLDOWN beats and HRR summary persisted to Set 2 row in SQLite
+        val set2Beats = database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession(set2Id).executeAsList()
+        assertTrue(set2Beats.any { it.phase == "POST_WORKOUT_COOLDOWN" }, "POST_WORKOUT_COOLDOWN beats must persist to Set 2")
+        val set2Session = database.phoenixDatabaseQueries.selectSessionById(set2Id).executeAsOne()
+        assertEquals(30L, set2Session.hrr60Bpm)
+        assertEquals(55L, set2Session.hrr300Bpm)
+    }
 }
 
 
