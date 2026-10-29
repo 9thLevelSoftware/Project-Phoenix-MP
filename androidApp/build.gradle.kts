@@ -104,8 +104,14 @@ abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
 
     @TaskAction
     fun verifyRuntimeConfig() {
-        val uri = validateSupabaseUrl(configuredSupabaseUrl.get())
+        val url = configuredSupabaseUrl.get()
+        val uri = validateSupabaseUrl(url)
         val host = checkNotNull(uri.host).lowercase()
+
+        if (host == "placeholder.supabase.co") {
+            println("Android Supabase config using local placeholder: host=$host")
+            return
+        }
 
         val addresses = InetAddress.getAllByName(host)
         println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}")
@@ -136,22 +142,19 @@ val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
 }
 
 // Priority: local.properties > environment variables
-val supabaseUrl: String = localPropsMap["supabase.url"]?.takeIf { it.isNotBlank() }
+val rawSupabaseUrl: String = localPropsMap["supabase.url"]?.takeIf { it.isNotBlank() }
     ?: System.getenv("SUPABASE_URL")
     ?: ""
-val supabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.isNotBlank() }
+val rawSupabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.isNotBlank() }
     ?: System.getenv("SUPABASE_ANON_KEY")
     ?: ""
 
-// Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
+// Fall back to placeholder credentials for local debug builds and Gradle Sync if missing
+val supabaseUrl: String = rawSupabaseUrl.ifBlank { "https://placeholder.supabase.co" }
+val supabaseAnonKey: String = rawSupabaseAnonKey.ifBlank { "placeholder-anon-key" }
+
+// Validate Supabase URL format unless explicitly skipped
 val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
-if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
-    throw GradleException(
-        "Missing Supabase credentials. Provide via local.properties (supabase.url, supabase.anon.key) " +
-            "or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY), " +
-            "or pass -Pskip.supabase.check=true for test-only builds.",
-    )
-}
 if (!skipSupabaseCheck && supabaseUrl.isNotBlank()) {
     VerifySupabaseRuntimeConfigTask.validateSupabaseUrl(supabaseUrl)
 }
@@ -249,12 +252,22 @@ val releasePackagingTaskNames = setOf(
     "zipApksForRelease",
 )
 tasks.configureEach {
-    if (name in releasePackagingTaskNames && injectedVersionCode == null) {
-        doFirst {
-            throw GradleException(
-                "version.code property must be set for release builds. " +
-                    "Pass -Pversion.code=<int> (e.g., ./gradlew assembleRelease -Pversion.code=42).",
-            )
+    if (name in releasePackagingTaskNames) {
+        if (injectedVersionCode == null) {
+            doFirst {
+                throw GradleException(
+                    "version.code property must be set for release builds. " +
+                        "Pass -Pversion.code=<int> (e.g., ./gradlew assembleRelease -Pversion.code=42).",
+                )
+            }
+        }
+        if (rawSupabaseUrl.isBlank() || rawSupabaseAnonKey.isBlank()) {
+            doFirst {
+                throw GradleException(
+                    "Supabase credentials (supabase.url and supabase.anon.key) must be provided " +
+                        "via local.properties or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY) for release builds.",
+                )
+            }
         }
     }
 }

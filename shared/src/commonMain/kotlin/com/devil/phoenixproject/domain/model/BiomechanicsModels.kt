@@ -111,7 +111,7 @@ data class ForceCurveResult(
     override fun hashCode(): Int {
         var result = normalizedForceN.contentHashCode()
         result = 31 * result + normalizedPositionPct.contentHashCode()
-        result = 31 * result + (stickingPointPct?.hashCode() ?: 0)
+        result = 31 * result + stickingPointPct.hashCode()
         result = 31 * result + strengthProfile.hashCode()
         result = 31 * result + repNumber
         return result

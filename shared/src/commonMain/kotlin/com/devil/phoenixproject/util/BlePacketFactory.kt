@@ -149,7 +149,7 @@ object BlePacketFactory {
         // Issue #390: Detect suspiciously low weight values that would cause the machine
         // to start at near-zero and ramp up slowly instead of the configured weight.
         if (!params.isJustLift && params.weightPerCableKg > 0f && params.weightPerCableKg < 2f) {
-            Logger.w("BlePacket") {
+            Logger.w(tag = "BlePacket") {
                 "Issue #390: weightPerCableKg=${params.weightPerCableKg}kg is suspiciously low. " +
                     "Expected > 2kg for a working set. Check weight resolution pipeline."
             }
@@ -170,39 +170,47 @@ object BlePacketFactory {
         )
 
         // Diagnostic logging
-        Logger.d("BlePacket") {
+        Logger.d(tag = "BlePacket") {
             "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ==="
         }
-        Logger.d("BlePacket") {
+        Logger.d(tag = "BlePacket") {
             "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
-        Logger.d("BlePacket") {
+        Logger.d(tag = "BlePacket") {
             "ecc.up.minMmS[0x48]=${getInt16LE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
                 "ecc.up.maxMmS[0x4A]=${getInt16LE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
                 "ecc.up.ramp[0x4C]=${getFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
         }
-        Logger.d("BlePacket") {
-            "forceMin[0x50]=${getFloatLE(
-                frame,
-                BleConstants.ActivationPacket.OFFSET_FORCE_MIN,
-            )}kg, " +
-                "forceMax[0x54]=${getFloatLE(
+        Logger.d(tag = "BlePacket") {
+            "forceMin[0x50]=${
+                getFloatLE(
                     frame,
-                    BleConstants.ActivationPacket.OFFSET_FORCE_MAX,
-                )}kg"
+                    BleConstants.ActivationPacket.OFFSET_FORCE_MIN,
+                )
+            }kg, " +
+                "forceMax[0x54]=${
+                    getFloatLE(
+                        frame,
+                        BleConstants.ActivationPacket.OFFSET_FORCE_MAX,
+                    )
+                }kg"
         }
-        Logger.d("BlePacket") {
-            "targetWeight[0x58]=${getFloatLE(
-                frame,
-                BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
-            )}kg, " +
-                "progression[0x5C]=${getFloatLE(
+        Logger.d(tag = "BlePacket") {
+            "targetWeight[0x58]=${
+                getFloatLE(
                     frame,
-                    BleConstants.ActivationPacket.OFFSET_PROGRESSION,
-                )}kg/rep"
+                    BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+                )
+            }kg, " +
+                "progression[0x5C]=${
+                    getFloatLE(
+                        frame,
+                        BleConstants.ActivationPacket.OFFSET_PROGRESSION,
+                    )
+                }kg/rep"
         }
         val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
-        Logger.d("BlePacket") {
+        Logger.d(tag = "BlePacket") {
             "reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})"
         }
 
@@ -251,7 +259,7 @@ object BlePacketFactory {
 
         val echoParams = getEchoParams(level, eccentricPct)
 
-        Logger.d("BlePacketFactory") {
+        Logger.d(tag = "BlePacketFactory") {
             "=== ECHO: ${level.displayName}, eccentric: $eccentricPct% ==="
         }
 

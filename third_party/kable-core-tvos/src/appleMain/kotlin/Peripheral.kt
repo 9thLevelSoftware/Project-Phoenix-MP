@@ -2,7 +2,7 @@ package com.juul.kable
 
 import platform.CoreBluetooth.CBPeripheral
 
-public actual fun Peripheral(
+actual fun Peripheral(
     advertisement: Advertisement,
     builderAction: PeripheralBuilderAction,
 ): Peripheral {
@@ -11,7 +11,7 @@ public actual fun Peripheral(
 }
 
 @Suppress("FunctionName") // Builder function.
-public fun Peripheral(
+fun Peripheral(
     identifier: Identifier,
     builderAction: PeripheralBuilderAction = {},
 ): CoreBluetoothPeripheral {
@@ -21,7 +21,7 @@ public fun Peripheral(
 }
 
 @Suppress("FunctionName") // Builder function.
-public fun Peripheral(
+fun Peripheral(
     cbPeripheral: CBPeripheral,
     builderAction: PeripheralBuilderAction = {},
 ): CoreBluetoothPeripheral {

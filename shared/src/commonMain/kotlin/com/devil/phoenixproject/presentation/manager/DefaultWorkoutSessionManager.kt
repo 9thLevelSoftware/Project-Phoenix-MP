@@ -499,7 +499,7 @@ class DefaultWorkoutSessionManager(
                 isSingleExercise: Boolean,
                 currentExercise: RoutineExercise?,
                 routine: Routine?,
-            ): String? = routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
+            ): String = routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
             override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
@@ -853,12 +853,8 @@ class DefaultWorkoutSessionManager(
             // When all exercises in the loaded routine are bodyweight, the Phoenix
             // trainer is not needed and its auto-power-off should not interrupt the user.
             val routine = coordinator._loadedRoutine.value
-            if (routine != null && routine.exercises.isNotEmpty() &&
-                routine.exercises.all { it.exercise.isBodyweight }
-            ) {
-                return false
-            }
-            return true
+            return !(routine != null && routine.exercises.isNotEmpty() &&
+                routine.exercises.all { it.exercise.isBodyweight })
         }
 
     override val isWorkoutMidSet: Boolean
@@ -1283,8 +1279,7 @@ class DefaultWorkoutSessionManager(
      * pre-publish decision in `handleSetCompletion`, where the state is not `SetSummary` yet.
      */
     fun isTerminalRoutineSummary(): Boolean {
-        if (coordinator._workoutState.value !is WorkoutState.SetSummary) return false
-        return activeSessionEngine.isTerminalRoutineStep()
+        return coordinator._workoutState.value is WorkoutState.SetSummary && activeSessionEngine.isTerminalRoutineStep()
     }
 
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
@@ -1489,11 +1484,7 @@ class DefaultWorkoutSessionManager(
                     val currentExercise = it.exercises.getOrNull(coordinator._currentExerciseIndex.value)
                     val isAMRAPExercise = currentExercise?.isAMRAP == true
 
-                    if (isAMRAPExercise) {
-                        true // AMRAP always has "more sets" - user decides when to move on
-                    } else {
-                        currentExercise != null && coordinator._currentSetIndex.value < currentExercise.setReps.size - 1
-                    }
+                    isAMRAPExercise || currentExercise != null && coordinator._currentSetIndex.value < currentExercise.setReps.size - 1 // AMRAP always has "more sets" - user decides when to move on
                 } ?: false
 
                 val hasMoreExercises = routine?.let {

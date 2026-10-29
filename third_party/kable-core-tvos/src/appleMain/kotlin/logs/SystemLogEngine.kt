@@ -2,7 +2,7 @@ package com.juul.kable.logs
 
 import platform.Foundation.NSLog
 
-public actual object SystemLogEngine : LogEngine {
+actual object SystemLogEngine : LogEngine {
     actual override fun verbose(throwable: Throwable?, tag: String, message: String) {
         log("V", tag, message, throwable)
     }

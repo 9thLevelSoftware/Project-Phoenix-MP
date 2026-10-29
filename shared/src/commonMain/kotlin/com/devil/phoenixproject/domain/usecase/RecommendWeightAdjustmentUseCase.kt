@@ -161,12 +161,11 @@ class RecommendWeightAdjustmentUseCase {
     )
 
     private fun BiomechanicsSetSummary?.hasSevereVelocityLoss(): Boolean {
-        if (this == null) return false
-        return totalVelocityLossPercent?.let { it >= SEVERE_VELOCITY_LOSS_PERCENT } == true ||
-            repResults.any { result ->
-                result.velocity.shouldStopSet ||
-                    (result.velocity.estimatedRepsRemaining != null && result.velocity.estimatedRepsRemaining <= 0)
-            }
+        return this != null && (totalVelocityLossPercent?.let { it >= SEVERE_VELOCITY_LOSS_PERCENT } == true ||
+                repResults.any { result ->
+                    result.velocity.shouldStopSet ||
+                        (result.velocity.estimatedRepsRemaining != null && result.velocity.estimatedRepsRemaining <= 0)
+                })
     }
 
     private fun nextHigherIncrement(current: Float, increment: Float): Float {

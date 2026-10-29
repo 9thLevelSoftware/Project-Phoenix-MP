@@ -793,7 +793,7 @@ class RoutineFlowManager(
                     }
                 }
                 // Issue #357: Log per-set weights for debugging PR% scaling
-                Logger.d("RoutineFlowManager") {
+                Logger.d(tag = "RoutineFlowManager") {
                     "Issue #357: ${exercise.exercise.name} resolved setWeights=${resolved.setWeights} (${resolved.setWeights.size} sets), " +
                         "setReps=${exercise.setReps} (${exercise.setReps.size} sets), baseWeight=${resolved.baseWeight}kg"
                 }
@@ -981,7 +981,7 @@ class RoutineFlowManager(
             }
         }
         if (hasVariableWarmups) {
-            Logger.d("RoutineFlowManager") { "Phase 35C: First exercise has ${firstExercise.warmupSets.size} warm-up sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Phase 35C: First exercise has ${firstExercise.warmupSets.size} warm-up sets" }
         }
         return published
     }
@@ -1112,8 +1112,7 @@ class RoutineFlowManager(
         }
         val resolvedRoutine = resolveRoutineWeights(routine)
         currentCoroutineContext().ensureActive()
-        if (!publicationStillCurrent()) return false
-        return loadRoutineInternal(
+        return publicationStillCurrent() && loadRoutineInternal(
             routine = resolvedRoutine,
             resumeLaunchOrigin = launchOrigin,
             resumeCycleId = cycleId,
@@ -1177,7 +1176,7 @@ class RoutineFlowManager(
             coordinator._currentWarmupSetIndex.value = if (warmupExercise != null) 0 else -1
         }
         warmupExercise?.let { exercise ->
-            Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Issue #356: Overview init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
     }
 
@@ -1263,13 +1262,13 @@ class RoutineFlowManager(
         }
         // Issue #357: Log weight source for PR% debugging
         val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
-        Logger.d("RoutineFlowManager") {
+        Logger.d(tag = "RoutineFlowManager") {
             "Issue #357: enterSetReady weight for set $setIndex: setWeightsPerCableKg[$setIndex]=$weightFromList, " +
                 "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
                 "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
         }
         if (hasVariableWarmups) {
-            Logger.d("RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
@@ -1336,7 +1335,7 @@ class RoutineFlowManager(
             "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
         }
         if (hasVariableWarmups) {
-            Logger.d("RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
@@ -1497,7 +1496,7 @@ class RoutineFlowManager(
     fun showRoutineComplete() {
         // Issue #355: Idempotency - don't re-trigger navigation if already complete
         if (coordinator._routineFlowState.value is RoutineFlowState.Complete) {
-            Logger.d("RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
+            Logger.d(tag = "RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
             return
         }
         lifecycleDelegate.beginRoutineCompletedRuntimeCleanup()
@@ -1591,7 +1590,7 @@ class RoutineFlowManager(
 
         // Issue #125: Block exercise navigation during Active state
         if (coordinator._workoutState.value is WorkoutState.Active) {
-            Logger.w("RoutineFlowManager") { "Cannot jump to exercise $index while workout is Active - stop workout first" }
+            Logger.w(tag = "RoutineFlowManager") { "Cannot jump to exercise $index while workout is Active - stop workout first" }
             scope.launch {
                 coordinator._userFeedbackEvents.emit("Stop the current set first")
             }
@@ -1602,12 +1601,12 @@ class RoutineFlowManager(
         val currentRepCount = coordinator._repCount.value
         if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
             markExerciseCompleted(coordinator._currentExerciseIndex.value)
-            Logger.d("RoutineFlowManager") {
+            Logger.d(tag = "RoutineFlowManager") {
                 "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
             }
         } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
             markExerciseSkipped(coordinator._currentExerciseIndex.value)
-            Logger.d("RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
+            Logger.d(tag = "RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
         }
 
         // Cancel any active timers
@@ -1632,7 +1631,7 @@ class RoutineFlowManager(
             }
             lifecycleDelegate.resetRepCounter()
             enterSetReady(index, 0, reinitializeWarmups = true)
-            Logger.i("RoutineFlowManager") { "Jumped to exercise $index; entered Set Ready (waiting for START)" }
+            Logger.i(tag = "RoutineFlowManager") { "Jumped to exercise $index; entered Set Ready (waiting for START)" }
         }
     }
 
@@ -1800,7 +1799,7 @@ class RoutineFlowManager(
      */
     fun logRpeForCurrentSet(rpe: Int) {
         coordinator._currentSetRpe.value = rpe
-        Logger.d("RoutineFlowManager") { "RPE logged for current set: $rpe" }
+        Logger.d(tag = "RoutineFlowManager") { "RPE logged for current set: $rpe" }
     }
 
     // ===== Shared Helpers =====

@@ -8,7 +8,7 @@ import platform.CoreBluetooth.CBPeripheral
     replaceWith = ReplaceWith("Peripheral(cbPeripheral, builderAction)"),
     level = DeprecationLevel.ERROR,
 )
-public actual fun CoroutineScope.peripheral(
+actual fun CoroutineScope.peripheral(
     advertisement: Advertisement,
     builderAction: PeripheralBuilderAction,
 ): Peripheral = Peripheral(advertisement, builderAction)
@@ -18,7 +18,7 @@ public actual fun CoroutineScope.peripheral(
     replaceWith = ReplaceWith("Peripheral(cbPeripheral, builderAction)"),
     level = DeprecationLevel.ERROR,
 )
-public fun CoroutineScope.peripheral(
+fun CoroutineScope.peripheral(
     identifier: Identifier,
     builderAction: PeripheralBuilderAction = {},
 ): Peripheral = Peripheral(identifier, builderAction)
@@ -28,7 +28,7 @@ public fun CoroutineScope.peripheral(
     replaceWith = ReplaceWith("Peripheral(cbPeripheral, builderAction)"),
     level = DeprecationLevel.ERROR,
 )
-public fun CoroutineScope.peripheral(
+fun CoroutineScope.peripheral(
     cbPeripheral: CBPeripheral,
     builderAction: PeripheralBuilderAction,
 ): CoreBluetoothPeripheral = Peripheral(cbPeripheral, builderAction)
