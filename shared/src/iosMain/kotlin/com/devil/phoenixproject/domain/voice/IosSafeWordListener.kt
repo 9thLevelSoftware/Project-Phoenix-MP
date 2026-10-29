@@ -1,7 +1,8 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package com.devil.phoenixproject.domain.voice
 
+import com.devil.phoenixproject.util.IosAudioDiagnostics
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -21,8 +22,10 @@ import platform.AVFAudio.AVAudioSessionCategoryOptionDefaultToSpeaker
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
+import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
 import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
+import platform.AVFAudio.AVAudioSessionInterruptionWasSuspendedKey
 import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
 import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
@@ -111,6 +114,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     private var lifecycleObserverGeneration = 0L
 
     override fun startListening() {
+        audioDiagnostic("start_requested")
         if (shouldBeListening) return
 
         if (!speechRecognizer.isAvailable()) {
@@ -146,6 +150,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
         }
 
         shouldBeListening = true
+        audioDiagnostic("listening_requested")
         _state.value = SafeWordState.Arming
         val generation = ++lifecycleObserverGeneration
         dispatch_async(dispatch_get_main_queue()) {
@@ -157,6 +162,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     override fun stopListening() {
+        audioDiagnostic("stop_requested")
         shouldBeListening = false
         val generation = ++lifecycleObserverGeneration
         dispatch_async(dispatch_get_main_queue()) {
@@ -217,6 +223,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun startRecognition() {
+        audioDiagnostic("recognition_start_requested")
         if (!shouldBeListening) return
 
         // F-039: a start attempt only becomes Armed once the audio engine is
@@ -279,7 +286,12 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
             @OptIn(BetaInteropApi::class)
             val engineStarted = memScoped {
                 val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                errorPtr.value = null
                 val started = engine.startAndReturnError(errorPtr.ptr)
+                IosAudioDiagnostics.record(TAG, "engine_start_result", warning = !started) {
+                    "result=$started errorDomain=${errorPtr.value?.domain} errorCode=${errorPtr.value?.code} " +
+                        "shouldBeListening=$shouldBeListening ${IosAudioDiagnostics.sessionDetails()}"
+                }
                 if (!started) {
                     val startError = errorPtr.value
                     NSLog("$TAG: Audio engine failed to start: ${startError?.localizedDescription}")
@@ -301,6 +313,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
             }
 
             _state.value = armingTracker.onRecognizerReady()
+            audioDiagnostic("recognizer_ready")
             // fix(audit): H — do not log the configured safe word. It is user-
             // chosen and may be PII or a sensitive phrase. Log only a length
             // hint for debugging startup issues.
@@ -313,6 +326,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun configureAudioSession() {
+        audioDiagnostic("configure_requested")
         try {
             val session = AVAudioSession.sharedInstance()
             // PlayAndRecord is required for the microphone tap. Without
@@ -321,15 +335,22 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
             // listener owns the process-wide session. MixWithOthers stays so
             // background audio keeps playing. The option only changes the
             // output route; input capture is unchanged.
-            session.setCategory(
-                AVAudioSessionCategoryPlayAndRecord,
-                AVAudioSessionCategoryOptionMixWithOthers or
-                    AVAudioSessionCategoryOptionDefaultToSpeaker,
-                null,
-            )
-            session.setMode(AVAudioSessionModeDefault, null)
-            session.setActive(true, null)
+            IosAudioDiagnostics.nativeResult(TAG, "set_category_play_and_record") { error ->
+                session.setCategory(
+                    AVAudioSessionCategoryPlayAndRecord,
+                    AVAudioSessionCategoryOptionMixWithOthers or
+                        AVAudioSessionCategoryOptionDefaultToSpeaker,
+                    error,
+                )
+            }
+            IosAudioDiagnostics.nativeResult(TAG, "set_mode_default") { error ->
+                session.setMode(AVAudioSessionModeDefault, error)
+            }
+            IosAudioDiagnostics.nativeResult(TAG, "activate") { error ->
+                session.setActive(true, error)
+            }
         } catch (e: Exception) {
+            audioDiagnostic("configure_exception")
             NSLog("$TAG: Failed to configure audio session: ${e.message}")
         }
     }
@@ -403,6 +424,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun tearDown() {
+        audioDiagnostic("teardown_requested")
         if (isTearingDown) return
         isTearingDown = true
         try {
@@ -428,22 +450,27 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
 
             // Deactivate audio session to release resources
             try {
-                AVAudioSession.sharedInstance().setActive(
-                    false,
-                    AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                    null,
-                )
+                IosAudioDiagnostics.nativeResult(TAG, "deactivate") { error ->
+                    AVAudioSession.sharedInstance().setActive(
+                        false,
+                        AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                        error,
+                    )
+                }
             } catch (e: Exception) {
+                audioDiagnostic("deactivate_exception")
                 NSLog("$TAG: Error deactivating audio session: ${e.message}")
             }
         } catch (e: Exception) {
             NSLog("$TAG: Error stopping audio engine: ${e.message}")
         } finally {
             isTearingDown = false
+            audioDiagnostic("teardown_finished")
         }
     }
 
     private fun scheduleRestart() {
+        audioDiagnostic("restart_requested")
         if (!shouldBeListening) return
 
         tearDown()
@@ -464,6 +491,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
      * [shouldBeListening] is still true.
      */
     private fun installLifecycleObservers() {
+        audioDiagnostic("observers_install_requested")
         if (lifecycleObserversInstalled) return
         lifecycleObserversInstalled = true
         val center = NSNotificationCenter.defaultCenter
@@ -473,6 +501,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
             `object` = null,
             queue = NSOperationQueue.mainQueue(),
             usingBlock = { _ ->
+                audioDiagnostic("app_active")
                 restartRecognitionFromLifecycle("foreground")
             },
         )
@@ -483,6 +512,11 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
             usingBlock = { notification ->
                 val typeValue = (notification?.userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)
                     ?.unsignedLongLongValue
+                IosAudioDiagnostics.record(TAG, "interruption") {
+                    "type=$typeValue options=${(notification?.userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue} " +
+                        "wasSuspended=${(notification?.userInfo?.get(AVAudioSessionInterruptionWasSuspendedKey) as? NSNumber)?.boolValue} " +
+                        "shouldBeListening=$shouldBeListening ${IosAudioDiagnostics.sessionDetails()}"
+                }
                 if (typeValue == AVAudioSessionInterruptionTypeEnded) {
                     restartRecognitionFromLifecycle("interruption-ended")
                 }
@@ -493,6 +527,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun removeLifecycleObservers() {
+        audioDiagnostic("observers_remove_requested")
         if (!lifecycleObserversInstalled) return
         lifecycleObserversInstalled = false
         lifecycleObservers.forEach { observer ->
@@ -512,6 +547,7 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
      * normal restart path).
      */
     private fun restartRecognitionFromLifecycle(reason: String) {
+        audioDiagnostic("lifecycle_recovery_requested", "reason=$reason")
         if (!shouldBeListening) return
         NSLog("$TAG: Recovering speech recognition (reason=$reason)")
         lifecycleRecoveryCancellationGeneration = recognitionCallbackGeneration
@@ -520,4 +556,12 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
     }
 
     private fun AVAudioFormat.isValidForRecordingTap(): Boolean = sampleRate > 0.0 && channelCount > 0u
+
+    private fun audioDiagnostic(event: String, detail: String = "") {
+        IosAudioDiagnostics.record(TAG, event) {
+            "shouldBeListening=$shouldBeListening isTearingDown=$isTearingDown " +
+                "observersInstalled=$lifecycleObserversInstalled generation=$recognitionCallbackGeneration " +
+                "$detail ${IosAudioDiagnostics.sessionDetails()}"
+        }
+    }
 }

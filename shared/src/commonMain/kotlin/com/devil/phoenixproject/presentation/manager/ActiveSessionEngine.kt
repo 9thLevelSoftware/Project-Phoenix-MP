@@ -5119,6 +5119,25 @@ class ActiveSessionEngine(
                 if (!executionGuard.isCurrent(eventLease)) return@launch
                 val timing = coordinator._workoutParameters.value.repCountTiming
                 val params = coordinator._workoutParameters.value
+                // Issue #1357: correlate workout-side decisions with the iOS collector/native
+                // audio trace. This is a snapshot, not proof that a cue was emitted or heard.
+                try {
+                    val audioLogs = ConnectionLogRepository.instance
+                    if (audioLogs.isEnabled.value) {
+                        val prefs = settingsManager.userPreferences.value
+                        audioLogs.debug(
+                            LogEventType.WORKOUT_AUDIO,
+                            "rep-event",
+                            details = "type=${event.type} warmup=${event.warmupCount} working=${event.workingCount} " +
+                                "timing=$timing repSound=${prefs.repSoundEnabled} " +
+                                "repVoice=${prefs.audioRepCountEnabled} " +
+                                "subscribers=${coordinator._hapticEvents.subscriptionCount.value}",
+                            tag = "ActiveSessionEngine",
+                        )
+                    }
+                } catch (_: Exception) {
+                    // Diagnostic collection must not interrupt workout processing.
+                }
                 when (event.type) {
                     RepType.WORKING_PENDING -> {
                         // TOP timing: announce rep number at concentric peak

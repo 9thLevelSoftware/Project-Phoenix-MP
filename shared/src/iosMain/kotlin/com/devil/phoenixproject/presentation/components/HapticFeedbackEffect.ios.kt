@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package com.devil.phoenixproject.presentation.components
 
@@ -10,6 +10,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
+import com.devil.phoenixproject.util.IosAudioDiagnostics
 import kotlinx.coroutines.flow.SharedFlow
 import platform.AVFAudio.AVAudioPlayer
 import platform.AVFAudio.AVAudioSession
@@ -17,8 +18,14 @@ import platform.AVFAudio.AVAudioSessionCategoryAmbient
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
+import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
 import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
+import platform.AVFAudio.AVAudioSessionInterruptionWasSuspendedKey
+import platform.AVFAudio.AVAudioSessionMediaServicesWereLostNotification
+import platform.AVFAudio.AVAudioSessionMediaServicesWereResetNotification
+import platform.AVFAudio.AVAudioSessionRouteChangeNotification
+import platform.AVFAudio.AVAudioSessionRouteChangeReasonKey
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
 import platform.Foundation.NSBundle
@@ -26,6 +33,8 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIApplicationDidBecomeActiveNotification
+import platform.UIKit.UIApplicationDidEnterBackgroundNotification
+import platform.UIKit.UIApplicationWillResignActiveNotification
 import platform.UIKit.UIImpactFeedbackGenerator
 import platform.UIKit.UIImpactFeedbackStyle
 import platform.UIKit.UINotificationFeedbackGenerator
@@ -33,6 +42,7 @@ import platform.UIKit.UINotificationFeedbackType
 import platform.darwin.NSObjectProtocol
 
 private val log = Logger.withTag("HapticFeedbackEffect.ios")
+private const val AUDIO_DIAGNOSTIC_TAG = "IosWorkoutAudio"
 
 /**
  * iOS implementation of HapticFeedbackEffect using UIKit haptic generators
@@ -55,11 +65,17 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     }
 
     LaunchedEffect(hapticEvents) {
-        hapticEvents.collect { event ->
-            // Play haptic feedback
-            playHapticFeedback(event)
-            // Play sound (if available)
-            soundPlayers.playSound(event)
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "collector_start")
+        try {
+            hapticEvents.collect { event ->
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "cue_received") { "cue=${event::class.simpleName}" }
+                // Play haptic feedback
+                playHapticFeedback(event)
+                // Play sound (if available)
+                soundPlayers.playSound(event)
+            }
+        } finally {
+            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "collector_stop")
         }
     }
 }
@@ -88,6 +104,7 @@ private class IosSoundManager {
     private var released = false
 
     init {
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "manager_init")
         setupAudioSession()
         loadSounds()
         loadBadgeSounds()
@@ -99,6 +116,13 @@ private class IosSoundManager {
         loadEncouragementSounds("vulgar_strong", 12, encouragementStrongSoundPlayers, "vulgar strong sounds")
         loadEncouragementSounds("dominatrix", 12, encouragementDominatrixSoundPlayers, "dominatrix sounds")
         installLifecycleObservers()
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_loaded") {
+            "eventPlayers=${players.values.count { it != null }} badge=${badgeSoundPlayers.count { it != null }} " +
+                "pr=${prSoundPlayers.count { it != null }} rep=${repCountSoundPlayers.count { it != null }} " +
+                "countdown=${countdownTickPlayer != null} neutral=${encouragementNeutralSoundPlayers.size} " +
+                "mild=${encouragementMildSoundPlayers.size} strong=${encouragementStrongSoundPlayers.size} " +
+                "dominatrix=${encouragementDominatrixSoundPlayers.size} ${IosAudioDiagnostics.sessionDetails()}"
+        }
     }
 
     private fun setupAudioSession() {
@@ -109,14 +133,23 @@ private class IosSoundManager {
             // SafeWordListener. AVAudioSession is process-wide; switching back
             // to Ambient during a workout would break microphone input.
             if (session.category != AVAudioSessionCategoryPlayAndRecord) {
-                session.setCategory(
-                    AVAudioSessionCategoryAmbient,
-                    AVAudioSessionCategoryOptionMixWithOthers,
-                    null,
-                )
+                IosAudioDiagnostics.nativeResult(AUDIO_DIAGNOSTIC_TAG, "set_category_ambient") { error ->
+                    session.setCategory(
+                        AVAudioSessionCategoryAmbient,
+                        AVAudioSessionCategoryOptionMixWithOthers,
+                        error,
+                    )
+                }
+            } else {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "preserve_play_and_record") {
+                    IosAudioDiagnostics.sessionDetails()
+                }
             }
-            session.setActive(true, null)
+            IosAudioDiagnostics.nativeResult(AUDIO_DIAGNOSTIC_TAG, "activate") { error ->
+                session.setActive(true, error)
+            }
         } catch (e: Exception) {
+            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "session_setup_exception", warning = true)
             log.w { "Failed to setup audio session: ${e.message}" }
         }
     }
@@ -139,6 +172,9 @@ private class IosSoundManager {
             `object` = null,
             queue = NSOperationQueue.mainQueue(),
             usingBlock = { _ ->
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "app_active") {
+                    "released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
                 recoverAudioSession()
             },
         )
@@ -150,6 +186,11 @@ private class IosSoundManager {
                 val userInfo = notification?.userInfo
                 val typeValue = (userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)
                     ?.unsignedLongLongValue
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "interruption") {
+                    "type=$typeValue options=${(userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)?.unsignedLongLongValue} " +
+                        "wasSuspended=${(userInfo?.get(AVAudioSessionInterruptionWasSuspendedKey) as? NSNumber)?.boolValue} " +
+                        "released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
                 // Only react to "ended" — "began" means the system has already
                 // suspended playback, and we will be re-foregrounded / re-shown
                 // when the interruption ends.
@@ -160,9 +201,34 @@ private class IosSoundManager {
         )
         lifecycleObservers += foregroundObserver
         lifecycleObservers += interruptionObserver
+        // Observation only: these notifications do not add recovery or change session ownership.
+        listOf(
+            UIApplicationWillResignActiveNotification to "app_resign_active",
+            UIApplicationDidEnterBackgroundNotification to "app_background",
+            AVAudioSessionRouteChangeNotification to "route_change",
+            AVAudioSessionMediaServicesWereLostNotification to "media_services_lost",
+            AVAudioSessionMediaServicesWereResetNotification to "media_services_reset",
+        ).forEach { (name, event) ->
+            try {
+                lifecycleObservers += center.addObserverForName(
+                    name = name,
+                    `object` = null,
+                    queue = NSOperationQueue.mainQueue(),
+                    usingBlock = { notification ->
+                        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, event) {
+                            "released=$released routeReason=${(notification?.userInfo?.get(AVAudioSessionRouteChangeReasonKey) as? NSNumber)?.unsignedLongLongValue} " +
+                                IosAudioDiagnostics.sessionDetails()
+                        }
+                    },
+                )
+            } catch (_: Exception) {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "diagnostic_observer_failed", warning = true) { "event=$event" }
+            }
+        }
     }
 
     private fun recoverAudioSession() {
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "recovery_requested") { "released=$released" }
         if (released) return
         setupAudioSession()
         prepareAllPlayers()
@@ -342,7 +408,10 @@ private class IosSoundManager {
 
     fun playSound(event: HapticEvent) {
         // ERROR event has no sound
-        if (event is HapticEvent.ERROR) return
+        if (event is HapticEvent.ERROR) {
+            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "cue_has_no_sound") { "cue=ERROR" }
+            return
+        }
 
         val player = when (event) {
             is HapticEvent.BADGE_EARNED -> {
@@ -415,21 +484,31 @@ private class IosSoundManager {
                 // path does not repeatedly reconfigure the process-wide
                 // AVAudioSession or downgrade SafeWordListener's PlayAndRecord
                 // category during active workouts.
-                player.prepareToPlay()
+                val prepared = player.prepareToPlay()
                 // Reset to beginning if already playing
                 player.currentTime = 0.0
                 if (event is HapticEvent.COUNTDOWN_TICK) {
                     player.enableRate = true
                     player.rate = ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)
                 }
-                player.play()
+                val played = player.play()
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_result", warning = !prepared || !played) {
+                    "cue=${event::class.simpleName} prepared=$prepared played=$played isPlaying=${player.isPlaying()} " +
+                        "playerVolume=${player.volume} released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
             } catch (e: Exception) {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_exception", warning = true) { "cue=${event::class.simpleName}" }
                 log.w { "Sound playback failed for $event: ${e.message}" }
+            }
+        } else {
+            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_missing", warning = true) {
+                "cue=${event::class.simpleName} released=$released ${IosAudioDiagnostics.sessionDetails()}"
             }
         }
     }
 
     fun release() {
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "manager_release")
         // Issue #522: Prevent late-arriving foreground / interruption
         // notifications from re-activating the session after we have already
         // torn it down, and remove the observers we installed in init.
@@ -490,12 +569,15 @@ private class IosSoundManager {
             // stepping on an active record session (mirrors the setup-time guard).
             val session = AVAudioSession.sharedInstance()
             if (session.category != AVAudioSessionCategoryPlayAndRecord) {
-                session.setActive(
-                    false,
-                    AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                    null,
-                )
+                IosAudioDiagnostics.nativeResult(AUDIO_DIAGNOSTIC_TAG, "deactivate") { error ->
+                    session.setActive(
+                        false,
+                        AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                        error,
+                    )
+                }
             } else {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "deactivation_skipped_play_and_record")
                 log.d { "Skipping audio-session deactivation: playAndRecord is active (safe-word listener owns it)" }
             }
         } catch (e: Exception) {
