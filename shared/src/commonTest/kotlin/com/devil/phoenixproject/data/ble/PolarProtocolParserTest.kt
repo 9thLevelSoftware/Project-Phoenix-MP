@@ -111,7 +111,7 @@ class PolarProtocolParserTest {
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses complete packet with 16-bit HR, energy, and multiple RR intervals`() {
+    fun `parsePolarHrMeasurement parses complete packet with 16-bit HR and energy and multiple RR intervals`() {
         // Flags: 0x01 (16-bit HR) | 0x06 (contact detected) | 0x08 (energy) | 0x10 (RR) = 0x1F
         // HR: 120 bpm (0x0078 -> [0x78, 0x00])
         // Energy: 250 kJ (0x00FA -> [0xFA, 0x00])
