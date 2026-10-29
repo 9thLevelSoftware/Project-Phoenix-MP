@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -501,7 +502,7 @@ internal fun routineResumeDiscardUiDecision(
 
 class MainViewModel(
     private val bleRepository: BleRepository,
-    private val workoutRepository: WorkoutRepository,
+    val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
     val personalRecordRepository: PersonalRecordRepository,
     private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
@@ -543,6 +544,7 @@ class MainViewModel(
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
+    val polarBleManager: PolarH10BleManager? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -732,6 +734,7 @@ class MainViewModel(
         machineSafetyCoordinator = machineSafetyCoordinator,
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
+        polarBleManager = polarBleManager,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -1457,6 +1460,12 @@ class MainViewModel(
                 Logger.i { "BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
+            }
+            try {
+                polarBleManager?.disconnect()
+                Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
+            } catch (e: Exception) {
+                Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }
             }
             Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }

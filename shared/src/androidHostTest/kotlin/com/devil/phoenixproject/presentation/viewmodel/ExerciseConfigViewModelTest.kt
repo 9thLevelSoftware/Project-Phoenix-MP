@@ -306,41 +306,50 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `manual PR percent weight edit before PR load converts when PR becomes available`() = runTest {
         val repository = FakePersonalRecordRepository()
-        val viewModel = createViewModel(personalRecordRepository = repository)
-        val exercise = benchRoutineExercise(
-            id = "rex-pr-pending",
-            setReps = listOf(10, 10),
-            weightPerCableKg = 5f,
-            setWeightsPerCableKg = listOf(5f, 5f),
-            usePercentOfPR = true,
-            weightPercentOfPR = 80,
-            setWeightsPercentOfPR = listOf(80, 80),
-        )
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val viewModel = createViewModel(personalRecordRepository = repository)
+            try {
+                val exercise = benchRoutineExercise(
+                    id = "rex-pr-pending",
+                    setReps = listOf(10, 10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f, 5f),
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    setWeightsPercentOfPR = listOf(80, 80),
+                )
 
-        viewModel.initialize(
-            exercise = exercise,
-            unit = WeightUnit.KG,
-            toDisplay = { value, _ -> value },
-            toKg = { value, _ -> value },
-        )
-        advanceUntilIdle()
-        assertNull(viewModel.currentExercisePR.value)
+                viewModel.initialize(
+                    exercise = exercise,
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                assertNull(viewModel.currentExercisePR.value)
 
-        viewModel.updateWeight(viewModel.sets.value.first().id, 25f)
-        assertEquals(listOf(25f, 5f), viewModel.sets.value.map { it.weightPerCable })
+                viewModel.updateWeight(viewModel.sets.value.first().id, 25f)
+                assertEquals(listOf(25f, 5f), viewModel.sets.value.map { it.weightPerCable })
 
-        repository.addRecord(weightPR(weight = 50f))
-        viewModel.loadPRForExercise("bench-1", "Old School")
-        advanceUntilIdle()
+                repository.addRecord(weightPR(weight = 50f))
+                viewModel.loadPRForExercise("bench-1", "Old School")
+                advanceUntilIdle()
 
-        waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(25f, 40f) }
+                assertEquals(listOf(25f, 40f), viewModel.sets.value.map { it.weightPerCable })
 
-        var saved: RoutineExercise? = null
-        viewModel.onSave { updated -> saved = updated }
+                var saved: RoutineExercise? = null
+                viewModel.onSave { updated -> saved = updated }
 
-        assertNotNull(saved)
-        assertEquals(listOf(50, 80), saved.setWeightsPercentOfPR)
-        assertEquals(listOf(25f, 40f), saved.setWeightsPerCableKg)
+                assertNotNull(saved)
+                assertEquals(listOf(50, 80), saved.setWeightsPercentOfPR)
+                assertEquals(listOf(25f, 40f), saved.setWeightsPerCableKg)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

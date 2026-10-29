@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PolarHrMeasurement
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -74,6 +76,32 @@ class ManualStopStartTimeRaceTest {
             "the legacy manual-stop save only runs without a current lease",
         )
         harness.coordinator.collectedMetrics.clear()
+    }
+
+    @Test
+    fun manualStopWithoutALeasePreservesTheRecordedPolarSummary() = runTest {
+        val polarManager = PolarH10BleManager(scope = backgroundScope)
+        val harness = DWSMTestHarness(this, polarBleManager = polarManager)
+        try {
+            runASetThenEndTheWorkout(harness)
+            polarManager.startSessionRecording("manual-polar", phase = "WORKING_SET")
+            polarManager.processRrIntervals(PolarHrMeasurement(120, true, rrIntervalsMs = listOf(500.0)))
+            polarManager.processRrIntervals(PolarHrMeasurement(100, true, rrIntervalsMs = listOf(600.0)))
+            harness.coordinator._repCount.value = RepCount(workingReps = REPS, totalReps = REPS, isWarmupComplete = true)
+            harness.coordinator.workoutStartTime = harness.nowMs - 10_000
+
+            harness.dwsm.stopWorkout()
+            advanceUntilIdle()
+
+            val saved = harness.fakeWorkoutRepo.allSessions().single { it.totalReps == REPS }
+            assertEquals(110, saved.avgHeartRateBpm)
+            assertEquals(120, saved.maxHeartRateBpm)
+            assertEquals(100, saved.minHeartRateBpm)
+            assertEquals(550f, saved.avgRrIntervalMs)
+            assertEquals(100f, saved.rmssdMs)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test

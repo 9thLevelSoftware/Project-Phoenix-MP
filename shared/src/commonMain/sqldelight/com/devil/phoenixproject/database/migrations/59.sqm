@@ -1,0 +1,52 @@
+-- Migration 59: Polar H10 Multi-Tier Telemetry Persistence
+
+-- 1. MetricSample intra-set synchronized biomechanics
+ALTER TABLE MetricSample ADD COLUMN heartRateBpm INTEGER;
+ALTER TABLE MetricSample ADD COLUMN rrIntervalMs REAL;
+ALTER TABLE MetricSample ADD COLUMN torsoPitchDeg REAL;
+ALTER TABLE MetricSample ADD COLUMN torsoRollDeg REAL;
+ALTER TABLE MetricSample ADD COLUMN dynamicAccMg INTEGER;
+ALTER TABLE MetricSample ADD COLUMN chestAccXMg INTEGER;
+ALTER TABLE MetricSample ADD COLUMN chestAccYMg INTEGER;
+ALTER TABLE MetricSample ADD COLUMN chestAccZMg INTEGER;
+
+-- 2. PolarBeatSample: continuous beat & recovery timeline
+CREATE TABLE IF NOT EXISTS PolarBeatSample (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    timestampMs INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    hrBpm INTEGER NOT NULL,
+    rrMs REAL NOT NULL,
+    rmssdMs REAL,
+    torsoPitchDeg REAL,
+    torsoRollDeg REAL,
+    dynamicAccMg INTEGER,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs);
+
+-- 3. PolarEcgSegment: 130 Hz raw ECG trace storage
+CREATE TABLE IF NOT EXISTS PolarEcgSegment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    sensorTimestampNs INTEGER NOT NULL,
+    wallClockTimestampMs INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    samplesUvCsv TEXT NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs);
+
+-- 4. WorkoutSession summary columns
+ALTER TABLE WorkoutSession ADD COLUMN avgHeartRateBpm INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN maxHeartRateBpm INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN minHeartRateBpm INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN avgRrIntervalMs REAL;
+ALTER TABLE WorkoutSession ADD COLUMN rmssdMs REAL;
+ALTER TABLE WorkoutSession ADD COLUMN hrr60Bpm INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN hrr300Bpm INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN maxTorsoPitchDeg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL;

@@ -31,9 +31,10 @@ import kotlinx.coroutines.flow.onSubscription
 
 /** Kable API double, not a simulated radio, CoreBluetooth stack, or trainer firmware. */
 internal class CompositionAdvertisement(
-    id: String,
+    id: String = "00000000-0000-0000-0000-001122334455",
     override val name: String? = "Vee_Composition",
     override val rssi: Int = -45,
+    override val uuids: List<Uuid> = listOf(BleConstants.NUS_SERVICE_UUID),
 ) : Advertisement {
     // Identifier is Uuid on Apple and String on Android. Validate UUIDs on both,
     // but do not call Android's MAC validator: this is not a radio advertisement.
@@ -43,7 +44,7 @@ internal class CompositionAdvertisement(
     override val peripheralName: String? = name
     override val isConnectable: Boolean = true
     override val txPower: Int? = null
-    override val uuids: List<Uuid> = listOf(BleConstants.NUS_SERVICE_UUID)
+
     override val manufacturerData: ManufacturerData? = null
     override fun serviceData(uuid: Uuid): ByteArray? = null
     override fun manufacturerData(companyIdentifierCode: Int): ByteArray? = null

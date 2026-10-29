@@ -44,6 +44,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -142,6 +145,8 @@ fun WorkoutTab(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs. The host
     // passes the active profile's overlay; the empty default is for previews/tests only.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
+    polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
     val connectionState = state.connectionState
     val workoutState = state.workoutState
@@ -284,7 +289,7 @@ fun WorkoutTab(
                 onReconnect = onReconnectWorkoutTeardown,
             )
 
-            if (connectionState is ConnectionState.Connected) {
+            if (connectionState is ConnectionState.Connected || workoutState is WorkoutState.Completed) {
                 when (workoutState) {
                     is WorkoutState.Error -> {
                         ErrorCard(message = workoutState.message)
@@ -297,6 +302,8 @@ fun WorkoutTab(
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
                             machineTeardownState = machineTeardownState,
+                            polarBleManager = polarBleManager,
+                            workoutRepository = workoutRepository,
                         )
                     }
 
@@ -423,6 +430,8 @@ fun WorkoutTab(
                             workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
+                            polarBleManager = polarBleManager,
+                            workoutRepository = workoutRepository,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
                                 // Just Lift set. If the user already decided, or the set isn't a
@@ -941,6 +950,8 @@ private fun CompletedCard(
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
     machineTeardownState: MachineTeardownState,
+    polarBleManager: PolarH10BleManager? = null,
+    workoutRepository: WorkoutRepository? = null,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1026,32 +1037,39 @@ private fun CompletedCard(
                             style = MaterialTheme.typography.bodyMedium,
                             color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
-
-                        Spacer(Modifier.height(Spacing.medium))
-
-                        Button(
-                            onClick = onStartNextExercise,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            enabled = nextExerciseStartGate.startEnabled,
-                            shape = MaterialTheme.shapes.medium,
-                            elevation = ButtonDefaults.buttonElevation(
-                                defaultElevation = 4.dp,
-                                pressedElevation = 2.dp,
-                            ),
-                        ) {
-                            Text(
-                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
-                                    stringResource(Res.string.workout_teardown_finishing)
-                                } else {
-                                    "Start Next Exercise"
-                                },
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
                     }
+                }
+            }
+
+            // Polar H10 Session Analytics & Cooldown Protocol (rendered below exercise cards, above action button)
+            PolarSessionAnalyticsCard(
+                modifier = Modifier.padding(vertical = Spacing.small),
+                polarBleManager = polarBleManager,
+                workoutRepository = workoutRepository,
+            )
+
+            if (hasMoreExercises && nextExercise != null) {
+                Button(
+                    onClick = onStartNextExercise,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    enabled = nextExerciseStartGate.startEnabled,
+                    shape = MaterialTheme.shapes.medium,
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 2.dp,
+                    ),
+                ) {
+                    Text(
+                        if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start Next Exercise"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             } else {
                 // Last exercise or not a routine - show "Start New Workout"

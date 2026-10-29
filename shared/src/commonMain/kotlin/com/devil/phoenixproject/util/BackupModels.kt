@@ -94,6 +94,16 @@ data class WorkoutSessionBackup(
      * because a post-sync edit keeps its stamp while the row is dirty.
      */
     val syncAcknowledged: Boolean = false,
+    // Polar H10 cardiac & torso biomechanics summary (added in migration 59)
+    val avgHeartRateBpm: Int? = null,
+    val maxHeartRateBpm: Int? = null,
+    val minHeartRateBpm: Int? = null,
+    val avgRrIntervalMs: Float? = null,
+    val rmssdMs: Float? = null,
+    val hrr60Bpm: Int? = null,
+    val hrr300Bpm: Int? = null,
+    val maxTorsoPitchDeg: Float? = null,
+    val maxTorsoRollDeg: Float? = null,
 )
 
 /**
@@ -112,6 +122,45 @@ data class MetricSampleBackup(
     val loadB: Float? = null,
     val power: Float?,
     val status: Int = 0,
+    // Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 59)
+    val heartRateBpm: Int? = null,
+    val rrIntervalMs: Float? = null,
+    val torsoPitchDeg: Float? = null,
+    val torsoRollDeg: Float? = null,
+    val dynamicAccMg: Int? = null,
+    val chestAccXMg: Int? = null,
+    val chestAccYMg: Int? = null,
+    val chestAccZMg: Int? = null,
+)
+
+/**
+ * Backup representation of PolarBeatSample
+ */
+@Serializable
+data class PolarBeatSampleBackup(
+    val id: Long = 0,
+    val sessionId: String,
+    val timestampMs: Long,
+    val phase: String,
+    val hrBpm: Int,
+    val rrMs: Float,
+    val rmssdMs: Float? = null,
+    val torsoPitchDeg: Float? = null,
+    val torsoRollDeg: Float? = null,
+    val dynamicAccMg: Int? = null,
+)
+
+/**
+ * Backup representation of PolarEcgSegment
+ */
+@Serializable
+data class PolarEcgSegmentBackup(
+    val id: Long = 0,
+    val sessionId: String,
+    val sensorTimestampNs: Long,
+    val wallClockTimestampMs: Long,
+    val phase: String,
+    val samplesUvCsv: String,
 )
 
 /**
@@ -656,7 +705,7 @@ fun backupPrivacySummary(includesRawTelemetry: Boolean): String =
         "profiles, profile training preferences, training baselines, personal records, badges and stats, and notes. " +
         (
             if (includesRawTelemetry) {
-                "Includes raw per-sample force and position telemetry. "
+                "Includes raw per-sample force, position, heart rate, RR, ECG, and accelerometer telemetry. "
             } else {
                 "Does not include raw per-sample telemetry (turn on \"Include raw telemetry\" to add it). "
             }
@@ -734,6 +783,9 @@ data class BackupContent(
     val localOwnershipClaims: List<LocalOwnershipClaimBackup> = emptyList(),
     val cycleConflictDrafts: List<CycleConflictDraftBackup> = emptyList(),
     val cycleSyncStates: List<CycleSyncStateBackup> = emptyList(),
+    // Added migration 58: Polar H10 multi-tier continuous timeline and ECG traces
+    val polarBeatSamples: List<PolarBeatSampleBackup> = emptyList(),
+    val polarEcgSegments: List<PolarEcgSegmentBackup> = emptyList(),
 )
 
 /**
@@ -799,6 +851,10 @@ data class ImportResult(
     val cycleConflictDraftsSkipped: Int = 0,
     val cycleSyncStatesImported: Int = 0,
     val cycleSyncStatesSkipped: Int = 0,
+    val polarBeatSamplesImported: Int = 0,
+    val polarBeatSamplesSkipped: Int = 0,
+    val polarEcgSegmentsImported: Int = 0,
+    val polarEcgSegmentsSkipped: Int = 0,
     val repairedReferences: Int = 0,
     /** Rows of a profile the user permanently deleted (PR 20), left out on purpose. */
     val deletedProfileRowsSkipped: Int = 0,
@@ -827,7 +883,8 @@ data class ImportResult(
             profileExerciseBaselinesImported + workoutDeletionsImported +
             pendingProfileRecoveriesImported + ownershipTransfersImported +
             appliedOwnershipEventsImported + localOwnershipClaimsImported +
-            cycleConflictDraftsImported + cycleSyncStatesImported
+            cycleConflictDraftsImported + cycleSyncStatesImported +
+            polarBeatSamplesImported + polarEcgSegmentsImported
 
     val totalSkipped: Int
         get() = sessionsSkipped + metricsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
@@ -839,5 +896,6 @@ data class ImportResult(
             profileExerciseBaselinesSkipped +
             workoutDeletionsSkipped + pendingProfileRecoveriesSkipped +
             ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
-            localOwnershipClaimsSkipped + cycleSyncStatesSkipped + deletedProfileRowsSkipped
+            localOwnershipClaimsSkipped + cycleSyncStatesSkipped +
+            polarBeatSamplesSkipped + polarEcgSegmentsSkipped + deletedProfileRowsSkipped
 }

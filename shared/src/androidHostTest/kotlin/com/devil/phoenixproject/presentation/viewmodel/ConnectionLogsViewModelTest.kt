@@ -84,4 +84,31 @@ class ConnectionLogsViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `filters logs by hrmOnly`() = runTest {
+        viewModel.logs.test {
+            // Initial empty state
+            assertEquals(emptyList(), awaitItem())
+
+            // Add logs
+            repository.info(LogEventType.CONNECT_SUCCESS, "Connected to Vitruvian", deviceName = "Vee_Trainer")
+            repository.info(LogEventType.CONNECT_SUCCESS, "[HRM] Connected to Polar H10", deviceName = "Polar H10", tag = "HRM")
+            advanceUntilIdle()
+
+            val withBothLogs = awaitItem()
+            assertEquals(2, withBothLogs.size)
+
+            // Toggle hrmOnly filter
+            viewModel.toggleHrmOnly()
+            advanceUntilIdle()
+
+            val filtered = awaitItem()
+            assertEquals(1, filtered.size)
+            assertEquals("HRM", filtered.first().tag)
+            assertTrue(filtered.first().message.contains("Polar H10"))
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }

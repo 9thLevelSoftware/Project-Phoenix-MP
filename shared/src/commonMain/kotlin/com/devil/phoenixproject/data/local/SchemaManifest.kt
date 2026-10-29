@@ -1117,12 +1117,21 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1)),
                 local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
                 synced_sync_generation INTEGER NOT NULL DEFAULT 0
-                    CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
+                    CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation),
+                avgHeartRateBpm INTEGER,
+                maxHeartRateBpm INTEGER,
+                minHeartRateBpm INTEGER,
+                avgRrIntervalMs REAL,
+                rmssdMs REAL,
+                hrr60Bpm INTEGER,
+                hrr300Bpm INTEGER,
+                maxTorsoPitchDeg REAL,
+                maxTorsoRollDeg REAL
             )
         """.trimIndent(),
     ),
 
-    // MetricSample -- initial schema, full shape (no later migrations add columns)
+    // MetricSample -- initial schema, full shape with Polar telemetry (migration 59)
     SchemaTableOperation(
         table = "MetricSample",
         createSql = """
@@ -1138,6 +1147,50 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 loadB REAL,
                 power REAL,
                 status INTEGER NOT NULL DEFAULT 0,
+                heartRateBpm INTEGER,
+                rrIntervalMs REAL,
+                torsoPitchDeg REAL,
+                torsoRollDeg REAL,
+                dynamicAccMg INTEGER,
+                chestAccXMg INTEGER,
+                chestAccYMg INTEGER,
+                chestAccZMg INTEGER,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // PolarBeatSample -- migration 59
+    SchemaTableOperation(
+        table = "PolarBeatSample",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PolarBeatSample (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                timestampMs INTEGER NOT NULL,
+                phase TEXT NOT NULL,
+                hrBpm INTEGER NOT NULL,
+                rrMs REAL NOT NULL,
+                rmssdMs REAL,
+                torsoPitchDeg REAL,
+                torsoRollDeg REAL,
+                dynamicAccMg INTEGER,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // PolarEcgSegment -- migration 59
+    SchemaTableOperation(
+        table = "PolarEcgSegment",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PolarEcgSegment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                sensorTimestampNs INTEGER NOT NULL,
+                wallClockTimestampMs INTEGER NOT NULL,
+                phase TEXT NOT NULL,
+                samplesUvCsv TEXT NOT NULL,
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -1719,6 +1772,27 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
         "synced_sync_generation",
         "ALTER TABLE WorkoutSession ADD COLUMN synced_sync_generation INTEGER NOT NULL DEFAULT 0 CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)",
     ),
+    // Migration 59: Polar H10 cardiac & torso biomechanics summary
+    SchemaHealOperation("WorkoutSession", "avgHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN avgHeartRateBpm INTEGER"),
+    SchemaHealOperation("WorkoutSession", "maxHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN maxHeartRateBpm INTEGER"),
+    SchemaHealOperation("WorkoutSession", "minHeartRateBpm", "ALTER TABLE WorkoutSession ADD COLUMN minHeartRateBpm INTEGER"),
+    SchemaHealOperation("WorkoutSession", "avgRrIntervalMs", "ALTER TABLE WorkoutSession ADD COLUMN avgRrIntervalMs REAL"),
+    SchemaHealOperation("WorkoutSession", "rmssdMs", "ALTER TABLE WorkoutSession ADD COLUMN rmssdMs REAL"),
+    SchemaHealOperation("WorkoutSession", "hrr60Bpm", "ALTER TABLE WorkoutSession ADD COLUMN hrr60Bpm INTEGER"),
+    SchemaHealOperation("WorkoutSession", "hrr300Bpm", "ALTER TABLE WorkoutSession ADD COLUMN hrr300Bpm INTEGER"),
+    SchemaHealOperation("WorkoutSession", "maxTorsoPitchDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoPitchDeg REAL"),
+    SchemaHealOperation("WorkoutSession", "maxTorsoRollDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL"),
+
+    // ── MetricSample (8 columns) ─────────────────────────────────────────
+    // Migration 59: Polar H10 intra-set synchronized telemetry & torso biomechanics
+    SchemaHealOperation("MetricSample", "heartRateBpm", "ALTER TABLE MetricSample ADD COLUMN heartRateBpm INTEGER"),
+    SchemaHealOperation("MetricSample", "rrIntervalMs", "ALTER TABLE MetricSample ADD COLUMN rrIntervalMs REAL"),
+    SchemaHealOperation("MetricSample", "torsoPitchDeg", "ALTER TABLE MetricSample ADD COLUMN torsoPitchDeg REAL"),
+    SchemaHealOperation("MetricSample", "torsoRollDeg", "ALTER TABLE MetricSample ADD COLUMN torsoRollDeg REAL"),
+    SchemaHealOperation("MetricSample", "dynamicAccMg", "ALTER TABLE MetricSample ADD COLUMN dynamicAccMg INTEGER"),
+    SchemaHealOperation("MetricSample", "chestAccXMg", "ALTER TABLE MetricSample ADD COLUMN chestAccXMg INTEGER"),
+    SchemaHealOperation("MetricSample", "chestAccYMg", "ALTER TABLE MetricSample ADD COLUMN chestAccYMg INTEGER"),
+    SchemaHealOperation("MetricSample", "chestAccZMg", "ALTER TABLE MetricSample ADD COLUMN chestAccZMg INTEGER"),
 
     // ── PersonalRecord (7 columns) ──────────────────────────────────────
 
@@ -1933,6 +2007,12 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
+
+    // ── PolarBeatSample (migration 59) ──────────────────────────────────
+    SchemaIndexOperation("idx_polar_beat_sample_session_ts", "CREATE INDEX IF NOT EXISTS idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs)"),
+
+    // ── PolarEcgSegment (migration 59) ──────────────────────────────────
+    SchemaIndexOperation("idx_polar_ecg_segment_session_wall", "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs)"),
 
     // ── PersonalRecord ──────────────────────────────────────────────────
     // idx_pr_unique changed shape: migration 19 added phase, migration 21 added profile_id.

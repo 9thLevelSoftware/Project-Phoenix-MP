@@ -8,6 +8,9 @@ import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.PolarEcgSegment
+import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
@@ -393,4 +396,16 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
         .map { it.exerciseId!! }
         .distinct()
+
+    var polarBeatSamplesBySession: (String) -> List<PolarBeatSample> = { emptyList() }
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+        polarBeatSamplesBySession(sessionId)
+
+    var polarEcgSegmentsBySession: (String) -> List<PolarEcgSegment> = { emptyList() }
+    override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =
+        polarEcgSegmentsBySession(sessionId)
+
+    var metricSamplesBySession: (String) -> List<PolarMetricSample> = { emptyList() }
+    override suspend fun getMetricSamplesBySession(sessionId: String): List<PolarMetricSample> =
+        metricSamplesBySession(sessionId)
 }

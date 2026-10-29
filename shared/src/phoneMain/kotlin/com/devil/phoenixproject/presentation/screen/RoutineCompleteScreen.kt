@@ -24,8 +24,10 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -46,7 +48,11 @@ import projectphoenix.shared.generated.resources.Res
  * only guaranteed exit.
  */
 @Composable
-fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel) {
+fun RoutineCompleteScreen(
+    navController: NavController,
+    viewModel: MainViewModel,
+    polarBleManager: PolarH10BleManager? = viewModel.polarBleManager,
+) {
     val routineFlowState by viewModel.routineFlowState.collectAsState()
 
     val completeState = routineFlowState as? RoutineFlowState.Complete
@@ -253,6 +259,20 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                         }
                     }
                 }
+
+                // Polar H10 Session Analytics & 5-minute recovery cooldown
+                val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
+                val workoutHistory by viewModel.workoutHistory.collectAsState()
+                val latestCompletedSession = remember(lastRecordedSessionId, workoutHistory) {
+                    lastRecordedSessionId?.let { id -> workoutHistory.firstOrNull { it.id == id } }
+                }
+                PolarSessionAnalyticsCard(
+                    sessionId = lastRecordedSessionId,
+                    session = latestCompletedSession,
+                    modifier = Modifier.fillMaxWidth(),
+                    polarBleManager = polarBleManager,
+                    workoutRepository = viewModel.workoutRepository,
+                )
             }
 
             // Reserved Done footer — sibling of the scroll body, outside every

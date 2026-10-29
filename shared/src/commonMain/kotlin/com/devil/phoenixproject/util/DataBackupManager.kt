@@ -37,6 +37,8 @@ import com.devil.phoenixproject.database.StreakHistory
 import com.devil.phoenixproject.database.Superset
 import com.devil.phoenixproject.database.TrainingCycle
 import com.devil.phoenixproject.database.UserProfile
+import com.devil.phoenixproject.database.PolarBeatSample
+import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.database.WorkoutDeletion
@@ -308,6 +310,8 @@ abstract class BaseDataBackupManager(
             "workoutSessions",
             "metricSamples",
             "completedSets",
+            "polarBeatSamples",
+            "polarEcgSegments",
             "personalRecords",
             "progressionEvents",
             "earnedBadges",
@@ -340,6 +344,8 @@ abstract class BaseDataBackupManager(
             "workoutSessions",
             "metricSamples",
             "completedSets",
+            "polarBeatSamples",
+            "polarEcgSegments",
             "personalRecords",
             // After every section that names exercises (routine exercises, sessions, PRs): a
             // baseline row carries only an id, so a retired catalogue id that maps by name alone
@@ -438,10 +444,14 @@ abstract class BaseDataBackupManager(
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
         // native SQLite driver handles large result sets.
         val metrics = mutableListOf<MetricSample>()
+        val polarBeatSamples = mutableListOf<com.devil.phoenixproject.database.PolarBeatSample>()
+        val polarEcgSegments = mutableListOf<com.devil.phoenixproject.database.PolarEcgSegment>()
         if (includeRawTelemetryInBackups) {
             for (session in sessions) {
                 val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
                 metrics.addAll(sessionMetrics)
+                polarBeatSamples.addAll(queries.selectPolarBeatSamplesBySession(session.id).executeAsList())
+                polarEcgSegments.addAll(queries.selectPolarEcgSegmentsBySession(session.id).executeAsList())
             }
         }
 
@@ -546,6 +556,8 @@ abstract class BaseDataBackupManager(
                 localOwnershipClaims = localOwnershipClaims.map(::mapLocalOwnershipClaimToBackup),
                 cycleSyncStates = cycleSyncStates.map(::mapCycleSyncStateToBackup),
                 cycleConflictDrafts = cycleConflictDrafts.map(::mapCycleConflictDraftToBackup),
+                polarBeatSamples = polarBeatSamples.map(::mapPolarBeatSampleToBackup),
+                polarEcgSegments = polarEcgSegments.map(::mapPolarEcgSegmentToBackup),
             ),
         )
     }
@@ -786,6 +798,8 @@ abstract class BaseDataBackupManager(
             "workoutSessions" -> json.decodeFromString<WorkoutSessionBackup>(raw)
             "metricSamples" -> json.decodeFromString<MetricSampleBackup>(raw)
             "completedSets" -> json.decodeFromString<CompletedSetBackup>(raw)
+            "polarBeatSamples" -> json.decodeFromString<PolarBeatSampleBackup>(raw)
+            "polarEcgSegments" -> json.decodeFromString<PolarEcgSegmentBackup>(raw)
             "personalRecords" -> json.decodeFromString<PersonalRecordBackup>(raw)
             "progressionEvents" -> json.decodeFromString<ProgressionEventBackup>(raw)
             "earnedBadges" -> json.decodeFromString<EarnedBadgeBackup>(raw)
@@ -893,6 +907,10 @@ abstract class BaseDataBackupManager(
             var plannedSetsSkipped = 0
             var completedSetsImported = 0
             var completedSetsSkipped = 0
+            var polarBeatSamplesImported = 0
+            var polarBeatSamplesSkipped = 0
+            var polarEcgSegmentsImported = 0
+            var polarEcgSegmentsSkipped = 0
             var progressionEventsImported = 0
             var progressionEventsSkipped = 0
             var earnedBadgesImported = 0
@@ -1059,18 +1077,45 @@ abstract class BaseDataBackupManager(
                         Logger.w { "Backup restore cannot safely retry legacy metric without stable id for session ${metric.sessionId}" }
                         return
                     }
-                    queries.insertMetric(
-                        sessionId = metric.sessionId,
-                        timestamp = metric.timestamp,
-                        position = metric.position?.toDouble(),
-                        positionB = metric.positionB?.toDouble(),
-                        velocity = metric.velocity?.toDouble(),
-                        velocityB = metric.velocityB?.toDouble(),
-                        load = metric.load?.toDouble(),
-                        loadB = metric.loadB?.toDouble(),
-                        power = metric.power?.toDouble(),
-                        status = metric.status.toLong(),
-                    )
+                    if (metric.heartRateBpm != null || metric.rrIntervalMs != null ||
+                        metric.torsoPitchDeg != null || metric.torsoRollDeg != null ||
+                        metric.dynamicAccMg != null || metric.chestAccXMg != null ||
+                        metric.chestAccYMg != null || metric.chestAccZMg != null
+                    ) {
+                        queries.insertMetricWithPolar(
+                            sessionId = metric.sessionId,
+                            timestamp = metric.timestamp,
+                            position = metric.position?.toDouble(),
+                            positionB = metric.positionB?.toDouble(),
+                            velocity = metric.velocity?.toDouble(),
+                            velocityB = metric.velocityB?.toDouble(),
+                            load = metric.load?.toDouble(),
+                            loadB = metric.loadB?.toDouble(),
+                            power = metric.power?.toDouble(),
+                            status = metric.status.toLong(),
+                            heartRateBpm = metric.heartRateBpm?.toLong(),
+                            rrIntervalMs = metric.rrIntervalMs?.toDouble(),
+                            torsoPitchDeg = metric.torsoPitchDeg?.toDouble(),
+                            torsoRollDeg = metric.torsoRollDeg?.toDouble(),
+                            dynamicAccMg = metric.dynamicAccMg?.toLong(),
+                            chestAccXMg = metric.chestAccXMg?.toLong(),
+                            chestAccYMg = metric.chestAccYMg?.toLong(),
+                            chestAccZMg = metric.chestAccZMg?.toLong(),
+                        )
+                    } else {
+                        queries.insertMetric(
+                            sessionId = metric.sessionId,
+                            timestamp = metric.timestamp,
+                            position = metric.position?.toDouble(),
+                            positionB = metric.positionB?.toDouble(),
+                            velocity = metric.velocity?.toDouble(),
+                            velocityB = metric.velocityB?.toDouble(),
+                            load = metric.load?.toDouble(),
+                            loadB = metric.loadB?.toDouble(),
+                            power = metric.power?.toDouble(),
+                            status = metric.status.toLong(),
+                        )
+                    }
                     queries.markWorkoutComponentDirty(metric.sessionId)
                     holdGroupOfRestoredChild(metric.sessionId)
                     metricsImported++
@@ -1082,7 +1127,15 @@ abstract class BaseDataBackupManager(
                         existing.position?.toFloat() == metric.position && existing.positionB?.toFloat() == metric.positionB &&
                         existing.velocity?.toFloat() == metric.velocity && existing.velocityB?.toFloat() == metric.velocityB &&
                         existing.load?.toFloat() == metric.load && existing.loadB?.toFloat() == metric.loadB &&
-                        existing.power?.toFloat() == metric.power && existing.status == metric.status.toLong()
+                        existing.power?.toFloat() == metric.power && existing.status == metric.status.toLong() &&
+                        existing.heartRateBpm?.toInt() == metric.heartRateBpm &&
+                        existing.rrIntervalMs?.toFloat() == metric.rrIntervalMs &&
+                        existing.torsoPitchDeg?.toFloat() == metric.torsoPitchDeg &&
+                        existing.torsoRollDeg?.toFloat() == metric.torsoRollDeg &&
+                        existing.dynamicAccMg?.toInt() == metric.dynamicAccMg &&
+                        existing.chestAccXMg?.toInt() == metric.chestAccXMg &&
+                        existing.chestAccYMg?.toInt() == metric.chestAccYMg &&
+                        existing.chestAccZMg?.toInt() == metric.chestAccZMg
                     if (same) metricsSkipped++ else {
                         entitiesWithErrors++
                         Logger.w { "Backup restore conflict metric id=${metric.id}" }
@@ -1101,6 +1154,14 @@ abstract class BaseDataBackupManager(
                     loadB = metric.loadB?.toDouble(),
                     power = metric.power?.toDouble(),
                     status = metric.status.toLong(),
+                    heartRateBpm = metric.heartRateBpm?.toLong(),
+                    rrIntervalMs = metric.rrIntervalMs?.toDouble(),
+                    torsoPitchDeg = metric.torsoPitchDeg?.toDouble(),
+                    torsoRollDeg = metric.torsoRollDeg?.toDouble(),
+                    dynamicAccMg = metric.dynamicAccMg?.toLong(),
+                    chestAccXMg = metric.chestAccXMg?.toLong(),
+                    chestAccYMg = metric.chestAccYMg?.toLong(),
+                    chestAccZMg = metric.chestAccZMg?.toLong(),
                 )
                 queries.markWorkoutComponentDirty(metric.sessionId)
                 holdGroupOfRestoredChild(metric.sessionId)
@@ -1611,6 +1672,25 @@ abstract class BaseDataBackupManager(
                                                     sessionsImported++
                                                     resolvedRoutineSessionId?.let { groupId ->
                                                         restoredRoutineGroupIds.getOrPut(sessionProfileId) { linkedSetOf() } += groupId
+                                                    }
+                                                    if (session.avgHeartRateBpm != null || session.maxHeartRateBpm != null ||
+                                                        session.minHeartRateBpm != null || session.avgRrIntervalMs != null ||
+                                                        session.rmssdMs != null || session.hrr60Bpm != null ||
+                                                        session.hrr300Bpm != null || session.maxTorsoPitchDeg != null ||
+                                                        session.maxTorsoRollDeg != null
+                                                    ) {
+                                                        queries.updateSessionPolarSummary(
+                                                            id = session.id,
+                                                            avgHeartRateBpm = session.avgHeartRateBpm?.toLong(),
+                                                            maxHeartRateBpm = session.maxHeartRateBpm?.toLong(),
+                                                            minHeartRateBpm = session.minHeartRateBpm?.toLong(),
+                                                            avgRrIntervalMs = session.avgRrIntervalMs?.toDouble(),
+                                                            rmssdMs = session.rmssdMs?.toDouble(),
+                                                            hrr60Bpm = session.hrr60Bpm?.toLong(),
+                                                            hrr300Bpm = session.hrr300Bpm?.toLong(),
+                                                            maxTorsoPitchDeg = session.maxTorsoPitchDeg?.toDouble(),
+                                                            maxTorsoRollDeg = session.maxTorsoRollDeg?.toDouble(),
+                                                        )
                                                     }
                                                     if (session.portalOrigin || session.updatedAt != null || session.syncAcknowledged) {
                                                         // Same transaction as the insert, so an aborted
@@ -2523,6 +2603,106 @@ abstract class BaseDataBackupManager(
                                     }
                                 }
 
+                                // --- polarBeatSamples ---
+                                "polarBeatSamples" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val beat = tryImport("polarBeatSample-parse", null) {
+                                                json.decodeFromString<PolarBeatSampleBackup>(rawJson)
+                                            } ?: continue
+
+                                            if (!parentAvailable("session", beat.sessionId) ||
+                                                queries.selectSessionById(beat.sessionId).executeAsOneOrNull() == null
+                                            ) {
+                                                entitiesWithErrors++
+                                                Logger.w { "Backup restore missing required session ${beat.sessionId} for polarBeatSample ${beat.id}" }
+                                            } else {
+                                                val existing = queries.selectPolarBeatSampleById(beat.id).executeAsOneOrNull()
+                                                if (existing != null) {
+                                                    if (mapPolarBeatSampleToBackup(existing) == beat) {
+                                                        polarBeatSamplesSkipped++
+                                                    } else {
+                                                        entitiesWithErrors++
+                                                        Logger.w { "Backup restore conflict polarBeatSample id=${beat.id}; local row preserved" }
+                                                    }
+                                                    continue
+                                                }
+                                                queries.insertPolarBeatSampleRestoreIfAbsent(
+                                                    id = beat.id,
+                                                    sessionId = beat.sessionId,
+                                                    timestampMs = beat.timestampMs,
+                                                    phase = beat.phase,
+                                                    hrBpm = beat.hrBpm.toLong(),
+                                                    rrMs = beat.rrMs.toDouble(),
+                                                    rmssdMs = beat.rmssdMs?.toDouble(),
+                                                    torsoPitchDeg = beat.torsoPitchDeg?.toDouble(),
+                                                    torsoRollDeg = beat.torsoRollDeg?.toDouble(),
+                                                    dynamicAccMg = beat.dynamicAccMg?.toLong(),
+                                                )
+                                                val inserted = queries.selectChangedRowCount().executeAsOne() > 0L
+                                                if (inserted) {
+                                                    queries.markWorkoutComponentDirty(beat.sessionId)
+                                                    holdGroupOfRestoredChild(beat.sessionId)
+                                                    polarBeatSamplesImported++
+                                                } else {
+                                                    polarBeatSamplesSkipped++
+                                                }
+                                            }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
+                                // --- polarEcgSegments ---
+                                "polarEcgSegments" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val segment = tryImport("polarEcgSegment-parse", null) {
+                                                json.decodeFromString<PolarEcgSegmentBackup>(rawJson)
+                                            } ?: continue
+
+                                            if (!parentAvailable("session", segment.sessionId) ||
+                                                queries.selectSessionById(segment.sessionId).executeAsOneOrNull() == null
+                                            ) {
+                                                entitiesWithErrors++
+                                                Logger.w { "Backup restore missing required session ${segment.sessionId} for polarEcgSegment ${segment.id}" }
+                                            } else {
+                                                val existing = queries.selectPolarEcgSegmentById(segment.id).executeAsOneOrNull()
+                                                if (existing != null) {
+                                                    if (mapPolarEcgSegmentToBackup(existing) == segment) {
+                                                        polarEcgSegmentsSkipped++
+                                                    } else {
+                                                        entitiesWithErrors++
+                                                        Logger.w { "Backup restore conflict polarEcgSegment id=${segment.id}; local row preserved" }
+                                                    }
+                                                    continue
+                                                }
+                                                queries.insertPolarEcgSegmentRestoreIfAbsent(
+                                                    id = segment.id,
+                                                    sessionId = segment.sessionId,
+                                                    sensorTimestampNs = segment.sensorTimestampNs,
+                                                    wallClockTimestampMs = segment.wallClockTimestampMs,
+                                                    phase = segment.phase,
+                                                    samplesUvCsv = segment.samplesUvCsv,
+                                                )
+                                                val inserted = queries.selectChangedRowCount().executeAsOne() > 0L
+                                                if (inserted) {
+                                                    queries.markWorkoutComponentDirty(segment.sessionId)
+                                                    holdGroupOfRestoredChild(segment.sessionId)
+                                                    polarEcgSegmentsImported++
+                                                } else {
+                                                    polarEcgSegmentsSkipped++
+                                                }
+                                            }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
                                 // --- progressionEvents ---
                                 "progressionEvents" -> {
                                     committedTransaction {
@@ -2878,6 +3058,10 @@ abstract class BaseDataBackupManager(
                 cycleSyncStatesSkipped = cycleSyncStatesSkipped,
                 cycleConflictDraftsImported = cycleConflictDraftsImported,
                 cycleConflictDraftsSkipped = cycleConflictDraftsSkipped,
+                polarBeatSamplesImported = polarBeatSamplesImported,
+                polarBeatSamplesSkipped = polarBeatSamplesSkipped,
+                polarEcgSegmentsImported = polarEcgSegmentsImported,
+                polarEcgSegmentsSkipped = polarEcgSegmentsSkipped,
                 repairedReferences = repairedReferences,
                 entitiesWithErrors = entitiesWithErrors,
             )
@@ -3001,18 +3185,20 @@ abstract class BaseDataBackupManager(
         writer.write("\"metricSamples\":[")
         var metricIndex = 0L
         var firstMetric = true
-        // Raw telemetry is opt-in (F-033); the empty section keeps the file shape stable.
-        for (session in if (includeRawTelemetryInBackups) sessions else emptyList()) {
-            val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
-            for (metric in sessionMetrics) {
-                if (!firstMetric) writer.write(",")
-                firstMetric = false
-                writer.write(json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(metric)))
-                metricIndex++
-            }
-            if (sessionMetrics.isNotEmpty()) {
-                writer.flush()
-                onProgress(BackupProgress(BackupPhase.METRICS, metricIndex, metricCount))
+        // Raw telemetry is opt-in (F-033).
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
+                for (metric in sessionMetrics) {
+                    if (!firstMetric) writer.write(",")
+                    firstMetric = false
+                    writer.write(json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(metric)))
+                    metricIndex++
+                }
+                if (sessionMetrics.isNotEmpty()) {
+                    writer.flush()
+                    onProgress(BackupProgress(BackupPhase.METRICS, metricIndex, metricCount))
+                }
             }
         }
         writer.write("],")
@@ -3074,6 +3260,42 @@ abstract class BaseDataBackupManager(
             )
         })
         writer.write(",")
+
+        writer.write("\"polarBeatSamples\":[")
+        var firstBeat = true
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionBeats = queries.selectPolarBeatSamplesBySession(session.id).executeAsList()
+                for (beat in sessionBeats) {
+                    if (!firstBeat) writer.write(",")
+                    firstBeat = false
+                    writer.write(json.encodeToString(PolarBeatSampleBackup.serializer(), mapPolarBeatSampleToBackup(beat)))
+                }
+                if (sessionBeats.isNotEmpty()) {
+                    writer.flush()
+                }
+            }
+        }
+        writer.write("],")
+        writer.flush()
+
+        writer.write("\"polarEcgSegments\":[")
+        var firstEcg = true
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionEcgs = queries.selectPolarEcgSegmentsBySession(session.id).executeAsList()
+                for (ecg in sessionEcgs) {
+                    if (!firstEcg) writer.write(",")
+                    firstEcg = false
+                    writer.write(json.encodeToString(PolarEcgSegmentBackup.serializer(), mapPolarEcgSegmentToBackup(ecg)))
+                }
+                if (sessionEcgs.isNotEmpty()) {
+                    writer.flush()
+                }
+            }
+        }
+        writer.write("],")
+        writer.flush()
 
         val progressionEvents = queries.selectAllProgressionEventsSync().executeAsList()
         writeJsonArray(writer, "progressionEvents", progressionEvents.map { json.encodeToString(ProgressionEventBackup.serializer(), mapProgressionEventToBackup(it)) })
@@ -3366,6 +3588,15 @@ abstract class BaseDataBackupManager(
             // 0/0; a local row needs at least one acknowledged push.
             syncAcknowledged = session.synced_sync_generation >= session.local_sync_generation &&
                 (session.portalOrigin == 1L || session.synced_sync_generation > 0L),
+            avgHeartRateBpm = session.avgHeartRateBpm?.toInt(),
+            maxHeartRateBpm = session.maxHeartRateBpm?.toInt(),
+            minHeartRateBpm = session.minHeartRateBpm?.toInt(),
+            avgRrIntervalMs = session.avgRrIntervalMs?.toFloat(),
+            rmssdMs = session.rmssdMs?.toFloat(),
+            hrr60Bpm = session.hrr60Bpm?.toInt(),
+            hrr300Bpm = session.hrr300Bpm?.toInt(),
+            maxTorsoPitchDeg = session.maxTorsoPitchDeg?.toFloat(),
+            maxTorsoRollDeg = session.maxTorsoRollDeg?.toFloat(),
         )
     }
 
@@ -3381,6 +3612,36 @@ abstract class BaseDataBackupManager(
         loadB = metric.loadB?.toFloat(),
         power = metric.power?.toFloat(),
         status = metric.status.toInt(),
+        heartRateBpm = metric.heartRateBpm?.toInt(),
+        rrIntervalMs = metric.rrIntervalMs?.toFloat(),
+        torsoPitchDeg = metric.torsoPitchDeg?.toFloat(),
+        torsoRollDeg = metric.torsoRollDeg?.toFloat(),
+        dynamicAccMg = metric.dynamicAccMg?.toInt(),
+        chestAccXMg = metric.chestAccXMg?.toInt(),
+        chestAccYMg = metric.chestAccYMg?.toInt(),
+        chestAccZMg = metric.chestAccZMg?.toInt(),
+    )
+
+    private fun mapPolarBeatSampleToBackup(sample: PolarBeatSample): PolarBeatSampleBackup = PolarBeatSampleBackup(
+        id = sample.id,
+        sessionId = sample.sessionId,
+        timestampMs = sample.timestampMs,
+        phase = sample.phase,
+        hrBpm = sample.hrBpm.toInt(),
+        rrMs = sample.rrMs.toFloat(),
+        rmssdMs = sample.rmssdMs?.toFloat(),
+        torsoPitchDeg = sample.torsoPitchDeg?.toFloat(),
+        torsoRollDeg = sample.torsoRollDeg?.toFloat(),
+        dynamicAccMg = sample.dynamicAccMg?.toInt(),
+    )
+
+    private fun mapPolarEcgSegmentToBackup(segment: PolarEcgSegment): PolarEcgSegmentBackup = PolarEcgSegmentBackup(
+        id = segment.id,
+        sessionId = segment.sessionId,
+        sensorTimestampNs = segment.sensorTimestampNs,
+        wallClockTimestampMs = segment.wallClockTimestampMs,
+        phase = segment.phase,
+        samplesUvCsv = segment.samplesUvCsv,
     )
 
     private fun mapRoutineToBackup(routine: Routine): RoutineBackup = RoutineBackup(
@@ -4090,7 +4351,21 @@ abstract class BaseDataBackupManager(
             val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
                 ?: return@withContext Result.failure(Exception("Session not found: $sessionId"))
 
-            val metrics = if (includeRawTelemetryInBackups) queries.selectMetricsBySession(sessionId).executeAsList() else emptyList()
+            val metrics = if (includeRawTelemetryInBackups) {
+                queries.selectMetricsBySession(sessionId).executeAsList()
+            } else {
+                emptyList()
+            }
+            val beatSamples = if (includeRawTelemetryInBackups) {
+                queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
+            } else {
+                emptyList()
+            }
+            val ecgSegments = if (includeRawTelemetryInBackups) {
+                queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+            } else {
+                emptyList()
+            }
             val completedSets = queries.selectCompletedSetsBySession(sessionId).executeAsList()
             val sessions = listOf(session)
 
@@ -4111,6 +4386,8 @@ abstract class BaseDataBackupManager(
                     workoutSessions = sessions.map { mapSessionToBackup(it) },
                     metricSamples = metrics.map { mapMetricToBackup(it) },
                     completedSets = completedSets.map { mapCompletedSetToBackup(it) },
+                    polarBeatSamples = beatSamples.map(::mapPolarBeatSampleToBackup),
+                    polarEcgSegments = ecgSegments.map(::mapPolarEcgSegmentToBackup),
                 ),
             )
 
@@ -4165,8 +4442,14 @@ abstract class BaseDataBackupManager(
             // Done per-session to mirror exportSession()'s OOM-safe pattern.
             val allMetrics = mutableListOf<MetricSample>()
             val allCompletedSets = mutableListOf<CompletedSet>()
+            val allBeatSamples = mutableListOf<PolarBeatSample>()
+            val allEcgSegments = mutableListOf<PolarEcgSegment>()
             for (session in sessions) {
-                if (includeRawTelemetryInBackups) allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
+                if (includeRawTelemetryInBackups) {
+                    allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
+                    allBeatSamples.addAll(queries.selectPolarBeatSamplesBySession(session.id).executeAsList())
+                    allEcgSegments.addAll(queries.selectPolarEcgSegmentsBySession(session.id).executeAsList())
+                }
                 allCompletedSets.addAll(queries.selectCompletedSetsBySession(session.id).executeAsList())
             }
 
@@ -4183,6 +4466,8 @@ abstract class BaseDataBackupManager(
                     workoutSessions = sessions.map { mapSessionToBackup(it) },
                     metricSamples = allMetrics.map { mapMetricToBackup(it) },
                     completedSets = allCompletedSets.map { mapCompletedSetToBackup(it) },
+                    polarBeatSamples = allBeatSamples.map(::mapPolarBeatSampleToBackup),
+                    polarEcgSegments = allEcgSegments.map(::mapPolarEcgSegmentToBackup),
                 ),
             )
 

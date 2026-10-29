@@ -2,6 +2,7 @@ package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.csv.CsvImportInbox
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
@@ -55,6 +56,7 @@ val dataModule = module {
     // Order matters: ExerciseRepository must be created before WorkoutRepository
     single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get(), get()) }
     single<ProfileExerciseBaselineRepository> { SqlDelightProfileExerciseBaselineRepository(get()) }
+    single<PolarTelemetryRepository> { SqlDelightPolarTelemetryRepository(get()) }
     single { LegacyBaselineRepair(get()) }
     single { ProfileMutationBarrier() }
     single { ProfileRecoveryActivityTracker() }
@@ -169,4 +171,7 @@ val dataModule = module {
     single<ExternalExerciseTemplateRepository> { SqlDelightExternalExerciseTemplateRepository(get()) }
     single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
     single { HealthBackfillManager(get(), get(), get(), get()) }
+
+    // Polar H10 BLE Manager
+    single { PolarH10BleManager(settings = get(), telemetryRepository = get()) } onClose { (it as? PolarH10BleManager)?.shutdown() }
 }

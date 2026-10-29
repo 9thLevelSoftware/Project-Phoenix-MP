@@ -1,0 +1,1266 @@
+package com.devil.phoenixproject.data.ble
+
+import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
+import com.devil.phoenixproject.data.repository.SqlDelightPolarTelemetryRepository
+import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.PolarAccSample
+import com.devil.phoenixproject.domain.model.PolarHrMeasurement
+import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
+import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.util.BleConstants
+import com.juul.kable.Characteristic
+import com.juul.kable.Peripheral
+import com.juul.kable.WriteType
+import com.russhwolf.settings.MapSettings
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.uuid.ExperimentalUuidApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+
+@OptIn(ExperimentalUuidApi::class)
+class PolarH10BleManagerTest {
+
+    // ==================== Advertisement Filter Tests ====================
+
+    @Test
+    fun `isPolarH10Advertisement matches Polar H10 device names case-insensitively`() {
+        val manager = PolarH10BleManager()
+
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H10 12345678", uuids = emptyList())))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "polar h10 9999", uuids = emptyList())))
+        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "POLAR H10", uuids = emptyList())))
+
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Vee_Trainer", uuids = emptyList())))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "VIT-200", uuids = emptyList())))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = emptyList())))
+    }
+
+    @Test
+    fun `standard Heart Rate UUID alone never identifies an H10`() {
+        val manager = PolarH10BleManager()
+
+        val hrUuid = BleConstants.Polar.HR_SERVICE_UUID
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = listOf(hrUuid))))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H9", uuids = listOf(hrUuid))))
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H100", uuids = listOf(hrUuid))))
+
+        val nusUuid = BleConstants.NUS_SERVICE_UUID
+        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Unknown", uuids = listOf(nusUuid))))
+    }
+
+    // ==================== Initial State Tests ====================
+
+    @Test
+    fun `initial states are correctly disconnected and empty`() {
+        val manager = PolarH10BleManager()
+
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertTrue(manager.scannedDevices.value.isEmpty())
+        assertNull(manager.batteryLevel.value)
+        assertNull(manager.hrMeasurement.value)
+        assertNull(manager.latestEcg.value)
+        assertNull(manager.latestAcc.value)
+    }
+
+    // ==================== Chained RR-Interval Clock Tests ====================
+
+    @Test
+    fun `chained RR clock accurately calculates timestamps across consecutive packets`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val collectJob = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        // Packet 1 at t = 100,000 ms with two RR intervals: 800.0 ms and 850.0 ms
+        // total duration = 1650 ms
+        // anchor = 100,000 - 1650 = 98,350 ms
+        // Beat 1: 98,350 + 800 = 99,150 ms
+        // Beat 2: 99,150 + 850 = 100,000 ms
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 72,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0, 850.0),
+            ),
+        )
+
+        assertEquals(2, collectedBeats.size)
+        assertEquals(800.0, collectedBeats[0].rrIntervalMs)
+        assertEquals(99_150L, collectedBeats[0].timestampMs)
+        assertEquals(72, collectedBeats[0].hr)
+
+        assertEquals(850.0, collectedBeats[1].rrIntervalMs)
+        assertEquals(100_000L, collectedBeats[1].timestampMs)
+        assertEquals(72, collectedBeats[1].hr)
+
+        // Packet 2 arrives at t = 100,920 ms (packet transport delayed by 20ms jitter)
+        // Previous beat was at 100,000 ms.
+        // Beat 3 RR = 900.0 ms -> timestamp = 100,000 + 900 = 100,900 ms (jitter eliminated!)
+        simulatedTime = 100_920L
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 70,
+                contactDetected = true,
+                rrIntervalsMs = listOf(900.0),
+            ),
+        )
+
+        assertEquals(3, collectedBeats.size)
+        assertEquals(900.0, collectedBeats[2].rrIntervalMs)
+        assertEquals(100_900L, collectedBeats[2].timestampMs)
+        assertEquals(70, collectedBeats[2].hr)
+
+        collectJob.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `chained RR clock re-anchors when packet gap exceeds 5 seconds`() {
+        var simulatedTime = 50_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val collectJob = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        // Initial beat at t = 50,000 ms
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 60,
+                contactDetected = true,
+                rrIntervalsMs = listOf(1000.0),
+            ),
+        )
+        assertEquals(1, collectedBeats.size)
+        assertEquals(50_000L, collectedBeats[0].timestampMs)
+
+        // Long silence / disconnection gap of 15 seconds: packet arrives at t = 65,000 ms
+        simulatedTime = 65_000L
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 75,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0),
+            ),
+        )
+
+        // Since gap (65,000 - 50,000 = 15,000 ms) > 5,000 ms, clock re-anchors to 65,000 ms
+        assertEquals(2, collectedBeats.size)
+        assertEquals(65_000L, collectedBeats[1].timestampMs)
+
+        collectJob.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `processRrIntervals ignores empty RR lists without modifying clock`() = kotlinx.coroutines.test.runTest {
+        val manager = PolarH10BleManager()
+        val beats = mutableListOf<com.devil.phoenixproject.domain.model.PolarRrBeat>()
+        val job = launch { manager.rrBeats.collect { beats.add(it) } }
+        manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = emptyList()))
+        assertTrue(beats.isEmpty())
+        job.cancel()
+    }
+
+    // ==================== Session Recording & Cooldown Tests ====================
+
+    @Test
+    fun `session recording and cooldown lifecycle updates state flows properly`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        assertFalse(manager.isCooldownActive.value)
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // Start session recording
+        manager.startSessionRecording("session-123", "WARMUP")
+        assertEquals("session-123", manager.currentRecordingSessionId)
+
+        // Feed some beats
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 150,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+
+        val activeSummary = manager.getSessionSummary("session-123")
+        assertEquals(150, activeSummary?.avgHeartRateBpm)
+
+        // Trigger cooldown
+        manager.triggerCooldown("session-123")
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+        assertEquals(150, manager.cooldownStartHeartRate.value)
+        assertEquals("session-123", manager.activeCooldownSessionId.value)
+
+        // Stop cooldown early
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `concurrent getSessionSummary reading while HR callbacks append is thread-safe`() {
+        val testScope = CoroutineScope(Dispatchers.Default + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+        manager.startSessionRecording("session-stress", "WORKING_SET")
+
+        var exceptionThrown: Throwable? = null
+        val writeJob = testScope.launch {
+            for (i in 1..500) {
+                manager.processRrIntervals(
+                    PolarHrMeasurement(
+                        hr = 120 + (i % 30),
+                        contactDetected = true,
+                        rrIntervalsMs = listOf(800.0 + (i % 50)),
+                    )
+                )
+            }
+        }
+
+        val readJob = testScope.launch {
+            try {
+                for (i in 1..500) {
+                    val summary = manager.getSessionSummary("session-stress")
+                    if (summary?.avgHeartRateBpm != null) {
+                        assertTrue(summary.avgHeartRateBpm >= 120)
+                    }
+                }
+            } catch (e: Throwable) {
+                exceptionThrown = e
+            }
+        }
+
+        kotlinx.coroutines.runBlocking {
+            writeJob.join()
+            readJob.join()
+        }
+
+        assertNull(exceptionThrown, "Concurrent reading and writing should not throw ConcurrentModificationException: ${exceptionThrown?.message}")
+        val finalSummary = manager.getSessionSummary("session-stress")
+        assertTrue(finalSummary != null && finalSummary.avgHeartRateBpm != null)
+        testScope.cancel()
+    }
+
+    @Test
+    fun `routine intermediate sets update phase to REST while final completion triggers cooldown`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        // 1. Start routine set 1
+        manager.startSessionRecording("routine-session-1", "WARMUP")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 145, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.updateSessionPhase("WORKING_SET")
+
+        // 2. Set 1 finishes -> transitions to REST, NOT cooldown
+        manager.updateSessionPhase("REST")
+        assertFalse(manager.isCooldownActive.value, "Intermediate set summary must NOT activate cooldown")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // 3. Set 2 starts -> transitions to WORKING_SET
+        manager.updateSessionPhase("WORKING_SET")
+        assertFalse(manager.isCooldownActive.value)
+
+        // 4. Routine complete -> triggers cooldown
+        manager.endSessionRecording("routine-session-1")
+        assertTrue(manager.isCooldownActive.value, "Final routine completion must activate cooldown")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        // 5. User adds an exercise on the fly (resuming routine) -> WORKING_SET cleanly cancels cooldown
+        manager.updateSessionPhase("WORKING_SET")
+        assertFalse(manager.isCooldownActive.value, "Resuming routine with added exercise must cancel cooldown")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // 6. The resumed set records under its own session before routine completion.
+        manager.startSessionRecording("routine-session-2", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 150, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertFalse(manager.endSessionRecording("routine-session-1"))
+        manager.endSessionRecording("routine-session-2")
+        assertTrue(manager.isCooldownActive.value, "Re-completing routine must reactivate cooldown")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `completed cooldown guards against wiping start HR unless forceRestart is true`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-guard", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 160, contactDetected = true, rrIntervalsMs = listOf(700.0)))
+
+        // Trigger cooldown and stop/complete it
+        manager.triggerCooldown("session-guard")
+        assertEquals(160, manager.cooldownStartHeartRate.value)
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+
+        // Re-entering screen triggers cooldown for same session with current HR lower
+        manager.processRrIntervals(PolarHrMeasurement(hr = 72, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        manager.triggerCooldown("session-guard") // without forceRestart
+        assertFalse(manager.isCooldownActive.value, "Should not restart completed cooldown without forceRestart")
+        assertEquals(160, manager.cooldownStartHeartRate.value, "Should not wipe cooldown start HR")
+
+        // Explicit tap on Restart Cooldown
+        manager.triggerCooldown("session-guard", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value, "Explicit restart must reactivate cooldown")
+        assertEquals(72, manager.cooldownStartHeartRate.value, "Restart re-anchors to current HR")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `cooldown anchors peak HR during first 30 seconds`() = runTest {
+        var simulatedTime = 100_000L
+        val manager = PolarH10BleManager(scope = this, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-peak", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+
+        // End session recording (start HR = 140)
+        manager.endSessionRecording("session-peak")
+        assertEquals(140, manager.cooldownStartHeartRate.value)
+
+        // 10 seconds in, HR peaks at 155
+        simulatedTime += 10_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 155, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+        testScheduler.advanceTimeBy(1000L)
+        assertEquals(155, manager.cooldownStartHeartRate.value, "Peak HR should be anchored within first 30 seconds")
+
+        // At 65 seconds, HR drops to 120 -> HRR60 measured from peak (155 - 120 = 35)
+        simulatedTime += 55_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        testScheduler.advanceTimeBy(1000L)
+        assertEquals(35, manager.cooldownHrr60.value, "HRR60 drop should be measured from peak HR (155 - 120 = 35)")
+
+        manager.stopCooldown()
+    }
+
+    // ==================== Signal Validity & Connection Gate Tests ====================
+
+    @Test
+    fun `isConnected state flow tracks connection and disconnection properly`() {
+        val manager = PolarH10BleManager()
+        assertFalse(manager.isConnected.value, "Initial state must be not connected")
+
+        manager.setConnectedForTesting(true)
+        assertTrue(manager.isConnected.value, "State must be connected after successful connect")
+        assertTrue(manager.connectionState.value is ConnectionState.Connected)
+
+        manager.setConnectedForTesting(false)
+        assertFalse(manager.isConnected.value, "State must be disconnected after disconnect")
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+    }
+
+    @Test
+    fun `strap removal or zero HR immediately clears cached telemetry and drops samples`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val collectJob = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        // 1. Valid telemetry packet arrives
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 135,
+                contactDetected = true,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+        assertEquals(1, collectedBeats.size)
+        assertEquals(135, manager.hrMeasurement.value?.hr)
+
+        // 2. User removes strap (contactDetected = false, hr = 0)
+        simulatedTime += 1000L
+        manager.processRrIntervals(
+            PolarHrMeasurement(
+                hr = 0,
+                contactDetected = false,
+                rrIntervalsMs = listOf(800.0),
+            )
+        )
+
+        // No new beat emitted, cached states cleared to null
+        assertEquals(1, collectedBeats.size, "Should not emit beats when strap is removed")
+        assertNull(manager.hrMeasurement.value, "hrMeasurement should be cleared upon strap removal")
+
+        collectJob.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `strap removal is debounced while disconnect immediately terminates recovery`() = runTest {
+        var simulatedTime = 100_000L
+        val testScope = backgroundScope
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-recovery", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 150, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("session-recovery")
+
+        assertTrue(manager.isCooldownActive.value, "Cooldown must be active")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+
+        // User unhooks strap during recovery cooldown
+        manager.processRrIntervals(PolarHrMeasurement(hr = 0, contactDetected = false, rrIntervalsMs = emptyList()))
+
+        assertTrue(manager.isCooldownActive.value)
+        runCurrent()
+        advanceTimeBy(3001)
+        assertFalse(manager.isCooldownActive.value, "Sustained contact loss must terminate cooldown")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        // Reactivate cooldown and verify disconnection terminates it
+        manager.startSessionRecording("session-recovery", "WORKING_SET")
+        manager.triggerCooldown("session-recovery", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value)
+
+        manager.setConnectedForTesting(false)
+        assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated upon disconnection")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `packet absence timeout exceeding 3 seconds clears telemetry and terminates cooldown`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        manager.startSessionRecording("session-timeout", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("session-timeout")
+
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals(140, manager.hrMeasurement.value?.hr)
+
+        // Advance time by 4 seconds (gap > 3 seconds)
+        simulatedTime += 4000L
+        manager.checkPacketAbsenceTimeout(simulatedTime)
+
+        assertNull(manager.hrMeasurement.value, "Telemetry state must be cleared after >3s absence")
+        assertFalse(manager.isCooldownActive.value, "Cooldown must be terminated after >3s packet absence")
+        assertEquals(0, manager.cooldownSecondsRemaining.value)
+
+        testScope.cancel()
+    }
+
+    // ==================== Zero-Contact Telemetry & Noise Suppression Tests ====================
+
+    @Test
+    fun `lost electrode contact drops all incoming PMD ECG and ACC packets and emits zero telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // 1. Establish initial good skin contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value, "Contact should be true with good strap contact")
+
+        // 2. Deliver valid ECG & ACC
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 1_000_000L, samplesMicrovolts = listOf(100, 200, 300))
+        )
+        assertEquals(listOf(100, 200, 300), manager.latestEcg.value?.samplesMicrovolts)
+
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Acc(sensorTimestampNs = 1_000_000L, samples = listOf(PolarAccSample(10, 20, 1000)))
+        )
+        assertNotNull(manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+
+        // 3. User unclips pod / loses skin contact (contactDetected = false, hr = 0)
+        manager.processRrIntervals(PolarHrMeasurement(hr = 0, contactDetected = false, rrIntervalsMs = emptyList()))
+        assertFalse(manager.isContactDetected.value, "Contact state must drop to false")
+        assertNull(manager.hrMeasurement.value, "HR must be cleared to null on contact loss")
+        assertNull(manager.latestEcg.value, "ECG must be cleared to null on contact loss")
+        assertNull(manager.latestAcc.value, "ACC must be cleared to null on contact loss")
+        assertNull(manager.torsoPitchDeg.value, "Posture must be cleared to null on contact loss")
+        assertNull(manager.torsoRollDeg.value)
+        assertNull(manager.dynamicAccMg.value)
+
+        // 4. PMD packets continue streaming while strap is unclipped - verify they are completely dropped
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 2_000_000L, samplesMicrovolts = listOf(150, 250, 350))
+        )
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Acc(sensorTimestampNs = 2_000_000L, samples = listOf(PolarAccSample(30, 40, 990)))
+        )
+
+        assertNull(manager.latestEcg.value, "ECG packets must be discarded while contact is lost")
+        assertNull(manager.latestAcc.value, "ACC packets must be discarded while contact is lost")
+        assertNull(manager.torsoPitchDeg.value, "Posture must remain null while contact is lost")
+        assertNull(manager.dynamicAccMg.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `ECG railing beyond physiological threshold drops transient frame without revoking contact`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // Initial valid contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 70, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        assertTrue(manager.isContactDetected.value)
+        assertEquals(70, manager.hrMeasurement.value?.hr)
+
+        // Deliver railed open-circuit noise (>= 15,000 uV)
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 3_000_000L,
+                samplesMicrovolts = listOf(100, 16_000, 200),
+            )
+        )
+
+        // Frame is dropped, but skin contact is NOT revoked
+        assertNull(manager.latestEcg.value, "Railed ECG frame must be discarded")
+        assertTrue(manager.isContactDetected.value, "Contact state must be preserved during transient ECG railing")
+        assertEquals(70, manager.hrMeasurement.value?.hr, "HR telemetry must not be cleared by transient ECG railing")
+
+        // Next valid frame arrives and is processed normally
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 3_500_000L,
+                samplesMicrovolts = listOf(150, 250, 350),
+            )
+        )
+        assertEquals(listOf(150, 250, 350), manager.latestEcg.value?.samplesMicrovolts)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `ECG flatline drops transient frame without revoking contact`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        // Initial valid contact
+        manager.processRrIntervals(PolarHrMeasurement(hr = 75, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        // Deliver zero flatline
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 4_000_000L,
+                samplesMicrovolts = listOf(0, 0, 0, 0),
+            )
+        )
+
+        assertNull(manager.latestEcg.value, "Flatline ECG packet must be dropped")
+        assertTrue(manager.isContactDetected.value, "Contact state must be preserved during transient flatline")
+
+        // Next valid frame arrives and is processed normally
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(
+                sensorTimestampNs = 4_500_000L,
+                samplesMicrovolts = listOf(200, 300, 400),
+            )
+        )
+        assertEquals(listOf(200, 300, 400), manager.latestEcg.value?.samplesMicrovolts)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `post-workout HR recovery cooldown triggers immediately and resolves session from lastRecordedSessionId`() {
+        var simulatedTime = 100_000L
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { simulatedTime })
+
+        // 1. Session completes recording for session-post-workout
+        manager.startSessionRecording("session-post-workout", "WORKING_SET")
+        assertEquals("session-post-workout", manager.lastRecordedSessionId.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 160, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertEquals(160, manager.hrMeasurement.value?.hr)
+
+        // Telemetry is flushed when set committed
+        manager.flushSessionTelemetry("session-post-workout")
+        assertEquals("session-post-workout", manager.lastRecordedSessionId.value)
+
+        // 2. User clicks "Start Cooldown" on summary card without explicitly providing ID
+        manager.triggerCooldown()
+
+        assertTrue(manager.isCooldownActive.value, "Cooldown must become active immediately on click")
+        assertEquals(300, manager.cooldownSecondsRemaining.value)
+        assertEquals("session-post-workout", manager.activeCooldownSessionId.value)
+        assertEquals(160, manager.cooldownStartHeartRate.value)
+
+        // Cooldown summary is available
+        val summary = manager.getSessionSummary("session-post-workout")
+        assertNotNull(summary)
+        assertEquals("session-post-workout", summary.sessionId)
+        assertEquals(160, summary.avgHeartRateBpm)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `critical battery level triggers contact loss and suppresses all telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        // Battery drops to critical level (4% <= 5%)
+        manager.setBatteryLevelForTesting(4)
+        assertTrue(manager.isBatteryCritical(), "Battery must be flagged critical at 4%")
+        assertFalse(manager.isContactDetected.value, "Critical battery must revoke contact validation")
+        assertNull(manager.hrMeasurement.value, "Telemetry must be cleared upon critical battery")
+
+        // Attempting to deliver subsequent PMD and HR packets
+        manager.processPmdMeasurement(
+            PolarPmdMeasurement.Ecg(sensorTimestampNs = 5_000_000L, samplesMicrovolts = listOf(120, 220))
+        )
+        manager.processRrIntervals(PolarHrMeasurement(hr = 80, contactDetected = true, rrIntervalsMs = listOf(750.0)))
+
+        assertNull(manager.latestEcg.value, "ECG must not emit with critical battery")
+        assertNull(manager.hrMeasurement.value, "HR must not emit with critical battery")
+        assertFalse(manager.isContactDetected.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `recordedSessionId isolation rejects mismatches and cooldown end clears state`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        // Without starting recording, all actions should reject
+        manager.triggerCooldown("session-unrecorded")
+        assertFalse(manager.isCooldownActive.value)
+        manager.endSessionRecording("session-unrecorded")
+        assertFalse(manager.isCooldownActive.value)
+        assertNull(manager.getSessionSummary("session-unrecorded"))
+
+        // Start recording session-A
+        manager.startSessionRecording("session-A", "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+
+        // session-B should be rejected
+        assertNull(manager.getSessionSummary("session-B"))
+        manager.triggerCooldown("session-B")
+        assertFalse(manager.isCooldownActive.value)
+        manager.endSessionRecording("session-B")
+        assertFalse(manager.isCooldownActive.value)
+
+        // session-A should succeed
+        val summaryA = manager.getSessionSummary("session-A")
+        assertEquals(140, summaryA?.avgHeartRateBpm)
+
+        manager.triggerCooldown("session-A")
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals("session-A", manager.activeCooldownSessionId.value)
+
+        // Ending cooldown clears active recording state, while preserving lastRecordedSessionId
+        // so the post-workout summary "Start Cooldown" button can restart cooldown for session-A
+        manager.stopCooldown()
+        assertFalse(manager.isCooldownActive.value)
+        assertNull(manager.activeCooldownSessionId.value)
+        assertNull(manager.currentRecordingSessionId)
+        assertEquals("session-A", manager.lastRecordedSessionId.value)
+
+        // Once cooldown ended, summary queries reject, arbitrary sessions reject cooldown,
+        // but the just-finished session-A can explicitly restart cooldown via forceRestart
+        assertEquals(140, manager.getSessionSummary("session-A")?.avgHeartRateBpm)
+        manager.triggerCooldown("session-B", forceRestart = true)
+        assertFalse(manager.isCooldownActive.value)
+        manager.triggerCooldown("session-A", forceRestart = true)
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals("session-A", manager.activeCooldownSessionId.value)
+        manager.stopCooldown()
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `standard HR packets with ECG OFF report isContactDetected true and emit HR and RR telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        assertFalse(manager.isContactDetected.value)
+        assertFalse(manager.isEcgStreaming.value)
+
+        val collectedBeats = mutableListOf<PolarRrBeat>()
+        val job = testScope.launch {
+            manager.rrBeats.collect { collectedBeats.add(it) }
+        }
+
+        val measurement = PolarHrMeasurement(hr = 135, contactDetected = true, rrIntervalsMs = listOf(820.0, 830.0))
+        manager.processRrIntervals(measurement)
+
+        assertTrue(manager.isContactDetected.value)
+        assertEquals(135, manager.hrMeasurement.value?.hr)
+        assertEquals(2, collectedBeats.size)
+        assertEquals(820.0, collectedBeats[0].rrIntervalMs)
+        assertEquals(830.0, collectedBeats[1].rrIntervalMs)
+
+        job.cancel()
+        testScope.cancel()
+    }
+
+    @Test
+    fun `turning ECG ON and then OFF does not break isContactDetected or stop HR or ACC telemetry`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 120, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setEcgStreamingForTesting(true)
+        assertTrue(manager.isEcgStreaming.value)
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setEcgStreamingForTesting(false)
+        assertFalse(manager.isEcgStreaming.value)
+        assertTrue(manager.isContactDetected.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 125, contactDetected = true, rrIntervalsMs = listOf(790.0)))
+        assertTrue(manager.isContactDetected.value)
+        assertEquals(125, manager.hrMeasurement.value?.hr)
+
+        val accMeasurement = PolarPmdMeasurement.Acc(
+            sensorTimestampNs = 123456789L,
+            samples = listOf(PolarAccSample(xMg = 100, yMg = 200, zMg = 980)),
+        )
+        manager.processPmdMeasurement(accMeasurement)
+        assertEquals(accMeasurement, manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `starting ACC alone with ECG OFF emits ACC samples without requiring ECG`() {
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(scope = testScope, timeSource = { 100_000L })
+
+        assertFalse(manager.isEcgStreaming.value)
+
+        manager.processRrIntervals(PolarHrMeasurement(hr = 130, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        assertTrue(manager.isContactDetected.value)
+
+        manager.setAccStreamingForTesting(true)
+        assertTrue(manager.isAccStreaming.value)
+        assertFalse(manager.isEcgStreaming.value)
+
+        val collectedAcc = mutableListOf<PolarPmdMeasurement.Acc>()
+        val job = testScope.launch {
+            manager.accStream.collect { collectedAcc.add(it) }
+        }
+
+        val accMeasurement = PolarPmdMeasurement.Acc(
+            sensorTimestampNs = 987654321L,
+            samples = listOf(
+                PolarAccSample(xMg = 150, yMg = 250, zMg = 950),
+                PolarAccSample(xMg = 155, yMg = 255, zMg = 945),
+            ),
+        )
+        manager.processPmdMeasurement(accMeasurement)
+
+        assertEquals(1, collectedAcc.size)
+        assertEquals(accMeasurement, manager.latestAcc.value)
+        assertNotNull(manager.torsoPitchDeg.value)
+        assertNotNull(manager.torsoRollDeg.value)
+        assertNotNull(manager.dynamicAccMg.value)
+
+        job.cancel()
+        testScope.cancel()
+    }
+
+    // ==================== Connection Lifecycle & Auto-Reconnect Tests ====================
+
+    @Test
+    fun `initial State Disconnected does not trigger premature disconnect cleanup or log disconnect`() {
+        val manager = PolarH10BleManager()
+
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertFalse(manager.wasEverConnectedForTesting)
+        assertFalse(manager.isExplicitDisconnectForTesting)
+    }
+
+    @Test
+    fun `disconnect sets isExplicitDisconnect and cleans up connection state`() = runTest {
+        val manager = PolarH10BleManager()
+        manager.setConnectedForTesting(true)
+
+        assertTrue(manager.isConnected.value)
+        assertTrue(manager.wasEverConnectedForTesting)
+        assertFalse(manager.isExplicitDisconnectForTesting)
+
+        manager.disconnect()
+
+        assertFalse(manager.isConnected.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertTrue(manager.isExplicitDisconnectForTesting)
+        assertFalse(manager.wasEverConnectedForTesting)
+    }
+
+    @Test
+    fun `startSessionRecording preserves explicit disconnect suppression`() {
+        val fakeAd = CompositionAdvertisement(
+            id = "00000000-0000-0000-0000-24acac0e5b59",
+            name = "Polar H10 12345678",
+            uuids = listOf(BleConstants.Polar.HR_SERVICE_UUID),
+        )
+        val rememberedId = fakeAd.identifier.toString()
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, rememberedId)
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_NAME, "Polar H10 12345678")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(
+            settings = settings,
+            scope = testScope,
+            advertisements = { flowOf(fakeAd) },
+            createPeripheral = { ad -> CompositionGattFake(ad, Dispatchers.Unconfined) },
+        )
+
+        runTest {
+            manager.disconnect()
+        }
+        assertTrue(manager.isExplicitDisconnectForTesting)
+
+        // Starting a workout should clear the explicit disconnect suppression and complete auto-reconnect
+        // through connect() without self-cancelling reconnectJob
+        manager.startSessionRecording("session-123", "WORKING_SET")
+
+        assertTrue(manager.isExplicitDisconnectForTesting)
+        assertFalse(manager.isConnected.value)
+        assertEquals(
+            ConnectionState.Disconnected,
+            manager.connectionState.value,
+        )
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `forgetRememberedDevice clears settings and cancels pending reconnectJob`() {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(
+            settings = settings,
+            scope = testScope,
+            advertisements = { flow { awaitCancellation() } },
+        )
+
+        manager.ensureConnectedOrReconnect()
+        assertTrue(manager.isReconnectJobActiveForTesting)
+
+        manager.forgetRememberedDevice()
+
+        assertNull(manager.rememberedAddress.value)
+        assertNull(settings.getStringOrNull(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS))
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `autoReconnectIfRemembered is suppressed when auto-reconnect is disabled`() = runTest {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+        settings.putBoolean(PolarH10BleManager.KEY_POLAR_AUTO_RECONNECT, false)
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(settings = settings, scope = testScope)
+
+        val result = manager.autoReconnectIfRemembered()
+
+        assertTrue(result.isSuccess)
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `autoReconnectIfRemembered is suppressed after explicit manual disconnect`() = runTest {
+        val settings = MapSettings()
+        settings.putString(PolarH10BleManager.KEY_POLAR_REMEMBERED_ADDRESS, "24:AC:AC:0E:5B:59")
+
+        val testScope = CoroutineScope(Dispatchers.Unconfined + Job())
+        val manager = PolarH10BleManager(settings = settings, scope = testScope)
+
+        manager.disconnect()
+        assertTrue(manager.isExplicitDisconnectForTesting)
+
+        val result = manager.autoReconnectIfRemembered()
+
+        assertTrue(result.isSuccess)
+        assertFalse(manager.isReconnectJobActiveForTesting)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `multi-set routine preserves lastRecordedSessionId across Idle discardActiveRecording and persists cooldown HRR to final set`() = runTest {
+        var simulatedTime = 100_000L
+        val database = com.devil.phoenixproject.testutil.createTestDatabase()
+        val manager = PolarH10BleManager(
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
+            scope = this,
+            timeSource = { simulatedTime },
+            persistenceDispatcher = Dispatchers.Unconfined,
+        )
+        manager.setConnectedForTesting(true)
+
+        val set1Id = "ea838be2-3983-4ec3-8eb4-c8a75fdd52a2"
+        val set2Id = "9615342a-142c-4cd7-838e-5cf38ab9b7f7"
+        val workoutRepo = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+
+        // 1. Set 1 recording & flush
+        manager.startSessionRecording(set1Id, "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 148, contactDetected = true, rrIntervalsMs = listOf(800.0)))
+        workoutRepo.saveSession(WorkoutSession(id = set1Id, timestamp = simulatedTime))
+        manager.flushSessionTelemetry(set1Id)
+        assertNull(manager.currentRecordingSessionId, "flushSessionTelemetry must clear activeSessionId once committed")
+        assertEquals(set1Id, manager.lastRecordedSessionId.value)
+
+        // 2. Set 2 recording & flush
+        simulatedTime += 60_000L
+        manager.startSessionRecording(set2Id, "WORKING_SET")
+        manager.processRrIntervals(PolarHrMeasurement(hr = 165, contactDetected = true, rrIntervalsMs = listOf(720.0)))
+        workoutRepo.saveSession(WorkoutSession(id = set2Id, timestamp = simulatedTime))
+        manager.flushSessionTelemetry(set2Id)
+        assertNull(manager.currentRecordingSessionId)
+        assertEquals(set2Id, manager.lastRecordedSessionId.value)
+
+        // 3. Routine teardown transitions to Idle before RoutineComplete -> calls discardActiveRecording()
+        manager.discardActiveRecording()
+
+        // Verify _lastRecordedSessionId and Set 2 summary were NOT wiped!
+        assertEquals(set2Id, manager.lastRecordedSessionId.value, "discardActiveRecording after flush must not wipe lastRecordedSessionId")
+        val summaryAfterIdle = manager.getSessionSummary(set2Id)
+        assertNotNull(summaryAfterIdle, "Set 2 summary must survive Idle discardActiveRecording")
+        assertEquals(165, summaryAfterIdle.avgHeartRateBpm)
+
+        // Verify an earlier set ID (set1Id) is rejected so Set 1's summary cannot be overwritten by Set 2's in-memory sessionHrs
+        manager.triggerCooldown(set1Id, forceRestart = true)
+        assertFalse(manager.isCooldownActive.value, "triggerCooldown for an earlier set ID must be rejected")
+
+        // 4. User clicks "Start Cooldown" on RoutineCompleteScreen
+        manager.triggerCooldown(manager.lastRecordedSessionId.value, forceRestart = true)
+        testScheduler.runCurrent()
+        assertTrue(manager.isCooldownActive.value, "Cooldown must be active after clicking Start Cooldown")
+        assertEquals(set2Id, manager.activeCooldownSessionId.value)
+        assertEquals(165, manager.cooldownStartHeartRate.value)
+
+        // 5. Feed POST_WORKOUT_COOLDOWN beats at 65s and 300s
+        simulatedTime += 65_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 135, contactDetected = true, rrIntervalsMs = listOf(850.0)))
+        testScheduler.advanceTimeBy(1500L)
+        assertEquals(30, manager.cooldownHrr60.value, "HRR60 should be 165 - 135 = 30 bpm")
+
+        simulatedTime += 240_000L
+        manager.processRrIntervals(PolarHrMeasurement(hr = 110, contactDetected = true, rrIntervalsMs = listOf(920.0)))
+        testScheduler.advanceTimeBy(1500L)
+
+        assertFalse(manager.isCooldownActive.value, "Cooldown should complete at 300s")
+        assertEquals(55, manager.cooldownHrr300.value, "HRR300 should be 165 - 110 = 55 bpm")
+
+        // Verify POST_WORKOUT_COOLDOWN beats and HRR summary persisted to Set 2 row in SQLite
+        val set2Beats = database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession(set2Id).executeAsList()
+        assertTrue(set2Beats.any { it.phase == "POST_WORKOUT_COOLDOWN" }, "POST_WORKOUT_COOLDOWN beats must persist to Set 2")
+        val set2Session = database.phoenixDatabaseQueries.selectSessionById(set2Id).executeAsOne()
+        assertEquals(30L, set2Session.hrr60Bpm)
+        assertEquals(55L, set2Session.hrr300Bpm)
+    }
+
+    @Test
+    fun `cooldown preserves committed workout statistics and only completed HRR windows`() = runTest {
+        var nowMs = 100_000L
+        val manager = PolarH10BleManager(scope = backgroundScope, timeSource = { nowMs })
+        manager.startSessionRecording("frozen")
+        manager.processRrIntervals(PolarHrMeasurement(140, true, rrIntervalsMs = listOf(800.0, 810.0)))
+        manager.processRrIntervals(PolarHrMeasurement(160, true, rrIntervalsMs = listOf(700.0)))
+        manager.flushSessionTelemetry("frozen")
+        val committed = assertNotNull(manager.getSessionSummary("frozen"))
+        assertEquals(150, committed.avgHeartRateBpm)
+        manager.triggerCooldown("frozen")
+        nowMs += 10_000L
+        manager.processRrIntervals(PolarHrMeasurement(120, true, rrIntervalsMs = listOf(1000.0)))
+        manager.stopCooldown()
+        assertEquals(committed, manager.getSessionSummary("frozen"))
+        assertNull(manager.cooldownHrr60.value)
+        assertNull(manager.cooldownHrr300.value)
+        manager.triggerCooldown("frozen", forceRestart = true)
+        nowMs += 65_000L
+        manager.processRrIntervals(PolarHrMeasurement(100, true, rrIntervalsMs = listOf(1100.0)))
+        manager.stopCooldown()
+        assertEquals(20, manager.cooldownHrr60.value)
+        assertNull(manager.cooldownHrr300.value)
+        assertEquals(committed.copy(hrr60Bpm = 20), manager.getSessionSummary("frozen"))
+    }
+
+    @Test
+    fun `transient contact loss preserves cooldown and recovery buffers`() = runTest {
+        val advertisement = CompositionAdvertisement(name = "Polar H10 contact debounce")
+        val fake = CompositionGattFake(advertisement, StandardTestDispatcher(testScheduler))
+        val manager = PolarH10BleManager(
+            scope = backgroundScope,
+            timeSource = { testScheduler.currentTime + 100_000L },
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { fake },
+        )
+        manager.startScanning()
+        runCurrent()
+        assertTrue(manager.connect(ScannedDevice("Polar H10 contact debounce", advertisement.identifier.toString())).isSuccess)
+        runCurrent()
+        manager.startSessionRecording("debounce")
+        manager.processRrIntervals(PolarHrMeasurement(150, true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("debounce")
+        manager.processRrIntervals(PolarHrMeasurement(130, true, rrIntervalsMs = listOf(900.0)))
+        manager.processRrIntervals(PolarHrMeasurement(0, false, rrIntervalsMs = emptyList()))
+        runCurrent()
+        advanceTimeBy(1000)
+        runCurrent()
+        assertTrue(manager.isCooldownActive.value, "Watchdog and cooldown ticks must honor transient contact debounce")
+        assertNull(manager.hrMeasurement.value)
+        manager.processRrIntervals(PolarHrMeasurement(128, true, rrIntervalsMs = listOf(950.0)))
+        advanceTimeBy(2500)
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals(3, manager.getBufferedBeatSamplesForTesting().size)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `raw ECG storage requires consent and is bounded independently of live preview`() = runTest {
+        var nowMs = 100_000L
+        val settings = MapSettings()
+        val manager = PolarH10BleManager(settings = settings, scope = backgroundScope, timeSource = { nowMs })
+        manager.startSessionRecording("raw")
+        manager.processRrIntervals(PolarHrMeasurement(140, true, rrIntervalsMs = listOf(800.0)))
+        val frame = PolarPmdMeasurement.Ecg(1L, listOf(100, 200, 300))
+        manager.processPmdMeasurement(frame)
+        assertFalse(manager.isRawEcgStorageEnabled.value)
+        assertNotNull(manager.latestEcg.value)
+        assertTrue(manager.getBufferedEcgSegmentsForTesting().isEmpty())
+        manager.setRawEcgStorageEnabled(true)
+        manager.processPmdMeasurement(frame)
+        assertEquals(1, manager.getBufferedEcgSegmentsForTesting().size)
+        nowMs += PolarH10BleManager.MAX_RAW_ECG_DURATION_MS
+        manager.processPmdMeasurement(frame.copy(sensorTimestampNs = 2L))
+        assertEquals(1, manager.getBufferedEcgSegmentsForTesting().size)
+        assertEquals(2L, manager.latestEcg.value?.sensorTimestampNs)
+        manager.setRawEcgStorageEnabled(false)
+        assertTrue(manager.getBufferedEcgSegmentsForTesting().isEmpty())
+        assertFalse(settings.getBoolean(PolarH10BleManager.KEY_RAW_ECG_STORAGE, true))
+        manager.startSessionRecording("sample-cap")
+        manager.setRawEcgStorageEnabled(true)
+        val largeFrame = PolarPmdMeasurement.Ecg(3L, List(1000) { 100 + it % 100 })
+        repeat(45) { manager.processPmdMeasurement(largeFrame) }
+        val samplesStored = manager.getBufferedEcgSegmentsForTesting().sumOf { it.samplesUvCsv.split(',').size }
+        assertEquals(39_000, samplesStored)
+    }
+
+    @Test
+    fun `connect timeout cleans up peripheral and reports connection failure`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(name = "Polar H10 timeout")
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        fake.connectGate = CompletableDeferred()
+        val manager = PolarH10BleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { fake },
+        )
+        manager.startScanning()
+        runCurrent()
+        val result = manager.connect(ScannedDevice("Polar H10 timeout", advertisement.identifier.toString()))
+        assertTrue(result.isFailure)
+        assertTrue(fake.disconnectCalls > 0)
+        assertFalse(manager.isConnected.value)
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `caller cancellation during connect cleans up and propagates cancellation`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(name = "Polar H10 cancelled")
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        fake.connectGate = CompletableDeferred()
+        val manager = PolarH10BleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { fake },
+        )
+        manager.startScanning()
+        runCurrent()
+        val connect = launch { manager.connect(ScannedDevice("Polar H10 cancelled", advertisement.identifier.toString())) }
+        advanceTimeBy(151)
+        runCurrent()
+        connect.cancel()
+        connect.join()
+        assertTrue(connect.isCancelled)
+        assertTrue(fake.disconnectCalls > 0)
+        assertFalse(manager.isConnected.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `missing PMD services leave the connection state observer alive`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(name = "Polar H10 missing PMD")
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val manager = PolarH10BleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { fake },
+        )
+        manager.startScanning()
+        runCurrent()
+        assertTrue(manager.connect(ScannedDevice("Polar H10 missing PMD", advertisement.identifier.toString())).isSuccess)
+        runCurrent()
+        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 1)
+        assertTrue(manager.isConnected.value)
+        fake.dropConnection()
+        runCurrent()
+        assertFalse(manager.isConnected.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `PMD subscription timeout is local and state observer survives`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(name = "Polar H10 stalled PMD")
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val peripheral = object : Peripheral by fake {
+            override fun observe(characteristic: Characteristic, onSubscription: suspend () -> Unit): Flow<ByteArray> = flow {
+                awaitCancellation()
+            }
+        }
+        val manager = PolarH10BleManager(
+            scope = backgroundScope, advertisements = { flowOf(advertisement) }, createPeripheral = { peripheral },
+        )
+        manager.startScanning()
+        runCurrent()
+        assertTrue(manager.connect(ScannedDevice("Polar H10 stalled PMD", advertisement.identifier.toString())).isSuccess)
+        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 1)
+        runCurrent()
+        assertTrue(manager.isConnected.value)
+        fake.dropConnection()
+        runCurrent()
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `ECG start requires successful indication and catches synchronous write response`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(name = "Polar H10 control point")
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val responses = MutableSharedFlow<ByteArray>()
+        val writtenOperations = mutableListOf<Byte>()
+        var responseStatus: Int? = null
+        val peripheral = object : Peripheral by fake {
+            override fun observe(characteristic: Characteristic, onSubscription: suspend () -> Unit): Flow<ByteArray> = flow {
+                onSubscription()
+                if (characteristic.characteristicUuid == BleConstants.Polar.pmdControlPointCharacteristic.characteristicUuid) {
+                    emitAll(responses)
+                } else {
+                    awaitCancellation()
+                }
+            }
+
+            override suspend fun write(characteristic: Characteristic, data: ByteArray, writeType: WriteType) {
+                writtenOperations.add(data[0])
+                responseStatus?.let { responses.emit(byteArrayOf(0xF0.toByte(), data[0], data[1], it.toByte())) }
+            }
+        }
+        val manager = PolarH10BleManager(
+            scope = backgroundScope, advertisements = { flowOf(advertisement) }, createPeripheral = { peripheral },
+        )
+        manager.startScanning()
+        runCurrent()
+        assertTrue(manager.connect(ScannedDevice("Polar H10 control point", advertisement.identifier.toString())).isSuccess)
+        runCurrent()
+        assertTrue(manager.startEcgStream().isFailure)
+        assertFalse(manager.isEcgStreaming.value)
+        responseStatus = 1
+        assertTrue(manager.startEcgStream().isFailure)
+        assertFalse(manager.isEcgStreaming.value)
+        responseStatus = 0
+        assertTrue(manager.startEcgStream().isSuccess)
+        assertTrue(manager.isEcgStreaming.value)
+        manager.setAccStreamingForTesting(true)
+        manager.startSessionRecording("stream-owner")
+        manager.releaseTelemetryPreviewAsync()
+        runCurrent()
+        assertTrue(manager.isEcgStreaming.value)
+        assertTrue(manager.isAccStreaming.value)
+        assertFalse(writtenOperations.contains(0x03.toByte()))
+        manager.triggerCooldown("stream-owner")
+        manager.releaseTelemetryPreviewAsync()
+        runCurrent()
+        assertTrue(manager.isEcgStreaming.value)
+        assertFalse(writtenOperations.contains(0x03.toByte()))
+        manager.shutdown()
+    }
+
+    @Test
+    fun `PMD packets cannot keep stale HR alive long enough to invent recovery`() = runTest {
+        var nowMs = 100_000L
+        val manager = PolarH10BleManager(scope = backgroundScope, timeSource = { nowMs })
+        manager.startSessionRecording("stale-hr")
+        manager.processRrIntervals(PolarHrMeasurement(150, true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("stale-hr")
+        nowMs += 65_000L
+        manager.processPmdMeasurement(PolarPmdMeasurement.Ecg(1L, listOf(100, 200, 300)))
+        manager.checkPacketAbsenceTimeout(nowMs)
+        assertFalse(manager.isCooldownActive.value)
+        assertNull(manager.cooldownHrr60.value)
+        assertNull(manager.cooldownHrr300.value)
+    }
+}
+
+

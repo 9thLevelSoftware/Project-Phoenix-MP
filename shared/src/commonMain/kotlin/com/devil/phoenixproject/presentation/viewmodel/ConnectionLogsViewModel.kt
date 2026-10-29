@@ -20,6 +20,7 @@ data class LogFilter(
     val showInfo: Boolean = true,
     val showWarning: Boolean = true,
     val showError: Boolean = true,
+    val hrmOnly: Boolean = false,
     val searchQuery: String = "",
 )
 
@@ -53,6 +54,13 @@ class ConnectionLogsViewModel : ViewModel() {
                 else -> true
             }
 
+            val isHrm = log.tag == "HRM" ||
+                log.eventType.startsWith("HRM_") ||
+                (log.deviceName?.contains("Polar", ignoreCase = true) == true) ||
+                log.message.startsWith("[HRM]")
+
+            val hrmMatch = if (filter.hrmOnly) isHrm else true
+
             val searchMatch = if (filter.searchQuery.isBlank()) {
                 true
             } else {
@@ -62,7 +70,7 @@ class ConnectionLogsViewModel : ViewModel() {
                     (log.details?.contains(filter.searchQuery, ignoreCase = true) == true)
             }
 
-            levelMatch && searchMatch
+            levelMatch && hrmMatch && searchMatch
         }
     }.stateIn(
         viewModelScope,
@@ -82,6 +90,13 @@ class ConnectionLogsViewModel : ViewModel() {
             LogLevel.WARNING -> _filter.value.copy(showWarning = !_filter.value.showWarning)
             LogLevel.ERROR -> _filter.value.copy(showError = !_filter.value.showError)
         }
+    }
+
+    /**
+     * Toggle HRM chest strap filter.
+     */
+    fun toggleHrmOnly() {
+        _filter.value = _filter.value.copy(hrmOnly = !_filter.value.hrmOnly)
     }
 
     /**

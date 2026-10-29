@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
@@ -571,6 +572,7 @@ class ActiveSessionEngine(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
+    private val polarBleManager: PolarH10BleManager? = null,
 ) {
     private data class PendingRestRackSelection(
         val itemIds: List<String>,
@@ -5977,10 +5979,25 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Collect metric for history recording.
+     * Collect metric for history recording, stamping live Polar H10 cardiac & torso biomechanics.
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
-        coordinator.collectedMetrics.append(metric)
+        val stampedMetric = polarBleManager?.let { polar ->
+            if (!polar.isConnected.value) return@let null
+            val hr = polar.hrMeasurement.value
+            val lastAcc = polar.latestAcc.value?.samples?.lastOrNull()
+            metric.copy(
+                heartRateBpm = hr?.hr,
+                rrIntervalMs = hr?.rrIntervalsMs?.lastOrNull()?.toFloat(),
+                torsoPitchDeg = polar.torsoPitchDeg.value?.toFloat(),
+                torsoRollDeg = polar.torsoRollDeg.value?.toFloat(),
+                dynamicAccMg = polar.dynamicAccMg.value,
+                chestAccXMg = lastAcc?.xMg,
+                chestAccYMg = lastAcc?.yMg,
+                chestAccZMg = lastAcc?.zMg,
+            )
+        } ?: metric
+        coordinator.collectedMetrics.append(stampedMetric)
     }
 
     // ===== Auto-Stop Helpers =====
@@ -6670,6 +6687,7 @@ class ActiveSessionEngine(
                 coordinator._repCount.value.workingReps == 0
             ) {
                 coordinator.warmupCompleteTimeMs = metric.timestamp
+                polarBleManager?.updateSessionPhase("WORKING_SET")
                 // F-022: start working rep 1's window at the end of warmup. Without a
                 // boundary here the window reaches back to set start, so rep 1's mean
                 // concentric velocity - the baseline for velocity-loss auto-end and for
@@ -8078,6 +8096,10 @@ class ActiveSessionEngine(
             return null
         }
         bodyweightCompletionGate.beginExecution(lease)
+        polarBleManager?.startSessionRecording(
+            sessionId = lease.sessionId,
+            phase = if (coordinator._repCount.value.warmupReps > 0 && !coordinator._repCount.value.isWarmupComplete) "WARMUP" else "WORKING_SET",
+        )
         if (!installBiomechanicsContext(lease)) return null
         retryRetainedWorkoutExitPersistence()
         executionContext = null
@@ -9282,6 +9304,7 @@ class ActiveSessionEngine(
         // window) is not a measurement and must never be read back as achieved load.
         // Shared rule with the manual-stop path: [recordedHeaviestKg].
         val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
+        val polarSummary = polarBleManager?.freezeSessionRecording(lease.sessionId)
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9329,6 +9352,15 @@ class ActiveSessionEngine(
             dominantSide = biomechanicsSummary?.dominantSide,
             strengthProfile = biomechanicsSummary?.strengthProfile?.name,
             profileId = lease.profileId,
+            avgHeartRateBpm = polarSummary?.avgHeartRateBpm,
+            maxHeartRateBpm = polarSummary?.maxHeartRateBpm,
+            minHeartRateBpm = polarSummary?.minHeartRateBpm,
+            avgRrIntervalMs = polarSummary?.avgRrIntervalMs,
+            rmssdMs = polarSummary?.rmssdMs,
+            hrr60Bpm = polarSummary?.hrr60Bpm,
+            hrr300Bpm = polarSummary?.hrr300Bpm,
+            maxTorsoPitchDeg = polarSummary?.maxTorsoPitchDeg,
+            maxTorsoRollDeg = polarSummary?.maxTorsoRollDeg,
         )
         val hasExerciseIdentity = params.selectedExerciseId != null || params.isJustLift
         val persistZeroRepStallAttempt = completion.reason == SetEndReason.STALL_FAILURE &&
@@ -9539,6 +9571,7 @@ class ActiveSessionEngine(
                 repMetrics = snapshot.repMetrics,
                 repBiomechanics = snapshot.biomechanicsRepResults,
             )
+            polarBleManager?.flushSessionTelemetry(sessionId)?.join()
             // Issue #869: the set is durable; Set Summary may now appear.
             commitSettled?.complete(Unit)
             snapshot.singleExerciseDefaults?.let { defaults ->
@@ -10595,6 +10628,14 @@ class ActiveSessionEngine(
         val startAtStopMs = coordinator.workoutStartTime
         val warmupCompleteAtStopMs = coordinator.warmupCompleteTimeMs
         val firstSampleAtStopMs = coordinator.collectedMetrics.snapshot().firstOrNull()?.timestamp
+        val polarSessionIdAtStop = polarBleManager?.currentRecordingSessionId
+        val polarSummaryAtStop = if (manualSnapshot == null) {
+            polarSessionIdAtStop?.let { sessionId ->
+                polarBleManager?.freezeSessionRecording(sessionId)
+            }
+        } else {
+            null
+        }
 
         val completeStop: () -> Unit = {
             launchPresentationContinuation(lease) {
@@ -10785,6 +10826,15 @@ class ActiveSessionEngine(
                     totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
                     dominantSide = bioSummary?.dominantSide,
                     strengthProfile = bioSummary?.strengthProfile?.name,
+                    avgHeartRateBpm = polarSummaryAtStop?.avgHeartRateBpm,
+                    maxHeartRateBpm = polarSummaryAtStop?.maxHeartRateBpm,
+                    minHeartRateBpm = polarSummaryAtStop?.minHeartRateBpm,
+                    avgRrIntervalMs = polarSummaryAtStop?.avgRrIntervalMs,
+                    rmssdMs = polarSummaryAtStop?.rmssdMs,
+                    hrr60Bpm = polarSummaryAtStop?.hrr60Bpm,
+                    hrr300Bpm = polarSummaryAtStop?.hrr300Bpm,
+                    maxTorsoPitchDeg = polarSummaryAtStop?.maxTorsoPitchDeg,
+                    maxTorsoRollDeg = polarSummaryAtStop?.maxTorsoRollDeg,
                     // C4: profileId was missing from this path. FP-6: it is the owning
                     // profile, not the live one.
                     profileId = attributionProfileId,
@@ -10827,6 +10877,9 @@ class ActiveSessionEngine(
                     repMetrics = emptyList(),
                     repBiomechanics = emptyList(),
                 )
+                polarSessionIdAtStop?.let { recordedSourceId ->
+                    polarBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
+                }
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {
                     Logger.d(

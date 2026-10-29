@@ -419,6 +419,15 @@ data class WorkoutMetric(
     val velocityA: Double = 0.0, // Firmware-provided velocity used for handle detection
     val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
     val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
+    // Polar H10 intra-set synchronized telemetry & torso biomechanics (migration 59)
+    val heartRateBpm: Int? = null,
+    val rrIntervalMs: Float? = null,
+    val torsoPitchDeg: Float? = null,
+    val torsoRollDeg: Float? = null,
+    val dynamicAccMg: Int? = null,
+    val chestAccXMg: Int? = null,
+    val chestAccYMg: Int? = null,
+    val chestAccZMg: Int? = null,
 ) {
     val totalLoad: Float get() = loadA + loadB
 }
@@ -620,6 +629,16 @@ data class WorkoutSession(
     val profileId: String = "default",
     /** Domain last-edit epoch millis used as the portal LWW wire timestamp. */
     val updatedAt: Long? = null,
+    // Polar H10 cardiac & torso biomechanics summary (added in migration 59)
+    val avgHeartRateBpm: Int? = null,
+    val maxHeartRateBpm: Int? = null,
+    val minHeartRateBpm: Int? = null,
+    val avgRrIntervalMs: Float? = null,
+    val rmssdMs: Float? = null,
+    val hrr60Bpm: Int? = null,
+    val hrr300Bpm: Int? = null,
+    val maxTorsoPitchDeg: Float? = null,
+    val maxTorsoRollDeg: Float? = null,
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean

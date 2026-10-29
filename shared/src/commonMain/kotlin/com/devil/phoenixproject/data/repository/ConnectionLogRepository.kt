@@ -85,6 +85,7 @@ class ConnectionLogRepository {
         deviceName: String? = null,
         deviceAddress: String? = null,
         details: String? = null,
+        tag: String? = null,
     ) {
         if (!_isEnabled.value) return
 
@@ -98,6 +99,7 @@ class ConnectionLogRepository {
             deviceName = deviceName,
             message = message,
             details = details,
+            tag = tag,
         )
 
         _logs.update { currentLogs ->
@@ -113,20 +115,48 @@ class ConnectionLogRepository {
     /**
      * Convenience methods for different log levels.
      */
-    fun debug(eventType: String, message: String, deviceName: String? = null, deviceAddress: String? = null, details: String? = null) {
-        log(LogLevel.DEBUG, eventType, message, deviceName, deviceAddress, details)
+    fun debug(
+        eventType: String,
+        message: String,
+        deviceName: String? = null,
+        deviceAddress: String? = null,
+        details: String? = null,
+        tag: String? = null,
+    ) {
+        log(LogLevel.DEBUG, eventType, message, deviceName, deviceAddress, details, tag)
     }
 
-    fun info(eventType: String, message: String, deviceName: String? = null, deviceAddress: String? = null, details: String? = null) {
-        log(LogLevel.INFO, eventType, message, deviceName, deviceAddress, details)
+    fun info(
+        eventType: String,
+        message: String,
+        deviceName: String? = null,
+        deviceAddress: String? = null,
+        details: String? = null,
+        tag: String? = null,
+    ) {
+        log(LogLevel.INFO, eventType, message, deviceName, deviceAddress, details, tag)
     }
 
-    fun warning(eventType: String, message: String, deviceName: String? = null, deviceAddress: String? = null, details: String? = null) {
-        log(LogLevel.WARNING, eventType, message, deviceName, deviceAddress, details)
+    fun warning(
+        eventType: String,
+        message: String,
+        deviceName: String? = null,
+        deviceAddress: String? = null,
+        details: String? = null,
+        tag: String? = null,
+    ) {
+        log(LogLevel.WARNING, eventType, message, deviceName, deviceAddress, details, tag)
     }
 
-    fun error(eventType: String, message: String, deviceName: String? = null, deviceAddress: String? = null, details: String? = null) {
-        log(LogLevel.ERROR, eventType, message, deviceName, deviceAddress, details)
+    fun error(
+        eventType: String,
+        message: String,
+        deviceName: String? = null,
+        deviceAddress: String? = null,
+        details: String? = null,
+        tag: String? = null,
+    ) {
+        log(LogLevel.ERROR, eventType, message, deviceName, deviceAddress, details, tag)
     }
 
     /**
@@ -154,7 +184,8 @@ class ConnectionLogRepository {
         sb.appendLine()
 
         _logs.value.forEach { log ->
-            sb.appendLine("[${formatTimestamp(log.timestamp)}] [${log.level}] ${log.eventType}")
+            val tagStr = if (log.tag != null) " [${log.tag}]" else ""
+            sb.appendLine("[${formatTimestamp(log.timestamp)}] [${log.level}]$tagStr ${log.eventType}")
             sb.appendLine("  ${log.message}")
             if (log.deviceName != null || log.deviceAddress != null) {
                 sb.appendLine(
