@@ -152,6 +152,8 @@ kotlin {
         }
 
         getByName("androidHostTest") {
+            // CompositionGattFake uses the vendored Android Kable 0.43.1 API.
+            languageSettings.optIn("com.juul.kable.ExperimentalApi")
             dependencies {
                 implementation(libs.junit)
                 implementation(libs.mockk)
@@ -237,6 +239,16 @@ kotlin {
 
             dependencies {
                 implementation(libs.sqldelight.native.driver)
+            }
+        }
+    }
+
+    // Upstream Kable 0.45 renamed the marker. Configure the native test compiler
+    // directly: an opt-in on the intermediate iosTest source set is not propagated.
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        compilations.named("test") {
+            compileTaskProvider.configure {
+                compilerOptions.optIn.add("com.juul.kable.ExperimentalKableApi")
             }
         }
     }

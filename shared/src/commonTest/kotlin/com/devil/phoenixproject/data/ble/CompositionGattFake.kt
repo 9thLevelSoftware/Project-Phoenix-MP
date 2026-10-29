@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class, com.juul.kable.ExperimentalApi::class)
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
 
 package com.devil.phoenixproject.data.ble
 
