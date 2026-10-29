@@ -1240,8 +1240,7 @@ abstract class BaseDataBackupManager(
                     "data" -> {
                         nav.beginObject()
                         while (nav.hasNextInObject()) {
-                            val fieldName = nav.nextName()
-                            when (fieldName) {
+                            when (val fieldName = nav.nextName()) {
                                 // --- equipmentRackItems ---
                                 "equipmentRackItems" -> {
                                     legacyRackFieldPresent = true

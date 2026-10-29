@@ -5119,6 +5119,25 @@ class ActiveSessionEngine(
                 if (!executionGuard.isCurrent(eventLease)) return@launch
                 val timing = coordinator._workoutParameters.value.repCountTiming
                 val params = coordinator._workoutParameters.value
+                // Issue #1357: correlate workout-side decisions with the iOS collector/native
+                // audio trace. This is a snapshot, not proof that a cue was emitted or heard.
+                try {
+                    val audioLogs = ConnectionLogRepository.instance
+                    if (audioLogs.isEnabled.value) {
+                        val prefs = settingsManager.userPreferences.value
+                        audioLogs.debug(
+                            LogEventType.WORKOUT_AUDIO,
+                            "rep-event",
+                            details = "type=${event.type} warmup=${event.warmupCount} working=${event.workingCount} " +
+                                "timing=$timing repSound=${prefs.repSoundEnabled} " +
+                                "repVoice=${prefs.audioRepCountEnabled} " +
+                                "subscribers=${coordinator._hapticEvents.subscriptionCount.value}",
+                            tag = "ActiveSessionEngine",
+                        )
+                    }
+                } catch (_: Exception) {
+                    // Diagnostic collection must not interrupt workout processing.
+                }
                 when (event.type) {
                     RepType.WORKING_PENDING -> {
                         // TOP timing: announce rep number at concentric peak
@@ -11306,13 +11325,13 @@ class ActiveSessionEngine(
             try {
                 val provider = healthProviderForPlatform()
                 val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
-                Logger.i("ActiveSessionEngine") {
+                Logger.i(tag = "ActiveSessionEngine") {
                     "HEALTH_DEBUG_ROUTINE_PUSH: provider=${provider.key}, status=${status?.status}, " +
                         "routineSessionId=$routineSessionId, completedExercises=$completedExerciseCount, " +
                         "completedSets=${completedSetKeys.size}, skippedExercises=${skippedIndices.size}, calories=${totalCalories ?: -1f}"
                 }
                 if (status?.status != ConnectionStatus.CONNECTED) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Routine health push skipped: ${provider.displayName} is not connected (status=${status?.status})"
                     }
                     return@launch
@@ -11331,14 +11350,14 @@ class ActiveSessionEngine(
                     completedSetsBySessionId = completedSetsBySessionId,
                 )
                 if (data == null) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Routine health push skipped: no persisted exportable segments for routineSessionId=$routineSessionId"
                     }
                     return@launch
                 }
                 val cursorRepository = healthExportCursorRepository
                 if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Routine health push skipped: ${data.externalId} is already marked exported"
                     }
                     return@launch
@@ -11349,15 +11368,15 @@ class ActiveSessionEngine(
                         if (cursorRepository != null) {
                             HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
                         }
-                        Logger.i("ActiveSessionEngine") {
+                        Logger.i(tag = "ActiveSessionEngine") {
                             "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s, segments=${data.segments.size})"
                         }
                     }
                     .onFailure { e ->
-                        Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
+                        Logger.w(tag = "ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
                     }
             } catch (e: Exception) {
-                Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
+                Logger.w(tag = "ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
             } finally {
                 coordinator.routineAccumulatedCalories = 0f
             }
@@ -11497,7 +11516,7 @@ class ActiveSessionEngine(
                 // re-prompt outside the routine flow.
                 coordinator._loadedRoutine.value != null
             if (shouldPromptBodyweightRepEntry) {
-                Logger.d("ActiveSessionEngine") {
+                Logger.d(tag = "ActiveSessionEngine") {
                     "Bodyweight set finished; prompting for reps before saving " +
                         "(exercise=${currentExercise.exercise.name}, set=${coordinator._currentSetIndex.value + 1}, " +
                         "hasDuration=${currentExercise.duration?.let { it > 0 } == true})"
@@ -11509,7 +11528,7 @@ class ActiveSessionEngine(
 
             if (wasBodyweight) {
                 coordinator.bodyweightSetsCompletedInRoutine++
-                Logger.d("ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise?.exercise?.name})" }
+                Logger.d(tag = "ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise.exercise?.name})" }
             }
 
             coordinator.previousExerciseWasBodyweight = wasBodyweight
@@ -11600,8 +11619,7 @@ class ActiveSessionEngine(
                 // owner. Resolve it once before publishing SetSummary so the
                 // recommendation is visible during the summary window; unresolved
                 // and accepted offers deliberately never inspect a successor.
-                val persistedPlan = coordinator._restTransitionPlan.value
-                val normalPlan = when (persistedPlan) {
+                val normalPlan = when (val persistedPlan = coordinator._restTransitionPlan.value) {
                     is RestTransitionPlan.NormalAdvance -> persistedPlan
                     is RestTransitionPlan.Declined -> persistedPlan.normalAdvance
                     else -> null
@@ -11968,7 +11986,7 @@ class ActiveSessionEngine(
         if (!hasExpectedAuthority(lease, "rest_timer_start")) return
         val timerJob = scope.launch(start = CoroutineStart.LAZY) {
             if (!hasExpectedAuthority(lease, "rest_timer_launch")) return@launch
-            val timerJob = coroutineContext[kotlinx.coroutines.Job] ?: return@launch
+            val timerJob = coroutineContext[Job] ?: return@launch
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val exerciseId = currentExercise?.exercise?.id ?: coordinator._workoutParameters.value.selectedExerciseId
@@ -12317,7 +12335,7 @@ class ActiveSessionEngine(
             }
 
             if (autoplay) {
-                Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
+                Logger.d(tag = "ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
                 if (!hasExpectedAuthority(lease, "rest_timer_successor")) return@launch
                 if (isSingleExercise) {
                     advanceToNextSetInSingleExercise(lease)
@@ -12792,7 +12810,7 @@ class ActiveSessionEngine(
         armJustLiftRestDeadline(restSeconds)
 
         coordinator.justLiftRestTimerJob = scope.launch {
-            val timerJob = coroutineContext[kotlinx.coroutines.Job]
+            val timerJob = coroutineContext[Job]
             Logger.d("startJustLiftEggTimer: starting $restSeconds s visual countdown")
 
             var lastRenderedSecond = restSeconds + 1
@@ -13186,7 +13204,7 @@ class ActiveSessionEngine(
             coordinator.restTimerJob = null
 
             val isJustLift = coordinator._workoutParameters.value.isJustLift
-            Logger.d("ActiveSessionEngine") { "skipRest: isJustLift=$isJustLift, advancing (no BLE stop - already sent at set end)" }
+            Logger.d(tag = "ActiveSessionEngine") { "skipRest: isJustLift=$isJustLift, advancing (no BLE stop - already sent at set end)" }
 
             if (isJustLift) {
                 // Just Lift rest returns to Idle (ready for next auto-start set), not Completed
@@ -13257,7 +13275,7 @@ class ActiveSessionEngine(
         } else {
             coordinator._restSecondsRemaining.value += seconds
         }
-        Logger.d("ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
+        Logger.d(tag = "ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
     }
 
     /**
@@ -13300,7 +13318,7 @@ class ActiveSessionEngine(
             coordinator.restDeadlineElapsedRealtimeMs = null
             coordinator._isRestPaused.value = true
         }
-        Logger.d("ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
+        Logger.d(tag = "ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
     }
 
     /**
@@ -13335,7 +13353,7 @@ class ActiveSessionEngine(
         coordinator._isRestPaused.value = false
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
         armRestDeadline(coordinator._restOriginalDuration.value)
-        Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
+        Logger.d(tag = "ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
     private fun mutateRestoredPlanOwnedRest(
@@ -13727,7 +13745,7 @@ class ActiveSessionEngine(
     fun pauseExerciseTimer() {
         if (coordinator._timedExerciseRemainingSeconds.value == null) return
         coordinator._isExerciseTimerPaused.value = true
-        Logger.d("ActiveSessionEngine") { "pauseExerciseTimer: paused" }
+        Logger.d(tag = "ActiveSessionEngine") { "pauseExerciseTimer: paused" }
     }
 
     /**
@@ -13736,7 +13754,7 @@ class ActiveSessionEngine(
     fun resumeExerciseTimer() {
         if (coordinator._timedExerciseRemainingSeconds.value == null) return
         coordinator._isExerciseTimerPaused.value = false
-        Logger.d("ActiveSessionEngine") { "resumeExerciseTimer: resumed" }
+        Logger.d(tag = "ActiveSessionEngine") { "resumeExerciseTimer: resumed" }
     }
 
     /**
@@ -13749,7 +13767,7 @@ class ActiveSessionEngine(
         if (original <= 0) return
         coordinator._isExerciseTimerPaused.value = false
         coordinator._timedExerciseRemainingSeconds.value = original
-        Logger.d("ActiveSessionEngine") { "resetExerciseTimer: reset to ${original}s" }
+        Logger.d(tag = "ActiveSessionEngine") { "resetExerciseTimer: reset to ${original}s" }
     }
 
     fun startNextSet() {
@@ -13762,7 +13780,7 @@ class ActiveSessionEngine(
                 }
                 return
             }
-            Logger.d("ActiveSessionEngine") { "startNextSet: advancing (no BLE stop - already sent at set end)" }
+            Logger.d(tag = "ActiveSessionEngine") { "startNextSet: advancing (no BLE stop - already sent at set end)" }
 
             if (isSingleExerciseMode(coordinator)) {
                 advanceToNextSetInSingleExercise(executionGuard.currentLease)
@@ -13785,7 +13803,7 @@ class ActiveSessionEngine(
         }
 
         coordinator.autoStartJob = scope.launch {
-            val timerJob = coroutineContext[kotlinx.coroutines.Job]
+            val timerJob = coroutineContext[Job]
             try {
                 val countdownSeconds = settingsManager.userPreferences.value.autoStartCountdownSeconds
                 for (i in countdownSeconds downTo 1) {

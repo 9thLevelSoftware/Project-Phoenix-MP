@@ -5,4 +5,4 @@ package com.juul.kable
     replaceWith = ReplaceWith("PlatformScanner"),
     level = DeprecationLevel.HIDDEN,
 )
-public typealias CoreBluetoothScanner = PlatformScanner
+typealias CoreBluetoothScanner = PlatformScanner

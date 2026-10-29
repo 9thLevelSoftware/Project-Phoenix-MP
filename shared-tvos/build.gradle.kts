@@ -92,6 +92,16 @@ kotlin {
             }
         }
     }
+
+    // CompositionGattFake uses the vendored Kable 0.43.1 marker on tvOS.
+    // Apply it to the test compiler; commonTest opt-ins are not propagated here.
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        compilations.named("test") {
+            compileTaskProvider.configure {
+                compilerOptions.optIn.add("com.juul.kable.ExperimentalApi")
+            }
+        }
+    }
 }
 
 val phoneShared = project(":shared")

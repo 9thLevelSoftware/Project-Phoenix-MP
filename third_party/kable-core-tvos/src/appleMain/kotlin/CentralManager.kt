@@ -15,31 +15,31 @@ import kotlin.uuid.Uuid
 
 private const val DISPATCH_QUEUE_LABEL = "central"
 
-public class CentralManager internal constructor(
+class CentralManager internal constructor(
     options: Map<Any?, *>?,
 ) {
 
-    public data class Configuration(
+    data class Configuration(
         val stateRestoration: Boolean,
     ) {
 
-        public class Builder internal constructor() {
+        class Builder internal constructor() {
 
             /**
              * Enables support for
              * [Core Bluetooth Background Processing for iOS Apps](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html)
              * by enabling [CentralManager] state preservation and restoration. */
-            public var stateRestoration: Boolean = false
+            var stateRestoration: Boolean = false
         }
     }
 
-    public companion object {
+    companion object {
 
         private val configuration = atomic<Configuration?>(null)
         private val lazyDefault = lazy { CentralManager(configuration.value?.toOptions()) }
         internal val Default by lazyDefault
 
-        public fun configure(builderAction: Configuration.Builder.() -> Unit) {
+        fun configure(builderAction: Configuration.Builder.() -> Unit) {
             check(!lazyDefault.isInitialized()) { "Cannot configure CentralManager, it has already initialized." }
             configuration.value = Configuration.Builder().apply(builderAction).build()
         }

@@ -5,4 +5,4 @@ package com.juul.kable
     replaceWith = ReplaceWith("PlatformAdvertisement"),
     level = DeprecationLevel.ERROR,
 )
-public typealias CoreBluetoothAdvertisement = PlatformAdvertisement
+typealias CoreBluetoothAdvertisement = PlatformAdvertisement

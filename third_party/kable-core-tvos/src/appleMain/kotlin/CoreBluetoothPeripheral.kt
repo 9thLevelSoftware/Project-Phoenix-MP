@@ -5,22 +5,22 @@ import kotlinx.io.IOException
 import platform.Foundation.NSData
 import kotlin.coroutines.cancellation.CancellationException
 
-public interface CoreBluetoothPeripheral : Peripheral {
+interface CoreBluetoothPeripheral : Peripheral {
 
     @Throws(CancellationException::class, IOException::class)
-    public suspend fun write(descriptor: Descriptor, data: NSData)
+    suspend fun write(descriptor: Descriptor, data: NSData)
 
     @Throws(CancellationException::class, IOException::class)
-    public suspend fun write(characteristic: Characteristic, data: NSData, writeType: WriteType)
+    suspend fun write(characteristic: Characteristic, data: NSData, writeType: WriteType)
 
     @Throws(CancellationException::class, IOException::class)
-    public suspend fun readAsNSData(descriptor: Descriptor): NSData
+    suspend fun readAsNSData(descriptor: Descriptor): NSData
 
-    public fun observeAsNSData(
+    fun observeAsNSData(
         characteristic: Characteristic,
         onSubscription: OnSubscriptionAction = {},
     ): Flow<NSData>
 
     @Throws(CancellationException::class, IOException::class)
-    public suspend fun readAsNSData(characteristic: Characteristic): NSData
+    suspend fun readAsNSData(characteristic: Characteristic): NSData
 }

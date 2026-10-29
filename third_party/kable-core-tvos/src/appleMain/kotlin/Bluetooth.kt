@@ -23,7 +23,7 @@ import platform.CoreBluetooth.CBCentralManagerStateUnsupported
         "Will be removed in a future release. " +
         "See https://github.com/JuulLabs/kable/issues/737 for more details.",
 )
-public actual enum class Reason {
+actual enum class Reason {
     @Deprecated(
         message = "`Bluetooth.availability` has inconsistent behavior across platforms. " +
             "Will be removed in a future release. " +

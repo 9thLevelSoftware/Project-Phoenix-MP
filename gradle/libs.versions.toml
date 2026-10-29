@@ -1,64 +1,64 @@
 [versions]
 # Kotlin and KMP
-kotlin = "2.4.0"
-agp = "9.2.1"
-compose-multiplatform = "1.11.1"
+kotlin = "2.4.21"
+agp = "9.5.0"
+compose-multiplatform = "1.12.2"
 # material3 and material-icons follow separate version tracks from CMP plugin
 cmp-material3 = "1.10.0-alpha05"
 cmp-material-icons = "1.7.3"
 
 # Kotlinx
 kotlinx-coroutines = "1.11.0"
-kotlinx-serialization = "1.11.0"
+kotlinx-serialization = "1.12.0"
 kotlinx-datetime = "0.8.0"
 
 # Compose
 activity-compose = "1.13.0"
 
 # Vendored Kable module deps (third_party/kable-core-android-patched, Phoenix #333)
-kotlinx-io = "0.8.0"
-atomicfu = "0.29.0"
-tuulbox = "8.1.0"
+kotlinx-io = "0.9.1"
+atomicfu = "0.33.0"
+tuulbox = "8.1.1"
 androidx-startup = "1.2.0"
 kable-atomicfu = "0.33.0"
-kable-kotlinx-io = "0.9.0"
+kable-kotlinx-io = "0.9.1"
 
 # AndroidX
 junit-androidx = "1.3.0"
-androidx-core = "1.19.0"
-androidx-lifecycle-viewmodel-compose = "2.10.0"
-androidx-navigation-compose = "2.9.2"
+androidx-core = "1.19.1"
+androidx-lifecycle-viewmodel-compose = "2.11.0"
+androidx-navigation-compose = "2.10.0"
 androidx-savedstate = "1.4.0"
 androidx-security-crypto = "1.1.0"
 androidx-browser = "1.10.0"
 androidx-documentfile = "1.1.0"
-androidx-health-connect = "1.2.0-alpha04"
+androidx-health-connect = "1.2.0-alpha06"
 
 # Dependency Injection - Koin (Multiplatform alternative to Hilt)
 koin = "4.2.2"
 koin-compose = "4.2.2"
 
 # Database - SQLDelight (Multiplatform alternative to Room)
-sqldelight = "2.3.2"
+sqldelight = "2.4.1"
 
 # Settings/Preferences - Multiplatform
 multiplatform-settings = "1.3.0"
 
 # BLE - Kable (Kotlin Multiplatform)
-kable = "0.43.1"
+kable = "0.45.0"
 
 # Ktor
-ktor = "3.5.0"
+ktor = "3.6.1"
 
 # Logging
-kermit = "2.1.0"
+kermit = "2.2.0"
 
 # Image Loading (Multiplatform)
-coil = "3.5.0"
+coil = "3.6.3"
 reorderable = "3.1.0"
 
 # Lottie (Multiplatform)
-compottie = "2.2.2"
+compottie = "2.3.3"
 
 # Testing
 junit = "4.13.2"
@@ -67,7 +67,7 @@ turbine = "1.2.1"
 truth = "1.4.5"
 koin-test = "4.2.2"
 multiplatform-settings-test = "1.3.0"
-robolectric = "4.15.1"
+robolectric = "4.17"
 androidx-test-core = "1.7.0"
 
 [libraries]
@@ -123,7 +123,7 @@ cmp-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "comp
 cmp-ui-test-junit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "compose-multiplatform" }
 # androidx-only artifact (CMP publishes no ui-test-manifest); version matches the
 # androidx compose that CMP 1.11.1 resolves to for the Android target.
-androidx-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version = "1.11.2" }
+androidx-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version = "1.12.1" }
 
 # Koin (Multiplatform DI)
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }

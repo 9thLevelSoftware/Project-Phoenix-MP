@@ -179,8 +179,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
      */
     fun hasNextInArray(): Boolean {
         skipWhitespace()
-        if (!hasMore()) return false
-        return when (peekChar()) {
+        return hasMore() && when (peekChar()) {
             ']' -> false
 
             ',' -> {
@@ -203,8 +202,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
      */
     fun hasNextInObject(): Boolean {
         skipWhitespace()
-        if (!hasMore()) return false
-        return when (peekChar()) {
+        return hasMore() && when (peekChar()) {
             '}' -> false
 
             ',' -> {
@@ -368,8 +366,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
 
         val sb = StringBuilder()
         while (true) {
-            val c = nextChar()
-            when (c) {
+            when (val c = nextChar()) {
                 '"' -> return sb.toString()
                 '\\' -> sb.append(readEscapeSequence())
                 else -> sb.append(c)
@@ -384,8 +381,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
      * (including surrogate pairs for supplementary Unicode code points).
      */
     private fun readEscapeSequence(): CharSequence {
-        val escaped = nextChar()
-        return when (escaped) {
+        return when (val escaped = nextChar()) {
             '"' -> "\""
             '\\' -> "\\"
             '/' -> "/"
@@ -445,8 +441,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
     private fun parseHex4(): Int {
         var result = 0
         repeat(4) { i ->
-            val c = nextChar()
-            val digit = when (c) {
+            val digit = when (val c = nextChar()) {
                 in '0'..'9' -> c - '0'
                 in 'a'..'f' -> 10 + (c - 'a')
                 in 'A'..'F' -> 10 + (c - 'A')

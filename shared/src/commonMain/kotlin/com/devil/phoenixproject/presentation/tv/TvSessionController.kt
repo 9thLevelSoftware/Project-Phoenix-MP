@@ -59,9 +59,8 @@ class TvSessionController(
     val routineReadyToStart: Boolean
         get() {
             val ready = coordinator.routineFlowState.value as? RoutineFlowState.SetReady ?: return false
-            if (completionFailed || bodyweightEntry != null || machineMayBeRunning || session.machineTeardownState.value !is MachineTeardownState.Ready) return false
-            return coordinator.workoutState.value is WorkoutState.Idle ||
-                lastStartedRoutineStep != (ready.exerciseIndex to ready.setIndex)
+            return !(completionFailed || bodyweightEntry != null || machineMayBeRunning || session.machineTeardownState.value !is MachineTeardownState.Ready) && (coordinator.workoutState.value is WorkoutState.Idle ||
+                lastStartedRoutineStep != (ready.exerciseIndex to ready.setIndex))
         }
     val manualRoutineRestSeconds: Int?
         get() {

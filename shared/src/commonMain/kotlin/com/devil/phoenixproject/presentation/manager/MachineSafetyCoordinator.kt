@@ -168,8 +168,7 @@ class MachineSafetyCoordinator(
         kind: MachineSafetyWorkoutKind,
     ): Boolean {
         val trainerAddress = transport.connectedTrainerAddress ?: return false
-        if (!persistMachineArming) return true
-        return recordMachineSessionArmed(
+        return !persistMachineArming || recordMachineSessionArmed(
             MachineSafetyHazardDocument(
                 generation = nextGeneration + 1L,
                 trainerAddress = trainerAddress,
@@ -449,11 +448,9 @@ class MachineSafetyCoordinator(
         document: MachineSafetyHazardDocument,
     ): Boolean {
         val current = _uiState.value as? MachineSafetyUiState.Visible ?: return false
-        if (current.document.identity != identity ||
-            document.identity != identity ||
-            current.document.recoveryAttemptToken > document.recoveryAttemptToken
-        ) return false
-        return try {
+        return !(current.document.identity != identity ||
+                document.identity != identity ||
+                current.document.recoveryAttemptToken > document.recoveryAttemptToken) && try {
             repository.replace(document)
             show(document, current.restoreWasRejected)
             true

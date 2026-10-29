@@ -848,8 +848,7 @@ data class RepRanges(
      * Used to determine whether to show cable position indicators.
      */
     fun isCableAActive(minRangeThreshold: Float = 50f): Boolean {
-        if (minPosA == null || maxPosA == null) return false
-        return (maxPosA - minPosA) > minRangeThreshold
+        return !(minPosA == null || maxPosA == null) && (maxPosA - minPosA) > minRangeThreshold
     }
 
     /**
@@ -857,8 +856,7 @@ data class RepRanges(
      * Used to determine whether to show cable position indicators.
      */
     fun isCableBActive(minRangeThreshold: Float = 50f): Boolean {
-        if (minPosB == null || maxPosB == null) return false
-        return (maxPosB - minPosB) > minRangeThreshold
+        return !(minPosB == null || maxPosB == null) && (maxPosB - minPosB) > minRangeThreshold
     }
 
     /**

@@ -49,7 +49,7 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
 
     // C2: Thread-safe snapshot list — processRep() runs on Dispatchers.Default while
     // getSetSummary()/reset() may be called from the main dispatcher
-    private val repResults = kotlinx.coroutines.flow.MutableStateFlow<List<BiomechanicsRepResult>>(emptyList())
+    private val repResults = MutableStateFlow<List<BiomechanicsRepResult>>(emptyList())
     // FINDING-56: @Volatile ensures cross-dispatcher visibility — computeVelocity reads on
     // Dispatchers.Default while reset() writes null from the main dispatcher.
     @Volatile

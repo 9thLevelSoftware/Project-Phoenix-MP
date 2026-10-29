@@ -32,7 +32,7 @@ object RoutineSetWeightResolver {
         val usesPrPercentage = hasValidPr && percent > 0
 
         val programmedWeight = when {
-            usesPrPercentage -> request.currentPrKg!! * percent / 100f
+            usesPrPercentage -> request.currentPrKg * percent / 100f
             hasValidPr -> exercise.weightPerCableKg
             else -> exercise.setWeightsPerCableKg.getOrNull(request.setIndex) ?: exercise.weightPerCableKg
         }

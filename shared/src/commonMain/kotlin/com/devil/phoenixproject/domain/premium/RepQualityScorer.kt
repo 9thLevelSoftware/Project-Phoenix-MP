@@ -171,7 +171,7 @@ class RepQualityScorer {
         // F149: use abs(mean) — a negative mean velocity would make CV negative,
         // pushing the smoothness score above its max (clamped to "perfect"),
         // scoring a noisy negative-velocity rep as perfectly smooth.
-        val coeffOfVariation = sqrt(variance) / kotlin.math.abs(mean)
+        val coeffOfVariation = sqrt(variance) / abs(mean)
         return (SMOOTHNESS_MAX_POINTS * maxOf(0f, 1f - coeffOfVariation * SMOOTHNESS_CV_MULTIPLIER))
             .coerceIn(0f, SMOOTHNESS_MAX_POINTS)
     }

@@ -347,8 +347,7 @@ object SmartSuggestionsEngine {
         muscleGroup: String,
         onUnknownGroup: ((String) -> Unit)? = null,
     ): MovementCategory {
-        val normalized = muscleGroup.lowercase().trim()
-        return when (normalized) {
+        return when (val normalized = muscleGroup.lowercase().trim()) {
             "chest", "pecs", "pectorals", "shoulders", "triceps", "front delts", "anterior delts", "side delts", "lateral delts" -> MovementCategory.PUSH
 
             "back", "biceps", "lats", "latissimus", "traps", "trapezius", "rear delts", "posterior delts", "rhomboids" -> MovementCategory.PULL

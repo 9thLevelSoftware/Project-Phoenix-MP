@@ -8,4 +8,4 @@ package com.juul.kable
     ),
     level = DeprecationLevel.HIDDEN,
 )
-public typealias ApplePeripheral = CoreBluetoothPeripheral
+typealias ApplePeripheral = CoreBluetoothPeripheral

@@ -84,23 +84,23 @@ class SafeWordDetectionManager(
     fun startForWorkout() {
         val context = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
         if (context == null) {
-            Logger.w(TAG) { "Profile context is switching, skipping voice stop" }
+            Logger.w(tag = TAG) { "Profile context is switching, skipping voice stop" }
             reportUnavailable(SafeWordUnavailableReason.PROFILE_SWITCHING)
             return
         }
         if (!context.preferences.workout.value.voiceStopEnabled) {
-            Logger.d(TAG) { "Voice stop not enabled, skipping" }
+            Logger.d(tag = TAG) { "Voice stop not enabled, skipping" }
             _state.value = SafeWordState.Disabled
             return
         }
         val safeWord = context.localSafety.safeWord
         if (safeWord.isNullOrBlank()) {
-            Logger.w(TAG) { "Voice stop enabled but no safe word configured, skipping" }
+            Logger.w(tag = TAG) { "Voice stop enabled but no safe word configured, skipping" }
             reportUnavailable(SafeWordUnavailableReason.NOT_CONFIGURED)
             return
         }
         if (!context.localSafety.safeWordCalibrated) {
-            Logger.w(TAG) { "Voice stop enabled but safe word not calibrated, skipping" }
+            Logger.w(tag = TAG) { "Voice stop enabled but safe word not calibrated, skipping" }
             reportUnavailable(SafeWordUnavailableReason.NOT_CALIBRATED)
             return
         }
@@ -111,7 +111,7 @@ class SafeWordDetectionManager(
         // F032: do not log the safe word itself — it is user-chosen voice PII.
         // The platform listeners already redact it in their startup logs; this
         // manager must too. Log only non-sensitive metadata.
-        Logger.i(TAG) { "Starting safe word detection for workout (configured, length=${safeWord.length})" }
+        Logger.i(tag = TAG) { "Starting safe word detection for workout (configured, length=${safeWord.length})" }
         val newListener = listenerFactory.create(safeWord)
         listener = newListener
 
@@ -153,7 +153,7 @@ class SafeWordDetectionManager(
         bridgeJob = null
         bridgeSupervisor.cancel()
         listener?.let {
-            Logger.d(TAG) { "Stopping safe word detection" }
+            Logger.d(tag = TAG) { "Stopping safe word detection" }
             it.stopListening()
         }
         listener = null
