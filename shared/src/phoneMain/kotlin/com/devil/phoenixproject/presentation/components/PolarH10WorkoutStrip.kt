@@ -121,15 +121,9 @@ private fun PolarH10WorkoutStripContent(
     val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
     val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
 
-    // 1. Auto-start ECG & ACC on enter, cleanly stop on dispose
-    LaunchedEffect(Unit) {
-        polarBleManager.startEcgStream()
-        polarBleManager.startAccStream()
-    }
-
     DisposableEffect(Unit) {
         onDispose {
-            polarBleManager.stopTelemetryStreamsAsync()
+            polarBleManager.releaseTelemetryPreviewAsync()
         }
     }
 

@@ -289,7 +289,7 @@ fun WorkoutTab(
                 onReconnect = onReconnectWorkoutTeardown,
             )
 
-            if (connectionState is ConnectionState.Connected) {
+            if (connectionState is ConnectionState.Connected || workoutState is WorkoutState.Completed) {
                 when (workoutState) {
                     is WorkoutState.Error -> {
                         ErrorCard(message = workoutState.message)

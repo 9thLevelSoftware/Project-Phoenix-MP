@@ -244,7 +244,7 @@ class DataBackupCompletenessTest {
     // ---- polar telemetry completeness ----
 
     @Test
-    fun `polar summaries samples and ecg traces survive backup and restore even when raw telemetry is false`() = runTest {
+    fun `polar summaries always round trip and raw samples and ecg traces require export opt in`() = runTest {
         val source = Fixture(includeRawTelemetry = false)
         source.seedProfiles()
         source.database.seedExercise("bench", "Bench Press")
@@ -261,7 +261,6 @@ class DataBackupCompletenessTest {
             maxTorsoPitchDeg = 32.5,
             maxTorsoRollDeg = 15.1,
         )
-        // 1 normal sample (should be excluded because includeRawTelemetry = false and no polar fields)
         source.queries.insertMetric(
             sessionId = "session-polar-1",
             timestamp = 1_700_000_001_000L,
@@ -274,7 +273,6 @@ class DataBackupCompletenessTest {
             power = 50.0,
             status = 0L,
         )
-        // 1 sample WITH Polar data (must be included even when includeRawTelemetry = false)
         source.queries.insertMetricWithPolar(
             sessionId = "session-polar-1",
             timestamp = 1_700_000_002_000L,
@@ -393,6 +391,77 @@ class DataBackupCompletenessTest {
         assertEquals(1, fullTarget.queries.selectMetricsBySession("session-polar-2").executeAsList().size)
         assertEquals(1, fullTarget.queries.selectPolarBeatSamplesBySession("session-polar-2").executeAsList().size)
         assertEquals(1, fullTarget.queries.selectPolarEcgSegmentsBySession("session-polar-2").executeAsList().size)
+    }
+
+    @Test
+    fun `polar restore skips exact duplicates and reports differing or cross session id conflicts`() = runTest {
+        val source = Fixture()
+        source.seedProfiles()
+        source.saveSession("polar-session-1")
+        source.saveSession("polar-session-2")
+        val beat = PolarBeatSampleBackup(
+            id = 42L,
+            sessionId = "polar-session-1",
+            timestampMs = 1_700_000_002_500L,
+            phase = "WORKING_SET",
+            hrBpm = 145,
+            rrMs = 740f,
+            rmssdMs = 45.2f,
+            torsoPitchDeg = 30f,
+            torsoRollDeg = 12f,
+            dynamicAccMg = 150,
+        )
+        val segment = PolarEcgSegmentBackup(
+            id = 57L,
+            sessionId = "polar-session-1",
+            sensorTimestampNs = 1_000_000_000L,
+            wallClockTimestampMs = 1_700_000_000_000L,
+            phase = "WORKING_SET",
+            samplesUvCsv = "100,105,110",
+        )
+        val exported = testJson.decodeFromString<BackupData>(source.manager.exportToJson())
+        val backup = exported.copy(
+            data = exported.data.copy(polarBeatSamples = listOf(beat), polarEcgSegments = listOf(segment)),
+        )
+        val target = Fixture()
+        val encoded = testJson.encodeToString(backup)
+
+        val imported = target.manager.importFromJson(encoded).getOrThrow()
+        assertEquals(0, imported.entitiesWithErrors)
+        assertEquals(1, imported.polarBeatSamplesImported)
+        assertEquals(1, imported.polarEcgSegmentsImported)
+        val originalBeat = target.queries.selectPolarBeatSampleById(beat.id).executeAsOne()
+        val originalSegment = target.queries.selectPolarEcgSegmentById(segment.id).executeAsOne()
+
+        val duplicate = target.manager.importFromJson(encoded).getOrThrow()
+        assertEquals(0, duplicate.entitiesWithErrors)
+        assertEquals(1, duplicate.polarBeatSamplesSkipped)
+        assertEquals(1, duplicate.polarEcgSegmentsSkipped)
+        assertEquals(0, duplicate.polarBeatSamplesImported)
+        assertEquals(0, duplicate.polarEcgSegmentsImported)
+
+        listOf(
+            beat.copy(hrBpm = 146) to segment.copy(samplesUvCsv = "999"),
+            beat.copy(sessionId = "polar-session-2") to segment.copy(sessionId = "polar-session-2"),
+        ).forEach { (conflictingBeat, conflictingSegment) ->
+            val conflicting = backup.copy(
+                data = backup.data.copy(
+                    polarBeatSamples = listOf(conflictingBeat),
+                    polarEcgSegments = listOf(conflictingSegment),
+                ),
+            )
+            val result = target.manager.importFromJson(testJson.encodeToString(conflicting)).getOrThrow()
+
+            assertEquals(2, result.entitiesWithErrors)
+            assertEquals(0, result.polarBeatSamplesSkipped)
+            assertEquals(0, result.polarEcgSegmentsSkipped)
+            assertEquals(0, result.polarBeatSamplesImported)
+            assertEquals(0, result.polarEcgSegmentsImported)
+            assertEquals(originalBeat, target.queries.selectPolarBeatSampleById(beat.id).executeAsOne())
+            assertEquals(originalSegment, target.queries.selectPolarEcgSegmentById(segment.id).executeAsOne())
+            assertTrue(target.queries.selectPolarBeatSamplesBySession("polar-session-2").executeAsList().isEmpty())
+            assertTrue(target.queries.selectPolarEcgSegmentsBySession("polar-session-2").executeAsList().isEmpty())
+        }
     }
 
     // ---- restore resets settings-held sync state ----

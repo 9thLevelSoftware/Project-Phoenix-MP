@@ -1247,6 +1247,12 @@ UPDATE WorkoutSession SET
     maxTorsoRollDeg = :maxTorsoRollDeg
 WHERE id = :id;
 
+updateSessionPolarRecovery:
+UPDATE WorkoutSession SET
+    hrr60Bpm = :hrr60Bpm,
+    hrr300Bpm = :hrr300Bpm
+WHERE id = :id;
+
 insertPolarBeatSample:
 INSERT INTO PolarBeatSample (
     sessionId, timestampMs, phase, hrBpm, rrMs, rmssdMs,
@@ -1255,6 +1261,9 @@ INSERT INTO PolarBeatSample (
 
 selectPolarBeatSamplesBySession:
 SELECT * FROM PolarBeatSample WHERE sessionId = ? ORDER BY timestampMs ASC;
+
+selectPolarBeatSampleById:
+SELECT * FROM PolarBeatSample WHERE id = ?;
 
 deletePolarBeatSamplesBySession:
 DELETE FROM PolarBeatSample WHERE sessionId = ?;
@@ -1278,6 +1287,19 @@ INSERT INTO PolarEcgSegment (
 
 selectPolarEcgSegmentsBySession:
 SELECT * FROM PolarEcgSegment WHERE sessionId = ? ORDER BY wallClockTimestampMs ASC;
+
+selectPolarEcgSegmentById:
+SELECT * FROM PolarEcgSegment WHERE id = ?;
+
+deleteExpiredPolarEcgSegments:
+DELETE FROM PolarEcgSegment WHERE wallClockTimestampMs < :cutoffMs;
+
+trimPolarEcgSegments:
+DELETE FROM PolarEcgSegment WHERE id IN (
+    SELECT id FROM PolarEcgSegment
+    ORDER BY wallClockTimestampMs DESC, id DESC
+    LIMIT -1 OFFSET :maxSegments
+);
 
 deletePolarEcgSegmentsBySession:
 DELETE FROM PolarEcgSegment WHERE sessionId = ?;

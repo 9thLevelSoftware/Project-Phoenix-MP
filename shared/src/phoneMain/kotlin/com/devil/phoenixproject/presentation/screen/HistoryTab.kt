@@ -1202,12 +1202,28 @@ private fun GroupedRoutineCard(
                     }
 
                     // Polar H10 Cardiac & Biomechanics Telemetry Section (rendered below all exercises & rep details)
-                    val polarSession = groupedItem.sessions.find {
-                        it.avgHeartRateBpm != null || it.maxHeartRateBpm != null || it.hrr60Bpm != null
-                    }
+                    val polarSession = groupedItem.sessions
+                        .filter {
+                            it.avgHeartRateBpm != null || it.maxHeartRateBpm != null ||
+                                it.minHeartRateBpm != null || it.avgRrIntervalMs != null ||
+                                it.rmssdMs != null || it.hrr60Bpm != null || it.hrr300Bpm != null ||
+                                it.maxTorsoPitchDeg != null || it.maxTorsoRollDeg != null
+                        }
+                        .sortedWith(compareBy<WorkoutSession> {
+                            it.hrr60Bpm != null || it.hrr300Bpm != null
+                        }.thenBy { it.timestamp })
+                        .lastOrNull()
 
                     if (polarSession != null) {
                         Spacer(modifier = Modifier.height(Spacing.medium))
+                        Text(
+                            text = if (polarSession.hrr60Bpm != null || polarSession.hrr300Bpm != null) {
+                                "Latest set with recovery data: ${polarSession.exerciseName}"
+                            } else {
+                                "Most recent set with sensor data: ${polarSession.exerciseName}"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                         PolarSessionAnalyticsCard(
                             sessionId = polarSession.id,
                             session = polarSession,

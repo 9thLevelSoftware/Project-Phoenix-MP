@@ -94,7 +94,7 @@ data class WorkoutSessionBackup(
      * because a post-sync edit keeps its stamp while the row is dirty.
      */
     val syncAcknowledged: Boolean = false,
-    // Polar H10 cardiac & torso biomechanics summary (added in migration 58)
+    // Polar H10 cardiac & torso biomechanics summary (added in migration 59)
     val avgHeartRateBpm: Int? = null,
     val maxHeartRateBpm: Int? = null,
     val minHeartRateBpm: Int? = null,
@@ -122,7 +122,7 @@ data class MetricSampleBackup(
     val loadB: Float? = null,
     val power: Float?,
     val status: Int = 0,
-    // Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 58)
+    // Polar H10 intra-set synchronized telemetry & torso biomechanics (added in migration 59)
     val heartRateBpm: Int? = null,
     val rrIntervalMs: Float? = null,
     val torsoPitchDeg: Float? = null,

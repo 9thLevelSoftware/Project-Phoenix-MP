@@ -533,9 +533,7 @@ class DefaultWorkoutSessionManager(
                             }
                             is WorkoutState.Completed, WorkoutState.RoutineComplete -> {
                                 if (polarBleManager.isConnected.value) {
-                                    polarBleManager.endSessionRecording(
-                                        polarBleManager.lastRecordedSessionId.value ?: coordinator.currentSessionId,
-                                    )
+                                    polarBleManager.endSessionRecording()
                                 }
                             }
                             is WorkoutState.SetSummary -> {
@@ -561,9 +559,7 @@ class DefaultWorkoutSessionManager(
                     coordinator.routineFlowState.collect { flowState ->
                         if (flowState is RoutineFlowState.Complete) {
                             if (polarBleManager.isConnected.value) {
-                                polarBleManager.endSessionRecording(
-                                    polarBleManager.lastRecordedSessionId.value ?: coordinator.currentSessionId,
-                                )
+                                polarBleManager.endSessionRecording()
                             }
                         }
                     }

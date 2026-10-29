@@ -836,7 +836,6 @@ class MainViewModel(
     val scannedDevices: StateFlow<List<ScannedDevice>> get() = bleConnectionManager.scannedDevices
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
-    val isPolarConnected: StateFlow<Boolean>? get() = polarBleManager?.isConnected
     val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
 
     fun startScanning() = bleConnectionManager.startScanning()

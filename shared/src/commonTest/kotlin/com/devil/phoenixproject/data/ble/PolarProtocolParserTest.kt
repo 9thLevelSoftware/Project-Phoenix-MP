@@ -233,13 +233,13 @@ class PolarProtocolParserTest {
 
     @Test
     fun `parsePolarPmdData parses uncompressed 16-bit ACC samples`() {
-        // Type 0x02 (ACC), Timestamp: 5000 ns, FrameType: 0x00
+        // Type 0x02 (ACC), Timestamp: 5000 ns, FrameType: 0x01
         // Sample 0: X=100, Y=-200, Z=980 (1g down)
         val bytes = ByteArray(10 + 6).apply {
             this[0] = 0x02 // ACC
             this[1] = 0x88.toByte()
             this[2] = 0x13 // 5000L = 0x1388
-            this[9] = 0x00 // uncompressed
+            this[9] = 0x01
 
             // X = 100 (0x0064)
             this[10] = 0x64
@@ -330,6 +330,61 @@ class PolarProtocolParserTest {
     }
 
     @Test
+    fun `compressed ACC decodes every byte padded block using the preceding sample`() {
+        val packet = compressedAccPacket() + byteArrayOf(4, 1, 0xE1.toByte(), 0x03, 8, 1, -5, 7, -9)
+
+        val result = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(packet))
+
+        assertEquals(
+            listOf(PolarAccSample(50, 50, 50), PolarAccSample(51, 48, 53), PolarAccSample(46, 55, 44)),
+            result.samples,
+        )
+    }
+
+    @Test
+    fun `compressed ACC handles reference only and empty blocks without losing later samples`() {
+        val referenceOnly = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(compressedAccPacket()))
+        assertEquals(listOf(PolarAccSample(50, 50, 50)), referenceOnly.samples)
+
+        val packet = compressedAccPacket() + byteArrayOf(0, 0, 8, 0, 8, 1, 1, -1, 2)
+        val result = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(packet))
+
+        assertEquals(
+            listOf(
+                PolarAccSample(50, 50, 50),
+                PolarAccSample(51, 49, 52),
+            ),
+            result.samples,
+        )
+    }
+
+    @Test
+    fun `compressed ACC rejects incomplete references headers payloads and unsupported delta widths`() {
+        val reference = compressedAccPacket()
+        val firstBlock = byteArrayOf(4, 1, 0xE1.toByte(), 0x03)
+
+        assertNull(parsePolarPmdData(reference.copyOf(15)))
+        assertNull(parsePolarPmdData(reference + byteArrayOf(4)))
+        assertNull(parsePolarPmdData(reference + byteArrayOf(4, 1, 0xE1.toByte())))
+        assertNull(parsePolarPmdData(reference + firstBlock + byteArrayOf(8)))
+        assertNull(parsePolarPmdData(reference + firstBlock + byteArrayOf(8, 1, 1, 2)))
+        assertNull(parsePolarPmdData(reference + byteArrayOf(17, 1)))
+        assertNull(parsePolarPmdData(reference + byteArrayOf(0, 1)))
+        assertNull(parsePolarPmdData(reference + byteArrayOf(0xFF.toByte(), 1)))
+    }
+
+    @Test
+    fun `uncompressed ACC frame type zero decodes signed eight bit triplets`() {
+        val header = ByteArray(10).apply { this[0] = 0x02 }
+
+        val result = assertIs<PolarPmdMeasurement.Acc>(
+            parsePolarPmdData(header + byteArrayOf(127, -128, -1, 0, 25, -25)),
+        )
+
+        assertEquals(listOf(PolarAccSample(127, -128, -1), PolarAccSample(0, 25, -25)), result.samples)
+    }
+
+    @Test
     fun `parsePolarPmdData parses uncompressed 16-bit ACC samples with frameType 0x01`() {
         // Polar H10 16-bit ACC frames use subType 0x01 (bit 7 = 0 for uncompressed)
         val bytes = ByteArray(10 + 6).apply {
@@ -398,5 +453,13 @@ class PolarProtocolParserTest {
         assertEquals(PolarAccSample(1000, 0, -1000), acc.samples[0])
         assertEquals(PolarAccSample(1005, -10, -980), acc.samples[1])
         assertEquals(PolarAccSample(1000, 5, -1000), acc.samples[2])
+    }
+
+    private fun compressedAccPacket(): ByteArray = ByteArray(16).apply {
+        this[0] = 0x02
+        this[9] = 0x81.toByte()
+        this[10] = 50
+        this[12] = 50
+        this[14] = 50
     }
 }

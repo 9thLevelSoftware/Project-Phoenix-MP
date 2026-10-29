@@ -300,19 +300,19 @@ class Issue687WorkoutStartGateUiTest {
         assertTrue(presentation.showRecoveryActions)
 
         val workoutTab = source("presentation/screen/WorkoutTab.kt")
-        val connectedOnlyBranch = workoutTab.indexOf(
-            "if (connectionState is ConnectionState.Connected)",
+        val gatedContentBranch = workoutTab.indexOf(
+            "if (connectionState is ConnectionState.Connected || workoutState is WorkoutState.Completed)",
         )
         val recoveryNotice = workoutTab.indexOf("WorkoutStartGateNotice(")
-        assertTrue(connectedOnlyBranch >= 0, "WorkoutTab connected-only content branch is missing")
+        assertTrue(gatedContentBranch >= 0, "WorkoutTab connected-or-completed content branch is missing")
         assertTrue(recoveryNotice >= 0, "WorkoutTab recovery notice is missing")
         assertTrue(
-            recoveryNotice < connectedOnlyBranch,
+            recoveryNotice < gatedContentBranch,
             "RecoveryRequired must keep Retry/Reconnect visible while $connectionState; " +
-                "WorkoutStartGateNotice is currently nested under connected-only content",
+                "WorkoutStartGateNotice is currently nested under gated content",
         )
 
-        val alwaysAvailableRecoveryBlock = workoutTab.substring(recoveryNotice, connectedOnlyBranch)
+        val alwaysAvailableRecoveryBlock = workoutTab.substring(recoveryNotice, gatedContentBranch)
         assertContainsAll(
             alwaysAvailableRecoveryBlock,
             "onRetry = onRetryWorkoutTeardown",

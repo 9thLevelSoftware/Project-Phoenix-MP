@@ -28,7 +28,7 @@ param(
     [string] $EvidenceDirectory = (Join-Path ([IO.Path]::GetTempPath()) 'phoenix-persisted-file-upgrade'),
 
     [Parameter()]
-    [int] $ExpectedSchemaVersion = 59
+    [int] $ExpectedSchemaVersion = 60
 )
 
 Set-StrictMode -Version Latest

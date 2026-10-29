@@ -56,6 +56,7 @@ val dataModule = module {
     // Order matters: ExerciseRepository must be created before WorkoutRepository
     single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get(), get()) }
     single<ProfileExerciseBaselineRepository> { SqlDelightProfileExerciseBaselineRepository(get()) }
+    single<PolarTelemetryRepository> { SqlDelightPolarTelemetryRepository(get()) }
     single { LegacyBaselineRepair(get()) }
     single { ProfileMutationBarrier() }
     single { ProfileRecoveryActivityTracker() }
@@ -172,5 +173,5 @@ val dataModule = module {
     single { HealthBackfillManager(get(), get(), get(), get()) }
 
     // Polar H10 BLE Manager
-    single { PolarH10BleManager(settings = get(), database = get()) } onClose { (it as? PolarH10BleManager)?.shutdown() }
+    single { PolarH10BleManager(settings = get(), telemetryRepository = get()) } onClose { (it as? PolarH10BleManager)?.shutdown() }
 }

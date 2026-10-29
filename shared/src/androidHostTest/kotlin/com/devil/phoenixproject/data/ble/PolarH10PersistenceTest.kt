@@ -1,6 +1,11 @@
 package com.devil.phoenixproject.data.ble
 
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.data.repository.SqlDelightPolarTelemetryRepository
+import com.devil.phoenixproject.data.repository.PolarTelemetryRepository
+import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.PolarEcgSegment
+import com.devil.phoenixproject.domain.model.PolarRecovery
 import com.devil.phoenixproject.domain.model.PolarHrMeasurement
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -9,6 +14,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -97,10 +105,12 @@ class PolarH10PersistenceTest {
     @Test
     fun `telemetry is buffered before session exists and flushed after session creation with foreign keys ON`() {
         val manager = PolarH10BleManager(
-            database = database,
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
             scope = testScope,
             timeSource = { simulatedTime },
+            persistenceDispatcher = Dispatchers.Unconfined,
         )
+        manager.setRawEcgStorageEnabled(true)
         val sessionId = "session-fk-test"
 
         // 1. Begin recording before WorkoutSession row exists
@@ -176,7 +186,7 @@ class PolarH10PersistenceTest {
     @Test
     fun `abandoned set discards buffered telemetry cleanly`() {
         val manager = PolarH10BleManager(
-            database = database,
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
             scope = testScope,
             timeSource = { simulatedTime },
         )
@@ -201,5 +211,148 @@ class PolarH10PersistenceTest {
 
         val beatRows = database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
         assertTrue(beatRows.isEmpty())
+    }
+
+    @Test
+    fun `queued flush detaches old session before another recording and recovery updates only HRR`() = runTest {
+        val manager = PolarH10BleManager(
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
+            scope = backgroundScope,
+            timeSource = { simulatedTime },
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        insertWorkoutSession("first")
+        insertWorkoutSession("second")
+        database.phoenixDatabaseQueries.updateSessionPolarSummary(
+            id = "first", avgHeartRateBpm = 150, maxHeartRateBpm = 170, minHeartRateBpm = 130,
+            avgRrIntervalMs = 800.0, rmssdMs = 25.0, hrr60Bpm = null, hrr300Bpm = null,
+            maxTorsoPitchDeg = 12.0, maxTorsoRollDeg = 8.0,
+        )
+        manager.startSessionRecording("first")
+        manager.processRrIntervals(PolarHrMeasurement(150, true, rrIntervalsMs = listOf(800.0)))
+        val firstFlush = manager.flushSessionTelemetry("first")
+        assertTrue(database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("first").executeAsList().isEmpty())
+        manager.triggerCooldown("first")
+        simulatedTime += 65_000L
+        manager.processRrIntervals(PolarHrMeasurement(120, true, rrIntervalsMs = listOf(1000.0)))
+        manager.startSessionRecording("second")
+        manager.processRrIntervals(PolarHrMeasurement(180, true, rrIntervalsMs = listOf(700.0)))
+        val secondFlush = manager.flushSessionTelemetry("second")
+        runCurrent()
+        firstFlush?.join()
+        secondFlush?.join()
+        val first = database.phoenixDatabaseQueries.selectSessionById("first").executeAsOne()
+        assertEquals(150L, first.avgHeartRateBpm)
+        assertEquals(170L, first.maxHeartRateBpm)
+        assertEquals(25.0, first.rmssdMs)
+        assertEquals(12.0, first.maxTorsoPitchDeg)
+        assertEquals(30L, first.hrr60Bpm)
+        assertEquals(null, first.hrr300Bpm)
+        assertEquals(listOf(150L, 120L), database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("first").executeAsList().map { it.hrBpm })
+        assertEquals(listOf(180L), database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("second").executeAsList().map { it.hrBpm })
+    }
+
+    @Test
+    fun `failed telemetry transaction remains retryable after parent row is committed`() = runTest {
+        insertWorkoutSession("retry")
+        val delegate = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined)
+        var failNextSave = true
+        val repository = object : PolarTelemetryRepository by delegate {
+            override suspend fun saveTelemetry(
+                sessionId: String,
+                beats: List<PolarBeatSample>,
+                ecgs: List<PolarEcgSegment>,
+                recovery: PolarRecovery?,
+            ) {
+                if (failNextSave) {
+                    failNextSave = false
+                    error("Transient telemetry storage failure")
+                }
+                delegate.saveTelemetry(sessionId, beats, ecgs, recovery)
+            }
+        }
+        val manager = PolarH10BleManager(
+            telemetryRepository = repository,
+            scope = backgroundScope,
+            timeSource = { simulatedTime },
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        manager.startSessionRecording("retry")
+        manager.processRrIntervals(PolarHrMeasurement(145, true, rrIntervalsMs = listOf(800.0)))
+        manager.flushSessionTelemetry("retry")
+        runCurrent()
+        assertTrue(manager.telemetryPersistenceError.value != null)
+        manager.flushSessionTelemetry("retry")
+        runCurrent()
+        assertEquals(null, manager.telemetryPersistenceError.value)
+        assertEquals(1, database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("retry").executeAsList().size)
+    }
+
+    @Test
+    fun `late manual stop commit remaps only its source buffer after next recording starts`() = runTest {
+        val manager = PolarH10BleManager(
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
+            scope = backgroundScope, timeSource = { simulatedTime },
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        manager.startSessionRecording("source")
+        manager.processRrIntervals(PolarHrMeasurement(145, true, rrIntervalsMs = listOf(800.0)))
+        assertEquals(145, manager.freezeSessionRecording("source")?.avgHeartRateBpm)
+        manager.processRrIntervals(PolarHrMeasurement(160, true, rrIntervalsMs = listOf(750.0)))
+        manager.startSessionRecording("next")
+        manager.processRrIntervals(PolarHrMeasurement(180, true, rrIntervalsMs = listOf(650.0)))
+        assertEquals(145, manager.getSessionSummary("source")?.avgHeartRateBpm)
+        insertWorkoutSession("committed")
+        manager.flushSessionTelemetry("committed", recordedSourceId = "source")
+        runCurrent()
+        assertEquals("next", manager.currentRecordingSessionId)
+        assertEquals("next", manager.lastRecordedSessionId.value)
+        assertEquals(1, manager.getBufferedBeatSamplesForTesting().size)
+        val stored = database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("committed").executeAsList()
+        assertEquals(listOf(145L), stored.map { it.hrBpm })
+    }
+
+    @Test
+    fun `precommit cooldown waits for matching parent commit and remaps the source`() = runTest {
+        val manager = PolarH10BleManager(
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
+            scope = backgroundScope, timeSource = { simulatedTime },
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        manager.startSessionRecording("uncommitted")
+        manager.processRrIntervals(PolarHrMeasurement(150, true, rrIntervalsMs = listOf(800.0)))
+        manager.freezeSessionRecording("uncommitted")
+        manager.triggerCooldown("uncommitted")
+        runCurrent()
+        assertTrue(!manager.isCooldownActive.value)
+        assertEquals(1, manager.getBufferedBeatSamplesForTesting().size)
+        assertEquals(null, manager.telemetryPersistenceError.value)
+        insertWorkoutSession("saved")
+        manager.flushSessionTelemetry("saved", recordedSourceId = "uncommitted")
+        runCurrent()
+        assertTrue(manager.isCooldownActive.value)
+        assertEquals("saved", manager.activeCooldownSessionId.value)
+        assertEquals(1, database.phoenixDatabaseQueries.selectPolarBeatSamplesBySession("saved").executeAsList().size)
+        manager.cancelCooldown()
+        runCurrent()
+    }
+
+    @Test
+    fun `next recording supersedes cooldown request before old parent commit`() = runTest {
+        val manager = PolarH10BleManager(
+            telemetryRepository = SqlDelightPolarTelemetryRepository(database, { simulatedTime }, Dispatchers.Unconfined),
+            scope = backgroundScope, timeSource = { simulatedTime },
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        manager.startSessionRecording("previous")
+        manager.processRrIntervals(PolarHrMeasurement(145, true, rrIntervalsMs = listOf(800.0)))
+        manager.triggerCooldown("previous")
+        manager.startSessionRecording("current")
+        insertWorkoutSession("previous")
+        manager.flushSessionTelemetry("previous")
+        runCurrent()
+        assertTrue(!manager.isCooldownActive.value)
+        assertEquals("current", manager.currentRecordingSessionId)
+        assertEquals("current", manager.lastRecordedSessionId.value)
     }
 }

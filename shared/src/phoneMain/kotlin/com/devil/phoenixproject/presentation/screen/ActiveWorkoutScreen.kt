@@ -199,10 +199,6 @@ fun ActiveWorkoutScreen(
     }
 
     LaunchedEffect(Unit) {
-        polarBleManager.ensureConnectedOrReconnect()
-    }
-
-    LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(

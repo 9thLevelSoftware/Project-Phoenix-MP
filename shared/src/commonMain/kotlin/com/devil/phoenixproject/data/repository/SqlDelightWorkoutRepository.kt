@@ -3,14 +3,14 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.MetricSample
 import com.devil.phoenixproject.database.PhoenixDatabase
-import com.devil.phoenixproject.database.PolarBeatSample
-import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.PolarEcgSegment
+import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -22,8 +22,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
-import com.devil.phoenixproject.util.PolarTelemetryUtils
-import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -1694,17 +1692,46 @@ class SqlDelightWorkoutRepository(
 
     override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
         withContext(Dispatchers.IO) {
-            queries.selectPolarBeatSamplesBySession(sessionId).executeAsList()
+            queries.selectPolarBeatSamplesBySession(sessionId).executeAsList().map { row ->
+                PolarBeatSample(
+                    id = row.id,
+                    sessionId = row.sessionId,
+                    timestampMs = row.timestampMs,
+                    phase = row.phase,
+                    hrBpm = row.hrBpm,
+                    rrMs = row.rrMs,
+                    rmssdMs = row.rmssdMs,
+                    torsoPitchDeg = row.torsoPitchDeg,
+                    torsoRollDeg = row.torsoRollDeg,
+                    dynamicAccMg = row.dynamicAccMg,
+                )
+            }
         }
 
     override suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment> =
         withContext(Dispatchers.IO) {
-            queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList()
+            queries.selectPolarEcgSegmentsBySession(sessionId).executeAsList().map { row ->
+                PolarEcgSegment(
+                    id = row.id,
+                    sessionId = row.sessionId,
+                    sensorTimestampNs = row.sensorTimestampNs,
+                    wallClockTimestampMs = row.wallClockTimestampMs,
+                    phase = row.phase,
+                    samplesUvCsv = row.samplesUvCsv,
+                )
+            }
         }
 
-    override suspend fun getMetricSamplesBySession(sessionId: String): List<MetricSample> =
+    override suspend fun getMetricSamplesBySession(sessionId: String): List<PolarMetricSample> =
         withContext(Dispatchers.IO) {
-            queries.selectMetricsBySession(sessionId).executeAsList()
+            queries.selectMetricsBySession(sessionId).executeAsList().map { row ->
+                PolarMetricSample(
+                    position = row.position,
+                    positionB = row.positionB,
+                    torsoPitchDeg = row.torsoPitchDeg,
+                    torsoRollDeg = row.torsoRollDeg,
+                )
+            }
         }
 }
 

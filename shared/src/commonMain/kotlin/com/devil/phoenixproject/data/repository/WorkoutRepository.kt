@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.MetricSample
-import com.devil.phoenixproject.database.PolarBeatSample
-import com.devil.phoenixproject.database.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.PolarEcgSegment
+import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
@@ -256,8 +256,8 @@ interface WorkoutRepository {
     /** Historical Polar ECG segments for a session. */
     suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment>
 
-    /** Historical raw metric samples for a session. */
-    suspend fun getMetricSamplesBySession(sessionId: String): List<MetricSample>
+    /** Historical torso and cable position samples for a session. */
+    suspend fun getMetricSamplesBySession(sessionId: String): List<PolarMetricSample>
 }
 
 /** A routine a CSV import was going to overwrite was deleted or moved to another profile (#772). */

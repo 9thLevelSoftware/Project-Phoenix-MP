@@ -2619,6 +2619,16 @@ abstract class BaseDataBackupManager(
                                                 entitiesWithErrors++
                                                 Logger.w { "Backup restore missing required session ${beat.sessionId} for polarBeatSample ${beat.id}" }
                                             } else {
+                                                val existing = queries.selectPolarBeatSampleById(beat.id).executeAsOneOrNull()
+                                                if (existing != null) {
+                                                    if (mapPolarBeatSampleToBackup(existing) == beat) {
+                                                        polarBeatSamplesSkipped++
+                                                    } else {
+                                                        entitiesWithErrors++
+                                                        Logger.w { "Backup restore conflict polarBeatSample id=${beat.id}; local row preserved" }
+                                                    }
+                                                    continue
+                                                }
                                                 queries.insertPolarBeatSampleRestoreIfAbsent(
                                                     id = beat.id,
                                                     sessionId = beat.sessionId,
@@ -2661,6 +2671,16 @@ abstract class BaseDataBackupManager(
                                                 entitiesWithErrors++
                                                 Logger.w { "Backup restore missing required session ${segment.sessionId} for polarEcgSegment ${segment.id}" }
                                             } else {
+                                                val existing = queries.selectPolarEcgSegmentById(segment.id).executeAsOneOrNull()
+                                                if (existing != null) {
+                                                    if (mapPolarEcgSegmentToBackup(existing) == segment) {
+                                                        polarEcgSegmentsSkipped++
+                                                    } else {
+                                                        entitiesWithErrors++
+                                                        Logger.w { "Backup restore conflict polarEcgSegment id=${segment.id}; local row preserved" }
+                                                    }
+                                                    continue
+                                                }
                                                 queries.insertPolarEcgSegmentRestoreIfAbsent(
                                                     id = segment.id,
                                                     sessionId = segment.sessionId,
