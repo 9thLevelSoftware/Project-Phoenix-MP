@@ -1,4 +1,7 @@
+import itertools
+import os
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -12,6 +15,107 @@ def workflow(name: str) -> str:
 
 
 class ReleaseWorkflowContracts(unittest.TestCase):
+    def job(self, text: str, name: str) -> str:
+        match = re.search(
+            r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", text
+        )
+        self.assertIsNotNone(match, f"Missing workflow job: {name}")
+        return match.group(1)
+
+    def test_orchestrators_upload_tv_by_default_with_explicit_review(self) -> None:
+        for name, gate, source in (
+            ("release-all.yml", "create-release", "github.sha"),
+            ("release-all-existing.yml", "prepare-release", "needs.prepare-release.outputs.sha"),
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                for flag in ("skip_tvos_testflight", "tvos_review_accepted"):
+                    self.assertRegex(text, rf"(?m)^      {flag}:\n(?:        .*\n)*?        default: false$")
+                self.assertIn("      tvos_review_pr:\n", text)
+                self.assertIn("  pull-requests: read\n  statuses: read\n", text)
+                tv = self.job(text, "tvos-testflight")
+                self.assertIn(f"needs: {gate}" if gate == "create-release" else "needs: [prepare-release, tests]", tv)
+                self.assertIn("if: ${{ !inputs.skip_tvos_testflight }}", tv)
+                self.assertIn("uses: ./.github/workflows/tvos-testflight.yml", tv)
+                self.assertIn("source_sha: ${{ " + source + " }}", tv)
+                self.assertIn("review_pr: ${{ inputs.tvos_review_pr }}", tv)
+                self.assertIn("review_accepted: ${{ inputs.tvos_review_accepted }}", tv)
+                self.assertIn("upload: true", tv)
+                self.assertIn("secrets: inherit", tv)
+                # TV runs its own native tests and cannot bypass them via phone skip_tests.
+                self.assertNotIn("skip_tests", tv)
+                gate_body = self.job(text, gate)
+                self.assertIn("if: ${{ !inputs.skip_tvos_testflight }}", gate_body)
+                self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.tvos_review_accepted }}", gate_body)
+                self.assertIn("TVOS_REVIEW_PR: ${{ inputs.tvos_review_pr }}", gate_body)
+                self.assertIn("run: python3 .github/scripts/tvos-release.py review", gate_body)
+                summary = self.job(text, "summary")
+                self.assertIn("tvos-testflight]", summary)
+                self.assertIn("needs.tvos-testflight.result", summary)
+        main = self.job(workflow("release-all.yml"), "create-release")
+        self.assertLess(main.index("tvos-release.py review"), main.index("gh release create"))
+        for path in (
+            "tvosApp/PhoenixTV.xcodeproj/project.pbxproj",
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/util/Constants.kt",
+        ):
+            self.assertIn(path, main)
+        self.assertIn('[ "$TVOS_VERSIONS" != "$ANDROID_VERSION" ]', main)
+        self.assertIn('[ "$SHARED_VERSION" != "$ANDROID_VERSION" ]', main)
+
+    def test_tv_recovery_preserves_exact_workflow_source_binding(self) -> None:
+        prepare = self.job(workflow("release-all-existing.yml"), "prepare-release")
+        self.assertIn('"${{ github.ref }}" != "refs/heads/main"', prepare)
+        self.assertIn("SKIP_TVOS: ${{ inputs.skip_tvos_testflight }}", prepare)
+        self.assertIn("WORKFLOW_SHA: ${{ github.sha }}", prepare)
+        self.assertIn('if [ "$SKIP_TVOS" != "true" ] && [ "$sha" != "$WORKFLOW_SHA" ]; then', prepare)
+        self.assertIn("skip_tvos_testflight=true", prepare)
+        self.assertLess(prepare.index('"$sha" != "$WORKFLOW_SHA"'), prepare.index('echo "sha=$sha"'))
+        self.assertIn("ref: ${{ github.sha }}", prepare)
+        self.assertIn("TVOS_SOURCE_SHA: ${{ steps.release-sha.outputs.sha }}", prepare)
+        guard = re.search(
+            r'(?ms)^          if \[ "\$SKIP_TVOS".*?^          fi$', prepare
+        ).group(0)
+        for skip_tv, same_sha in itertools.product((False, True), repeat=2):
+            with self.subTest(skip_tv=skip_tv, same_sha=same_sha):
+                env = os.environ | {
+                    "SKIP_TVOS": str(skip_tv).lower(),
+                    "sha": "a" * 40,
+                    "WORKFLOW_SHA": ("a" if same_sha else "b") * 40,
+                }
+                result = subprocess.run(["bash", "-c", guard], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0 if skip_tv or same_sha else 1)
+
+    def test_mobile_store_condition_truth_tables(self) -> None:
+        text = workflow("release-all.yml")
+        states = ("success", "failure", "cancelled", "skipped")
+        for store, asset, store_skip, asset_skip in (
+            ("android-playstore", "android-apk", "skip_android_playstore", "skip_android_apk"),
+            ("ios-testflight", "ios-ipa", "skip_ios_testflight", "skip_ios_ipa"),
+        ):
+            body = self.job(text, store)
+            condition = re.search(r"(?m)^    if: \$\{\{ (.*?) \}\}$", body).group(1)
+            # Evaluate the actual checked-in expression for every relevant status/input
+            # combination, including skipped assets and failure/cancellation blocking.
+            for cancelled, skip_store, skip_asset, release, artifact in itertools.product(
+                (False, True), (False, True), (False, True), states, states
+            ):
+                values = {
+                    "cancelled()": cancelled,
+                    f"inputs.{store_skip}": skip_store,
+                    f"inputs.{asset_skip}": skip_asset,
+                    "needs.create-release.result": release,
+                    f"needs.{asset}.result": artifact,
+                }
+                expression = condition
+                for token, value in values.items():
+                    expression = expression.replace(token, repr(value))
+                expression = expression.replace("&&", " and ").replace("||", " or ").replace("!", " not ")
+                actual = eval(expression.strip(), {"__builtins__": {}}, {})
+                expected = (not cancelled and release == "success" and not skip_store and
+                            (artifact == "success" or (skip_asset and artifact == "skipped")))
+                with self.subTest(store=store, **values):
+                    self.assertEqual(actual, expected)
+
     def test_ios_release_konan_cache_follows_gradle_version_inputs(self) -> None:
         ci_text = workflow("ci-tests.yml")
         ci_keys = re.findall(

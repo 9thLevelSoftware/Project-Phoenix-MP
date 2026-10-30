@@ -31,14 +31,14 @@ Do not edit `shared/src/commonMain/composeResources/*/strings.xml` for a version
 
 ## Quick Start
 
-Read the checked-in version, then bump that. `release-all` compares Android `versionName` with the iOS `MARKETING_VERSION` values and does not check `Constants.APP_VERSION`. Copying an older release into this skill writes a downgrade and leaves Settings on the wrong version.
+Read the checked-in version, then bump that. `release-all` checks Android, shared, iOS, and tvOS version parity before creating the release. Copying an older release into this skill writes a downgrade and leaves Settings on the wrong version.
 
 Confirm these in the files before running. They are the live defaults:
 
-- `versionName`, `Constants.APP_VERSION`, and both `MARKETING_VERSION` entries: `1.0.8`
-- default Android `versionCode` (`injectedVersionCode ?: ...`): `12`
+- `versionName`, `Constants.APP_VERSION`, and all iOS/tvOS `MARKETING_VERSION` entries: `1.0.9`
+- default Android `versionCode` (`injectedVersionCode ?: ...`): `13`
 
-From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.0.8` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `12` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
+From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.0.9` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `13` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
 
 ```powershell
 python .agents/skills/update-phoenix-version/scripts/update_version.py --version <version> --android-code <android-code> --dry-run
@@ -53,19 +53,19 @@ python .agents/skills/update-phoenix-version/scripts/update_version.py --version
 Verify the current tree without modifying files:
 
 ```powershell
-python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.0.8 --android-code 12
+python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.0.9 --android-code 13
 ```
 
 ## Workflow
 
-1. Read the checked-in `versionName` (`1.0.8`) and default `versionCode` (`12`), then choose the bump from those values. Do not reuse an older release as the target.
+1. Read the checked-in `versionName` (`1.0.9`) and default `versionCode` (`13`), then choose the bump from those values. Do not reuse an older release as the target.
 2. Run the helper with `--dry-run`.
 3. Run the helper without `--dry-run` after the replacements look right.
 4. Run `--check` with the same values.
 5. Search for stale app-version literals:
 
 ```powershell
-rg -n "1\.0\.8|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp shared .github docs
+rg -n "1\.0\.9|versionName|APP_VERSION|MARKETING_VERSION|CURRENT_PROJECT_VERSION" androidApp iosApp tvosApp shared .github docs
 ```
 
 Replace the escaped old version with the actual previous version. Ignore test fixtures, historical docs, generated release metadata, and localized Settings label templates unless the user explicitly asks to update those too.
@@ -100,4 +100,4 @@ Do not claim iOS release verification from Windows unless an explicit iOS build/
 - `--tvos-build` changes only TV. If intentionally changing both checked-in Apple defaults, supply both `--ios-build` and `--tvos-build` with the requested common default. CI substitutes its own TV archive build number without modifying the phone project or the checked-in defaults.
 - Extend with small targeted edits when integrating upstream changes to this skill; do not replace upstream documentation or version-helper behavior wholesale.
 - Verify helper behavior with `python3 .agents/skills/update-phoenix-version/scripts/test_update_version.py`. All updates in these tests target temporary fixture repositories, never the current checkout.
-- For unsigned builds, production/Phantom boundaries, signing prerequisites and independent review acceptance, read `tvosApp/README.md`. TV remains separate from `release-all`; adding version parity here does not authorize dispatch, signing, upload, or an ASC mutation.
+- For unsigned builds, production/Phantom boundaries, signing prerequisites and independent review acceptance, read `tvosApp/README.md`. `release-all` includes TV TestFlight upload unless explicitly skipped; the version helper itself does not dispatch workflows or upload builds.

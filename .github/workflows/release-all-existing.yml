@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing GitHub release tag whose APK and IPA should be rebuilt'
+        description: 'Existing GitHub release tag to rebuild/publish (TV requires tag SHA to match selected main revision)'
         required: true
         type: string
       versionCodeOverride:
@@ -36,9 +36,25 @@ on:
         required: false
         type: boolean
         default: false
+      skip_tvos_testflight:
+        description: 'Skip tvOS TestFlight (required for a tag older than the selected main revision)'
+        required: false
+        type: boolean
+        default: false
+      tvos_review_pr:
+        description: 'PR covering this exact revision with trusted independent tvOS review (required unless TV skipped)'
+        required: false
+        type: string
+      tvos_review_accepted:
+        description: 'Independent tvOS review and beta acceptance complete (required unless TV skipped)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  pull-requests: read
+  statuses: read
 
 jobs:
   prepare-release:
@@ -57,6 +73,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           TAG: ${{ inputs.release_tag }}
+          SKIP_TVOS: ${{ inputs.skip_tvos_testflight }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
@@ -70,7 +88,25 @@ jobs:
           done
           test "$object_type" = "commit"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$SKIP_TVOS" != "true" ] && [ "$sha" != "$WORKFLOW_SHA" ]; then
+            echo "tvOS recovery requires the release tag to resolve to this run's selected main revision. For historical mobile recovery, set skip_tvos_testflight=true." >&2
+            exit 1
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout the exact workflow and TV release revision
+        if: ${{ !inputs.skip_tvos_testflight }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require exact-revision tvOS review before recovery builds
+        if: ${{ !inputs.skip_tvos_testflight }}
+        env:
+          TVOS_SOURCE_SHA: ${{ steps.release-sha.outputs.sha }}
+          TVOS_REVIEW_PR: ${{ inputs.tvos_review_pr }}
+          TVOS_REVIEW_ACCEPTED: ${{ inputs.tvos_review_accepted }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/tvos-release.py review
 
   tests:
     needs: prepare-release
@@ -119,9 +155,20 @@ jobs:
       skip_tests: true
     secrets: inherit
 
+  tvos-testflight:
+    needs: [prepare-release, tests]
+    if: ${{ !inputs.skip_tvos_testflight }}
+    uses: ./.github/workflows/tvos-testflight.yml
+    with:
+      source_sha: ${{ needs.prepare-release.outputs.sha }}
+      review_pr: ${{ inputs.tvos_review_pr }}
+      review_accepted: ${{ inputs.tvos_review_accepted }}
+      upload: true
+    secrets: inherit
+
   summary:
     if: always()
-    needs: [tests, prepare-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    needs: [tests, prepare-release, android-apk, ios-ipa, android-playstore, ios-testflight, tvos-testflight]
     runs-on: ubuntu-latest
     steps:
       - name: Summary
@@ -136,3 +183,4 @@ jobs:
           echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| iOS TestFlight | ${{ needs.ios-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| tvOS TestFlight | ${{ needs.tvos-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"

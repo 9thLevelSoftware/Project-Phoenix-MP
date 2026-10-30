@@ -32,9 +32,25 @@ on:
         required: false
         type: boolean
         default: false
+      skip_tvos_testflight:
+        description: 'Skip tvOS TestFlight'
+        required: false
+        type: boolean
+        default: false
+      tvos_review_pr:
+        description: 'PR covering this exact revision with trusted independent tvOS review (required unless TV skipped)'
+        required: false
+        type: string
+      tvos_review_accepted:
+        description: 'Independent tvOS review and beta acceptance complete (required unless TV skipped)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  pull-requests: read
+  statuses: read
 
 jobs:
   # Off-main dispatches skip the test run; create-release then fails fast on its main-branch check.
@@ -64,18 +80,32 @@ jobs:
         with:
           ref: ${{ needs.tests.outputs.sha }}
           fetch-depth: 0
+      - name: Require exact-revision tvOS review before creating the release
+        if: ${{ !inputs.skip_tvos_testflight }}
+        env:
+          TVOS_SOURCE_SHA: ${{ github.sha }}
+          TVOS_REVIEW_PR: ${{ inputs.tvos_review_pr }}
+          TVOS_REVIEW_ACCEPTED: ${{ inputs.tvos_review_accepted }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/tvos-release.py review
       - name: Determine release version
         id: version
         run: |
           set -euo pipefail
           ANDROID_VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' androidApp/build.gradle.kts | head -1)"
           IOS_VERSIONS="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | sort -u)"
+          TVOS_VERSIONS="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' tvosApp/PhoenixTV.xcodeproj/project.pbxproj | sort -u)"
+          SHARED_VERSION="$(sed -nE 's/^[[:space:]]*const val APP_VERSION = "([^"]+)".*/\1/p' shared/src/commonMain/kotlin/com/devil/phoenixproject/util/Constants.kt)"
           if ! [[ "$ANDROID_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
             echo "Invalid Android versionName: '$ANDROID_VERSION'." >&2
             exit 1
           fi
           if [ "$(printf '%s\n' "$IOS_VERSIONS" | sed '/^$/d' | wc -l)" -ne 1 ] || [ "$IOS_VERSIONS" != "$ANDROID_VERSION" ]; then
             echo "Android and iOS marketing versions must match. Android='$ANDROID_VERSION'; iOS='$IOS_VERSIONS'." >&2
+            exit 1
+          fi
+          if [ "$TVOS_VERSIONS" != "$ANDROID_VERSION" ] || [ "$SHARED_VERSION" != "$ANDROID_VERSION" ]; then
+            echo "Android, iOS, tvOS and shared app versions must match. Android='$ANDROID_VERSION'; tvOS='$TVOS_VERSIONS'; shared='$SHARED_VERSION'." >&2
             exit 1
           fi
           TAG="v$ANDROID_VERSION"
@@ -119,7 +149,7 @@ jobs:
     secrets: inherit
   android-playstore:
     needs: [create-release, android-apk]
-    if: ${{ !inputs.skip_android_playstore }}
+    if: ${{ !cancelled() && needs.create-release.result == 'success' && !inputs.skip_android_playstore && (needs.android-apk.result == 'success' || (inputs.skip_android_apk && needs.android-apk.result == 'skipped')) }}
     uses: ./.github/workflows/android-playstore.yml
     with:
       source_ref: ${{ needs.create-release.outputs.tag }}
@@ -129,22 +159,32 @@ jobs:
     secrets: inherit
   ios-testflight:
     needs: [create-release, ios-ipa]
-    if: ${{ !inputs.skip_ios_testflight }}
+    if: ${{ !cancelled() && needs.create-release.result == 'success' && !inputs.skip_ios_testflight && (needs.ios-ipa.result == 'success' || (inputs.skip_ios_ipa && needs.ios-ipa.result == 'skipped')) }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
       source_ref: ${{ needs.create-release.outputs.tag }}
       skip_tests: true
     secrets: inherit
+  tvos-testflight:
+    needs: create-release
+    if: ${{ !inputs.skip_tvos_testflight }}
+    uses: ./.github/workflows/tvos-testflight.yml
+    with:
+      source_sha: ${{ github.sha }}
+      review_pr: ${{ inputs.tvos_review_pr }}
+      review_accepted: ${{ inputs.tvos_review_accepted }}
+      upload: true
+    secrets: inherit
   summary:
     if: always()
-    needs: [tests, create-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    needs: [tests, create-release, android-apk, ios-ipa, android-playstore, ios-testflight, tvos-testflight]
     runs-on: ubuntu-latest
     steps:
       - name: Summary
         run: |
           echo "## Release All Platforms" >> "$GITHUB_STEP_SUMMARY"
           echo "Release tag: ${{ needs.create-release.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Each store publication begins after its matching platform asset succeeds." >> "$GITHUB_STEP_SUMMARY"
+          echo "Mobile store publication waits for its matching release asset unless that asset is explicitly skipped. tvOS runs its own review, simulator, archive and upload gates." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Unit tests | ${{ needs.tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
@@ -152,3 +192,4 @@ jobs:
           echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| iOS TestFlight | ${{ needs.ios-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| tvOS TestFlight | ${{ needs.tvos-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"

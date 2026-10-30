@@ -871,11 +871,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("${{ runner.temp }}/tvos-release/export/release.json", step)
         self.assertRegex(step, r"(?m)^          if-no-files-found: error$")
 
-    def test_archive_build_number_keeps_attempt_uniqueness_and_review_gates(self):
+    def test_archive_build_number_uses_serialized_utc_time_and_keeps_review_gates(self):
         text = self.workflow("tvos-testflight.yml")
         archive = self.job(text, "archive")
-        self.assertIn('test "$GITHUB_RUN_ATTEMPT" -lt 1000', archive)
-        self.assertIn('${GITHUB_RUN_NUMBER}$(printf \'%03d\' "$GITHUB_RUN_ATTEMPT")', archive)
+        self.assertIn('build_number="$(date -u +%Y%m%d%H%M%S)"', archive)
+        self.assertNotIn("GITHUB_RUN_NUMBER", archive)
+        self.assertNotIn("GITHUB_RUN_ATTEMPT", archive)
+        self.assertRegex(text, r"(?m)^concurrency:\n  group: tvos-testflight\n  cancel-in-progress: false$")
         for job, dependency in (("simulator-tests", "acceptance"), ("archive", "simulator-tests"), ("upload", "archive")):
             body = self.job(text, job)
             self.assertRegex(body, r"(?m)^    needs: " + dependency + r"$")
@@ -886,6 +888,39 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("python3 .github/scripts/tvos-release.py preflight", acceptance)
         self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha }}", text)
         self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}", text)
+
+    def test_archive_build_numbers_are_ordered_across_callers_and_archive_retries(self):
+        archive = self.job(self.workflow("tvos-testflight.yml"), "archive")
+        generator = re.search(r'(?m)^          (build_number=.*)$', archive).group(1)
+        # Execute the actual assignment with a controlled date command. All callers
+        # deliberately share a run number: GitHub's per-workflow counters can collide.
+        program = (
+            'set -e\n'
+            'date() {\n'
+            '  test "$#" -eq 2\n'
+            '  test "$1" = "-u"\n'
+            '  test "$2" = "+%Y%m%d%H%M%S"\n'
+            '  printf "%s\\n" "$FIXTURE_UTC_TIMESTAMP"\n'
+            '}\n' + generator + '\nprintf "%s" "$build_number"\n'
+        )
+        cases = (
+            ("tvOS TestFlight beta", "20261029120000", "1"),
+            ("Release All Platforms", "20261029120100", "1"),
+            ("Release All (Existing)", "20261231235959", "1"),
+            ("Release All (Existing)", "20270101000000", "2"),
+        )
+        numbers = []
+        for caller, timestamp, attempt in cases:
+            with self.subTest(caller=caller, attempt=attempt):
+                env = os.environ | {"GITHUB_WORKFLOW": caller, "GITHUB_RUN_NUMBER": "7",
+                                    "GITHUB_RUN_ATTEMPT": attempt, "FIXTURE_UTC_TIMESTAMP": timestamp}
+                result = subprocess.run(["bash", "-c", program], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, timestamp)
+                self.assertRegex(result.stdout, r"^[0-9]{14}$")
+                self.assertLessEqual(len(result.stdout), 18)
+                numbers.append(int(result.stdout))
+        self.assertEqual(numbers, sorted(set(numbers)))
 
     def test_unsigned_pr_paths_include_version_helper_changes(self):
         text = self.workflow("tvos-build.yml")

@@ -1,6 +1,7 @@
-name: tvOS standalone TestFlight beta
+name: tvOS TestFlight beta
 
-# Intentionally independent of release-all and phone CI. No push/PR/schedule triggers.
+# Manual or called by release-all; retains its own review/native/signing gates.
+# No push/PR/schedule triggers. Direct dispatch remains archive-only by default.
 on:
   workflow_dispatch:
     inputs:
@@ -195,9 +196,9 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APP_APPLE_ID: ${{ secrets.APP_APPLE_ID }}
         run: |
-          # Phone convention: date + run number. Include attempt to avoid rerun collisions.
-          test "$GITHUB_RUN_ATTEMPT" -lt 1000
-          build_number="$(date -u +%Y%m%d)${GITHUB_RUN_NUMBER}$(printf '%03d' "$GITHUB_RUN_ATTEMPT")"
+          # UTC archive time is shared across callers with independent run counters.
+          # The workflow-wide tvos-testflight concurrency group serializes archives/retries.
+          build_number="$(date -u +%Y%m%d%H%M%S)"
           python3 .github/scripts/tvos-release.py archive \
             --build-number "$build_number" \
             --output "$RUNNER_TEMP/tvos-release" \

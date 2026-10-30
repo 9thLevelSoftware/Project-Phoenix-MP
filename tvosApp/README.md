@@ -2,22 +2,33 @@
 
 Standalone tvOS application, not phone mirroring. Project/scheme: `PhoenixTV`;
 bundle: `com.devil.phoenixproject.projectphoenix`; minimum tvOS: 17.0.
-The #1288 beta targets the 1.0.8 release intent, but tooling derives version
-values from the checkout rather than pinning them to that intent.
+Tooling derives version values from the checkout and keeps them aligned with
+the Android and iOS release.
 
 ## Scope and acceptance
 
 These scripts implement a release path; they are not evidence that the TV app
-has passed native builds, signing, upload, or real-device BLE tests. The parent
-owns native runs and integration of the already-merged version PR #1349.
-Do not create another version bump or modify phone release workflows.
+has passed native builds, signing, upload, or real-device BLE tests. Native
+results and release acceptance must be recorded for the actual release revision.
 
 `.github/workflows/tvos-build.yml` runs unsigned native builds and tests on
 relevant pull requests or manual invocation, without signing or cloud secrets.
-The separate `.github/workflows/tvos-testflight.yml` is manual/reusable only:
-no push, PR, schedule or `release-all` triggers, and upload defaults to false.
+`.github/workflows/tvos-testflight.yml` is manual/reusable only, with no direct
+push, PR, or schedule trigger. Standalone dispatch defaults to archive-only.
+Both `release-all.yml` and `release-all-existing.yml` call it with upload enabled
+unless `skip_tvos_testflight` is selected. Supply `tvos_review_pr` and set
+`tvos_review_accepted` after the independent review/beta acceptance described
+below; the workflow verifies the review evidence before publishing any platform.
 Its signed path remains gated on independent review of the exact source SHA;
 unsigned CI success is not a TestFlight delivery claim.
+
+The combined workflows run from `main`. Existing-release recovery with TV
+selected requires the release tag's resolved commit to equal the selected
+`main` revision, preserving the TV source/workflow SHA gate. For an older tag,
+use `skip_tvos_testflight: true` for mobile recovery and run the standalone TV
+workflow from that reviewed tag. The combined run summary includes TV upload
+status; successful upload verifies App Store Connect processing, not external
+tester distribution.
 
 ## Offline tooling checks
 
@@ -263,8 +274,11 @@ material is temporary; signing uses an ephemeral keychain, restores the prior
 search list and deletes only its own installed profile. Sensitive command
 output is not printed or uploaded as a build log.
 
-CI overrides only the TV archive build number (UTC date + run number + a padded
-run-attempt suffix); it does not edit checked-in version defaults. The archive
+CI overrides only the TV archive build number with a fixed-width UTC timestamp
+(`YYYYMMDDHHMMSS`) taken when archiving. The shared `tvos-testflight` concurrency
+group serializes standalone and combined runs; caller-specific run counters are
+not used. Rebuilding an archive on a later attempt receives a later timestamp.
+CI does not edit checked-in version defaults. The archive
 and exported IPA are signed manually with the TV profile. IPA metadata records
 the reviewed source SHA, platform, bundle, marketing version and build. Only the
 IPA and release manifest are retained for one day, not keychains, configs,
@@ -275,7 +289,7 @@ The archive upload and uploader download use the same run-stable artifact name,
 `tvos-testflight-ipa-${{ github.run_id }}`. An upload-only failed-job retry can
 therefore consume the retained archive from an earlier attempt, within its
 retention window. Re-running the archive replaces that artifact (`overwrite:
-true`) while still assigning a unique attempt-suffixed build number. Source-SHA,
+true`) while assigning a fresh timestamp build number. Source-SHA,
 release metadata, and independent-review gates are unchanged. Artifact lookup
 recovery alone does not prove that repeating an already accepted ASC upload is
 idempotent; exact build processing still needs verification.
@@ -291,8 +305,8 @@ external testers received the build.
 
 ## Remaining release evidence
 
-Before a real dispatch, the parent must integrate the existing version PR,
-obtain independent review acceptance, execute the native simulator/device
+Before a real dispatch, obtain independent review acceptance for the release
+revision, execute the native simulator/device
 build/test paths, validate release app assets/icons, and confirm the TV profile
 and shared ASC configuration are provisioned. Real Apple TV BLE behavior and
 remote/safety interaction remain hardware beta checks, not tooling-test claims.
