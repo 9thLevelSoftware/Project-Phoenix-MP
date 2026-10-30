@@ -1,5 +1,12 @@
 import itertools
+import os
 import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -52,14 +59,75 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         self.assertIn('[ "$TVOS_VERSIONS" != "$ANDROID_VERSION" ]', main)
         self.assertIn('[ "$SHARED_VERSION" != "$ANDROID_VERSION" ]', main)
 
-    def test_tv_recovery_builds_resolved_tag_without_workflow_sha_restriction(self) -> None:
+    def test_existing_release_pins_dispatched_main_before_testing_and_building(self) -> None:
         prepare = self.job(workflow("release-all-existing.yml"), "prepare-release")
         self.assertIn('"${{ github.ref }}" != "refs/heads/main"', prepare)
-        self.assertIn('[[ "$sha" =~ ^[0-9a-f]{40}$ ]]', prepare)
-        self.assertNotIn("WORKFLOW_SHA", prepare)
+        self.assertIn("ref: ${{ github.sha }}", prepare)
+        self.assertIn("SOURCE_SHA: ${{ github.sha }}", prepare)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$SOURCE_SHA"', prepare)
+        self.assertIn('--version "${TAG#v}" --check', prepare)
         self.assertNotIn("SKIP_TVOS", prepare)
         tv = self.job(workflow("release-all-existing.yml"), "tvos-testflight")
         self.assertIn("source_sha: ${{ needs.prepare-release.outputs.sha }}", tv)
+        self.assertIn("Source SHA: ${{ needs.prepare-release.outputs.sha }}", self.job(workflow("release-all-existing.yml"), "summary"))
+
+    def test_existing_release_prepare_accepts_current_main_and_rejects_version_drift(self) -> None:
+        prepare = self.job(workflow("release-all-existing.yml"), "prepare-release")
+        step = prepare.split("      - name: Verify existing release and source version\n", 1)[1]
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace(
+            "${{ github.repository }}", "example/phoenix"
+        )
+        bash = shutil.which("bash")
+        if os.name == "nt":
+            bash = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe")
+        self.assertTrue(bash and Path(bash).is_file(), "Bash is required for prepare-step regression coverage")
+        current_sha, old_tag_sha = "a" * 40, "b" * 40
+        for drift in (None, "android", "shared", "ios", "tvos"):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as raw:
+                fixture = Path(raw)
+                files = {
+                    "settings.gradle.kts": "",
+                    "androidApp/build.gradle.kts": 'versionName = "1.0.9"\n',
+                    "shared/src/commonMain/kotlin/com/devil/phoenixproject/util/Constants.kt": 'const val APP_VERSION = "1.0.9"\n',
+                    "iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj": "MARKETING_VERSION = 1.0.9;\n" * 2,
+                    "tvosApp/PhoenixTV.xcodeproj/project.pbxproj": "MARKETING_VERSION = 1.0.9;\n" * 2,
+                }
+                if drift:
+                    prefix = {"android": "androidApp/", "shared": "shared/", "ios": "iosApp/", "tvos": "tvosApp/"}[drift]
+                    files = {path: content.replace("1.0.9", "1.0.10") if path.startswith(prefix) else content
+                             for path, content in files.items()}
+                for path, content in files.items():
+                    target = fixture / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(content, encoding="utf-8")
+                checker = ".agents/skills/update-phoenix-version/scripts/update_version.py"
+                (fixture / checker).parent.mkdir(parents=True)
+                shutil.copyfile(ROOT / checker, fixture / checker)
+                (fixture / "bin").mkdir()
+                for name, body in {
+                    "gh": 'echo "$*" >> gh-calls\nif [ "$1 $2" = "release view" ]; then exit 0; fi\necho "$OLD_TAG_SHA"\n',
+                    "git": 'echo "$*" >> git-calls\n[ "$*" = "rev-parse HEAD" ] || exit 99\necho "$SOURCE_SHA"\n',
+                }.items():
+                    fake = fixture / "bin" / name
+                    fake.write_text("#!/bin/sh\n" + body, encoding="utf-8", newline="\n")
+                    fake.chmod(0o755)
+                prefix = 'export PATH="$PWD/bin:$PATH"\npython3() { ' + shlex.quote(Path(sys.executable).as_posix()) + ' "$@"; }\n'
+                result = subprocess.run(
+                    [bash, "-c", prefix + script], cwd=fixture,
+                    env=os.environ | {"TAG": "v1.0.9", "SOURCE_SHA": current_sha, "OLD_TAG_SHA": old_tag_sha, "GITHUB_OUTPUT": "output"},
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual((fixture / "gh-calls").read_text().strip(), "release view v1.0.9 --repo example/phoenix")
+                self.assertEqual((fixture / "git-calls").read_text().strip(), "rev-parse HEAD")
+                if drift:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("expected 1.0.9, found 1.0.10", result.stderr)
+                    self.assertFalse((fixture / "output").exists(), "Failed validation must not unlock downstream jobs")
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual((fixture / "output").read_text(), f"sha={current_sha}\n")
+                for path, content in files.items():
+                    self.assertEqual((fixture / path).read_text(), content, "Version validation must never rewrite source")
 
     def test_mobile_store_condition_truth_tables(self) -> None:
         text = workflow("release-all.yml")
@@ -274,9 +342,8 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         existing = workflow("release-all-existing.yml")
         self.assertIn("ref: ${{ needs.prepare-release.outputs.sha }}", existing)
-        self.assertIn('gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq .object', existing)
-        self.assertIn('gh api "repos/${{ github.repository }}/git/tags/$sha" --jq .object', existing)
-        self.assertIn('test "$object_type" = "commit"', existing)
+        self.assertNotIn("gh api", self.job(existing, "prepare-release"))
+        self.assertIn('echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"', existing)
         self.assertNotIn("gh release delete-asset", existing)
         self.assertIn("needs: [prepare-release, tests]", existing)
         # Direct dispatch of a platform workflow must run the tests: skip only via an input

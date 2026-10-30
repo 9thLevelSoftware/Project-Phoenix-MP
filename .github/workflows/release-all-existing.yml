@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing GitHub release tag to rebuild/publish'
+        description: 'Existing GitHub release tag to update from main with the same marketing version'
         required: true
         type: string
       versionCodeOverride:
@@ -57,25 +57,24 @@ jobs:
             echo "Run Release All (Existing) from main and provide the release tag as input." >&2
             exit 1
           fi
-      - name: Verify release and resolve its commit
+      - name: Checkout dispatched main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify existing release and source version
         id: release-sha
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
-          object=$(gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq .object)
-          object_type=$(jq -r .type <<< "$object")
-          sha=$(jq -r .sha <<< "$object")
-          while [ "$object_type" = "tag" ]; do
-            object=$(gh api "repos/${{ github.repository }}/git/tags/$sha" --jq .object)
-            object_type=$(jq -r .type <<< "$object")
-            sha=$(jq -r .sha <<< "$object")
-          done
-          test "$object_type" = "commit"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python3 .agents/skills/update-phoenix-version/scripts/update_version.py --version "${TAG#v}" --check
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
   tests:
     needs: prepare-release
@@ -142,7 +141,8 @@ jobs:
         run: |
           echo "## Release All (Existing)" >> "$GITHUB_STEP_SUMMARY"
           echo "Release tag: ${{ inputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Selected builds and tests used the release tag's resolved commit." >> "$GITHUB_STEP_SUMMARY"
+          echo "Source SHA: ${{ needs.prepare-release.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Selected builds and tests use the dispatched main commit with the existing release's marketing version." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Unit tests | ${{ needs.tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
