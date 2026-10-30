@@ -41,6 +41,12 @@
 -keep class io.ktor.** { *; }
 -dontwarn io.ktor.**
 
+# ART rejects R8's optimized push coroutine with a String/Throwable register mismatch.
+# Keep this state machine unoptimized; the rest of the sync layer can still optimize.
+-keepclassmembers,allowobfuscation class com.devil.phoenixproject.data.sync.SyncManager {
+    *** pushLocalChanges*(...);
+}
+
 # ==================== OkHttp (Ktor Android engine) ====================
 # okhttp-android 5.3.2 consumer rules are -dontwarn only. The app does not
 # load OkHttp by reflection.
