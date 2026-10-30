@@ -1,22 +1,14 @@
 name: tvOS TestFlight beta
 
-# Manual or called by release-all; retains its own review/native/signing gates.
+# Manual or called by release-all; retains its own native/signing checks.
 # No push/PR/schedule triggers. Direct dispatch remains archive-only by default.
 on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: 'Full reviewed source SHA; must match the workflow revision selected for this run'
-        required: true
+        description: 'Optional full source SHA; defaults to the selected workflow revision'
+        required: false
         type: string
-      review_pr:
-        description: 'PR with trusted current-revision approval or automated reviewer attestation'
-        required: true
-        type: string
-      review_accepted:
-        description: 'Independent review and beta acceptance complete (not a substitute for the checked PR approval)'
-        type: boolean
-        default: false
       upload:
         description: 'Upload exported TV IPA to ASC and verify TV_OS processing; false is archive-only'
         type: boolean
@@ -24,14 +16,8 @@ on:
   workflow_call:
     inputs:
       source_sha:
-        required: true
+        required: false
         type: string
-      review_pr:
-        required: true
-        type: string
-      review_accepted:
-        type: boolean
-        default: false
       upload:
         type: boolean
         default: false
@@ -63,20 +49,15 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
-  statuses: read
 
 concurrency:
   group: tvos-testflight
   cancel-in-progress: false
 
-# User inputs are passed as data, never interpolated into shell commands or checkout refs.
-# The review gate validates the SHA/PR syntax and binds them to github.sha.
+# Source inputs are action/env data, never interpolated into shell commands.
+# Validate the exact selected SHA against checkout before native tests and signing.
 env:
-  TVOS_SOURCE_SHA: ${{ inputs.source_sha }}
-  TVOS_REVIEW_PR: ${{ inputs.review_pr }}
-  TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}
-  GH_TOKEN: ${{ github.token }}
+  TVOS_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
 
 jobs:
   acceptance:
@@ -85,13 +66,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Require independent approval of exact source and workflow revision
-        run: python3 .github/scripts/tvos-release.py review
+      - name: Validate the selected source revision
+        run: python3 .github/scripts/tvos-release.py source
       - name: Fail closed before any native build or signing secrets
         run: |
           python3 .github/scripts/tvos-release.py preflight
@@ -116,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -169,7 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -222,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

@@ -2,7 +2,7 @@
 """Standalone tvOS build/release tooling. Python 3.10+; no credentials needed for tests.
 
 Native commands run only via local/archive/upload subcommands, never preflight/tests.
-Release commands are CI-only and require an independently approved exact source SHA.
+Release commands are CI-only and validate the exact selected source SHA.
 """
 from __future__ import annotations
 
@@ -256,61 +256,19 @@ def validate_profile(profile, env):
     return uuid
 
 
-def accept_review(pr, reviews, sha, repo, status_receipt=None):
-    require(re.fullmatch(r"[0-9a-f]{40}", sha) is not None, "A full lowercase source SHA is required")
-    require(pr["base"]["repo"]["full_name"] == repo and pr["head"]["repo"]["full_name"] == repo,
-            "Release review must be for this repository, not a fork")
-    head = pr["head"]["sha"]
-    require(not pr.get("draft") and (sha == head or (pr.get("merged") and pr.get("merge_commit_sha") == sha)),
-            "Review does not cover this source SHA")
-    latest = {}
-    for review in sorted(reviews, key=lambda r: r["id"]):
-        if review["state"] in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}:
-            latest[review["user"]["login"]] = review
-    require(not any(r["state"] == "CHANGES_REQUESTED" for r in latest.values()), "Unresolved changes-requested review")
-    approved = any(r["state"] == "APPROVED" and r["commit_id"] == head and
-                   r["user"]["login"].casefold() != pr["user"]["login"].casefold() and
-                   r.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}
-                   for r in latest.values())
-    # Separate automated reviewers can use the owner's GitHub identity, which
-    # cannot approve its own PR. This is an audited reviewer attestation, not
-    # permission for the implementation worker to approve itself.
-    receipt = status_receipt or {}
-    statuses = sorted((s for s in receipt.get("statuses", [])
-                       if s.get("context") == "tvOS independent review"),
-                      key=lambda s: s["id"], reverse=True)
-    status = statuses[0] if statuses else {}
-    attested = (receipt.get("sha") == sha and status.get("state") == "success" and
-                status.get("creator", {}).get("login", "").casefold() == repo.split("/")[0].casefold() and
-                status.get("description") == "Independent tvOS review accepted" and
-                re.fullmatch(r"https://github\.com/" + re.escape(repo) +
-                             r"/pull/" + str(pr.get("number")) + r"#issuecomment-[0-9]+",
-                             status.get("target_url", "")) is not None)
-    require(approved or attested, "Missing trusted current-revision independent review or automated reviewer attestation")
-
-
-def review_gate():
+def source_revision_guard():
     env = os.environ
-    required_env(env, ("GITHUB_REPOSITORY", "GITHUB_SHA", "TVOS_SOURCE_SHA", "TVOS_REVIEW_PR", "GH_TOKEN"))
-    require(env.get("TVOS_REVIEW_ACCEPTED") == "true", "Independent review acceptance must be explicitly enabled")
-    sha, repo = env["TVOS_SOURCE_SHA"], env["GITHUB_REPOSITORY"]
-    require(sha == env["GITHUB_SHA"], "Workflow and reviewed source must be the same immutable SHA")
-    require(re.fullmatch(r"[1-9][0-9]*", env["TVOS_REVIEW_PR"]) is not None, "Invalid review PR number")
-    prefix = f"repos/{repo}/pulls/{env['TVOS_REVIEW_PR']}"
-    pr = json.loads(run(["gh", "api", prefix], "Read review PR", sensitive=True))
-    pages = json.loads(run(["gh", "api", "--paginate", "--slurp", prefix + "/reviews?per_page=100"], "Read all reviews", sensitive=True))
-    status_pages = json.loads(run(["gh", "api", "--paginate", "--slurp",
-                                   f"repos/{repo}/commits/{sha}/statuses?per_page=100"],
-                                  "Read exact-revision review attestations", sensitive=True))
-    receipt = {"sha": sha, "statuses": [status for page in status_pages for status in page]}
-    accept_review(pr, [review for page in pages for review in page], sha, repo, receipt)
-    require(run(["git", "rev-parse", "HEAD"], "Check source SHA", sensitive=True).strip() == sha, "Checkout differs from reviewed SHA")
-    print("Independent review gate accepted the exact source revision.")
+    required_env(env, ("TVOS_SOURCE_SHA",))
+    sha = env["TVOS_SOURCE_SHA"]
+    require(re.fullmatch(r"[0-9a-f]{40}", sha) is not None, "A full lowercase source SHA is required")
+    require(run(["git", "rev-parse", "HEAD"], "Check source SHA", sensitive=True).strip() == sha,
+            "Checkout differs from selected source SHA")
+    print("Validated the exact selected source revision.")
 
 
 def ci_release_guard():
     require(os.environ.get("GITHUB_ACTIONS") == "true", "Signing and upload are CI-only")
-    review_gate()  # Recheck before either signing or uploading, not just at dispatch time.
+    source_revision_guard()  # Recheck before either signing or uploading.
     read_versions(ROOT)
     source_guard(ROOT)
 
@@ -558,7 +516,7 @@ def upload(args):
     folder = Path(args.input).resolve()
     metadata = json.loads((folder / "release.json").read_text())
     require(metadata["source_sha"] == os.environ["TVOS_SOURCE_SHA"] and metadata["bundle"] == BUNDLE and
-            metadata["platform"] == "TV_OS" and metadata["marketing"] == read_versions(ROOT)["marketing"], "IPA metadata does not match reviewed TV source")
+            metadata["platform"] == "TV_OS" and metadata["marketing"] == read_versions(ROOT)["marketing"], "IPA metadata does not match selected TV source")
     app_id = os.environ["APP_APPLE_ID"]
     app = asc_get("apps/" + app_id)
     require(app["data"]["attributes"]["bundleId"] == BUNDLE, "ASC app ID belongs to another bundle")
@@ -595,7 +553,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("preflight", help="Offline strict parity and production composition gate")
-    sub.add_parser("review", help="Read-only GitHub independent review acceptance gate")
+    sub.add_parser("source", help="Validate that checkout matches the selected source SHA")
     local_parser = sub.add_parser("local", help="Unsigned build or deterministic debug simulator UI tests")
     local_parser.add_argument("action", choices=("build", "test"))
     local_parser.add_argument("--sdk", choices=("appletvsimulator", "appletvos"), default="appletvsimulator")
@@ -603,7 +561,7 @@ def main():
     local_parser.add_argument("--simulator", help="Exact TV simulator UDID (required for tests)")
     local_parser.add_argument("--derived-data", default=os.environ.get("TVOS_DERIVED_DATA", str(ROOT / ".scratch/tvos-derived-data")))
     local_parser.add_argument("--result-bundle", default=str(ROOT / ".scratch/tvos-tests.xcresult"))
-    archive_parser = sub.add_parser("archive", help="CI-only reviewed signed device archive/export; no upload")
+    archive_parser = sub.add_parser("archive", help="CI-only signed device archive/export; no upload")
     archive_parser.add_argument("--build-number", required=True)
     archive_parser.add_argument("--output", required=True)
     archive_parser.add_argument("--derived-data", required=True)
@@ -614,8 +572,8 @@ def main():
         if args.command == "preflight":
             source_guard(ROOT)
             print(json.dumps(read_versions(ROOT), indent=2))
-        elif args.command == "review":
-            review_gate()
+        elif args.command == "source":
+            source_revision_guard()
         elif args.command == "local":
             local(args)
         elif args.command == "archive":

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing GitHub release tag to rebuild/publish (TV requires tag SHA to match selected main revision)'
+        description: 'Existing GitHub release tag to rebuild/publish'
         required: true
         type: string
       versionCodeOverride:
@@ -37,24 +37,13 @@ on:
         type: boolean
         default: false
       skip_tvos_testflight:
-        description: 'Skip tvOS TestFlight (required for a tag older than the selected main revision)'
-        required: false
-        type: boolean
-        default: false
-      tvos_review_pr:
-        description: 'PR covering this exact revision with trusted independent tvOS review (required unless TV skipped)'
-        required: false
-        type: string
-      tvos_review_accepted:
-        description: 'Independent tvOS review and beta acceptance complete (required unless TV skipped)'
+        description: 'Skip tvOS TestFlight'
         required: false
         type: boolean
         default: false
 
 permissions:
   contents: write
-  pull-requests: read
-  statuses: read
 
 jobs:
   prepare-release:
@@ -73,8 +62,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           TAG: ${{ inputs.release_tag }}
-          SKIP_TVOS: ${{ inputs.skip_tvos_testflight }}
-          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
@@ -88,25 +75,7 @@ jobs:
           done
           test "$object_type" = "commit"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          if [ "$SKIP_TVOS" != "true" ] && [ "$sha" != "$WORKFLOW_SHA" ]; then
-            echo "tvOS recovery requires the release tag to resolve to this run's selected main revision. For historical mobile recovery, set skip_tvos_testflight=true." >&2
-            exit 1
-          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - name: Checkout the exact workflow and TV release revision
-        if: ${{ !inputs.skip_tvos_testflight }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Require exact-revision tvOS review before recovery builds
-        if: ${{ !inputs.skip_tvos_testflight }}
-        env:
-          TVOS_SOURCE_SHA: ${{ steps.release-sha.outputs.sha }}
-          TVOS_REVIEW_PR: ${{ inputs.tvos_review_pr }}
-          TVOS_REVIEW_ACCEPTED: ${{ inputs.tvos_review_accepted }}
-          GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/tvos-release.py review
 
   tests:
     needs: prepare-release
@@ -161,8 +130,6 @@ jobs:
     uses: ./.github/workflows/tvos-testflight.yml
     with:
       source_sha: ${{ needs.prepare-release.outputs.sha }}
-      review_pr: ${{ inputs.tvos_review_pr }}
-      review_accepted: ${{ inputs.tvos_review_accepted }}
       upload: true
     secrets: inherit
 

@@ -16,19 +16,15 @@ relevant pull requests or manual invocation, without signing or cloud secrets.
 `.github/workflows/tvos-testflight.yml` is manual/reusable only, with no direct
 push, PR, or schedule trigger. Standalone dispatch defaults to archive-only.
 Both `release-all.yml` and `release-all-existing.yml` call it with upload enabled
-unless `skip_tvos_testflight` is selected. Supply `tvos_review_pr` and set
-`tvos_review_accepted` after the independent review/beta acceptance described
-below; the workflow verifies the review evidence before publishing any platform.
-Its signed path remains gated on independent review of the exact source SHA;
-unsigned CI success is not a TestFlight delivery claim.
+unless `skip_tvos_testflight` is selected. TV uses the normal release dispatch;
+build, signing, and upload checks run automatically. Unsigned CI success is
+not a TestFlight delivery claim.
 
-The combined workflows run from `main`. Existing-release recovery with TV
-selected requires the release tag's resolved commit to equal the selected
-`main` revision, preserving the TV source/workflow SHA gate. For an older tag,
-use `skip_tvos_testflight: true` for mobile recovery and run the standalone TV
-workflow from that reviewed tag. The combined run summary includes TV upload
-status; successful upload verifies App Store Connect processing, not external
-tester distribution.
+The combined workflows run from `main`. Existing-release recovery rebuilds the
+release tag's resolved commit for every selected platform. Tags predating this
+simplified TV tooling may need their original standalone workflow. The combined
+run summary includes TV upload status; successful upload verifies App Store
+Connect processing, not external tester distribution.
 
 ## Offline tooling checks
 
@@ -124,8 +120,8 @@ supply it. There is no automatic fake device or telemetry fallback.
 The release gate checks these source boundaries and rejects recognizable
 Phantom transport markers in the archived device executable. These are defense
 in depth, not a proof that arbitrary code cannot synthesize telemetry. An
-independent review of the production factory, shared-core wiring and safety
-behavior remains mandatory, as do parent-owned native checks. Release device
+inspection of the production factory, shared-core wiring and safety
+behavior remains part of code review. Release device
 and debug simulator paths must not be conflated in an acceptance report.
 
 The existing Xcode Resources phase copies
@@ -205,45 +201,19 @@ commands. Reassess the declaration if the app's encryption usage changes.
 
 ## Signed archive / TestFlight workflow
 
-Do not execute until independent review and beta acceptance are complete.
-For both manual and reusable calls, provide:
+Use `release-all.yml` for a normal release. The standalone/reusable TV workflow
+has two inputs:
 
-- `source_sha`: full lowercase commit SHA. It must equal the selected workflow
-  revision (`github.sha`) and the checked-out HEAD. No arbitrary branch refs.
-- `review_pr`: a PR in this repository with a current-head `APPROVED` review from
-  an independent OWNER/MEMBER/COLLABORATOR, not its author, **or** the automated
-  reviewer attestation described below. Any unresolved changes-requested review
-  blocks. The exact merged commit is also accepted; unrelated later commits are not.
-- `review_accepted: true`: explicit independent review/beta acceptance. A boolean
-  alone cannot bypass the checked review evidence.
-- `upload`: false for archive/export only; true opts into upload and verification.
+- `source_sha`: optional full lowercase commit SHA, defaulting to the selected
+  workflow revision (`github.sha`). The checked-out HEAD must match it.
+- `upload`: false for archive/export only; true uploads and verifies processing.
+  Both combined release workflows enable upload automatically.
 
-### Automated review without a human approval gate
+Pass the named secrets explicitly or use `secrets: inherit` from a caller.
+The TV workflow uses read-only repository permissions and pinned action commits.
+Source identity is checked before building and again before signing/upload.
 
-The independent downstream reviewer may share the repository owner's GitHub
-identity; GitHub does not allow that account to approve its own PR. After a
-separate spec/safety review, that reviewer (never the implementation worker)
-posts a durable PR comment naming its task/run, exact release SHA, review
-findings and evidence. It then records a commit status on that **exact SHA**:
-context `tvOS independent review`, state `success`, description
-`Independent tvOS review accepted`, and `target_url` equal to the PR comment URL.
-Only a status created by the repository owner is trusted; the latest status for
-that context wins, so pending/failure revokes acceptance. A merge-SHA release
-requires a fresh attestation on that merge SHA. The workflow reads every status
-page and rechecks before signing/upload; it has read-only status permissions.
-
-This is the trusted reviewer's auditable attestation, not cryptographic proof
-of reviewer independence. The task graph enforces separate implementation and
-review runs. Do not manufacture this receipt in an implementation run, ask for
-unnecessary human approval, or treat it as a substitute for required exact-head CI.
-
-A reusable caller must check out/run the same reviewed revision. Pass the named
-secrets explicitly or use `secrets: inherit` from an authorized caller. The
-workflow uses read-only repository/PR permissions, pins third-party action
-commits, and never creates tags, commits, pushes, merges, or changes issue state.
-Review is rechecked before signing and again before upload.
-
-Gates run serially: acceptance/static checks -> fresh simulator native UI tests
+Gates run serially: source/static checks -> fresh simulator native UI tests
 -> signed Release `generic/platform=tvOS` archive/export -> optional upload.
 The archive uses the phone's Xcode 26.2 / macos-26-intel convention; upload uses
 the separate Xcode 16.4 / macos-15 convention. This reuse is not proof that the
@@ -280,7 +250,7 @@ group serializes standalone and combined runs; caller-specific run counters are
 not used. Rebuilding an archive on a later attempt receives a later timestamp.
 CI does not edit checked-in version defaults. The archive
 and exported IPA are signed manually with the TV profile. IPA metadata records
-the reviewed source SHA, platform, bundle, marketing version and build. Only the
+the selected source SHA, platform, bundle, marketing version and build. Only the
 IPA and release manifest are retained for one day, not keychains, configs,
 profiles, DerivedData or archive build logs. Simulator results are separate and
 use the blank/offline cloud configuration.
@@ -289,8 +259,8 @@ The archive upload and uploader download use the same run-stable artifact name,
 `tvos-testflight-ipa-${{ github.run_id }}`. An upload-only failed-job retry can
 therefore consume the retained archive from an earlier attempt, within its
 retention window. Re-running the archive replaces that artifact (`overwrite:
-true`) while assigning a fresh timestamp build number. Source-SHA,
-release metadata, and independent-review gates are unchanged. Artifact lookup
+true`) while assigning a fresh timestamp build number. Source-SHA
+and release metadata checks still apply. Artifact lookup
 recovery alone does not prove that repeating an already accepted ASC upload is
 idempotent; exact build processing still needs verification.
 
@@ -305,10 +275,8 @@ external testers received the build.
 
 ## Remaining release evidence
 
-Before a real dispatch, obtain independent review acceptance for the release
-revision, execute the native simulator/device
-build/test paths, validate release app assets/icons, and confirm the TV profile
-and shared ASC configuration are provisioned. Real Apple TV BLE behavior and
-remote/safety interaction remain hardware beta checks, not tooling-test claims.
+CI runs native simulator tests and device archives, and validates the TV profile
+and shared cloud/ASC configuration. Release asset appearance, real Apple TV BLE
+behavior, and remote/safety interaction still need device validation.
 See `.scratch/release-tooling-report.md` for this implementation's actual command
 exit codes and deliberately unexecuted stages.

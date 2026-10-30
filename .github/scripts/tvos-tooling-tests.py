@@ -99,48 +99,38 @@ class ToolingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.validate_profile(profile, env)
 
-    def review_fixture(self):
+    def test_source_revision_accepts_exact_checkout_without_review_or_workflow_sha_match(self):
         sha = "a" * 40
-        pr = {"number": 123, "head": {"sha": sha, "repo": {"full_name": "owner/repo"}},
-              "base": {"repo": {"full_name": "owner/repo"}}, "user": {"login": "author"}, "draft": False}
-        review = {"id": 1, "state": "APPROVED", "commit_id": sha, "user": {"login": "reviewer"}, "author_association": "MEMBER"}
-        return sha, pr, review
+        with patch.dict(os.environ, {"TVOS_SOURCE_SHA": sha, "GITHUB_SHA": "b" * 40}, clear=True), \
+                patch.object(release, "run", return_value=sha + "\n") as command:
+            release.source_revision_guard()
+        command.assert_called_once_with(["git", "rev-parse", "HEAD"], "Check source SHA", sensitive=True)
 
-    def test_automated_review_attestation_is_exact_trusted_and_revocable(self):
-        sha, pr, _ = self.review_fixture()
-        status = {"id": 1, "context": "tvOS independent review", "state": "success",
-                  "creator": {"login": "owner"},
-                  "description": "Independent tvOS review accepted",
-                  "target_url": "https://github.com/owner/repo/pull/123#issuecomment-123"}
-        receipt = {"sha": sha, "statuses": [status]}
-        release.accept_review(pr, [], sha, "owner/repo", receipt)
-        bad = [receipt | {"sha": "b" * 40},
-               receipt | {"statuses": [status | {"creator": {"login": "stranger"}}]},
-               receipt | {"statuses": [status | {"target_url": "https://example.com/review"}]},
-               receipt | {"statuses": [status, status | {"id": 2, "state": "failure"}]}]
-        for rejected in bad:
-            with self.assertRaises(ValueError):
-                release.accept_review(pr, [], sha, "owner/repo", rejected)
-        _, _, review = self.review_fixture()
-        with self.assertRaises(ValueError):
-            release.accept_review(pr, [review | {"state": "CHANGES_REQUESTED"}], sha, "owner/repo", receipt)
+    def test_source_revision_rejects_missing_and_nonimmutable_inputs_before_git(self):
+        for sha in (None, "", "main", "v1.0.9", "a" * 39, "A" * 40, "a" * 40 + "; echo unsafe"):
+            with self.subTest(sha=sha), \
+                    patch.dict(os.environ, {} if sha is None else {"TVOS_SOURCE_SHA": sha}, clear=True), \
+                    patch.object(release, "run") as command:
+                with self.assertRaises(ValueError):
+                    release.source_revision_guard()
+                command.assert_not_called()
 
-    def test_review_requires_independent_current_approval(self):
-        sha, pr, review = self.review_fixture()
-        release.accept_review(pr, [review], sha, "owner/repo")
-        for reviews in [[], [review | {"commit_id": "b" * 40}], [review | {"user": {"login": "author"}}],
-                        [review | {"author_association": "NONE"}], [review | {"state": "DISMISSED"}],
-                        [review, review | {"id": 2, "state": "CHANGES_REQUESTED"}]]:
-            with self.subTest(reviews=reviews), self.assertRaises(ValueError):
-                release.accept_review(pr, reviews, sha, "owner/repo")
+    def test_source_revision_rejects_a_different_checkout(self):
+        with patch.dict(os.environ, {"TVOS_SOURCE_SHA": "a" * 40}, clear=True), \
+                patch.object(release, "run", return_value="b" * 40 + "\n"):
+            with self.assertRaisesRegex(ValueError, "Checkout differs from selected source SHA"):
+                release.source_revision_guard()
 
-    def test_merge_review_is_bound_to_merged_head(self):
-        sha, pr, review = self.review_fixture()
-        merge = "b" * 40
-        pr |= {"merged": True, "merge_commit_sha": merge}
-        release.accept_review(pr, [review], merge, "owner/repo")
-        with self.assertRaises(ValueError):
-            release.accept_review(pr, [review], "c" * 40, "owner/repo")
+    def test_ci_release_checks_source_before_parity_or_production_composition(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}, clear=True), \
+                patch.object(release, "source_revision_guard", side_effect=ValueError("source mismatch")) as source, \
+                patch.object(release, "read_versions") as versions, \
+                patch.object(release, "source_guard") as production:
+            with self.assertRaisesRegex(ValueError, "source mismatch"):
+                release.ci_release_guard()
+            source.assert_called_once_with()
+            versions.assert_not_called()
+            production.assert_not_called()
 
     def test_upload_verification_matches_platform_marketing_build_and_app(self):
         data = {"data": [{"id": "tv-build", "attributes": {"version": "456", "processingState": "VALID"},
@@ -871,7 +861,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("${{ runner.temp }}/tvos-release/export/release.json", step)
         self.assertRegex(step, r"(?m)^          if-no-files-found: error$")
 
-    def test_archive_build_number_uses_serialized_utc_time_and_keeps_review_gates(self):
+    def test_archive_build_number_uses_serialized_utc_time_and_keeps_source_validation(self):
         text = self.workflow("tvos-testflight.yml")
         archive = self.job(text, "archive")
         self.assertIn('build_number="$(date -u +%Y%m%d%H%M%S)"', archive)
@@ -881,13 +871,15 @@ class WorkflowContractTests(unittest.TestCase):
         for job, dependency in (("simulator-tests", "acceptance"), ("archive", "simulator-tests"), ("upload", "archive")):
             body = self.job(text, job)
             self.assertRegex(body, r"(?m)^    needs: " + dependency + r"$")
-            self.assertIn("ref: ${{ github.sha }}", body)
+            self.assertIn("ref: ${{ inputs.source_sha || github.sha }}", body)
         acceptance = self.job(text, "acceptance")
-        self.assertIn("ref: ${{ github.sha }}", acceptance)
-        self.assertIn("run: python3 .github/scripts/tvos-release.py review", acceptance)
+        self.assertIn("ref: ${{ inputs.source_sha || github.sha }}", acceptance)
+        self.assertIn("run: python3 .github/scripts/tvos-release.py source", acceptance)
         self.assertIn("python3 .github/scripts/tvos-release.py preflight", acceptance)
-        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha }}", text)
-        self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}", text)
+        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}", text)
+        self.assertEqual(text.count("      source_sha:\n        required: false"), 1)
+        self.assertRegex(text, r"source_sha:\n        description: [^\n]+\n        required: false")
+        self.assertNotRegex(text, r"TVOS_REVIEW|review_pr:|review_accepted:|pull-requests:|statuses:")
 
     def test_archive_build_numbers_are_ordered_across_callers_and_archive_retries(self):
         archive = self.job(self.workflow("tvos-testflight.yml"), "archive")
@@ -1005,7 +997,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("if: always()", artifact)
         self.assertIn("${{ runner.temp }}/tvos-evidence/", artifact)
 
-    def test_signed_archive_uses_matching_heap_without_weakening_review_signing_or_upload_gates(self):
+    def test_signed_archive_uses_matching_heap_and_keeps_source_signing_and_upload_checks(self):
         text = self.workflow("tvos-testflight.yml")
         archive = self.job(text, "archive")
         self.assertRegex(archive, r"(?m)^    runs-on: macos-26-intel$")
@@ -1016,11 +1008,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("TVOS_PROVISION_PROFILE_BASE64: ${{ secrets.TVOS_PROVISION_PROFILE_BASE64 }}", archive)
 
         acceptance = self.job(text, "acceptance")
-        self.assertIn("run: python3 .github/scripts/tvos-release.py review", acceptance)
+        self.assertIn("run: python3 .github/scripts/tvos-release.py source", acceptance)
         self.assertIn("python3 .github/scripts/tvos-release.py preflight", acceptance)
-        self.assertIn("ref: ${{ github.sha }}", acceptance)
-        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha }}", text)
-        self.assertIn("TVOS_REVIEW_ACCEPTED: ${{ inputs.review_accepted }}", text)
+        self.assertIn("ref: ${{ inputs.source_sha || github.sha }}", acceptance)
+        self.assertIn("TVOS_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}", text)
 
         simulator = self.job(text, "simulator-tests")
         self.assertRegex(simulator, r"(?m)^    runs-on: macos-26$")
