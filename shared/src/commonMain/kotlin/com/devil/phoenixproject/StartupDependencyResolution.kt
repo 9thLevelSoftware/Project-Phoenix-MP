@@ -13,6 +13,8 @@ internal interface StartupDiagnosticFailure {
     val startupPresenceSnapshot: DatabasePresenceSnapshot? get() = null
 }
 
+internal enum class StartupStage { UNKNOWN, STARTUP_DEPENDENCIES, REQUIRED_MIGRATIONS, FEATURE_DEPENDENCIES }
+
 internal sealed interface StartupDependencyResolution<out T> {
     data class Ready<T>(val dependencies: T) : StartupDependencyResolution<T>
 
@@ -22,6 +24,7 @@ internal sealed interface StartupDependencyResolution<out T> {
         val supportCode: String? = null,
         internal val presenceSnapshot: DatabasePresenceSnapshot? = null,
         internal val cause: Throwable,
+        val stage: StartupStage = StartupStage.UNKNOWN,
     ) : StartupDependencyResolution<Nothing>
 }
 
@@ -31,6 +34,7 @@ internal sealed interface StartupDependencyResolution<out T> {
  * cross into the user-visible state.
  */
 internal inline fun <T> resolveStartupDependencies(
+    stage: StartupStage = StartupStage.UNKNOWN,
     resolve: () -> T,
 ): StartupDependencyResolution<T> = runCatching(resolve).fold(
     onSuccess = StartupDependencyResolution<T>::Ready,
@@ -42,6 +46,7 @@ internal inline fun <T> resolveStartupDependencies(
             supportCode = diagnostic?.startupDiagnosticReason,
             presenceSnapshot = diagnostic?.startupPresenceSnapshot,
             cause = failure,
+            stage = stage,
         )
     },
 )
@@ -63,16 +68,18 @@ internal suspend fun <S, T> prepareStartupDependencies(
     resolveFeatures: (S) -> T,
     blockingDispatcher: CoroutineDispatcher,
 ): StartupDependencyResolution<T> {
-    val startup = withContext(blockingDispatcher) { resolveStartupDependencies(resolveStartupOnly) }
+    val startup = withContext(blockingDispatcher) {
+        resolveStartupDependencies(StartupStage.STARTUP_DEPENDENCIES, resolveStartupOnly)
+    }
     if (startup is StartupDependencyResolution.Failed) return startup
     startup as StartupDependencyResolution.Ready
     return try {
         withContext(blockingDispatcher) { prepareRequired(startup.dependencies) }
-        resolveStartupDependencies { resolveFeatures(startup.dependencies) }
+        resolveStartupDependencies(StartupStage.FEATURE_DEPENDENCIES) { resolveFeatures(startup.dependencies) }
     } catch (failure: CancellationException) {
         throw failure
     } catch (failure: Throwable) {
-        resolveStartupDependencies<T> { throw failure }
+        resolveStartupDependencies<T>(StartupStage.REQUIRED_MIGRATIONS) { throw failure }
     }
 }
 

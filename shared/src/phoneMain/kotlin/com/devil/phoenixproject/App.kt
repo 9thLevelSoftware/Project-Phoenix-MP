@@ -75,6 +75,9 @@ import projectphoenix.shared.generated.resources.startup_local_data_preserved_ti
 import projectphoenix.shared.generated.resources.startup_storage_attention_title
 import projectphoenix.shared.generated.resources.startup_storage_failed_message
 import projectphoenix.shared.generated.resources.startup_support_code
+import projectphoenix.shared.generated.resources.startup_initialization_failed_message
+import projectphoenix.shared.generated.resources.startup_share_diagnostics
+import projectphoenix.shared.generated.resources.startup_share_diagnostics_failed
 
 private const val LAUNCH_SPLASH_DURATION_MS = 2_500L
 private const val SUPPORT_EMAIL = "support@phoenix-portal.com"
@@ -133,6 +136,8 @@ internal fun startupFailureActions(failure: StartupDependencyResolution.Failed):
     if (failure.diagnosticCode == DUAL_DATABASES_DIAGNOSTIC_CODE) {
         add(StartupFailureAction.EXPORT_DATABASE_FILES)
         add(StartupFailureAction.CONTACT_SUPPORT)
+    } else if (failure.diagnosticCode == "STARTUP_INITIALIZATION_FAILED") {
+        add(StartupFailureAction.CONTACT_SUPPORT)
     }
     if (failure.retryAllowed) add(StartupFailureAction.RETRY)
 }
@@ -173,6 +178,7 @@ private fun AppLifecycleObserver(
 @Composable
 internal fun PersistedFileStartupFailureScreen(
     failure: StartupDependencyResolution.Failed,
+    onShareDiagnostics: (() -> Boolean)? = null,
     onRetry: () -> Unit,
 ) {
     val dualDatabases = failure.diagnosticCode == DUAL_DATABASES_DIAGNOSTIC_CODE
@@ -181,6 +187,7 @@ internal fun PersistedFileStartupFailureScreen(
     val uriHandler = LocalUriHandler.current
     var exporting by remember { mutableStateOf(false) }
     var exportFailed by remember { mutableStateOf(false) }
+    var shareFailed by remember(failure) { mutableStateOf(false) }
     Box(
         modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).padding(24.dp),
         contentAlignment = Alignment.Center,
@@ -207,6 +214,8 @@ internal fun PersistedFileStartupFailureScreen(
                 stringResource(
                     if (dualDatabases) {
                         Res.string.startup_dual_databases_message
+                    } else if (failure.diagnosticCode == "STARTUP_INITIALIZATION_FAILED") {
+                        Res.string.startup_initialization_failed_message
                     } else {
                         Res.string.startup_storage_failed_message
                     },
@@ -258,6 +267,18 @@ internal fun PersistedFileStartupFailureScreen(
             if (StartupFailureAction.CONTACT_SUPPORT in actions) {
                 TextButton(onClick = { runCatching { uriHandler.openUri(startupSupportMailtoUri(failure)) } }) {
                     Text(stringResource(Res.string.startup_contact_support))
+                }
+            }
+            if (onShareDiagnostics != null) {
+                TextButton(onClick = { shareFailed = !onShareDiagnostics() }) {
+                    Text(stringResource(Res.string.startup_share_diagnostics))
+                }
+                if (shareFailed) {
+                    Text(
+                        stringResource(Res.string.startup_share_diagnostics_failed),
+                        color = Color(0xFFFF6B6B),
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
             if (StartupFailureAction.RETRY in actions) {
