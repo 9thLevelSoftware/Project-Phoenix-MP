@@ -69,9 +69,11 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag '$TAG' (expected vX.Y.Z)." >&2
+            exit 1
+          fi
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           python3 .agents/skills/update-phoenix-version/scripts/update_version.py --version "${TAG#v}" --check
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"

@@ -79,11 +79,15 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         bash = shutil.which("bash")
         if os.name == "nt":
+            # Local Windows runs need Git Bash rather than the WSL launcher on PATH.
             bash = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe")
-        self.assertTrue(bash and Path(bash).is_file(), "Bash is required for prepare-step regression coverage")
-        current_sha, old_tag_sha = "a" * 40, "b" * 40
-        for drift in (None, "android", "shared", "ios", "tvos"):
-            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as raw:
+        if not bash or not Path(bash).is_file():
+            self.skipTest("Bash is required for prepare-step regression coverage")
+        current_sha = "a" * 40
+        cases = [("v1.0.9", drift) for drift in (None, "android", "shared", "ios", "tvos")]
+        cases += [("1.0.9", None), ("v1.0.9-rc1", None)]
+        for tag, drift in cases:
+            with self.subTest(tag=tag, drift=drift), tempfile.TemporaryDirectory() as raw:
                 fixture = Path(raw)
                 files = {
                     "settings.gradle.kts": "",
@@ -105,7 +109,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 shutil.copyfile(ROOT / checker, fixture / checker)
                 (fixture / "bin").mkdir()
                 for name, body in {
-                    "gh": 'echo "$*" >> gh-calls\nif [ "$1 $2" = "release view" ]; then exit 0; fi\necho "$OLD_TAG_SHA"\n',
+                    "gh": 'echo "$*" >> gh-calls\n[ "$1 $2" = "release view" ]\n',
                     "git": 'echo "$*" >> git-calls\n[ "$*" = "rev-parse HEAD" ] || exit 99\necho "$SOURCE_SHA"\n',
                 }.items():
                     fake = fixture / "bin" / name
@@ -114,16 +118,23 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 prefix = 'export PATH="$PWD/bin:$PATH"\npython3() { ' + shlex.quote(Path(sys.executable).as_posix()) + ' "$@"; }\n'
                 result = subprocess.run(
                     [bash, "-c", prefix + script], cwd=fixture,
-                    env=os.environ | {"TAG": "v1.0.9", "SOURCE_SHA": current_sha, "OLD_TAG_SHA": old_tag_sha, "GITHUB_OUTPUT": "output"},
+                    env=os.environ | {"TAG": tag, "SOURCE_SHA": current_sha, "GITHUB_OUTPUT": "output"},
                     capture_output=True, text=True, check=False,
                 )
-                self.assertEqual((fixture / "gh-calls").read_text().strip(), "release view v1.0.9 --repo example/phoenix")
-                self.assertEqual((fixture / "git-calls").read_text().strip(), "rev-parse HEAD")
+                if tag != "v1.0.9":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"Invalid release tag '{tag}' (expected vX.Y.Z).", result.stderr)
+                    self.assertFalse((fixture / "gh-calls").exists())
+                    self.assertFalse((fixture / "git-calls").exists())
+                    self.assertFalse((fixture / "output").exists(), "Invalid tags must not unlock downstream jobs")
+                else:
+                    self.assertEqual((fixture / "gh-calls").read_text().strip(), "release view v1.0.9 --repo example/phoenix")
+                    self.assertEqual((fixture / "git-calls").read_text().strip(), "rev-parse HEAD")
                 if drift:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("expected 1.0.9, found 1.0.10", result.stderr)
                     self.assertFalse((fixture / "output").exists(), "Failed validation must not unlock downstream jobs")
-                else:
+                elif tag == "v1.0.9":
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual((fixture / "output").read_text(), f"sha={current_sha}\n")
                 for path, content in files.items():

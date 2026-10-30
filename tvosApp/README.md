@@ -20,9 +20,10 @@ unless `skip_tvos_testflight` is selected. TV uses the normal release dispatch;
 build, signing, and upload checks run automatically. Unsigned CI success is
 not a TestFlight delivery claim.
 
-The combined workflows run from `main`. Existing-release recovery rebuilds the
-release tag's resolved commit for every selected platform. Tags predating this
-simplified TV tooling may need their original standalone workflow. The combined
+The combined workflows run from `main`. Existing-release builds pin the dispatched
+main commit for tests and every selected platform, and require its marketing
+versions to match the selected release tag. The tag stays unchanged while the
+platform workflows create new builds under that version. The combined
 run summary includes TV upload status; successful upload verifies App Store
 Connect processing, not external tester distribution.
 
