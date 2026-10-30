@@ -15,10 +15,12 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.jvm.Volatile
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
@@ -72,24 +74,48 @@ private const val BODY_WEIGHT_READ_MAX_PAGES = 10
  * [androidx.health.connect.client.PermissionController] contract
  * (`PermissionController.createRequestPermissionResultContract()`).
  */
-actual class HealthIntegration(private val context: Context) : HealthWorkoutWriter {
+actual class HealthIntegration internal constructor(
+    private val sdkStatus: () -> Int,
+    private val openClient: () -> HealthConnectClient,
+) : HealthWorkoutWriter {
 
-    private val client: HealthConnectClient? by lazy {
-        try {
-            if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE) {
-                HealthConnectClient.getOrCreate(context)
-            } else {
+    constructor(context: Context) : this(
+        sdkStatus = { HealthConnectClient.getSdkStatus(context) },
+        openClient = { HealthConnectClient.getOrCreate(context) },
+    )
+
+    // Only a live client is memoized. An unavailable or failed lookup stays uncached so a
+    // later install or update in the same process can succeed.
+    @Volatile
+    private var cachedClient: HealthConnectClient? = null
+    private val clientLock = Any()
+
+    private fun client(): HealthConnectClient? {
+        cachedClient?.let { return it }
+        synchronized(clientLock) {
+            cachedClient?.let { return it }
+            val resolved = try {
+                if (sdkStatus() == HealthConnectClient.SDK_AVAILABLE) {
+                    openClient()
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.e(e) { "Failed to create HealthConnectClient" }
                 null
             }
-        } catch (e: Exception) {
-            log.e(e) { "Failed to create HealthConnectClient" }
-            null
+            if (resolved != null) {
+                cachedClient = resolved
+            }
+            return resolved
         }
     }
 
     actual override suspend fun isAvailable(): Boolean = try {
-        HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
+        sdkStatus() == HealthConnectClient.SDK_AVAILABLE
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         log.w(e) { "Error checking Health Connect availability" }
         false
     }
@@ -108,18 +134,19 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
     private suspend fun hasCalorieWritePermission(): Boolean = hasGrantedPermissions(optionalHealthPermissions)
 
     private suspend fun hasGrantedPermissions(permissions: Set<String>): Boolean {
-        val c = client ?: return false
+        val c = client() ?: return false
         return try {
             val granted = c.permissionController.getGrantedPermissions()
             granted.containsAll(permissions)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.w(e) { "Error checking Health Connect permissions" }
             false
         }
     }
 
     actual suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
-        val c = client ?: return Result.failure(
+        val c = client() ?: return Result.failure(
             IllegalStateException("Health Connect is not available on this device"),
         )
 
@@ -155,6 +182,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
 
             Result.success(null)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e(e) { "Failed to read latest Health Connect scale body weight" }
             Result.failure(e)
         }
@@ -162,7 +190,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
 
     @SuppressLint("RestrictedApi")
     actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
-        val c = client ?: return Result.failure(
+        val c = client() ?: return Result.failure(
             IllegalStateException("Health Connect is not available on this device"),
         )
 
@@ -237,6 +265,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             log.d { "Wrote ${records.size} Health Connect record(s) for ${data.externalId}" }
             Result.success(Unit)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e(e) { "Failed to write workout to Health Connect for ${data.externalId}" }
             Result.failure(e)
         }
