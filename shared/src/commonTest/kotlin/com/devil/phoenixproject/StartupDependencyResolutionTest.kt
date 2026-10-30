@@ -18,6 +18,29 @@ import org.koin.dsl.module
 
 class StartupDependencyResolutionTest {
     @Test
+    fun failuresIdentifyTheStageWithoutExposingExceptionMessages() = runTest {
+        for (stage in listOf(StartupStage.STARTUP_DEPENDENCIES, StartupStage.REQUIRED_MIGRATIONS, StartupStage.FEATURE_DEPENDENCIES)) {
+            val cause = IllegalStateException("private preference value")
+            val result = prepareAppHostDependencies(
+                resolveStartupOnly = {
+                    if (stage == StartupStage.STARTUP_DEPENDENCIES) throw cause
+                    "database"
+                },
+                prepareRequired = { if (stage == StartupStage.REQUIRED_MIGRATIONS) throw cause },
+                resolveFeatures = {
+                    if (stage == StartupStage.FEATURE_DEPENDENCIES) throw cause
+                    "features"
+                },
+                blockingDispatcher = StandardTestDispatcher(testScheduler),
+            )
+            val failure = assertIs<StartupDependencyResolution.Failed>(result)
+            assertEquals(stage, failure.stage)
+            assertEquals("STARTUP_INITIALIZATION_FAILED", failure.diagnosticCode)
+            assertEquals(null, failure.supportCode)
+        }
+    }
+
+    @Test
     fun requiredStartupCompletesBeforeFeatureDependenciesAreResolved() = runTest {
         val events = mutableListOf<String>()
 
@@ -185,7 +208,10 @@ class StartupDependencyResolutionTest {
         assertEquals("STARTUP_INITIALIZATION_FAILED", failure.diagnosticCode)
         assertTrue(failure.retryAllowed)
         assertFalse(failure.diagnosticCode.contains("token"))
-        assertEquals(listOf(StartupFailureAction.RETRY), startupFailureActions(failure))
+        assertEquals(
+            listOf(StartupFailureAction.CONTACT_SUPPORT, StartupFailureAction.RETRY),
+            startupFailureActions(failure),
+        )
     }
 
     @Test
@@ -254,6 +280,22 @@ class StartupDependencyResolutionTest {
             "mailto:support@phoenix-portal.com?subject=Project%20Phoenix%20startup%3A%20DB_DUAL_DATABASES%20%2F%20CANONICAL_LEGACY_TARGET",
             startupSupportMailtoUri(failure),
         )
+    }
+
+    @Test
+    fun supportEmailIdentifiesKnownStartupStagesWithoutExceptionMessages() {
+        for (stage in listOf(StartupStage.STARTUP_DEPENDENCIES, StartupStage.REQUIRED_MIGRATIONS, StartupStage.FEATURE_DEPENDENCIES)) {
+            val failure = StartupDependencyResolution.Failed(
+                diagnosticCode = "STARTUP_INITIALIZATION_FAILED",
+                retryAllowed = true,
+                cause = IllegalStateException("private account or workout details"),
+                stage = stage,
+            )
+            assertEquals(
+                "mailto:support@phoenix-portal.com?subject=Project%20Phoenix%20startup%3A%20STARTUP_INITIALIZATION_FAILED%20%2F%20${stage.name}",
+                startupSupportMailtoUri(failure),
+            )
+        }
     }
 
     @Test

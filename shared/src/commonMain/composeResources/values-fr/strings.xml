@@ -761,6 +761,9 @@
     <string name="startup_contact_support">Contacter l’assistance par e-mail</string>
     <string name="startup_diagnostic_code">Code de diagnostic : %1$s</string>
     <string name="startup_support_code">Code d’assistance : %1$s</string>
+    <string name="startup_initialization_failed_message">Phoenix n’a pas pu terminer son démarrage. Gardez l’application installée pour préserver vos données locales. Réessayez ou contactez l’assistance si le problème persiste.</string>
+    <string name="startup_share_diagnostics">Partager les diagnostics de démarrage</string>
+    <string name="startup_share_diagnostics_failed">Impossible d’ouvrir le menu de partage. Vous pouvez réessayer.</string>
 
     <!-- Shared/opened routine CSV files (#1242) -->
     <string name="routine_csv_imported_builder">Importé dans le Builder : %1$s</string>

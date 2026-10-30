@@ -905,6 +905,9 @@
     <string name="startup_storage_failed_message">Phoenix could not safely prepare local storage. Existing local data was left in place. You can retry after resolving the device or storage issue.</string>
     <string name="startup_diagnostic_code">Diagnostic code: %1$s</string>
     <string name="startup_support_code">Support code: %1$s</string>
+    <string name="startup_initialization_failed_message">Phoenix could not finish starting. Keep the app installed to preserve your local data. Try again, or contact support if the problem continues.</string>
+    <string name="startup_share_diagnostics">Share startup diagnostics</string>
+    <string name="startup_share_diagnostics_failed">The share sheet could not be opened. You can try again.</string>
     <!-- PR 28: voice safe-word emergency stop availability -->
     <string name="voice_stop_unavailable_chip">Voice stop unavailable: %1$s</string>
     <string name="voice_stop_unavailable_snackbar">Voice stop unavailable: %1$s. Use the on-screen Stop button to end the set.</string>
