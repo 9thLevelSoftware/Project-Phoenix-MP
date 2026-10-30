@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.PackageInfo
 import androidx.test.core.app.ApplicationProvider
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -11,6 +12,7 @@ import kotlin.test.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -57,10 +59,11 @@ class AndroidStartupDiagnosticsTest {
             override fun startActivity(intent: Intent) { launched += intent }
         }
 
-        assertTrue(shareAndroidStartupDiagnostics(context, failure(IllegalStateException("private"))))
+        assertTrue(shareAndroidStartupDiagnostics(context, failure(IllegalStateException("private")), "Diagnose teilen"))
 
         val chooser = launched.single()
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        assertEquals("Diagnose teilen", chooser.getCharSequenceExtra(Intent.EXTRA_TITLE))
         @Suppress("DEPRECATION")
         val send = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
         assertEquals(Intent.ACTION_SEND, send.action)
@@ -75,8 +78,65 @@ class AndroidStartupDiagnosticsTest {
         val context = object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
             override fun startActivity(intent: Intent) { throw ActivityNotFoundException() }
         }
-        assertFalse(shareAndroidStartupDiagnostics(context, failure(IllegalStateException())))
+        assertFalse(shareAndroidStartupDiagnostics(context, failure(IllegalStateException()), "Share"))
     }
+
+    @Test
+    fun sharedReportUsesInstalledVersionAndLongBuildCode() {
+        assertInstalledVersion("2.4.0-store", 4_294_967_305L)
+    }
+
+    @Test
+    @Config(sdk = [26])
+    fun sharedReportUsesInstalledVersionOnApi26() {
+        assertInstalledVersion("2.4.0-legacy", 123L)
+    }
+
+    @Test
+    fun packageLookupFailureStillSharesWithExplicitlyUnknownBuild() {
+        val launched = mutableListOf<Intent>()
+        val context = object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
+            override fun getPackageName(): String = "missing.startup.diagnostics.package"
+            override fun startActivity(intent: Intent) { launched += intent }
+        }
+
+        assertTrue(shareAndroidStartupDiagnostics(context, failure(IllegalStateException("private")), "Share"))
+
+        val report = sharedReport(launched.single())
+        assertTrue(report.contains("App version: UNKNOWN (build UNKNOWN)"), report)
+        assertTrue(report.contains("Diagnostic code: STARTUP_INITIALIZATION_FAILED"), report)
+        assertFalse(report.contains("private"), report)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun assertInstalledVersion(versionName: String, versionCode: Long) {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val info = PackageInfo().apply {
+            packageName = app.packageName
+            this.versionName = versionName
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                longVersionCode = versionCode
+            } else {
+                this.versionCode = versionCode.toInt()
+            }
+        }
+        shadowOf(app.packageManager).installPackage(info)
+        val launched = mutableListOf<Intent>()
+        val context = object : ContextWrapper(app) {
+            override fun startActivity(intent: Intent) { launched += intent }
+        }
+
+        assertTrue(shareAndroidStartupDiagnostics(context, failure(IllegalStateException()), "Share"))
+
+        assertEquals(
+            "App version: $versionName (build $versionCode)",
+            sharedReport(launched.single()).lineSequence().first { it.startsWith("App version:") },
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun sharedReport(chooser: Intent): String =
+        chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!.getStringExtra(Intent.EXTRA_TEXT)!!
 
     private fun failure(cause: Throwable) = StartupDependencyResolution.Failed(
         diagnosticCode = "STARTUP_INITIALIZATION_FAILED",

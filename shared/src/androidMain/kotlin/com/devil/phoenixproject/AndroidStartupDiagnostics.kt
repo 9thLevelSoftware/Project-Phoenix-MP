@@ -3,7 +3,6 @@ package com.devil.phoenixproject
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import com.devil.phoenixproject.util.Constants
 
 /** In-memory support report. Never read the database, preferences, or exception messages. */
 internal fun formatAndroidStartupDiagnostics(
@@ -39,10 +38,11 @@ internal fun formatAndroidStartupDiagnostics(
 internal fun shareAndroidStartupDiagnostics(
     context: Context,
     failure: StartupDependencyResolution.Failed,
+    chooserTitle: String,
 ): Boolean = try {
     val report = formatAndroidStartupDiagnostics(
         failure,
-        appVersion = Constants.APP_VERSION,
+        appVersion = installedAppVersion(context),
         platform = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}",
     )
     val send = Intent(Intent.ACTION_SEND).apply {
@@ -51,9 +51,23 @@ internal fun shareAndroidStartupDiagnostics(
         putExtra(Intent.EXTRA_TEXT, report)
     }
     context.startActivity(
-        Intent.createChooser(send, null).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
+        Intent.createChooser(send, chooserTitle).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
     )
     true
 } catch (_: Exception) {
     false
+}
+
+/** Package metadata is optional: support sharing must survive a failed package lookup. */
+@Suppress("DEPRECATION")
+private fun installedAppVersion(context: Context): String = try {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        info.longVersionCode
+    } else {
+        info.versionCode.toLong()
+    }
+    "${info.versionName ?: "UNKNOWN"} (build $code)"
+} catch (_: Exception) {
+    "UNKNOWN (build UNKNOWN)"
 }

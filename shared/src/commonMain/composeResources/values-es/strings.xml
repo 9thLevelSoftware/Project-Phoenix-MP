@@ -761,6 +761,9 @@
     <string name="startup_contact_support">Escribir al soporte</string>
     <string name="startup_diagnostic_code">Código de diagnóstico: %1$s</string>
     <string name="startup_support_code">Código de soporte: %1$s</string>
+    <string name="startup_initialization_failed_message">Phoenix no pudo terminar de iniciarse. Mantén la app instalada para conservar tus datos locales. Inténtalo de nuevo o contacta con soporte si el problema continúa.</string>
+    <string name="startup_share_diagnostics">Compartir diagnósticos de inicio</string>
+    <string name="startup_share_diagnostics_failed">No se pudo abrir el menú para compartir. Puedes volver a intentarlo.</string>
 
     <!-- Shared/opened routine CSV files (#1242) -->
     <string name="routine_csv_imported_builder">Importado al Builder: %1$s</string>

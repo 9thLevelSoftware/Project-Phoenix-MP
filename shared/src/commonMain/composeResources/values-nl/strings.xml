@@ -739,6 +739,9 @@
     <string name="startup_contact_support">Support mailen</string>
     <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
     <string name="startup_support_code">Supportcode: %1$s</string>
+    <string name="startup_initialization_failed_message">Phoenix kon niet volledig opstarten. Laat de app geïnstalleerd om je lokale gegevens te bewaren. Probeer het opnieuw of neem contact op met support als het probleem blijft.</string>
+    <string name="startup_share_diagnostics">Opstartdiagnostiek delen</string>
+    <string name="startup_share_diagnostics_failed">Het deelmenu kon niet worden geopend. Je kunt het opnieuw proberen.</string>
 
     <!-- Shared/opened routine CSV files (#1242) -->
     <string name="routine_csv_imported_builder">Geïmporteerd naar Builder: %1$s</string>

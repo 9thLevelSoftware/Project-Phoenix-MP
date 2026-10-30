@@ -283,6 +283,22 @@ class StartupDependencyResolutionTest {
     }
 
     @Test
+    fun supportEmailIdentifiesKnownStartupStagesWithoutExceptionMessages() {
+        for (stage in listOf(StartupStage.STARTUP_DEPENDENCIES, StartupStage.REQUIRED_MIGRATIONS, StartupStage.FEATURE_DEPENDENCIES)) {
+            val failure = StartupDependencyResolution.Failed(
+                diagnosticCode = "STARTUP_INITIALIZATION_FAILED",
+                retryAllowed = true,
+                cause = IllegalStateException("private account or workout details"),
+                stage = stage,
+            )
+            assertEquals(
+                "mailto:support@phoenix-portal.com?subject=Project%20Phoenix%20startup%3A%20STARTUP_INITIALIZATION_FAILED%20%2F%20${stage.name}",
+                startupSupportMailtoUri(failure),
+            )
+        }
+    }
+
+    @Test
     fun `mailto components percent-encode reserved and non-ascii characters`() {
         assertEquals("a-b_c.d~e%20%26%3F%C3%A9", encodeMailtoComponent("a-b_c.d~e &?é"))
     }

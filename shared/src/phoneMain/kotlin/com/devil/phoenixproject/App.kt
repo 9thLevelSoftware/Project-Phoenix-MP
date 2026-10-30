@@ -104,7 +104,11 @@ internal enum class StartupFailureAction { EXPORT_DATABASE_FILES, CONTACT_SUPPOR
  * subject) instead of the public issue tracker.
  */
 internal fun startupSupportMailtoUri(failure: StartupDependencyResolution.Failed): String {
-    val codes = listOfNotNull(failure.diagnosticCode, failure.supportCode).joinToString(" / ")
+    val codes = listOfNotNull(
+        failure.diagnosticCode,
+        failure.supportCode,
+        failure.stage.takeUnless { it == StartupStage.UNKNOWN }?.name,
+    ).joinToString(" / ")
     val subject = "Project Phoenix startup: $codes"
     return "mailto:$SUPPORT_EMAIL?subject=${encodeMailtoComponent(subject)}"
 }
@@ -136,7 +140,7 @@ internal fun startupFailureActions(failure: StartupDependencyResolution.Failed):
     if (failure.diagnosticCode == DUAL_DATABASES_DIAGNOSTIC_CODE) {
         add(StartupFailureAction.EXPORT_DATABASE_FILES)
         add(StartupFailureAction.CONTACT_SUPPORT)
-    } else if (failure.diagnosticCode == "STARTUP_INITIALIZATION_FAILED") {
+    } else if (failure.diagnosticCode == STARTUP_INITIALIZATION_FAILED) {
         add(StartupFailureAction.CONTACT_SUPPORT)
     }
     if (failure.retryAllowed) add(StartupFailureAction.RETRY)
@@ -214,7 +218,7 @@ internal fun PersistedFileStartupFailureScreen(
                 stringResource(
                     if (dualDatabases) {
                         Res.string.startup_dual_databases_message
-                    } else if (failure.diagnosticCode == "STARTUP_INITIALIZATION_FAILED") {
+                    } else if (failure.diagnosticCode == STARTUP_INITIALIZATION_FAILED) {
                         Res.string.startup_initialization_failed_message
                     } else {
                         Res.string.startup_storage_failed_message

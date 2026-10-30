@@ -15,6 +15,8 @@ internal interface StartupDiagnosticFailure {
 
 internal enum class StartupStage { UNKNOWN, STARTUP_DEPENDENCIES, REQUIRED_MIGRATIONS, FEATURE_DEPENDENCIES }
 
+internal const val STARTUP_INITIALIZATION_FAILED = "STARTUP_INITIALIZATION_FAILED"
+
 internal sealed interface StartupDependencyResolution<out T> {
     data class Ready<T>(val dependencies: T) : StartupDependencyResolution<T>
 
@@ -41,7 +43,7 @@ internal inline fun <T> resolveStartupDependencies(
     onFailure = { failure ->
         val diagnostic = failure.findStartupDiagnosticFailure()
         StartupDependencyResolution.Failed(
-            diagnosticCode = diagnostic?.startupDiagnosticCode ?: "STARTUP_INITIALIZATION_FAILED",
+            diagnosticCode = diagnostic?.startupDiagnosticCode ?: STARTUP_INITIALIZATION_FAILED,
             retryAllowed = diagnostic?.startupRetryAllowed ?: true,
             supportCode = diagnostic?.startupDiagnosticReason,
             presenceSnapshot = diagnostic?.startupPresenceSnapshot,

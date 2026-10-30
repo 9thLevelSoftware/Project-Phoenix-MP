@@ -22,6 +22,9 @@ import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.startup_share_diagnostics
 import org.koin.mp.KoinPlatform
 
 private data class AndroidAppDependencies(
@@ -80,9 +83,10 @@ fun AndroidAppHost() {
                     "support=${current.supportCode ?: "NONE"}, " +
                     "presence=${current.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
             }
+            val shareTitle = stringResource(Res.string.startup_share_diagnostics)
             PersistedFileStartupFailureScreen(
                 current,
-                onShareDiagnostics = { shareAndroidStartupDiagnostics(context, current) },
+                onShareDiagnostics = { shareAndroidStartupDiagnostics(context, current, shareTitle) },
             ) { retryAttempt++ }
         }
 
