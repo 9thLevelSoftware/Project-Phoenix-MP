@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.browser.customtabs.CustomTabsIntent
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import java.security.SecureRandom
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +57,9 @@ actual class OAuthLauncher(private val context: Context) {
      * the host app's manifest intent filter on `OAuthRedirectActivity`. Kept
      * so this signature matches the iOS actual, which passes the scheme to
      * `ASWebAuthenticationSession`.
+     *
+     * Caller cancellation cleans up the in-flight browser flow and is rethrown.
+     * It is not returned as [Result.failure].
      */
     actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> {
         val deferred = AndroidOAuthBridge.beginFlow()
@@ -103,8 +107,11 @@ actual class OAuthLauncher(private val context: Context) {
             val callbackUrl = deferred.await()
             Result.success(callbackUrl)
         } catch (e: Exception) {
-            log.w(e) { "OAuth flow ended: ${e.message}" }
+            // CancellationException extends Exception. Drop the browser flow first,
+            // then rethrow so a cancelled caller is not reported as a failed login.
             AndroidOAuthBridge.cancelFlow()
+            e.rethrowIfCancellation()
+            log.w(e) { "OAuth flow ended: ${e.message}" }
             Result.failure(e)
         } finally {
             abandonmentGuard.dispose()
@@ -219,4 +226,8 @@ object AndroidOAuthBridge {
         }
         pending = null
     }
+
+    /** True while [OAuthLauncher.launch] is still waiting on the browser callback. */
+    @Synchronized
+    internal fun hasPendingFlow(): Boolean = pending?.isCompleted == false
 }
