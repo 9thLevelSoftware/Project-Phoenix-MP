@@ -514,6 +514,14 @@ sealed class HapticEvent {
     /** Light haptic + chirpchirp sound */
     data object WORKOUT_START : HapticEvent()
 
+    /**
+     * Issue #1356: Just Lift / Echo auto-start readiness cue. Short distinct non-speech
+     * audio cue + haptic announcing the machine is ready for ROM reps after the
+     * hold-to-start countdown completes and the cable workout activates. Emission is
+     * gated by [com.devil.phoenixproject.presentation.manager.AutoStartReadyCuePolicy].
+     */
+    data object AUTO_START_READY : HapticEvent()
+
     /** Light haptic + chirpchirp sound */
     data object WORKOUT_END : HapticEvent()
 
