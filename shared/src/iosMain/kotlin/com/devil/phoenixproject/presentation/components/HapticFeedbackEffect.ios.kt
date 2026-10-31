@@ -270,6 +270,8 @@ private class IosSoundManager {
             HapticEvent.DOMINATRIX_MODE_UNLOCKED to "dominatrix_unlock",
             // Issue #100: Warmup-to-working transition (ascending tone)
             HapticEvent.WARMUP_TO_WORKING to "beepboop",
+            // Issue #1356: Just Lift/Echo auto-start readiness cue (distinct asset, not chirpchirp)
+            HapticEvent.AUTO_START_READY to "auto_start_ready",
             // Issue #313: Velocity loss threshold alert (attention-getting)
             HapticEvent.VELOCITY_THRESHOLD_REACHED to "boopbeepbeep",
             // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
@@ -679,6 +681,14 @@ private fun playHapticFeedback(event: HapticEvent) {
                 val notificationGenerator = UINotificationFeedbackGenerator()
                 notificationGenerator.prepare()
                 notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeWarning)
+            }
+
+            // Issue #1356: Auto-start readiness — one firm impact, deliberately distinct
+            // from WORKOUT_START's medium start impact.
+            is HapticEvent.AUTO_START_READY -> {
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
+                generator.prepare()
+                generator.impactOccurred()
             }
 
             is HapticEvent.REP_COUNT_ANNOUNCED -> {

@@ -7897,7 +7897,11 @@ class ActiveSessionEngine(
         NOT_CONNECTED,
     }
 
-    fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
+    fun startWorkout(
+        skipCountdown: Boolean = false,
+        isJustLiftMode: Boolean = false,
+        autoStartReadyCue: Boolean = false,
+    ) {
         when (coordinator._restTransitionPlan.value) {
             is RestTransitionPlan.UnresolvedDropOffer,
             is RestTransitionPlan.AcceptedRetry,
@@ -7918,6 +7922,7 @@ class ActiveSessionEngine(
             retryRequest = null,
             queuedSuccessorToken = null,
             queuedStartCandidate = null,
+            autoStartReadyCue = autoStartReadyCue,
         )
     }
 
@@ -7970,6 +7975,7 @@ class ActiveSessionEngine(
         retryRequest: RetryStartRequest?,
         queuedSuccessorToken: NoCurrentSuccessorToken? = null,
         queuedStartCandidate: QueuedStartCandidate? = null,
+        autoStartReadyCue: Boolean = false,
     ): ExecutionLease? {
         if (retryRequest != null && !ownsAcceptedRetryStartClaim(retryRequest)) return null
         if ((queuedSuccessorToken == null) != (queuedStartCandidate == null)) return null
@@ -8928,6 +8934,23 @@ class ActiveSessionEngine(
                 coordinator.collectedMetrics.clear()
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
                 if (!hasCurrentAuthority(activeLease, "cable_start_after_haptic")) return@launch
+
+                // Issue #1356: Just Lift/Echo auto-start readiness cue. Delivered only on the
+                // cable activation path after the authority check above, best-effort via
+                // tryEmit (non-suspending — the activation path gains no new suspension and a
+                // full buffer drops the cue silently; no replay). Emission uses the captured
+                // start's parameters; deferred/rejected starts never reach here with
+                // autoStartReadyCue set because that intent is discarded at rejection/deferral.
+                if (AutoStartReadyCuePolicy.shouldEmit(
+                        isJustLift = effectiveParams.isJustLift,
+                        isEchoMode = effectiveParams.isEchoMode,
+                        useAutoStart = effectiveParams.useAutoStart,
+                        beepsEnabled = settingsManager.userPreferences.value.beepsEnabled,
+                        autoStartReadyCue = autoStartReadyCue,
+                    )
+                ) {
+                    coordinator._hapticEvents.tryEmit(HapticEvent.AUTO_START_READY)
+                }
 
                 // exerciseDuration != null is logically redundant (implied by isTimedCableExercise)
                 // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
@@ -13851,7 +13874,10 @@ class ActiveSessionEngine(
                 Logger.d { "Issue221: Auto-start timer complete - params.isJustLift=${params.isJustLift}, params.useAutoStart=${params.useAutoStart}" }
                 Logger.d { "Issue221: Starting workout with isJustLiftMode=true (auto-start implies Just Lift mode)" }
                 if (hasAutoStartAuthority(expectedLease, "auto_start_successor")) {
-                    startWorkout(skipCountdown = true, isJustLiftMode = true)
+                    // Issue #1356: auto-start origin — the readiness cue may fire at cable
+                    // activation for this start. No emission here: aborted/deferred/rejected
+                    // starts discard the intent (never persisted).
+                    startWorkout(skipCountdown = true, isJustLiftMode = true, autoStartReadyCue = true)
                 }
             } finally {
                 if (coordinator.autoStartJob === timerJob) {
