@@ -285,4 +285,21 @@ class SafeWordListenerIosAudioTapGuardTest {
                 "recognizer is reported instead of restarting forever.",
         )
     }
+
+    @Test
+    fun iosSafeWordListener_keepsSharedSessionActiveAcrossRestarts() {
+        val source = safeWordListenerSource.readText()
+
+        // Issue #1357: restarts and lifecycle recovery tear down while still
+        // listening. Deactivating the process-wide session there silenced
+        // workout cues that HapticFeedbackEffect had just reactivated.
+        val tearDownIndex = source.indexOf("private fun tearDown()")
+        val guardIndex = source.indexOf("if (!shouldBeListening) {", tearDownIndex)
+        val deactivateIndex = source.indexOf("setActive(", tearDownIndex)
+        assertTrue(tearDownIndex >= 0, "iOS safe-word listener must define tearDown().")
+        assertTrue(
+            guardIndex in (tearDownIndex + 1) until deactivateIndex,
+            "tearDown() must only deactivate the shared audio session once listening has stopped.",
+        )
+    }
 }

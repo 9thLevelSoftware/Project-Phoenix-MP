@@ -64,7 +64,10 @@ class IosNamedSoundLoaderContractTest {
     @Test
     fun releaseStopsBadgeAndPrWithEncouragementPools() {
         val source = iosHapticSource.readText()
-        val release = functionBody(source, "fun release()")
+        // Issue #1357: release() and the media-services-reset rebuild share
+        // one stop-and-clear helper.
+        assertTrue(functionBody(source, "fun release()").contains("stopAndClearPlayers()"))
+        val release = functionBody(source, "private fun stopAndClearPlayers()")
         val listStart = release.indexOf("listOf(")
         val listEnd = release.indexOf(").forEach { pool ->", listStart)
         assertTrue(listStart >= 0 && listEnd > listStart, "release shares one pool stop-and-clear")

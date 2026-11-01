@@ -448,18 +448,27 @@ internal class IosSafeWordListener(private val safeWord: String) : SafeWordListe
                 _state.value = if (shouldBeListening) SafeWordState.Arming else SafeWordState.Disabled
             }
 
-            // Deactivate audio session to release resources
-            try {
-                IosAudioDiagnostics.nativeResult(TAG, "deactivate") { error ->
-                    AVAudioSession.sharedInstance().setActive(
-                        false,
-                        AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                        error,
-                    )
+            // Deactivate the audio session only when listening is really over.
+            // Issue #1357: restarts and lifecycle recovery also come through
+            // here while shouldBeListening is still true. The session is
+            // process-wide, so deactivating then silenced workout cues right
+            // after HapticFeedbackEffect had reactivated it for the same
+            // foreground or interruption-ended notification.
+            if (!shouldBeListening) {
+                try {
+                    IosAudioDiagnostics.nativeResult(TAG, "deactivate") { error ->
+                        AVAudioSession.sharedInstance().setActive(
+                            false,
+                            AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                            error,
+                        )
+                    }
+                } catch (e: Exception) {
+                    audioDiagnostic("deactivate_exception")
+                    NSLog("$TAG: Error deactivating audio session: ${e.message}")
                 }
-            } catch (e: Exception) {
-                audioDiagnostic("deactivate_exception")
-                NSLog("$TAG: Error deactivating audio session: ${e.message}")
+            } else {
+                audioDiagnostic("deactivation_skipped_restart")
             }
         } catch (e: Exception) {
             NSLog("$TAG: Error stopping audio engine: ${e.message}")

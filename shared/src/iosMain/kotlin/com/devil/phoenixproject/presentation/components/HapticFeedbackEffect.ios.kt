@@ -19,6 +19,7 @@ import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
 import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
+import platform.AVFAudio.AVAudioSessionInterruptionTypeBegan
 import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionInterruptionWasSuspendedKey
@@ -32,7 +33,9 @@ import platform.Foundation.NSBundle
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
+import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationDidBecomeActiveNotification
+import platform.UIKit.UIApplicationState
 import platform.UIKit.UIApplicationDidEnterBackgroundNotification
 import platform.UIKit.UIApplicationWillResignActiveNotification
 import platform.UIKit.UIImpactFeedbackGenerator
@@ -103,9 +106,20 @@ private class IosSoundManager {
     private val lifecycleObservers = mutableListOf<NSObjectProtocol>()
     private var released = false
 
+    // Issue #1357: true while the system holds the session away from us (an
+    // interruption began, a reactivation failed, or a cue was refused). The
+    // next foreground cue retries activation instead of staying silent until
+    // the workout is restarted.
+    private var sessionNeedsRecovery = false
+
     init {
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "manager_init")
-        setupAudioSession()
+        sessionNeedsRecovery = !setupAudioSession()
+        loadAllSounds()
+        installLifecycleObservers()
+    }
+
+    private fun loadAllSounds() {
         loadSounds()
         loadBadgeSounds()
         loadPRSounds()
@@ -115,7 +129,6 @@ private class IosSoundManager {
         loadEncouragementSounds("vulgar_mild", 12, encouragementMildSoundPlayers, "vulgar mild sounds")
         loadEncouragementSounds("vulgar_strong", 12, encouragementStrongSoundPlayers, "vulgar strong sounds")
         loadEncouragementSounds("dominatrix", 12, encouragementDominatrixSoundPlayers, "dominatrix sounds")
-        installLifecycleObservers()
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_loaded") {
             "eventPlayers=${players.values.count { it != null }} badge=${badgeSoundPlayers.count { it != null }} " +
                 "pr=${prSoundPlayers.count { it != null }} rep=${repCountSoundPlayers.count { it != null }} " +
@@ -125,8 +138,15 @@ private class IosSoundManager {
         }
     }
 
-    private fun setupAudioSession() {
-        try {
+    /**
+     * Returns whether the shared session is active afterwards.
+     *
+     * Issue #1357: a refused activation (another app's session still tearing
+     * down as we foreground) used to be logged and then forgotten. Callers
+     * keep the result so the next cue can retry.
+     */
+    private fun setupAudioSession(): Boolean {
+        return try {
             val session = AVAudioSession.sharedInstance()
             // Use Ambient category with MixWithOthers to play alongside music,
             // but do not downgrade an active PlayAndRecord session owned by
@@ -151,8 +171,12 @@ private class IosSoundManager {
         } catch (e: Exception) {
             IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "session_setup_exception", warning = true)
             log.w { "Failed to setup audio session: ${e.message}" }
+            false
         }
     }
+
+    private fun isAppActive(): Boolean =
+        UIApplication.sharedApplication.applicationState == UIApplicationState.UIApplicationStateActive
 
     /**
      * Issue #522: Observe iOS app-foreground and AVAudioSession interruption
@@ -191,17 +215,31 @@ private class IosSoundManager {
                         "wasSuspended=${(userInfo?.get(AVAudioSessionInterruptionWasSuspendedKey) as? NSNumber)?.boolValue} " +
                         "released=$released ${IosAudioDiagnostics.sessionDetails()}"
                 }
-                // Only react to "ended" — "began" means the system has already
-                // suspended playback, and we will be re-foregrounded / re-shown
-                // when the interruption ends.
-                if (typeValue == AVAudioSessionInterruptionTypeEnded) {
+                // "Began" means the system has already deactivated us. Mark it
+                // so the next cue reactivates even if "ended" never arrives,
+                // which iOS does not guarantee (Issue #1357).
+                if (typeValue == AVAudioSessionInterruptionTypeBegan) {
+                    sessionNeedsRecovery = true
+                } else if (typeValue == AVAudioSessionInterruptionTypeEnded) {
                     recoverAudioSession()
                 }
             },
         )
+        // Issue #1357: after a media services reset every AVAudioPlayer is
+        // dead and prepareToPlay() cannot revive it, so rebuild them.
+        val mediaResetObserver = center.addObserverForName(
+            name = AVAudioSessionMediaServicesWereResetNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue(),
+            usingBlock = { _ ->
+                rebuildAfterMediaServicesReset()
+            },
+        )
         lifecycleObservers += foregroundObserver
         lifecycleObservers += interruptionObserver
+        lifecycleObservers += mediaResetObserver
         // Observation only: these notifications do not add recovery or change session ownership.
+        // (The media services reset rebuild above is a separate observer.)
         listOf(
             UIApplicationWillResignActiveNotification to "app_resign_active",
             UIApplicationDidEnterBackgroundNotification to "app_background",
@@ -230,8 +268,16 @@ private class IosSoundManager {
     private fun recoverAudioSession() {
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "recovery_requested") { "released=$released" }
         if (released) return
-        setupAudioSession()
+        sessionNeedsRecovery = !setupAudioSession()
         prepareAllPlayers()
+    }
+
+    private fun rebuildAfterMediaServicesReset() {
+        if (released) return
+        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "rebuild_after_media_reset", warning = true)
+        stopAndClearPlayers()
+        sessionNeedsRecovery = !setupAudioSession()
+        loadAllSounds()
     }
 
     /**
@@ -478,6 +524,13 @@ private class IosSoundManager {
         }
 
         if (player != null) {
+            // Issue #1357: the lifecycle observers get one chance to reactivate.
+            // If that lost the race with another app, retry here, but only when
+            // flagged and in the foreground (no audio background mode, so a
+            // backgrounded retry can only fail).
+            if (sessionNeedsRecovery && isAppActive()) {
+                recoverAudioSession()
+            }
             try {
                 // Issue #522: Defensively re-prepare the chosen player. The
                 // lifecycle observers own session reactivation so this hot
@@ -495,6 +548,20 @@ private class IosSoundManager {
                 IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_result", warning = !prepared || !played) {
                     "cue=${event::class.simpleName} prepared=$prepared played=$played isPlaying=${player.isPlaying()} " +
                         "playerVolume=${player.volume} released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
+                if (!played) {
+                    // Issue #1357: reactivate once and retry; otherwise leave the
+                    // flag set so the next foreground cue tries again.
+                    sessionNeedsRecovery = true
+                    if (isAppActive()) {
+                        recoverAudioSession()
+                        player.currentTime = 0.0
+                        val retried = player.play()
+                        if (!retried) sessionNeedsRecovery = true
+                        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_retry_result", warning = !retried) {
+                            "cue=${event::class.simpleName} played=$retried ${IosAudioDiagnostics.sessionDetails()}"
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_exception", warning = true) { "cue=${event::class.simpleName}" }
@@ -522,6 +589,32 @@ private class IosSoundManager {
         }
         lifecycleObservers.clear()
 
+        stopAndClearPlayers()
+
+        try {
+            // F063: AVAudioSession is process-wide. If SafeWordListener currently
+            // holds it in playAndRecord for emergency voice detection, deactivating
+            // here would break the microphone. Only deactivate when we are not
+            // stepping on an active record session (mirrors the setup-time guard).
+            val session = AVAudioSession.sharedInstance()
+            if (session.category != AVAudioSessionCategoryPlayAndRecord) {
+                IosAudioDiagnostics.nativeResult(AUDIO_DIAGNOSTIC_TAG, "deactivate") { error ->
+                    session.setActive(
+                        false,
+                        AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                        error,
+                    )
+                }
+            } else {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "deactivation_skipped_play_and_record")
+                log.d { "Skipping audio-session deactivation: playAndRecord is active (safe-word listener owns it)" }
+            }
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+    }
+
+    private fun stopAndClearPlayers() {
         players.values.forEach { player ->
             try {
                 player?.stop()
@@ -560,28 +653,6 @@ private class IosSoundManager {
                 try { player?.stop() } catch (e: Exception) { /* ignore */ }
             }
             pool.clear()
-        }
-
-        try {
-            // F063: AVAudioSession is process-wide. If SafeWordListener currently
-            // holds it in playAndRecord for emergency voice detection, deactivating
-            // here would break the microphone. Only deactivate when we are not
-            // stepping on an active record session (mirrors the setup-time guard).
-            val session = AVAudioSession.sharedInstance()
-            if (session.category != AVAudioSessionCategoryPlayAndRecord) {
-                IosAudioDiagnostics.nativeResult(AUDIO_DIAGNOSTIC_TAG, "deactivate") { error ->
-                    session.setActive(
-                        false,
-                        AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                        error,
-                    )
-                }
-            } else {
-                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "deactivation_skipped_play_and_record")
-                log.d { "Skipping audio-session deactivation: playAndRecord is active (safe-word listener owns it)" }
-            }
-        } catch (e: Exception) {
-            // Ignore cleanup errors
         }
     }
 }
