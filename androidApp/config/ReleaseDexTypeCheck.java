@@ -15,7 +15,6 @@ import com.android.tools.smali.dexlib2.iface.instruction.Instruction;
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction;
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction;
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction;
-import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction;
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference;
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference;
 import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef;
@@ -245,8 +244,19 @@ public final class ReleaseDexTypeCheck {
             for (int i = 0; i < five.getRegisterCount(); i++) registers.add(all[i]);
         }
         String callee = target.getDefiningClass() + "->" + target.getName();
+        boolean isStatic = opcode == Opcode.INVOKE_STATIC || opcode == Opcode.INVOKE_STATIC_RANGE;
+        int expectedRegisters = isStatic ? 0 : 1;
+        for (CharSequence typeName : target.getParameterTypes()) {
+            expectedRegisters += typeName.toString().equals("J") || typeName.toString().equals("D") ? 2 : 1;
+        }
+        if (registers.size() != expectedRegisters) {
+            // ART rejects an argument count that does not match the callee's proto.
+            problems.add(new Problem(method, String.format("@0x%04x: %d argument registers for %s, whose proto needs %d",
+                    pc, registers.size(), callee, expectedRegisters)));
+            return;
+        }
         int index = 0;
-        if (opcode != Opcode.INVOKE_STATIC && opcode != Opcode.INVOKE_STATIC_RANGE) {
+        if (!isStatic) {
             boolean constructor = target.getName().equals("<init>");
             boolean viaInterface = opcode == Opcode.INVOKE_INTERFACE || opcode == Opcode.INVOKE_INTERFACE_RANGE;
             if (!constructor && !viaInterface && !target.getDefiningClass().startsWith("[")) {
@@ -290,8 +300,8 @@ public final class ReleaseDexTypeCheck {
         if (actualType.startsWith("[")) return false;
         for (String type = actualType; type != null; ) {
             if (type.equals(expected)) return true;
-            TypeProto proto = classPath.getClass(type);
             try {
+                TypeProto proto = classPath.getClass(type);
                 type = proto.getSuperclass();
             } catch (RuntimeException unresolved) {
                 return null;
@@ -358,8 +368,9 @@ public final class ReleaseDexTypeCheck {
             String className = classes.get(obfuscatedClass);
             if (className == null) return null;
             Set<String> names = methods.getOrDefault(obfuscatedClass + "->" + obfuscatedMethod, Collections.emptySet());
-            String methodNames = names.isEmpty() ? obfuscatedMethod : String.join("|", names);
-            return className + "." + methodNames;
+            // Without a method entry, the caller shows the raw signature rather than an obfuscated name as original.
+            // Overloads sharing an obfuscated name join with '|'; the bracketed dex signature tells them apart.
+            return names.isEmpty() ? null : className + "." + String.join("|", names);
         }
 
         private static String descriptor(String javaName) {
