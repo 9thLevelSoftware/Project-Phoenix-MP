@@ -43,6 +43,8 @@
 
 # ART rejects R8's optimized push coroutine with a String/Throwable register mismatch.
 # Keep this state machine unoptimized; the rest of the sync layer can still optimize.
+# :androidApp:verifyReleaseDexTypes fails release builds that contain this class of bytecode
+# anywhere; drop the rule only once that check passes without it.
 -keepclassmembers,allowobfuscation class com.devil.phoenixproject.data.sync.SyncManager {
     *** pushLocalChanges*(...);
 }

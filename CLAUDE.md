@@ -28,6 +28,10 @@ Every Gradle invocation configures `androidApp`, which fails without Supabase cr
 # Schema manifest check (also runs automatically before SQLDelight codegen)
 ./gradlew -Pskip.supabase.check=true :shared:validateSchemaManifest
 
+# Minified release APK + check that R8 output passes ART's reference-type verification (#1365).
+# Release packaging needs non-blank supabase.url/supabase.anon.key (placeholders are fine locally).
+./gradlew -Pskip.supabase.check=true :androidApp:assembleRelease :androidApp:verifyReleaseDexTypes -Pversion.code=1
+
 # iOS (macOS only; verified by the CI iOS workflows, not on Windows/Linux).
 # Xcode links shared/build/bin/iosArm64/xcodeFramework for Debug and Release.
 # Local debug uses linkDebugFrameworkIosArm64 and install-xcode-framework.sh debug.
