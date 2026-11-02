@@ -21,6 +21,7 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference;
 import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -30,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -65,13 +67,27 @@ public final class ReleaseDexTypeCheck {
             Opcode.INVOKE_DIRECT_RANGE, Opcode.INVOKE_STATIC_RANGE, Opcode.INVOKE_INTERFACE_RANGE);
 
     private final ClassPath classPath;
-    private final Mapping mapping;
-    private final List<String> problems = new ArrayList<>();
+    private final List<Problem> problems = new ArrayList<>();
     private int methods;
 
-    private ReleaseDexTypeCheck(ClassPath classPath, Mapping mapping) {
+    private ReleaseDexTypeCheck(ClassPath classPath) {
         this.classPath = classPath;
-        this.mapping = mapping;
+    }
+
+    /** One rejected instruction, or a method the analyzer could not process. */
+    private static final class Problem {
+        final Method method;
+        final String detail;
+
+        Problem(Method method, String detail) {
+            this.method = method;
+            this.detail = detail;
+        }
+
+        String signature() {
+            return method.getDefiningClass() + "->" + method.getName()
+                    + "(" + String.join("", method.getParameterTypes()) + ")" + method.getReturnType();
+        }
     }
 
     public static void main(String[] args) throws IOException {
@@ -106,10 +122,9 @@ public final class ReleaseDexTypeCheck {
             System.exit(1);
         }
 
-        Mapping mapping = Mapping.read(mappingFile);
         boolean failed = false;
         for (File artifact : artifacts) {
-            failed |= !checkArtifact(artifact, boot, mapping);
+            failed |= !checkArtifact(artifact, boot, mappingFile);
         }
         System.exit(failed ? 1 : 0);
     }
@@ -120,7 +135,7 @@ public final class ReleaseDexTypeCheck {
         System.exit(2);
     }
 
-    private static boolean checkArtifact(File artifact, List<File> boot, Mapping mapping) throws IOException {
+    private static boolean checkArtifact(File artifact, List<File> boot, File mappingFile) throws IOException {
         Opcodes opcodes = Opcodes.forApi(26);
         List<ClassProvider> providers = new ArrayList<>();
         for (File jar : boot) providers.add(new ClassFileHeaderProvider(jar));
@@ -142,7 +157,7 @@ public final class ReleaseDexTypeCheck {
             return false;
         }
 
-        ReleaseDexTypeCheck check = new ReleaseDexTypeCheck(new ClassPath(providers, false, ClassPath.NOT_ART), mapping);
+        ReleaseDexTypeCheck check = new ReleaseDexTypeCheck(new ClassPath(providers, false, ClassPath.NOT_ART));
         for (DexBackedDexFile dex : dexFiles) {
             for (ClassDef classDef : dex.getClasses()) {
                 for (Method method : classDef.getMethods()) {
@@ -156,9 +171,22 @@ public final class ReleaseDexTypeCheck {
                     check.methods, artifact, dexFiles.size());
             return true;
         }
-        System.err.printf("%s contains %d instruction(s) that ART's verifier would reject with VerifyError "
-                + "(see #1365 and #1368):%n", artifact, check.problems.size());
-        check.problems.forEach(p -> System.err.println("  - " + p));
+        Map<String, List<Problem>> byMethod = new LinkedHashMap<>();
+        check.problems.forEach(p -> byMethod.computeIfAbsent(p.signature(), k -> new ArrayList<>()).add(p));
+        System.err.printf("%s: %d method(s) contain code that ART's verifier rejects with VerifyError, or that the "
+                + "analyzer cannot check (see #1365 and #1368):%n", artifact, byMethod.size());
+        Set<String> classes = new LinkedHashSet<>();
+        check.problems.forEach(p -> classes.add(p.method.getDefiningClass()));
+        Mapping mapping = Mapping.read(mappingFile, classes);
+        byMethod.forEach((signature, methodProblems) -> {
+            Method method = methodProblems.get(0).method;
+            String original = mapping.original(method.getDefiningClass(), method.getName());
+            System.err.println("  - " + (original == null ? signature : original + " [" + signature + "]"));
+            methodProblems.stream().limit(3).forEach(p -> System.err.println("      " + p.detail));
+            if (methodProblems.size() > 3) {
+                System.err.println("      ... and " + (methodProblems.size() - 3) + " more in this method");
+            }
+        });
         System.err.println("Keep each affected method unoptimized with a method-scoped "
                 + "-keepclassmembers,allowobfuscation rule in androidApp/proguard-rules.pro, or move to an "
                 + "R8 version that fixes the miscompilation, then rebuild.");
@@ -171,11 +199,11 @@ public final class ReleaseDexTypeCheck {
         try {
             analyzer = new MethodAnalyzer(classPath, method, null, false);
         } catch (RuntimeException e) {
-            problems.add(describe(method) + ": analyzer failed: " + e);
+            problems.add(new Problem(method, "analyzer failed: " + e));
             return;
         }
         if (analyzer.getAnalysisException() != null) {
-            problems.add(describe(method) + ": analyzer failed: " + analyzer.getAnalysisException().getMessage());
+            problems.add(new Problem(method, "analyzer failed: " + analyzer.getAnalysisException().getMessage()));
             return;
         }
         for (AnalyzedInstruction analyzed : analyzer.getAnalyzedInstructions()) {
@@ -241,8 +269,8 @@ public final class ReleaseDexTypeCheck {
         if (expected.length() == 1) return;
         RegisterType actual = analyzed.getPreInstructionRegisterType(register);
         if (isAssignable(expected, actual) != Boolean.FALSE) return;
-        problems.add(String.format("%s @0x%04x: v%d (%s) has %s, expected %s",
-                describe(method), pc, register, use, actual, expected));
+        problems.add(new Problem(method, String.format("@0x%04x: v%d (%s) has %s, expected %s",
+                pc, register, use, actual, expected)));
     }
 
     /** TRUE or FALSE when decidable; null when a type does not resolve and ART would defer the check. */
@@ -272,39 +300,58 @@ public final class ReleaseDexTypeCheck {
         return false;
     }
 
-    private String describe(Method method) {
-        String signature = method.getDefiningClass() + "->" + method.getName()
-                + "(" + String.join("", method.getParameterTypes()) + ")" + method.getReturnType();
-        String original = mapping.original(method.getDefiningClass(), method.getName());
-        return original == null ? signature : original + " [" + signature + "]";
-    }
-
-    /** Reads the class and method names from an R8 mapping.txt to make reports readable. */
+    /** Original class and method names from R8's mapping.txt, read only for the classes in a report. */
     private static final class Mapping {
         private static final Pattern CLASS_LINE = Pattern.compile("^(\\S+) -> (\\S+):$");
-        private static final Pattern METHOD_LINE = Pattern.compile("^\\s+(?:\\d+:\\d+:)?\\S+ ([^\\s(]+)\\(.*\\)(?::\\d+(?::\\d+)?)? -> (\\S+)$");
+        // Group 1: optional minified line range; consecutive lines sharing it list inlined frames, outermost last.
+        private static final Pattern METHOD_LINE = Pattern.compile("^\\s+((?:\\d+:\\d+:)?)\\S+ ([^\\s(]+)\\(.*\\)(?::\\d+(?::\\d+)?)? -> (\\S+)$");
         private final Map<String, String> classes = new HashMap<>();
         private final Map<String, Set<String>> methods = new HashMap<>();
 
-        static Mapping read(File file) throws IOException {
+        static Mapping read(File file, Set<String> wantedClasses) throws IOException {
             Mapping mapping = new Mapping();
             if (file == null || !file.isFile()) return mapping;
-            String obfuscatedClass = null;
-            for (String line : Files.readAllLines(file.toPath())) {
-                if (line.startsWith("#")) continue;
-                Matcher classLine = CLASS_LINE.matcher(line);
-                if (classLine.matches()) {
-                    obfuscatedClass = descriptor(classLine.group(2));
-                    mapping.classes.put(obfuscatedClass, classLine.group(1));
-                    continue;
+            try (BufferedReader reader = Files.newBufferedReader(file.toPath())) {
+                String obfuscatedClass = null;
+                String runKey = null;
+                String runName = null;
+                for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                    if (line.trim().startsWith("#")) continue; // Metadata; may sit inside an inline run.
+                    Matcher methodLine = METHOD_LINE.matcher(line);
+                    boolean isMethod = line.startsWith(" ") && methodLine.matches();
+                    String key = isMethod && !methodLine.group(1).isEmpty() ? methodLine.group(1) + methodLine.group(3) : null;
+                    if (runKey != null && (key == null || !key.equals(runKey))) {
+                        mapping.addOutermostFrame(obfuscatedClass, runKey, runName);
+                        runKey = null;
+                    }
+                    if (!line.startsWith(" ")) {
+                        Matcher classLine = CLASS_LINE.matcher(line);
+                        obfuscatedClass = classLine.matches() ? descriptor(classLine.group(2)) : null;
+                        if (obfuscatedClass != null && wantedClasses.contains(obfuscatedClass)) {
+                            mapping.classes.put(obfuscatedClass, classLine.group(1));
+                        } else {
+                            obfuscatedClass = null;
+                        }
+                    } else if (obfuscatedClass != null && isMethod) {
+                        if (key == null) {
+                            mapping.addOutermostFrame(obfuscatedClass, ":" + methodLine.group(3), methodLine.group(2));
+                        } else {
+                            runKey = key;
+                            runName = methodLine.group(2);
+                        }
+                    }
                 }
-                Matcher methodLine = METHOD_LINE.matcher(line);
-                if (obfuscatedClass != null && methodLine.matches()) {
-                    mapping.methods.computeIfAbsent(obfuscatedClass + "->" + methodLine.group(2), k -> new TreeSet<>())
-                            .add(methodLine.group(1));
-                }
+                if (runKey != null) mapping.addOutermostFrame(obfuscatedClass, runKey, runName);
             }
             return mapping;
+        }
+
+        private void addOutermostFrame(String obfuscatedClass, String runKey, String name) {
+            if (obfuscatedClass == null) return;
+            String obfuscatedMethod = runKey.substring(runKey.lastIndexOf(':') + 1);
+            // R8 may qualify the outermost frame with its original class; the report names the class already.
+            methods.computeIfAbsent(obfuscatedClass + "->" + obfuscatedMethod, k -> new TreeSet<>())
+                    .add(name.substring(name.lastIndexOf('.') + 1));
         }
 
         String original(String obfuscatedClass, String obfuscatedMethod) {
