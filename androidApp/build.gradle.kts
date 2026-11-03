@@ -235,8 +235,8 @@ android {
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
-        versionCode = injectedVersionCode ?: 13
-        versionName = "1.0.9"
+        versionCode = injectedVersionCode ?: 14
+        versionName = "1.1.0"
 
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")

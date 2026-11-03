@@ -35,10 +35,10 @@ Read the checked-in version, then bump that. `release-all` checks Android, share
 
 Confirm these in the files before running. They are the live defaults:
 
-- `versionName`, `Constants.APP_VERSION`, and all iOS/tvOS `MARKETING_VERSION` entries: `1.0.9`
-- default Android `versionCode` (`injectedVersionCode ?: ...`): `13`
+- `versionName`, `Constants.APP_VERSION`, and all iOS/tvOS `MARKETING_VERSION` entries: `1.1.0`
+- default Android `versionCode` (`injectedVersionCode ?: ...`): `14`
 
-From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.0.9` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `13` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
+From the repository root, dry-run the bump first. `<version>` is the next numeric `x.y.z` after `1.1.0` (sample shape `1.2.3`, not a version to apply). `<android-code>` is the next code after `14` when the checked-in Play default must move. Omit `--ios-build` unless a local Xcode build number was requested; iOS CI replaces `CURRENT_PROJECT_VERSION` before release/TestFlight upload.
 
 ```powershell
 python .agents/skills/update-phoenix-version/scripts/update_version.py --version <version> --android-code <android-code> --dry-run
@@ -53,12 +53,12 @@ python .agents/skills/update-phoenix-version/scripts/update_version.py --version
 Verify the current tree without modifying files:
 
 ```powershell
-python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.0.9 --android-code 13
+python .agents/skills/update-phoenix-version/scripts/update_version.py --check --version 1.1.0 --android-code 14
 ```
 
 ## Workflow
 
-1. Read the checked-in `versionName` (`1.0.9`) and default `versionCode` (`13`), then choose the bump from those values. Do not reuse an older release as the target.
+1. Read the checked-in `versionName` (`1.1.0`) and default `versionCode` (`14`), then choose the bump from those values. Do not reuse an older release as the target.
 2. Run the helper with `--dry-run`.
 3. Run the helper without `--dry-run` after the replacements look right.
 4. Run `--check` with the same values.
