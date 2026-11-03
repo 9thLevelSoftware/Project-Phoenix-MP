@@ -223,4 +223,62 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
             "prepareAllPlayers() must iterate the dominatrix encouragement players.",
         )
     }
+
+    // ---- Issue #1357: recovery must notice failure and retry ----
+
+    @Test
+    fun iosHapticFeedbackEffect_readsSessionActivationResult() {
+        val source = iosHapticSource.readText()
+
+        // Kotlin/Native never throws for a failed NSError** call, so passing
+        // null and ignoring the Boolean made failed reactivation invisible.
+        assertTrue(
+            !source.contains("setActive(true, null)"),
+            "Audio session activation must pass an NSError pointer and read the result.",
+        )
+        assertTrue(
+            source.contains("sessionNeedsRecovery = !setupAudioSession()"),
+            "A failed activation must leave a recovery flag set for the next cue.",
+        )
+    }
+
+    @Test
+    fun iosHapticFeedbackEffect_flagsRecoveryWhenInterruptionBegins() {
+        val source = iosHapticSource.readText()
+
+        val beganIndex = source.indexOf("typeValue == AVAudioSessionInterruptionTypeBegan")
+        val flagIndex = source.indexOf("sessionNeedsRecovery = true", beganIndex)
+        assertTrue(beganIndex >= 0, "iOS does not guarantee an ended interruption, so began must be handled.")
+        assertTrue(flagIndex > beganIndex, "A began interruption must flag the session for recovery.")
+    }
+
+    @Test
+    fun iosHapticFeedbackEffect_retriesWhenPlaybackIsRefused() {
+        val source = iosHapticSource.readText()
+
+        val playSoundIndex = source.indexOf("fun playSound(event: HapticEvent)")
+        val playSoundBody = source.substring(playSoundIndex, source.indexOf("fun release()", playSoundIndex))
+        assertTrue(
+            playSoundBody.contains("if (sessionNeedsRecovery && isAppActive())"),
+            "playSound() must retry a flagged session only while the app is in the foreground.",
+        )
+        assertTrue(
+            playSoundBody.contains("if (!played)"),
+            "playSound() must check play()'s result instead of assuming the cue played.",
+        )
+    }
+
+    @Test
+    fun iosHapticFeedbackEffect_rebuildsPlayersAfterMediaServicesReset() {
+        val source = iosHapticSource.readText()
+
+        assertTrue(
+            source.contains("AVAudioSessionMediaServicesWereResetNotification"),
+            "Players must be rebuilt after a media services reset; prepareToPlay() cannot revive them.",
+        )
+        val rebuildIndex = source.indexOf("private fun rebuildAfterMediaServicesReset()")
+        assertTrue(rebuildIndex >= 0, "IosSoundManager must define rebuildAfterMediaServicesReset().")
+        val rebuildBody = source.substring(rebuildIndex, source.indexOf("\n    }", rebuildIndex))
+        assertTrue("stopAndClearPlayers()" in rebuildBody && "loadAllSounds()" in rebuildBody)
+    }
 }

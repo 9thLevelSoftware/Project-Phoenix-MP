@@ -37,7 +37,10 @@ class IosEncouragementSoundLoaderContractTest {
         assertTrue(helper.contains("loadSound(\"\${prefix}_\${i.toString().padStart(2, '0')}\")?.let { destination.add(it) }"))
         assertTrue(helper.contains("Loaded \${destination.size} \$label"))
 
-        val init = functionBody(source, "init {")
+        // Issue #1357: init loads through loadAllSounds() so a media services
+        // reset can rebuild the same pools.
+        assertTrue(functionBody(source, "init {").contains("loadAllSounds()"))
+        val init = functionBody(source, "private fun loadAllSounds()")
         assertEquals(
             listOf(
                 """loadEncouragementSounds("encouragement", 15, encouragementNeutralSoundPlayers, "encouragement neutral sounds")""",
