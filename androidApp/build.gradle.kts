@@ -2,6 +2,7 @@ import java.net.InetAddress
 import java.net.URI
 import java.util.zip.CRC32
 import java.util.zip.ZipFile
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
@@ -94,6 +95,50 @@ abstract class VerifyReleaseCueResourcesTask : DefaultTask() {
                 "Verified ${expectedCueFiles.size} Android cue resources in ${artifact.relativeTo(projectRoot)} " +
                     "by packaged .ogg fingerprints.",
             )
+        }
+    }
+}
+
+/**
+ * Runs config/ReleaseDexTypeCheck.java over the minified release APK/AAB. R8 from AGP 9.5 emitted
+ * code in SyncManager.pushLocalChanges that ART rejects with VerifyError, which blocked startup on
+ * Android 17 (#1365, #1368). PR CI builds debug only, so this check runs in the release workflows.
+ */
+abstract class VerifyReleaseDexTypesTask : DefaultTask() {
+    @get:Classpath
+    abstract val checkerClasspath: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val checkerSource: RegularFileProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val bootClasspath: ConfigurableFileCollection
+
+    @get:Internal
+    abstract val releaseApkDir: DirectoryProperty
+
+    @get:Internal
+    abstract val releaseBundleDir: DirectoryProperty
+
+    @get:Internal
+    abstract val mappingFile: RegularFileProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun verifyDexTypes() {
+        execOperations.javaexec {
+            classpath = checkerClasspath
+            // Java source-file mode: the launcher compiles and runs the single checker file.
+            mainClass.set(checkerSource.get().asFile.absolutePath)
+            maxHeapSize = "2g"
+            bootClasspath.files.forEach { args("--boot", it.absolutePath) }
+            args("--artifacts", releaseApkDir.get().asFile.absolutePath)
+            args("--artifacts", releaseBundleDir.get().asFile.absolutePath)
+            args("--mapping", mappingFile.get().asFile.absolutePath)
         }
     }
 }
@@ -282,6 +327,29 @@ tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
     releaseBundleDir.set(layout.buildDirectory.dir("outputs/bundle/release"))
     projectRootDir.set(rootProject.layout.projectDirectory)
+}
+
+val releaseDexTypeCheckClasspath = configurations.create("releaseDexTypeCheckClasspath") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+dependencies {
+    add(releaseDexTypeCheckClasspath.name, libs.smali.dexlib2)
+}
+
+tasks.register<VerifyReleaseDexTypesTask>("verifyReleaseDexTypes") {
+    group = "verification"
+    description = "Fails if minified release artifacts contain bytecode that ART's verifier rejects (#1365, #1368)."
+
+    mustRunAfter("assembleRelease", "bundleRelease")
+
+    checkerClasspath.from(releaseDexTypeCheckClasspath)
+    checkerSource.set(layout.projectDirectory.file("config/ReleaseDexTypeCheck.java"))
+    bootClasspath.from(androidComponents.sdkComponents.bootClasspath)
+    releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
+    releaseBundleDir.set(layout.buildDirectory.dir("outputs/bundle/release"))
+    mappingFile.set(layout.buildDirectory.file("outputs/mapping/release/mapping.txt"))
 }
 
 dependencies {

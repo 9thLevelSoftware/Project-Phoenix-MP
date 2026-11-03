@@ -434,6 +434,23 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertNotIn("gh release upload", text)
                 self.assertNotIn("--clobber", text)
 
+    def test_android_release_builds_run_the_dex_type_check(self) -> None:
+        # #1365/#1368: R8 output that ART rejects must fail the build before any upload.
+        for name, build_task in (
+            ("android-release-apk.yml", ":androidApp:assembleRelease"),
+            ("android-playstore.yml", ":androidApp:bundleRelease"),
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                start = text.index(f"./gradlew {build_task}")
+                invocation = text[start : text.index("rm keystore.jks", start)]
+                self.assertRegex(invocation, r"(?m)^ +:androidApp:verifyReleaseDexTypes \\$")
+                step_start = text.rindex("      - name:", 0, start)
+                step_end = text.index("      - name:", start)
+                self.assertNotIn("continue-on-error", text[step_start:step_end])
+                # Later steps (the upload) must not run after a failed build.
+                self.assertNotIn("always()", text[step_end:])
+
     def test_ci_host_unit_tests_share_one_gradle_invocation(self) -> None:
         text = workflow("ci-tests.yml")
         job = re.search(
