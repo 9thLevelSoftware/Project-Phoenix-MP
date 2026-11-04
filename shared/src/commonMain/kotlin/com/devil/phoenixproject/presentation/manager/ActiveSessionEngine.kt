@@ -26,9 +26,11 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
+import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
+import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -7149,6 +7151,16 @@ class ActiveSessionEngine(
             if (persisted) {
                 Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
             }
+        } catch (e: StaleProfileContextException) {
+            // Issue #1366 review: settingsManager.mutateWorkout only accepts the ACTIVE
+            // profile context, so an attributed owner profile that differs (FP-6
+            // fallbacks) throws here. Swallowing that in the generic catch would silently
+            // drop the save — log the skip explicitly. The durable-write ledger is
+            // untouched because persistJustLiftDefaultsIfNewer only records successful
+            // writes.
+            Logger.w(e) { "Just Lift defaults save skipped (attributed profile is not the active profile)" }
+        } catch (e: ProfileContextUnavailableException) {
+            Logger.w(e) { "Just Lift defaults save skipped (active profile context unavailable)" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
@@ -10778,9 +10790,9 @@ class ActiveSessionEngine(
                     ?: activeRuntimeDocument?.profileId
                     ?: userProfileRepository.activeProfile.value?.id
                     ?: "default"
-                val attributionExecutionId = attributionLease
-                    ?.takeIf { it.profileId == attributionProfileId }
-                    ?.executionId
+                // Issue #1366 review: attributionProfileId is derived from this same
+                // lease whenever it exists, so a profile guard here can never be false.
+                val attributionExecutionId = attributionLease?.executionId
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
