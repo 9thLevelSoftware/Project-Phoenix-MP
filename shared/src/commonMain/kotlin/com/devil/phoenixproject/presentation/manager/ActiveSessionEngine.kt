@@ -11019,6 +11019,8 @@ class ActiveSessionEngine(
                 }
 
                 if (isJustLift) {
+                    // Persist before publishing Idle: JustLiftScreen reloads its defaults
+                    // from the durable profile document as soon as this stop returns there.
                     saveJustLiftDefaultsFromWorkout(
                         profileId = attributionProfileId,
                         executionId = attributionExecutionId,

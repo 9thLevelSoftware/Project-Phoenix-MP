@@ -333,14 +333,11 @@ fun ActiveWorkoutScreen(
                     justLiftExitContext,
                     viewModel::currentWorkoutSessionId,
                 )
-                val currentEntry = navController.currentBackStackEntry
-                val atDestination = currentEntry?.destination?.route == NavigationRoutes.JustLift.route
-                val sourceEntryWasReplaced =
-                    justLiftExitContext.sourceEntryId != null && currentEntry?.id != justLiftExitContext.sourceEntryId
-                val sessionWasReplaced = justLiftExitContext.sessionId?.let { expectedSessionId ->
-                    viewModel.currentWorkoutSessionId()?.let { it != expectedSessionId } == true
-                } == true
-                hasNavigatedAway = navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
+                hasNavigatedAway = navController.justLiftExitHasSettled(
+                    context = justLiftExitContext,
+                    navigated = navigated,
+                    currentSessionId = viewModel::currentWorkoutSessionId,
+                )
             }
 
             workoutState is WorkoutState.Idle &&
@@ -695,16 +692,11 @@ fun ActiveWorkoutScreen(
                                     exitContext,
                                     viewModel::currentWorkoutSessionId,
                                 )
-                                val currentEntry = navController.currentBackStackEntry
-                                val atDestination =
-                                    currentEntry?.destination?.route == NavigationRoutes.JustLift.route
-                                val sourceEntryWasReplaced =
-                                    exitContext.sourceEntryId != null && currentEntry?.id != exitContext.sourceEntryId
-                                val sessionWasReplaced = exitContext.sessionId?.let { expectedSessionId ->
-                                    viewModel.currentWorkoutSessionId()?.let { it != expectedSessionId } == true
-                                } == true
-                                hasNavigatedAway =
-                                    navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
+                                hasNavigatedAway = navController.justLiftExitHasSettled(
+                                    context = exitContext,
+                                    navigated = navigated,
+                                    currentSessionId = viewModel::currentWorkoutSessionId,
+                                )
                             } else {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
@@ -799,4 +791,18 @@ private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this)
     SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
     SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
     SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
+}
+
+private fun NavController.justLiftExitHasSettled(
+    context: JustLiftExitContext,
+    navigated: Boolean,
+    currentSessionId: () -> String?,
+): Boolean {
+    val currentEntry = currentBackStackEntry
+    val atDestination = currentEntry?.destination?.route == NavigationRoutes.JustLift.route
+    val sourceEntryWasReplaced = context.sourceEntryId != null && currentEntry?.id != context.sourceEntryId
+    val sessionWasReplaced = context.sessionId?.let { expectedSessionId ->
+        currentSessionId()?.let { it != expectedSessionId } == true
+    } == true
+    return navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
 }
