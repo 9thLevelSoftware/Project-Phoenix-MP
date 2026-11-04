@@ -146,4 +146,74 @@ class HapticFeedbackAudioRoutingGuardTest {
         // Event mapping for dominatrix unlock SFX
         assertTrue(source.contains("HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock"))
     }
+
+    /**
+     * Issue #1356: the auto-start readiness cue must be statically registered with a
+     * literal R.raw reference so release resource shrinking keeps the asset (AT-4/AT-6).
+     */
+    @Test
+    fun autoStartReadyCue_isStaticallyRegisteredWithLiteralRawReference() {
+        val source = hapticFeedbackSource.readText()
+
+        assertTrue(
+            source.contains("""AndroidCueResource("auto_start_ready", R.raw.auto_start_ready)"""),
+            "auto_start_ready must be registered with a literal R.raw reference.",
+        )
+        assertTrue(
+            source.contains("HapticEvent.AUTO_START_READY to autoStartReady"),
+            "AUTO_START_READY must map to the auto_start_ready cue in eventCues.",
+        )
+        assertFalse(
+            source.contains("getIdentifier("),
+            "HapticFeedbackEffect must not use dynamic raw resource lookup.",
+        )
+    }
+
+    /** Issue #1356: the exhaustive haptic when must carry an AUTO_START_READY branch (AT-5). */
+    @Test
+    fun playHapticFeedback_when_hasAutoStartReadyBranch() {
+        val source = hapticFeedbackSource.readText()
+        val hapticWhen = source
+            .substringAfter("private fun playHapticFeedback")
+            .substringBefore("vibrator.vibrate(effect)")
+
+        assertTrue(
+            hapticWhen.contains("is HapticEvent.AUTO_START_READY ->"),
+            "playHapticFeedback must handle AUTO_START_READY with an explicit vibration branch.",
+        )
+    }
+
+    /**
+     * Issue #1356: iOS source contract (IT-1/IT-2) — loadSounds() must map the cue to the
+     * bundled auto_start_ready asset and the iOS haptic when must carry the branch. The
+     * built-bundle proof (IT-3's bundle half) is a build-time artifact, asserted during
+     * the iOS build evidence step, not here.
+     */
+    @Test
+    fun iosAutoStartReadyCue_mappingAndHapticBranchExist() {
+        val iosSource = File(
+            projectRoot,
+            "shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.ios.kt",
+        ).readText()
+
+        assertTrue(
+            iosSource.contains("""HapticEvent.AUTO_START_READY to "auto_start_ready""""),
+            "iOS loadSounds() must map AUTO_START_READY to auto_start_ready.",
+        )
+        val iosHapticWhen = iosSource
+            .substringAfter("private fun playHapticFeedback")
+            .substringBefore("} catch (e: Exception)")
+        assertTrue(
+            iosHapticWhen.contains("is HapticEvent.AUTO_START_READY ->"),
+            "iOS playHapticFeedback must handle AUTO_START_READY with an explicit haptic branch.",
+        )
+    }
+
+    /** Issue #1356: the converted CAF must exist on disk alongside the other Sounds (IT-3 source half). */
+    @Test
+    fun iosAutoStartReadyCaf_existsInSoundsDirectory() {
+        val caf = File(projectRoot, "iosApp/PhoenixApp/PhoenixApp/Sounds/auto_start_ready.caf")
+
+        assertTrue(caf.isFile && caf.length() > 0, "auto_start_ready.caf must exist in the iOS Sounds directory.")
+    }
 }

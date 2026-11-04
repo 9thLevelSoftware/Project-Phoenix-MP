@@ -52,6 +52,31 @@ class HapticEventAudioTest {
         assertNotEquals(soundMap[HapticEvent.FINAL_REP], soundMap[HapticEvent.REP_COMPLETED])
     }
 
+    // ========== Issue #1356: AUTO_START_READY Event Tests ==========
+
+    @Test
+    fun `AUTO_START_READY has stable equality and hashCode`() {
+        assertEquals(HapticEvent.AUTO_START_READY, HapticEvent.AUTO_START_READY)
+        assertEquals(HapticEvent.AUTO_START_READY.hashCode(), HapticEvent.AUTO_START_READY.hashCode())
+    }
+
+    @Test
+    fun `AUTO_START_READY is distinct from WORKOUT_START and COUNTDOWN_TICK`() {
+        assertNotEquals(HapticEvent.AUTO_START_READY as HapticEvent, HapticEvent.WORKOUT_START as HapticEvent)
+        assertNotEquals(HapticEvent.AUTO_START_READY as HapticEvent, HapticEvent.COUNTDOWN_TICK(5) as HapticEvent)
+    }
+
+    @Test
+    fun `AUTO_START_READY can be used as map key`() {
+        val soundMap = mapOf<HapticEvent, String>(
+            HapticEvent.WORKOUT_START to "chirpchirp",
+            HapticEvent.AUTO_START_READY to "auto_start_ready",
+        )
+        assertEquals("auto_start_ready", soundMap[HapticEvent.AUTO_START_READY])
+        assertEquals("chirpchirp", soundMap[HapticEvent.WORKOUT_START])
+        assertNotEquals(soundMap[HapticEvent.AUTO_START_READY], soundMap[HapticEvent.WORKOUT_START])
+    }
+
     @Test
     fun `all HapticEvent singleton types are distinct`() {
         val singletons: List<HapticEvent> = listOf(
@@ -68,6 +93,7 @@ class HapticEventAudioTest {
             HapticEvent.PERSONAL_RECORD,
             HapticEvent.VELOCITY_THRESHOLD_REACHED,
             HapticEvent.WARMUP_TO_WORKING,
+            HapticEvent.AUTO_START_READY,
         )
         // Each pair should be distinct
         for (i in singletons.indices) {

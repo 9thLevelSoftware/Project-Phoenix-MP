@@ -241,6 +241,9 @@ private object AndroidCueResources {
     private val restOver = AndroidCueResource("restover", R.raw.restover)
     // Issue #611: Dominatrix unlock SFX — must be declared before eventCues which references it
     private val dominatrixUnlock = AndroidCueResource("dominatrix_unlock", R.raw.dominatrix_unlock)
+    // Issue #1356: Just Lift/Echo auto-start readiness cue — literal R.raw reference
+    // (no getIdentifier) so release resource shrinking retains the asset.
+    private val autoStartReady = AndroidCueResource("auto_start_ready", R.raw.auto_start_ready)
 
     val eventCues: Map<HapticEvent, AndroidCueResource> = mapOf(
         HapticEvent.REP_COMPLETED to repCompleteStrong,
@@ -248,6 +251,8 @@ private object AndroidCueResources {
         HapticEvent.WARMUP_COMPLETE to beepBoop,
         HapticEvent.WORKOUT_COMPLETE to boopBeepBeep,
         HapticEvent.WORKOUT_START to chirpChirp,
+        // Issue #1356: Just Lift/Echo auto-start readiness cue (distinct asset, not chirpchirp)
+        HapticEvent.AUTO_START_READY to autoStartReady,
         HapticEvent.WORKOUT_END to chirpChirp,
         HapticEvent.REST_ENDING to restOver,
         HapticEvent.DISCO_MODE_UNLOCKED to discoMode,
@@ -536,6 +541,12 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 intArrayOf(0, 150, 0, 220),
                 -1,
             )
+        }
+
+        // Issue #1356: Auto-start readiness — one firm pulse, deliberately distinct
+        // from WORKOUT_START's two quick attention pulses.
+        is HapticEvent.AUTO_START_READY -> {
+            VibrationEffect.createOneShot(110, 220)
         }
         // REP_COUNT_ANNOUNCED and VERBAL_ENCOURAGEMENT return before this when.
     }
