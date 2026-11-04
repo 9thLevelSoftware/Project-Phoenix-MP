@@ -1032,6 +1032,9 @@ class MainViewModel(
     // Issue #627: Delegates read-only stop-in-progress flag to suppress resume-bounce.
     fun isStoppingWorkout(): Boolean = workoutSessionManager.isStoppingWorkout
 
+    /** Issue #1366: live workout session identity for the shared Just Lift exit transition. */
+    fun currentWorkoutSessionId(): String? = workoutSessionManager.coordinator.currentSessionId
+
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
     fun pauseWorkout() = workoutSessionManager.pauseWorkout()

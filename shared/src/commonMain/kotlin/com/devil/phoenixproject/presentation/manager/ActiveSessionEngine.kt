@@ -7074,7 +7074,21 @@ class ActiveSessionEngine(
         }
     }
 
-    suspend fun getJustLiftDefaults(): JustLiftDefaults = settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
+    suspend fun getJustLiftDefaults(): JustLiftDefaults {
+        // Issue #1366: the JustLiftScreen returned to by STOP -> Exit reloads these
+        // defaults on composition, which races the async exit-snapshot persistence
+        // (persistSnapshot commits the session before its justLiftDefaults write). The
+        // exit snapshot captured the just-ended session's confirmed settings pre-teardown
+        // (Issue #714), so prefer that pending document — freshest execution wins — for
+        // the current profile until its durable write lands and the snapshot is removed.
+        val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+            ?.profile?.id
+        val pending = exitSnapshotStore.retainedSnapshots()
+            .filter { it.lease.profileId == currentProfileId && it.justLiftDefaults != null }
+            .maxByOrNull { it.lease.executionId }
+            ?.justLiftDefaults
+        return (pending ?: settingsManager.getJustLiftDefaultsDocument()).toRuntimeJustLiftDefaults()
+    }
 
     internal fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
