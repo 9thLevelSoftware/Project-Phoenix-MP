@@ -1273,6 +1273,17 @@ internal class WorkoutExecutionGuard(
         true
     }
 
+    internal suspend fun newestPendingJustLiftDefaultsExecutionId(
+        profileId: String,
+        candidateExecutionIds: List<Long>,
+    ): Long? = justLiftDefaultsPersistenceMutex.withLock {
+        val latestPersistedExecutionId = latestJustLiftDefaultsExecutionByProfile[profileId]
+        candidateExecutionIds
+            .asSequence()
+            .filter { latestPersistedExecutionId == null || it > latestPersistedExecutionId }
+            .maxOrNull()
+    }
+
     fun persistenceClaimStatus(sessionId: String): PersistenceClaimStatus = withPlatformLock(persistenceLock) {
         persistedClaims[sessionId] ?: PersistenceClaimStatus.UNCLAIMED
     }

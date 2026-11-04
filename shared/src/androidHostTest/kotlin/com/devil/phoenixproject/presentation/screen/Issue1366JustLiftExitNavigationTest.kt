@@ -155,7 +155,7 @@ class Issue1366JustLiftExitNavigationTest {
         rule.onNodeWithText("STOP").assertIsDisplayed().performClick()
         rule.onNodeWithText("Exit Workout?").assertIsDisplayed()
         rule.onNodeWithText("Exit").performClick()
-        settleTolerantly()
+        settle()
 
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
         // Contract: the exit lands on JustLiftScreen with the selected mode retained,
@@ -214,7 +214,7 @@ class Issue1366JustLiftExitNavigationTest {
         // Cycle 1: STOP -> Exit.
         val visitedAtExitClick1 = visitedRoutes.size
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         val visitedAfterExit1 = visitedRoutes.drop(visitedAtExitClick1)
         assertEquals(
             "Cycle 1 must land JustLift (visited: $visitedAfterExit1)",
@@ -241,7 +241,7 @@ class Issue1366JustLiftExitNavigationTest {
 
         val visitedAtExitClick2 = visitedRoutes.size
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         val visitedAfterExit2 = visitedRoutes.drop(visitedAtExitClick2)
         assertEquals(
             "Cycle 2 must land JustLift (visited: $visitedAfterExit2)",
@@ -311,7 +311,7 @@ class Issue1366JustLiftExitNavigationTest {
 
         val visitedAtExitClick = visitedRoutes.size
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
 
         assertEquals(
@@ -337,7 +337,7 @@ class Issue1366JustLiftExitNavigationTest {
 
         val visitedAtExitClick = visitedRoutes.size
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
 
         assertEquals(
@@ -361,7 +361,7 @@ class Issue1366JustLiftExitNavigationTest {
         val visitedAtStop = visitedRoutes.size
 
         fx.viewModel.stopWorkout(exitingWorkout = true)
-        settleTolerantly()
+        settle()
 
         val visitedAfterStop = visitedRoutes.drop(visitedAtStop)
         assertEquals(
@@ -386,7 +386,7 @@ class Issue1366JustLiftExitNavigationTest {
         )
 
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         val settledRoute = currentRoute()
         val settledStack = backStack()
         assertEquals(NavigationRoutes.JustLift.route, settledRoute)
@@ -395,7 +395,7 @@ class Issue1366JustLiftExitNavigationTest {
         // the same exit identity must be no-ops (one effective transition total).
         val second = navController!!.exitToJustLift(exitContext) { fx.viewModel.currentWorkoutSessionId() }
         val third = navController!!.exitToJustLift(exitContext) { fx.viewModel.currentWorkoutSessionId() }
-        settleTolerantly()
+        settle()
         assertEquals("A repeat delivery must not navigate", false, second)
         assertEquals("A repeat delivery must not navigate", false, third)
         assertEquals(settledRoute, currentRoute())
@@ -414,7 +414,7 @@ class Issue1366JustLiftExitNavigationTest {
         )
 
         exitViaStopDialog()
-        settleTolerantly()
+        settle()
         assertEquals(NavigationRoutes.JustLift.route, currentRoute())
 
         // Later session: the production JustLift entry producer pushes a NEW
@@ -430,7 +430,7 @@ class Issue1366JustLiftExitNavigationTest {
         assertEquals("home -> just_lift -> active_workout", laterStack)
 
         val effective = navController!!.exitToJustLift(staleContext) { fx.viewModel.currentWorkoutSessionId() }
-        settleTolerantly()
+        settle()
         assertEquals("A stale ended-session callback must not navigate", false, effective)
         assertEquals(laterStack, backStack())
         assertEquals(NavigationRoutes.ActiveWorkout.route, currentRoute())
@@ -444,7 +444,7 @@ class Issue1366JustLiftExitNavigationTest {
         val effective2 = navController!!.exitToJustLift(sameEntryStaleSession) {
             fx.viewModel.currentWorkoutSessionId()
         }
-        settleTolerantly()
+        settle()
         assertEquals("A stale session token must not navigate the later session", false, effective2)
         assertEquals(laterStack, backStack())
     }
@@ -568,16 +568,6 @@ class Issue1366JustLiftExitNavigationTest {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(SETTLE_WINDOW_MS)
         rule.waitForIdle()
-    }
-
-    /**
-     * Like [settle], but does not fail the test when the composition under test is one
-     * the harness cannot drive idle (the over-popped Home landing on the unfixed
-     * implementation). The route assertions below read NavController state directly,
-     * so the recorded visited-destination trail is the authority, not idleness.
-     */
-    private fun settleTolerantly() {
-        runCatching { settle() }
     }
 
     // ===== Navigation measurement primitives =====

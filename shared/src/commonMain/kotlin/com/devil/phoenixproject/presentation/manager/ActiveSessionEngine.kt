@@ -7079,14 +7079,24 @@ class ActiveSessionEngine(
         // defaults on composition, which races the async exit-snapshot persistence
         // (persistSnapshot commits the session before its justLiftDefaults write). The
         // exit snapshot captured the just-ended session's confirmed settings pre-teardown
-        // (Issue #714), so prefer that pending document — freshest execution wins — for
-        // the current profile until its durable write lands and the snapshot is removed.
+        // (Issue #714), so prefer only a retained execution newer than the durable-write
+        // ledger for this profile until that write lands and the snapshot is removed.
         val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
             ?.profile?.id
-        val pending = exitSnapshotStore.retainedSnapshots()
-            .filter { it.lease.profileId == currentProfileId && it.justLiftDefaults != null }
-            .maxByOrNull { it.lease.executionId }
-            ?.justLiftDefaults
+        val profilePendingSnapshots = currentProfileId?.let { profileId ->
+            exitSnapshotStore.retainedSnapshots().filter {
+                it.lease.profileId == profileId && it.justLiftDefaults != null
+            }
+        }.orEmpty()
+        val newestPendingExecutionId = currentProfileId?.let { profileId ->
+            executionGuard.newestPendingJustLiftDefaultsExecutionId(
+                profileId = profileId,
+                candidateExecutionIds = profilePendingSnapshots.map { it.lease.executionId },
+            )
+        }
+        val pending = newestPendingExecutionId?.let { executionId ->
+            profilePendingSnapshots.firstOrNull { it.lease.executionId == executionId }?.justLiftDefaults
+        }
         return (pending ?: settingsManager.getJustLiftDefaultsDocument()).toRuntimeJustLiftDefaults()
     }
 
@@ -7117,12 +7127,26 @@ class ActiveSessionEngine(
         restSeconds = restSeconds,
     )
 
-    private suspend fun saveJustLiftDefaultsFromWorkout() {
+    private suspend fun saveJustLiftDefaultsFromWorkout(lease: ExecutionLease?) {
         val params = coordinator._workoutParameters.value
         val defaults = toJustLiftDefaultsDocumentOrNull(params) ?: return
         try {
-            settingsManager.saveJustLiftDefaultsDocument(defaults)
-            Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
+            val persisted = if (lease == null) {
+                settingsManager.saveJustLiftDefaultsDocument(defaults)
+                true
+            } else {
+                executionGuard.persistJustLiftDefaultsIfNewer(
+                    profileId = lease.profileId,
+                    executionId = lease.executionId,
+                ) {
+                    settingsManager.mutateWorkout(lease.profileId) { workoutPreferences ->
+                        workoutPreferences.copy(justLiftDefaults = defaults)
+                    }
+                }
+            }
+            if (persisted) {
+                Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
+            }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
@@ -10695,7 +10719,7 @@ class ActiveSessionEngine(
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                         bleRepository.restartMonitorPolling()
-                        saveJustLiftDefaultsFromWorkout()
+                        saveJustLiftDefaultsFromWorkout(manualSnapshot.lease)
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
@@ -10974,7 +10998,7 @@ class ActiveSessionEngine(
                 }
 
                 if (isJustLift) {
-                    saveJustLiftDefaultsFromWorkout()
+                    saveJustLiftDefaultsFromWorkout(lease)
                     coordinator._workoutParameters.update { p ->
                         p.copy(selectedExerciseId = null)
                     }
