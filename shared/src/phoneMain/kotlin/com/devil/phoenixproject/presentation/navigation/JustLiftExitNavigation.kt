@@ -87,16 +87,10 @@ fun NavController.exitToJustLift(
     // 3. Destination check: if JustLift is already current there is nothing to do.
     if (currentEntry.destination.route == NavigationRoutes.JustLift.route) return false
 
-    // 4. Destination-specific non-inclusive pop: removes the ActiveWorkout entry(ies)
-    //    above the EXISTING JustLift entry (tolerates duplicate ActiveWorkout entries).
-    if (popBackStack(NavigationRoutes.JustLift.route, inclusive = false)) return true
-
-    // 5. Guarded absent-destination fallback (tested separately): JustLift is not on
-    //    the stack (unusual entry path / state restoration). Rewriting the stack from
-    //    the Home anchor preserves Home as the bottom entry and cannot duplicate
-    //    JustLift — it is known-absent here (step 4 just failed).
-    navigate(NavigationRoutes.JustLift.route) {
-        popUpTo(NavigationRoutes.Home.route) { inclusive = false }
-    }
+    // 4+5. Destination-specific non-inclusive pop to the EXISTING JustLift entry
+    //    (tolerates duplicate ActiveWorkout entries), with the guarded
+    //    absent-destination fallback preserving Home when JustLift is not on the
+    //    stack (unusual entry path / state restoration).
+    safePopOrNavigate(NavigationRoutes.JustLift.route)
     return true
 }
