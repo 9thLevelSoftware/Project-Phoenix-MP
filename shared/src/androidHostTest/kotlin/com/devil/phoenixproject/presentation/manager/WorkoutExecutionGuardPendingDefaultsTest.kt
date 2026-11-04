@@ -1,6 +1,5 @@
-package com.devil.phoenixproject.presentation.screen
+package com.devil.phoenixproject.presentation.manager
 
-import com.devil.phoenixproject.presentation.manager.WorkoutExecutionGuard
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

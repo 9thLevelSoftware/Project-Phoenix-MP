@@ -7127,22 +7127,24 @@ class ActiveSessionEngine(
         restSeconds = restSeconds,
     )
 
-    private suspend fun saveJustLiftDefaultsFromWorkout(lease: ExecutionLease?) {
+    private suspend fun saveJustLiftDefaultsFromWorkout(profileId: String, executionId: Long?) {
         val params = coordinator._workoutParameters.value
         val defaults = toJustLiftDefaultsDocumentOrNull(params) ?: return
         try {
-            val persisted = if (lease == null) {
-                settingsManager.saveJustLiftDefaultsDocument(defaults)
+            val persistDefaults: suspend () -> Unit = {
+                settingsManager.mutateWorkout(profileId) { workoutPreferences ->
+                    workoutPreferences.copy(justLiftDefaults = defaults)
+                }
+            }
+            val persisted = if (executionId == null) {
+                persistDefaults()
                 true
             } else {
                 executionGuard.persistJustLiftDefaultsIfNewer(
-                    profileId = lease.profileId,
-                    executionId = lease.executionId,
-                ) {
-                    settingsManager.mutateWorkout(lease.profileId) { workoutPreferences ->
-                        workoutPreferences.copy(justLiftDefaults = defaults)
-                    }
-                }
+                    profileId = profileId,
+                    executionId = executionId,
+                    persist = persistDefaults,
+                )
             }
             if (persisted) {
                 Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
@@ -10719,7 +10721,10 @@ class ActiveSessionEngine(
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                         bleRepository.restartMonitorPolling()
-                        saveJustLiftDefaultsFromWorkout(manualSnapshot.lease)
+                        saveJustLiftDefaultsFromWorkout(
+                            profileId = manualSnapshot.lease.profileId,
+                            executionId = manualSnapshot.lease.executionId,
+                        )
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
@@ -10768,10 +10773,14 @@ class ActiveSessionEngine(
                 // active runtime document (routine rest transitions publish one); and only
                 // as a last resort from the live active profile, which is all this path
                 // used before.
-                val attributionProfileId = executionContext?.lease?.profileId
+                val attributionLease = executionContext?.lease
+                val attributionProfileId = attributionLease?.profileId
                     ?: activeRuntimeDocument?.profileId
                     ?: userProfileRepository.activeProfile.value?.id
                     ?: "default"
+                val attributionExecutionId = attributionLease
+                    ?.takeIf { it.profileId == attributionProfileId }
+                    ?.executionId
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
@@ -10998,7 +11007,10 @@ class ActiveSessionEngine(
                 }
 
                 if (isJustLift) {
-                    saveJustLiftDefaultsFromWorkout(lease)
+                    saveJustLiftDefaultsFromWorkout(
+                        profileId = attributionProfileId,
+                        executionId = attributionExecutionId,
+                    )
                     coordinator._workoutParameters.update { p ->
                         p.copy(selectedExerciseId = null)
                     }

@@ -293,7 +293,7 @@ fun ActiveWorkoutScreen(
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
     val activeWorkoutEntryId = navController.currentBackStackEntry?.id
     val activeWorkoutSessionId = viewModel.currentWorkoutSessionId()
-    val justLiftExitContext = remember(navController, activeWorkoutEntryId, activeWorkoutSessionId) {
+    val justLiftExitContext = remember(navController, activeWorkoutEntryId) {
         JustLiftExitContext.capture(navController, activeWorkoutSessionId)
     }
     var hasNavigatedAway by remember { mutableStateOf(false) }
@@ -698,18 +698,13 @@ fun ActiveWorkoutScreen(
                                 val currentEntry = navController.currentBackStackEntry
                                 val atDestination =
                                     currentEntry?.destination?.route == NavigationRoutes.JustLift.route
-                                val sameSourceEntry =
-                                    exitContext.sourceEntryId == null || currentEntry?.id == exitContext.sourceEntryId
-                                val liveSessionId = viewModel.currentWorkoutSessionId()
-                                val sameSession = exitContext.sessionId == null || liveSessionId == null ||
-                                    liveSessionId == exitContext.sessionId
-                                hasNavigatedAway = navigated || atDestination
-                                if (!hasNavigatedAway && sameSourceEntry && sameSession) {
-                                    // Last-resort recovery only while this still-authorized
-                                    // ActiveWorkout entry owns navigation. Never pop a
-                                    // replacement session or a JustLift destination.
-                                    hasNavigatedAway = navController.navigateUp()
-                                }
+                                val sourceEntryWasReplaced =
+                                    exitContext.sourceEntryId != null && currentEntry?.id != exitContext.sourceEntryId
+                                val sessionWasReplaced = exitContext.sessionId?.let { expectedSessionId ->
+                                    viewModel.currentWorkoutSessionId()?.let { it != expectedSessionId } == true
+                                } == true
+                                hasNavigatedAway =
+                                    navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
                             } else {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
