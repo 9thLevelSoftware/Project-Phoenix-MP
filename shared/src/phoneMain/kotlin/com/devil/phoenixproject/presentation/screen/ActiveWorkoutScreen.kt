@@ -52,7 +52,9 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.exitToJustLift
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -289,6 +291,11 @@ fun ActiveWorkoutScreen(
     // Navigation guard to prevent double navigateUp() calls (Issue #204)
     // The LaunchedEffect can re-trigger if workoutParameters changes during navigation,
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
+    val activeWorkoutEntryId = navController.currentBackStackEntry?.id
+    val activeWorkoutSessionId = viewModel.currentWorkoutSessionId()
+    val justLiftExitContext = remember(navController, activeWorkoutEntryId) {
+        JustLiftExitContext.capture(navController, activeWorkoutSessionId)
+    }
     var hasNavigatedAway by remember { mutableStateOf(false) }
 
     // Watch for workout completion and navigate back
@@ -315,12 +322,22 @@ fun ActiveWorkoutScreen(
             }
 
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
-                // Just Lift completed and reset to Idle - navigate back to Just Lift screen
+                // Just Lift stop/auto-reset settles back on JustLiftScreen with the
+                // selected mode retained (Issue #1366: one shared, idempotent,
+                // destination-specific exit for the stop path — never a second
+                // relative pop that over-pops [Home, JustLift, ActiveWorkout] to Home).
                 Logger.d {
-                    "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen"
+                    "ActiveWorkoutScreen: Just Lift idle, returning to JustLiftScreen"
                 }
-                hasNavigatedAway = true
-                navController.navigateUp()
+                val navigated = navController.exitToJustLift(
+                    justLiftExitContext,
+                    viewModel::currentWorkoutSessionId,
+                )
+                hasNavigatedAway = navController.justLiftExitHasSettled(
+                    context = justLiftExitContext,
+                    navigated = navigated,
+                    currentSessionId = viewModel::currentWorkoutSessionId,
+                )
             }
 
             workoutState is WorkoutState.Idle &&
@@ -654,11 +671,38 @@ fun ActiveWorkoutScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            // Use exitingWorkout=true to reset state to Idle and clear routine context
-                            // This prevents stale SetSummary state from blocking editing after exit
-                            viewModel.stopWorkout(exitingWorkout = true)
-                            showExitConfirmation = false
-                            navController.navigateUp()
+                            // Issue #1366: STOP -> Exit must settle on JustLiftScreen with the
+                            // selected mode retained, never Home. Capture the exit context
+                            // BEFORE stopWorkout() mutates engine state, then run the shared
+                            // idempotent Just Lift exit. Stop/safety ownership stays in
+                            // stopWorkout(exitingWorkout = true): navigation never gates it.
+                            val isJustLiftExit = workoutParameters.isJustLift
+                            val exitContext = JustLiftExitContext.capture(
+                                navController,
+                                viewModel.currentWorkoutSessionId(),
+                            )
+                            if (isJustLiftExit) {
+                                // The shared exit is authoritative. Latch only after the
+                                // destination has been reached (or the request is stale);
+                                // pre-latching suppresses the Idle observer if the transition
+                                // declines the request.
+                                viewModel.stopWorkout(exitingWorkout = true)
+                                showExitConfirmation = false
+                                val navigated = navController.exitToJustLift(
+                                    exitContext,
+                                    viewModel::currentWorkoutSessionId,
+                                )
+                                hasNavigatedAway = navController.justLiftExitHasSettled(
+                                    context = exitContext,
+                                    navigated = navigated,
+                                    currentSessionId = viewModel::currentWorkoutSessionId,
+                                )
+                            } else {
+                                viewModel.stopWorkout(exitingWorkout = true)
+                                showExitConfirmation = false
+                                hasNavigatedAway = true
+                                navController.navigateUp()
+                            }
                         },
                     ) {
                         Text(stringResource(Res.string.action_exit))
@@ -747,4 +791,18 @@ private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this)
     SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
     SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
     SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
+}
+
+private fun NavController.justLiftExitHasSettled(
+    context: JustLiftExitContext,
+    navigated: Boolean,
+    currentSessionId: () -> String?,
+): Boolean {
+    val currentEntry = currentBackStackEntry
+    val atDestination = currentEntry?.destination?.route == NavigationRoutes.JustLift.route
+    val sourceEntryWasReplaced = context.sourceEntryId != null && currentEntry?.id != context.sourceEntryId
+    val sessionWasReplaced = context.sessionId?.let { expectedSessionId ->
+        currentSessionId()?.let { it != expectedSessionId } == true
+    } == true
+    return navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
 }
