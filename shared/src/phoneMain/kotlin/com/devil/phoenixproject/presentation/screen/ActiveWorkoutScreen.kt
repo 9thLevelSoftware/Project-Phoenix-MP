@@ -53,6 +53,8 @@ import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.exitJustLift
+import com.devil.phoenixproject.presentation.navigation.isCurrentActiveWorkoutEntry
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -286,6 +288,12 @@ fun ActiveWorkoutScreen(
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
 
+    // Capture this NavBackStackEntry identity before stop publishes Idle. Both the
+    // explicit Exit action and the Idle observer must belong to this same entry.
+    val activeWorkoutEntryId = remember(navController) {
+        navController.currentBackStackEntry?.id
+    }
+
     // Navigation guard to prevent double navigateUp() calls (Issue #204)
     // The LaunchedEffect can re-trigger if workoutParameters changes during navigation,
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
@@ -320,7 +328,7 @@ fun ActiveWorkoutScreen(
                     "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen"
                 }
                 hasNavigatedAway = true
-                navController.navigateUp()
+                navController.exitJustLift(activeWorkoutEntryId)
             }
 
             workoutState is WorkoutState.Idle &&
@@ -654,11 +662,21 @@ fun ActiveWorkoutScreen(
                 confirmButton = {
                     Button(
                         onClick = {
+                            val isJustLiftExit = workoutParameters.isJustLift
+                            if (isJustLiftExit &&
+                                !navController.isCurrentActiveWorkoutEntry(activeWorkoutEntryId)
+                            ) {
+                                return@Button
+                            }
                             // Use exitingWorkout=true to reset state to Idle and clear routine context
                             // This prevents stale SetSummary state from blocking editing after exit
                             viewModel.stopWorkout(exitingWorkout = true)
                             showExitConfirmation = false
-                            navController.navigateUp()
+                            if (isJustLiftExit) {
+                                navController.exitJustLift(activeWorkoutEntryId)
+                            } else {
+                                navController.navigateUp()
+                            }
                         },
                     ) {
                         Text(stringResource(Res.string.action_exit))
