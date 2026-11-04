@@ -213,6 +213,24 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                     build_section,
                 )
 
+    def test_ios_archives_free_gradle_memory_before_xcodebuild(self) -> None:
+        # Release #98 (v1.1.0) lost its macos-26-intel runner 46 minutes into
+        # the iOS build. Daemons hold their heap into xcodebuild archive otherwise.
+        for name in (
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+            "ios-testflight-internal.yml",
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                gradle = text.index("./gradlew :shared:linkReleaseFrameworkIosArm64")
+                stop = text.index("./gradlew --stop")
+                archive = text.index("- name: Archive app")
+                self.assertLess(gradle, stop)
+                self.assertLess(stop, archive)
+                self.assertIn("pkill -f KotlinCompileDaemon", text)
+                self.assertEqual(text.count("memory_pressure -Q 2>/dev/null | tail -1); swap"), 2)
+
     def test_testflight_build_and_upload_use_compatible_runners(self) -> None:
         for name in ("ios-testflight.yml", "ios-testflight-internal.yml"):
             with self.subTest(workflow=name):

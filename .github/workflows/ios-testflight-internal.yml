@@ -109,10 +109,29 @@ jobs:
           # Single Gradle invocation — linkReleaseFrameworkIosArm64 already depends on
           # generateComposeResClass and resource processing, but listing them explicitly
           # ensures they run even if a dependency edge is missing. One JVM startup, not three.
+          # Log free memory and swap once a minute. If the runner is starved and
+          # drops off ("lost communication with the server"), always() steps never
+          # run, so this live log is the only evidence of where memory ran out.
+          ( while sleep 60 >/dev/null 2>&1; do
+              echo "[mem $(date -u +%H:%M:%S)] $(memory_pressure -Q 2>/dev/null | tail -1); swap $(sysctl -n vm.swapusage)"
+            done ) &
+          MEM_SAMPLER=$!
+          trap 'kill "$MEM_SAMPLER" 2>/dev/null || true' EXIT
+
           ./gradlew :shared:linkReleaseFrameworkIosArm64 \
             :shared:generateComposeResClass \
             :shared:iosArm64ProcessResources \
             --no-parallel -Pskip.supabase.check=true
+
+      # The Gradle daemon keeps its committed heap (up to the 8 GB -Xmx; ParallelGC
+      # does not hand it back) after the Kotlin/Native link. xcodebuild archive then
+      # links the static shared.framework into the app on the same 14 GB runner, so
+      # free the JVMs before it starts.
+      - name: Stop Gradle and Kotlin daemons before archiving
+        run: |
+          ./gradlew --stop || true
+          pkill -f KotlinCompileDaemon || true
+          echo "Free memory after stopping daemons: $(memory_pressure -Q 2>/dev/null | tail -1)"
 
       - name: Install shared.framework for Xcode
         run: |
@@ -147,6 +166,12 @@ jobs:
 
       - name: Archive app
         run: |
+          ( while sleep 60 >/dev/null 2>&1; do
+              echo "[mem $(date -u +%H:%M:%S)] $(memory_pressure -Q 2>/dev/null | tail -1); swap $(sysctl -n vm.swapusage)"
+            done ) &
+          MEM_SAMPLER=$!
+          trap 'kill "$MEM_SAMPLER" 2>/dev/null || true' EXIT
+
           xcodebuild archive \
             -project "$PROJECT_PATH" \
             -scheme "$SCHEME" \
