@@ -7082,7 +7082,10 @@ class ActiveSessionEngine(
         // (persistSnapshot commits the session before its justLiftDefaults write). The
         // exit snapshot captured the just-ended session's confirmed settings pre-teardown
         // (Issue #714), so prefer only a retained execution newer than the durable-write
-        // ledger for this profile until that write lands and the snapshot is removed.
+        // ledger for this profile until that write lands and the snapshot is removed. A
+        // snapshot whose save FAILED stays eligible: its defaults were never written, and
+        // its retry on the next start writes exactly these values. A later write with no
+        // execution (persistJustLiftDefaultsOutOfBand) advances the ledger past it.
         val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
             ?.profile?.id
         val profilePendingSnapshots = currentProfileId?.let { profileId ->
@@ -7139,7 +7142,7 @@ class ActiveSessionEngine(
                 }
             }
             val persisted = if (executionId == null) {
-                persistDefaults()
+                executionGuard.persistJustLiftDefaultsOutOfBand(profileId, persistDefaults)
                 true
             } else {
                 executionGuard.persistJustLiftDefaultsIfNewer(
@@ -7151,6 +7154,10 @@ class ActiveSessionEngine(
             if (persisted) {
                 Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
             }
+        } catch (e: CancellationException) {
+            // The save suspends (ledger mutex + profile write): a cancelled stop
+            // continuation must stop here, not carry on mutating state.
+            throw e
         } catch (e: StaleProfileContextException) {
             // Issue #1366 review: settingsManager.mutateWorkout only accepts the ACTIVE
             // profile context, so an attributed owner profile that differs (FP-6
@@ -9600,6 +9607,23 @@ class ActiveSessionEngine(
         }
     }
 
+    /**
+     * Issue #714: synchronous best-effort write of the snapshot's frozen Just Lift
+     * defaults. A failure is logged, not raised: the retained snapshot's retry recovers.
+     */
+    private suspend fun persistJustLiftDefaultsBestEffort(snapshot: WorkoutExitSnapshot) {
+        try {
+            persistCapturedJustLiftDefaultsSnapshot(snapshot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.w(e) {
+                "Issue #714: synchronous Just Lift defaults write failed; " +
+                    "retained-snapshot retry will recover"
+            }
+        }
+    }
+
     private fun retryRetainedWorkoutExitPersistence() {
         scope.launch {
             exitSnapshotStore.retainedSnapshots().forEach { launchSnapshotPersistence(it) }
@@ -10733,10 +10757,10 @@ class ActiveSessionEngine(
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                         bleRepository.restartMonitorPolling()
-                        saveJustLiftDefaultsFromWorkout(
-                            profileId = manualSnapshot.lease.profileId,
-                            executionId = manualSnapshot.lease.executionId,
-                        )
+                        // Issue #714: persist the snapshot's pre-teardown capture, never live
+                        // post-teardown params. persistSnapshot writes the same frozen data
+                        // under the same execution id, so whichever lands first is correct.
+                        persistJustLiftDefaultsBestEffort(manualSnapshot)
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
@@ -11729,16 +11753,7 @@ class ActiveSessionEngine(
             // Issue #714: persist the captured Just Lift defaults before publishing
             // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
-                try {
-                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    Logger.w(e) {
-                        "Issue #714: synchronous Just Lift defaults write failed; " +
-                            "retained-snapshot retry will recover"
-                    }
-                }
+                persistJustLiftDefaultsBestEffort(terminalSnapshot)
             }
 
             // Rest actions can be selected while RESET is still in flight. Read the
