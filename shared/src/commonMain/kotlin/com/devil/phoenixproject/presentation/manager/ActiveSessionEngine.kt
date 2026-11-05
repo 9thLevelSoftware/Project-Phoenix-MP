@@ -7082,12 +7082,16 @@ class ActiveSessionEngine(
         // (persistSnapshot commits the session before its justLiftDefaults write). The
         // exit snapshot captured the just-ended session's confirmed settings pre-teardown
         // (Issue #714), so prefer only a retained execution newer than the durable-write
-        // ledger for this profile until that write lands and the snapshot is removed.
+        // ledger for this profile, and only while its persistence is still in flight. A
+        // snapshot whose persistence FAILED stays retained for retry, but must not hide
+        // durable values written since (sync pull, backup import, no-lease stop).
         val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
             ?.profile?.id
         val profilePendingSnapshots = currentProfileId?.let { profileId ->
             exitSnapshotStore.retainedSnapshots().filter {
-                it.lease.profileId == profileId && it.justLiftDefaults != null
+                it.lease.profileId == profileId &&
+                    it.justLiftDefaults != null &&
+                    executionGuard.persistenceClaimStatus(it.completion.lease.sessionId) == PersistenceClaimStatus.IN_PROGRESS
             }
         }.orEmpty()
         val newestPendingExecutionId = currentProfileId?.let { profileId ->
@@ -7151,6 +7155,10 @@ class ActiveSessionEngine(
             if (persisted) {
                 Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
             }
+        } catch (e: CancellationException) {
+            // The save suspends (ledger mutex + profile write): a cancelled stop
+            // continuation must stop here, not carry on mutating state.
+            throw e
         } catch (e: StaleProfileContextException) {
             // Issue #1366 review: settingsManager.mutateWorkout only accepts the ACTIVE
             // profile context, so an attributed owner profile that differs (FP-6
@@ -10733,10 +10741,19 @@ class ActiveSessionEngine(
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                         bleRepository.restartMonitorPolling()
-                        saveJustLiftDefaultsFromWorkout(
-                            profileId = manualSnapshot.lease.profileId,
-                            executionId = manualSnapshot.lease.executionId,
-                        )
+                        // Issue #714: persist the snapshot's pre-teardown capture, never live
+                        // post-teardown params. persistSnapshot writes the same frozen data
+                        // under the same execution id, so whichever lands first is correct.
+                        try {
+                            persistCapturedJustLiftDefaultsSnapshot(manualSnapshot)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Logger.w(e) {
+                                "Issue #714: manual-stop Just Lift defaults write failed; " +
+                                    "retained-snapshot retry will recover"
+                            }
+                        }
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }

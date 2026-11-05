@@ -328,10 +328,11 @@ class Issue1366JustLiftExitNavigationTest {
 
     @Test
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
-    fun `stop exit with absent JustLift entry falls back preserving Home without duplicates`() {
-        // Unusual entry path: ActiveWorkout reached without a JustLift entry under it.
-        // The guarded fallback must preserve Home as the bottom entry and must not
-        // create duplicate JustLift entries.
+    fun `stop exit with absent JustLift entry returns to the previous screen`() {
+        // Unusual entry path: ActiveWorkout reached without a JustLift entry under it
+        // (resumed from elsewhere, or state restoration). Exit must return to the screen
+        // below, as before #1366, and must NOT create a fresh JustLiftScreen that would
+        // re-prepare and re-arm handle auto-start right after the user chose Exit.
         driveJustLiftActiveSession(justLiftParameters(), includeJustLiftEntry = false)
         assertEquals("home -> active_workout", backStack())
 
@@ -341,14 +342,14 @@ class Issue1366JustLiftExitNavigationTest {
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
 
         assertEquals(
-            "The absent-destination fallback must land JustLift (visited: $visitedAfterExit)",
-            NavigationRoutes.JustLift.route,
+            "The absent-destination fallback must return to Home (visited: $visitedAfterExit)",
+            NavigationRoutes.Home.route,
             currentRoute(),
         )
-        assertEquals(
-            "Fallback must preserve Home and never duplicate JustLift",
-            "home -> just_lift",
-            backStack(),
+        assertEquals("Fallback must leave only Home", "home", backStack())
+        assertTrue(
+            "Fallback must never create a JustLift entry (visited: $visitedAfterExit)",
+            visitedAfterExit.none { it == NavigationRoutes.JustLift.route },
         )
     }
 
@@ -380,10 +381,7 @@ class Issue1366JustLiftExitNavigationTest {
     fun `repeated exit deliveries after settling perform no second transition`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
         // The exact context the Exit dialog confirm captures (before stop).
-        val exitContext = JustLiftExitContext.capture(
-            navController!!,
-            fx.viewModel.currentWorkoutSessionId(),
-        )
+        val exitContext = JustLiftExitContext.capture(navController!!)
 
         exitViaStopDialog()
         settle()
@@ -393,8 +391,8 @@ class Issue1366JustLiftExitNavigationTest {
 
         // Repeated confirmations / recreated-composition observer deliveries carrying
         // the same exit identity must be no-ops (one effective transition total).
-        val second = navController!!.exitToJustLift(exitContext) { fx.viewModel.currentWorkoutSessionId() }
-        val third = navController!!.exitToJustLift(exitContext) { fx.viewModel.currentWorkoutSessionId() }
+        val second = navController!!.exitToJustLift(exitContext)
+        val third = navController!!.exitToJustLift(exitContext)
         settle()
         assertEquals("A repeat delivery must not navigate", false, second)
         assertEquals("A repeat delivery must not navigate", false, third)
@@ -404,14 +402,9 @@ class Issue1366JustLiftExitNavigationTest {
 
     @Test
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
-    fun `stale exit callback from an ended session cannot navigate a later session`() {
+    fun `stale exit callback from an ended entry cannot navigate a later session`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
-        val staleSessionId = fx.viewModel.currentWorkoutSessionId()
-        assertNotNull("Precondition: session identity exists before stop", staleSessionId)
-        val staleContext = JustLiftExitContext.capture(
-            navController!!,
-            fx.viewModel.currentWorkoutSessionId(),
-        )
+        val staleContext = JustLiftExitContext.capture(navController!!)
 
         exitViaStopDialog()
         settle()
@@ -429,24 +422,51 @@ class Issue1366JustLiftExitNavigationTest {
         val laterStack = backStack()
         assertEquals("home -> just_lift -> active_workout", laterStack)
 
-        val effective = navController!!.exitToJustLift(staleContext) { fx.viewModel.currentWorkoutSessionId() }
+        val effective = navController!!.exitToJustLift(staleContext)
         settle()
-        assertEquals("A stale ended-session callback must not navigate", false, effective)
+        assertEquals("A stale ended-entry callback must not navigate", false, effective)
         assertEquals(laterStack, backStack())
         assertEquals(NavigationRoutes.ActiveWorkout.route, currentRoute())
+    }
 
-        // The session-identity check alone (SAME entry, stale session token) must also
-        // reject while the later session is current on that entry.
-        val sameEntryStaleSession = JustLiftExitContext(
-            sourceEntryId = navController!!.currentBackStackEntry?.id,
-            sessionId = staleSessionId,
-        )
-        val effective2 = navController!!.exitToJustLift(sameEntryStaleSession) {
-            fx.viewModel.currentWorkoutSessionId()
-        }
+    @Test
+    @Config(qualifiers = "w402dp-h874dp-xxhdpi")
+    fun `follow-on set on the same entry still returns to JustLift after a stop set`() {
+        // Production same-entry rollover: Just Lift auto-start from SetSummary
+        // (startWorkout(skipCountdown = true, isJustLiftMode = true)) begins the next set on
+        // the SAME ActiveWorkout entry. A later Stop Set (the safe-word path) publishes Idle
+        // without clearing the live session id; the Idle observer must still land JustLift.
+        val fx = driveJustLiftActiveSession(justLiftParameters())
+        val coordinator = fx.viewModel.workoutSessionManager.coordinator
+        val entryId = navController!!.currentBackStackEntry?.id
+        val firstSessionId = coordinator.currentSessionId
+        assertNotNull("Precondition: the first set has a session id", firstSessionId)
+
+        fx.viewModel.stopWorkout()
+        rule.waitUntil(TIMEOUT_MS) { fx.viewModel.workoutState.value is WorkoutState.SetSummary }
+        assertEquals(NavigationRoutes.ActiveWorkout.route, currentRoute())
+
+        fx.viewModel.startWorkout(skipCountdown = true, isJustLiftMode = true)
+        rule.waitUntil(TIMEOUT_MS) { fx.viewModel.workoutState.value is WorkoutState.Active }
         settle()
-        assertEquals("A stale session token must not navigate the later session", false, effective2)
-        assertEquals(laterStack, backStack())
+        assertEquals("The follow-on set must reuse the same entry", entryId, navController!!.currentBackStackEntry?.id)
+        assertTrue(
+            "Precondition: the follow-on set is a new session",
+            coordinator.currentSessionId != null && coordinator.currentSessionId != firstSessionId,
+        )
+
+        val visitedAtStop = visitedRoutes.size
+        fx.viewModel.stopAndReturnToSetReady()
+        rule.waitUntil(TIMEOUT_MS) { fx.viewModel.workoutState.value is WorkoutState.Idle }
+        settle()
+        val visitedAfterStop = visitedRoutes.drop(visitedAtStop)
+
+        assertEquals(
+            "The follow-on set's Idle must land JustLift (visited: $visitedAfterStop)",
+            NavigationRoutes.JustLift.route,
+            currentRoute(),
+        )
+        assertEquals("home -> just_lift", backStack())
     }
 
     // ===== Driving helpers =====
