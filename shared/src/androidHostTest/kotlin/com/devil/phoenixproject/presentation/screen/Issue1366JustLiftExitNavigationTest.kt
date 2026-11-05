@@ -338,7 +338,11 @@ class Issue1366JustLiftExitNavigationTest {
 
         val visitedAtExitClick = visitedRoutes.size
         exitViaStopDialog()
-        settle()
+        // Compose never reaches idle once the production HomeScreen is current in this
+        // harness, so settle()'s waitForIdle() would time out. Wait on the back stack and
+        // hold the observation window open by advancing frames instead.
+        rule.waitUntil(TIMEOUT_MS) { backStack() == NavigationRoutes.Home.route }
+        repeat(SETTLE_FRAMES) { rule.mainClock.advanceTimeByFrame() }
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
 
         assertEquals(
@@ -604,6 +608,9 @@ class Issue1366JustLiftExitNavigationTest {
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val SETTLE_WINDOW_MS = 5_000L
+
+        /** Frames (16 ms each) to observe after a transition that cannot wait for idle. */
+        const val SETTLE_FRAMES = 60
 
         /** Weight of the saved Just Lift defaults seeded in this harness (JustLiftDefaultsDocument default). */
         const val SAVED_DEFAULTS_WEIGHT_KG = 20f
