@@ -385,7 +385,7 @@ class Issue1366JustLiftExitNavigationTest {
     fun `repeated exit deliveries after settling perform no second transition`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
         // The exact context the Exit dialog confirm captures (before stop).
-        val exitContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry?.id)
+        val exitContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry!!.id)
 
         exitViaStopDialog()
         settle()
@@ -408,7 +408,7 @@ class Issue1366JustLiftExitNavigationTest {
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
     fun `stale exit callback from an ended entry cannot navigate a later session`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
-        val staleContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry?.id)
+        val staleContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry!!.id)
 
         exitViaStopDialog()
         settle()

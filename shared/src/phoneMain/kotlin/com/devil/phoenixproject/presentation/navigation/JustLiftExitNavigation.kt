@@ -22,7 +22,7 @@ import androidx.navigation.NavController
  */
 class JustLiftExitContext internal constructor(
     /** The back-stack entry (ActiveWorkout) that owns/authorised this exit. */
-    val sourceEntryId: String?,
+    val sourceEntryId: String,
 )
 
 /**
@@ -44,7 +44,7 @@ fun NavController.exitToJustLift(context: JustLiftExitContext): Boolean {
     //    over), the originating entry is no longer current and every repeat or stale
     //    delivery no-ops. This is what makes the transition idempotent across
     //    composition recreation and duplicated callbacks.
-    if (context.sourceEntryId != null && currentEntry.id != context.sourceEntryId) return false
+    if (currentEntry.id != context.sourceEntryId) return false
 
     // 2. Destination check: if JustLift is already current there is nothing to do.
     if (currentEntry.destination.route == NavigationRoutes.JustLift.route) return false

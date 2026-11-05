@@ -1273,6 +1273,23 @@ internal class WorkoutExecutionGuard(
         true
     }
 
+    /**
+     * Records a Just Lift defaults write that has no execution (the no-lease stop path) in
+     * the same ledger. Such a write is newer than every execution issued so far, so a
+     * retained older snapshot can neither shadow it on read nor overwrite it on retry.
+     */
+    internal suspend fun persistJustLiftDefaultsOutOfBand(
+        profileId: String,
+        persist: suspend () -> Unit,
+    ) = justLiftDefaultsPersistenceMutex.withLock {
+        persist()
+        val issuedExecutionId = executionSequence.value
+        val latestExecutionId = latestJustLiftDefaultsExecutionByProfile[profileId]
+        if (latestExecutionId == null || issuedExecutionId > latestExecutionId) {
+            latestJustLiftDefaultsExecutionByProfile[profileId] = issuedExecutionId
+        }
+    }
+
     internal suspend fun newestPendingJustLiftDefaultsExecutionId(
         profileId: String,
         candidateExecutionIds: List<Long>,

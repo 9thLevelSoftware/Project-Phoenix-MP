@@ -1802,28 +1802,7 @@ class WorkoutExitPersistenceTest {
         val harness = DWSMTestHarness(this)
         try {
             // 1. Seed the active profile's Just Lift defaults as TUT — the bug condition.
-            val readyBefore = harness.fakeUserProfileRepo.activeProfileContext.value
-                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
-            harness.fakeUserProfileRepo.updateWorkout(
-                readyBefore.profile.id,
-                readyBefore.preferences.workout.value.copy(
-                    justLiftDefaults = com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument(
-                        workoutModeId = ProgramMode.TUT.modeValue,
-                        weightPerCableKg = 18f,
-                        weightChangePerRep = 0.5f,
-                        eccentricLoadPercentage = 100,
-                        echoLevelValue = 0,
-                        stallDetectionEnabled = true,
-                        repCountTimingName = com.devil.phoenixproject.domain.model.RepCountTiming.TOP.name,
-                        restSeconds = 90,
-                    ),
-                ),
-            )
-            advanceUntilIdle()
-
-            // Sanity: seeded TUT is observable via settingsManager before the workout.
-            val seededBefore = harness.settingsManager.getJustLiftDefaultsDocument()
-            assertEquals(ProgramMode.TUT.modeValue, seededBefore.workoutModeId)
+            seedTutJustLiftDefaults(harness)
 
             // 2. User picks Old School and starts a Just Lift set. params carry OldSchool.
             harness.fakeBleRepo.simulateConnect("Vee_Test")

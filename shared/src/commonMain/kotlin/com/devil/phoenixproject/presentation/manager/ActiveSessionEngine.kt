@@ -7084,7 +7084,8 @@ class ActiveSessionEngine(
         // (Issue #714), so prefer only a retained execution newer than the durable-write
         // ledger for this profile until that write lands and the snapshot is removed. A
         // snapshot whose save FAILED stays eligible: its defaults were never written, and
-        // its retry on the next start writes exactly these values.
+        // its retry on the next start writes exactly these values. A later write with no
+        // execution (persistJustLiftDefaultsOutOfBand) advances the ledger past it.
         val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
             ?.profile?.id
         val profilePendingSnapshots = currentProfileId?.let { profileId ->
@@ -7141,7 +7142,7 @@ class ActiveSessionEngine(
                 }
             }
             val persisted = if (executionId == null) {
-                persistDefaults()
+                executionGuard.persistJustLiftDefaultsOutOfBand(profileId, persistDefaults)
                 true
             } else {
                 executionGuard.persistJustLiftDefaultsIfNewer(
