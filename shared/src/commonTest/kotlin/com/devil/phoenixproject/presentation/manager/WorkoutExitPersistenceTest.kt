@@ -1851,7 +1851,7 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
-    fun `Issue714 manual Just Lift stop persists the frozen capture, not live post-stop params`() = runTest {
+    fun `Issue714 manual Just Lift stop persists the frozen capture over live post-stop params`() = runTest {
         val harness = DWSMTestHarness(this)
         val commitGate = CompletableDeferred<Unit>()
         try {
