@@ -50,4 +50,27 @@ class WorkoutExecutionGuardPendingDefaultsTest {
             "A later execution still writes",
         )
     }
+
+    @Test
+    fun `execution issued during an out-of-band write stays eligible`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        var duringWrite: ExecutionLease? = null
+
+        guard.persistJustLiftDefaultsOutOfBand("profile-a") {
+            duringWrite = guard.beginExecution(
+                ExecutionSeed(sessionId = "during", profileId = "profile-a", requiresMachine = false, workingRepTarget = 5),
+            ).getOrThrow()
+        }
+        val issued = checkNotNull(duringWrite)
+
+        assertEquals(
+            issued.executionId,
+            guard.newestPendingJustLiftDefaultsExecutionId("profile-a", listOf(issued.executionId)),
+            "An execution that began while the write was in flight must not be stamped as written",
+        )
+        assertTrue(
+            guard.persistJustLiftDefaultsIfNewer("profile-a", issued.executionId) {},
+            "Its own defaults write must still land",
+        )
+    }
 }
