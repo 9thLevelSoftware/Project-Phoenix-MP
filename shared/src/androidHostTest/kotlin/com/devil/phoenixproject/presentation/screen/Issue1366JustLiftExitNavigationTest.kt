@@ -340,9 +340,9 @@ class Issue1366JustLiftExitNavigationTest {
         exitViaStopDialog()
         // Compose never reaches idle once the production HomeScreen is current in this
         // harness, so settle()'s waitForIdle() would time out. Wait on the back stack and
-        // hold the observation window open by advancing frames instead.
+        // hold the observation window open by advancing the clock instead.
         rule.waitUntil(TIMEOUT_MS) { backStack() == NavigationRoutes.Home.route }
-        repeat(SETTLE_FRAMES) { rule.mainClock.advanceTimeByFrame() }
+        rule.mainClock.advanceTimeBy(SETTLE_WINDOW_MS)
         val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
 
         assertEquals(
@@ -385,7 +385,7 @@ class Issue1366JustLiftExitNavigationTest {
     fun `repeated exit deliveries after settling perform no second transition`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
         // The exact context the Exit dialog confirm captures (before stop).
-        val exitContext = JustLiftExitContext.capture(navController!!)
+        val exitContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry?.id)
 
         exitViaStopDialog()
         settle()
@@ -408,7 +408,7 @@ class Issue1366JustLiftExitNavigationTest {
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
     fun `stale exit callback from an ended entry cannot navigate a later session`() {
         val fx = driveJustLiftActiveSession(justLiftParameters())
-        val staleContext = JustLiftExitContext.capture(navController!!)
+        val staleContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry?.id)
 
         exitViaStopDialog()
         settle()
@@ -608,9 +608,6 @@ class Issue1366JustLiftExitNavigationTest {
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val SETTLE_WINDOW_MS = 5_000L
-
-        /** Frames (16 ms each) to observe after a transition that cannot wait for idle. */
-        const val SETTLE_FRAMES = 60
 
         /** Weight of the saved Just Lift defaults seeded in this harness (JustLiftDefaultsDocument default). */
         const val SAVED_DEFAULTS_WEIGHT_KG = 20f

@@ -23,13 +23,7 @@ import androidx.navigation.NavController
 class JustLiftExitContext internal constructor(
     /** The back-stack entry (ActiveWorkout) that owns/authorised this exit. */
     val sourceEntryId: String?,
-) {
-    companion object {
-        /** Captures the current back-stack entry as the source of the exit. */
-        fun capture(navController: NavController): JustLiftExitContext =
-            JustLiftExitContext(sourceEntryId = navController.currentBackStackEntry?.id)
-    }
-}
+)
 
 /**
  * Idempotent, destination-specific Just Lift exit. Returns true when THIS call

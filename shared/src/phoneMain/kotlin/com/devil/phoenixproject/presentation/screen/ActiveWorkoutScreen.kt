@@ -95,9 +95,9 @@ fun ActiveWorkoutScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
-    polarBleManager: PolarH10BleManager = koinInject(),
     /** Issue #1366: id of the NavBackStackEntry hosting this screen (from NavGraph). */
-    backStackEntryId: String? = null,
+    backStackEntryId: String,
+    polarBleManager: PolarH10BleManager = koinInject(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
@@ -295,8 +295,8 @@ fun ActiveWorkoutScreen(
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
     // Issue #1366: the Just Lift exit identity is the entry that HOSTS this screen,
     // captured once - never whichever entry is on top during a transition.
-    val justLiftExitContext = remember(navController, backStackEntryId) {
-        JustLiftExitContext(sourceEntryId = backStackEntryId ?: navController.currentBackStackEntry?.id)
+    val justLiftExitContext = remember(backStackEntryId) {
+        JustLiftExitContext(sourceEntryId = backStackEntryId)
     }
     var hasNavigatedAway by remember { mutableStateOf(false) }
 

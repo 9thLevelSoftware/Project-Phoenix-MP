@@ -7082,16 +7082,14 @@ class ActiveSessionEngine(
         // (persistSnapshot commits the session before its justLiftDefaults write). The
         // exit snapshot captured the just-ended session's confirmed settings pre-teardown
         // (Issue #714), so prefer only a retained execution newer than the durable-write
-        // ledger for this profile, and only while its persistence is still in flight. A
-        // snapshot whose persistence FAILED stays retained for retry, but must not hide
-        // durable values written since (sync pull, backup import, no-lease stop).
+        // ledger for this profile until that write lands and the snapshot is removed. A
+        // snapshot whose save FAILED stays eligible: its defaults were never written, and
+        // its retry on the next start writes exactly these values.
         val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
             ?.profile?.id
         val profilePendingSnapshots = currentProfileId?.let { profileId ->
             exitSnapshotStore.retainedSnapshots().filter {
-                it.lease.profileId == profileId &&
-                    it.justLiftDefaults != null &&
-                    executionGuard.persistenceClaimStatus(it.completion.lease.sessionId) == PersistenceClaimStatus.IN_PROGRESS
+                it.lease.profileId == profileId && it.justLiftDefaults != null
             }
         }.orEmpty()
         val newestPendingExecutionId = currentProfileId?.let { profileId ->
@@ -9608,6 +9606,23 @@ class ActiveSessionEngine(
         }
     }
 
+    /**
+     * Issue #714: synchronous best-effort write of the snapshot's frozen Just Lift
+     * defaults. A failure is logged, not raised: the retained snapshot's retry recovers.
+     */
+    private suspend fun persistJustLiftDefaultsBestEffort(snapshot: WorkoutExitSnapshot) {
+        try {
+            persistCapturedJustLiftDefaultsSnapshot(snapshot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.w(e) {
+                "Issue #714: synchronous Just Lift defaults write failed; " +
+                    "retained-snapshot retry will recover"
+            }
+        }
+    }
+
     private fun retryRetainedWorkoutExitPersistence() {
         scope.launch {
             exitSnapshotStore.retainedSnapshots().forEach { launchSnapshotPersistence(it) }
@@ -10744,16 +10759,7 @@ class ActiveSessionEngine(
                         // Issue #714: persist the snapshot's pre-teardown capture, never live
                         // post-teardown params. persistSnapshot writes the same frozen data
                         // under the same execution id, so whichever lands first is correct.
-                        try {
-                            persistCapturedJustLiftDefaultsSnapshot(manualSnapshot)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            Logger.w(e) {
-                                "Issue #714: manual-stop Just Lift defaults write failed; " +
-                                    "retained-snapshot retry will recover"
-                            }
-                        }
+                        persistJustLiftDefaultsBestEffort(manualSnapshot)
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
@@ -11746,16 +11752,7 @@ class ActiveSessionEngine(
             // Issue #714: persist the captured Just Lift defaults before publishing
             // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
-                try {
-                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    Logger.w(e) {
-                        "Issue #714: synchronous Just Lift defaults write failed; " +
-                            "retained-snapshot retry will recover"
-                    }
-                }
+                persistJustLiftDefaultsBestEffort(terminalSnapshot)
             }
 
             // Rest actions can be selected while RESET is still in flight. Read the

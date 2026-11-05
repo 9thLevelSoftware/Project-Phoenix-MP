@@ -1872,6 +1872,99 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
+    fun `Issue714 manual Just Lift stop persists the frozen capture, not live post-stop params`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val commitGate = CompletableDeferred<Unit>()
+        try {
+            seedTutJustLiftDefaults(harness)
+            startOldSchoolJustLiftSet(harness)
+
+            // Hold the snapshot commit so the manual-stop continuation reaches its own
+            // defaults write first, after the live params changed (as a teardown reset does).
+            harness.fakeWorkoutRepo.beforeSaveSession = { commitGate.await() }
+            harness.dwsm.stopWorkout(exitingWorkout = false)
+            harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(
+                programMode = ProgramMode.TUT,
+                weightPerCableKg = 18f,
+            )
+            advanceUntilIdle()
+            commitGate.complete(Unit)
+            advanceUntilIdle()
+
+            val persisted = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(ProgramMode.OldSchool.modeValue, persisted.workoutModeId)
+            assertEquals(27.5f, persisted.weightPerCableKg)
+        } finally {
+            commitGate.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue714 failed End Workout save keeps the retained Just Lift settings readable`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            seedTutJustLiftDefaults(harness)
+            startOldSchoolJustLiftSet(harness)
+
+            // The commit fails before the defaults write, so the durable document keeps TUT
+            // and the retained snapshot is the only copy of the confirmed settings.
+            harness.fakeWorkoutRepo.beforeSaveSession = { throw IllegalStateException("db unavailable") }
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                ProgramMode.TUT.modeValue,
+                harness.settingsManager.getJustLiftDefaultsDocument().workoutModeId,
+            )
+            val readBack = harness.activeSessionEngine.getJustLiftDefaults()
+            assertEquals(ProgramMode.OldSchool.modeValue, readBack.workoutModeId)
+            assertEquals(27.5f, readBack.weightPerCableKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private suspend fun TestScope.seedTutJustLiftDefaults(harness: DWSMTestHarness) {
+        val ready = harness.fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
+        harness.fakeUserProfileRepo.updateWorkout(
+            ready.profile.id,
+            ready.preferences.workout.value.copy(
+                justLiftDefaults = JustLiftDefaultsDocument(
+                    workoutModeId = ProgramMode.TUT.modeValue,
+                    weightPerCableKg = 18f,
+                    weightChangePerRep = 0.5f,
+                    eccentricLoadPercentage = 100,
+                    echoLevelValue = 0,
+                    stallDetectionEnabled = true,
+                    repCountTimingName = RepCountTiming.TOP.name,
+                    restSeconds = 90,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(ProgramMode.TUT.modeValue, harness.settingsManager.getJustLiftDefaultsDocument().workoutModeId)
+    }
+
+    private fun TestScope.startOldSchoolJustLiftSet(harness: DWSMTestHarness) {
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 5,
+                warmupReps = 0,
+                weightPerCableKg = 27.5f,
+                isJustLift = true,
+                useAutoStart = true,
+                selectedExerciseId = null,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+        advanceUntilIdle()
+        harness.coordinator._repCount.value = RepCount(workingReps = 5)
+    }
+
+    @Test
     fun `Issue714 reset after handleSetCompletion does not affect persisted Just Lift defaults`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
