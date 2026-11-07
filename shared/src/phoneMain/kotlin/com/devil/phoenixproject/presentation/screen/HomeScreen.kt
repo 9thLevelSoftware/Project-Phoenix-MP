@@ -92,7 +92,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
-    val recentActivityHistory by viewModel.homeRecentActivityHistory.collectAsState()
+    val recentActivityHistory by viewModel.groupedWorkoutHistory.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
     val cycleRepository: TrainingCycleRepository = koinInject()
@@ -213,7 +213,6 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                     )
                     HomeRecentActivityContent(
                         history = recentActivityHistory,
-                        profileId = profileId,
                         weightUnit = weightUnit,
                         onExerciseClick = { exerciseId ->
                             navController.navigate(NavigationRoutes.SingleExerciseForExercise.createRoute(exerciseId))
@@ -512,21 +511,18 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
 @Composable
 internal fun HomeRecentActivityContent(
     history: List<HistoryItem>,
-    profileId: String,
     weightUnit: WeightUnit = WeightUnit.KG,
     onExerciseClick: (String) -> Unit,
 ) {
     RecentActivitySummary(
-        history = projectHomeRecentActivities(
-            filterRecentActivityHistoryForProfile(history, profileId),
-        ),
+        history = projectHomeRecentActivities(history),
         weightUnit = weightUnit,
         onExerciseClick = onExerciseClick,
     )
 }
 
 @Composable
-internal fun RecentActivitySummary(
+private fun RecentActivitySummary(
     history: List<HistoryItem>,
     weightUnit: WeightUnit = WeightUnit.KG,
     onExerciseClick: (String) -> Unit,

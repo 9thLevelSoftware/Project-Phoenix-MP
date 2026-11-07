@@ -7,26 +7,14 @@ import kotlin.test.assertTrue
 
 class HomeRecentActivityWiringTest {
     @Test
-    fun recentActivityUsesGroupedVisibleFeedAndWeeklyComplianceKeepsRawFeed() {
+    fun recentActivityUsesGroupedHistoryAndWeeklyComplianceKeepsRawFeed() {
         val homeScreen = assertNotNull(
             readProjectFile("src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/HomeScreen.kt"),
         )
 
+        assertTrue(homeScreen.contains("viewModel.groupedWorkoutHistory.collectAsState()"))
         assertTrue(homeScreen.contains("history = recentActivityHistory"))
-        assertTrue(homeScreen.contains("profileId = profileId"))
-        assertTrue(homeScreen.contains("filterRecentActivityHistoryForProfile(history, profileId)"))
         assertTrue(homeScreen.contains("history = recentSessions"))
         assertTrue(homeScreen.contains("history = projectHomeRecentActivities("))
-    }
-
-    @Test
-    fun homeRecentActivityFeedIsFilteredToTheActiveProfile() {
-        val historyManager = assertNotNull(
-            readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/HistoryManager.kt"),
-        )
-
-        assertTrue(historyManager.contains("val homeRecentActivityHistory: StateFlow<List<HistoryItem>> = groupedWorkoutHistory"))
-        assertTrue(historyManager.contains("combine(userProfileRepository.activeProfile, allWorkoutSessions)"))
-        assertTrue(historyManager.contains("session.profileId == profileId && (session.workingReps > 0 || session.totalReps > 0)"))
     }
 }

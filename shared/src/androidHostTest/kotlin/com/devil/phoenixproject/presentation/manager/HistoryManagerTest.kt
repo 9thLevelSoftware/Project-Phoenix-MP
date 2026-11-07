@@ -133,7 +133,7 @@ class HistoryManagerTest {
             var activeProfileId = "profile-a"
             val emittedProfileIdsAfterSwitch = mutableListOf<String>()
             val collectJob = launch {
-                manager.homeRecentActivityHistory.collect { items ->
+                manager.groupedWorkoutHistory.collect { items ->
                     if (activeProfileId == "profile-b") {
                         emittedProfileIdsAfterSwitch += items.flatMap { item ->
                             when (item) {
@@ -145,13 +145,13 @@ class HistoryManagerTest {
                 }
             }
             advanceUntilIdle()
-            assertEquals(listOf("routine:profile-a-run"), manager.homeRecentActivityHistory.value.map(HistoryItem::lazyColumnKey))
+            assertEquals(listOf("routine:profile-a-run"), manager.groupedWorkoutHistory.value.map(HistoryItem::lazyColumnKey))
 
             activeProfileId = "profile-b"
             fakeUserProfileRepository.seedReadyProfileForTest("profile-b")
             advanceUntilIdle()
 
-            assertEquals(listOf("single:profile-b-session"), manager.homeRecentActivityHistory.value.map(HistoryItem::lazyColumnKey))
+            assertEquals(listOf("single:profile-b-session"), manager.groupedWorkoutHistory.value.map(HistoryItem::lazyColumnKey))
             assertEquals(setOf("profile-b"), emittedProfileIdsAfterSwitch.toSet())
             collectJob.cancel()
         } finally {
@@ -195,10 +195,10 @@ class HistoryManagerTest {
                 fakeUserProfileRepository,
                 managerScope,
             )
-            val collectJob = launch { manager.homeRecentActivityHistory.collect { } }
+            val collectJob = launch { manager.groupedWorkoutHistory.collect { } }
             advanceUntilIdle()
 
-            val projected = projectHomeRecentActivities(manager.homeRecentActivityHistory.value)
+            val projected = projectHomeRecentActivities(manager.groupedWorkoutHistory.value)
             assertEquals(
                 listOf("routine:new-run", "single:older-workout"),
                 projected.map(HistoryItem::lazyColumnKey),

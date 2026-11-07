@@ -52,36 +52,4 @@ class HomeRecentActivityProjectionTest {
         assertEquals(listOf("single:a-session", "single:z-session"), projected.map(HistoryItem::lazyColumnKey))
     }
 
-    @Test
-    fun `cached recent activities from another profile are hidden before projection`() {
-        val oldRoutine = GroupedRoutineHistoryItem(
-            routineSessionId = "profile-a-run",
-            routineName = "Push Day",
-            sessions = listOf(
-                WorkoutSession(
-                    id = "profile-a-set",
-                    routineSessionId = "profile-a-run",
-                    profileId = "profile-a",
-                    totalReps = 8,
-                ),
-            ),
-            totalDuration = 0L,
-            totalReps = 8,
-            exerciseCount = 1,
-            timestamp = 2_000L,
-        )
-        val oldStandalone = SingleSessionHistoryItem(
-            WorkoutSession(id = "profile-a-single", profileId = "profile-a", totalReps = 5),
-        )
-        val currentStandalone = SingleSessionHistoryItem(
-            WorkoutSession(id = "profile-b-single", profileId = "profile-b", totalReps = 5),
-        )
-
-        val visible = filterRecentActivityHistoryForProfile(
-            listOf(oldRoutine, oldStandalone, currentStandalone),
-            profileId = "profile-b",
-        )
-
-        assertEquals(listOf("single:profile-b-single"), visible.map(HistoryItem::lazyColumnKey))
-    }
 }

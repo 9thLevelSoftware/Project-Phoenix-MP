@@ -120,9 +120,6 @@ class HistoryManager(
         .map(::groupHistorySessions)
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Home reuses the already-grouped, profile-scoped history projection. */
-    val homeRecentActivityHistory: StateFlow<List<HistoryItem>> = groupedWorkoutHistory
-
     /**
      * True until the first emission from [historyVisibleSessions], false thereafter.
      * Prevents [HistoryTab] from showing EmptyState before the initial DB query returns —

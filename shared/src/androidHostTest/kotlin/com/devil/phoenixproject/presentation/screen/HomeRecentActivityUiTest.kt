@@ -74,7 +74,6 @@ class HomeRecentActivityUiTest {
             MaterialTheme {
                 HomeRecentActivityContent(
                     history = history,
-                    profileId = "default",
                     weightUnit = WeightUnit.KG,
                     onExerciseClick = clickedExercises::add,
                 )
