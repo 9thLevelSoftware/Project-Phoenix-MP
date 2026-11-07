@@ -83,7 +83,7 @@ class HomeRecentActivityUiTest {
 
         rule.onAllNodesWithText("Push Day").assertCountEquals(1)
         rule.onNodeWithText("Push Day").assertIsDisplayed().assertHasNoClickAction()
-        rule.onNodeWithText("2 sets • 18 reps").assertIsDisplayed()
+        rule.onNodeWithText("2 sets • 18 total reps").assertIsDisplayed()
         rule.onNodeWithText(formatRecentActivityDateTime(groupedRoutine.timestamp)).assertIsDisplayed()
 
         rule.onNodeWithText("Squat").assertIsDisplayed().assertHasClickAction().performClick()
