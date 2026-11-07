@@ -13,6 +13,7 @@ class HomeRecentActivityWiringTest {
         )
 
         assertTrue(homeScreen.contains("viewModel.groupedWorkoutHistory.collectAsState()"))
+        assertTrue(homeScreen.contains("history = recentActivityHistory"))
         assertTrue(homeScreen.contains("history = recentSessions"))
     }
 }
