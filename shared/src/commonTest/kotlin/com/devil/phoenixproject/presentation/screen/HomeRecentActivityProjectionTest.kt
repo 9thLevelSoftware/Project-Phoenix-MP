@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 
 class HomeRecentActivityProjectionTest {
     @Test
-    fun `groups before limiting and keeps distinct older workout visible`() {
+    fun `limits Home projection to the two newest activities`() {
         val newestRoutine = GroupedRoutineHistoryItem(
             routineSessionId = "run-new",
             routineName = "Push Day",
@@ -26,8 +26,11 @@ class HomeRecentActivityProjectionTest {
         val olderWorkout = SingleSessionHistoryItem(
             WorkoutSession(id = "standalone-old", timestamp = 2_000L, exerciseId = "squat", totalReps = 3),
         )
+        val oldestWorkout = SingleSessionHistoryItem(
+            WorkoutSession(id = "standalone-oldest", timestamp = 1_000L, exerciseId = "deadlift", totalReps = 4),
+        )
 
-        val projected = projectHomeRecentActivities(listOf(newestRoutine, olderWorkout))
+        val projected = projectHomeRecentActivities(listOf(newestRoutine, olderWorkout, oldestWorkout))
 
         assertEquals(listOf("routine:run-new", "single:standalone-old"), projected.map(HistoryItem::lazyColumnKey))
     }
