@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.screen.projectHomeRecentActivities
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
@@ -89,6 +90,176 @@ class HistoryManagerTest {
 
             assertEquals(emptyList(), duplicateKeys.keys.toList())
             assertEquals(2, historyItems.size)
+            collectJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `grouped history filters stale rows against the active profile`() = runTest {
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-a")
+        val staleGroupedHistory = kotlinx.coroutines.flow.MutableStateFlow<List<HistoryItem>>(
+            listOf(
+                GroupedRoutineHistoryItem(
+                    routineSessionId = "profile-a-run",
+                    routineName = "Old profile routine",
+                    sessions = listOf(
+                        WorkoutSession(
+                            id = "profile-a-session",
+                            routineSessionId = "profile-a-run",
+                            profileId = "profile-a",
+                            totalReps = 8,
+                        ),
+                    ),
+                    totalDuration = 0L,
+                    totalReps = 8,
+                    exerciseCount = 1,
+                    timestamp = 3_000L,
+                ),
+            ),
+        )
+        val emittedHistory = mutableListOf<List<HistoryItem>>()
+        val collectJob = launch {
+            filterGroupedHistoryForActiveProfile(fakeUserProfileRepository.activeProfile, staleGroupedHistory)
+                .collect { emittedHistory += it }
+        }
+        advanceUntilIdle()
+        assertEquals(listOf("routine:profile-a-run"), emittedHistory.last().map(HistoryItem::lazyColumnKey))
+
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-b")
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), emittedHistory.last())
+        staleGroupedHistory.value = listOf(
+            SingleSessionHistoryItem(
+                WorkoutSession(id = "profile-b-session", profileId = "profile-b", totalReps = 5),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(listOf("single:profile-b-session"), emittedHistory.last().map(HistoryItem::lazyColumnKey))
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `home recent activity filters stale rows when active profile changes`() = runTest {
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-a")
+        fakeWorkoutRepository.addSessions(
+            listOf(
+                WorkoutSession(
+                    id = "profile-a-session",
+                    timestamp = 3_000L,
+                    routineSessionId = "profile-a-run",
+                    profileId = "profile-a",
+                    totalReps = 8,
+                ),
+                WorkoutSession(
+                    id = "profile-b-session",
+                    timestamp = 2_000L,
+                    profileId = "profile-b",
+                    totalReps = 5,
+                ),
+                WorkoutSession(
+                    id = "profile-b-zero-rep",
+                    timestamp = 4_000L,
+                    profileId = "profile-b",
+                    totalReps = 0,
+                ),
+            ),
+        )
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = HistoryManager(
+                fakeWorkoutRepository,
+                fakePersonalRecordRepository,
+                fakeUserProfileRepository,
+                managerScope,
+            )
+            var activeProfileId = "profile-a"
+            val emittedProfileIdsAfterSwitch = mutableListOf<String>()
+            val collectJob = launch {
+                manager.groupedWorkoutHistory.collect { items ->
+                    if (activeProfileId == "profile-b") {
+                        emittedProfileIdsAfterSwitch += items.flatMap { item ->
+                            when (item) {
+                                is GroupedRoutineHistoryItem -> item.sessions.map { it.profileId }
+                                is SingleSessionHistoryItem -> listOf(item.session.profileId)
+                            }
+                        }
+                    }
+                }
+            }
+            advanceUntilIdle()
+            assertEquals(listOf("routine:profile-a-run"), manager.groupedWorkoutHistory.value.map(HistoryItem::lazyColumnKey))
+
+            activeProfileId = "profile-b"
+            fakeUserProfileRepository.seedReadyProfileForTest("profile-b")
+            advanceUntilIdle()
+
+            assertEquals(listOf("single:profile-b-session"), manager.groupedWorkoutHistory.value.map(HistoryItem::lazyColumnKey))
+            assertEquals(setOf("profile-b"), emittedProfileIdsAfterSwitch.toSet())
+            collectJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `home recent activity groups sets before selecting two items`() = runTest {
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-a")
+        val sessions = listOf(
+            WorkoutSession(
+                id = "new-set-1",
+                timestamp = 3_000L,
+                routineSessionId = "new-run",
+                routineName = "Push Day",
+                profileId = "profile-a",
+                totalReps = 5,
+            ),
+            WorkoutSession(
+                id = "new-set-2",
+                timestamp = 4_000L,
+                routineSessionId = "new-run",
+                routineName = "Push Day",
+                profileId = "profile-a",
+                totalReps = 5,
+            ),
+            WorkoutSession(
+                id = "older-workout",
+                timestamp = 2_000L,
+                profileId = "profile-a",
+                totalReps = 3,
+            ),
+        )
+        fakeWorkoutRepository.addSessions(sessions)
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = HistoryManager(
+                fakeWorkoutRepository,
+                fakePersonalRecordRepository,
+                fakeUserProfileRepository,
+                managerScope,
+            )
+            val collectJob = launch { manager.groupedWorkoutHistory.collect { } }
+            advanceUntilIdle()
+
+            val projected = projectHomeRecentActivities(manager.groupedWorkoutHistory.value)
+            assertEquals(
+                listOf("routine:new-run", "single:older-workout"),
+                projected.map(HistoryItem::lazyColumnKey),
+            )
+            val newestRoutine = assertIs<GroupedRoutineHistoryItem>(projected.first())
+            assertEquals(2, newestRoutine.sessions.size)
+            assertEquals(10, newestRoutine.totalReps)
+            assertEquals(0, fakeWorkoutRepository.historyVisibleSessionQueryCount)
+
+            val rawSetControl = projectHomeRecentActivities(
+                sessions.filter { it.routineSessionId != null }.map(::SingleSessionHistoryItem),
+            )
+            assertEquals(
+                listOf("single:new-set-2", "single:new-set-1"),
+                rawSetControl.map(HistoryItem::lazyColumnKey),
+            )
             collectJob.cancel()
         } finally {
             managerScope.cancel()

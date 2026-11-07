@@ -89,6 +89,12 @@ object KmpUtils {
                 "$month/$day/$year"
             }
 
+            "dd/MM/yyyy", "dd.MM.yyyy", "dd-MM-yyyy" -> {
+                val day = dateTime.day.toString().padStart(2, '0')
+                val month = dateTime.month.number.toString().padStart(2, '0')
+                "${day}${pattern[2]}${month}${pattern[2]}${dateTime.year}"
+            }
+
             "yyyy-MM-dd" -> {
                 val month = dateTime.month.number.toString().padStart(2, '0')
                 val day = dateTime.day.toString().padStart(2, '0')
