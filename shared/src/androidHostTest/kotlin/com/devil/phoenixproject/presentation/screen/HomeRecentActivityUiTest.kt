@@ -80,15 +80,19 @@ class HomeRecentActivityUiTest {
             }
         }
 
+        val datePattern = "MMM d"
+        val timePattern = "h:mm a"
+        val separator = " • "
+
         rule.onAllNodesWithText("Push Day").assertCountEquals(1)
         rule.onNodeWithText("Push Day").assertIsDisplayed().assertHasNoClickAction()
         rule.onNodeWithText("2 sets • 18 total reps").assertIsDisplayed()
         rule.onNodeWithText(
             formatRecentActivityDateTime(
                 groupedRoutine.timestamp,
-                datePattern = "MMM d",
-                timePattern = "h:mm a",
-                separator = " • ",
+                datePattern = datePattern,
+                timePattern = timePattern,
+                separator = separator,
             ),
         ).assertIsDisplayed()
 
@@ -98,9 +102,9 @@ class HomeRecentActivityUiTest {
         rule.onNodeWithText(
             formatRecentActivityDateTime(
                 standalone.timestamp,
-                datePattern = "MMM d",
-                timePattern = "h:mm a",
-                separator = " • ",
+                datePattern = datePattern,
+                timePattern = timePattern,
+                separator = separator,
             ),
         ).assertIsDisplayed()
         assertEquals(listOf("squat"), clickedExercises)
