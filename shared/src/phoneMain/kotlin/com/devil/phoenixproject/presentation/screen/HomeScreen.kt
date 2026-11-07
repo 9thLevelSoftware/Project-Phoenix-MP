@@ -554,11 +554,7 @@ private fun RecentActivitySummary(
                             setCountLabel,
                             repCountLabel,
                         )
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
+                        RecentActivityRowSurface {
                             RecentActivityRowContent(
                                 title = item.routineName,
                                 detail = detail,
@@ -570,38 +566,37 @@ private fun RecentActivitySummary(
                     is SingleSessionHistoryItem -> {
                         val session = item.session
                         val replayExerciseId = session.replayExerciseId()
-                        if (replayExerciseId != null) {
-                            Surface(
-                                onClick = { onExerciseClick(replayExerciseId) },
-                                color = MaterialTheme.colorScheme.surfaceContainer,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                RecentActivityRowContent(
-                                    title = session.exerciseName ?: "Workout Session",
-                                    detail = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit),
-                                    timestamp = session.timestamp,
-                                    showChevron = true,
-                                )
-                            }
-                        } else {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainer,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                RecentActivityRowContent(
-                                    title = session.exerciseName ?: "Workout Session",
-                                    detail = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit),
-                                    timestamp = session.timestamp,
-                                    showChevron = false,
-                                )
-                            }
+                        RecentActivityRowSurface(
+                            onClick = replayExerciseId?.let { exerciseId ->
+                                { onExerciseClick(exerciseId) }
+                            },
+                        ) {
+                            RecentActivityRowContent(
+                                title = session.exerciseName ?: "Workout Session",
+                                detail = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit),
+                                timestamp = session.timestamp,
+                                showChevron = replayExerciseId != null,
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RecentActivityRowSurface(
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val color = MaterialTheme.colorScheme.surfaceContainer
+    val shape = MaterialTheme.shapes.small
+    val modifier = Modifier.fillMaxWidth()
+    if (onClick == null) {
+        Surface(color = color, shape = shape, modifier = modifier, content = content)
+    } else {
+        Surface(onClick = onClick, color = color, shape = shape, modifier = modifier, content = content)
     }
 }
 
@@ -664,9 +659,9 @@ private fun RecentActivityRowContent(title: String, detail: String, timestamp: L
 
 internal fun formatRecentActivityDateTime(
     timestamp: Long,
-    datePattern: String = "MMM d",
-    timePattern: String = "h:mm a",
-    separator: String = " • ",
+    datePattern: String,
+    timePattern: String,
+    separator: String,
 ): String =
     "${KmpUtils.formatTimestamp(timestamp, datePattern)}$separator${KmpUtils.formatTimestamp(timestamp, timePattern)}"
 

@@ -83,12 +83,26 @@ class HomeRecentActivityUiTest {
         rule.onAllNodesWithText("Push Day").assertCountEquals(1)
         rule.onNodeWithText("Push Day").assertIsDisplayed().assertHasNoClickAction()
         rule.onNodeWithText("2 sets • 18 total reps").assertIsDisplayed()
-        rule.onNodeWithText(formatRecentActivityDateTime(groupedRoutine.timestamp)).assertIsDisplayed()
+        rule.onNodeWithText(
+            formatRecentActivityDateTime(
+                groupedRoutine.timestamp,
+                datePattern = "MMM d",
+                timePattern = "h:mm a",
+                separator = " • ",
+            ),
+        ).assertIsDisplayed()
 
         rule.onNodeWithText("Squat").assertIsDisplayed().assertHasClickAction().performClick()
         rule.onNodeWithText(AchievedLoadPresentation.homeRecentActivityLine(standalone.session, WeightUnit.KG))
             .assertIsDisplayed()
-        rule.onNodeWithText(formatRecentActivityDateTime(standalone.timestamp)).assertIsDisplayed()
+        rule.onNodeWithText(
+            formatRecentActivityDateTime(
+                standalone.timestamp,
+                datePattern = "MMM d",
+                timePattern = "h:mm a",
+                separator = " • ",
+            ),
+        ).assertIsDisplayed()
         assertEquals(listOf("squat"), clickedExercises)
     }
 }
