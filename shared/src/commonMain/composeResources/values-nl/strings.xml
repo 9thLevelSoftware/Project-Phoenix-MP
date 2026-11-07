@@ -749,4 +749,12 @@
     <string name="routine_csv_saved_daily">Geïmporteerd: %1$s. Staat in Dagelijkse routines.</string>
     <string name="action_open">Openen</string>
     <string name="routine_csv_import_busy">Er is al een import bezig. Deel het bestand opnieuw als die klaar is.</string>
+    <string name="home_recent_activity_one_set">1 set</string>
+    <string name="home_recent_activity_many_sets">%1$d sets</string>
+    <string name="home_recent_activity_one_rep">1 herhaling</string>
+    <string name="home_recent_activity_many_reps">%1$d herhalingen</string>
+    <string name="home_recent_activity_group_detail">%1$s • %2$s</string>
+    <string name="home_recent_activity_date_pattern">dd-MM-yyyy</string>
+    <string name="home_recent_activity_time_pattern">HH:mm</string>
+    <string name="home_recent_activity_date_time_separator"> • </string>
 </resources>

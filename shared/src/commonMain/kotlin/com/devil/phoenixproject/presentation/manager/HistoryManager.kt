@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -47,6 +48,29 @@ val HistoryItem.lazyColumnKey: String
         is SingleSessionHistoryItem -> "single:${session.id}"
         is GroupedRoutineHistoryItem -> "routine:$routineSessionId"
     }
+
+private fun groupHistorySessions(sessions: List<WorkoutSession>): List<HistoryItem> {
+    val groupedByRoutine = sessions.filter { it.routineSessionId != null }
+        .groupBy { it.routineSessionId!! }
+        .map { (id, sessionList) ->
+            val sortedSessions = sessionList.sortedBy { it.timestamp }
+            val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
+            val lastEnd = sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
+            GroupedRoutineHistoryItem(
+                routineSessionId = id,
+                routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
+                sessions = sortedSessions,
+                // Use elapsed span (first set start -> last set end) so inter-set rest is included.
+                totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
+                totalReps = sessionList.sumOf { it.totalReps },
+                exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
+                timestamp = sessionList.minOf { it.timestamp },
+            )
+        }
+    val singleSessions = sessions.filter { it.routineSessionId == null }
+        .map { SingleSessionHistoryItem(it) }
+    return (groupedByRoutine + singleSessions).sortedByDescending { it.timestamp }
+}
 
 /**
  * Manages workout history and personal records display.
@@ -95,30 +119,20 @@ class HistoryManager(
                 initialValue = emptyList(),
             )
 
-    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions.map { sessions ->
-        val groupedByRoutine = sessions.filter { it.routineSessionId != null }
-            .groupBy { it.routineSessionId!! }
-            .map { (id, sessionList) ->
-                val sortedSessions = sessionList.sortedBy { it.timestamp }
-                val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
-                val lastEnd =
-                    sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
-                GroupedRoutineHistoryItem(
-                    routineSessionId = id,
-                    routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
-                    sessions = sortedSessions,
-                    // Use elapsed span (first set start -> last set end) so inter-set rest is included.
-                    totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
-                    totalReps = sessionList.sumOf { it.totalReps },
-                    exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
-                    timestamp = sessionList.minOf { it.timestamp },
-                )
-            }
-        val singleSessions = sessions.filter { it.routineSessionId == null }
-            .map { SingleSessionHistoryItem(it) }
+    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions
+        .map(::groupHistorySessions)
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        (groupedByRoutine + singleSessions).sortedByDescending { it.timestamp }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /**
+     * Home's activity projection is explicitly paired with the active profile. StateFlow retains
+     * its last value while a profile-scoped query switches; filtering against the current profile
+     * prevents the previous profile's rows from briefly reappearing on Home.
+     */
+    val homeRecentActivityHistory: StateFlow<List<HistoryItem>> =
+        combine(userProfileRepository.activeProfile, historyVisibleSessions) { profile, sessions ->
+            val profileId = profile?.id ?: "default"
+            groupHistorySessions(sessions.filter { it.profileId == profileId })
+        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
      * True until the first emission from [historyVisibleSessions], false thereafter.

@@ -911,6 +911,7 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
+    val homeRecentActivityHistory: StateFlow<List<HistoryItem>> get() = historyManager.homeRecentActivityHistory
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
 

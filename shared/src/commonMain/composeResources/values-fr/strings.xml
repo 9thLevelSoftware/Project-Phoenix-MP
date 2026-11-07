@@ -771,4 +771,12 @@
     <string name="routine_csv_saved_daily">Importé : %1$s. Il se trouve dans les Routines quotidiennes.</string>
     <string name="action_open">Ouvrir</string>
     <string name="routine_csv_import_busy">Une importation est déjà en cours. Partagez à nouveau le fichier quand elle se termine.</string>
+    <string name="home_recent_activity_one_set">1 série</string>
+    <string name="home_recent_activity_many_sets">%1$d séries</string>
+    <string name="home_recent_activity_one_rep">1 répétition</string>
+    <string name="home_recent_activity_many_reps">%1$d répétitions</string>
+    <string name="home_recent_activity_group_detail">%1$s • %2$s</string>
+    <string name="home_recent_activity_date_pattern">dd/MM/yyyy</string>
+    <string name="home_recent_activity_time_pattern">HH:mm</string>
+    <string name="home_recent_activity_date_time_separator"> • </string>
 </resources>
