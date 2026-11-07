@@ -97,6 +97,51 @@ class HistoryManagerTest {
     }
 
     @Test
+    fun `grouped history filters stale rows against the active profile`() = runTest {
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-a")
+        val staleGroupedHistory = kotlinx.coroutines.flow.MutableStateFlow<List<HistoryItem>>(
+            listOf(
+                GroupedRoutineHistoryItem(
+                    routineSessionId = "profile-a-run",
+                    routineName = "Old profile routine",
+                    sessions = listOf(
+                        WorkoutSession(
+                            id = "profile-a-session",
+                            routineSessionId = "profile-a-run",
+                            profileId = "profile-a",
+                            totalReps = 8,
+                        ),
+                    ),
+                    totalDuration = 0L,
+                    totalReps = 8,
+                    exerciseCount = 1,
+                    timestamp = 3_000L,
+                ),
+            ),
+        )
+        val emittedHistory = mutableListOf<List<HistoryItem>>()
+        val collectJob = launch {
+            filterGroupedHistoryForActiveProfile(fakeUserProfileRepository.activeProfile, staleGroupedHistory)
+                .collect { emittedHistory += it }
+        }
+        advanceUntilIdle()
+        assertEquals(listOf("routine:profile-a-run"), emittedHistory.last().map(HistoryItem::lazyColumnKey))
+
+        fakeUserProfileRepository.seedReadyProfileForTest("profile-b")
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), emittedHistory.last())
+        staleGroupedHistory.value = listOf(
+            SingleSessionHistoryItem(
+                WorkoutSession(id = "profile-b-session", profileId = "profile-b", totalReps = 5),
+            ),
+        )
+        advanceUntilIdle()
+        assertEquals(listOf("single:profile-b-session"), emittedHistory.last().map(HistoryItem::lazyColumnKey))
+        collectJob.cancel()
+    }
+
+    @Test
     fun `home recent activity filters stale rows when active profile changes`() = runTest {
         fakeUserProfileRepository.seedReadyProfileForTest("profile-a")
         fakeWorkoutRepository.addSessions(

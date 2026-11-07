@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -10,6 +11,7 @@ import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.util.KmpLocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +49,27 @@ val HistoryItem.lazyColumnKey: String
     get() = when (this) {
         is SingleSessionHistoryItem -> "single:${session.id}"
         is GroupedRoutineHistoryItem -> "routine:$routineSessionId"
+    }
+
+internal fun filterRecentActivityHistoryForProfile(
+    history: List<HistoryItem>,
+    profileId: String,
+): List<HistoryItem> =
+    history.filter { item ->
+        when (item) {
+            is GroupedRoutineHistoryItem -> item.sessions.isNotEmpty() &&
+                item.sessions.all { it.profileId == profileId }
+            is SingleSessionHistoryItem -> item.session.profileId == profileId
+        }
+    }
+
+/** Rechecks cached groups when the active profile changes, before the source flow catches up. */
+internal fun filterGroupedHistoryForActiveProfile(
+    activeProfile: Flow<UserProfile?>,
+    groupedHistory: Flow<List<HistoryItem>>,
+): Flow<List<HistoryItem>> =
+    combine(activeProfile, groupedHistory) { profile, items ->
+        filterRecentActivityHistoryForProfile(items, profile?.id ?: "default")
     }
 
 private fun groupHistorySessions(sessions: List<WorkoutSession>): List<HistoryItem> {
@@ -116,9 +139,15 @@ class HistoryManager(
             initialValue = emptyList(),
         )
 
-    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions
-        .map(::groupHistorySessions)
-        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> =
+        filterGroupedHistoryForActiveProfile(
+            activeProfile = userProfileRepository.activeProfile,
+            groupedHistory = historyVisibleSessions.map(::groupHistorySessions),
+        ).stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
 
     /**
      * True until the first emission from [historyVisibleSessions], false thereafter.
