@@ -25,7 +25,8 @@ class HomeRecentActivityWiringTest {
             readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/HistoryManager.kt"),
         )
 
-        assertTrue(historyManager.contains("val homeRecentActivityHistory: StateFlow<List<HistoryItem>>"))
-        assertTrue(historyManager.contains("sessions.filter { it.profileId == profileId }"))
+        assertTrue(historyManager.contains("val homeRecentActivityHistory: StateFlow<List<HistoryItem>> = groupedWorkoutHistory"))
+        assertTrue(historyManager.contains("combine(userProfileRepository.activeProfile, allWorkoutSessions)"))
+        assertTrue(historyManager.contains("session.profileId == profileId && (session.workingReps > 0 || session.totalReps > 0)"))
     }
 }

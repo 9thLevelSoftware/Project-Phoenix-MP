@@ -100,39 +100,28 @@ class HistoryManager(
     /**
      * Issue #591: Analytics / History-visible sessions.
      *
-     * `allWorkoutSessions` powers streak, progress percentage, and
-     * history pagination (still needs every persisted row). For the
-     * `groupedWorkoutHistory` grouping used by `HistoryTab`'s Daily Routine
-     * card and per-set drill-down we instead need to skip zero-rep /
-     * soft-deleted rows so they do not inflate routine set totals or
-     * trip the misleading pre-v0.2.1 placeholder.
+     * `allWorkoutSessions` already reads the active profile's non-deleted rows. Filter out
+     * incomplete zero-rep captures here so History and Home share that one database flow
+     * instead of issuing a second full-history query for the same profile.
      */
     val historyVisibleSessions: StateFlow<List<WorkoutSession>> =
-        userProfileRepository.activeProfile
-            .flatMapLatest { profile ->
-                val profileId = profile?.id ?: "default"
-                workoutRepository.getHistoryVisibleSessions(profileId)
+        combine(userProfileRepository.activeProfile, allWorkoutSessions) { profile, sessions ->
+            val profileId = profile?.id ?: "default"
+            sessions.filter { session ->
+                session.profileId == profileId && (session.workingReps > 0 || session.totalReps > 0)
             }
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList(),
-            )
+        }.stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
 
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions
         .map(::groupHistorySessions)
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * Home's activity projection is explicitly paired with the active profile. StateFlow retains
-     * its last value while a profile-scoped query switches; filtering against the current profile
-     * prevents the previous profile's rows from briefly reappearing on Home.
-     */
-    val homeRecentActivityHistory: StateFlow<List<HistoryItem>> =
-        combine(userProfileRepository.activeProfile, historyVisibleSessions) { profile, sessions ->
-            val profileId = profile?.id ?: "default"
-            groupHistorySessions(sessions.filter { it.profileId == profileId })
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Home reuses the already-grouped, profile-scoped history projection. */
+    val homeRecentActivityHistory: StateFlow<List<HistoryItem>> = groupedWorkoutHistory
 
     /**
      * True until the first emission from [historyVisibleSessions], false thereafter.

@@ -206,6 +206,7 @@ class HistoryManagerTest {
             val newestRoutine = assertIs<GroupedRoutineHistoryItem>(projected.first())
             assertEquals(2, newestRoutine.sessions.size)
             assertEquals(10, newestRoutine.totalReps)
+            assertEquals(0, fakeWorkoutRepository.historyVisibleSessionQueryCount)
 
             val rawSetControl = projectHomeRecentActivities(
                 sessions.filter { it.routineSessionId != null }.map(::SingleSessionHistoryItem),

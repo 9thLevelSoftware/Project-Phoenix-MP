@@ -67,6 +67,7 @@ class FakeWorkoutRepository : WorkoutRepository {
     var biomechanicsRepository: FakeBiomechanicsRepository? = null
 
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
+    var historyVisibleSessionQueryCount = 0
     val saveSessionAttempts = mutableListOf<WorkoutSession>()
 
     /**
@@ -124,14 +125,17 @@ class FakeWorkoutRepository : WorkoutRepository {
     //   deletedAt IS NULL AND (workingReps > 0 OR totalReps > 0)
     // so unit tests using this fake exercise the same data the
     // production SqlDelightWorkoutRepository returns.
-    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow.map { all ->
-        all.filter { session ->
-            // No deletedAt field on WorkoutSession today; when soft
-            // delete lands, gate on it here too. For now the in-memory
-            // fake never stores deleted rows, so only the profile and
-            // positive-rep guards are required to match the SQL behavior.
-            session.profileId == profileId &&
-                (session.workingReps > 0 || session.totalReps > 0)
+    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> {
+        historyVisibleSessionQueryCount++
+        return _sessionsFlow.map { all ->
+            all.filter { session ->
+                // No deletedAt field on WorkoutSession today; when soft
+                // delete lands, gate on it here too. For now the in-memory
+                // fake never stores deleted rows, so only the profile and
+                // positive-rep guards are required to match the SQL behavior.
+                session.profileId == profileId &&
+                    (session.workingReps > 0 || session.totalReps > 0)
+            }
         }
     }
 
