@@ -74,14 +74,12 @@ internal object CableTelemetryArchivalRetention {
         val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= boundaryTimestamp }
 
         // Preserve safety events individually without widening the retained context window.
-        val preContextSamples = samples.subList(0, firstRetainedIndex)
-        val retainedSafetySamples = preContextSamples.filter {
+        val (retainedSafetySamples, discardedSamples) = samples.subList(0, firstRetainedIndex).partition {
             (it.status and SampleStatus.SAFETY_STATUS_MASK) != 0
         }
-        if (preContextSamples.any { sample ->
-                (sample.status and SampleStatus.SAFETY_STATUS_MASK) == 0 &&
-                    (abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
-                        abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM)
+        if (discardedSamples.any { sample ->
+                abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
+                    abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
             }
         ) {
             return samples
