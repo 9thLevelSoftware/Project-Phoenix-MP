@@ -82,21 +82,17 @@ class CableTelemetryArchivalPersistenceTest {
 
             startTrackedCableSet(harness)
             val nextLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            val nextSamples = (0..8).map { index ->
-                WorkoutMetric(
-                    timestamp = index * SAMPLE_INTERVAL_MS,
-                    loadA = 20f,
-                    loadB = 18f,
-                    positionA = 100f,
-                    positionB = 200f,
-                )
-            }
+            val nextSamples = telemetryWithMovement(restingPosition = 350f)
             nextSamples.forEach(harness.coordinator.collectedMetrics::append)
             harness.coordinator._repCount.value = RepCount()
             harness.dwsm.stopWorkout(exitingWorkout = false)
             advanceUntilIdle()
 
-            assertEquals(nextSamples, harness.fakeWorkoutRepo.metricsForSession(nextLease.sessionId))
+            assertEquals(
+                nextSamples.drop(4),
+                harness.fakeWorkoutRepo.metricsForSession(nextLease.sessionId),
+                "the restarted set uses its own resting baseline and retention window",
+            )
         } finally {
             harness.cleanup()
         }
@@ -119,14 +115,14 @@ class CableTelemetryArchivalPersistenceTest {
         harness.coordinator._repCount.value = RepCount(workingReps = 2)
     }
 
-    private fun telemetryWithMovement(): List<WorkoutMetric> = (0..16).map { index ->
+    private fun telemetryWithMovement(restingPosition: Float = 100f): List<WorkoutMetric> = (0..16).map { index ->
         val positionA = when (index) {
-            in 0..7 -> 100f
-            8 -> 101.5f
-            9 -> 103f
-            10 -> 105.5f
-            11 -> 108f
-            else -> 111f
+            in 0..7 -> restingPosition
+            8 -> restingPosition + 1.5f
+            9 -> restingPosition + 3f
+            10 -> restingPosition + 5.5f
+            11 -> restingPosition + 8f
+            else -> restingPosition + 11f
         }
         WorkoutMetric(
             timestamp = index * SAMPLE_INTERVAL_MS,

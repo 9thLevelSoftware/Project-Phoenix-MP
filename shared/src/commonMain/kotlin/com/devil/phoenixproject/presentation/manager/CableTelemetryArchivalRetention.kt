@@ -66,8 +66,22 @@ internal object CableTelemetryArchivalRetention {
         val departureTimestamp = samples[departureIndex].timestamp
         if (departureTimestamp < Long.MIN_VALUE + PRIOR_CONTEXT_MS) return samples
         val contextStartTimestamp = departureTimestamp - PRIOR_CONTEXT_MS
-        val firstRetainedIndex = samples.indexOfLast { it.timestamp <= contextStartTimestamp }
+        val lastContextIndex = samples.indexOfLast { it.timestamp <= contextStartTimestamp }
+        if (lastContextIndex < 0) return samples
+        val boundaryTimestamp = samples[lastContextIndex].timestamp
+        // Retain every sample sharing the boundary timestamp, not only the last duplicate.
+        val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= boundaryTimestamp }
         if (firstRetainedIndex < 0) return samples
+
+        val discardedPrefix = samples.subList(0, firstRetainedIndex)
+        if (discardedPrefix.any { sample ->
+                sample.status != 0 ||
+                    abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
+                    abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
+            }
+        ) {
+            return samples
+        }
         return samples.subList(firstRetainedIndex, samples.size).toList()
     }
 
@@ -76,7 +90,7 @@ internal object CableTelemetryArchivalRetention {
         for (sample in samples) {
             if (!sample.positionA.isFinite() || !sample.positionB.isFinite()) return false
             val previous = previousTimestamp
-            if (previous != null && sample.timestamp <= previous) return false
+            if (previous != null && sample.timestamp < previous) return false
             previousTimestamp = sample.timestamp
         }
         return true

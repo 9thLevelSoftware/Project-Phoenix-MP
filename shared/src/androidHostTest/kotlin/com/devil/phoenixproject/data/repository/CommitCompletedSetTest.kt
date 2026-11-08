@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
@@ -147,7 +148,14 @@ class CommitCompletedSetTest {
                 positionB = 200f,
                 velocityA = 0.25 + index * 0.01,
                 velocityB = -0.5 + index * 0.02,
-                status = index,
+                status = when (index) {
+                    8 -> SampleStatus.ROM_OUTSIDE_HIGH
+                    9 -> SampleStatus.ROM_OUTSIDE_LOW
+                    10 -> SampleStatus.SPOTTER_ACTIVE
+                    11 -> SampleStatus.DELOAD_WARN
+                    12 -> SampleStatus.DELOAD_OCCURRED
+                    else -> 0
+                },
                 heartRateBpm = 100 + index,
                 rrIntervalMs = 800f - index,
                 torsoPitchDeg = 1f + index,

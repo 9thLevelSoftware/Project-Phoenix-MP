@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -92,20 +93,61 @@ class CableTelemetryArchivalRetentionTest {
 
     @Test
     fun `immediate movement keeps the full payload when pre-movement context is unavailable`() {
-        val a = listOf(100f, 100f, 100f, 100f, 106f, 110f, 114f)
-        val samples = metrics(a, List(a.size) { 200f })
+        val timestamps = listOf(500L, 750L, 1_000L, 1_250L, 1_300L, 1_400L, 1_500L)
+        val positions = listOf(100f, 100f, 100f, 100f, 106f, 110f, 114f)
+        val samples = timestamps.mapIndexed { index, timestamp ->
+            WorkoutMetric(
+                timestamp = timestamp,
+                loadA = 20f,
+                loadB = 18f,
+                positionA = positions[index],
+                positionB = 200f,
+            )
+        }
 
         assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
     }
 
     @Test
-    fun `invalid positions and nonmonotonic timestamps keep the complete payload`() {
+    fun `invalid positions and decreasing timestamps keep the complete payload`() {
         val samples = confidentTrace()
         val invalid = samples.toMutableList().also { it[5] = it[5].copy(positionB = Float.NaN) }
-        val nonmonotonic = samples.toMutableList().also { it[5] = it[5].copy(timestamp = it[4].timestamp) }
+        val decreasing = samples.toMutableList().also { it[5] = it[5].copy(timestamp = it[4].timestamp - 1L) }
 
         assertEquals(invalid, CableTelemetryArchivalRetention.selectForRomCableSet(invalid, romEnabled = true))
-        assertEquals(nonmonotonic, CableTelemetryArchivalRetention.selectForRomCableSet(nonmonotonic, romEnabled = true))
+        assertEquals(decreasing, CableTelemetryArchivalRetention.selectForRomCableSet(decreasing, romEnabled = true))
+    }
+
+    @Test
+    fun `repeated timestamps at the context boundary are accepted and retained`() {
+        val samples = confidentTrace().toMutableList().also {
+            it[5] = it[5].copy(timestamp = it[4].timestamp)
+        }
+
+        assertEquals(samples.drop(4), CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+    }
+
+    @Test
+    fun `machine status in the discarded prefix prevents trimming`() {
+        val samples = confidentTrace().toMutableList().also {
+            it[3] = it[3].copy(status = SampleStatus.ROM_OUTSIDE_HIGH)
+        }
+
+        assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+    }
+
+    @Test
+    fun `subthreshold displacement in the discarded prefix prevents trimming`() {
+        val positionsA = (0 until 28).map { index ->
+            when (index) {
+                4, 5 -> 103f
+                in 21..23 -> 106f + (index - 21) * 2f
+                else -> 100f
+            }
+        }
+        val samples = metrics(positionsA, List(positionsA.size) { 200f })
+
+        assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
     }
 
     @Test
