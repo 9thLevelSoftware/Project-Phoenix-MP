@@ -28,23 +28,21 @@ class CableTelemetryArchivalRetentionTest {
 
     @Test
     fun `fifty hertz idle telemetry is trimmed with one second context`() {
-        val idleSampleCount = 2_000 // 40 seconds at 50 Hz; movement begins at 40,000 ms.
-        val samplesAfterMovement = 51
-        val samples = (0 until idleSampleCount + samplesAfterMovement).map { index ->
-            val positionA = if (index < idleSampleCount) 100f else 100f + (index - idleSampleCount + 1)
-            WorkoutMetric(
-                timestamp = index * 20L,
-                loadA = 20f,
-                loadB = 18f,
-                positionA = positionA,
-                positionB = 200f,
-            )
-        }
+        val samples = fiftyHertzIdleTrace()
 
         val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
 
         assertEquals(1_950, samples.size - retained.size, "trim all but one second of idle context")
         assertEquals(samples.drop(1_950), retained, "preserve the full context and every later sample")
+    }
+
+    @Test
+    fun `fifty hertz trim retains a safety flag on the first idle sample without retaining the gap`() {
+        val samples = fiftyHertzIdleTrace(SampleStatus.ROM_OUTSIDE_HIGH)
+
+        val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
+
+        assertEquals(listOf(samples.first()) + samples.drop(1_950), retained)
     }
 
     @Test
@@ -128,10 +126,16 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
-    fun `machine safety status beyond the baseline clamps the retained window to the flagged sample`() {
-        val samples = longIdleTrace(SampleStatus.ROM_OUTSIDE_HIGH)
+    fun `safety flags in discarded prefix are preserved without retaining the idle gap`() {
+        val samples = longIdleTrace().toMutableList().also {
+            it[5] = it[5].copy(status = SampleStatus.ROM_OUTSIDE_HIGH)
+            it[10] = it[10].copy(status = SampleStatus.DELOAD_WARN)
+        }
 
-        assertEquals(samples.drop(5), CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+        assertEquals(
+            listOf(samples[5], samples[10]) + samples.drop(17),
+            CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true),
+        )
     }
 
     @Test
@@ -152,13 +156,13 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
-    fun `safety flag clamps before stationarity check of the remaining discarded prefix`() {
+    fun `safety flag does not hide unflagged movement before the context window`() {
         val samples = longIdleTrace(
             status = SampleStatus.ROM_OUTSIDE_HIGH,
             deviatedIndices = setOf(8),
         )
 
-        assertEquals(samples.drop(5), CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+        assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
     }
 
     @Test
@@ -180,6 +184,22 @@ class CableTelemetryArchivalRetentionTest {
         }
         return metrics(positionsA, List(positionsA.size) { 200f }).toMutableList().also {
             if (status != 0) it[5] = it[5].copy(status = status)
+        }
+    }
+
+    private fun fiftyHertzIdleTrace(statusAtStart: Int = 0): List<WorkoutMetric> {
+        val idleSampleCount = 2_000 // 40 seconds at 50 Hz; movement begins at 40,000 ms.
+        val samplesAfterMovement = 51
+        return (0 until idleSampleCount + samplesAfterMovement).map { index ->
+            val positionA = if (index < idleSampleCount) 100f else 100f + (index - idleSampleCount + 1)
+            WorkoutMetric(
+                timestamp = index * 20L,
+                loadA = 20f,
+                loadB = 18f,
+                positionA = positionA,
+                positionB = 200f,
+                status = if (index == 0) statusAtStart else 0,
+            )
         }
     }
 
