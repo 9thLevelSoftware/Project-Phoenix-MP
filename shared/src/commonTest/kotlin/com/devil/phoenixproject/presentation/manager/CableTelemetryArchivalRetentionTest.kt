@@ -146,14 +146,7 @@ class CableTelemetryArchivalRetentionTest {
 
     @Test
     fun `subthreshold displacement in the discarded prefix prevents trimming`() {
-        val positionsA = (0 until 28).map { index ->
-            when (index) {
-                4, 5 -> 103f
-                in 21..23 -> 106f + (index - 21) * 2f
-                else -> 100f
-            }
-        }
-        val samples = metrics(positionsA, List(positionsA.size) { 200f })
+        val samples = longIdleTrace(deviatedIndices = setOf(4, 5))
 
         assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
     }
@@ -167,15 +160,16 @@ class CableTelemetryArchivalRetentionTest {
         assertEquals(idle, CableTelemetryArchivalRetention.selectForRomCableSet(idle, romEnabled = true))
     }
 
-    private fun longIdleTrace(status: Int): List<WorkoutMetric> {
+    private fun longIdleTrace(status: Int = 0, deviatedIndices: Set<Int> = emptySet()): List<WorkoutMetric> {
         val positionsA = (0 until 28).map { index ->
             when (index) {
                 in 21..23 -> 106f + (index - 21) * 2f
+                in deviatedIndices -> 103f
                 else -> 100f
             }
         }
         return metrics(positionsA, List(positionsA.size) { 200f }).toMutableList().also {
-            it[5] = it[5].copy(status = status)
+            if (status != 0) it[5] = it[5].copy(status = status)
         }
     }
 

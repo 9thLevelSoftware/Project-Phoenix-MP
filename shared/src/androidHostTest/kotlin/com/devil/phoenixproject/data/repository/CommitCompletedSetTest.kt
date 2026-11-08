@@ -18,7 +18,6 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.presentation.manager.CableTelemetryArchivalRetention
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestSchema
 import com.devil.phoenixproject.testutil.seedExercise
@@ -166,8 +165,7 @@ class CommitCompletedSetTest {
                 chestAccZMg = -40 + index,
             )
         }
-        val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
-        assertEquals(samples.drop(4), retained)
+        val retained = samples.drop(4)
 
         repository.commitCompletedSet(
             session = session(),

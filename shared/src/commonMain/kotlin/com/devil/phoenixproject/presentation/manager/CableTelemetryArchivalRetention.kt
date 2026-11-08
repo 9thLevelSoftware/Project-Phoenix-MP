@@ -7,10 +7,10 @@ import kotlin.math.abs
 /** Selects a frozen archival payload without changing live set data or summary inputs. */
 internal object CableTelemetryArchivalRetention {
     /** Provisional minimum excursion from a stationary baseline that qualifies as movement. */
-    const val MOVEMENT_EXCURSION_THRESHOLD_MM = 5f
+    private const val MOVEMENT_EXCURSION_THRESHOLD_MM = 5f
 
     /** Retain this much pre-onset telemetry as context for calibration and interpretation. */
-    const val PRIOR_CONTEXT_MS = 1_000L
+    private const val PRIOR_CONTEXT_MS = 1_000L
 
     private const val BASELINE_SAMPLE_COUNT = 4
     private const val BASELINE_MIN_DURATION_MS = 500L
@@ -89,16 +89,9 @@ internal object CableTelemetryArchivalRetention {
         return samples.subList(retentionStartIndex, samples.size).toList()
     }
 
-    private fun hasValidOrderedPositions(samples: List<WorkoutMetric>): Boolean {
-        var previousTimestamp: Long? = null
-        for (sample in samples) {
-            if (!sample.positionA.isFinite() || !sample.positionB.isFinite()) return false
-            val previous = previousTimestamp
-            if (previous != null && sample.timestamp < previous) return false
-            previousTimestamp = sample.timestamp
-        }
-        return true
-    }
+    private fun hasValidOrderedPositions(samples: List<WorkoutMetric>): Boolean =
+        samples.all { it.positionA.isFinite() && it.positionB.isFinite() } &&
+            samples.zipWithNext().all { (previous, current) -> current.timestamp >= previous.timestamp }
 
     private fun firstConfirmedDeparture(
         samples: List<WorkoutMetric>,
@@ -119,9 +112,7 @@ internal object CableTelemetryArchivalRetention {
                 var departure = candidate
                 while (departure > firstCandidateIndex) {
                     val previous = signedExcursion(samples[departure - 1], baseline, cable, direction)
-                        ?: break
                     val current = signedExcursion(samples[departure], baseline, cable, direction)
-                        ?: break
                     if (previous < DEPARTURE_BACKTRACK_MM ||
                         previous > current + BACKTRACK_NOISE_TOLERANCE_MM
                     ) {
@@ -144,10 +135,8 @@ internal object CableTelemetryArchivalRetention {
         return if (delta > 0f) 1 else -1
     }
 
-    private fun signedExcursion(sample: WorkoutMetric, baseline: Float, cable: Int, direction: Int): Float? {
-        val signed = (position(sample, cable) - baseline) * direction
-        return signed.takeIf { it.isFinite() }
-    }
+    private fun signedExcursion(sample: WorkoutMetric, baseline: Float, cable: Int, direction: Int): Float =
+        (position(sample, cable) - baseline) * direction
 
     private fun position(sample: WorkoutMetric, cable: Int): Float =
         if (cable == 0) sample.positionA else sample.positionB
