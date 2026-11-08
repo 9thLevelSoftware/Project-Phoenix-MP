@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -97,6 +98,9 @@ class Issue1366JustLiftExitNavigationTest {
 
     /** One-shot guard for the initial stack navigation across composition recreation. */
     private var initialNavigationDone = false
+
+    /** Counts content-body creations so a test can prove a recreation really happened. */
+    private var compositionCreations = 0
 
     @Before
     fun setUpKoin() {
@@ -604,18 +608,35 @@ class Issue1366JustLiftExitNavigationTest {
         // a RECREATED composition re-runs `remember { JustLiftExitContext.capture(...) }`
         // (a fresh capture) plus a fresh LaunchedEffect that collects the current Idle
         // state — the recreated-observer delivery path the merge gate requires.
+        // Pause the frame clock so the Idle observer's pending delivery cannot run before
+        // the recreation: that is the mid-teardown path this test is named for.
+        val creationsBeforeRestore = compositionCreations
+        rule.mainClock.autoAdvance = false
         fx.viewModel.stopWorkout(exitingWorkout = true)
         val visitedAtStop = visitedRoutes.size
         val routeAtStop = currentRoute()
-        restorationTester.emulateSavedInstanceStateRestore()
+        assertEquals(
+            "The Idle delivery must still be pending when the recreation starts",
+            NavigationRoutes.ActiveWorkout.route,
+            routeAtStop,
+        )
+        try {
+            restorationTester.emulateSavedInstanceStateRestore()
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
         settle()
+        assertTrue(
+            "The content must actually be recreated across the restore " +
+                "(creations before: $creationsBeforeRestore, after: $compositionCreations)",
+            compositionCreations > creationsBeforeRestore,
+        )
 
         val visitedAfter = visitedRoutes.drop(visitedAtStop)
-        // The recreation restarts the trail collector, which re-emits the current
-        // entry; an observation re-emission of the same route with no intervening
-        // destination change is NOT a navigation. Effective transitions = consecutive
-        // distinct emissions.
-        val effectiveTransitions = visitedAfter.fold(emptyList<String>()) { acc, route ->
+        // The recreation restarts the trail collector, which may re-emit the route that
+        // was current at stop before the exit lands. That re-emission is NOT a navigation,
+        // so drop it first; then collapse consecutive repeats into effective transitions.
+        val effectiveTransitions = visitedAfter.dropWhile { it == routeAtStop }.fold(emptyList<String>()) { acc, route ->
             if (acc.lastOrNull() == route) acc else acc + route
         }
         assertEquals(
@@ -698,6 +719,9 @@ class Issue1366JustLiftExitNavigationTest {
 
         restorationTester.setContent {
             Box(Modifier.fillMaxSize()) {
+                // Runs once per creation of this content (not per recomposition), so a
+                // StateRestorationTester recreation bumps it exactly once.
+                remember { compositionCreations++ }
                 val nav = rememberNavController().also { navController = it }
                 NavGraph(
                     navController = nav,
