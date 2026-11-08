@@ -248,6 +248,7 @@ class WorkoutExitPersistenceTest {
     fun `automatic completion archives only idle prefix and preserves summary metrics`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             startTrackedCableSet(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             val samples = (0..16).map { index ->
