@@ -129,7 +129,7 @@ class CommitCompletedSetTest {
     }
 
     @Test
-    fun `commitCompletedSet round trips selected cable sample timestamps exactly`() = runTest {
+    fun `commitCompletedSet round trips selected cable samples exactly`() = runTest {
         val samples = (0..16).map { index ->
             val positionA = when (index) {
                 in 0..7 -> 100f
@@ -141,10 +141,21 @@ class CommitCompletedSetTest {
             }
             WorkoutMetric(
                 timestamp = index * 250L,
-                loadA = 20f,
-                loadB = 18f,
+                loadA = 20f + index,
+                loadB = 18f + index * 0.5f,
                 positionA = positionA,
                 positionB = 200f,
+                velocityA = 0.25 + index * 0.01,
+                velocityB = -0.5 + index * 0.02,
+                status = index,
+                heartRateBpm = 100 + index,
+                rrIntervalMs = 800f - index,
+                torsoPitchDeg = 1f + index,
+                torsoRollDeg = -2f - index,
+                dynamicAccMg = 10 + index,
+                chestAccXMg = -20 + index,
+                chestAccYMg = 30 + index,
+                chestAccZMg = -40 + index,
             )
         }
         val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
@@ -159,8 +170,27 @@ class CommitCompletedSetTest {
         )
 
         val persisted = database.phoenixDatabaseQueries.selectMetricsBySession(SESSION_ID).executeAsList()
-        assertEquals(retained.size, persisted.size)
-        assertEquals(retained.map { it.timestamp }, persisted.map { it.timestamp })
+        assertEquals(retained.size, persisted.size, "persist exactly the selected samples")
+        assertEquals(retained.map { it.timestamp }, persisted.map { it.timestamp }, "preserve timestamp order")
+        assertEquals(retained.map { it.positionA.toDouble() }, persisted.map { it.position })
+        assertEquals(retained.map { it.positionB.toDouble() }, persisted.map { it.positionB })
+        assertEquals(retained.map { it.velocityA }, persisted.map { it.velocity })
+        assertEquals(retained.map { it.velocityB }, persisted.map { it.velocityB })
+        assertEquals(retained.map { it.loadA.toDouble() }, persisted.map { it.load })
+        assertEquals(retained.map { it.loadB.toDouble() }, persisted.map { it.loadB })
+        assertEquals(
+            retained.map { ((it.loadA + it.loadB) * it.velocityA.toFloat()).toDouble() },
+            persisted.map { it.power },
+        )
+        assertEquals(retained.map { it.status.toLong() }, persisted.map { it.status })
+        assertEquals(retained.map { it.heartRateBpm?.toLong() }, persisted.map { it.heartRateBpm })
+        assertEquals(retained.map { it.rrIntervalMs?.toDouble() }, persisted.map { it.rrIntervalMs })
+        assertEquals(retained.map { it.torsoPitchDeg?.toDouble() }, persisted.map { it.torsoPitchDeg })
+        assertEquals(retained.map { it.torsoRollDeg?.toDouble() }, persisted.map { it.torsoRollDeg })
+        assertEquals(retained.map { it.dynamicAccMg?.toLong() }, persisted.map { it.dynamicAccMg })
+        assertEquals(retained.map { it.chestAccXMg?.toLong() }, persisted.map { it.chestAccXMg })
+        assertEquals(retained.map { it.chestAccYMg?.toLong() }, persisted.map { it.chestAccYMg })
+        assertEquals(retained.map { it.chestAccZMg?.toLong() }, persisted.map { it.chestAccZMg })
     }
 
     @Test

@@ -26,6 +26,27 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
+    fun `fifty hertz idle telemetry is trimmed with one second context`() {
+        val idleSampleCount = 2_000 // 40 seconds at 50 Hz; movement begins at 40,000 ms.
+        val samplesAfterMovement = 51
+        val samples = (0 until idleSampleCount + samplesAfterMovement).map { index ->
+            val positionA = if (index < idleSampleCount) 100f else 100f + (index - idleSampleCount + 1)
+            WorkoutMetric(
+                timestamp = index * 20L,
+                loadA = 20f,
+                loadB = 18f,
+                positionA = positionA,
+                positionB = 200f,
+            )
+        }
+
+        val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
+
+        assertEquals(1_950, samples.size - retained.size, "trim all but one second of idle context")
+        assertEquals(samples.drop(1_950), retained, "preserve the full context and every later sample")
+    }
+
+    @Test
     fun `confirmed short excursion beyond five millimeters is retained`() {
         val displacement = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0.4f, 1f, 2f, 3.4f, 5.2f, 5.7f, 5.9f, 6f)
         val samples = metrics(displacement.map { 100f + it }, List(displacement.size) { 250f })

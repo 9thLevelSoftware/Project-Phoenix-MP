@@ -30,13 +30,14 @@ internal object CableTelemetryArchivalRetention {
         if (samples.size < BASELINE_SAMPLE_COUNT + CONFIRMATION_SAMPLE_COUNT - 1) return samples
         if (!hasValidOrderedPositions(samples)) return samples
 
-        val baselineWindow = samples.take(BASELINE_SAMPLE_COUNT)
-        val baselineStartMs = baselineWindow.first().timestamp
-        if (baselineStartMs > Long.MAX_VALUE - BASELINE_MIN_DURATION_MS ||
-            baselineWindow.last().timestamp < baselineStartMs + BASELINE_MIN_DURATION_MS
-        ) {
-            return samples
+        val baselineStartMs = samples.first().timestamp
+        if (baselineStartMs > Long.MAX_VALUE - BASELINE_MIN_DURATION_MS) return samples
+        val durationEndIndex = samples.indexOfFirst {
+            it.timestamp >= baselineStartMs + BASELINE_MIN_DURATION_MS
         }
+        if (durationEndIndex < 0) return samples
+        val baselineEndIndex = maxOf(BASELINE_SAMPLE_COUNT - 1, durationEndIndex)
+        val baselineWindow = samples.take(baselineEndIndex + 1)
 
         val baselineA = median(baselineWindow.map { it.positionA })
         val baselineB = median(baselineWindow.map { it.positionB })
@@ -56,7 +57,12 @@ internal object CableTelemetryArchivalRetention {
             return samples
         }
 
-        val departureIndex = firstConfirmedDeparture(samples, baselineA, baselineB) ?: return samples
+        val departureIndex = firstConfirmedDeparture(
+            samples = samples,
+            baselineA = baselineA,
+            baselineB = baselineB,
+            firstCandidateIndex = baselineWindow.size,
+        ) ?: return samples
         val departureTimestamp = samples[departureIndex].timestamp
         if (departureTimestamp < Long.MIN_VALUE + PRIOR_CONTEXT_MS) return samples
         val contextStartTimestamp = departureTimestamp - PRIOR_CONTEXT_MS
@@ -80,11 +86,12 @@ internal object CableTelemetryArchivalRetention {
         samples: List<WorkoutMetric>,
         baselineA: Float,
         baselineB: Float,
+        firstCandidateIndex: Int,
     ): Int? {
         var earliestDeparture: Int? = null
         for (cable in 0..1) {
             val baseline = if (cable == 0) baselineA else baselineB
-            for (candidate in BASELINE_SAMPLE_COUNT until samples.size - CONFIRMATION_SAMPLE_COUNT + 1) {
+            for (candidate in firstCandidateIndex until samples.size - CONFIRMATION_SAMPLE_COUNT + 1) {
                 val direction = movementDirection(samples[candidate], baseline, cable) ?: continue
                 val confirmed = (candidate until candidate + CONFIRMATION_SAMPLE_COUNT).all { index ->
                     movementDirection(samples[index], baseline, cable) == direction
@@ -92,7 +99,7 @@ internal object CableTelemetryArchivalRetention {
                 if (!confirmed) continue
 
                 var departure = candidate
-                while (departure > BASELINE_SAMPLE_COUNT) {
+                while (departure > firstCandidateIndex) {
                     val previous = signedExcursion(samples[departure - 1], baseline, cable, direction)
                         ?: break
                     val current = signedExcursion(samples[departure], baseline, cable, direction)
