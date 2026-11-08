@@ -128,15 +128,15 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
-    fun `machine safety status beyond the baseline in the discarded prefix prevents trimming`() {
+    fun `machine safety status beyond the baseline clamps the retained window to the flagged sample`() {
         val samples = longIdleTrace(SampleStatus.ROM_OUTSIDE_HIGH)
 
-        assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+        assertEquals(samples.drop(5), CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
     }
 
     @Test
-    fun `rep readiness status in discarded prefix does not disable trimming`() {
-        val samples = longIdleTrace(SampleStatus.REP_TOP_READY)
+    fun `rep readiness flags in discarded prefix do not disable trimming`() {
+        val samples = longIdleTrace(SampleStatus.REP_TOP_READY or SampleStatus.REP_BOTTOM_READY)
 
         assertEquals(
             samples.drop(17),

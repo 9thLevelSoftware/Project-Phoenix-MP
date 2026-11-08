@@ -18,12 +18,6 @@ internal object CableTelemetryArchivalRetention {
     private const val CONFIRMATION_SAMPLE_COUNT = 3
     private const val DEPARTURE_BACKTRACK_MM = 0.25f
     private const val BACKTRACK_NOISE_TOLERANCE_MM = 1f
-    private val SAFETY_STATUS_MASK =
-        SampleStatus.ROM_OUTSIDE_HIGH or
-            SampleStatus.ROM_OUTSIDE_LOW or
-            SampleStatus.SPOTTER_ACTIVE or
-            SampleStatus.DELOAD_WARN or
-            SampleStatus.DELOAD_OCCURRED
 
     /**
      * Trim only a confidently stationary leading prefix. Unsupported or ambiguous input is
@@ -81,14 +75,18 @@ internal object CableTelemetryArchivalRetention {
 
         val discardedPrefix = samples.subList(0, firstRetainedIndex)
         if (discardedPrefix.any { sample ->
-                (sample.status and SAFETY_STATUS_MASK) != 0 ||
-                    abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
+                abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
                     abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
             }
         ) {
             return samples
         }
-        return samples.subList(firstRetainedIndex, samples.size).toList()
+        // Preserve every safety event and its following context, while still trimming earlier idle.
+        val firstSafetyFlagIndex = discardedPrefix.indexOfFirst {
+            (it.status and SampleStatus.SAFETY_STATUS_MASK) != 0
+        }
+        val retentionStartIndex = if (firstSafetyFlagIndex >= 0) firstSafetyFlagIndex else firstRetainedIndex
+        return samples.subList(retentionStartIndex, samples.size).toList()
     }
 
     private fun hasValidOrderedPositions(samples: List<WorkoutMetric>): Boolean {

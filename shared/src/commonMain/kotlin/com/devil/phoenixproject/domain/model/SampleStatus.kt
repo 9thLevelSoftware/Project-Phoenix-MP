@@ -36,5 +36,12 @@ data class SampleStatus(val raw: Int) {
         const val SPOTTER_ACTIVE = 1 shl 5 // 0x0020
         const val DELOAD_WARN = 1 shl 6 // 0x0040
         const val DELOAD_OCCURRED = 1 shl 15 // 0x8000
+
+        internal val SAFETY_STATUS_MASK =
+            ROM_OUTSIDE_HIGH or
+                ROM_OUTSIDE_LOW or
+                SPOTTER_ACTIVE or
+                DELOAD_WARN or
+                DELOAD_OCCURRED
     }
 }
