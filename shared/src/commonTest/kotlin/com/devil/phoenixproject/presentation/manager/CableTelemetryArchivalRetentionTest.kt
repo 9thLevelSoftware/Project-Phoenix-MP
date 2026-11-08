@@ -152,6 +152,16 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
+    fun `safety flag clamps before stationarity check of the remaining discarded prefix`() {
+        val samples = longIdleTrace(
+            status = SampleStatus.ROM_OUTSIDE_HIGH,
+            deviatedIndices = setOf(8),
+        )
+
+        assertEquals(samples.drop(5), CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+    }
+
+    @Test
     fun `disabled ROM semantics and idle-only cancellation keep all samples`() {
         val moving = confidentTrace()
         val idle = metrics(List(12) { 100f }, List(12) { 200f })

@@ -73,7 +73,19 @@ internal object CableTelemetryArchivalRetention {
         // Retain every sample sharing the boundary timestamp, not only the last duplicate.
         val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= boundaryTimestamp }
 
-        val discardedPrefix = samples.subList(0, firstRetainedIndex)
+        // Preserve every safety event and its following context, while still trimming earlier idle.
+        val firstSafetyFlagIndex = samples.subList(0, firstRetainedIndex).indexOfFirst {
+            (it.status and SampleStatus.SAFETY_STATUS_MASK) != 0
+        }
+        val retentionStartIndex = if (firstSafetyFlagIndex >= 0) {
+            minOf(firstRetainedIndex, firstSafetyFlagIndex)
+        } else {
+            firstRetainedIndex
+        }
+
+        // Only require stationarity for samples that will actually be discarded. Motion after
+        // a retained safety event is preserved and must not cancel the earlier safe trim.
+        val discardedPrefix = samples.subList(0, retentionStartIndex)
         if (discardedPrefix.any { sample ->
                 abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
                     abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
@@ -81,11 +93,6 @@ internal object CableTelemetryArchivalRetention {
         ) {
             return samples
         }
-        // Preserve every safety event and its following context, while still trimming earlier idle.
-        val firstSafetyFlagIndex = discardedPrefix.indexOfFirst {
-            (it.status and SampleStatus.SAFETY_STATUS_MASK) != 0
-        }
-        val retentionStartIndex = if (firstSafetyFlagIndex >= 0) firstSafetyFlagIndex else firstRetainedIndex
         return samples.subList(retentionStartIndex, samples.size).toList()
     }
 
