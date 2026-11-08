@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -10,10 +11,12 @@ import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.util.KmpLocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -48,6 +51,50 @@ val HistoryItem.lazyColumnKey: String
         is GroupedRoutineHistoryItem -> "routine:$routineSessionId"
     }
 
+internal fun filterRecentActivityHistoryForProfile(
+    history: List<HistoryItem>,
+    profileId: String,
+): List<HistoryItem> =
+    history.filter { item ->
+        when (item) {
+            is GroupedRoutineHistoryItem -> item.sessions.isNotEmpty() &&
+                item.sessions.all { it.profileId == profileId }
+            is SingleSessionHistoryItem -> item.session.profileId == profileId
+        }
+    }
+
+/** Rechecks cached groups when the active profile changes, before the source flow catches up. */
+internal fun filterGroupedHistoryForActiveProfile(
+    activeProfile: Flow<UserProfile?>,
+    groupedHistory: Flow<List<HistoryItem>>,
+): Flow<List<HistoryItem>> =
+    combine(activeProfile, groupedHistory) { profile, items ->
+        filterRecentActivityHistoryForProfile(items, profile?.id ?: "default")
+    }
+
+private fun groupHistorySessions(sessions: List<WorkoutSession>): List<HistoryItem> {
+    val groupedByRoutine = sessions.filter { it.routineSessionId != null }
+        .groupBy { it.routineSessionId!! }
+        .map { (id, sessionList) ->
+            val sortedSessions = sessionList.sortedBy { it.timestamp }
+            val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
+            val lastEnd = sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
+            GroupedRoutineHistoryItem(
+                routineSessionId = id,
+                routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
+                sessions = sortedSessions,
+                // Use elapsed span (first set start -> last set end) so inter-set rest is included.
+                totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
+                totalReps = sessionList.sumOf { it.totalReps },
+                exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
+                timestamp = sessionList.minOf { it.timestamp },
+            )
+        }
+    val singleSessions = sessions.filter { it.routineSessionId == null }
+        .map { SingleSessionHistoryItem(it) }
+    return (groupedByRoutine + singleSessions).sortedByDescending { it.timestamp }
+}
+
 /**
  * Manages workout history and personal records display.
  * Extracted from MainViewModel — pure read-only computed flows.
@@ -76,49 +123,31 @@ class HistoryManager(
     /**
      * Issue #591: Analytics / History-visible sessions.
      *
-     * `allWorkoutSessions` powers streak, progress percentage, and
-     * history pagination (still needs every persisted row). For the
-     * `groupedWorkoutHistory` grouping used by `HistoryTab`'s Daily Routine
-     * card and per-set drill-down we instead need to skip zero-rep /
-     * soft-deleted rows so they do not inflate routine set totals or
-     * trip the misleading pre-v0.2.1 placeholder.
+     * `allWorkoutSessions` already reads the active profile's non-deleted rows. Filter out
+     * incomplete zero-rep captures here so History and Home share that one database flow
+     * instead of issuing a second full-history query for the same profile.
      */
     val historyVisibleSessions: StateFlow<List<WorkoutSession>> =
-        userProfileRepository.activeProfile
-            .flatMapLatest { profile ->
-                val profileId = profile?.id ?: "default"
-                workoutRepository.getHistoryVisibleSessions(profileId)
+        combine(userProfileRepository.activeProfile, allWorkoutSessions) { profile, sessions ->
+            val profileId = profile?.id ?: "default"
+            sessions.filter { session ->
+                session.profileId == profileId && (session.workingReps > 0 || session.totalReps > 0)
             }
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList(),
-            )
+        }.stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
 
-    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions.map { sessions ->
-        val groupedByRoutine = sessions.filter { it.routineSessionId != null }
-            .groupBy { it.routineSessionId!! }
-            .map { (id, sessionList) ->
-                val sortedSessions = sessionList.sortedBy { it.timestamp }
-                val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
-                val lastEnd =
-                    sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
-                GroupedRoutineHistoryItem(
-                    routineSessionId = id,
-                    routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
-                    sessions = sortedSessions,
-                    // Use elapsed span (first set start -> last set end) so inter-set rest is included.
-                    totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
-                    totalReps = sessionList.sumOf { it.totalReps },
-                    exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
-                    timestamp = sessionList.minOf { it.timestamp },
-                )
-            }
-        val singleSessions = sessions.filter { it.routineSessionId == null }
-            .map { SingleSessionHistoryItem(it) }
-
-        (groupedByRoutine + singleSessions).sortedByDescending { it.timestamp }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> =
+        filterGroupedHistoryForActiveProfile(
+            activeProfile = userProfileRepository.activeProfile,
+            groupedHistory = historyVisibleSessions.map(::groupHistorySessions),
+        ).stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
 
     /**
      * True until the first emission from [historyVisibleSessions], false thereafter.

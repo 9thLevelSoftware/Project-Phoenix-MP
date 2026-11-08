@@ -17,6 +17,17 @@ import kotlin.test.assertTrue
 class KmpUtilsTest {
 
     @Test
+    fun formatTimestamp_supportsLocalizedDatePatterns() {
+        val timestamp = 1_718_452_800_000L
+        val usDate = KmpUtils.formatTimestamp(timestamp, "MM/dd/yyyy").split('/')
+        val dayFirstDate = "${usDate[1]}/${usDate[0]}/${usDate[2]}"
+
+        assertEquals(dayFirstDate, KmpUtils.formatTimestamp(timestamp, "dd/MM/yyyy"))
+        assertEquals(dayFirstDate.replace('/', '.'), KmpUtils.formatTimestamp(timestamp, "dd.MM.yyyy"))
+        assertEquals(dayFirstDate.replace('/', '-'), KmpUtils.formatTimestamp(timestamp, "dd-MM-yyyy"))
+    }
+
+    @Test
     fun formatTimestamp_compactMonthDay_doesNotFallBackToNumericDate() {
         val formatted = KmpUtils.formatTimestamp(1_718_452_800_000L, "MMM d")
 

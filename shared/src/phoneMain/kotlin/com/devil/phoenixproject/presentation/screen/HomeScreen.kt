@@ -50,6 +50,9 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem
+import com.devil.phoenixproject.presentation.manager.HistoryItem
+import com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
@@ -60,6 +63,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.util.KmpUtils
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
@@ -70,6 +74,14 @@ import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.cd_start_workout
 import projectphoenix.shared.generated.resources.cd_streak
+import projectphoenix.shared.generated.resources.home_recent_activity_date_pattern
+import projectphoenix.shared.generated.resources.home_recent_activity_date_time_separator
+import projectphoenix.shared.generated.resources.home_recent_activity_group_detail
+import projectphoenix.shared.generated.resources.home_recent_activity_many_reps
+import projectphoenix.shared.generated.resources.home_recent_activity_many_sets
+import projectphoenix.shared.generated.resources.home_recent_activity_one_rep
+import projectphoenix.shared.generated.resources.home_recent_activity_one_set
+import projectphoenix.shared.generated.resources.home_recent_activity_time_pattern
 import projectphoenix.shared.generated.resources.start_workout
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
@@ -80,6 +92,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
+    val recentActivityHistory by viewModel.groupedWorkoutHistory.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
     val cycleRepository: TrainingCycleRepository = koinInject()
@@ -198,8 +211,8 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    RecentActivitySummary(
-                        history = recentSessions,
+                    HomeRecentActivityContent(
+                        history = recentActivityHistory,
                         weightUnit = weightUnit,
                         onExerciseClick = { exerciseId ->
                             navController.navigate(NavigationRoutes.SingleExerciseForExercise.createRoute(exerciseId))
@@ -496,8 +509,21 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
 }
 
 @Composable
+internal fun HomeRecentActivityContent(
+    history: List<HistoryItem>,
+    weightUnit: WeightUnit = WeightUnit.KG,
+    onExerciseClick: (String) -> Unit,
+) {
+    RecentActivitySummary(
+        history = projectHomeRecentActivities(history),
+        weightUnit = weightUnit,
+        onExerciseClick = onExerciseClick,
+    )
+}
+
+@Composable
 private fun RecentActivitySummary(
-    history: List<WorkoutSession>,
+    history: List<HistoryItem>,
     weightUnit: WeightUnit = WeightUnit.KG,
     onExerciseClick: (String) -> Unit,
 ) {
@@ -509,32 +535,49 @@ private fun RecentActivitySummary(
         )
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            history.take(2).forEach { session ->
-                val replayExerciseId = session.replayExerciseId()
-                if (replayExerciseId != null) {
-                    Surface(
-                        onClick = { onExerciseClick(replayExerciseId) },
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        RecentActivityRowContent(
-                            session = session,
-                            weightUnit = weightUnit,
-                            showChevron = true,
+            history.forEach { item ->
+                when (item) {
+                    is GroupedRoutineHistoryItem -> {
+                        val setCount = item.sessions.size
+                        val setCountLabel = if (setCount == 1) {
+                            stringResource(Res.string.home_recent_activity_one_set)
+                        } else {
+                            stringResource(Res.string.home_recent_activity_many_sets, setCount)
+                        }
+                        val repCountLabel = if (item.totalReps == 1) {
+                            stringResource(Res.string.home_recent_activity_one_rep)
+                        } else {
+                            stringResource(Res.string.home_recent_activity_many_reps, item.totalReps)
+                        }
+                        val detail = stringResource(
+                            Res.string.home_recent_activity_group_detail,
+                            setCountLabel,
+                            repCountLabel,
                         )
+                        RecentActivityRowSurface {
+                            RecentActivityRowContent(
+                                title = item.routineName,
+                                detail = detail,
+                                timestamp = item.timestamp,
+                                showChevron = false,
+                            )
+                        }
                     }
-                } else {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        RecentActivityRowContent(
-                            session = session,
-                            weightUnit = weightUnit,
-                            showChevron = false,
-                        )
+                    is SingleSessionHistoryItem -> {
+                        val session = item.session
+                        val replayExerciseId = session.replayExerciseId()
+                        RecentActivityRowSurface(
+                            onClick = replayExerciseId?.let { exerciseId ->
+                                { onExerciseClick(exerciseId) }
+                            },
+                        ) {
+                            RecentActivityRowContent(
+                                title = session.exerciseName ?: "Workout Session",
+                                detail = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit),
+                                timestamp = session.timestamp,
+                                showChevron = replayExerciseId != null,
+                            )
+                        }
                     }
                 }
             }
@@ -543,7 +586,26 @@ private fun RecentActivitySummary(
 }
 
 @Composable
-private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: WeightUnit, showChevron: Boolean) {
+private fun RecentActivityRowSurface(
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val color = MaterialTheme.colorScheme.surfaceContainer
+    val shape = MaterialTheme.shapes.small
+    val modifier = Modifier.fillMaxWidth()
+    if (onClick == null) {
+        Surface(color = color, shape = shape, modifier = modifier, content = content)
+    } else {
+        Surface(onClick = onClick, color = color, shape = shape, modifier = modifier, content = content)
+    }
+}
+
+@Composable
+private fun RecentActivityRowContent(title: String, detail: String, timestamp: Long, showChevron: Boolean) {
+    val datePattern = stringResource(Res.string.home_recent_activity_date_pattern)
+    val timePattern = stringResource(Res.string.home_recent_activity_time_pattern)
+    val dateTimeSeparator = stringResource(Res.string.home_recent_activity_date_time_separator)
+
     Row(
         modifier = Modifier.padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -556,18 +618,27 @@ private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: Weight
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            // Issue #1182: Echo shows the achieved load (measured peak), not the configured seed.
-            // The exact rendered line lives in AchievedLoadPresentation so it stays testable.
-            val loadLine = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit)
             Text(
-                session.exerciseName ?: "Workout Session",
+                title,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                loadLine,
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                formatRecentActivityDateTime(
+                    timestamp = timestamp,
+                    datePattern = datePattern,
+                    timePattern = timePattern,
+                    separator = dateTimeSeparator,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -585,6 +656,14 @@ private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: Weight
         }
     }
 }
+
+internal fun formatRecentActivityDateTime(
+    timestamp: Long,
+    datePattern: String,
+    timePattern: String,
+    separator: String,
+): String =
+    "${KmpUtils.formatTimestamp(timestamp, datePattern)}$separator${KmpUtils.formatTimestamp(timestamp, timePattern)}"
 
 private data class CycleStartRequest(
     val routineId: String,
