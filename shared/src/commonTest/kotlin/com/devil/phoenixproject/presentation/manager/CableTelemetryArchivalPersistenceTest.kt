@@ -19,6 +19,7 @@ class CableTelemetryArchivalPersistenceTest {
     fun `manual stop trims idle prefix and preserves partial telemetry and summary input`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             startTrackedCableSet(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             val samples = telemetryWithMovement()
