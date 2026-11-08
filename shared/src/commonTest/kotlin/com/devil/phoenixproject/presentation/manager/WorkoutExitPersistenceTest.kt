@@ -245,6 +245,44 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
+    fun `automatic completion archives only idle prefix and preserves summary metrics`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val samples = (0..16).map { index ->
+                val positionA = when (index) {
+                    in 0..7 -> 100f
+                    8 -> 101.5f
+                    9 -> 103f
+                    10 -> 105.5f
+                    11 -> 108f
+                    else -> 111f
+                }
+                WorkoutMetric(
+                    timestamp = index * 250L,
+                    loadA = 20f,
+                    loadB = 18f,
+                    positionA = positionA,
+                    positionB = 200f,
+                )
+            }
+            samples.forEach(harness.coordinator.collectedMetrics::append)
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+
+            val persisted = harness.fakeWorkoutRepo.metricsForSession(lease.sessionId)
+            assertEquals(samples.drop(4).map { it.timestamp }, persisted.map { it.timestamp })
+            val summary = assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertEquals(samples, summary.metrics, "live summary input must retain the original collected buffer")
+            assertEquals(2, summary.repCount)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `automatic completion persists immutable snapshot when RESET times out`() = runTest {
         val harness = DWSMTestHarness(this)
         val neverReset = CompletableDeferred<Result<Unit>>()

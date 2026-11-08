@@ -9223,6 +9223,10 @@ class ActiveSessionEngine(
         val recordedWeightPerCableKg = recordedWeightPerCableKg(params, completion.executedWeightPerCableKg)
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.snapshot()
+        val archiveMetrics = CableTelemetryArchivalRetention.selectForRomCableSet(
+            samples = metrics,
+            romEnabled = completion.isCableExercise && !completion.isBodyweight && !completion.isTimed,
+        )
         val exerciseIndex = coordinator._currentExerciseIndex.value
         val setIndex = coordinator._currentSetIndex.value
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(exerciseIndex)
@@ -9430,7 +9434,7 @@ class ActiveSessionEngine(
             terminalPath = terminalPath,
             session = session,
             completedSet = completedSet,
-            metrics = metrics,
+            metrics = archiveMetrics,
             repMetrics = coordinator.setRepMetrics.snapshot().map(RepMetricData::deepCopyForExitSnapshot),
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
                 .map { it.deepCopyForExitSnapshot() },

@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.manager.CableTelemetryArchivalRetention
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestSchema
 import com.devil.phoenixproject.testutil.seedExercise
@@ -125,6 +126,41 @@ class CommitCompletedSetTest {
         assertEquals(1, q.selectMetricsBySession(SESSION_ID).executeAsList().size)
         assertEquals(1L, q.countRepMetricsBySession(SESSION_ID).executeAsOne())
         assertEquals(1, q.selectRepBiomechanicsBySession(SESSION_ID).executeAsList().size)
+    }
+
+    @Test
+    fun `commitCompletedSet round trips selected cable sample timestamps exactly`() = runTest {
+        val samples = (0..16).map { index ->
+            val positionA = when (index) {
+                in 0..7 -> 100f
+                8 -> 101.5f
+                9 -> 103f
+                10 -> 105.5f
+                11 -> 108f
+                else -> 111f
+            }
+            WorkoutMetric(
+                timestamp = index * 250L,
+                loadA = 20f,
+                loadB = 18f,
+                positionA = positionA,
+                positionB = 200f,
+            )
+        }
+        val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
+        assertEquals(samples.drop(4), retained)
+
+        repository.commitCompletedSet(
+            session = session(),
+            metrics = retained,
+            completedSet = completedSet(),
+            repMetrics = emptyList(),
+            repBiomechanics = emptyList(),
+        )
+
+        val persisted = database.phoenixDatabaseQueries.selectMetricsBySession(SESSION_ID).executeAsList()
+        assertEquals(retained.size, persisted.size)
+        assertEquals(retained.map { it.timestamp }, persisted.map { it.timestamp })
     }
 
     @Test
