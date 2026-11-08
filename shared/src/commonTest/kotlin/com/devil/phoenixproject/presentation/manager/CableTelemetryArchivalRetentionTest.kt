@@ -47,6 +47,26 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
+    fun `irregular timestamps retain the last sample at or before one second cutoff`() {
+        val timestamps = listOf(0L, 250L, 500L, 750L, 1_000L, 1_250L, 1_400L, 1_600L, 1_900L, 2_200L, 2_450L, 2_700L, 2_950L)
+        val positionsA = listOf(100f, 100f, 100f, 100f, 100f, 100f, 100f, 100f, 100f, 100f, 106f, 108f, 110f)
+        val samples = timestamps.mapIndexed { index, timestamp ->
+            WorkoutMetric(
+                timestamp = timestamp,
+                loadA = 20f,
+                loadB = 18f,
+                positionA = positionsA[index],
+                positionB = 200f,
+            )
+        }
+
+        val retained = CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true)
+
+        assertEquals(timestamps.drop(6), retained.map { it.timestamp })
+        assertEquals(samples.drop(6), retained, "retain the sample at 1,400 ms and preserve original order")
+    }
+
+    @Test
     fun `confirmed short excursion beyond five millimeters is retained`() {
         val displacement = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0.4f, 1f, 2f, 3.4f, 5.2f, 5.7f, 5.9f, 6f)
         val samples = metrics(displacement.map { 100f + it }, List(displacement.size) { 250f })

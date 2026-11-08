@@ -66,8 +66,8 @@ internal object CableTelemetryArchivalRetention {
         val departureTimestamp = samples[departureIndex].timestamp
         if (departureTimestamp < Long.MIN_VALUE + PRIOR_CONTEXT_MS) return samples
         val contextStartTimestamp = departureTimestamp - PRIOR_CONTEXT_MS
-        val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= contextStartTimestamp }
-        if (firstRetainedIndex <= 0) return samples
+        val firstRetainedIndex = samples.indexOfLast { it.timestamp <= contextStartTimestamp }
+        if (firstRetainedIndex < 0) return samples
         return samples.subList(firstRetainedIndex, samples.size).toList()
     }
 
