@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -84,11 +86,17 @@ class Issue1366JustLiftExitNavigationTest {
     val rule: AndroidComposeTestRule<ActivityScenarioRule<ComponentActivity>, ComponentActivity> =
         createAndroidComposeRule()
 
+    /** Content is set through this tester so any test can emulate state restoration. */
+    private val restorationTester = StateRestorationTester(rule)
+
     private var fixture: RoutineCompleteRuntimeFixture? = null
     private var navController: NavHostController? = null
 
     /** Every destination that became current, in order (bottom -> top evidence trail). */
     private val visitedRoutes = mutableListOf<String>()
+
+    /** One-shot guard for the initial stack navigation across composition recreation. */
+    private var initialNavigationDone = false
 
     @Before
     fun setUpKoin() {
@@ -449,6 +457,215 @@ class Issue1366JustLiftExitNavigationTest {
         assertEquals(laterStack, backStack())
     }
 
+    // ===== Merge-gate validation extensions (entry-ID capture / delayed Idle /
+    //      recreated-composition delivery / rendered Echo verification) =====
+
+    @Test
+    @Config(qualifiers = "w402dp-h874dp-xxhdpi")
+    fun `exit captures the real ActiveWorkout entry id and retains the existing JustLift entry`() {
+        val fx = driveJustLiftActiveSession(justLiftParameters())
+        val homeId = entryIdOf(NavigationRoutes.Home.route)
+        val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
+        val activeId = entryIdOf(NavigationRoutes.ActiveWorkout.route)
+
+        // Real back-stack entry-ID capture evidence: the authorisation context must
+        // record the CURRENT ActiveWorkout entry's identity (the merge gate requires
+        // actual entry-ID capture, not route-string evidence).
+        val captured = JustLiftExitContext.capture(
+            navController!!,
+            fx.viewModel.currentWorkoutSessionId(),
+        )
+        assertEquals(
+            "JustLiftExitContext.capture must record the current ActiveWorkout back-stack entry id",
+            activeId,
+            captured.sourceEntryId,
+        )
+
+        exitViaStopDialog()
+        settle()
+
+        val after = routedEntries()
+        // Entry-ID level contract: [home, just_lift] with the EXISTING JustLift entry
+        // retained non-inclusively, the captured ActiveWorkout entry gone, and no
+        // duplicate JustLift entry.
+        assertEquals(
+            "After STOP -> Exit the stack must be exactly [home, just_lift] by ENTRY ID " +
+                "(after: ${entryIdTrail()})",
+            listOf(homeId, justLiftId),
+            after.map { it.id },
+        )
+        assertEquals(
+            "Exactly one JustLift entry must remain (no duplicate JustLift)",
+            1,
+            after.count { it.destination.route == NavigationRoutes.JustLift.route },
+        )
+        assertTrue(
+            "The captured ActiveWorkout entry id must be gone from the stack",
+            after.none { it.id == activeId },
+        )
+        assertFalse(
+            "The captured source entry id must never re-enter the stack",
+            after.any { it.id == captured.sourceEntryId },
+        )
+
+        RoutineCompleteRuntimeEvidence.record(
+            "justLiftExit_entryIdCapture",
+            mapOf(
+                "destination" to currentRoute(),
+                "backStackEntryIdsAfter" to entryIdTrail(),
+                "capturedSourceEntryId" to captured.sourceEntryId,
+                "retainedJustLiftEntryId" to justLiftId,
+                "capturedEntryGoneFromStack" to after.none { it.id == captured.sourceEntryId },
+            ),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w402dp-h874dp-xxhdpi")
+    fun `delayed idle observer delivery after the exit confirm is a no-op`() {
+        val fx = driveJustLiftActiveSession(justLiftParameters())
+        val homeId = entryIdOf(NavigationRoutes.Home.route)
+        val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
+        // The observer incarnation's composition-time capture (the production
+        // `remember(navController, activeWorkoutEntryId) { JustLiftExitContext.capture(...) }`).
+        val observerContext = JustLiftExitContext.capture(
+            navController!!,
+            fx.viewModel.currentWorkoutSessionId(),
+        )
+
+        rule.onNodeWithText("STOP").assertIsDisplayed().performClick()
+        rule.onNodeWithText("Exit Workout?").assertIsDisplayed()
+
+        // Deliberately control delivery timing: freeze the frame clock so the confirm
+        // click's synchronous handler (capture -> real stop -> exitToJustLift) and the
+        // Idle observer's collection resumption cannot share one natural interleaving.
+        val visitedAtExitClick = visitedRoutes.size
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithText("Exit").performClick()
+        // Pump frames ONE AT A TIME and record the per-frame navigation trajectory:
+        // delivery timing is under explicit test control, not ambient scheduling.
+        val trajectory = mutableListOf<String>()
+        repeat(DELAY_PUMP_FRAMES) { frame ->
+            rule.mainClock.advanceTimeByFrame()
+            rule.runOnIdle {
+                trajectory += "frame=$frame route=${currentRoute()} visited=${visitedRoutes.size} stack=${entryIdTrail()}"
+            }
+        }
+        rule.mainClock.autoAdvance = true
+
+        // The delayed Idle-observer delivery (its composition-time capture, delivered
+        // after the confirm handler's exit has already landed) must be a no-op.
+        val lateDelivery = navController!!.exitToJustLift(observerContext) {
+            fx.viewModel.currentWorkoutSessionId()
+        }
+        settle()
+
+        assertFalse("A delayed Idle-observer delivery must not navigate again", lateDelivery)
+        val visitedAfterExit = visitedRoutes.drop(visitedAtExitClick)
+        assertEquals(
+            "Exactly one effective exit transition despite the delayed Idle delivery " +
+                "(visited after Exit tap: $visitedAfterExit)",
+            listOf(NavigationRoutes.JustLift.route),
+            visitedAfterExit,
+        )
+        assertEquals(
+            "Delayed delivery must not disturb the settled entry-id stack",
+            listOf(homeId, justLiftId),
+            routedEntries().map { it.id },
+        )
+        assertEquals(
+            "No duplicate JustLift entry may appear after the delayed delivery",
+            1,
+            routedEntries().count { it.destination.route == NavigationRoutes.JustLift.route },
+        )
+
+        RoutineCompleteRuntimeEvidence.record(
+            "justLiftExit_delayedIdleDelivery",
+            mapOf(
+                "destination" to currentRoute(),
+                "frameTrajectory" to trajectory,
+                "lateDeliveryNavigated" to lateDelivery,
+                "visitedAfterExit" to visitedAfterExit,
+                "backStackEntryIdsAfter" to entryIdTrail(),
+            ),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w402dp-h874dp-xxhdpi")
+    fun `composition recreation mid-teardown delivers the pending idle exit exactly once`() {
+        val fx = driveJustLiftActiveSession(justLiftParameters())
+        val homeId = entryIdOf(NavigationRoutes.Home.route)
+        val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
+
+        // Real stop publishes Idle synchronously while the ActiveWorkout composition is
+        // still outgoing. Emulate saved-instance-state restoration NOW: the outgoing
+        // composition (and its pending observer delivery) is destroyed mid-teardown and
+        // a RECREATED composition re-runs `remember { JustLiftExitContext.capture(...) }`
+        // (a fresh capture) plus a fresh LaunchedEffect that collects the current Idle
+        // state — the recreated-observer delivery path the merge gate requires.
+        fx.viewModel.stopWorkout(exitingWorkout = true)
+        val visitedAtStop = visitedRoutes.size
+        val routeAtStop = currentRoute()
+        restorationTester.emulateSavedInstanceStateRestore()
+        settle()
+
+        val visitedAfter = visitedRoutes.drop(visitedAtStop)
+        // The recreation restarts the trail collector, which re-emits the current
+        // entry; an observation re-emission of the same route with no intervening
+        // destination change is NOT a navigation. Effective transitions = consecutive
+        // distinct emissions.
+        val effectiveTransitions = visitedAfter.fold(emptyList<String>()) { acc, route ->
+            if (acc.lastOrNull() == route) acc else acc + route
+        }
+        assertEquals(
+            "The recreated composition's pending Idle delivery must settle on JustLift " +
+                "(visited after stop: $visitedAfter)",
+            NavigationRoutes.JustLift.route,
+            currentRoute(),
+        )
+        assertTrue(
+            "Recreated-composition delivery must never navigate to Home (visited: $visitedAfter)",
+            visitedAfter.none { it == NavigationRoutes.Home.route },
+        )
+        assertEquals(
+            "Exactly one effective exit transition across composition recreation " +
+                "(effective transitions: $effectiveTransitions)",
+            listOf(NavigationRoutes.JustLift.route),
+            effectiveTransitions,
+        )
+        assertEquals(
+            "Nothing may navigate after the exit lands (visited after stop: $visitedAfter)",
+            listOf(NavigationRoutes.JustLift.route),
+            visitedAfter.dropWhile { it != NavigationRoutes.JustLift.route }.fold(emptyList<String>()) { acc, route ->
+                if (acc.lastOrNull() == route) acc else acc + route
+            },
+        )
+        assertEquals(
+            "The settled stack must be exactly [home, just_lift] by ENTRY ID (after: ${entryIdTrail()})",
+            listOf(homeId, justLiftId),
+            routedEntries().map { it.id },
+        )
+        assertEquals(
+            "No duplicate JustLift entry after composition recreation",
+            1,
+            routedEntries().count { it.destination.route == NavigationRoutes.JustLift.route },
+        )
+
+        RoutineCompleteRuntimeEvidence.record(
+            "justLiftExit_recreatedCompositionDelivery",
+            mapOf(
+                "destination" to currentRoute(),
+                "routeAtStop" to routeAtStop,
+                "visitedAfterStop" to visitedAfter,
+                "effectiveTransitions" to effectiveTransitions,
+                "backStackEntryIdsAfter" to entryIdTrail(),
+                "retainedJustLiftEntryIdMatchesPreRecreation" to
+                    (routedEntries().singleOrNull { it.destination.route == NavigationRoutes.JustLift.route }?.id == justLiftId),
+            ),
+        )
+    }
+
     // ===== Driving helpers =====
 
     /**
@@ -479,7 +696,7 @@ class Issue1366JustLiftExitNavigationTest {
             fx.viewModel.updateWorkoutParameters(parameters)
         }
 
-        rule.setContent {
+        restorationTester.setContent {
             Box(Modifier.fillMaxSize()) {
                 val nav = rememberNavController().also { navController = it }
                 NavGraph(
@@ -502,14 +719,19 @@ class Issue1366JustLiftExitNavigationTest {
                     }
                 }
                 LaunchedEffect(Unit) {
-                    if (includeJustLiftEntry) {
-                        nav.navigate(NavigationRoutes.JustLift.route)
-                    } else {
-                        // Unusual entry path: ActiveWorkout without a JustLift entry below.
-                        nav.navigate(NavigationRoutes.ActiveWorkout.route)
-                    }
-                    repeat(extraActiveWorkoutEntries) {
-                        nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                    // Guarded so StateRestorationTester-driven composition recreation
+                    // does not re-run the initial navigation and pollute the stack.
+                    if (!initialNavigationDone) {
+                        initialNavigationDone = true
+                        if (includeJustLiftEntry) {
+                            nav.navigate(NavigationRoutes.JustLift.route)
+                        } else {
+                            // Unusual entry path: ActiveWorkout without a JustLift entry below.
+                            nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                        }
+                        repeat(extraActiveWorkoutEntries) {
+                            nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                        }
                     }
                 }
             }
@@ -553,6 +775,15 @@ class Issue1366JustLiftExitNavigationTest {
         assertEquals(EchoLevel.EPIC, retained.echoLevel)
         assertEquals(EccentricLoad.LOAD_120, retained.eccentricLoad)
         assertEquals(31.5f, retained.weightPerCableKg)
+        // Rendered verification (merge gate): the returned JustLiftScreen must RENDER
+        // the retained Echo selection and settings — engine parameters alone are not
+        // evidence of what the user sees after the exit. The Echo mode chip and Echo
+        // level chip carry Selected semantics; the eccentric-load picker is a dropdown
+        // rendering the retained value as its visible text.
+        rule.onNodeWithText("Echo").assertIsSelected()
+        rule.onNodeWithText("Epic").assertIsSelected()
+        rule.onNodeWithText("120%").assertIsDisplayed()
+        rule.onNodeWithText("Adaptive resistance with echo feedback").assertIsDisplayed()
     }
 
     private fun justLiftParameters(): WorkoutParameters = WorkoutParameters(
@@ -581,9 +812,23 @@ class Issue1366JustLiftExitNavigationTest {
             .mapNotNull { it.destination.route }
             .joinToString(" -> ")
 
+    /** Back-stack entries that carry a route (the graph root has none), bottom -> top. */
+    private fun routedEntries() =
+        navController!!.currentBackStack.value.filter { it.destination.route != null }
+
+    /** Real entry-ID evidence trail: route#entryId for every routed entry, bottom -> top. */
+    private fun entryIdTrail(): String =
+        routedEntries().joinToString(" -> ") { "${it.destination.route}#${it.id}" }
+
+    private fun entryIdOf(route: String): String =
+        routedEntries().first { it.destination.route == route }.id
+
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val SETTLE_WINDOW_MS = 5_000L
+
+        /** Frames pumped one at a time while delivery timing is under explicit control. */
+        const val DELAY_PUMP_FRAMES = 30
 
         /** Weight of the saved Just Lift defaults seeded in this harness (JustLiftDefaultsDocument default). */
         const val SAVED_DEFAULTS_WEIGHT_KG = 20f
