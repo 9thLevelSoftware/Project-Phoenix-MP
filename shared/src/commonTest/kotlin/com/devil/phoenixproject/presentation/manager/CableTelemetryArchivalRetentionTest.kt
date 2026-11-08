@@ -128,12 +128,20 @@ class CableTelemetryArchivalRetentionTest {
     }
 
     @Test
-    fun `machine status in the discarded prefix prevents trimming`() {
-        val samples = confidentTrace().toMutableList().also {
-            it[3] = it[3].copy(status = SampleStatus.ROM_OUTSIDE_HIGH)
-        }
+    fun `machine safety status beyond the baseline in the discarded prefix prevents trimming`() {
+        val samples = longIdleTrace(SampleStatus.ROM_OUTSIDE_HIGH)
 
         assertEquals(samples, CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true))
+    }
+
+    @Test
+    fun `rep readiness status in discarded prefix does not disable trimming`() {
+        val samples = longIdleTrace(SampleStatus.REP_TOP_READY)
+
+        assertEquals(
+            samples.drop(17),
+            CableTelemetryArchivalRetention.selectForRomCableSet(samples, romEnabled = true),
+        )
     }
 
     @Test
@@ -157,6 +165,18 @@ class CableTelemetryArchivalRetentionTest {
 
         assertEquals(moving, CableTelemetryArchivalRetention.selectForRomCableSet(moving, romEnabled = false))
         assertEquals(idle, CableTelemetryArchivalRetention.selectForRomCableSet(idle, romEnabled = true))
+    }
+
+    private fun longIdleTrace(status: Int): List<WorkoutMetric> {
+        val positionsA = (0 until 28).map { index ->
+            when (index) {
+                in 21..23 -> 106f + (index - 21) * 2f
+                else -> 100f
+            }
+        }
+        return metrics(positionsA, List(positionsA.size) { 200f }).toMutableList().also {
+            it[5] = it[5].copy(status = status)
+        }
     }
 
     private fun confidentTrace(): List<WorkoutMetric> {

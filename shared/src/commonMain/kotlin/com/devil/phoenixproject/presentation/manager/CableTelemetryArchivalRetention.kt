@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlin.math.abs
 
@@ -17,6 +18,12 @@ internal object CableTelemetryArchivalRetention {
     private const val CONFIRMATION_SAMPLE_COUNT = 3
     private const val DEPARTURE_BACKTRACK_MM = 0.25f
     private const val BACKTRACK_NOISE_TOLERANCE_MM = 1f
+    private val SAFETY_STATUS_MASK =
+        SampleStatus.ROM_OUTSIDE_HIGH or
+            SampleStatus.ROM_OUTSIDE_LOW or
+            SampleStatus.SPOTTER_ACTIVE or
+            SampleStatus.DELOAD_WARN or
+            SampleStatus.DELOAD_OCCURRED
 
     /**
      * Trim only a confidently stationary leading prefix. Unsupported or ambiguous input is
@@ -71,11 +78,10 @@ internal object CableTelemetryArchivalRetention {
         val boundaryTimestamp = samples[lastContextIndex].timestamp
         // Retain every sample sharing the boundary timestamp, not only the last duplicate.
         val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= boundaryTimestamp }
-        if (firstRetainedIndex < 0) return samples
 
         val discardedPrefix = samples.subList(0, firstRetainedIndex)
         if (discardedPrefix.any { sample ->
-                sample.status != 0 ||
+                (sample.status and SAFETY_STATUS_MASK) != 0 ||
                     abs(sample.positionA - baselineA) > BASELINE_MAX_DEVIATION_MM ||
                     abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
             }
