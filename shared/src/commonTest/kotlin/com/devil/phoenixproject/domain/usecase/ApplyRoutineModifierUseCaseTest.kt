@@ -102,6 +102,32 @@ class ApplyRoutineModifierUseCaseTest {
     }
 
     @Test
+    fun `active recovery ignores high-rep set for one rep max and preserves stored baseline`() = runTest {
+        val now = currentTimeMillis()
+        baselineRepository.seed("default", "bench", 120f, now)
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "high-rep-set",
+            sessionId = "high-rep-session",
+            plannedSetId = null,
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 30,
+            actualWeightKg = 30f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val routine = routineWith(
+            routineExercise(weight = 40f, scalingBasis = ScalingBasis.ESTIMATED_1RM).copy(usePercentOfPR = true),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 80))
+
+        assertEquals(96f, adjusted.exercises.single().weightPerCableKg)
+    }
+
+    @Test
     fun `active recovery drops later warmups and scales first warmup reps`() = runTest {
         val routine = routineWith(
             routineExercise(

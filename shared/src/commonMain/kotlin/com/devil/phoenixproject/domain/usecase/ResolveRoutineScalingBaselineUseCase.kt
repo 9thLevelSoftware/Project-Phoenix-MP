@@ -152,7 +152,7 @@ class ResolveRoutineScalingBaselineUseCase(
     private fun isValidCompletedWorkingSet(set: CompletedSet): Boolean =
         set.setType == SetType.STANDARD &&
             set.setEndReason == SetEndReason.TARGET_REPS_REACHED &&
-            set.actualReps > 0 &&
+            set.actualReps in 1..MAX_REP_DERIVED_1RM_REPS &&
             set.actualWeightKg.isFinite() &&
             set.actualWeightKg > 0f &&
             set.completedAt > 0L
@@ -253,6 +253,9 @@ enum class RoutineScalingBaselineSource(val displayLabel: String) {
 
 private const val MAX_VELOCITY_AGE_MS = 28L * 24L * 60L * 60L * 1_000L
 private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1_000L
+// Keep rep-derived prescription estimates within a conventional low-rep range; high-rep
+// extrapolation can produce a misleading 1RM and should not override stored/velocity values.
+private const val MAX_REP_DERIVED_1RM_REPS = 12
 
 private fun ageInDays(now: Long, timestamp: Long?): Long? =
     timestamp?.takeIf { it > 0L }?.let { (now - it).coerceAtLeast(0L) / MILLIS_PER_DAY }
