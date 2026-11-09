@@ -280,7 +280,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     }
 
     @Test
-    fun `strongest eligible set beyond 400 recent results remains usable`() = runTest {
+    fun `candidate results are bounded to newest 400 eligible sets`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
@@ -291,7 +291,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 repository = workoutRepository,
                 sessionId = "issue-1383-window-$index",
                 completedAt = now - (401 - index) * 1_000L,
-                weightKg = if (index == 0) 100f else 25f,
+                weightKg = 25f,
             )
         }
 
@@ -302,27 +302,11 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedAtSince = now - VALIDITY_WINDOW_MS,
             completedAtUntil = now,
         )
-        val resolver = ResolveRoutineScalingBaselineUseCase(
-            prRepository = FakePersonalRecordRepository(),
-            baselineRepository = FakeProfileExerciseBaselineRepository(),
-            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
-            completedSetRepository = completedSetRepository,
-            nowMillis = { now },
-        )
-        val resolved = resolver(
-            exerciseId = EXERCISE_ID,
-            mode = ProgramMode.OldSchool,
-            profileId = PROFILE_ID,
-            basis = ScalingBasis.ESTIMATED_1RM,
-        )
 
-        assertEquals(401, candidates.size)
+        assertEquals(400, candidates.size)
         assertEquals("issue-1383-window-400", candidates.first().sessionId)
-        assertEquals("issue-1383-window-0", candidates.last().sessionId)
-        assertNotNull(resolved)
-        assertEquals(RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE, resolved.source)
-        assertEquals(100f * 36f / 27f, resolved.weightPerCableKg, 0.0001f)
-        assertEquals(now - 401_000L, resolved.sourceTimestamp)
+        assertEquals("issue-1383-window-1", candidates.last().sessionId)
+        assertFalse(candidates.any { it.sessionId == "issue-1383-window-0" })
     }
 
     @Test

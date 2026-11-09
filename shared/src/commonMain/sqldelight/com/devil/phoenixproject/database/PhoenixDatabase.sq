@@ -2629,8 +2629,8 @@ LIMIT ?;
 -- session so an interrupted/resumed workout cannot leak unmarked continuation sets.
 -- Keep this separate from general history queries:
 -- The parameter-bounded retry check prevents a future retry from suppressing a current
--- candidate. Return every eligible candidate in the 28-day horizon so a recent weaker set
--- cannot hide an older stronger estimate.
+-- candidate. Return the newest 400 eligible candidates in the 28-day horizon to bound
+-- routine-entry work while retaining the completed_at index-backed time window.
 selectEligibleWorkingSetsForOneRepMax:
 SELECT
     cs.id,
@@ -2722,7 +2722,8 @@ WHERE ws.exerciseId = :exerciseId
         )
       )
   )
-ORDER BY cs.completed_at DESC;
+ORDER BY cs.completed_at DESC
+LIMIT 400;
 
 insertCompletedSet:
 INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
