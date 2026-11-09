@@ -213,7 +213,7 @@ fun ExerciseEditBottomSheet(
     val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
     val baselineLoadStatus by viewModel.baselineLoadStatus.collectAsState()
     val baselineResolutionReason by viewModel.baselineResolutionReason.collectAsState()
-    val anyScalingBaselineAvailable by viewModel.anyScalingBaselineAvailable.collectAsState()
+    val estimatedOneRepMaxBaselineAvailable by viewModel.estimatedOneRepMaxBaselineAvailable.collectAsState()
 
     // The shared resolver is authoritative for ESTIMATED_1RM so a rejected velocity value
     // cannot reappear through an editor-only fallback.
@@ -266,7 +266,10 @@ fun ExerciseEditBottomSheet(
     // The ViewModel computes this from the current-basis baseline, either PR, and an
     // ESTIMATED_1RM resolution probe, so a user whose only 1RM source is a velocity or
     // rep-derived estimate can still reach the Est. 1RM basis.
-    val hasAnyBaseline = anyScalingBaselineAvailable
+    val hasAnyBaseline = maxWeightBaselineKg != null ||
+        maxVolumeBaselineKg != null ||
+        sharedBaselineKg != null ||
+        estimatedOneRepMaxBaselineAvailable
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)

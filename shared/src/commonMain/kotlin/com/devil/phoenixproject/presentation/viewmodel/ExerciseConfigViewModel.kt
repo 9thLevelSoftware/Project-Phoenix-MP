@@ -646,7 +646,15 @@ class ExerciseConfigViewModel constructor(
         _usePercentOfPR.value = enabled
         if (!enabled) {
             if (::displayToKg.isInitialized && ::weightUnit.isInitialized) {
-                savedAbsoluteSetWeightsKg = _sets.value.map { set -> displayToKg(set.weightPerCable, weightUnit) }
+                if (baselineKgForCurrentBasis() != null) {
+                    // A scaled preview was on screen: the displayed weights are derived from
+                    // the baseline, not authored absolutes. Restore the saved absolutes
+                    // instead of adopting (and destroying) them.
+                    restoreSavedAbsoluteSetWeights()
+                } else {
+                    // No baseline was active, so the displayed weights are genuine absolutes.
+                    savedAbsoluteSetWeightsKg = _sets.value.map { set -> displayToKg(set.weightPerCable, weightUnit) }
+                }
             }
             pendingPercentOfPREditWeights.clear()
         }

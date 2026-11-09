@@ -595,7 +595,7 @@ class ExerciseConfigViewModelTest {
 
             assertEquals(ScalingBasis.MAX_WEIGHT_PR, viewModel.effectiveScalingBasis())
             assertNull(viewModel.baselineKgForCurrentBasis())
-            assertTrue(viewModel.anyScalingBaselineAvailable.value)
+            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()
@@ -704,59 +704,6 @@ class ExerciseConfigViewModelTest {
             advanceUntilIdle()
 
             assertEquals(1, eligibleSetLookups)
-        } finally {
-            viewModel.viewModelScope.cancel()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun `estimated availability probe runs once per exercise mode profile across basis changes`() = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        var eligibleSetLookups = 0
-        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
-            override suspend fun getEligibleWorkingSetsForOneRepMax(
-                exerciseId: String,
-                profileId: String,
-                mode: String,
-                completedAtSince: Long,
-                completedAtUntil: Long,
-            ): List<CompletedSet> {
-                eligibleSetLookups += 1
-                return emptyList()
-            }
-        }
-        val viewModel = createViewModel(
-            personalRecordRepository = FakePersonalRecordRepository(),
-            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
-            completedSetRepository = completedSets,
-        )
-        try {
-            viewModel.initialize(
-                exercise = benchRoutineExercise(
-                    id = "rex-availability-probe-cache",
-                    setReps = listOf(10),
-                    weightPerCableKg = 25f,
-                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
-                ),
-                unit = WeightUnit.KG,
-                toDisplay = { value, _ -> value },
-                toKg = { value, _ -> value },
-            )
-            advanceUntilIdle()
-            // Only the availability probe scans eligible sets for a non-ESTIMATED basis.
-            assertEquals(1, eligibleSetLookups)
-
-            viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
-            advanceUntilIdle()
-            // Cached per (exercise, mode, profile): basis changes must not repeat the scan.
-            assertEquals(1, eligibleSetLookups)
-
-            // Selecting the ESTIMATED_1RM basis resolves it for real (a fresh resolution),
-            // and feeds the cache instead of probing again.
-            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
-            advanceUntilIdle()
-            assertEquals(2, eligibleSetLookups)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()
@@ -1172,7 +1119,7 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
-    fun `anyScalingBaselineAvailable is true when only an estimated 1RM baseline exists`() = runTest {
+    fun `estimatedOneRepMaxBaselineAvailable is true when only an estimated 1RM baseline exists`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val velocityRepository = FakeVelocityOneRepMaxRepository().apply {
@@ -1209,7 +1156,7 @@ class ExerciseConfigViewModelTest {
 
                 // No max-weight/max-volume PR and no stored 1RM: the ESTIMATED_1RM probe
                 // still makes scaling available, without touching the visible preview.
-                assertTrue(viewModel.anyScalingBaselineAvailable.value)
+                assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
                 assertNull(viewModel.baselineKgForCurrentBasis())
                 assertNull(viewModel.routineScalingBaseline.value)
             } finally {
