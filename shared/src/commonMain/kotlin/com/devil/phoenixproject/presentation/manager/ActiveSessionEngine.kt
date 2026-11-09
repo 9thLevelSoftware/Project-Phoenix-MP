@@ -9595,9 +9595,9 @@ class ActiveSessionEngine(
     }
 
     // Issue #714: serialize profile-scoped Just Lift defaults writes by execution id.
-    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
-        val pending = snapshot.justLiftDefaults ?: return
-        executionGuard.persistJustLiftDefaultsIfNewer(
+    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot): Boolean {
+        val pending = snapshot.justLiftDefaults ?: return false
+        return executionGuard.persistJustLiftDefaultsIfNewer(
             profileId = snapshot.lease.profileId,
             executionId = snapshot.lease.executionId,
         ) {
@@ -9610,12 +9610,24 @@ class ActiveSessionEngine(
     /**
      * Issue #714: synchronous best-effort write of the snapshot's frozen Just Lift
      * defaults. A failure is logged, not raised: the retained snapshot's retry recovers.
+     * A profile-context failure is a skip, not a failure: the retry writes to the same
+     * attributed profile through the same active-profile check, so it cannot recover it.
      */
     private suspend fun persistJustLiftDefaultsBestEffort(snapshot: WorkoutExitSnapshot) {
         try {
-            persistCapturedJustLiftDefaultsSnapshot(snapshot)
+            if (persistCapturedJustLiftDefaultsSnapshot(snapshot)) {
+                val saved = snapshot.justLiftDefaults
+                Logger.d {
+                    "Saved Just Lift defaults: mode=${saved?.workoutModeId}, " +
+                        "weight=${saved?.weightPerCableKg}kg, restSeconds=${saved?.restSeconds}"
+                }
+            }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: StaleProfileContextException) {
+            Logger.w(e) { "Just Lift defaults save skipped (attributed profile is not the active profile)" }
+        } catch (e: ProfileContextUnavailableException) {
+            Logger.w(e) { "Just Lift defaults save skipped (active profile context unavailable)" }
         } catch (e: Throwable) {
             Logger.w(e) {
                 "Issue #714: synchronous Just Lift defaults write failed; " +
