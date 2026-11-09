@@ -2,9 +2,11 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -13,11 +15,15 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseControls
 import com.devil.phoenixproject.presentation.screen.shouldShowStopAtTopToggle
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
@@ -28,6 +34,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -35,6 +42,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Test
 
 class ExerciseConfigViewModelTest {
@@ -43,10 +51,12 @@ class ExerciseConfigViewModelTest {
         personalRecordRepository: PersonalRecordRepository? = null,
         velocityOneRepMaxRepository: VelocityOneRepMaxRepository? = null,
         baselineRepository: ProfileExerciseBaselineRepository = FakeProfileExerciseBaselineRepository(),
+        completedSetRepository: CompletedSetRepository = FakeCompletedSetRepository(),
     ) = ExerciseConfigViewModel(
         personalRecordRepository = personalRecordRepository,
         velocityOneRepMaxRepository = velocityOneRepMaxRepository,
         baselineRepository = baselineRepository,
+        completedSetRepository = completedSetRepository,
     )
 
     @Test
@@ -425,7 +435,18 @@ class ExerciseConfigViewModelTest {
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = createViewModel(personalRecordRepository = repository)
+        val pumpLookupCompleted = AtomicBoolean(false)
+        val trackedRepository = object : PersonalRecordRepository by repository {
+            override suspend fun getBestWeightPR(
+                exerciseId: String,
+                workoutMode: String,
+                profileId: String,
+                phase: WorkoutPhase,
+            ): PersonalRecord? = repository.getBestWeightPR(exerciseId, workoutMode, profileId, phase).also {
+                if (workoutMode == "Pump") pumpLookupCompleted.set(true)
+            }
+        }
+        val viewModel = createViewModel(personalRecordRepository = trackedRepository)
         val exercise = RoutineExercise(
             id = "rex-3",
             exercise = Exercise(
@@ -497,8 +518,10 @@ class ExerciseConfigViewModelTest {
         assertEquals(72.5f, viewModel.currentExercisePR.value?.weightPerCableKg)
 
         viewModel.loadPRForExercise("bench-1", "Pump")
-        waitForCondition { viewModel.currentExercisePR.value == null }
-        assertNull(viewModel.currentExercisePR.value)
+        waitForCondition { pumpLookupCompleted.get() }
+        // The explicitly requested mode does not match the editor's active mode; its late
+        // result must not clear the current profile/mode PR.
+        assertEquals(72.5f, viewModel.currentExercisePR.value?.weightPerCableKg)
     }
 
     @Test
@@ -530,6 +553,228 @@ class ExerciseConfigViewModelTest {
         waitForCondition { viewModel.currentExercisePR.value?.weightPerCableKg == 45f }
         assertEquals(WorkoutPhase.CONCENTRIC, viewModel.currentExercisePR.value?.phase)
         assertEquals(45f, viewModel.currentExercisePR.value?.weightPerCableKg)
+    }
+
+    @Test
+    fun `unavailable scaling basis restores saved absolute weights after an estimated preview`() = runTest {
+        val personalRecords = FakePersonalRecordRepository().apply {
+            addRecord(weightPR(weight = 100f).copy(timestamp = currentTimeMillis()))
+        }
+        val velocityRepository = FakeVelocityOneRepMaxRepository()
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val viewModel = createViewModel(
+                personalRecordRepository = personalRecords,
+                velocityOneRepMaxRepository = velocityRepository,
+            )
+            try {
+                viewModel.initialize(
+                    exercise = benchRoutineExercise(
+                        id = "rex-baseline-fallback-after-context-change",
+                        setReps = listOf(10, 10),
+                        weightPerCableKg = 25f,
+                        setWeightsPerCableKg = listOf(25f, 30f),
+                        usePercentOfPR = true,
+                        weightPercentOfPR = 80,
+                        setWeightsPercentOfPR = listOf(80, 80),
+                        scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                    ),
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                assertEquals(100f, viewModel.baselineKgForCurrentBasis())
+                assertEquals(listOf(80f, 80f), viewModel.sets.value.map { it.weightPerCable })
+
+                viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+                assertEquals(ScalingBaselineLoadStatus.LOADING, viewModel.baselineLoadStatus.value)
+                assertEquals(listOf(25f, 30f), viewModel.sets.value.map { it.weightPerCable })
+                advanceUntilIdle()
+
+                assertEquals(ScalingBasis.ESTIMATED_1RM, viewModel.effectiveScalingBasis())
+                assertEquals(ScalingBaselineLoadStatus.UNAVAILABLE, viewModel.baselineLoadStatus.value)
+                assertEquals(listOf(25f, 30f), viewModel.sets.value.map { it.weightPerCable })
+
+                var saved: RoutineExercise? = null
+                viewModel.onSave { updated -> saved = updated }
+
+                assertNotNull(saved)
+                assertEquals(listOf(25f, 30f), saved.setWeightsPerCableKg)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `estimated baseline shows loading then unavailable without changing saved absolute weights`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = FakeCompletedSetRepository(),
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-estimated-unavailable",
+                    setReps = listOf(10, 8),
+                    weightPerCableKg = 25f,
+                    setWeightsPerCableKg = listOf(25f, 30f),
+                    usePercentOfPR = true,
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+
+            assertEquals(ScalingBaselineLoadStatus.LOADING, viewModel.baselineLoadStatus.value)
+            assertNull(viewModel.baselineResolutionReason.value)
+            advanceUntilIdle()
+
+            assertEquals(ScalingBaselineLoadStatus.UNAVAILABLE, viewModel.baselineLoadStatus.value)
+            assertFalse(viewModel.baselineResolutionReason.value.isNullOrBlank())
+            assertEquals(listOf(25f, 30f), viewModel.sets.value.map { it.weightPerCable })
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `estimated stored baseline preview rounds to half kilograms`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val baselineRepository = FakeProfileExerciseBaselineRepository()
+        baselineRepository.set("default", "bench-1", 100.4f, currentTimeMillis())
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            baselineRepository = baselineRepository,
+            completedSetRepository = FakeCompletedSetRepository(),
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-estimated-rounding",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    setWeightsPerCableKg = listOf(25f),
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    setWeightsPercentOfPR = listOf(80),
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+
+            assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
+            assertEquals(80.5f, viewModel.sets.value.single().weightPerCable)
+            assertEquals(100.4f, viewModel.baselineKgForCurrentBasis())
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `stale baseline results are ignored after mode basis and exercise changes`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val oldSchoolResult = CompletableDeferred<List<CompletedSet>>()
+        val pumpResult = CompletableDeferred<List<CompletedSet>>()
+        val newExerciseResult = CompletableDeferred<List<CompletedSet>>()
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> = when (exerciseId to mode) {
+                "bench-1" to ProgramMode.OldSchool.displayName -> oldSchoolResult.await()
+                "bench-1" to ProgramMode.Pump.displayName -> pumpResult.await()
+                "row-2" to ProgramMode.OldSchool.displayName -> newExerciseResult.await()
+                else -> emptyList()
+            }
+        }
+        val now = currentTimeMillis()
+        fun candidate(id: String, weightKg: Float, completedAt: Long) = CompletedSet(
+            id = id,
+            sessionId = "$id-session",
+            plannedSetId = null,
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = weightKg,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = completedAt,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-stale-bench",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    setWeightsPerCableKg = listOf(25f),
+                    usePercentOfPR = true,
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            viewModel.onSelectedModeChange(WorkoutMode.Pump)
+            viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-stale-row",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    setWeightsPerCableKg = listOf(25f),
+                    usePercentOfPR = true,
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                ).copy(
+                    exercise = Exercise(id = "row-2", name = "Cable Row", muscleGroup = "Back", equipment = "BAR"),
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+
+            newExerciseResult.complete(listOf(candidate("current-row", 90f, now)))
+            advanceUntilIdle()
+            assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
+            assertEquals(120f, viewModel.baselineKgForCurrentBasis())
+            assertEquals(96f, viewModel.sets.value.single().weightPerCable)
+
+            oldSchoolResult.complete(listOf(candidate("stale-old-school", 60f, now - 2_000L)))
+            pumpResult.complete(listOf(candidate("stale-pump", 65f, now - 1_000L)))
+            advanceUntilIdle()
+
+            assertEquals(120f, viewModel.baselineKgForCurrentBasis())
+            assertEquals(96f, viewModel.sets.value.single().weightPerCable)
+        } finally {
+            oldSchoolResult.complete(emptyList())
+            pumpResult.complete(emptyList())
+            newExerciseResult.complete(emptyList())
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

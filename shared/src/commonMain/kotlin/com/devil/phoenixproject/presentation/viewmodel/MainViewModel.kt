@@ -537,6 +537,7 @@ class MainViewModel(
             personalRecordRepository,
             profileExerciseBaselineRepository,
             velocityOneRepMaxRepository,
+            completedSetRepository,
         ),
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.

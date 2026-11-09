@@ -96,6 +96,7 @@ internal class RoutineCompleteRuntimeFixture {
             fakePersonalRecordRepository,
             fakeBaselineRepository,
             FakeVelocityOneRepMaxRepository(),
+            fakeCompletedSetRepository,
         ),
         recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
         equipmentRackRepository = profileEquipmentRackRepository,

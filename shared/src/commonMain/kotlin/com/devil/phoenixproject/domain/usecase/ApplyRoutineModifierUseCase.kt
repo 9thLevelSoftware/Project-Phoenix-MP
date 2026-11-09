@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -21,6 +22,7 @@ class ApplyRoutineModifierUseCase(
     private val prRepository: PersonalRecordRepository,
     private val baselineRepository: ProfileExerciseBaselineRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    private val completedSetRepository: CompletedSetRepository,
     // Issue #882: baseline lookup delegates to the canonical resolver so Active Recovery
     // honors effectiveScalingBasis (MAX_WEIGHT_PR / MAX_VOLUME_PR / ESTIMATED_1RM) and the
     // shared current-mode -> cross-mode -> stored-1RM precedence instead of a second chain.
@@ -28,6 +30,7 @@ class ApplyRoutineModifierUseCase(
         prRepository,
         baselineRepository,
         velocityOneRepMaxRepository,
+        completedSetRepository,
     ),
 ) {
     suspend operator fun invoke(

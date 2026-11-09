@@ -2605,6 +2605,76 @@ WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
 ORDER BY cs.completed_at DESC
 LIMIT ?;
 
+-- Issue #1383: only producer-backed, fully completed, constant-load working sets may
+-- contribute to a rep-derived 1RM. Fail closed for portal-origin/legacy, Echo/adaptive,
+-- Just Lift, routine sessions (their one-shot Active Recovery/Heavy Deload modifiers are
+-- not persisted), progressed, assisted, or safety-affected records. Keep this separate
+-- from general history/progression queries. Return the full 28-day candidate window so
+-- callers can select the highest estimate rather than an arbitrary newest-N subset.
+selectEligibleWorkingSetsForOneRepMax:
+SELECT
+    cs.id,
+    cs.session_id,
+    cs.planned_set_id,
+    cs.routine_exercise_id,
+    cs.set_number,
+    cs.set_type,
+    cs.attempt_number,
+    cs.actual_reps,
+    cs.actual_weight_kg,
+    cs.logged_rpe,
+    cs.is_pr,
+    cs.completed_at,
+    cs.set_end_reason
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.exerciseId = :exerciseId
+  AND ws.profile_id = :profileId
+  AND ws.mode = :mode
+  AND ws.deletedAt IS NULL
+  AND ws.portalOrigin = 0
+  AND ws.routineId IS NULL
+  AND ws.routineSessionId IS NULL
+  AND ws.isJustLift = 0
+  AND ws.progressionKg = 0
+  AND ws.safetyFlags = 0
+  AND ws.deloadWarningCount = 0
+  AND ws.romViolationCount = 0
+  AND ws.spotterActivations = 0
+  AND ws.externalAddedLoadKg = 0
+  AND ws.counterweightKg = 0
+  AND TRIM(ws.rackItemsJson) = '[]'
+  AND ws.workingReps > 0
+  AND ws.workingReps = cs.actual_reps
+  AND ws.weightPerCableKg = cs.actual_weight_kg
+  AND cs.set_type = 'STANDARD'
+  AND cs.set_end_reason = 'TARGET_REPS_REACHED'
+  AND cs.actual_reps > 0
+  AND cs.actual_weight_kg > 0
+  AND cs.completed_at >= :completedAtSince
+  AND cs.completed_at <= :completedAtUntil
+  AND NOT EXISTS (
+    SELECT 1
+    FROM CompletedSet newer
+    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+    WHERE newer_ws.exerciseId = ws.exerciseId
+      AND newer_ws.profile_id = ws.profile_id
+      AND newer_ws.deletedAt IS NULL
+      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+      AND newer.set_number = cs.set_number
+      AND (
+        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+        OR (
+          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+          AND newer.completed_at > cs.completed_at
+        )
+      )
+  )
+ORDER BY cs.completed_at DESC;
+
 insertCompletedSet:
 INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

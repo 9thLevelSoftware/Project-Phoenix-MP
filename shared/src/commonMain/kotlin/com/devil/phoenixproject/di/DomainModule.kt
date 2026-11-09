@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalMvtRepository
@@ -48,9 +49,9 @@ val domainModule = module {
     single<DropSetFeatureGate> { EnabledDropSetFeatureGate }
     single { DropSetCandidateResolver() }
     single { DropSetEligibilityPolicy(get(), get()) }
-    factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get()) }
-    factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get()) }
-    factory { ApplyRoutineModifierUseCase(get(), get(), get(), get()) }
+    factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get(), get()) }
+    factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get(), get()) }
+    factory { ApplyRoutineModifierUseCase(get(), get(), get(), get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get(), get()) }
 

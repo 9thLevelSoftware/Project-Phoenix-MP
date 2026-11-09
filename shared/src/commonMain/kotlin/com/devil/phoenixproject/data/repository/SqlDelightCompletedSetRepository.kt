@@ -165,6 +165,26 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
         collapseCompletedSetsToLatestLogicalAttempts(sets, routineSessionBySessionId::get)
     }
 
+    override suspend fun getEligibleWorkingSetsForOneRepMax(
+        exerciseId: String,
+        profileId: String,
+        mode: String,
+        completedAtSince: Long,
+        completedAtUntil: Long,
+    ): List<CompletedSet> = withContext(Dispatchers.IO) {
+        if (exerciseId.isBlank() || profileId.isBlank() || mode.isBlank() || completedAtUntil < completedAtSince) {
+            return@withContext emptyList()
+        }
+        queries.selectEligibleWorkingSetsForOneRepMax(
+            exerciseId = exerciseId,
+            profileId = profileId,
+            mode = mode,
+            completedAtSince = completedAtSince,
+            completedAtUntil = completedAtUntil,
+            mapper = ::mapToCompletedSet,
+        ).executeAsList()
+    }
+
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? = withContext(Dispatchers.IO) {
         val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
             .coerceAtLeast(0)

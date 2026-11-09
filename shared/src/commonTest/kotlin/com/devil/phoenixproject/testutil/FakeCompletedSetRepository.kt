@@ -40,6 +40,8 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val sessionExerciseIds = mutableMapOf<String, String>()
     private val sessionRoutineIds = mutableMapOf<String, String>()
     private val deletedSessionIds = mutableSetOf<String>()
+    /** Explicit repository-approved candidates for resolver policy tests. */
+    val eligibleWorkingSetsForOneRepMax = mutableListOf<CompletedSet>()
 
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
@@ -106,6 +108,18 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
             .filter { it.sessionId !in deletedSessionIds }
         return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
     }
+
+    override suspend fun getEligibleWorkingSetsForOneRepMax(
+        exerciseId: String,
+        profileId: String,
+        mode: String,
+        completedAtSince: Long,
+        completedAtUntil: Long,
+    ): List<CompletedSet> = eligibleWorkingSetsForOneRepMax
+        .asSequence()
+        .filter { it.completedAt in completedAtSince..completedAtUntil }
+        .sortedByDescending { it.completedAt }
+        .toList()
 
     /**
      * Test-only raw insert. Production writes a completed set through

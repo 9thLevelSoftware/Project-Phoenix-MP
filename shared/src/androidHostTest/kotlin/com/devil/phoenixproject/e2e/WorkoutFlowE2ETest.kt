@@ -77,7 +77,12 @@ class WorkoutFlowE2ETest {
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeBaselineRepository, FakeVelocityOneRepMaxRepository())
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(
+            fakePersonalRecordRepository,
+            fakeBaselineRepository,
+            FakeVelocityOneRepMaxRepository(),
+            fakeCompletedSetRepository,
+        )
         fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
         profileEquipmentRackRepository = ProfileEquipmentRackRepository(
             fakeUserProfileRepository,

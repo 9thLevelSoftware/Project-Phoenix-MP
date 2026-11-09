@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -18,10 +19,12 @@ class ResolveRoutineWeightsUseCase(
     private val prRepository: PersonalRecordRepository,
     private val baselineRepository: ProfileExerciseBaselineRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    private val completedSetRepository: CompletedSetRepository,
     private val scalingBaselineResolver: ResolveRoutineScalingBaselineUseCase = ResolveRoutineScalingBaselineUseCase(
         prRepository,
         baselineRepository,
         velocityOneRepMaxRepository,
+        completedSetRepository,
     ),
 ) {
     /**

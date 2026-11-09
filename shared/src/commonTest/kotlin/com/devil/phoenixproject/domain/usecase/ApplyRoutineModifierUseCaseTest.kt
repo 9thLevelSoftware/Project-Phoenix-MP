@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -10,9 +11,13 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
@@ -26,6 +31,7 @@ class ApplyRoutineModifierUseCaseTest {
     private lateinit var prRepository: FakePersonalRecordRepository
     private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var velocityRepository: FakeVelocityOneRepMaxRepository
+    private lateinit var completedSetRepository: FakeCompletedSetRepository
     private lateinit var useCase: ApplyRoutineModifierUseCase
 
     private val cableExercise = Exercise(
@@ -46,7 +52,8 @@ class ApplyRoutineModifierUseCaseTest {
         prRepository = FakePersonalRecordRepository()
         baselineRepository = FakeProfileExerciseBaselineRepository()
         velocityRepository = FakeVelocityOneRepMaxRepository()
-        useCase = ApplyRoutineModifierUseCase(prRepository, baselineRepository, velocityRepository)
+        completedSetRepository = FakeCompletedSetRepository()
+        useCase = ApplyRoutineModifierUseCase(prRepository, baselineRepository, velocityRepository, completedSetRepository)
     }
 
     @Test
@@ -66,6 +73,32 @@ class ApplyRoutineModifierUseCaseTest {
         assertEquals(55f, exercise.weightPerCableKg)
         assertEquals(listOf(55f, 55f, 55f), exercise.setWeightsPerCableKg)
         assertEquals(listOf(10, 8, 6), exercise.setReps)
+    }
+
+    @Test
+    fun `active recovery resolves rep-derived one rep max through the default constructor`() = runTest {
+        val now = currentTimeMillis()
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "rep-derived-set",
+            sessionId = "rep-derived-session",
+            plannedSetId = null,
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 90f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val routine = routineWith(
+            routineExercise(weight = 40f, scalingBasis = ScalingBasis.ESTIMATED_1RM).copy(usePercentOfPR = true),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 80))
+
+        // Brzycki estimates 90 kg x 10 as 120 kg; Active Recovery uses 80% of that baseline.
+        assertEquals(96f, adjusted.exercises.single().weightPerCableKg)
     }
 
     @Test
@@ -362,7 +395,7 @@ class ApplyRoutineModifierUseCaseTest {
             r2 = 0.99f,
             distinctLoads = 3,
             passedQualityGate = true,
-            computedAt = 1L,
+            computedAt = currentTimeMillis(),
             profileId = "default",
         )
         val routine = routineWith(routineExercise(weight = 40f, scalingBasis = ScalingBasis.ESTIMATED_1RM))

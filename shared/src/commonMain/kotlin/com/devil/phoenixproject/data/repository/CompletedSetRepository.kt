@@ -60,6 +60,19 @@ interface CompletedSetRepository {
     suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet>
 
     /**
+     * Completed, constant-load working sets that are safe inputs to a rep-derived 1RM.
+     * Implementations must scope by exercise/profile/current mode, preserve deletion and
+     * completion semantics, and exclude assisted, progressive, adaptive, and safety-affected rows.
+     */
+    suspend fun getEligibleWorkingSetsForOneRepMax(
+        exerciseId: String,
+        profileId: String,
+        mode: String,
+        completedAtSince: Long,
+        completedAtUntil: Long,
+    ): List<CompletedSet>
+
+    /**
      * Ensure a completed-set row exists for a Just Lift session after post-set exercise tagging.
      * Returns the existing row when one is already present so retagging does not duplicate stats.
      */
