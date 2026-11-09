@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.URI
 import java.util.zip.CRC32
@@ -141,6 +142,83 @@ abstract class VerifyReleaseDexTypesTask : DefaultTask() {
             args("--mapping", mappingFile.get().asFile.absolutePath)
         }
     }
+}
+
+/**
+ * Self-tests config/ReleaseDexTypeCheck.java with generated fixtures (#1368): reference-typed
+ * dex must pass, a String where a Throwable is expected (the #1365/#1368 failure class) must
+ * fail, and a directory without artifacts must fail closed. Runs before verifyReleaseDexTypes
+ * so a checker regression can never silently pass a release build.
+ */
+abstract class TestReleaseDexTypesTask : DefaultTask() {
+    @get:Classpath
+    abstract val checkerClasspath: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val checkerSource: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val fixturesSource: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val fixturesDir: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun runFixtureChecks() {
+        val out = fixturesDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        execOperations.javaexec {
+            classpath = checkerClasspath
+            // Java source-file mode, like the checker itself.
+            mainClass.set(fixturesSource.get().asFile.absolutePath)
+            args(out.absolutePath)
+        }
+        val boot = out.resolve("boot.jar").absolutePath
+
+        val valid = runChecker("--boot", boot, "--artifacts", out.resolve("valid").absolutePath)
+        check(valid.exitCode == 0) {
+            "Reference-typed fixture must pass ReleaseDexTypeCheck, got exit ${valid.exitCode}:\n${valid.output}"
+        }
+
+        val invalid = runChecker("--boot", boot, "--artifacts", out.resolve("invalid").absolutePath)
+        check(invalid.exitCode == 1) {
+            "String-to-Throwable fixture must fail ReleaseDexTypeCheck, got exit ${invalid.exitCode}:\n${invalid.output}"
+        }
+        check(invalid.output.contains("expected Ljava/lang/Throwable;") && invalid.output.contains("->boom()")) {
+            "String-to-Throwable fixture must report the rejected methods:\n${invalid.output}"
+        }
+
+        val missing = runChecker("--boot", boot, "--artifacts", out.resolve("no-artifacts").absolutePath)
+        check(missing.exitCode == 1 && missing.output.contains("No Android release APK or AAB artifacts found")) {
+            "ReleaseDexTypeCheck must fail closed when no artifacts exist, got exit ${missing.exitCode}:\n${missing.output}"
+        }
+
+        logger.lifecycle(
+            "ReleaseDexTypeCheck fixtures passed: valid typing accepted, "
+                + "String-to-Throwable rejected, missing artifacts fail closed.",
+        )
+    }
+
+    private fun runChecker(vararg checkerArgs: String): CheckerRun {
+        val output = ByteArrayOutputStream()
+        val result = execOperations.javaexec {
+            classpath = checkerClasspath
+            mainClass.set(checkerSource.get().asFile.absolutePath)
+            args(*checkerArgs)
+            isIgnoreExitValue = true
+            standardOutput = output
+            errorOutput = output
+        }
+        return CheckerRun(result.exitValue, output.toString())
+    }
+
+    private class CheckerRun(val exitCode: Int, val output: String)
 }
 
 abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
@@ -344,12 +422,25 @@ tasks.register<VerifyReleaseDexTypesTask>("verifyReleaseDexTypes") {
 
     mustRunAfter("assembleRelease", "bundleRelease")
 
+    // The release check is only trustworthy while its fixtures pass (#1368).
+    dependsOn("testReleaseDexTypes")
+
     checkerClasspath.from(releaseDexTypeCheckClasspath)
     checkerSource.set(layout.projectDirectory.file("config/ReleaseDexTypeCheck.java"))
     bootClasspath.from(androidComponents.sdkComponents.bootClasspath)
     releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
     releaseBundleDir.set(layout.buildDirectory.dir("outputs/bundle/release"))
     mappingFile.set(layout.buildDirectory.file("outputs/mapping/release/mapping.txt"))
+}
+
+tasks.register<TestReleaseDexTypesTask>("testReleaseDexTypes") {
+    group = "verification"
+    description = "Self-tests config/ReleaseDexTypeCheck.java with generated valid and invalid fixtures (#1368)."
+
+    checkerClasspath.from(releaseDexTypeCheckClasspath)
+    checkerSource.set(layout.projectDirectory.file("config/ReleaseDexTypeCheck.java"))
+    fixturesSource.set(layout.projectDirectory.file("config/ReleaseDexTypeCheckFixtures.java"))
+    fixturesDir.set(layout.buildDirectory.dir("release-dex-type-check-fixtures"))
 }
 
 dependencies {
