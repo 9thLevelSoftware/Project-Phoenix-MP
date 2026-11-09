@@ -491,20 +491,17 @@ class Issue1366JustLiftExitNavigationTest {
     @Test
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
     fun `exit captures the real ActiveWorkout entry id and retains the existing JustLift entry`() {
-        val fx = driveJustLiftActiveSession(justLiftParameters())
+        driveJustLiftActiveSession(justLiftParameters())
         val homeId = entryIdOf(NavigationRoutes.Home.route)
         val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
         val activeId = entryIdOf(NavigationRoutes.ActiveWorkout.route)
 
-        // Real back-stack entry-ID capture evidence: the authorisation context must
-        // record the CURRENT ActiveWorkout entry's identity (the merge gate requires
-        // actual entry-ID capture, not route-string evidence).
-        val captured = JustLiftExitContext.capture(
-            navController!!,
-            fx.viewModel.currentWorkoutSessionId(),
-        )
+        // Real back-stack entry-ID capture evidence: the authorisation context is built
+        // from the CURRENT back-stack entry, the way NavGraph passes backStackEntry.id to
+        // ActiveWorkoutScreen, and that entry must be the ActiveWorkout entry.
+        val captured = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry!!.id)
         assertEquals(
-            "JustLiftExitContext.capture must record the current ActiveWorkout back-stack entry id",
+            "The exit context must record the current ActiveWorkout back-stack entry id",
             activeId,
             captured.sourceEntryId,
         )
@@ -551,15 +548,12 @@ class Issue1366JustLiftExitNavigationTest {
     @Test
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
     fun `delayed idle observer delivery after the exit confirm is a no-op`() {
-        val fx = driveJustLiftActiveSession(justLiftParameters())
+        driveJustLiftActiveSession(justLiftParameters())
         val homeId = entryIdOf(NavigationRoutes.Home.route)
         val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
-        // The observer incarnation's composition-time capture (the production
-        // `remember(navController, activeWorkoutEntryId) { JustLiftExitContext.capture(...) }`).
-        val observerContext = JustLiftExitContext.capture(
-            navController!!,
-            fx.viewModel.currentWorkoutSessionId(),
-        )
+        // The observer incarnation's composition-time context (the production
+        // `remember(backStackEntryId) { JustLiftExitContext(sourceEntryId = backStackEntryId) }`).
+        val observerContext = JustLiftExitContext(sourceEntryId = navController!!.currentBackStackEntry!!.id)
 
         rule.onNodeWithText("STOP").assertIsDisplayed().performClick()
         rule.onNodeWithText("Exit Workout?").assertIsDisplayed()
@@ -583,9 +577,7 @@ class Issue1366JustLiftExitNavigationTest {
 
         // The delayed Idle-observer delivery (its composition-time capture, delivered
         // after the confirm handler's exit has already landed) must be a no-op.
-        val lateDelivery = navController!!.exitToJustLift(observerContext) {
-            fx.viewModel.currentWorkoutSessionId()
-        }
+        val lateDelivery = navController!!.exitToJustLift(observerContext)
         settle()
 
         assertFalse("A delayed Idle-observer delivery must not navigate again", lateDelivery)
@@ -629,7 +621,7 @@ class Issue1366JustLiftExitNavigationTest {
         // Real stop publishes Idle synchronously while the ActiveWorkout composition is
         // still outgoing. Emulate saved-instance-state restoration NOW: the outgoing
         // composition (and its pending observer delivery) is destroyed mid-teardown and
-        // a RECREATED composition re-runs `remember { JustLiftExitContext.capture(...) }`
+        // a RECREATED composition re-runs `remember(backStackEntryId) { JustLiftExitContext(...) }`
         // (a fresh capture) plus a fresh LaunchedEffect that collects the current Idle
         // state — the recreated-observer delivery path the merge gate requires.
         // Pause the frame clock so the Idle observer's pending delivery cannot run before
