@@ -1953,7 +1953,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 )
 
 // ============================================================
-// TASK 5: manifestIndexes -- 78 index operations
+// TASK 5: manifestIndexes -- 79 index operations
 //
 // Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
@@ -2170,6 +2170,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── CompletedSet ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_completed_set_session", "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)"),
+    SchemaIndexOperation("idx_completed_set_completed_at", "CREATE INDEX IF NOT EXISTS idx_completed_set_completed_at ON CompletedSet(completed_at)"),
 
     // ── ProgressionEvent ────────────────────────────────────────────────
     SchemaIndexOperation("idx_progression_exercise", "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)"),

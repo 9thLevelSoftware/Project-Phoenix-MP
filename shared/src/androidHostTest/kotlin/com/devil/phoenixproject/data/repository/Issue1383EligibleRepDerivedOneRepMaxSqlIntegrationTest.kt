@@ -109,6 +109,81 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         assertEquals(now - 201_000L, resolved.sourceTimestamp)
     }
 
+    @Test
+    fun `candidate query bounds to the newest 400 results`() = runTest {
+        val database = createTestDatabase()
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val completedSetRepository = SqlDelightCompletedSetRepository(database)
+        val now = currentTimeMillis()
+
+        repeat(401) { index ->
+            commitCandidate(
+                repository = workoutRepository,
+                sessionId = "issue-1383-window-$index",
+                completedAt = now - (401 - index) * 1_000L,
+                weightKg = 25f,
+            )
+        }
+
+        val candidates = completedSetRepository.getEligibleWorkingSetsForOneRepMax(
+            exerciseId = EXERCISE_ID,
+            profileId = PROFILE_ID,
+            mode = ProgramMode.OldSchool.displayName,
+            completedAtSince = now - VALIDITY_WINDOW_MS,
+            completedAtUntil = now,
+        )
+
+        assertEquals(400, candidates.size)
+        assertEquals("issue-1383-window-400", candidates.first().sessionId)
+        assertEquals("issue-1383-window-1", candidates.last().sessionId)
+        assertFalse(candidates.any { it.sessionId == "issue-1383-window-0" })
+    }
+
+    @Test
+    fun `history and 1RM queries share latest routine attempt collapse`() = runTest {
+        val database = createTestDatabase()
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val completedSetRepository = SqlDelightCompletedSetRepository(database)
+        val now = currentTimeMillis()
+        val routineSessionId = "issue-1383-retry-routine-session"
+        val routineExerciseId = "issue-1383-retry-exercise"
+
+        commitCandidate(
+            repository = workoutRepository,
+            sessionId = "issue-1383-retry-old",
+            completedAt = now - 2_000L,
+            weightKg = 30f,
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            attemptNumber = 1,
+        )
+        commitCandidate(
+            repository = workoutRepository,
+            sessionId = "issue-1383-retry-new",
+            completedAt = now - 1_000L,
+            weightKg = 40f,
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            attemptNumber = 2,
+        )
+
+        val eligible = completedSetRepository.getEligibleWorkingSetsForOneRepMax(
+            exerciseId = EXERCISE_ID,
+            profileId = PROFILE_ID,
+            mode = ProgramMode.OldSchool.displayName,
+            completedAtSince = now - VALIDITY_WINDOW_MS,
+            completedAtUntil = now,
+        )
+        val recent = completedSetRepository.getRecentCompletedSetsForExercise(
+            exerciseId = EXERCISE_ID,
+            profileId = PROFILE_ID,
+            limit = 10,
+        )
+
+        assertEquals(listOf("issue-1383-retry-new-set"), eligible.map { it.id })
+        assertEquals(listOf("issue-1383-retry-new-set"), recent.map { it.id })
+    }
+
     private suspend fun commitCandidate(
         repository: SqlDelightWorkoutRepository,
         sessionId: String,
@@ -120,6 +195,8 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         mode: String = ProgramMode.OldSchool.displayName,
         routineId: String? = null,
         routineSessionId: String? = null,
+        routineExerciseId: String? = null,
+        attemptNumber: Int = 1,
         safetyFlags: Int = 0,
     ) {
         repository.commitCompletedSet(
@@ -150,6 +227,8 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 isPr = false,
                 completedAt = completedAt,
                 setEndReason = SetEndReason.TARGET_REPS_REACHED,
+                routineExerciseId = routineExerciseId,
+                attemptNumber = attemptNumber,
             ),
             repMetrics = emptyList(),
             repBiomechanics = emptyList(),

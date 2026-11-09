@@ -2235,6 +2235,33 @@ CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
 
+-- Shared latest-attempt collapse for exercise history and one-rep-max candidates.
+CREATE VIEW CompletedSetLatestAttempt AS
+SELECT cs.*
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.deletedAt IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM CompletedSet newer
+    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+    WHERE newer_ws.exerciseId = ws.exerciseId
+      AND newer_ws.profile_id = ws.profile_id
+      AND newer_ws.deletedAt IS NULL
+      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+      AND newer.set_number = cs.set_number
+      AND (
+        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+        OR (
+          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+          AND newer.completed_at > cs.completed_at
+        )
+      )
+  );
+
 -- ==================== TRAINING CYCLES QUERIES ====================
 
 -- TrainingCycle Queries
@@ -2580,29 +2607,9 @@ SELECT
     cs.completed_at,
     cs.set_end_reason,
     ws.routineSessionId
-FROM CompletedSet cs
+FROM CompletedSetLatestAttempt cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM CompletedSet newer
-    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
-    WHERE newer_ws.exerciseId = ws.exerciseId
-      AND newer_ws.profile_id = ws.profile_id
-      AND newer_ws.deletedAt IS NULL
-      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
-      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
-      AND newer.set_number = cs.set_number
-      AND (
-        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
-        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
-        OR (
-          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
-          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
-          AND newer.completed_at > cs.completed_at
-        )
-      )
-  )
 ORDER BY cs.completed_at DESC
 LIMIT ?;
 
@@ -2614,11 +2621,9 @@ LIMIT ?;
 -- completed working sets remain producer-backed evidence; deload/safety-flagged
 -- sessions remain excluded via the session flags, and the caller compares candidates
 -- against the stored 1RM with a margin so a uniformly deloaded history cannot silently
--- demote an explicit stored baseline. Keep this separate from general
--- history/progression queries. Return the 28-day candidate window bounded at the
--- newest 400 eligible candidates while callers still select the highest estimate (a
--- per-exercise 28-day history beyond 400 eligible constant-load working sets is not
--- realistic).
+-- demote an explicit stored baseline. Keep this separate from general history/progression
+-- queries and share retry collapse via CompletedSetLatestAttempt. Return the 28-day
+-- candidate window bounded at the newest 400 eligible candidates.
 selectEligibleWorkingSetsForOneRepMax:
 SELECT
     cs.id,
@@ -2634,7 +2639,7 @@ SELECT
     cs.is_pr,
     cs.completed_at,
     cs.set_end_reason
-FROM CompletedSet cs
+FROM CompletedSetLatestAttempt cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = :exerciseId
   AND ws.profile_id = :profileId
@@ -2659,26 +2664,6 @@ WHERE ws.exerciseId = :exerciseId
   AND cs.actual_weight_kg > 0
   AND cs.completed_at >= :completedAtSince
   AND cs.completed_at <= :completedAtUntil
-  AND NOT EXISTS (
-    SELECT 1
-    FROM CompletedSet newer
-    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
-    WHERE newer_ws.exerciseId = ws.exerciseId
-      AND newer_ws.profile_id = ws.profile_id
-      AND newer_ws.deletedAt IS NULL
-      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
-      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
-      AND newer.set_number = cs.set_number
-      AND (
-        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
-        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
-        OR (
-          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
-          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
-          AND newer.completed_at > cs.completed_at
-        )
-      )
-  )
 ORDER BY cs.completed_at DESC
 LIMIT 400;
 

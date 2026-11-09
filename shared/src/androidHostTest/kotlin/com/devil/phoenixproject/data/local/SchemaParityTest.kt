@@ -118,6 +118,31 @@ class SchemaParityTest {
     // ==================== TEST 2 ====================
 
     @Test
+    fun `fresh and upgraded schemas create the shared completed-set latest-attempt view`() {
+        val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(freshDriver)
+        assertEquals(
+            "CompletedSetLatestAttempt",
+            queryScalar(
+                freshDriver,
+                "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
+            ),
+        )
+
+        val upgradedDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildMinimalV1Schema(upgradedDriver)
+        migrateWithResilience(upgradedDriver, 1, EXPECTED_SCHEMA_VERSION)
+        reconcileFullSchema(upgradedDriver)
+        assertEquals(
+            "CompletedSetLatestAttempt",
+            queryScalar(
+                upgradedDriver,
+                "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
+            ),
+        )
+    }
+
+    @Test
     fun `every intermediate version upgrades cleanly with all manifest entries`() {
         val failures = mutableListOf<String>()
         val freshIndexDefinitions = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).let { fresh ->
@@ -1331,7 +1356,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 61L
+        private const val EXPECTED_SCHEMA_VERSION = 62L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each

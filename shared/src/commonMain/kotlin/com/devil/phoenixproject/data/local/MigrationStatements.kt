@@ -1355,9 +1355,40 @@ WHERE gs.rowid = (
         "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL",
     )
 
-    // Migration 60: eligible completed-set query index for issue #1383.
+    // Migration 60: index CompletedSet(completed_at) for the issue #1383 window scan.
+    // Mirrors 60.sqm exactly.
     60 -> listOf(
-        "CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at)",
+        "CREATE INDEX IF NOT EXISTS idx_completed_set_completed_at ON CompletedSet(completed_at)",
+    )
+
+    // Migration 61: shared latest-attempt view for exercise history and 1RM candidates.
+    // Mirrors 61.sqm exactly.
+    61 -> listOf(
+        """CREATE VIEW IF NOT EXISTS CompletedSetLatestAttempt AS
+        SELECT cs.*
+        FROM CompletedSet cs
+        INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+        WHERE ws.deletedAt IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM CompletedSet newer
+            INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+            WHERE newer_ws.exerciseId = ws.exerciseId
+              AND newer_ws.profile_id = ws.profile_id
+              AND newer_ws.deletedAt IS NULL
+              AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+              AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+              AND newer.set_number = cs.set_number
+              AND (
+                CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                OR (
+                  CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                  = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                  AND newer.completed_at > cs.completed_at
+                )
+              )
+          )""",
     )
 
     else -> emptyList()
