@@ -4,7 +4,12 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -101,6 +106,13 @@ class Issue1366JustLiftExitNavigationTest {
 
     /** Counts content-body creations so a test can prove a recreation really happened. */
     private var compositionCreations = 0
+
+    /**
+     * Hosts the content in a SaveableStateHolder so a test can dispose and restore it
+     * frame by frame under a paused clock (StateRestorationTester waits for idle between
+     * its steps, which drains or skips the frames this ordering depends on).
+     */
+    private var contentShown by mutableStateOf(true)
 
     @Before
     fun setUpKoin() {
@@ -619,7 +631,7 @@ class Issue1366JustLiftExitNavigationTest {
         val justLiftId = entryIdOf(NavigationRoutes.JustLift.route)
 
         // Real stop publishes Idle synchronously while the ActiveWorkout composition is
-        // still outgoing. Emulate saved-instance-state restoration NOW: the outgoing
+        // still outgoing. Dispose and restore the content from saved state NOW: the outgoing
         // composition (and its pending observer delivery) is destroyed mid-teardown and
         // a RECREATED composition re-runs `remember(backStackEntryId) { JustLiftExitContext(...) }`
         // (a fresh capture) plus a fresh LaunchedEffect that collects the current Idle
@@ -637,7 +649,12 @@ class Issue1366JustLiftExitNavigationTest {
             routeAtStop,
         )
         try {
-            restorationTester.emulateSavedInstanceStateRestore()
+            // Frame 1 disposes the outgoing content (and the observer's not-yet-started
+            // delivery with it); frame 2 restores it from saved state.
+            setContentShown(false)
+            rule.mainClock.advanceTimeByFrame()
+            setContentShown(true)
+            rule.mainClock.advanceTimeByFrame()
         } finally {
             rule.mainClock.autoAdvance = true
         }
@@ -705,6 +722,13 @@ class Issue1366JustLiftExitNavigationTest {
 
     // ===== Driving helpers =====
 
+    private fun setContentShown(shown: Boolean) {
+        rule.runOnUiThread {
+            contentShown = shown
+            Snapshot.sendApplyNotifications()
+        }
+    }
+
     /**
      * Builds the production shell over the production [NavGraph], starts a REAL Just
      * Lift session (real engine lease) and lets the production JustLiftScreen entry
@@ -734,43 +758,48 @@ class Issue1366JustLiftExitNavigationTest {
         }
 
         restorationTester.setContent {
-            Box(Modifier.fillMaxSize()) {
-                // Runs once per creation of this content (not per recomposition), so a
-                // StateRestorationTester recreation bumps it exactly once.
-                remember { compositionCreations++ }
-                val nav = rememberNavController().also { navController = it }
-                NavGraph(
-                    navController = nav,
-                    viewModel = fx.viewModel,
-                    exerciseRepository = fx.fakeExerciseRepository,
-                    themeMode = ThemeMode.SYSTEM,
-                    onThemeModeChange = {},
-                    dynamicColorAvailable = false,
-                    dynamicColorEnabled = false,
-                    onDynamicColorEnabledChange = {},
-                    onOpenProfileSwitcher = {},
-                    onProfileRecoveryRequired = {},
-                )
-                LaunchedEffect(Unit) {
-                    nav.currentBackStackEntryFlow.collect { entry ->
-                        synchronized(visitedRoutes) {
-                            visitedRoutes += (entry.destination.route ?: "<graph>")
+            val contentHolder = rememberSaveableStateHolder()
+            if (contentShown) {
+                contentHolder.SaveableStateProvider(CONTENT_STATE_KEY) {
+                    Box(Modifier.fillMaxSize()) {
+                        // Runs once per creation of this content (not per recomposition), so a
+                        // dispose-and-restore recreation bumps it exactly once.
+                        remember { compositionCreations++ }
+                        val nav = rememberNavController().also { navController = it }
+                        NavGraph(
+                            navController = nav,
+                            viewModel = fx.viewModel,
+                            exerciseRepository = fx.fakeExerciseRepository,
+                            themeMode = ThemeMode.SYSTEM,
+                            onThemeModeChange = {},
+                            dynamicColorAvailable = false,
+                            dynamicColorEnabled = false,
+                            onDynamicColorEnabledChange = {},
+                            onOpenProfileSwitcher = {},
+                            onProfileRecoveryRequired = {},
+                        )
+                        LaunchedEffect(Unit) {
+                            nav.currentBackStackEntryFlow.collect { entry ->
+                                synchronized(visitedRoutes) {
+                                    visitedRoutes += (entry.destination.route ?: "<graph>")
+                                }
+                            }
                         }
-                    }
-                }
-                LaunchedEffect(Unit) {
-                    // Guarded so StateRestorationTester-driven composition recreation
-                    // does not re-run the initial navigation and pollute the stack.
-                    if (!initialNavigationDone) {
-                        initialNavigationDone = true
-                        if (includeJustLiftEntry) {
-                            nav.navigate(NavigationRoutes.JustLift.route)
-                        } else {
-                            // Unusual entry path: ActiveWorkout without a JustLift entry below.
-                            nav.navigate(NavigationRoutes.ActiveWorkout.route)
-                        }
-                        repeat(extraActiveWorkoutEntries) {
-                            nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                        LaunchedEffect(Unit) {
+                            // Guarded so a test-driven composition recreation
+                            // does not re-run the initial navigation and pollute the stack.
+                            if (!initialNavigationDone) {
+                                initialNavigationDone = true
+                                if (includeJustLiftEntry) {
+                                    nav.navigate(NavigationRoutes.JustLift.route)
+                                } else {
+                                    // Unusual entry path: ActiveWorkout without a JustLift entry below.
+                                    nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                                }
+                                repeat(extraActiveWorkoutEntries) {
+                                    nav.navigate(NavigationRoutes.ActiveWorkout.route)
+                                }
+                            }
                         }
                     }
                 }
@@ -869,6 +898,9 @@ class Issue1366JustLiftExitNavigationTest {
 
         /** Frames pumped one at a time while delivery timing is under explicit control. */
         const val DELAY_PUMP_FRAMES = 30
+
+        /** SaveableStateHolder key for the test content. */
+        const val CONTENT_STATE_KEY = "issue1366-content"
 
         /** Weight of the saved Just Lift defaults seeded in this harness (JustLiftDefaultsDocument default). */
         const val SAVED_DEFAULTS_WEIGHT_KG = 20f
