@@ -485,7 +485,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             r'(?ms)^tasks\.register<VerifyReleaseDexTypesTask>\("verifyReleaseDexTypes"\) \{\n(?P<body>.*?)^\}',
             build_gradle,
         )
-        self.assertIsNotNone(verify_task, "verifyReleaseDexTypes task registration is missing")
         if verify_task is None:
             self.fail("verifyReleaseDexTypes task registration is missing")
         self.assertRegex(

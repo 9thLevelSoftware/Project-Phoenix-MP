@@ -46,7 +46,8 @@ import java.util.zip.ZipOutputStream;
  * unresolved type is skipped as ART-deferred and the invalid fixture would wrongly pass).
  *
  * Usage: java -cp <dexlib2 classpath> ReleaseDexTypeCheckFixtures.java <output-dir>
- * Writes <output-dir>/boot.jar, <output-dir>/valid/valid.apk, <output-dir>/invalid/invalid.apk.
+ * Writes <output-dir>/boot.jar, <output-dir>/valid/valid.apk, and <output-dir>/invalid/invalid.apk;
+ * creates <output-dir>/no-artifacts/ as an empty directory for the fail-closed check.
  */
 public final class ReleaseDexTypeCheckFixtures {
     private static final String CHECKED = "Lfixture/Checked;";
@@ -64,7 +65,7 @@ public final class ReleaseDexTypeCheckFixtures {
         writeBootJar(out.resolve("boot.jar"));
         writeApk(out.resolve("valid").resolve("valid.apk"), validDex());
         writeApk(out.resolve("invalid").resolve("invalid.apk"), invalidDex());
-        System.out.println("Wrote checker fixtures to " + out + " (boot.jar, valid/valid.apk, invalid/invalid.apk)");
+        System.out.println("Wrote checker fixtures to " + out + " (no-artifacts/, boot.jar, valid/valid.apk, invalid/invalid.apk)");
     }
 
     /** Correct reference typing: Throwable-typed registers are thrown and passed where Throwable is expected. */
