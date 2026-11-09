@@ -1053,6 +1053,10 @@ class SchemaManifestTest {
 
         // No failures should occur (all prerequisite tables exist)
         assertFalse(report.hasFailures, "Unexpected failures: ${report.failures.map { "${it.target}: ${it.detail}" }}")
+        assertTrue(
+            indexExists(driver, "idx_completed_set_completed_at"),
+            "Schema reconciliation must heal the issue #1383 candidate-window index",
+        )
 
         // Migration 56: a leftover signature table is dropped and not recreated.
         assertFalse(tableExists(driver, "ExerciseSignature"))
