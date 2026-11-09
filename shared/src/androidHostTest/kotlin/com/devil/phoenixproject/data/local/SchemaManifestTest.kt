@@ -1041,7 +1041,7 @@ class SchemaManifestTest {
         driver.execute(null, "CREATE TABLE CycleDay (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, day_number INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE CycleProgress (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL UNIQUE, current_day_number INTEGER NOT NULL DEFAULT 1)", 0)
         driver.execute(null, "CREATE TABLE PlannedSet (id TEXT PRIMARY KEY, routine_exercise_id TEXT NOT NULL, set_number INTEGER NOT NULL)", 0)
-        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, completed_at INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE ExternalActivity (id TEXT PRIMARY KEY, externalId TEXT NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL, startedAt INTEGER NOT NULL, syncedAt INTEGER NOT NULL, profileId TEXT NOT NULL DEFAULT 'default')", 0)
 
         val report = reconcileFullSchema(driver)

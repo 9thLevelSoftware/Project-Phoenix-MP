@@ -55,7 +55,7 @@ class Android109UpgradeTest {
             assertEquals(0L, upgraded.longValue("SELECT COUNT(*) FROM PolarBeatSample"))
             assertEquals(0L, upgraded.longValue("SELECT COUNT(*) FROM PolarEcgSegment"))
 
-            // Exercise generated v62 queries as well as DDL inspection. Old rows
+            // Exercise generated current-schema queries as well as DDL inspection. Old rows
             // must deserialize with null telemetry, and new telemetry must persist.
             val queries = PhoenixDatabase(upgraded).phoenixDatabaseQueries
             queries.insertPolarBeatSample(SESSION_ID, 1_730_000_001_000, "WORKING", 120, 500.0, 35.0, 3.0, 1.0, 42)
