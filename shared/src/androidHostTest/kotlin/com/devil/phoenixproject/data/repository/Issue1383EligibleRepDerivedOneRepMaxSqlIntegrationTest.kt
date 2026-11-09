@@ -2,7 +2,11 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
@@ -25,21 +29,84 @@ import kotlinx.coroutines.test.runTest
 /** Real SQL coverage for issue #1383's rep-derived baseline candidate contract. */
 class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     @Test
-    fun `candidate query excludes unsafe origins and returns the full window for highest estimate`() = runTest {
+    fun `candidate query excludes unsafe origins and preserves the strongest candidate`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
         val now = currentTimeMillis()
         val mode = ProgramMode.OldSchool
 
-        // The old query's LIMIT 200 would hide this oldest, strongest eligible set; the
-        // bounded LIMIT 400 window keeps 203 realistic candidates intact (no truncation).
+        val routineId = "issue-1383-routine-plan"
+        val activeRecoveryExerciseId = "issue-1383-active-recovery-exercise"
+        val heavyDeloadExerciseId = "issue-1383-heavy-deload-exercise"
+        val unchangedRoutineExerciseId = "issue-1383-unchanged-routine-exercise"
+        val routineExercises = listOf(
+            RoutineExercise(
+                id = activeRecoveryExerciseId,
+                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                orderIndex = 0,
+                setReps = listOf(10),
+                weightPerCableKg = 500f,
+                setWeightsPerCableKg = listOf(500f),
+            ),
+            RoutineExercise(
+                id = heavyDeloadExerciseId,
+                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                orderIndex = 1,
+                setReps = listOf(10),
+                weightPerCableKg = 600f,
+                setWeightsPerCableKg = listOf(600f),
+            ),
+            RoutineExercise(
+                id = unchangedRoutineExerciseId,
+                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                orderIndex = 2,
+                setReps = listOf(10),
+                weightPerCableKg = 80f,
+                setWeightsPerCableKg = listOf(80f),
+            ),
+        )
+        workoutRepository.saveRoutine(
+            Routine(
+                id = routineId,
+                name = "Issue 1383 candidate fixture",
+                exercises = routineExercises,
+                profileId = PROFILE_ID,
+            ),
+        )
+        listOf(
+            PlannedSet.standard(
+                id = "issue-1383-active-recovery-plan",
+                routineExerciseId = activeRecoveryExerciseId,
+                setNumber = 0,
+                targetReps = 10,
+                targetWeightKg = 500f,
+            ),
+            PlannedSet.standard(
+                id = "issue-1383-heavy-deload-plan",
+                routineExerciseId = heavyDeloadExerciseId,
+                setNumber = 0,
+                targetReps = 10,
+                targetWeightKg = 600f,
+            ),
+            PlannedSet.standard(
+                id = "issue-1383-unchanged-routine-plan",
+                routineExerciseId = unchangedRoutineExerciseId,
+                setNumber = 0,
+                targetReps = 10,
+                targetWeightKg = 80f,
+            ),
+        ).forEach { completedSetRepository.savePlannedSet(it) }
+
+        // The old query's LIMIT 200 would hide this oldest, strongest eligible set; this
+        // fixture stays below the current 400-candidate cap while preserving that set.
         repeat(201) { index ->
             val sessionId = "issue-1383-eligible-$index"
             val completedAt = now - (201 - index) * 1_000L
             val weightKg = if (index == 0) 100f else 25f
             commitCandidate(workoutRepository, sessionId, completedAt, weightKg)
         }
+        commitCandidate(workoutRepository, "issue-1383-too-many-reps", now - 750L, 1_000f, reps = 50)
 
         commitCandidate(workoutRepository, "issue-1383-portal", now - 800L, 400f)
         database.phoenixDatabaseQueries.restoreSessionSyncMarkers(
@@ -48,23 +115,49 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             updatedAt = now,
             acknowledged = 1L,
         )
-        // Routine-session constant-load completed working sets ARE eligible: one-shot
-        // Active Recovery/Heavy Deload modifiers adjust the prescription, not the actual
-        // completed load recorded on the set. Kept below the strongest open-session set so
-        // the full-window winner assertion stays focused.
+        // Modifier-adjusted routine completions do not match the persisted plan, while an
+        // unchanged planned load/reps pair remains eligible.
         commitCandidate(
             workoutRepository,
-            "issue-1383-routine-id",
+            "issue-1383-routine-active-recovery",
             now - 700L,
-            30f,
-            routineId = "routine-active-recovery",
+            400f,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-active-recovery",
+            plannedSetId = "issue-1383-active-recovery-plan",
+            routineExerciseId = activeRecoveryExerciseId,
         )
         commitCandidate(
             workoutRepository,
-            "issue-1383-routine-session",
+            "issue-1383-routine-heavy-deload",
             now - 600L,
-            40f,
-            routineSessionId = "routine-session-heavy-deload",
+            600f,
+            reps = 5,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-heavy-deload",
+            plannedSetId = "issue-1383-heavy-deload-plan",
+            routineExerciseId = heavyDeloadExerciseId,
+        )
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-routine-unchanged",
+            now - 550L,
+            80f,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-unchanged",
+            plannedSetId = "issue-1383-unchanged-routine-plan",
+            routineExerciseId = unchangedRoutineExerciseId,
+        )
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-routine-future-retry",
+            now + 1_000L,
+            80f,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-unchanged",
+            plannedSetId = "issue-1383-unchanged-routine-plan",
+            routineExerciseId = unchangedRoutineExerciseId,
+            attemptNumber = 2,
         )
         commitCandidate(workoutRepository, "issue-1383-safety", now - 500L, 700f, safetyFlags = 1)
         commitCandidate(workoutRepository, "issue-1383-other-profile", now - 400L, 800f, profileId = "other-profile")
@@ -79,12 +172,13 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedAtUntil = now,
         )
 
-        // 201 open-session + 2 routine-session constant-load rows; well under the LIMIT 400
-        // bound, so realistic candidate sets are never truncated.
-        assertEquals(203, candidates.size)
+        assertEquals(202, candidates.size)
         assertTrue(candidates.any { it.id == "issue-1383-eligible-0-set" })
-        assertTrue(candidates.any { it.sessionId == "issue-1383-routine-id" })
-        assertTrue(candidates.any { it.sessionId == "issue-1383-routine-session" })
+        assertTrue(candidates.any { it.sessionId == "issue-1383-routine-unchanged" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-routine-active-recovery" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-routine-heavy-deload" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-routine-future-retry" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-too-many-reps" })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-portal") })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-safety") })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-other-") })
@@ -140,20 +234,50 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     }
 
     @Test
-    fun `history and 1RM queries share latest routine attempt collapse`() = runTest {
+    fun `history and 1RM queries exclude older routine attempts`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
         val now = currentTimeMillis()
+        val routineId = "issue-1383-retry-routine"
         val routineSessionId = "issue-1383-retry-routine-session"
         val routineExerciseId = "issue-1383-retry-exercise"
+        val plannedSetId = "issue-1383-retry-planned-set"
+        workoutRepository.saveRoutine(
+            Routine(
+                id = routineId,
+                name = "Issue 1383 retry fixture",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = routineExerciseId,
+                        exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                        orderIndex = 0,
+                        setReps = listOf(10),
+                        weightPerCableKg = 40f,
+                        setWeightsPerCableKg = listOf(40f),
+                    ),
+                ),
+                profileId = PROFILE_ID,
+            ),
+        )
+        completedSetRepository.savePlannedSet(
+            PlannedSet.standard(
+                id = plannedSetId,
+                routineExerciseId = routineExerciseId,
+                setNumber = 0,
+                targetReps = 10,
+                targetWeightKg = 40f,
+            ),
+        )
 
         commitCandidate(
             repository = workoutRepository,
             sessionId = "issue-1383-retry-old",
             completedAt = now - 2_000L,
-            weightKg = 30f,
+            weightKg = 40f,
+            routineId = routineId,
             routineSessionId = routineSessionId,
+            plannedSetId = plannedSetId,
             routineExerciseId = routineExerciseId,
             attemptNumber = 1,
         )
@@ -162,7 +286,9 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             sessionId = "issue-1383-retry-new",
             completedAt = now - 1_000L,
             weightKg = 40f,
+            routineId = routineId,
             routineSessionId = routineSessionId,
+            plannedSetId = plannedSetId,
             routineExerciseId = routineExerciseId,
             attemptNumber = 2,
         )
@@ -195,6 +321,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         mode: String = ProgramMode.OldSchool.displayName,
         routineId: String? = null,
         routineSessionId: String? = null,
+        plannedSetId: String? = null,
         routineExerciseId: String? = null,
         attemptNumber: Int = 1,
         safetyFlags: Int = 0,
@@ -218,17 +345,17 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedSet = CompletedSet(
                 id = "$sessionId-set",
                 sessionId = sessionId,
-                plannedSetId = null,
+                plannedSetId = plannedSetId,
+                routineExerciseId = routineExerciseId,
                 setNumber = 0,
                 setType = SetType.STANDARD,
+                attemptNumber = attemptNumber,
                 actualReps = reps,
                 actualWeightKg = weightKg,
                 loggedRpe = null,
                 isPr = false,
                 completedAt = completedAt,
                 setEndReason = SetEndReason.TARGET_REPS_REACHED,
-                routineExerciseId = routineExerciseId,
-                attemptNumber = attemptNumber,
             ),
             repMetrics = emptyList(),
             repBiomechanics = emptyList(),

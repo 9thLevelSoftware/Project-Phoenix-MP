@@ -2615,16 +2615,13 @@ LIMIT ?;
 
 -- Issue #1383: only producer-backed, fully completed, constant-load working sets may
 -- contribute to a rep-derived 1RM. Fail closed for portal-origin/legacy, Echo/adaptive,
--- Just Lift, progressed, assisted, or safety-affected records. Routine sessions remain
--- eligible when their completed sets satisfy the constant-load predicates. One-shot routine
--- modifiers are not persisted on WorkoutSession, so this query cannot distinguish
--- modifier-adjusted loads from ordinary routine work. The stored-1RM margin protects an
--- explicit baseline, but cannot protect a rep-derived fallback when no stored 1RM exists.
--- Excluding only modified sessions safely requires persisted modifier provenance; do not
--- exclude all routine history because unmodified routine work is valid completed-set evidence.
--- Safety-flagged sessions remain excluded by the session flags. Keep this separate from
--- general history/progression queries and share retry collapse via CompletedSetLatestAttempt.
--- Return the 28-day candidate window bounded at the newest 400 eligible candidates.
+-- Just Lift, progressed, assisted, or safety-affected records. Routine rows are eligible
+-- only when their persisted planned set still matches the completed load and reps; this
+-- excludes Active Recovery/Heavy Deload adjustments that were not persisted to the plan,
+-- while preserving unchanged routine work. Keep this separate from general history queries:
+-- the parameter-bounded retry check prevents a future retry from suppressing a current
+-- candidate, while history uses the shared CompletedSetLatestAttempt view. Return candidates
+-- from the 28-day horizon, bounded to the newest 400 eligible rows.
 selectEligibleWorkingSetsForOneRepMax:
 SELECT
     cs.id,
@@ -2640,13 +2637,28 @@ SELECT
     cs.is_pr,
     cs.completed_at,
     cs.set_end_reason
-FROM CompletedSetLatestAttempt cs
+FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+LEFT JOIN RoutineExercise rx ON rx.id = cs.routine_exercise_id
+LEFT JOIN PlannedSet ps ON ps.id = cs.planned_set_id
 WHERE ws.exerciseId = :exerciseId
   AND ws.profile_id = :profileId
   AND ws.mode = :mode
   AND ws.deletedAt IS NULL
   AND ws.portalOrigin = 0
+  AND (
+    (ws.routineId IS NULL AND ws.routineSessionId IS NULL)
+    OR (
+      ws.routineId IS NOT NULL
+      AND ws.routineSessionId IS NOT NULL
+      AND rx.routineId = ws.routineId
+      AND (rx.exerciseId IS NULL OR rx.exerciseId = ws.exerciseId)
+      AND ps.routine_exercise_id = rx.id
+      AND ps.set_type = 'STANDARD'
+      AND ps.target_reps = cs.actual_reps
+      AND ps.target_weight_kg = cs.actual_weight_kg
+    )
+  )
   AND ws.isJustLift = 0
   AND ws.progressionKg = 0
   AND ws.safetyFlags = 0
@@ -2662,9 +2674,32 @@ WHERE ws.exerciseId = :exerciseId
   AND cs.set_type = 'STANDARD'
   AND cs.set_end_reason = 'TARGET_REPS_REACHED'
   AND cs.actual_reps > 0
+  AND cs.actual_reps <= 12
   AND cs.actual_weight_kg > 0
   AND cs.completed_at >= :completedAtSince
   AND cs.completed_at <= :completedAtUntil
+  AND NOT EXISTS (
+    SELECT 1
+    FROM CompletedSet newer
+    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+    WHERE newer_ws.exerciseId = ws.exerciseId
+      AND newer_ws.profile_id = ws.profile_id
+      AND newer_ws.deletedAt IS NULL
+      AND newer.completed_at >= :completedAtSince
+      AND newer.completed_at <= :completedAtUntil
+      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+      AND newer.set_number = cs.set_number
+      AND (
+        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+        OR (
+          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+          AND newer.completed_at > cs.completed_at
+        )
+      )
+  )
 ORDER BY cs.completed_at DESC
 LIMIT 400;
 
