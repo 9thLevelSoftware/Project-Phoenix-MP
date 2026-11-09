@@ -95,6 +95,8 @@ fun ActiveWorkoutScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
+    /** Issue #1366: id of the NavBackStackEntry hosting this screen (from NavGraph). */
+    backStackEntryId: String,
     polarBleManager: PolarH10BleManager = koinInject(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
@@ -291,10 +293,10 @@ fun ActiveWorkoutScreen(
     // Navigation guard to prevent double navigateUp() calls (Issue #204)
     // The LaunchedEffect can re-trigger if workoutParameters changes during navigation,
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
-    val activeWorkoutEntryId = navController.currentBackStackEntry?.id
-    val activeWorkoutSessionId = viewModel.currentWorkoutSessionId()
-    val justLiftExitContext = remember(navController, activeWorkoutEntryId) {
-        JustLiftExitContext.capture(navController, activeWorkoutSessionId)
+    // Issue #1366: the Just Lift exit identity is the entry that HOSTS this screen,
+    // captured once - never whichever entry is on top during a transition.
+    val justLiftExitContext = remember(backStackEntryId) {
+        JustLiftExitContext(sourceEntryId = backStackEntryId)
     }
     var hasNavigatedAway by remember { mutableStateOf(false) }
 
@@ -329,15 +331,10 @@ fun ActiveWorkoutScreen(
                 Logger.d {
                     "ActiveWorkoutScreen: Just Lift idle, returning to JustLiftScreen"
                 }
-                val navigated = navController.exitToJustLift(
-                    justLiftExitContext,
-                    viewModel::currentWorkoutSessionId,
-                )
-                hasNavigatedAway = navController.justLiftExitHasSettled(
-                    context = justLiftExitContext,
-                    navigated = navigated,
-                    currentSessionId = viewModel::currentWorkoutSessionId,
-                )
+                // A no-op means this entry already left (or JustLift is current), so the
+                // exit is settled either way.
+                navController.exitToJustLift(justLiftExitContext)
+                hasNavigatedAway = true
             }
 
             workoutState is WorkoutState.Idle &&
@@ -672,31 +669,16 @@ fun ActiveWorkoutScreen(
                     Button(
                         onClick = {
                             // Issue #1366: STOP -> Exit must settle on JustLiftScreen with the
-                            // selected mode retained, never Home. Capture the exit context
-                            // BEFORE stopWorkout() mutates engine state, then run the shared
-                            // idempotent Just Lift exit. Stop/safety ownership stays in
-                            // stopWorkout(exitingWorkout = true): navigation never gates it.
-                            val isJustLiftExit = workoutParameters.isJustLift
-                            val exitContext = JustLiftExitContext.capture(
-                                navController,
-                                viewModel.currentWorkoutSessionId(),
-                            )
-                            if (isJustLiftExit) {
-                                // The shared exit is authoritative. Latch only after the
-                                // destination has been reached (or the request is stale);
-                                // pre-latching suppresses the Idle observer if the transition
-                                // declines the request.
+                            // selected mode retained, never Home. Run the shared idempotent
+                            // Just Lift exit, which the Idle observer also uses; latching the
+                            // guard keeps that observer from adding a second transition.
+                            // Stop/safety ownership stays in stopWorkout(exitingWorkout = true):
+                            // navigation never gates it.
+                            if (workoutParameters.isJustLift) {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
-                                val navigated = navController.exitToJustLift(
-                                    exitContext,
-                                    viewModel::currentWorkoutSessionId,
-                                )
-                                hasNavigatedAway = navController.justLiftExitHasSettled(
-                                    context = exitContext,
-                                    navigated = navigated,
-                                    currentSessionId = viewModel::currentWorkoutSessionId,
-                                )
+                                navController.exitToJustLift(justLiftExitContext)
+                                hasNavigatedAway = true
                             } else {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
@@ -791,18 +773,4 @@ private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this)
     SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
     SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
     SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
-}
-
-private fun NavController.justLiftExitHasSettled(
-    context: JustLiftExitContext,
-    navigated: Boolean,
-    currentSessionId: () -> String?,
-): Boolean {
-    val currentEntry = currentBackStackEntry
-    val atDestination = currentEntry?.destination?.route == NavigationRoutes.JustLift.route
-    val sourceEntryWasReplaced = context.sourceEntryId != null && currentEntry?.id != context.sourceEntryId
-    val sessionWasReplaced = context.sessionId?.let { expectedSessionId ->
-        currentSessionId()?.let { it != expectedSessionId } == true
-    } == true
-    return navigated || atDestination || sourceEntryWasReplaced || sessionWasReplaced
 }
