@@ -1953,7 +1953,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 )
 
 // ============================================================
-// TASK 5: manifestIndexes -- 79 index operations
+// TASK 5: manifestIndexes -- 81 index operations
 //
 // Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
