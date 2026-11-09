@@ -1355,6 +1355,11 @@ WHERE gs.rowid = (
         "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL",
     )
 
+    // Migration 60: eligible completed-set query index for issue #1383.
+    60 -> listOf(
+        "CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at)",
+    )
+
     else -> emptyList()
 }
 

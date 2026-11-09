@@ -1331,7 +1331,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 60L
+        private const val EXPECTED_SCHEMA_VERSION = 61L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each
