@@ -651,9 +651,9 @@ class Issue1366JustLiftExitNavigationTest {
         try {
             // Frame 1 disposes the outgoing content (and the observer's not-yet-started
             // delivery with it); frame 2 restores it from saved state.
-            setContentShown(false)
+            toggleContent(false)
             rule.mainClock.advanceTimeByFrame()
-            setContentShown(true)
+            toggleContent(true)
             rule.mainClock.advanceTimeByFrame()
         } finally {
             rule.mainClock.autoAdvance = true
@@ -722,7 +722,7 @@ class Issue1366JustLiftExitNavigationTest {
 
     // ===== Driving helpers =====
 
-    private fun setContentShown(shown: Boolean) {
+    private fun toggleContent(shown: Boolean) {
         rule.runOnUiThread {
             contentShown = shown
             Snapshot.sendApplyNotifications()
