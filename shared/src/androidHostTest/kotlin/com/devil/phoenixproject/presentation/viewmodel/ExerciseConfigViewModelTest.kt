@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordReposito
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -553,6 +554,133 @@ class ExerciseConfigViewModelTest {
         waitForCondition { viewModel.currentExercisePR.value?.weightPerCableKg == 45f }
         assertEquals(WorkoutPhase.CONCENTRIC, viewModel.currentExercisePR.value?.phase)
         assertEquals(45f, viewModel.currentExercisePR.value?.weightPerCableKg)
+    }
+
+    @Test
+    fun `velocity-only estimated baseline remains available from another selected basis`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val velocityRepository = FakeVelocityOneRepMaxRepository().apply {
+            latestPassing = VelocityOneRepMaxEntity(
+                id = 1L,
+                exerciseId = "bench-1",
+                estimatedPerCableKg = 80f,
+                mvtUsedMs = 0.3f,
+                r2 = 0.98f,
+                distinctLoads = 4,
+                passedQualityGate = true,
+                computedAt = currentTimeMillis(),
+                profileId = "default",
+            )
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = velocityRepository,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-velocity-only-availability",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+
+            assertEquals(ScalingBasis.MAX_WEIGHT_PR, viewModel.effectiveScalingBasis())
+            assertNull(viewModel.baselineKgForCurrentBasis())
+            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `initial estimated baseline lookup runs once after PR loading`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var eligibleSetLookups = 0
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                eligibleSetLookups += 1
+                return emptyList()
+            }
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-estimated-single-lookup",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    usePercentOfPR = true,
+                    scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, eligibleSetLookups)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `edited scaled weight is retained as absolute when selected baseline becomes unavailable`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val personalRecords = FakePersonalRecordRepository().apply {
+            addRecord(weightPR(weight = 100f).copy(timestamp = currentTimeMillis()))
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = personalRecords,
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-authored-absolute-after-basis-change",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    setWeightsPerCableKg = listOf(25f),
+                    usePercentOfPR = true,
+                    setWeightsPercentOfPR = listOf(80),
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+            assertEquals(listOf(80f), viewModel.sets.value.map { it.weightPerCable })
+
+            viewModel.updateWeight(viewModel.sets.value.single().id, 90f)
+            assertEquals(listOf(90f), viewModel.sets.value.map { it.weightPerCable })
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+
+            assertEquals(ScalingBaselineLoadStatus.UNAVAILABLE, viewModel.baselineLoadStatus.value)
+            assertEquals(listOf(90f), viewModel.sets.value.map { it.weightPerCable })
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test

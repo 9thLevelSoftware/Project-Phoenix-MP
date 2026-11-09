@@ -213,6 +213,7 @@ fun ExerciseEditBottomSheet(
     val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
     val baselineLoadStatus by viewModel.baselineLoadStatus.collectAsState()
     val baselineResolutionReason by viewModel.baselineResolutionReason.collectAsState()
+    val estimatedOneRepMaxBaselineAvailable by viewModel.estimatedOneRepMaxBaselineAvailable.collectAsState()
 
     // The shared resolver is authoritative for ESTIMATED_1RM so a rejected velocity value
     // cannot reappear through an editor-only fallback.
@@ -259,12 +260,12 @@ fun ExerciseEditBottomSheet(
 
         else -> null
     }
-    // True if a baseline exists for AT LEAST ONE basis. Used to gate the % toggle and
-    // warning so the user can enable scaling and switch to a basis that has data, rather
-    // than being locked out when only the currently-selected basis lacks a baseline (#517).
+    // True when a baseline is available for any basis. In particular, Est. 1RM is resolved
+    // independently so a velocity-only source does not leave the toggle disabled.
     val hasAnyBaseline = maxWeightBaselineKg != null ||
         maxVolumeBaselineKg != null ||
-        sharedBaselineKg != null
+        sharedBaselineKg != null ||
+        estimatedOneRepMaxBaselineAvailable
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)

@@ -871,7 +871,7 @@ class ResolveRoutineWeightsUseCaseTest {
             r2 = 0.98f,
             distinctLoads = 4,
             passedQualityGate = true, // legacy row from a previous build
-            computedAt = 1000L,
+            computedAt = currentTimeMillis(),
             profileId = "default",
         )
         baselineRepository.set("default", "bench-press", 120f, 1L)

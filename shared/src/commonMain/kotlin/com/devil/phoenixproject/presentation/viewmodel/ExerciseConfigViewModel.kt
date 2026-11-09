@@ -107,6 +107,11 @@ class ExerciseConfigViewModel constructor(
     val baselineLoadStatus: StateFlow<ScalingBaselineLoadStatus> = _baselineLoadStatus.asStateFlow()
     private val _baselineResolutionReason = MutableStateFlow<String?>(null)
     val baselineResolutionReason: StateFlow<String?> = _baselineResolutionReason.asStateFlow()
+    // Basis-independent availability lets the editor expose Est. 1RM when it is the only
+    // source, even while another scaling basis is selected.
+    private val _estimatedOneRepMaxBaselineAvailable = MutableStateFlow(false)
+    val estimatedOneRepMaxBaselineAvailable: StateFlow<Boolean> =
+        _estimatedOneRepMaxBaselineAvailable.asStateFlow()
 
     private val _exerciseType = MutableStateFlow(ExerciseType.STANDARD)
     val exerciseType: StateFlow<ExerciseType> = _exerciseType.asStateFlow()
@@ -358,9 +363,9 @@ class ExerciseConfigViewModel constructor(
             _currentMaxVolumePR.value = volumePR
             logDebug("Loaded volume PR for exercise=$exerciseId, mode=$workoutMode, profile=$profileId: ${volumePR?.weightPerCableKg ?: "none"}")
 
-            // Re-sync after the max-volume PR lands, then re-resolve via the shared policy.
+            // The shared baseline resolver is loaded with the exercise/mode context; do not
+            // issue a second request here and invalidate that in-flight result.
             resyncSetWeightsIfBaselineReady()
-            loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
         }
     }
 
@@ -386,6 +391,7 @@ class ExerciseConfigViewModel constructor(
         _routineScalingBaseline.value = null
         _baselineLoadStatus.value = ScalingBaselineLoadStatus.LOADING
         _baselineResolutionReason.value = null
+        _estimatedOneRepMaxBaselineAvailable.value = false
         resyncSetWeightsIfBaselineReady()
         if (resolver == null) {
             _baselineLoadStatus.value = ScalingBaselineLoadStatus.UNAVAILABLE
@@ -401,6 +407,25 @@ class ExerciseConfigViewModel constructor(
                 originalExercise.exercise.id == exerciseId &&
                 _selectedMode.value.toProgramMode() == programMode &&
                 effectiveScalingBasis() == basis
+
+        if (basis != ScalingBasis.ESTIMATED_1RM) {
+            viewModelScope.launch {
+                val estimatedBaselineAvailable = try {
+                    resolver(
+                        exerciseId = exerciseId,
+                        mode = programMode,
+                        profileId = profileId,
+                        basis = ScalingBasis.ESTIMATED_1RM,
+                    ) != null
+                } catch (e: Exception) {
+                    logWarning("Failed to check estimated 1RM availability for exercise=$exerciseId, mode=${mode.displayName}, profile=$profileId: ${e.message}")
+                    false
+                }
+                if (requestStillMatchesCurrentContext()) {
+                    _estimatedOneRepMaxBaselineAvailable.value = estimatedBaselineAvailable
+                }
+            }
+        }
 
         viewModelScope.launch {
             try {
@@ -423,6 +448,9 @@ class ExerciseConfigViewModel constructor(
                         ScalingBaselineLoadStatus.UNAVAILABLE
                     } else {
                         ScalingBaselineLoadStatus.AVAILABLE
+                    }
+                    if (basis == ScalingBasis.ESTIMATED_1RM) {
+                        _estimatedOneRepMaxBaselineAvailable.value = baseline != null
                     }
                     _baselineResolutionReason.value = reason
                     resyncSetWeightsIfBaselineReady()
@@ -792,9 +820,7 @@ class ExerciseConfigViewModel constructor(
         _sets.value = _sets.value.mapIndexed { index, set ->
             if (index == setIndex) set.copy(weightPerCable = nextWeight) else set
         }
-        if (!_usePercentOfPR.value || baselineKg == null || baselineKg <= 0f) {
-            rememberAbsoluteSetWeight(setIndex, weight)
-        }
+        rememberAbsoluteSetWeight(setIndex, weight)
     }
 
     fun updateDuration(setId: String, duration: Int) {
