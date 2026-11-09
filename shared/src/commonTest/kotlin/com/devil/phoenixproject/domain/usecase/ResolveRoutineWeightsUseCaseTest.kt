@@ -91,6 +91,47 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
+    fun `modifier-adjusted working set cannot create a rep-derived baseline`() = runTest {
+        val now = currentTimeMillis()
+        completedSetRepository.registerSessionContext(
+            sessionId = "active-recovery-session",
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+            routineModifierApplied = true,
+        )
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "active-recovery-set",
+            sessionId = "active-recovery-session",
+            plannedSetId = "planned-set",
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 50f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNull(result)
+    }
+
+    @Test
     fun `expired passing velocity estimate falls through to stored 1RM`() = runTest {
         velocityRepository.latestPassing = VelocityOneRepMaxEntity(
             id = 1L,

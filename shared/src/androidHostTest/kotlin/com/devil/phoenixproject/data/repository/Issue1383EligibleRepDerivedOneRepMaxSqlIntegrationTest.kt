@@ -126,6 +126,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             routineSessionId = "issue-1383-session-active-recovery",
             plannedSetId = "issue-1383-active-recovery-plan",
             routineExerciseId = activeRecoveryExerciseId,
+            routineModifierApplied = true,
         )
         commitCandidate(
             workoutRepository,
@@ -137,6 +138,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             routineSessionId = "issue-1383-session-heavy-deload",
             plannedSetId = "issue-1383-heavy-deload-plan",
             routineExerciseId = heavyDeloadExerciseId,
+            routineModifierApplied = true,
         )
         commitCandidate(
             workoutRepository,
@@ -323,6 +325,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         routineSessionId: String? = null,
         plannedSetId: String? = null,
         routineExerciseId: String? = null,
+        routineModifierApplied: Boolean = false,
         attemptNumber: Int = 1,
         safetyFlags: Int = 0,
     ) {
@@ -338,6 +341,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 exerciseId = exerciseId,
                 routineId = routineId,
                 routineSessionId = routineSessionId,
+                routineModifierApplied = routineModifierApplied,
                 safetyFlags = safetyFlags,
                 profileId = profileId,
             ),

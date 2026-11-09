@@ -1391,6 +1391,12 @@ WHERE gs.rowid = (
           )""",
     )
 
+    // Migration 62: persisted one-shot routine-modifier provenance.
+    // Mirrors 62.sqm exactly; preexisting rows are unknown and fail closed.
+    62 -> listOf(
+        "ALTER TABLE WorkoutSession ADD COLUMN routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))",
+    )
+
     else -> emptyList()
 }
 

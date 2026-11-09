@@ -9344,6 +9344,11 @@ class ActiveSessionEngine(
             routineSessionId = context.routineSessionId,
             routineName = context.routineName,
             routineId = context.routineId,
+            routineModifierApplied = coordinator._loadedRoutine.value
+                ?.exercises
+                ?.getOrNull(coordinator._currentExerciseIndex.value)
+                ?.isLaunchAdjustedByRoutineModifier
+                ?: (context.routineId != null || context.routineSessionId != null),
             peakForceConcentricA = summary.peakForceConcentricA,
             peakForceConcentricB = summary.peakForceConcentricB,
             peakForceEccentricA = summary.peakForceEccentricA,
@@ -10819,6 +10824,11 @@ class ActiveSessionEngine(
                     routineSessionId = legacyLogicalSetKey?.routineSessionId ?: coordinator.currentRoutineSessionId,
                     routineName = coordinator.currentRoutineName,
                     routineId = coordinator.currentRoutineId,
+                    routineModifierApplied = coordinator._loadedRoutine.value
+                        ?.exercises
+                        ?.getOrNull(coordinator._currentExerciseIndex.value)
+                        ?.isLaunchAdjustedByRoutineModifier
+                        ?: (coordinator.currentRoutineId != null || coordinator.currentRoutineSessionId != null),
                     peakForceConcentricA = summary.peakForceConcentricA,
                     peakForceConcentricB = summary.peakForceConcentricB,
                     peakForceEccentricA = summary.peakForceEccentricA,

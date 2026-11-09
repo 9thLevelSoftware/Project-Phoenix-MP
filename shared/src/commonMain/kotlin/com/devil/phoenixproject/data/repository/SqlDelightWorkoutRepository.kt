@@ -134,6 +134,7 @@ class SqlDelightWorkoutRepository(
         hrr300Bpm: Long?,
         maxTorsoPitchDeg: Double?,
         maxTorsoRollDeg: Double?,
+        routineModifierApplied: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -154,6 +155,7 @@ class SqlDelightWorkoutRepository(
         routineSessionId = routineSessionId,
         routineName = routineName,
         routineId = routineId,
+        routineModifierApplied = routineModifierApplied == 1L,
         safetyFlags = safetyFlags.toInt(),
         deloadWarningCount = deloadWarningCount.toInt(),
         romViolationCount = romViolationCount.toInt(),
@@ -653,6 +655,10 @@ class SqlDelightWorkoutRepository(
             externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
             counterweightKg = session.counterweightKg.toDouble(),
             rackItemsJson = session.rackItemsJson,
+        )
+        queries.updateSessionRoutineModifierApplied(
+            id = session.id,
+            routineModifierApplied = if (session.routineModifierApplied) 1L else 0L,
         )
         if (session.avgHeartRateBpm != null || session.maxHeartRateBpm != null ||
             session.minHeartRateBpm != null || session.avgRrIntervalMs != null ||

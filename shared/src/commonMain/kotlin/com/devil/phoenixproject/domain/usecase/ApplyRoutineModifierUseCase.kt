@@ -49,7 +49,10 @@ class ApplyRoutineModifierUseCase(
             // 'other'/'bands'/null) with real load must scale like any other loaded exercise;
             // only genuine zero-load rows keep their loads.
             if (!hasPositiveLoad(exercise)) {
-                exercise.copy(warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent))
+                exercise.copy(
+                    warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent),
+                    isLaunchAdjustedByRoutineModifier = true,
+                )
             } else {
                 val baselineKg = resolveBaselineKg(exercise, profileId)
                 if (baselineKg != null) {
@@ -64,6 +67,7 @@ class ApplyRoutineModifierUseCase(
                             emptyList()
                         },
                         warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent),
+                        isLaunchAdjustedByRoutineModifier = true,
                     )
                 } else {
                     // No PR/stored-1RM baseline: scale each already-resolved programmed load
@@ -90,6 +94,7 @@ class ApplyRoutineModifierUseCase(
                         weightPerCableKg = adjustedBaseWeight,
                         setWeightsPerCableKg = adjustedSetWeights,
                         warmupSets = scaleFirstWarmupOnly(exercise.warmupSets, percent),
+                        isLaunchAdjustedByRoutineModifier = true,
                     )
                 }
             }
@@ -104,6 +109,7 @@ class ApplyRoutineModifierUseCase(
                 duration = timedDuration?.let { scaleDurationSeconds(it, percent) } ?: exercise.duration,
                 isLaunchAdjustedDuration = timedDuration != null,
                 warmupSets = exercise.warmupSets.map { it.copy(reps = scaleReps(it.reps, percent)) },
+                isLaunchAdjustedByRoutineModifier = true,
             )
         },
     )

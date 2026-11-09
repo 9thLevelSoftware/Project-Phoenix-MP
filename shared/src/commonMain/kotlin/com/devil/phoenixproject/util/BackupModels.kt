@@ -104,6 +104,8 @@ data class WorkoutSessionBackup(
     val hrr300Bpm: Int? = null,
     val maxTorsoPitchDeg: Float? = null,
     val maxTorsoRollDeg: Float? = null,
+    // Unknown legacy backups default to true so their rows are not treated as clean 1RM evidence.
+    val routineModifierApplied: Boolean = true,
 )
 
 /**

@@ -1531,6 +1531,7 @@ class SqlDelightSyncRepository(
         hrr300Bpm: Long?,
         maxTorsoPitchDeg: Double?,
         maxTorsoRollDeg: Double?,
+        routineModifierApplied: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -1551,6 +1552,7 @@ class SqlDelightSyncRepository(
         routineSessionId = routineSessionId,
         routineName = routineName,
         routineId = routineId,
+        routineModifierApplied = routineModifierApplied == 1L,
         safetyFlags = safetyFlags.toInt(),
         deloadWarningCount = deloadWarningCount.toInt(),
         romViolationCount = romViolationCount.toInt(),

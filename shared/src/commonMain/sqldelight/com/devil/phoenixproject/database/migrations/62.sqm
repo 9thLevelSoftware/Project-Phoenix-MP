@@ -1,0 +1,3 @@
+-- Migration 62: persist one-shot routine-modifier provenance.
+-- Existing sessions are unknown, so they fail closed for rep-derived 1RM inputs.
+ALTER TABLE WorkoutSession ADD COLUMN routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1));

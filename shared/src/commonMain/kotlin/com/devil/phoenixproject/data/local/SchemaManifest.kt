@@ -1055,7 +1055,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
     // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33),
-    // portalOrigin (m48), local/synced_sync_generation (m49)
+    // portalOrigin (m48), local/synced_sync_generation (m49),
+    // routineModifierApplied (m62; unknown legacy/imported rows fail closed)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -1126,7 +1127,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 hrr60Bpm INTEGER,
                 hrr300Bpm INTEGER,
                 maxTorsoPitchDeg REAL,
-                maxTorsoRollDeg REAL
+                maxTorsoRollDeg REAL,
+                routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
             )
         """.trimIndent(),
     ),
@@ -1709,7 +1711,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 39: explicit bodyweight classification (issue #635)
     SchemaHealOperation("Exercise", "isBodyweight", "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER"),
 
-    // ── WorkoutSession (38 columns) ─────────────────────────────────────
+    // ── WorkoutSession (39 columns) ─────────────────────────────────────
 
     // Migration 5: set summary metrics
     SchemaHealOperation("WorkoutSession", "peakForceConcentricA", "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL"),
@@ -1782,6 +1784,12 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "hrr300Bpm", "ALTER TABLE WorkoutSession ADD COLUMN hrr300Bpm INTEGER"),
     SchemaHealOperation("WorkoutSession", "maxTorsoPitchDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoPitchDeg REAL"),
     SchemaHealOperation("WorkoutSession", "maxTorsoRollDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL"),
+    // Migration 62: only explicitly unmodified local sessions are safe 1RM candidates.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "routineModifierApplied",
+        "ALTER TABLE WorkoutSession ADD COLUMN routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))",
+    ),
 
     // ── MetricSample (8 columns) ─────────────────────────────────────────
     // Migration 59: Polar H10 intra-set synchronized telemetry & torso biomechanics

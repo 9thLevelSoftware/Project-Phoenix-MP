@@ -215,6 +215,29 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `routine modifier provenance heal excludes legacy rows by default`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('legacy',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "WorkoutSession" && it.column == "routineModifierApplied" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("1", queryScalar(driver, "SELECT CAST(routineModifierApplied AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+    }
+
+    @Test
     fun `baseline table and remap index reconcile idempotently`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(null, "CREATE TABLE UserProfile(id TEXT PRIMARY KEY)", 0)

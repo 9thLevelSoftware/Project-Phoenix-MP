@@ -105,6 +105,7 @@ class ApplyRoutineModifierUseCaseTest {
 
         // Brzycki estimates 90 kg x 10 as 120 kg; Active Recovery uses 80% of that baseline.
         assertEquals(96f, adjusted.exercises.single().weightPerCableKg)
+        assertEquals(true, adjusted.exercises.single().isLaunchAdjustedByRoutineModifier)
     }
 
     @Test
@@ -171,6 +172,7 @@ class ApplyRoutineModifierUseCaseTest {
         assertEquals(listOf(40f, 42.5f, 45f), exercise.setWeightsPerCableKg)
         assertEquals(listOf(5, 4, null), exercise.setReps)
         assertEquals(listOf(WarmupSet(6, 50), WarmupSet(4, 70)), exercise.warmupSets)
+        assertEquals(true, exercise.isLaunchAdjustedByRoutineModifier)
     }
 
     @Test

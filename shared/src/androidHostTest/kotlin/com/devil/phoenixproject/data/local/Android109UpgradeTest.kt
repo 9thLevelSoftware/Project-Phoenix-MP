@@ -23,7 +23,7 @@ import org.robolectric.annotation.SQLiteMode
 
 /**
  * Android-driver reproduction of a canonical 1.0.8 (v59) database opening in the
- * current build (v62). The old DDL is pinned to the released tag, not reconstructed from today's
+ * current build (v63). The old DDL is pinned to the released tag, not reconstructed from today's
  * schema. Native SQLite exercises Android's open-helper callbacks without JDBC.
  *
  * SDK 35 is a representative Pixel 9 platform, not evidence of the reporting
@@ -45,7 +45,7 @@ class Android109UpgradeTest {
 
     @Test
     fun v108Database_upgradesThroughProductionDriver_andReopensWithOldAndNewData() {
-        assertEquals(62L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
+        assertEquals(63L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
         seedReleased108Database()
 
         val upgraded = DriverFactory(context).createDriver()
@@ -55,7 +55,7 @@ class Android109UpgradeTest {
             assertEquals(0L, upgraded.longValue("SELECT COUNT(*) FROM PolarBeatSample"))
             assertEquals(0L, upgraded.longValue("SELECT COUNT(*) FROM PolarEcgSegment"))
 
-            // Exercise generated v62 queries as well as DDL inspection. Old rows
+            // Exercise generated v63 queries as well as DDL inspection. Old rows
             // must deserialize with null telemetry, and new telemetry must persist.
             val queries = PhoenixDatabase(upgraded).phoenixDatabaseQueries
             queries.insertPolarBeatSample(SESSION_ID, 1_730_000_001_000, "WORKING", 120, 500.0, 35.0, 3.0, 1.0, 42)
@@ -136,7 +136,7 @@ class Android109UpgradeTest {
     }
 
     private fun assertHealthyUpgrade(driver: SqlDriver) {
-        assertEquals(62L, driver.longValue("PRAGMA user_version"))
+        assertEquals(63L, driver.longValue("PRAGMA user_version"))
         assertEquals("ok", driver.textValue("PRAGMA quick_check"))
         assertEquals(1L, driver.longValue("PRAGMA foreign_keys"))
         driver.executeQuery(null, "PRAGMA foreign_key_check", { cursor ->
@@ -157,6 +157,7 @@ class Android109UpgradeTest {
         assertEquals(3L, session.synced_sync_generation)
         assertNull(session.avgHeartRateBpm)
         assertNull(session.hrr300Bpm)
+        assertEquals(1L, session.routineModifierApplied, "Legacy sessions have unknown modifier provenance and must fail closed")
 
         val metric = queries.selectMetricById(41).executeAsOne()
         assertEquals(SESSION_ID, metric.sessionId)

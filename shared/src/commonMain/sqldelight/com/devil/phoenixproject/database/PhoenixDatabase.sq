@@ -132,7 +132,10 @@ CREATE TABLE WorkoutSession (
     hrr60Bpm INTEGER,
     hrr300Bpm INTEGER,
     maxTorsoPitchDeg REAL,
-    maxTorsoRollDeg REAL
+    maxTorsoRollDeg REAL,
+    -- Legacy or imported sessions are unknown until a local workout explicitly records
+    -- whether a one-shot routine modifier was applied. Fail closed for 1RM inputs.
+    routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -1072,6 +1075,9 @@ INSERT INTO WorkoutSession (
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateSessionRoutineModifierApplied:
+UPDATE WorkoutSession SET routineModifierApplied = :routineModifierApplied WHERE id = :id;
 
 -- Insert session only if ID doesn't already exist (for sync pull deduplication).
 -- Includes updatedAt so a pulled row carries the push watermark instead of NULL.
@@ -2615,10 +2621,12 @@ LIMIT ?;
 
 -- Issue #1383: only producer-backed, fully completed, constant-load working sets may
 -- contribute to a rep-derived 1RM. Fail closed for portal-origin/legacy, Echo/adaptive,
--- Just Lift, progressed, assisted, or safety-affected records. Routine rows are eligible
--- only when their persisted planned set still matches the completed load and reps; this
--- excludes Active Recovery/Heavy Deload adjustments that were not persisted to the plan,
--- while preserving unchanged routine work. Keep this separate from general history queries:
+-- Just Lift, progressed, assisted, safety-affected, and one-shot-modified records. A
+-- session's persisted planned set can still match a launch-time modifier result (for
+-- example, after rounding); the explicit provenance flag is authoritative. Legacy or
+-- imported rows default to unknown/modified, and any marked row excludes its whole routine
+-- session so an interrupted/resumed workout cannot leak unmarked continuation sets.
+-- Keep this separate from general history queries:
 -- the parameter-bounded retry check prevents a future retry from suppressing a current
 -- candidate, while history uses the shared CompletedSetLatestAttempt view. Return candidates
 -- from the 28-day horizon, bounded to the newest 400 eligible rows.
@@ -2646,6 +2654,19 @@ WHERE ws.exerciseId = :exerciseId
   AND ws.mode = :mode
   AND ws.deletedAt IS NULL
   AND ws.portalOrigin = 0
+  AND ws.routineModifierApplied = 0
+  AND (
+    ws.routineSessionId IS NULL
+    OR TRIM(ws.routineSessionId) = ''
+    OR NOT EXISTS (
+      SELECT 1
+      FROM WorkoutSession modifier_ws
+      WHERE modifier_ws.profile_id = ws.profile_id
+        AND modifier_ws.routineSessionId = ws.routineSessionId
+        AND modifier_ws.deletedAt IS NULL
+        AND modifier_ws.routineModifierApplied != 0
+    )
+  )
   AND (
     (ws.routineId IS NULL AND ws.routineSessionId IS NULL)
     OR (

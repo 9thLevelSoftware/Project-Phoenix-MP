@@ -41,12 +41,13 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val sessionProfileIds = mutableMapOf<String, String>()
     private val sessionModes = mutableMapOf<String, String>()
     private val sessionRoutineIds = mutableMapOf<String, String>()
+    private val routineModifierAppliedSessions = mutableSetOf<String>()
     private val deletedSessionIds = mutableSetOf<String>()
     /**
      * Explicit repository-approved candidates for resolver policy tests. The fake does
      * NOT model the SQL query's fail-closed origin/load predicates — tests curate this
      * list to only contain rows those predicates would admit. Session scoping
-     * (exerciseId/profileId/mode) and the completedAt window ARE modelled, see
+     * (exerciseId/profileId/mode), modifier provenance, and the completedAt window ARE modelled, see
      * [getEligibleWorkingSetsForOneRepMax].
      */
     val eligibleWorkingSetsForOneRepMax = mutableListOf<CompletedSet>()
@@ -65,10 +66,16 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         exerciseId: String,
         profileId: String = "default",
         mode: String,
+        routineModifierApplied: Boolean = false,
     ) {
         sessionExerciseIds[sessionId] = exerciseId
         sessionProfileIds[sessionId] = profileId
         sessionModes[sessionId] = mode
+        if (routineModifierApplied) {
+            routineModifierAppliedSessions += sessionId
+        } else {
+            routineModifierAppliedSessions -= sessionId
+        }
     }
 
     fun setSessionRoutine(sessionId: String, routineSessionId: String) {
@@ -145,6 +152,7 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         .filter { sessionExerciseIds[it.sessionId] == exerciseId }
         .filter { sessionProfileIds[it.sessionId] == profileId }
         .filter { sessionModes[it.sessionId] == mode }
+        .filter { it.sessionId !in routineModifierAppliedSessions }
         .filter { it.completedAt in completedAtSince..completedAtUntil }
         .sortedByDescending { it.completedAt }
         .toList()
