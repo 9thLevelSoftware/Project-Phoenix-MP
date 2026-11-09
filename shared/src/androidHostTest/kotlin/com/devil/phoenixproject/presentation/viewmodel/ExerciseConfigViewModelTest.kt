@@ -388,8 +388,11 @@ class ExerciseConfigViewModelTest {
         waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(40f, 45f, 50f) }
 
         viewModel.onUsePercentOfPRChange(false)
+        // Percent off with a baseline active restores the authored absolutes ([5,5,5]);
+        // the scaled preview ([40,45,50]) is not adopted into the saved absolutes.
+        assertEquals(listOf(5f, 5f, 5f), viewModel.sets.value.map { it.weightPerCable })
         viewModel.deleteSet(0)
-        assertEquals(listOf(45f, 50f), viewModel.sets.value.map { it.weightPerCable })
+        assertEquals(listOf(5f, 5f), viewModel.sets.value.map { it.weightPerCable })
 
         viewModel.onUsePercentOfPRChange(true)
         assertEquals(listOf(45f, 50f), viewModel.sets.value.map { it.weightPerCable })
@@ -592,7 +595,7 @@ class ExerciseConfigViewModelTest {
 
             assertEquals(ScalingBasis.MAX_WEIGHT_PR, viewModel.effectiveScalingBasis())
             assertNull(viewModel.baselineKgForCurrentBasis())
-            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
+            assertTrue(viewModel.anyScalingBaselineAvailable.value)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()
@@ -701,6 +704,59 @@ class ExerciseConfigViewModelTest {
             advanceUntilIdle()
 
             assertEquals(1, eligibleSetLookups)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `estimated availability probe runs once per exercise mode profile across basis changes`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var eligibleSetLookups = 0
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                eligibleSetLookups += 1
+                return emptyList()
+            }
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-availability-probe-cache",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+            // Only the availability probe scans eligible sets for a non-ESTIMATED basis.
+            assertEquals(1, eligibleSetLookups)
+
+            viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
+            advanceUntilIdle()
+            // Cached per (exercise, mode, profile): basis changes must not repeat the scan.
+            assertEquals(1, eligibleSetLookups)
+
+            // Selecting the ESTIMATED_1RM basis resolves it for real (a fresh resolution),
+            // and feeds the cache instead of probing again.
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+            assertEquals(2, eligibleSetLookups)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()
@@ -966,6 +1022,200 @@ class ExerciseConfigViewModelTest {
             pumpResult.complete(emptyList())
             newExerciseResult.complete(emptyList())
             viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `updateWeight in percent mode with a baseline records the typed absolute for no-baseline restore`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val personalRecords = FakePersonalRecordRepository().apply {
+                addRecord(weightPR(weight = 50f))
+            }
+            val viewModel = createViewModel(
+                personalRecordRepository = personalRecords,
+                velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            )
+            try {
+                viewModel.initialize(
+                    exercise = benchRoutineExercise(
+                        id = "rex-typed-absolute",
+                        setReps = listOf(10, 10),
+                        weightPerCableKg = 5f,
+                        setWeightsPerCableKg = listOf(5f, 5f),
+                        usePercentOfPR = true,
+                        weightPercentOfPR = 80,
+                        setWeightsPercentOfPR = listOf(80, 80),
+                        scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                    ),
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                assertEquals(listOf(40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+                viewModel.updateWeight(viewModel.sets.value.first().id, 45f)
+                assertEquals(listOf(45f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+                // Switching to a no-baseline context restores the typed absolute (45),
+                // not the seeded authored weight (5) or the scaled preview (40).
+                viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+                advanceUntilIdle()
+                assertEquals(listOf(45f, 5f), viewModel.sets.value.map { it.weightPerCable })
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `toggling percent off with a baseline active restores authored absolutes instead of the scaled preview`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val personalRecords = FakePersonalRecordRepository().apply {
+                addRecord(weightPR(weight = 50f))
+            }
+            val viewModel = createViewModel(
+                personalRecordRepository = personalRecords,
+                velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            )
+            try {
+                viewModel.initialize(
+                    exercise = benchRoutineExercise(
+                        id = "rex-percent-off-restore",
+                        setReps = listOf(10, 10),
+                        weightPerCableKg = 5f,
+                        setWeightsPerCableKg = listOf(5f, 5f),
+                        usePercentOfPR = true,
+                        weightPercentOfPR = 80,
+                        setWeightsPercentOfPR = listOf(80, 80),
+                        scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                    ),
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                assertEquals(listOf(40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+                viewModel.onUsePercentOfPRChange(false)
+                // Authored absolutes are restored; the scaled preview is not persisted.
+                assertEquals(listOf(5f, 5f), viewModel.sets.value.map { it.weightPerCable })
+
+                viewModel.onUsePercentOfPRChange(true)
+                assertEquals(listOf(40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+                viewModel.onUsePercentOfPRChange(false)
+                assertEquals(listOf(5f, 5f), viewModel.sets.value.map { it.weightPerCable })
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `loadPRForExercise does not start a second baseline request after loadRoutineScalingBaseline`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            var eligibleReads = 0
+            val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+                override suspend fun getEligibleWorkingSetsForOneRepMax(
+                    exerciseId: String,
+                    profileId: String,
+                    mode: String,
+                    completedAtSince: Long,
+                    completedAtUntil: Long,
+                ): List<CompletedSet> {
+                    eligibleReads += 1
+                    return emptyList()
+                }
+            }
+            val viewModel = createViewModel(
+                personalRecordRepository = FakePersonalRecordRepository(),
+                velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+                completedSetRepository = completedSets,
+            )
+            try {
+                viewModel.initialize(
+                    exercise = benchRoutineExercise(
+                        id = "rex-no-duplicate-baseline",
+                        setReps = listOf(10),
+                        weightPerCableKg = 25f,
+                        setWeightsPerCableKg = listOf(25f),
+                        usePercentOfPR = true,
+                        scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                    ),
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+                // initialize's loadPRForExercise + loadRoutineScalingBaseline must produce
+                // exactly one baseline request (one resolver query).
+                assertEquals(1, eligibleReads)
+
+                viewModel.loadPRForExercise("bench-1", "Old School")
+                advanceUntilIdle()
+                // The PR load path must not start a second baseline request.
+                assertEquals(1, eligibleReads)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `anyScalingBaselineAvailable is true when only an estimated 1RM baseline exists`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val velocityRepository = FakeVelocityOneRepMaxRepository().apply {
+                latestPassing = VelocityOneRepMaxEntity(
+                    id = 1L,
+                    exerciseId = "bench-1",
+                    estimatedPerCableKg = 100f,
+                    mvtUsedMs = 0.3f,
+                    r2 = 0.98f,
+                    distinctLoads = 4,
+                    passedQualityGate = true,
+                    computedAt = currentTimeMillis(),
+                    profileId = "default",
+                )
+            }
+            val viewModel = createViewModel(
+                personalRecordRepository = FakePersonalRecordRepository(),
+                velocityOneRepMaxRepository = velocityRepository,
+            )
+            try {
+                viewModel.initialize(
+                    exercise = benchRoutineExercise(
+                        id = "rex-estimated-only-availability",
+                        setReps = listOf(10),
+                        weightPerCableKg = 25f,
+                        setWeightsPerCableKg = listOf(25f),
+                        scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                    ),
+                    unit = WeightUnit.KG,
+                    toDisplay = { value, _ -> value },
+                    toKg = { value, _ -> value },
+                )
+                advanceUntilIdle()
+
+                // No max-weight/max-volume PR and no stored 1RM: the ESTIMATED_1RM probe
+                // still makes scaling available, without touching the visible preview.
+                assertTrue(viewModel.anyScalingBaselineAvailable.value)
+                assertNull(viewModel.baselineKgForCurrentBasis())
+                assertNull(viewModel.routineScalingBaseline.value)
+            } finally {
+                viewModel.viewModelScope.cancel()
+            }
+        } finally {
             Dispatchers.resetMain()
         }
     }

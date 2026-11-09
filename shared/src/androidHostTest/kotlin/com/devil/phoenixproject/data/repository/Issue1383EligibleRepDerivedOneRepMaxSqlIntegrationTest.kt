@@ -32,7 +32,8 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         val now = currentTimeMillis()
         val mode = ProgramMode.OldSchool
 
-        // The old query's LIMIT 200 would hide this oldest, strongest eligible set.
+        // The old query's LIMIT 200 would hide this oldest, strongest eligible set; the
+        // bounded LIMIT 400 window keeps 203 realistic candidates intact (no truncation).
         repeat(201) { index ->
             val sessionId = "issue-1383-eligible-$index"
             val completedAt = now - (201 - index) * 1_000L
@@ -47,18 +48,22 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             updatedAt = now,
             acknowledged = 1L,
         )
+        // Routine-session constant-load completed working sets ARE eligible: one-shot
+        // Active Recovery/Heavy Deload modifiers adjust the prescription, not the actual
+        // completed load recorded on the set. Kept below the strongest open-session set so
+        // the full-window winner assertion stays focused.
         commitCandidate(
             workoutRepository,
             "issue-1383-routine-id",
             now - 700L,
-            500f,
+            30f,
             routineId = "routine-active-recovery",
         )
         commitCandidate(
             workoutRepository,
             "issue-1383-routine-session",
             now - 600L,
-            600f,
+            40f,
             routineSessionId = "routine-session-heavy-deload",
         )
         commitCandidate(workoutRepository, "issue-1383-safety", now - 500L, 700f, safetyFlags = 1)
@@ -74,10 +79,13 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedAtUntil = now,
         )
 
-        assertEquals(201, candidates.size)
+        // 201 open-session + 2 routine-session constant-load rows; well under the LIMIT 400
+        // bound, so realistic candidate sets are never truncated.
+        assertEquals(203, candidates.size)
         assertTrue(candidates.any { it.id == "issue-1383-eligible-0-set" })
+        assertTrue(candidates.any { it.sessionId == "issue-1383-routine-id" })
+        assertTrue(candidates.any { it.sessionId == "issue-1383-routine-session" })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-portal") })
-        assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-routine") })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-safety") })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-other-") })
 

@@ -78,6 +78,12 @@ class ApplyRoutineModifierUseCaseTest {
     @Test
     fun `active recovery resolves rep-derived one rep max through the default constructor`() = runTest {
         val now = currentTimeMillis()
+        completedSetRepository.registerSessionContext(
+            sessionId = "rep-derived-session",
+            exerciseId = "bench",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+        )
         completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
             id = "rep-derived-set",
             sessionId = "rep-derived-session",

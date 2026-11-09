@@ -112,8 +112,10 @@ class ResolveRoutineScalingBaselineUseCase(
             }
         val contradictedByNewerWorkingLoad = velocityEstimate != null && completedWorkingSets.any { set ->
             set.completedAt > velocityEstimate.computedAt &&
+                set.actualReps >= 2 && // single-rep sets must not displace a multi-load quality-gated velocity estimate
                 set.actualWeightKg.isFinite() &&
-                set.actualWeightKg > velocityEstimate.estimatedPerCableKg
+                OneRepMaxCalculator.estimate(set.actualWeightKg, set.actualReps) >
+                velocityEstimate.estimatedPerCableKg * (1f + CONTRADICTION_ESTIMATE_MARGIN)
         }
         if (velocityEstimate != null && !contradictedByNewerWorkingLoad) {
             return RoutineScalingBaseline(
@@ -128,6 +130,19 @@ class ResolveRoutineScalingBaselineUseCase(
         }
 
         highestRepEstimate?.let { (set, estimate) ->
+            // Precedence guard: the binding tier order stays velocity -> rep-derived ->
+            // labeled stored 1RM, but the margin reconciles that order with the
+            // requirement that stored/legacy baselines are preserved — a noisy eligible
+            // set must clear the stored 1RM by a margin before it may demote an explicit
+            // stored baseline.
+            val storedBaseline = storedOneRepMaxBaseline(profileId, exerciseId, basis)
+            if (storedBaseline != null &&
+                estimate <= storedBaseline.weightPerCableKg * (1f + REP_DERIVED_OVER_STORED_MARGIN)
+            ) {
+                return storedBaseline.copy(
+                    resolutionReason = "An eligible completed working-set estimate was available but did not clear the stored 1RM by the required margin; keeping the stored 1RM.",
+                )
+            }
             return RoutineScalingBaseline(
                 weightPerCableKg = estimate,
                 basis = basis,
@@ -152,7 +167,8 @@ class ResolveRoutineScalingBaselineUseCase(
     private fun isValidCompletedWorkingSet(set: CompletedSet): Boolean =
         set.setType == SetType.STANDARD &&
             set.setEndReason == SetEndReason.TARGET_REPS_REACHED &&
-            set.actualReps in 1..MAX_REP_DERIVED_1RM_REPS &&
+            set.actualReps > 0 &&
+            set.actualReps <= MAX_REP_DERIVED_REPS &&
             set.actualWeightKg.isFinite() &&
             set.actualWeightKg > 0f &&
             set.completedAt > 0L
@@ -253,9 +269,18 @@ enum class RoutineScalingBaselineSource(val displayLabel: String) {
 
 private const val MAX_VELOCITY_AGE_MS = 28L * 24L * 60L * 60L * 1_000L
 private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1_000L
-// Keep rep-derived prescription estimates within a conventional low-rep range; high-rep
-// extrapolation can produce a misleading 1RM and should not override stored/velocity values.
-private const val MAX_REP_DERIVED_1RM_REPS = 12
+
+// Hybrid Brzycki/Epley estimates beyond ~12 reps are not comparable evidence: Epley
+// linearizes and util/Constants.kt notes overestimation risk at high rep counts.
+private const val MAX_REP_DERIVED_REPS = 12
+
+// A candidate working set only contradicts a velocity estimate when its 1RM estimate
+// exceeds the velocity estimate by more than this margin.
+private const val CONTRADICTION_ESTIMATE_MARGIN = 0.05f
+
+// A rep-derived estimate must clear a stored 1RM baseline by this margin before it may
+// demote the explicit stored baseline.
+private const val REP_DERIVED_OVER_STORED_MARGIN = 0.05f
 
 private fun ageInDays(now: Long, timestamp: Long?): Long? =
     timestamp?.takeIf { it > 0L }?.let { (now - it).coerceAtLeast(0L) / MILLIS_PER_DAY }

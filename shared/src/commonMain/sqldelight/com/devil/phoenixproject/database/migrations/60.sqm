@@ -1,0 +1,2 @@
+-- Migration 60: index CompletedSet(completed_at) for the issue #1383 eligible-working-set window scan.
+CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
