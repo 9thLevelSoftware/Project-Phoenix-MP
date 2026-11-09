@@ -110,7 +110,13 @@ class ApplyRoutineModifierUseCaseTest {
     @Test
     fun `active recovery ignores high-rep set for one rep max and preserves stored baseline`() = runTest {
         val now = currentTimeMillis()
-        baselineRepository.seed("default", "bench", 120f, now)
+        baselineRepository.seed("default", "bench", 50f, now)
+        completedSetRepository.registerSessionContext(
+            sessionId = "high-rep-session",
+            exerciseId = "bench",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+        )
         completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
             id = "high-rep-set",
             sessionId = "high-rep-session",
@@ -130,7 +136,8 @@ class ApplyRoutineModifierUseCaseTest {
 
         val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 80))
 
-        assertEquals(96f, adjusted.exercises.single().weightPerCableKg)
+        // The 30-rep candidate is rejected, leaving the stored 50 kg baseline at 80%.
+        assertEquals(40f, adjusted.exercises.single().weightPerCableKg)
     }
 
     @Test
