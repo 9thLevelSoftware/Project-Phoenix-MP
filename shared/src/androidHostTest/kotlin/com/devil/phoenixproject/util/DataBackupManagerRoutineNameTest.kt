@@ -517,6 +517,46 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `backup import marks standalone sessions as unverified for 1RM`() = runTest {
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-imported-unverified",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 10,
+                        weightPerCableKg = 80f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "exercise-imported-unverified",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                        routineModifierApplied = false,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        val imported = database.phoenixDatabaseQueries
+            .selectSessionById("session-imported-unverified")
+            .executeAsOne()
+        assertEquals(1L, imported.routineModifierApplied, "Backup provenance must fail closed for rep-derived 1RM")
+    }
+
+    @Test
     fun `importFromJson infers routine name from unique exercise mapping when routineId missing`() = runTest {
         val backup = BackupData(
             version = 1,

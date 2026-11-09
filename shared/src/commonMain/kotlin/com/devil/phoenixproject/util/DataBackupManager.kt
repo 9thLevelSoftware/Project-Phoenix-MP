@@ -1670,7 +1670,8 @@ abstract class BaseDataBackupManager(
                                                 if (inserted != null) {
                                                     queries.updateSessionRoutineModifierApplied(
                                                         id = session.id,
-                                                        routineModifierApplied = if (session.routineModifierApplied) 1L else 0L,
+                                                        // Imported backup records have no trusted load provenance.
+                                                        routineModifierApplied = 1L,
                                                     )
                                                     sessionsImported++
                                                     resolvedRoutineSessionId?.let { groupId ->

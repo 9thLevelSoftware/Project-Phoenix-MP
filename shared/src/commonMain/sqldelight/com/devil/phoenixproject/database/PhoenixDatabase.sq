@@ -2241,7 +2241,8 @@ CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
 
--- Shared latest-attempt collapse for exercise history and one-rep-max candidates.
+-- Optional latest-attempt projection for callers that need deduplication before limiting.
+-- General exercise history intentionally retains its pre-collapse row-limit behavior.
 CREATE VIEW CompletedSetLatestAttempt AS
 SELECT cs.*
 FROM CompletedSet cs
@@ -2613,7 +2614,7 @@ SELECT
     cs.completed_at,
     cs.set_end_reason,
     ws.routineSessionId
-FROM CompletedSetLatestAttempt cs
+FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
 ORDER BY cs.completed_at DESC
@@ -2627,9 +2628,9 @@ LIMIT ?;
 -- imported rows default to unknown/modified, and any marked row excludes its whole routine
 -- session so an interrupted/resumed workout cannot leak unmarked continuation sets.
 -- Keep this separate from general history queries:
--- the parameter-bounded retry check prevents a future retry from suppressing a current
--- candidate, while history uses the shared CompletedSetLatestAttempt view. Return candidates
--- from the 28-day horizon, bounded to the newest 400 eligible rows.
+-- The parameter-bounded retry check prevents a future retry from suppressing a current
+-- candidate. Return every eligible candidate in the 28-day horizon so a recent weaker set
+-- cannot hide an older stronger estimate.
 selectEligibleWorkingSetsForOneRepMax:
 SELECT
     cs.id,
@@ -2652,6 +2653,7 @@ LEFT JOIN PlannedSet ps ON ps.id = cs.planned_set_id
 WHERE ws.exerciseId = :exerciseId
   AND ws.profile_id = :profileId
   AND ws.mode = :mode
+  AND UPPER(TRIM(ws.mode)) <> 'ECHO'
   AND ws.deletedAt IS NULL
   AND ws.portalOrigin = 0
   AND ws.routineModifierApplied = 0
@@ -2663,7 +2665,6 @@ WHERE ws.exerciseId = :exerciseId
       FROM WorkoutSession modifier_ws
       WHERE modifier_ws.profile_id = ws.profile_id
         AND modifier_ws.routineSessionId = ws.routineSessionId
-        AND modifier_ws.deletedAt IS NULL
         AND modifier_ws.routineModifierApplied != 0
     )
   )
@@ -2721,8 +2722,7 @@ WHERE ws.exerciseId = :exerciseId
         )
       )
   )
-ORDER BY cs.completed_at DESC
-LIMIT 400;
+ORDER BY cs.completed_at DESC;
 
 insertCompletedSet:
 INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)

@@ -54,6 +54,34 @@ class SqlDelightCompletedSetRepositoryOneRepMaxModifierTest {
         assertEquals(listOf("set-ordinary"), eligible.map { it.id })
     }
 
+    @Test
+    fun `soft deleted modifier marker still excludes the routine group`() = runTest {
+        seedRoutine()
+        val base = 1_800_000_000_000L
+        saveSession("deleted-modified-marker", "modified-run", base, modifierApplied = true)
+        saveSession("resumed-unmarked-set", "modified-run", base + 1_000, modifierApplied = false)
+        saveSession("ordinary-set", "ordinary-run", base + 2_000, modifierApplied = false)
+
+        insertSet("deleted-modified-marker", "set-deleted-marker", base + 100)
+        insertSet("resumed-unmarked-set", "set-resumed", base + 1_100)
+        insertSet("ordinary-set", "set-ordinary", base + 2_100)
+        database.phoenixDatabaseQueries.softDeleteSession(
+            deletedAt = base + 500,
+            updatedAt = base + 500,
+            id = "deleted-modified-marker",
+        )
+
+        val eligible = completedSetRepository.getEligibleWorkingSetsForOneRepMax(
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = "OldSchool",
+            completedAtSince = base,
+            completedAtUntil = base + 10_000,
+        )
+
+        assertEquals(listOf("set-ordinary"), eligible.map { it.id })
+    }
+
     private suspend fun seedRoutine() {
         val exerciseId = "bench-press"
         val exercise = Exercise(

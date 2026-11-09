@@ -83,6 +83,14 @@ class IndexQueryPlanTest {
         assertFalse(recent.any { "TEMP B-TREE FOR ORDER BY" in it }, "$db: $recent")
     }
 
+    @Test
+    fun `1RM candidate query uses exercise and session indexes`() = forEachDatabase { db, driver ->
+        val candidates = queryPlan(driver, "selectEligibleWorkingSetsForOneRepMax")
+        assertTrue(candidates.any { "idx_session_exercise_profile_ts" in it }, "$db: $candidates")
+        assertTrue(candidates.any { "idx_completed_set_session" in it }, "$db: $candidates")
+        assertFalse(candidates.any { it.startsWith("SCAN CompletedSet") }, "$db: $candidates")
+    }
+
     private fun forEachDatabase(block: (String, SqlDriver) -> Unit) {
         for ((name, driver) in databases) block(name, driver)
     }

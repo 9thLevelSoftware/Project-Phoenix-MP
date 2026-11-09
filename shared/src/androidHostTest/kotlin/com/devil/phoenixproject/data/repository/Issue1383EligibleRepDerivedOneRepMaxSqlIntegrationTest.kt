@@ -206,7 +206,81 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     }
 
     @Test
-    fun `candidate query bounds to the newest 400 results`() = runTest {
+    fun `recent history preserves the pre-collapse row limit`() = runTest {
+        val database = createTestDatabase()
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val completedSetRepository = SqlDelightCompletedSetRepository(database)
+        val now = currentTimeMillis()
+        val routineSessionId = "issue-1383-history-retry-session"
+        val routineExerciseId = "issue-1383-history-retry-exercise"
+
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-history-retry-old",
+            now - 2_000L,
+            40f,
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            attemptNumber = 1,
+        )
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-history-retry-new",
+            now - 1_000L,
+            40f,
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            attemptNumber = 2,
+        )
+        repeat(9) { index ->
+            commitCandidate(
+                workoutRepository,
+                "issue-1383-history-unique-$index",
+                now - (3_000L + index * 1_000L),
+                25f,
+            )
+        }
+
+        val recent = completedSetRepository.getRecentCompletedSetsForExercise(
+            exerciseId = EXERCISE_ID,
+            profileId = PROFILE_ID,
+            limit = 10,
+        )
+
+        assertEquals(9, recent.size)
+        assertTrue(recent.any { it.id == "issue-1383-history-retry-new-set" })
+        assertFalse(recent.any { it.id == "issue-1383-history-retry-old-set" })
+    }
+
+    @Test
+    fun `echo records are excluded even when repository is called directly`() = runTest {
+        val database = createTestDatabase()
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val completedSetRepository = SqlDelightCompletedSetRepository(database)
+        val now = currentTimeMillis()
+        val echoMode = ProgramMode.Echo.displayName
+
+        commitCandidate(
+            repository = workoutRepository,
+            sessionId = "issue-1383-echo-direct-call",
+            completedAt = now - 1_000L,
+            weightKg = 80f,
+            mode = echoMode,
+        )
+
+        val candidates = completedSetRepository.getEligibleWorkingSetsForOneRepMax(
+            exerciseId = EXERCISE_ID,
+            profileId = PROFILE_ID,
+            mode = echoMode,
+            completedAtSince = now - VALIDITY_WINDOW_MS,
+            completedAtUntil = now,
+        )
+
+        assertTrue(candidates.isEmpty())
+    }
+
+    @Test
+    fun `strongest eligible set beyond 400 recent results remains usable`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
@@ -217,7 +291,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 repository = workoutRepository,
                 sessionId = "issue-1383-window-$index",
                 completedAt = now - (401 - index) * 1_000L,
-                weightKg = 25f,
+                weightKg = if (index == 0) 100f else 25f,
             )
         }
 
@@ -228,11 +302,27 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedAtSince = now - VALIDITY_WINDOW_MS,
             completedAtUntil = now,
         )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = FakePersonalRecordRepository(),
+            baselineRepository = FakeProfileExerciseBaselineRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+        val resolved = resolver(
+            exerciseId = EXERCISE_ID,
+            mode = ProgramMode.OldSchool,
+            profileId = PROFILE_ID,
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
 
-        assertEquals(400, candidates.size)
+        assertEquals(401, candidates.size)
         assertEquals("issue-1383-window-400", candidates.first().sessionId)
-        assertEquals("issue-1383-window-1", candidates.last().sessionId)
-        assertFalse(candidates.any { it.sessionId == "issue-1383-window-0" })
+        assertEquals("issue-1383-window-0", candidates.last().sessionId)
+        assertNotNull(resolved)
+        assertEquals(RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE, resolved.source)
+        assertEquals(100f * 36f / 27f, resolved.weightPerCableKg, 0.0001f)
+        assertEquals(now - 401_000L, resolved.sourceTimestamp)
     }
 
     @Test
