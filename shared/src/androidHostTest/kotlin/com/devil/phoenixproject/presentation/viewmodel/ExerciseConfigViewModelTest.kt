@@ -668,6 +668,77 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `overlapping estimated availability and basis selection share an in-flight candidate lookup`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var eligibleSetLookups = 0
+        val completedQueryStarted = CompletableDeferred<Unit>()
+        val releaseCompletedQuery = CompletableDeferred<Unit>()
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                eligibleSetLookups += 1
+                completedQueryStarted.complete(Unit)
+                releaseCompletedQuery.await()
+                return listOf(
+                    CompletedSet(
+                        id = "overlapping-estimated-baseline-set",
+                        sessionId = "overlapping-estimated-baseline-session",
+                        plannedSetId = "planned-set-1",
+                        setNumber = 0,
+                        setType = SetType.STANDARD,
+                        actualReps = 10,
+                        actualWeightKg = 50f,
+                        loggedRpe = null,
+                        isPr = false,
+                        completedAt = currentTimeMillis(),
+                        setEndReason = SetEndReason.TARGET_REPS_REACHED,
+                    ),
+                )
+            }
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-overlapping-estimated-lookup",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+            assertTrue(completedQueryStarted.isCompleted)
+            assertEquals(1, eligibleSetLookups)
+
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+            assertEquals(1, eligibleSetLookups)
+
+            releaseCompletedQuery.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals("REP_DERIVED_ESTIMATE", viewModel.routineScalingBaseline.value?.source?.name)
+            assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
+        } finally {
+            releaseCompletedQuery.complete(Unit)
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `initial estimated baseline lookup runs once after PR loading`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var eligibleSetLookups = 0
@@ -704,6 +775,76 @@ class ExerciseConfigViewModelTest {
             advanceUntilIdle()
 
             assertEquals(1, eligibleSetLookups)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `estimated baseline availability is reused when selected after basis changes`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var eligibleSetLookups = 0
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                eligibleSetLookups += 1
+                return emptyList()
+            }
+        }
+        val velocityRepository = FakeVelocityOneRepMaxRepository().apply {
+            latestPassing = VelocityOneRepMaxEntity(
+                id = 1L,
+                exerciseId = "bench-1",
+                estimatedPerCableKg = 80f,
+                mvtUsedMs = 0.3f,
+                r2 = 0.98f,
+                distinctLoads = 4,
+                passedQualityGate = true,
+                computedAt = currentTimeMillis(),
+                profileId = "default",
+            )
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository().apply {
+                addRecord(weightPR(weight = 100f))
+            },
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-estimated-availability-reuse",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, eligibleSetLookups)
+            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
+            assertEquals(100f, viewModel.baselineKgForCurrentBasis())
+            assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
+
+            viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
+            advanceUntilIdle()
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+
+            assertEquals(1, eligibleSetLookups)
+            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
+            assertEquals(80f, viewModel.baselineKgForCurrentBasis())
+            assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()

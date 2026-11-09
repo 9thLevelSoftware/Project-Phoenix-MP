@@ -26,6 +26,9 @@ import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,20 +86,13 @@ class ExerciseConfigViewModel constructor(
     private val _initialized = MutableStateFlow(false)
     private var activeProfileId: String = "default"
     private var baselineRequestId = 0L
-
-    private data class EstimatedBaselineLookupContext(
+    private data class EstimatedBaselineContext(
         val exerciseId: String,
+        val programMode: ProgramMode,
         val profileId: String,
-        val mode: ProgramMode,
     )
-
-    private data class CachedEstimatedBaseline(
-        val context: EstimatedBaselineLookupContext,
-        val baseline: RoutineScalingBaseline?,
-    )
-
-    private var estimatedBaselineLookupContext: EstimatedBaselineLookupContext? = null
-    private var cachedEstimatedBaseline: CachedEstimatedBaseline? = null
+    private val estimatedBaselineResolutions =
+        mutableMapOf<EstimatedBaselineContext, Deferred<RoutineScalingBaseline?>>()
 
     // Dependencies that need to be passed in
     private lateinit var originalExercise: RoutineExercise
@@ -402,18 +398,11 @@ class ExerciseConfigViewModel constructor(
         val profileId = activeProfileId
         val basis = effectiveScalingBasis()
         val programMode = mode.toProgramMode()
-        val lookupContext = EstimatedBaselineLookupContext(exerciseId, profileId, programMode)
-        if (estimatedBaselineLookupContext != lookupContext) {
-            estimatedBaselineLookupContext = lookupContext
-            cachedEstimatedBaseline = null
-        }
         val resolver = scalingBaselineResolver
         _routineScalingBaseline.value = null
         _baselineLoadStatus.value = ScalingBaselineLoadStatus.LOADING
         _baselineResolutionReason.value = null
-        _estimatedOneRepMaxBaselineAvailable.value = cachedEstimatedBaseline
-            ?.takeIf { it.context == lookupContext }
-            ?.baseline != null
+        _estimatedOneRepMaxBaselineAvailable.value = false
         resyncSetWeightsIfBaselineReady()
         if (resolver == null) {
             _baselineLoadStatus.value = ScalingBaselineLoadStatus.UNAVAILABLE
@@ -433,7 +422,7 @@ class ExerciseConfigViewModel constructor(
         if (basis != ScalingBasis.ESTIMATED_1RM) {
             viewModelScope.launch {
                 val estimatedBaselineAvailable = try {
-                    resolveEstimatedBaselineForContext(resolver, lookupContext) != null
+                    resolveEstimatedBaseline(exerciseId, programMode, profileId, resolver) != null
                 } catch (e: Exception) {
                     logWarning("Failed to check estimated 1RM availability for exercise=$exerciseId, mode=${mode.displayName}, profile=$profileId: ${e.message}")
                     false
@@ -447,7 +436,7 @@ class ExerciseConfigViewModel constructor(
         viewModelScope.launch {
             try {
                 val baseline = if (basis == ScalingBasis.ESTIMATED_1RM) {
-                    resolveEstimatedBaselineForContext(resolver, lookupContext)
+                    resolveEstimatedBaseline(exerciseId, programMode, profileId, resolver)
                 } else {
                     resolver(
                         exerciseId = exerciseId,
@@ -488,21 +477,32 @@ class ExerciseConfigViewModel constructor(
         }
     }
 
-    private suspend fun resolveEstimatedBaselineForContext(
+    private suspend fun resolveEstimatedBaseline(
+        exerciseId: String,
+        mode: ProgramMode,
+        profileId: String,
         resolver: ResolveRoutineScalingBaselineUseCase,
-        context: EstimatedBaselineLookupContext,
     ): RoutineScalingBaseline? {
-        cachedEstimatedBaseline?.takeIf { it.context == context }?.let { return it.baseline }
-        val baseline = resolver(
-            exerciseId = context.exerciseId,
-            mode = context.mode,
-            profileId = context.profileId,
-            basis = ScalingBasis.ESTIMATED_1RM,
-        )
-        if (estimatedBaselineLookupContext == context) {
-            cachedEstimatedBaseline = CachedEstimatedBaseline(context, baseline)
+        val context = EstimatedBaselineContext(exerciseId, mode, profileId)
+        val resolution = estimatedBaselineResolutions.getOrPut(context) {
+            viewModelScope.async(start = CoroutineStart.LAZY) {
+                resolver(
+                    exerciseId = exerciseId,
+                    mode = mode,
+                    profileId = profileId,
+                    basis = ScalingBasis.ESTIMATED_1RM,
+                )
+            }
         }
-        return baseline
+        resolution.start()
+        return try {
+            resolution.await()
+        } catch (e: Exception) {
+            if (resolution.isCompleted && estimatedBaselineResolutions[context] === resolution) {
+                estimatedBaselineResolutions.remove(context)
+            }
+            throw e
+        }
     }
 
     /**
