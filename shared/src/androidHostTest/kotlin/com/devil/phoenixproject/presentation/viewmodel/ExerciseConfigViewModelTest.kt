@@ -600,6 +600,71 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `estimated baseline availability lookup is reused while switching scaling bases`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var eligibleSetLookups = 0
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                eligibleSetLookups += 1
+                return listOf(
+                    CompletedSet(
+                        id = "eligible-baseline-set",
+                        sessionId = "eligible-baseline-session",
+                        plannedSetId = "planned-set-1",
+                        setNumber = 0,
+                        setType = SetType.STANDARD,
+                        actualReps = 10,
+                        actualWeightKg = 50f,
+                        loggedRpe = null,
+                        isPr = false,
+                        completedAt = currentTimeMillis(),
+                        setEndReason = SetEndReason.TARGET_REPS_REACHED,
+                    ),
+                )
+            }
+        }
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-reused-estimated-lookup",
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+                ),
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+            assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
+            assertEquals(1, eligibleSetLookups)
+
+            viewModel.onScalingBasisChange(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+            assertEquals("REP_DERIVED_ESTIMATE", viewModel.routineScalingBaseline.value?.source?.name)
+            assertEquals(1, eligibleSetLookups)
+
+            viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
+            advanceUntilIdle()
+            assertEquals(1, eligibleSetLookups)
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `initial estimated baseline lookup runs once after PR loading`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var eligibleSetLookups = 0

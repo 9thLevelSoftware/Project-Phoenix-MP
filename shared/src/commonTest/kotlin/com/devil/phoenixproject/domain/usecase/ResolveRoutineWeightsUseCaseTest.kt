@@ -56,6 +56,40 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
+    fun `Echo mode does not use rep-derived completed working sets`() = runTest {
+        val now = currentTimeMillis()
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "echo-completed-set",
+            sessionId = "echo-session",
+            plannedSetId = "echo-planned-set",
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 50f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now - 1_000L,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.Echo,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNull(result)
+    }
+
+    @Test
     fun `expired passing velocity estimate falls through to stored 1RM`() = runTest {
         velocityRepository.latestPassing = VelocityOneRepMaxEntity(
             id = 1L,
