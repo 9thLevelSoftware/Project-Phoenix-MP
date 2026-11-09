@@ -481,7 +481,17 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             build_gradle, r'register<TestReleaseDexTypesTask>\("testReleaseDexTypes"\)'
         )
         # verifyReleaseDexTypes must not run without its fixtures passing first.
-        self.assertRegex(build_gradle, r'dependsOn\("testReleaseDexTypes"\)')
+        verify_task = re.search(
+            r'(?ms)^tasks\.register<VerifyReleaseDexTypesTask>\("verifyReleaseDexTypes"\) \{\n(?P<body>.*?)^\}',
+            build_gradle,
+        )
+        self.assertIsNotNone(verify_task, "verifyReleaseDexTypes task registration is missing")
+        if verify_task is None:
+            self.fail("verifyReleaseDexTypes task registration is missing")
+        self.assertRegex(
+            verify_task.group("body"),
+            r'(?m)^\s*dependsOn\("testReleaseDexTypes"\)\s*$',
+        )
         self.assertIn(":androidApp:testReleaseDexTypes", workflow("ci-tests.yml"))
 
     def test_ci_host_unit_tests_share_one_gradle_invocation(self) -> None:

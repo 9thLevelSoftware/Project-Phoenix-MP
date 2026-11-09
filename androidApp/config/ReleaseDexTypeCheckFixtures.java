@@ -1,7 +1,6 @@
 import com.android.tools.smali.dexlib2.AccessFlags;
 import com.android.tools.smali.dexlib2.Opcode;
 import com.android.tools.smali.dexlib2.Opcodes;
-import com.android.tools.smali.dexlib2.iface.Annotation;
 import com.android.tools.smali.dexlib2.iface.Field;
 import com.android.tools.smali.dexlib2.iface.Method;
 import com.android.tools.smali.dexlib2.iface.MethodImplementation;
@@ -19,7 +18,6 @@ import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstructio
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableFieldReference;
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference;
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference;
-import com.android.tools.smali.dexlib2.immutable.reference.ImmutableTypeReference;
 import com.android.tools.smali.dexlib2.writer.io.MemoryDataStore;
 import com.android.tools.smali.dexlib2.writer.pool.DexPool;
 
@@ -32,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -63,6 +60,7 @@ public final class ReleaseDexTypeCheckFixtures {
         }
         Path out = Path.of(args[0]);
         Files.createDirectories(out);
+        Files.createDirectories(out.resolve("no-artifacts"));
         writeBootJar(out.resolve("boot.jar"));
         writeApk(out.resolve("valid").resolve("valid.apk"), validDex());
         writeApk(out.resolve("invalid").resolve("invalid.apk"), invalidDex());

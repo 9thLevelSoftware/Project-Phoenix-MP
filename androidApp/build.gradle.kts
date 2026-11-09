@@ -185,13 +185,19 @@ abstract class TestReleaseDexTypesTask : DefaultTask() {
         check(valid.exitCode == 0) {
             "Reference-typed fixture must pass ReleaseDexTypeCheck, got exit ${valid.exitCode}:\n${valid.output}"
         }
+        check(valid.output.contains("Verified reference types in 4 methods")) {
+            "Reference-typed fixture must verify exactly four methods:\n${valid.output}"
+        }
 
         val invalid = runChecker("--boot", boot, "--artifacts", out.resolve("invalid").absolutePath)
         check(invalid.exitCode == 1) {
             "String-to-Throwable fixture must fail ReleaseDexTypeCheck, got exit ${invalid.exitCode}:\n${invalid.output}"
         }
-        check(invalid.output.contains("expected Ljava/lang/Throwable;") && invalid.output.contains("->boom()")) {
-            "String-to-Throwable fixture must report the rejected methods:\n${invalid.output}"
+        check(
+            invalid.output.contains("expected Ljava/lang/Throwable;") &&
+                invalid.output.contains("->run()") && invalid.output.contains("->boom()")
+        ) {
+            "String-to-Throwable fixture must report both rejected methods:\n${invalid.output}"
         }
 
         val missing = runChecker("--boot", boot, "--artifacts", out.resolve("no-artifacts").absolutePath)
