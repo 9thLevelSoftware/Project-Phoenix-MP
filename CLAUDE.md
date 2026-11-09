@@ -22,7 +22,9 @@ Every Gradle invocation configures `androidApp`, which fails without Supabase cr
 ./gradlew -Pskip.supabase.check=true :androidApp:assembleDebug
 
 # Tests (the test suites CI runs). The shared suite holds most tests; don't stop at androidApp.
-./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue
+# :androidApp:testReleaseDexTypes self-tests the release dex checker against valid/invalid
+# fixtures; verifyReleaseDexTypes dependsOn it, so release verification cannot run on a broken checker (#1368).
+./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest :androidApp:testReleaseDexTypes --continue
 ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest --tests '*SchemaParityTest*'   # one class
 
 # Schema manifest check (also runs automatically before SQLDelight codegen)
