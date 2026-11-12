@@ -88,9 +88,13 @@ class IndexQueryPlanTest {
         val recent = queryPlan(driver, "selectRecentCompletedSetsForExercise")
         assertTrue(recent.any { it.startsWith("SEARCH ws USING INDEX idx_session_exercise_profile_ts") }, "$db: $recent")
         assertTrue(recent.any { it.startsWith("SEARCH cs USING INDEX idx_completed_set_session") }, "$db: $recent")
+        assertTrue(recent.any { it.startsWith("SEARCH newer_ws USING INDEX idx_session_exercise_profile_ts") }, "$db: $recent")
         assertTrue(recent.any { it.startsWith("SEARCH newer USING INDEX idx_completed_set_session") }, "$db: $recent")
         assertFalse(
-            recent.any { it.startsWith("SCAN CompletedSet") || it.startsWith("SCAN cs") || it.startsWith("SCAN newer") },
+            recent.any {
+                it.startsWith("SCAN CompletedSet") || it.startsWith("SCAN cs") ||
+                    it.startsWith("SCAN newer_ws") || it.startsWith("SCAN newer")
+            },
             "$db: $recent",
         )
     }
