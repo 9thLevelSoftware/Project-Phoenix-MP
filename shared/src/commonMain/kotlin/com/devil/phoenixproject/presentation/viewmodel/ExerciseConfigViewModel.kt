@@ -91,8 +91,11 @@ class ExerciseConfigViewModel constructor(
         val programMode: ProgramMode,
         val profileId: String,
     )
-    private val estimatedBaselineResolutions =
-        mutableMapOf<EstimatedBaselineContext, Deferred<RoutineScalingBaseline?>>()
+    private data class CachedEstimatedBaselineResolution(
+        val context: EstimatedBaselineContext,
+        val resolution: Deferred<RoutineScalingBaseline?>,
+    )
+    private var estimatedBaselineResolution: CachedEstimatedBaselineResolution? = null
 
     // Dependencies that need to be passed in
     private lateinit var originalExercise: RoutineExercise
@@ -484,22 +487,23 @@ class ExerciseConfigViewModel constructor(
         resolver: ResolveRoutineScalingBaselineUseCase,
     ): RoutineScalingBaseline? {
         val context = EstimatedBaselineContext(exerciseId, mode, profileId)
-        val resolution = estimatedBaselineResolutions.getOrPut(context) {
-            viewModelScope.async(start = CoroutineStart.LAZY) {
-                resolver(
-                    exerciseId = exerciseId,
-                    mode = mode,
-                    profileId = profileId,
-                    basis = ScalingBasis.ESTIMATED_1RM,
-                )
-            }
+        val cached = estimatedBaselineResolution?.takeIf { it.context == context }
+        val resolution = cached?.resolution ?: viewModelScope.async(start = CoroutineStart.LAZY) {
+            resolver(
+                exerciseId = exerciseId,
+                mode = mode,
+                profileId = profileId,
+                basis = ScalingBasis.ESTIMATED_1RM,
+            )
+        }.also {
+            estimatedBaselineResolution = CachedEstimatedBaselineResolution(context, it)
         }
         resolution.start()
         return try {
             resolution.await()
         } catch (e: Exception) {
-            if (resolution.isCompleted && estimatedBaselineResolutions[context] === resolution) {
-                estimatedBaselineResolutions.remove(context)
+            if (estimatedBaselineResolution?.resolution === resolution) {
+                estimatedBaselineResolution = null
             }
             throw e
         }

@@ -2241,8 +2241,8 @@ CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
 
--- Optional latest-attempt projection for callers that need deduplication before limiting.
--- General exercise history intentionally retains its pre-collapse row-limit behavior.
+-- Shared latest-attempt projection for callers that deduplicate before limiting.
+-- Exercise history reads this view so retries do not consume the requested row limit.
 CREATE VIEW CompletedSetLatestAttempt AS
 SELECT cs.*
 FROM CompletedSet cs
@@ -2614,7 +2614,7 @@ SELECT
     cs.completed_at,
     cs.set_end_reason,
     ws.routineSessionId
-FROM CompletedSet cs
+FROM CompletedSetLatestAttempt cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
 ORDER BY cs.completed_at DESC
@@ -2622,11 +2622,11 @@ LIMIT ?;
 
 -- Issue #1383: only producer-backed, fully completed, constant-load working sets may
 -- contribute to a rep-derived 1RM. Fail closed for portal-origin/legacy, Echo/adaptive,
--- Just Lift, progressed, assisted, safety-affected, and one-shot-modified records. A
--- session's persisted planned set can still match a launch-time modifier result (for
--- example, after rounding); the explicit provenance flag is authoritative. Legacy or
--- imported rows default to unknown/modified, and any marked row excludes its whole routine
--- session so an interrupted/resumed workout cannot leak unmarked continuation sets.
+-- Just Lift, progressed, assisted, safety-affected, and one-shot-modified records. Local
+-- completion persists routine-exercise identity and the authoritative modifier-provenance
+-- flag; PlannedSet rows are not written for ordinary routines. Legacy/imported rows default
+-- to unknown/modified, and any marked row excludes its whole routine session so an
+-- interrupted/resumed workout cannot leak unmarked continuation sets.
 -- Keep this separate from general history queries:
 -- The parameter-bounded retry check prevents a future retry from suppressing a current
 -- candidate. Return the newest 400 eligible candidates in the 28-day horizon to bound
@@ -2649,7 +2649,6 @@ SELECT
 FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 LEFT JOIN RoutineExercise rx ON rx.id = cs.routine_exercise_id
-LEFT JOIN PlannedSet ps ON ps.id = cs.planned_set_id
 WHERE ws.exerciseId = :exerciseId
   AND ws.profile_id = :profileId
   AND ws.mode = :mode
@@ -2675,10 +2674,6 @@ WHERE ws.exerciseId = :exerciseId
       AND ws.routineSessionId IS NOT NULL
       AND rx.routineId = ws.routineId
       AND (rx.exerciseId IS NULL OR rx.exerciseId = ws.exerciseId)
-      AND ps.routine_exercise_id = rx.id
-      AND ps.set_type = 'STANDARD'
-      AND ps.target_reps = cs.actual_reps
-      AND ps.target_weight_kg = cs.actual_weight_kg
     )
   )
   AND ws.isJustLift = 0

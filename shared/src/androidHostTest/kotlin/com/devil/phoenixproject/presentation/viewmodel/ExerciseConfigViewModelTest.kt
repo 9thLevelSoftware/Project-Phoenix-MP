@@ -603,7 +603,7 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
-    fun `estimated baseline availability lookup is reused while switching scaling bases`() = runTest {
+    fun `estimated baseline cache is reused within and evicted across contexts`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var eligibleSetLookups = 0
         val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
@@ -661,6 +661,14 @@ class ExerciseConfigViewModelTest {
             viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
             advanceUntilIdle()
             assertEquals(1, eligibleSetLookups)
+
+            viewModel.onSelectedModeChange(WorkoutMode.Pump)
+            advanceUntilIdle()
+            assertEquals(2, eligibleSetLookups)
+
+            viewModel.onSelectedModeChange(WorkoutMode.OldSchool)
+            advanceUntilIdle()
+            assertEquals(3, eligibleSetLookups)
         } finally {
             viewModel.viewModelScope.cancel()
             Dispatchers.resetMain()

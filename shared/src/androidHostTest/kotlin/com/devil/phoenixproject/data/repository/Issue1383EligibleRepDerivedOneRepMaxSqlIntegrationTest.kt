@@ -74,30 +74,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 profileId = PROFILE_ID,
             ),
         )
-        listOf(
-            PlannedSet.standard(
-                id = "issue-1383-active-recovery-plan",
-                routineExerciseId = activeRecoveryExerciseId,
-                setNumber = 0,
-                targetReps = 10,
-                targetWeightKg = 500f,
-            ),
-            PlannedSet.standard(
-                id = "issue-1383-heavy-deload-plan",
-                routineExerciseId = heavyDeloadExerciseId,
-                setNumber = 0,
-                targetReps = 10,
-                targetWeightKg = 600f,
-            ),
-            PlannedSet.standard(
-                id = "issue-1383-unchanged-routine-plan",
-                routineExerciseId = unchangedRoutineExerciseId,
-                setNumber = 0,
-                targetReps = 10,
-                targetWeightKg = 80f,
-            ),
-        ).forEach { completedSetRepository.savePlannedSet(it) }
-
         // The old query's LIMIT 200 would hide this oldest, strongest eligible set; this
         // fixture stays below the current 400-candidate cap while preserving that set.
         repeat(201) { index ->
@@ -115,8 +91,8 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             updatedAt = now,
             acknowledged = 1L,
         )
-        // Modifier-adjusted routine completions do not match the persisted plan, while an
-        // unchanged planned load/reps pair remains eligible.
+        // The persisted routine-modifier provenance excludes adjusted loads; an ordinary
+        // local routine completion remains eligible without a PlannedSet row.
         commitCandidate(
             workoutRepository,
             "issue-1383-routine-active-recovery",
@@ -124,7 +100,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             400f,
             routineId = routineId,
             routineSessionId = "issue-1383-session-active-recovery",
-            plannedSetId = "issue-1383-active-recovery-plan",
             routineExerciseId = activeRecoveryExerciseId,
             routineModifierApplied = true,
         )
@@ -136,7 +111,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             reps = 5,
             routineId = routineId,
             routineSessionId = "issue-1383-session-heavy-deload",
-            plannedSetId = "issue-1383-heavy-deload-plan",
             routineExerciseId = heavyDeloadExerciseId,
             routineModifierApplied = true,
         )
@@ -147,7 +121,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             80f,
             routineId = routineId,
             routineSessionId = "issue-1383-session-unchanged",
-            plannedSetId = "issue-1383-unchanged-routine-plan",
             routineExerciseId = unchangedRoutineExerciseId,
         )
         commitCandidate(
@@ -157,7 +130,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             80f,
             routineId = routineId,
             routineSessionId = "issue-1383-session-unchanged",
-            plannedSetId = "issue-1383-unchanged-routine-plan",
             routineExerciseId = unchangedRoutineExerciseId,
             attemptNumber = 2,
         )
@@ -206,7 +178,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     }
 
     @Test
-    fun `recent history preserves the pre-collapse row limit`() = runTest {
+    fun `recent history excludes retries before applying the row limit`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
@@ -247,7 +219,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             limit = 10,
         )
 
-        assertEquals(9, recent.size)
+        assertEquals(10, recent.size)
         assertTrue(recent.any { it.id == "issue-1383-history-retry-new-set" })
         assertFalse(recent.any { it.id == "issue-1383-history-retry-old-set" })
     }
