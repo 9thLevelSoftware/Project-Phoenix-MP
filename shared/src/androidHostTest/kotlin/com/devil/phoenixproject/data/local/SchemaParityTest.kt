@@ -119,6 +119,11 @@ class SchemaParityTest {
 
     @Test
     fun `fresh and upgraded schemas create the shared completed-set latest-attempt view`() {
+        fun normalizedViewSql(sql: String): String = sql
+            .replace(Regex("(?i)CREATE\\s+VIEW\\s+IF\\s+NOT\\s+EXISTS"), "CREATE VIEW")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
         val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         PhoenixDatabase.Schema.create(freshDriver)
         assertEquals(
@@ -128,18 +133,33 @@ class SchemaParityTest {
                 "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
             ),
         )
+        val freshDefinition = requireNotNull(
+            queryScalar(
+                freshDriver,
+                "SELECT sql FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
+            ),
+        )
 
         val upgradedDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildMinimalV1Schema(upgradedDriver)
         migrateWithResilience(upgradedDriver, 1, EXPECTED_SCHEMA_VERSION)
-        reconcileFullSchema(upgradedDriver)
-        assertEquals(
-            "CompletedSetLatestAttempt",
+        val migratedDefinition = requireNotNull(
             queryScalar(
                 upgradedDriver,
-                "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
+                "SELECT sql FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
             ),
         )
+        upgradedDriver.execute(identifier = null, sql = "DROP VIEW IF EXISTS CompletedSetLatestAttempt", parameters = 0)
+        reconcileFullSchema(upgradedDriver)
+        val healedDefinition = requireNotNull(
+            queryScalar(
+                upgradedDriver,
+                "SELECT sql FROM sqlite_master WHERE type = 'view' AND name = 'CompletedSetLatestAttempt'",
+            ),
+        )
+
+        assertEquals(normalizedViewSql(freshDefinition), normalizedViewSql(migratedDefinition))
+        assertEquals(normalizedViewSql(freshDefinition), normalizedViewSql(healedDefinition))
     }
 
     @Test
@@ -170,6 +190,11 @@ class SchemaParityTest {
                 for (op in manifestIndexes) {
                     if (!indexExistsInDriver(driver, op.name)) {
                         failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: MISSING index ${op.name}"
+                    }
+                }
+                for (op in manifestViews) {
+                    if (!viewExists(driver, op.name)) {
+                        failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: MISSING view ${op.name}"
                     }
                 }
                 indexDefinitionDiffs(expected = freshIndexDefinitions, actual = getIndexDefinitions(driver))

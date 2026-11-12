@@ -33,6 +33,8 @@ internal data class SchemaIndexOperation(
     val beforeCreateSql: List<String> = emptyList(),
 )
 
+internal data class SchemaViewOperation(val name: String, val createSql: String)
+
 internal enum class ReconciliationStatus { CREATED, ALREADY_PRESENT, TABLE_MISSING, FAILED }
 
 internal data class ReconciliationResult(
@@ -92,6 +94,20 @@ internal fun indexExists(driver: SqlDriver, indexName: String): Boolean {
     driver.executeQuery(
         identifier = null,
         sql = "SELECT name FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+        mapper = { cursor ->
+            exists = cursor.next().value
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    return exists
+}
+
+internal fun viewExists(driver: SqlDriver, viewName: String): Boolean {
+    var exists = false
+    driver.executeQuery(
+        identifier = null,
+        sql = "SELECT name FROM sqlite_master WHERE type = 'view' AND name = '$viewName'",
         mapper = { cursor ->
             exists = cursor.next().value
             QueryResult.Value(Unit)
@@ -327,6 +343,20 @@ internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): Reco
     }
 }
 
+internal fun applyViewCreate(driver: SqlDriver, op: SchemaViewOperation): ReconciliationResult {
+    val alreadyExists = viewExists(driver, op.name)
+    return try {
+        driver.execute(identifier = null, sql = op.createSql, parameters = 0)
+        if (alreadyExists) {
+            ReconciliationResult("view", op.name, ReconciliationStatus.ALREADY_PRESENT)
+        } else {
+            ReconciliationResult("view", op.name, ReconciliationStatus.CREATED)
+        }
+    } catch (e: Exception) {
+        ReconciliationResult("view", op.name, ReconciliationStatus.FAILED, e.message)
+    }
+}
+
 // ==================== ENTRY POINT ====================
 
 internal fun applyTableDrop(driver: SqlDriver, table: String): ReconciliationResult {
@@ -356,6 +386,9 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
     }
     for (op in manifestIndexes) {
         report.add(applyIndexCreate(driver, op))
+    }
+    for (op in manifestViews) {
+        report.add(applyViewCreate(driver, op))
     }
     return report
 }
@@ -1958,6 +1991,46 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 45: stable logical-set attempt identity (Issue #673 PR 2)
     SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
     SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
+)
+
+// ============================================================
+// TASK 5a: manifestViews -- views required by production queries
+//
+// Numbered migrations create these on the upgrade path; the manifest heals them
+// when branch/version skew marks a migration applied without creating the view.
+// ============================================================
+
+internal val manifestViews: List<SchemaViewOperation> = listOf(
+    SchemaViewOperation(
+        name = "CompletedSetLatestAttempt",
+        createSql = """
+            CREATE VIEW IF NOT EXISTS CompletedSetLatestAttempt AS
+            SELECT cs.*
+            FROM CompletedSet cs
+            INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+            WHERE ws.deletedAt IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM CompletedSet newer
+                INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+                WHERE newer_ws.exerciseId = ws.exerciseId
+                  AND newer_ws.profile_id = ws.profile_id
+                  AND newer_ws.deletedAt IS NULL
+                  AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+                  AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+                  AND newer.set_number = cs.set_number
+                  AND (
+                    CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                    > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                    OR (
+                      CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                      = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                      AND newer.completed_at > cs.completed_at
+                    )
+                  )
+              );
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================

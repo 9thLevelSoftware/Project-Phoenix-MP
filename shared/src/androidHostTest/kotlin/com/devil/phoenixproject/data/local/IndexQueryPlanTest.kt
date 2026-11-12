@@ -84,6 +84,18 @@ class IndexQueryPlanTest {
     }
 
     @Test
+    fun `recent completed-set history uses exercise and session indexes`() = forEachDatabase { db, driver ->
+        val recent = queryPlan(driver, "selectRecentCompletedSetsForExercise")
+        assertTrue(recent.any { it.startsWith("SEARCH ws USING INDEX idx_session_exercise_profile_ts") }, "$db: $recent")
+        assertTrue(recent.any { it.startsWith("SEARCH cs USING INDEX idx_completed_set_session") }, "$db: $recent")
+        assertTrue(recent.any { it.startsWith("SEARCH newer USING INDEX idx_completed_set_session") }, "$db: $recent")
+        assertFalse(
+            recent.any { it.startsWith("SCAN CompletedSet") || it.startsWith("SCAN cs") || it.startsWith("SCAN newer") },
+            "$db: $recent",
+        )
+    }
+
+    @Test
     fun `1RM candidate query uses exercise and session indexes`() = forEachDatabase { db, driver ->
         val candidates = queryPlan(driver, "selectEligibleWorkingSetsForOneRepMax")
         assertTrue(candidates.any { "idx_session_exercise_profile_ts" in it }, "$db: $candidates")
