@@ -97,6 +97,10 @@ class ExerciseConfigViewModel constructor(
     )
     private var estimatedBaselineResolution: CachedEstimatedBaselineResolution? = null
 
+    private fun clearEstimatedBaselineCache() {
+        estimatedBaselineResolution = null
+    }
+
     // Dependencies that need to be passed in
     private lateinit var originalExercise: RoutineExercise
     private lateinit var weightUnit: WeightUnit
@@ -210,6 +214,7 @@ class ExerciseConfigViewModel constructor(
         if (_initialized.value && originalExercise.id == exercise.id && activeProfileId == profileId) {
             return
         }
+        clearEstimatedBaselineCache()
 
         originalExercise = exercise
         weightUnit = unit
@@ -401,6 +406,10 @@ class ExerciseConfigViewModel constructor(
         val profileId = activeProfileId
         val basis = effectiveScalingBasis()
         val programMode = mode.toProgramMode()
+        val estimatedContext = EstimatedBaselineContext(exerciseId, programMode, profileId)
+        if (estimatedBaselineResolution?.context != estimatedContext) {
+            clearEstimatedBaselineCache()
+        }
         val resolver = scalingBaselineResolver
         _routineScalingBaseline.value = null
         _baselineLoadStatus.value = ScalingBaselineLoadStatus.LOADING

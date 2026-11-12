@@ -1123,6 +1123,91 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `estimated baseline cache refreshes after changing profile away and back`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val lookups = mutableMapOf<Pair<String, String>, Int>()
+        val setsByContext = mutableMapOf<Pair<String, String>, List<CompletedSet>>()
+        val completedSets = object : CompletedSetRepository by FakeCompletedSetRepository() {
+            override suspend fun getEligibleWorkingSetsForOneRepMax(
+                exerciseId: String,
+                profileId: String,
+                mode: String,
+                completedAtSince: Long,
+                completedAtUntil: Long,
+            ): List<CompletedSet> {
+                val context = exerciseId to mode
+                lookups[context] = (lookups[context] ?: 0) + 1
+                return setsByContext[context].orEmpty()
+            }
+        }
+        val now = currentTimeMillis()
+        fun candidate(id: String, weightKg: Float) = CompletedSet(
+            id = id,
+            sessionId = "$id-session",
+            plannedSetId = null,
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = weightKg,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val oldSchoolContext = "bench-1" to ProgramMode.OldSchool.displayName
+        setsByContext[oldSchoolContext] = listOf(candidate("old-school-first", 60f))
+        val routineExercise = benchRoutineExercise(
+            id = "rex-baseline-cache-context",
+            setReps = listOf(10),
+            weightPerCableKg = 25f,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+        )
+        val viewModel = createViewModel(
+            personalRecordRepository = FakePersonalRecordRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            completedSetRepository = completedSets,
+        )
+        try {
+            viewModel.initialize(
+                exercise = routineExercise,
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+            )
+            advanceUntilIdle()
+            assertEquals(80f, viewModel.routineScalingBaseline.value?.weightPerCableKg)
+            assertEquals(1, lookups[oldSchoolContext])
+
+            setsByContext[oldSchoolContext] = listOf(candidate("old-school-updated", 75f))
+            viewModel.initialize(
+                exercise = routineExercise,
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+                profileId = "alternate-profile",
+            )
+            advanceUntilIdle()
+            assertEquals(100f, viewModel.routineScalingBaseline.value?.weightPerCableKg)
+            assertEquals(2, lookups[oldSchoolContext])
+
+            viewModel.initialize(
+                exercise = routineExercise,
+                unit = WeightUnit.KG,
+                toDisplay = { value, _ -> value },
+                toKg = { value, _ -> value },
+                profileId = "default",
+            )
+            advanceUntilIdle()
+
+            assertEquals(100f, viewModel.routineScalingBaseline.value?.weightPerCableKg)
+            assertEquals(3, lookups[oldSchoolContext])
+        } finally {
+            viewModel.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `updateWeight in percent mode with a baseline records the typed absolute for no-baseline restore`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {

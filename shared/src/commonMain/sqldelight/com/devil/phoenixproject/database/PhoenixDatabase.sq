@@ -2621,12 +2621,11 @@ ORDER BY cs.completed_at DESC
 LIMIT ?;
 
 -- Issue #1383: only producer-backed, fully completed, constant-load working sets may
--- contribute to a rep-derived 1RM. Fail closed for portal-origin/legacy, Echo/adaptive,
--- Just Lift, progressed, assisted, safety-affected, and one-shot-modified records. Local
--- completion persists routine-exercise identity and the authoritative modifier-provenance
--- flag; PlannedSet rows are not written for ordinary routines. Legacy/imported rows default
--- to unknown/modified, and any marked row excludes its whole routine session so an
--- interrupted/resumed workout cannot leak unmarked continuation sets.
+-- contribute to a rep-derived 1RM. Routine candidates require a valid persisted routine/exercise
+-- link; ordinary routine saves do not materialize PlannedSet rows. Fail closed for missing or
+-- partial routine linkage, portal-origin/legacy, Echo/adaptive, Just Lift, progressed, assisted,
+-- safety-affected, and modified records. Any marked row excludes its whole routine session so
+-- an interrupted/resumed workout cannot leak unmarked continuation sets.
 -- Keep this separate from general history queries:
 -- The parameter-bounded retry check prevents a future retry from suppressing a current
 -- candidate. Return the newest 400 eligible candidates in the 28-day horizon to bound
@@ -2671,9 +2670,11 @@ WHERE ws.exerciseId = :exerciseId
     (ws.routineId IS NULL AND ws.routineSessionId IS NULL)
     OR (
       ws.routineId IS NOT NULL
+      AND TRIM(ws.routineId) <> ''
       AND ws.routineSessionId IS NOT NULL
+      AND TRIM(ws.routineSessionId) <> ''
       AND rx.routineId = ws.routineId
-      AND (rx.exerciseId IS NULL OR rx.exerciseId = ws.exerciseId)
+      AND rx.exerciseId = ws.exerciseId
     )
   )
   AND ws.isJustLift = 0

@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -19,6 +18,7 @@ import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -40,10 +40,12 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         val activeRecoveryExerciseId = "issue-1383-active-recovery-exercise"
         val heavyDeloadExerciseId = "issue-1383-heavy-deload-exercise"
         val unchangedRoutineExerciseId = "issue-1383-unchanged-routine-exercise"
+        val unresolvedExerciseLinkId = "issue-1383-unresolved-exercise-link"
+        database.seedExercise(EXERCISE_ID, name = "Bench Press")
         val routineExercises = listOf(
             RoutineExercise(
                 id = activeRecoveryExerciseId,
-                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                exercise = Exercise(id = EXERCISE_ID, name = "Bench Press", muscleGroup = "Chest"),
                 orderIndex = 0,
                 setReps = listOf(10),
                 weightPerCableKg = 500f,
@@ -51,7 +53,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             ),
             RoutineExercise(
                 id = heavyDeloadExerciseId,
-                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                exercise = Exercise(id = EXERCISE_ID, name = "Bench Press", muscleGroup = "Chest"),
                 orderIndex = 1,
                 setReps = listOf(10),
                 weightPerCableKg = 600f,
@@ -59,11 +61,19 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             ),
             RoutineExercise(
                 id = unchangedRoutineExerciseId,
-                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                exercise = Exercise(id = EXERCISE_ID, name = "Bench Press", muscleGroup = "Chest"),
                 orderIndex = 2,
                 setReps = listOf(10),
                 weightPerCableKg = 80f,
                 setWeightsPerCableKg = listOf(80f),
+            ),
+            RoutineExercise(
+                id = unresolvedExerciseLinkId,
+                exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                orderIndex = 3,
+                setReps = listOf(10),
+                weightPerCableKg = 900f,
+                setWeightsPerCableKg = listOf(900f),
             ),
         )
         workoutRepository.saveRoutine(
@@ -133,6 +143,23 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             routineExerciseId = unchangedRoutineExerciseId,
             attemptNumber = 2,
         )
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-routine-unlinked",
+            now - 525L,
+            900f,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-unlinked",
+        )
+        commitCandidate(
+            workoutRepository,
+            "issue-1383-routine-null-exercise-link",
+            now - 520L,
+            900f,
+            routineId = routineId,
+            routineSessionId = "issue-1383-session-null-exercise-link",
+            routineExerciseId = unresolvedExerciseLinkId,
+        )
         commitCandidate(workoutRepository, "issue-1383-safety", now - 500L, 700f, safetyFlags = 1)
         commitCandidate(workoutRepository, "issue-1383-other-profile", now - 400L, 800f, profileId = "other-profile")
         commitCandidate(workoutRepository, "issue-1383-other-exercise", now - 300L, 900f, exerciseId = "other-exercise")
@@ -152,6 +179,8 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         assertFalse(candidates.any { it.sessionId == "issue-1383-routine-active-recovery" })
         assertFalse(candidates.any { it.sessionId == "issue-1383-routine-heavy-deload" })
         assertFalse(candidates.any { it.sessionId == "issue-1383-routine-future-retry" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-routine-unlinked" })
+        assertFalse(candidates.any { it.sessionId == "issue-1383-routine-null-exercise-link" })
         assertFalse(candidates.any { it.sessionId == "issue-1383-too-many-reps" })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-portal") })
         assertFalse(candidates.any { it.sessionId.startsWith("issue-1383-safety") })
@@ -178,7 +207,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
     }
 
     @Test
-    fun `recent history excludes retries before applying the row limit`() = runTest {
+    fun `recent history collapses retries before applying the row limit`() = runTest {
         val database = createTestDatabase()
         val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         val completedSetRepository = SqlDelightCompletedSetRepository(database)
@@ -222,6 +251,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         assertEquals(10, recent.size)
         assertTrue(recent.any { it.id == "issue-1383-history-retry-new-set" })
         assertFalse(recent.any { it.id == "issue-1383-history-retry-old-set" })
+        assertTrue(recent.any { it.id == "issue-1383-history-unique-8-set" })
     }
 
     @Test
@@ -290,7 +320,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         val routineId = "issue-1383-retry-routine"
         val routineSessionId = "issue-1383-retry-routine-session"
         val routineExerciseId = "issue-1383-retry-exercise"
-        val plannedSetId = "issue-1383-retry-planned-set"
+        database.seedExercise(EXERCISE_ID, name = "Bench Press")
         workoutRepository.saveRoutine(
             Routine(
                 id = routineId,
@@ -298,7 +328,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                 exercises = listOf(
                     RoutineExercise(
                         id = routineExerciseId,
-                        exercise = Exercise(name = "Bench Press", muscleGroup = "Chest"),
+                        exercise = Exercise(id = EXERCISE_ID, name = "Bench Press", muscleGroup = "Chest"),
                         orderIndex = 0,
                         setReps = listOf(10),
                         weightPerCableKg = 40f,
@@ -306,15 +336,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
                     ),
                 ),
                 profileId = PROFILE_ID,
-            ),
-        )
-        completedSetRepository.savePlannedSet(
-            PlannedSet.standard(
-                id = plannedSetId,
-                routineExerciseId = routineExerciseId,
-                setNumber = 0,
-                targetReps = 10,
-                targetWeightKg = 40f,
             ),
         )
 
@@ -325,7 +346,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             weightKg = 40f,
             routineId = routineId,
             routineSessionId = routineSessionId,
-            plannedSetId = plannedSetId,
             routineExerciseId = routineExerciseId,
             attemptNumber = 1,
         )
@@ -336,7 +356,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             weightKg = 40f,
             routineId = routineId,
             routineSessionId = routineSessionId,
-            plannedSetId = plannedSetId,
             routineExerciseId = routineExerciseId,
             attemptNumber = 2,
         )
@@ -369,7 +388,6 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
         mode: String = ProgramMode.OldSchool.displayName,
         routineId: String? = null,
         routineSessionId: String? = null,
-        plannedSetId: String? = null,
         routineExerciseId: String? = null,
         routineModifierApplied: Boolean = false,
         attemptNumber: Int = 1,
@@ -395,7 +413,7 @@ class Issue1383EligibleRepDerivedOneRepMaxSqlIntegrationTest {
             completedSet = CompletedSet(
                 id = "$sessionId-set",
                 sessionId = sessionId,
-                plannedSetId = plannedSetId,
+                plannedSetId = null,
                 routineExerciseId = routineExerciseId,
                 setNumber = 0,
                 setType = SetType.STANDARD,
