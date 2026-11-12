@@ -7,13 +7,13 @@ import app.cash.sqldelight.db.SqlDriver
 // SchemaManifest.kt -- Single source of truth for schema reconciliation
 //
 // DriverFactory calls reconcileFullSchema() on open. That drops retired tables
-// (applyTableDrop), creates manifestTables (applyTableCreate), heals
-// manifestColumns (applyColumnHeal), and creates manifestIndexes
+// (applyTableDrop), creates manifestTables and manifestViews (applyTableCreate / applyViewCreate),
+// heals manifestColumns (applyColumnHeal), and creates manifestIndexes
 // (applyIndexCreate). The manifest is COMPLETE, IDEMPOTENT, and CROSS-PLATFORM.
 //
 // Every table that needs guaranteed existence (both bootstrap tables and
-// migration-created tables vulnerable to branch-merge gaps), every column
-// added after its table's initial CREATE, and every index from
+// migration-created tables vulnerable to branch-merge gaps), every required view,
+// every column added after its table's initial CREATE, and every index from
 // PhoenixDatabase.sq is declared here with provenance comments tracing
 // back to migration numbers.
 // ============================================================

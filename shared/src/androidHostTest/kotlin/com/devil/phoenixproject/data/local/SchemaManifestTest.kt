@@ -1071,7 +1071,7 @@ class SchemaManifestTest {
 
         // Verify the report has entries for all manifest items, including dropped tables
         val expectedTotal = manifestDroppedTables.size + manifestTables.size +
-            manifestColumns.size + manifestIndexes.size
+            manifestColumns.size + manifestViews.size + manifestIndexes.size
         assertEquals(expectedTotal, report.total)
 
         // No failures should occur (all prerequisite tables exist)
