@@ -6,6 +6,7 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import co.touchlab.sqliter.DatabaseFileContext
 import co.touchlab.sqliter.NO_VERSION_CHECK
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
@@ -31,6 +32,22 @@ internal class IosDatabaseFileOperations(
     private val fileManager = NSFileManager.defaultManager
     private var capturedPresenceSnapshot: DatabasePresenceSnapshot? = null
 
+    /**
+     * Applies backup exclusion to [path] and verifies it BY READBACK of
+     * NSURLIsExcludedFromBackupKey (integration-model §7, risk 5, issue #1384 P3): a
+     * best-effort attribute write that silently fails would leave database bytes — and with
+     * them Intervals.icu connection/secret-reference/completion rows — backup-eligible.
+     * A verification failure never breaks core database storage or BLE: it closes
+     * [IosIntegrationBackupExclusionGate] so the integration refuses to store instead.
+     */
+    private fun verifiedBackupExclusion(path: String) {
+        if (!fileManager.fileExistsAtPath(path)) return
+        runBestEffortBackupExclusion(path) { excludeFromBackup(path) }
+        if (readBackupExclusion(path) != true) {
+            IosIntegrationBackupExclusionGate.noteExclusionFailure("backup exclusion could not be verified at $path")
+        }
+    }
+
     override fun capturePresenceSnapshot(): DatabasePresenceSnapshot {
         fun presence(path: String): DatabasePresence = DatabasePresence(
             main = fileManager.fileExistsAtPath(path),
@@ -51,6 +68,10 @@ internal class IosDatabaseFileOperations(
 
     override fun inspect(): DatabaseFileLayout {
         migrateLegacyLibraryRootIfNeeded()
+        // Reopen/startup coverage (integration-model §7, risk 5): the live database family
+        // must be provably backup-excluded every time startup re-opens the storage layout,
+        // including anything a fresh create, migration or crash left behind.
+        verifyLiveDatabaseFamilyBackupExclusion()
         return DatabaseFileLayout(
             legacyExists = exists(DatabaseArtifact.LEGACY),
             targetExists = exists(DatabaseArtifact.TARGET),
@@ -63,6 +84,7 @@ internal class IosDatabaseFileOperations(
     }
 
     override fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint {
+        verifyLiveDatabaseFamilyBackupExclusion()
         val driver = rawDriver(artifact)
         try {
             var busy: Long? = null
@@ -96,6 +118,7 @@ internal class IosDatabaseFileOperations(
     }
 
     override fun validate(artifact: DatabaseArtifact): DatabaseFingerprint {
+        verifyLiveDatabaseFamilyBackupExclusion()
         val driver = rawDriver(artifact)
         return try {
             validatedFingerprint(driver, artifact)
@@ -113,7 +136,7 @@ internal class IosDatabaseFileOperations(
         check(fileManager.copyItemAtPath(path(from), toPath = path(to), error = null)) {
             "Could not copy $from to $to"
         }
-        runBestEffortBackupExclusion(path(to)) { excludeFromBackup(path(to)) }
+        verifiedBackupExclusion(path(to))
     }
 
     override fun sync(artifact: DatabaseArtifact) {
@@ -130,12 +153,14 @@ internal class IosDatabaseFileOperations(
     override fun atomicMove(from: DatabaseArtifact, to: DatabaseArtifact) {
         check(!exists(to)) { "Refusing to replace existing $to database artifact" }
         deleteSidecars(from)
-        // Apply the attribute before rename so a successfully promoted file is
-        // never left eligible for backup if a later startup step fails.
-        runBestEffortBackupExclusion(path(from)) { excludeFromBackup(path(from)) }
+        // Apply and verify the attribute before rename so a successfully promoted file is
+        // never left eligible for backup if a later startup step fails. Re-verify after the
+        // move: file attributes travel with the inode, but verification is the contract.
+        verifiedBackupExclusion(path(from))
         check(fileManager.moveItemAtPath(path(from), toPath = path(to), error = null)) {
             "Could not atomically move $from to $to"
         }
+        verifiedBackupExclusion(path(to))
     }
 
     override fun delete(artifact: DatabaseArtifact) {
@@ -210,11 +235,12 @@ internal class IosDatabaseFileOperations(
                 check(fileManager.copyItemAtPath(sourcePath, toPath = scratchPath, error = null)) {
                     "Could not copy a database candidate for inspection"
                 }
-                runBestEffortBackupExclusion(scratchPath) { excludeFromBackup(scratchPath) }
+                verifiedBackupExclusion(scratchPath)
                 for (suffix in sidecars) {
                     check(fileManager.copyItemAtPath("$sourcePath$suffix", toPath = "$scratchPath$suffix", error = null)) {
                         "Could not copy a database candidate sidecar for inspection"
                     }
+                    verifiedBackupExclusion("$scratchPath$suffix")
                 }
                 val driver = NativeSqliteDriver(
                     DatabaseConfiguration(
@@ -263,19 +289,21 @@ internal class IosDatabaseFileOperations(
                 error = null,
             ),
         ) { "Could not create the quarantine folder" }
-        runBestEffortBackupExclusion(folder) { excludeFromBackup(folder) }
+        verifiedBackupExclusion(folder)
         for (suffix in DATABASE_SIDECAR_SUFFIXES) {
             val sidecar = "$sourcePath$suffix"
             if (fileManager.fileExistsAtPath(sidecar)) {
                 check(fileManager.moveItemAtPath(sidecar, toPath = "$folder/$fileName$suffix", error = null)) {
                     "Could not move a database sidecar into quarantine"
                 }
+                verifiedBackupExclusion("$folder/$fileName$suffix")
             }
         }
         if (!sidecarsOnly && fileManager.fileExistsAtPath(sourcePath)) {
             check(fileManager.moveItemAtPath(sourcePath, toPath = "$folder/$fileName", error = null)) {
                 "Could not move a database into quarantine"
             }
+            verifiedBackupExclusion("$folder/$fileName")
         }
     }
 
@@ -420,6 +448,7 @@ internal class IosDatabaseFileOperations(
                 "Could not copy the legacy database into the SQLiter directory"
             }
             mainCopied = true
+            verifiedBackupExclusion(legacyPath)
             for (suffix in compatibilitySidecars) {
                 check(fileManager.copyItemAtPath(
                     "$compatibilityPath$suffix",
@@ -429,6 +458,7 @@ internal class IosDatabaseFileOperations(
                     "Could not copy the legacy database sidecar into the SQLiter directory"
                 }
                 copiedSidecars += suffix
+                verifiedBackupExclusion("$legacyPath$suffix")
             }
         } catch (failure: Throwable) {
             for (suffix in copiedSidecars.asReversed()) {
@@ -566,6 +596,114 @@ internal fun runBestEffortBackupExclusion(path: String, exclude: () -> Unit) {
         exclude()
     } catch (failure: Throwable) {
         NSLog("iOS DB: Warning -- could not exclude database artifact from backup at $path: ${failure.message?.take(120)}")
+    }
+}
+
+/**
+ * Fail-closed gate for Intervals.icu integration storage (integration-model §7, risk 5,
+ * issue #1384 P3). Integration rows (connection metadata, secret key references,
+ * completion journal/receipts, outbox jobs, reservations, installation authorization) must
+ * never be written to a database file that the OS backup could capture. The gate is CLOSED
+ * until the live database family has been verified backup-excluded, and it closes again on
+ * any verification failure.
+ *
+ * REQUIRED CONSUMPTION (integration seam): the Intervals connection/secure store must call
+ * [integrationStoragePermitted] immediately BEFORE storing any integration data, and fail
+ * the integration closed (disabled + safe explanation) when it returns false. Core
+ * database storage and BLE never consult this gate — a failed exclusion must never break
+ * them. Fresh-created files are covered because the gate re-verifies at call time.
+ */
+internal object IosIntegrationBackupExclusionGate {
+    @Volatile
+    private var closedReason: String? = "live database backup exclusion has not been verified yet"
+
+    /**
+     * Re-verifies the live database family (main files, WAL/SHM/journal sidecars, legacy
+     * root family and quarantine) with readback at call time and returns whether integration
+     * storage is permitted. Fail-closed: any unverifiable exclusion refuses storage.
+     */
+    fun integrationStoragePermitted(): Boolean = verifyLiveDatabaseFamilyBackupExclusion()
+
+    /** The reason storage is currently refused, or null when permitted. */
+    fun closedReason(): String? = closedReason
+
+    internal fun noteExclusionFailure(reason: String) {
+        if (closedReason == null) NSLog("iOS DB: Intervals integration storage CLOSED: $reason")
+        closedReason = reason
+    }
+
+    internal fun noteExclusionVerified() {
+        closedReason = null
+    }
+}
+
+/**
+ * Reads NSURLIsExcludedFromBackupKey back for [filePath]. Returns true/false for the
+ * recorded attribute, or null when it cannot be determined (missing file, read failure).
+ * Readback is the proof the exclusion exists — best-effort writes are not (§7, risk 5).
+ */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun readBackupExclusion(filePath: String): Boolean? {
+    val fileManager = NSFileManager.defaultManager
+    if (!fileManager.fileExistsAtPath(filePath)) return null
+    val url = NSURL.fileURLWithPath(filePath)
+    return memScoped {
+        val valuePtr = alloc<ObjCObjectVar<Any?>>()
+        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+        valuePtr.value = null
+        errorPtr.value = null
+        val read = url.getResourceValue(valuePtr.ptr, forKey = NSURLIsExcludedFromBackupKey, error = errorPtr.ptr)
+        if (!read) null else (valuePtr.value as? NSNumber)?.boolValue
+    }
+}
+
+/**
+ * Verifies — establishing where missing — that every existing member of the live database
+ * family is backup-excluded, WITH READBACK: all database artifacts (TARGET live database,
+ * LEGACY, RECOVERY, STAGING) with their `-wal`/`-shm`/`-journal` sidecars, the pre-SQLiter
+ * Library-root family and the quarantine folder (excluded recursively, its entries also
+ * verified individually when present). Covers fresh-create, migration copies, reopen,
+ * sidecars and quarantine: anything a later step created appears at the next verification.
+ *
+ * Fail-closed: the first failure closes [IosIntegrationBackupExclusionGate] and this returns
+ * false. Never throws — core storage and BLE are unaffected; only integration storage is
+ * refused.
+ */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun verifyLiveDatabaseFamilyBackupExclusion(): Boolean {
+    return try {
+        val fileManager = NSFileManager.defaultManager
+        val sidecars = listOf("", "-wal", "-shm", "-journal")
+        val familyRoots = listOf(
+            DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null),
+            DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null),
+            DatabaseFileContext.databasePath(DatabaseFileNames.RECOVERY, null),
+            DatabaseFileContext.databasePath(DatabaseFileNames.STAGING, null),
+            legacyLibraryRootPath(),
+        )
+        val family = familyRoots.flatMap { root -> sidecars.map { suffix -> "$root$suffix" } } +
+            DatabaseFileContext.databasePath(DATABASE_QUARANTINE_DIRECTORY, null)
+        var failure: String? = null
+        for (path in family) {
+            if (!fileManager.fileExistsAtPath(path)) continue
+            runBestEffortBackupExclusion(path)
+            if (readBackupExclusion(path) != true) {
+                failure = "backup exclusion could not be verified at $path"
+                break
+            }
+        }
+        if (failure != null) {
+            IosIntegrationBackupExclusionGate.noteExclusionFailure(failure)
+            false
+        } else {
+            IosIntegrationBackupExclusionGate.noteExclusionVerified()
+            true
+        }
+    } catch (failure: Throwable) {
+        IosIntegrationBackupExclusionGate.noteExclusionFailure(
+            "backup exclusion verification failed: ${failure.message?.take(120)}",
+        )
+        false
     }
 }
 

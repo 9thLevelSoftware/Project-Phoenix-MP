@@ -5162,3 +5162,415 @@ SELECT * FROM SessionNotes;
 insertSessionNotesIgnore:
 INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
 VALUES (?, ?, ?);
+
+-- ==================== INTERVALS.ICU OUTBOUND EXPORT (issue #1384, migration 63) ====================
+-- Opt-in direct-from-phone session export. All tables start empty; no historical
+-- rows are ever seeded. Secrets never live in these tables (secret_key_ref is a
+-- reference into the secure settings store only).
+
+CREATE TABLE IntervalsConnection (
+    profile_id TEXT PRIMARY KEY NOT NULL,
+    resolved_athlete_id TEXT NOT NULL,
+    connection_generation INTEGER NOT NULL DEFAULT 0,
+    dispatch_auth_generation INTEGER NOT NULL DEFAULT 0,
+    installation_id TEXT NOT NULL,
+    secret_key_ref TEXT,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
+    paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0, 1)),
+    auth_required INTEGER NOT NULL DEFAULT 0 CHECK(auth_required IN (0, 1)),
+    validated_at INTEGER,
+    enabled_at INTEGER,
+    paused_at INTEGER,
+    consent_version INTEGER NOT NULL DEFAULT 0,
+    disclosure_version INTEGER NOT NULL DEFAULT 0,
+    eligibility_epoch INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE WorkoutCompletionJournal (
+    profile_id TEXT NOT NULL,
+    local_kind TEXT NOT NULL CHECK(local_kind IN ('ROUTINE', 'STANDALONE')),
+    completion_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('REQUESTED', 'FINALIZED')),
+    finish_reason TEXT NOT NULL,
+    routine_title TEXT,
+    expected_session_count INTEGER NOT NULL,
+    expected_set_count INTEGER NOT NULL,
+    membership_digest TEXT NOT NULL,
+    start_epoch_ms INTEGER NOT NULL,
+    start_local_iso TEXT NOT NULL,
+    time_zone_id TEXT NOT NULL,
+    utc_offset_minutes INTEGER NOT NULL,
+    completed_epoch_ms INTEGER NOT NULL,
+    eligible INTEGER NOT NULL CHECK(eligible IN (0, 1)),
+    resolved_athlete_id TEXT,
+    connection_generation INTEGER,
+    destination_digest TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, local_kind, completion_id)
+);
+
+CREATE INDEX idx_completion_journal_state ON WorkoutCompletionJournal(state, created_at);
+
+CREATE TABLE WorkoutCompletionJournalChild (
+    journal_profile_id TEXT NOT NULL,
+    journal_local_kind TEXT NOT NULL,
+    journal_completion_id TEXT NOT NULL,
+    child_key TEXT NOT NULL,
+    child_kind TEXT NOT NULL CHECK(child_kind IN ('SESSION', 'COMPLETED_SET')),
+    session_id TEXT NOT NULL,
+    codec_version INTEGER NOT NULL,
+    replay_payload TEXT,
+    committed INTEGER NOT NULL DEFAULT 0 CHECK(committed IN (0, 1)),
+    committed_at INTEGER,
+    PRIMARY KEY (journal_profile_id, journal_local_kind, journal_completion_id, child_key),
+    FOREIGN KEY (journal_profile_id, journal_local_kind, journal_completion_id)
+        REFERENCES WorkoutCompletionJournal(profile_id, local_kind, completion_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_completion_journal_child_session ON WorkoutCompletionJournalChild(session_id);
+
+CREATE TABLE WorkoutCompletionReceipt (
+    profile_id TEXT NOT NULL,
+    local_kind TEXT NOT NULL,
+    completion_id TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    snapshot_version INTEGER NOT NULL,
+    membership_json TEXT NOT NULL,
+    finish_reason TEXT NOT NULL,
+    start_epoch_ms INTEGER NOT NULL,
+    start_local_iso TEXT NOT NULL,
+    time_zone_id TEXT NOT NULL,
+    utc_offset_minutes INTEGER NOT NULL,
+    completed_epoch_ms INTEGER NOT NULL,
+    eligible INTEGER NOT NULL CHECK(eligible IN (0, 1)),
+    resolved_athlete_id TEXT,
+    connection_generation INTEGER,
+    export_payload TEXT,
+    payload_digest TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, local_kind, completion_id)
+);
+
+CREATE INDEX idx_completion_receipt_external ON WorkoutCompletionReceipt(external_id);
+
+CREATE TABLE IntervalsOutbox (
+    profile_id TEXT NOT NULL,
+    resolved_athlete_id TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    receipt_profile_id TEXT NOT NULL,
+    receipt_local_kind TEXT NOT NULL,
+    receipt_completion_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    payload_version INTEGER NOT NULL,
+    payload_digest TEXT NOT NULL,
+    original_generation INTEGER NOT NULL,
+    dispatch_auth_generation INTEGER NOT NULL DEFAULT 0,
+    remote_activity_id TEXT,
+    state TEXT NOT NULL CHECK(state IN ('PENDING', 'IN_FLIGHT', 'RETRY_WAIT', 'SENT', 'AUTH_REQUIRED', 'PERMANENT_FAILURE', 'UNCERTAIN', 'PAUSED')),
+    reason_code TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER,
+    lease_token TEXT,
+    lease_expires_at INTEGER,
+    first_sent_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, resolved_athlete_id, external_id)
+);
+
+CREATE INDEX idx_intervals_outbox_due ON IntervalsOutbox(state, next_attempt_at);
+CREATE INDEX idx_intervals_outbox_lease ON IntervalsOutbox(state, lease_expires_at);
+
+CREATE TABLE IntervalsExternalIdReservation (
+    resolved_athlete_id TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    owner_profile_id TEXT NOT NULL,
+    owner_local_kind TEXT NOT NULL,
+    owner_completion_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (resolved_athlete_id, external_id)
+);
+
+-- ==================== INTERVALS.ICU NAMED OPERATIONS ====================
+
+-- Admission (REQUESTED) is idempotent for the same completion key; a conflicting
+-- membership/destination digest is compared in code after readback (never a
+-- blanket INSERT OR IGNORE). Returns rows inserted (0 or 1).
+insertCompletionJournalIfAbsent:
+INSERT INTO WorkoutCompletionJournal(
+    profile_id, local_kind, completion_id, state, finish_reason, routine_title,
+    expected_session_count, expected_set_count, membership_digest,
+    start_epoch_ms, start_local_iso, time_zone_id, utc_offset_minutes, completed_epoch_ms,
+    eligible, resolved_athlete_id, connection_generation, destination_digest,
+    created_at, updated_at
+)
+SELECT :profile_id, :local_kind, :completion_id, 'REQUESTED', :finish_reason, :routine_title,
+       :expected_session_count, :expected_set_count, :membership_digest,
+       :start_epoch_ms, :start_local_iso, :time_zone_id, :utc_offset_minutes, :completed_epoch_ms,
+       :eligible, :resolved_athlete_id, :connection_generation, :destination_digest,
+       :created_at, :created_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM WorkoutCompletionJournal
+    WHERE profile_id = :profile_id AND local_kind = :local_kind AND completion_id = :completion_id
+);
+
+selectCompletionJournal:
+SELECT * FROM WorkoutCompletionJournal
+WHERE profile_id = :profile_id AND local_kind = :local_kind AND completion_id = :completion_id;
+
+insertCompletionJournalChildIfAbsent:
+INSERT INTO WorkoutCompletionJournalChild(
+    journal_profile_id, journal_local_kind, journal_completion_id,
+    child_key, child_kind, session_id, codec_version, replay_payload, committed, committed_at
+)
+SELECT :journal_profile_id, :journal_local_kind, :journal_completion_id,
+       :child_key, :child_kind, :session_id, :codec_version, :replay_payload, 0, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM WorkoutCompletionJournalChild
+    WHERE journal_profile_id = :journal_profile_id AND journal_local_kind = :journal_local_kind
+      AND journal_completion_id = :journal_completion_id AND child_key = :child_key
+);
+
+-- Clear the child's replay record only in the same transaction as its durable
+-- commit. CAS on committed=0 keeps repeat commits from rewriting history.
+markCompletionChildCommitted:
+UPDATE WorkoutCompletionJournalChild
+SET committed = 1, committed_at = :committed_at, replay_payload = NULL
+WHERE journal_profile_id = :journal_profile_id AND journal_local_kind = :journal_local_kind
+  AND journal_completion_id = :journal_completion_id AND child_key = :child_key
+  AND committed = 0;
+
+selectCompletionJournalChildren:
+SELECT * FROM WorkoutCompletionJournalChild
+WHERE journal_profile_id = :journal_profile_id AND journal_local_kind = :journal_local_kind
+  AND journal_completion_id = :journal_completion_id
+ORDER BY child_kind ASC, child_key ASC;
+
+selectRequestedCompletions:
+SELECT * FROM WorkoutCompletionJournal
+WHERE state = 'REQUESTED'
+ORDER BY created_at ASC;
+
+markCompletionJournalFinalized:
+UPDATE WorkoutCompletionJournal
+SET state = 'FINALIZED', updated_at = :now
+WHERE profile_id = :profile_id AND local_kind = :local_kind AND completion_id = :completion_id
+  AND state = 'REQUESTED';
+
+insertCompletionReceiptIfAbsent:
+INSERT INTO WorkoutCompletionReceipt(
+    profile_id, local_kind, completion_id, external_id, snapshot_version, membership_json,
+    finish_reason, start_epoch_ms, start_local_iso, time_zone_id, utc_offset_minutes,
+    completed_epoch_ms, eligible, resolved_athlete_id, connection_generation,
+    export_payload, payload_digest, created_at
+)
+SELECT :profile_id, :local_kind, :completion_id, :external_id, :snapshot_version, :membership_json,
+       :finish_reason, :start_epoch_ms, :start_local_iso, :time_zone_id, :utc_offset_minutes,
+       :completed_epoch_ms, :eligible, :resolved_athlete_id, :connection_generation,
+       :export_payload, :payload_digest, :created_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM WorkoutCompletionReceipt
+    WHERE profile_id = :profile_id AND local_kind = :local_kind AND completion_id = :completion_id
+);
+
+selectCompletionReceipt:
+SELECT * FROM WorkoutCompletionReceipt
+WHERE profile_id = :profile_id AND local_kind = :local_kind AND completion_id = :completion_id;
+
+selectCompletionReceiptsByExternalId:
+SELECT * FROM WorkoutCompletionReceipt WHERE external_id = :external_id;
+
+-- Literal wire identity reservation: same external_id reused by another
+-- profile/kind fails visibly in code (0 rows inserted + differing readback).
+reserveIntervalsExternalId:
+INSERT INTO IntervalsExternalIdReservation(
+    resolved_athlete_id, external_id, owner_profile_id, owner_local_kind, owner_completion_id, created_at
+)
+SELECT :resolved_athlete_id, :external_id, :owner_profile_id, :owner_local_kind, :owner_completion_id, :created_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM IntervalsExternalIdReservation
+    WHERE resolved_athlete_id = :resolved_athlete_id AND external_id = :external_id
+);
+
+selectIntervalsExternalIdReservation:
+SELECT * FROM IntervalsExternalIdReservation
+WHERE resolved_athlete_id = :resolved_athlete_id AND external_id = :external_id;
+
+insertIntervalsJobIfAbsent:
+INSERT INTO IntervalsOutbox(
+    profile_id, resolved_athlete_id, external_id, receipt_profile_id, receipt_local_kind,
+    receipt_completion_id, payload_json, payload_version, payload_digest,
+    original_generation, dispatch_auth_generation, remote_activity_id, state, reason_code,
+    attempts, next_attempt_at, lease_token, lease_expires_at, first_sent_at,
+    created_at, updated_at
+)
+SELECT :profile_id, :resolved_athlete_id, :external_id, :receipt_profile_id, :receipt_local_kind,
+       :receipt_completion_id, :payload_json, :payload_version, :payload_digest,
+       :original_generation, :dispatch_auth_generation, NULL, 'PENDING', NULL,
+       0, NULL, NULL, NULL, NULL, :created_at, :created_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM IntervalsOutbox
+    WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+      AND external_id = :external_id
+);
+
+selectIntervalsJob:
+SELECT * FROM IntervalsOutbox
+WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+  AND external_id = :external_id;
+
+selectDueIntervalsJobs:
+SELECT * FROM IntervalsOutbox
+WHERE profile_id = :profile_id
+  AND state IN ('PENDING', 'RETRY_WAIT')
+  AND attempts < :max_attempts
+  AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+ORDER BY created_at ASC
+LIMIT :limit;
+
+-- Claim under state + lease + generation CAS; the attempt is counted durably here
+-- (max attempts per job lifetime includes the first).
+claimIntervalsJob:
+UPDATE IntervalsOutbox
+SET state = 'IN_FLIGHT', lease_token = :lease_token, lease_expires_at = :lease_expires_at,
+    attempts = attempts + 1, updated_at = :now
+WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+  AND external_id = :external_id
+  AND state IN ('PENDING', 'RETRY_WAIT')
+  AND (lease_token IS NULL OR lease_expires_at <= :now)
+  AND dispatch_auth_generation = :dispatch_auth_generation;
+
+-- Terminal/transition write under lease-token + generation CAS. state/reason carry
+-- the frozen state machine; next_attempt_at schedules RETRY_WAIT.
+completeIntervalsJob:
+UPDATE IntervalsOutbox
+SET state = :state, reason_code = :reason_code, remote_activity_id = :remote_activity_id,
+    lease_token = NULL, lease_expires_at = NULL,
+    next_attempt_at = :next_attempt_at,
+    first_sent_at = COALESCE(first_sent_at, :first_sent_at),
+    updated_at = :now
+WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+  AND external_id = :external_id
+  -- NULL-safe lease CAS: reconciliation writes pass a NULL lease token for UNCERTAIN
+  -- rows (their lease is gone); NULL = NULL must match exactly like the contract says.
+  AND ((:lease_token IS NULL AND lease_token IS NULL) OR lease_token = :lease_token)
+  AND dispatch_auth_generation = :dispatch_auth_generation;
+
+-- Expired IN_FLIGHT leases after restart become UNCERTAIN, never PENDING.
+expireIntervalsLeases:
+UPDATE IntervalsOutbox
+SET state = 'UNCERTAIN', reason_code = 'LEASE_EXPIRED', lease_token = NULL,
+    lease_expires_at = NULL, updated_at = :now
+WHERE state = 'IN_FLIGHT' AND lease_expires_at IS NOT NULL AND lease_expires_at <= :now;
+
+-- Pause keeps eligible jobs for the unchanged destination but stops dispatch;
+-- UNCERTAIN / PERMANENT_FAILURE rows are untouched so ambiguity is preserved.
+pauseIntervalsProfileJobs:
+UPDATE IntervalsOutbox
+SET state = 'PAUSED', updated_at = :now
+WHERE profile_id = :profile_id AND state IN ('PENDING', 'RETRY_WAIT', 'AUTH_REQUIRED');
+
+resumeIntervalsProfileJobs:
+UPDATE IntervalsOutbox
+SET state = CASE WHEN next_attempt_at IS NOT NULL AND next_attempt_at > :now
+                 THEN 'RETRY_WAIT' ELSE 'PENDING' END,
+    updated_at = :now
+WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+  AND state IN ('PAUSED', 'AUTH_REQUIRED') AND attempts < :max_attempts;
+
+-- Same-destination provenance re-stamp at an explicit fresh-consent enable: rows queued
+-- under a replaced connection generation (credential rotation) are re-bound to the
+-- current generation so they are not permanently stranded. Rows of a different athlete
+-- are never rebound; attempts/lifetime counters and state are untouched. The guard keeps
+-- the common no-rotation case a no-op so enable() does not churn updated_at on rows
+-- whose provenance did not change.
+restampIntervalsProfileJobs:
+UPDATE IntervalsOutbox
+SET original_generation = :connection_generation, updated_at = :now
+WHERE profile_id = :profile_id AND resolved_athlete_id = :resolved_athlete_id
+  AND state IN ('PENDING', 'RETRY_WAIT', 'AUTH_REQUIRED')
+  AND original_generation <> :connection_generation;
+
+authRequiredIntervalsProfileJobs:
+UPDATE IntervalsOutbox
+SET state = 'AUTH_REQUIRED', reason_code = 'AUTH_REQUIRED', lease_token = NULL,
+    lease_expires_at = NULL, updated_at = :now
+WHERE profile_id = :profile_id AND state IN ('PENDING', 'RETRY_WAIT', 'IN_FLIGHT');
+
+-- Durable generation invalidation happens BEFORE secure-key deletion (disconnect)
+-- or BEFORE writing a replacement secret (rotation). Jobs keep their captured
+-- original_generation forever; only dispatch authorization is revoked.
+invalidateIntervalsGeneration:
+UPDATE IntervalsConnection
+SET dispatch_auth_generation = 0, enabled = 0, secret_key_ref = NULL, updated_at = :now
+WHERE profile_id = :profile_id AND connection_generation = :connection_generation;
+
+selectIntervalsStatus:
+SELECT profile_id, resolved_athlete_id, connection_generation, dispatch_auth_generation,
+       installation_id, enabled, paused, auth_required, validated_at, enabled_at, paused_at,
+       consent_version, disclosure_version, eligibility_epoch, updated_at
+FROM IntervalsConnection
+WHERE profile_id = :profile_id;
+
+selectIntervalsJobCounts:
+SELECT state, COUNT(*) AS job_count, MAX(first_sent_at) AS last_sent_at
+FROM IntervalsOutbox
+WHERE profile_id = :profile_id
+GROUP BY state;
+
+upsertIntervalsConnection:
+UPDATE IntervalsConnection
+SET resolved_athlete_id = :resolved_athlete_id,
+    connection_generation = :connection_generation,
+    dispatch_auth_generation = :dispatch_auth_generation,
+    installation_id = :installation_id,
+    secret_key_ref = :secret_key_ref,
+    enabled = :enabled,
+    paused = :paused,
+    auth_required = :auth_required,
+    validated_at = :validated_at,
+    enabled_at = :enabled_at,
+    paused_at = :paused_at,
+    consent_version = :consent_version,
+    disclosure_version = :disclosure_version,
+    eligibility_epoch = :eligibility_epoch,
+    updated_at = :updated_at
+WHERE profile_id = :profile_id;
+
+insertIntervalsConnectionIfAbsent:
+INSERT INTO IntervalsConnection(
+    profile_id, resolved_athlete_id, connection_generation, dispatch_auth_generation,
+    installation_id, secret_key_ref, enabled, paused, auth_required,
+    validated_at, enabled_at, paused_at, consent_version, disclosure_version,
+    eligibility_epoch, updated_at
+)
+SELECT :profile_id, :resolved_athlete_id, :connection_generation, :dispatch_auth_generation,
+       :installation_id, :secret_key_ref, :enabled, :paused, :auth_required,
+       :validated_at, :enabled_at, :paused_at, :consent_version, :disclosure_version,
+       :eligibility_epoch, :updated_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM IntervalsConnection WHERE profile_id = :profile_id
+);
+
+deleteIntervalsProfileState:
+DELETE FROM IntervalsConnection WHERE profile_id = :profile_id;
+
+deleteIntervalsProfileJournal:
+DELETE FROM WorkoutCompletionJournal WHERE profile_id = :profile_id;
+
+-- Explicit child cleanup (repo convention: never rely on ON DELETE CASCADE —
+-- foreign_keys may be off). Replay payloads hold full session/set/rep JSON and must
+-- not survive a profile purge through the journal delete.
+deleteIntervalsProfileJournalChildren:
+DELETE FROM WorkoutCompletionJournalChild WHERE journal_profile_id = :profile_id;
+
+deleteIntervalsProfileReceipts:
+DELETE FROM WorkoutCompletionReceipt WHERE profile_id = :profile_id;
+
+deleteIntervalsProfileJobs:
+DELETE FROM IntervalsOutbox WHERE profile_id = :profile_id;
+
+deleteIntervalsProfileReservations:
+DELETE FROM IntervalsExternalIdReservation WHERE owner_profile_id = :profile_id;

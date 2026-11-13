@@ -1717,6 +1717,150 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // ── Intervals.icu outbound export (issue #1384, migration 63) ──────
+    // Full shape: additive tables created empty in migration 63; no later
+    // migration adds columns. Secrets never live in these tables.
+    SchemaTableOperation(
+        table = "IntervalsConnection",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS IntervalsConnection (
+                profile_id TEXT PRIMARY KEY NOT NULL,
+                resolved_athlete_id TEXT NOT NULL,
+                connection_generation INTEGER NOT NULL DEFAULT 0,
+                dispatch_auth_generation INTEGER NOT NULL DEFAULT 0,
+                installation_id TEXT NOT NULL,
+                secret_key_ref TEXT,
+                enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
+                paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0, 1)),
+                auth_required INTEGER NOT NULL DEFAULT 0 CHECK(auth_required IN (0, 1)),
+                validated_at INTEGER,
+                enabled_at INTEGER,
+                paused_at INTEGER,
+                consent_version INTEGER NOT NULL DEFAULT 0,
+                disclosure_version INTEGER NOT NULL DEFAULT 0,
+                eligibility_epoch INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "WorkoutCompletionJournal",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutCompletionJournal (
+                profile_id TEXT NOT NULL,
+                local_kind TEXT NOT NULL CHECK(local_kind IN ('ROUTINE', 'STANDALONE')),
+                completion_id TEXT NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('REQUESTED', 'FINALIZED')),
+                finish_reason TEXT NOT NULL,
+                routine_title TEXT,
+                expected_session_count INTEGER NOT NULL,
+                expected_set_count INTEGER NOT NULL,
+                membership_digest TEXT NOT NULL,
+                start_epoch_ms INTEGER NOT NULL,
+                start_local_iso TEXT NOT NULL,
+                time_zone_id TEXT NOT NULL,
+                utc_offset_minutes INTEGER NOT NULL,
+                completed_epoch_ms INTEGER NOT NULL,
+                eligible INTEGER NOT NULL CHECK(eligible IN (0, 1)),
+                resolved_athlete_id TEXT,
+                connection_generation INTEGER,
+                destination_digest TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, local_kind, completion_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "WorkoutCompletionJournalChild",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutCompletionJournalChild (
+                journal_profile_id TEXT NOT NULL,
+                journal_local_kind TEXT NOT NULL,
+                journal_completion_id TEXT NOT NULL,
+                child_key TEXT NOT NULL,
+                child_kind TEXT NOT NULL CHECK(child_kind IN ('SESSION', 'COMPLETED_SET')),
+                session_id TEXT NOT NULL,
+                codec_version INTEGER NOT NULL,
+                replay_payload TEXT,
+                committed INTEGER NOT NULL DEFAULT 0 CHECK(committed IN (0, 1)),
+                committed_at INTEGER,
+                PRIMARY KEY (journal_profile_id, journal_local_kind, journal_completion_id, child_key),
+                FOREIGN KEY (journal_profile_id, journal_local_kind, journal_completion_id)
+                    REFERENCES WorkoutCompletionJournal(profile_id, local_kind, completion_id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "WorkoutCompletionReceipt",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutCompletionReceipt (
+                profile_id TEXT NOT NULL,
+                local_kind TEXT NOT NULL,
+                completion_id TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                snapshot_version INTEGER NOT NULL,
+                membership_json TEXT NOT NULL,
+                finish_reason TEXT NOT NULL,
+                start_epoch_ms INTEGER NOT NULL,
+                start_local_iso TEXT NOT NULL,
+                time_zone_id TEXT NOT NULL,
+                utc_offset_minutes INTEGER NOT NULL,
+                completed_epoch_ms INTEGER NOT NULL,
+                eligible INTEGER NOT NULL CHECK(eligible IN (0, 1)),
+                resolved_athlete_id TEXT,
+                connection_generation INTEGER,
+                export_payload TEXT,
+                payload_digest TEXT,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, local_kind, completion_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "IntervalsOutbox",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS IntervalsOutbox (
+                profile_id TEXT NOT NULL,
+                resolved_athlete_id TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                receipt_profile_id TEXT NOT NULL,
+                receipt_local_kind TEXT NOT NULL,
+                receipt_completion_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_version INTEGER NOT NULL,
+                payload_digest TEXT NOT NULL,
+                original_generation INTEGER NOT NULL,
+                dispatch_auth_generation INTEGER NOT NULL DEFAULT 0,
+                remote_activity_id TEXT,
+                state TEXT NOT NULL CHECK(state IN ('PENDING', 'IN_FLIGHT', 'RETRY_WAIT', 'SENT', 'AUTH_REQUIRED', 'PERMANENT_FAILURE', 'UNCERTAIN', 'PAUSED')),
+                reason_code TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at INTEGER,
+                lease_token TEXT,
+                lease_expires_at INTEGER,
+                first_sent_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, resolved_athlete_id, external_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "IntervalsExternalIdReservation",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS IntervalsExternalIdReservation (
+                resolved_athlete_id TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                owner_profile_id TEXT NOT NULL,
+                owner_local_kind TEXT NOT NULL,
+                owner_completion_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (resolved_athlete_id, external_id)
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -2034,7 +2178,7 @@ internal val manifestViews: List<SchemaViewOperation> = listOf(
 )
 
 // ============================================================
-// TASK 5: manifestIndexes -- 81 index operations
+// TASK 5: manifestIndexes -- 86 index operations
 //
 // Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
@@ -2330,4 +2474,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── VelocityOneRepMaxEstimate (issue #517, migration 36.sqm) ──────
     SchemaIndexOperation("idx_velocity_1rm_exercise", "CREATE INDEX IF NOT EXISTS idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id)"),
+
+    // ── Intervals.icu outbound export (issue #1384, migration 63.sqm) ─
+    SchemaIndexOperation("idx_completion_journal_state", "CREATE INDEX IF NOT EXISTS idx_completion_journal_state ON WorkoutCompletionJournal(state, created_at)"),
+    SchemaIndexOperation("idx_completion_journal_child_session", "CREATE INDEX IF NOT EXISTS idx_completion_journal_child_session ON WorkoutCompletionJournalChild(session_id)"),
+    SchemaIndexOperation("idx_completion_receipt_external", "CREATE INDEX IF NOT EXISTS idx_completion_receipt_external ON WorkoutCompletionReceipt(external_id)"),
+    SchemaIndexOperation("idx_intervals_outbox_due", "CREATE INDEX IF NOT EXISTS idx_intervals_outbox_due ON IntervalsOutbox(state, next_attempt_at)"),
+    SchemaIndexOperation("idx_intervals_outbox_lease", "CREATE INDEX IF NOT EXISTS idx_intervals_outbox_lease ON IntervalsOutbox(state, lease_expires_at)"),
 )

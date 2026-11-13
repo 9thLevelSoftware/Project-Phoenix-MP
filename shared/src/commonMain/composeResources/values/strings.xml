@@ -944,4 +944,113 @@
     <string name="home_recent_activity_date_pattern">MMM d</string>
     <string name="home_recent_activity_time_pattern">h:mm a</string>
     <string name="home_recent_activity_date_time_separator"> • </string>
+    <!-- ==================== Intervals.icu outbound sync (#1384) ==================== -->
+    <string name="intervals_screen_title">Intervals.icu</string>
+    <string name="intervals_back_cd">Go back</string>
+    <string name="intervals_send_workouts_title">Send workouts</string>
+    <string name="intervals_send_workouts_subtitle">Automatically send finished workouts to Intervals.icu</string>
+    <string name="intervals_send_workouts_cd">Open Send workouts settings</string>
+
+    <!-- Disclosure -->
+    <string name="intervals_disclosure_title">How sharing works</string>
+    <string name="intervals_disclosure_strength">Each finished workout is sent as one strength-training activity with every set's reps and weight.</string>
+    <string name="intervals_disclosure_hr">Average and maximum heart rate are included when a heart-rate monitor recorded them. No strap is required.</string>
+    <string name="intervals_disclosure_credentials">Your athlete ID and API key are stored only on this phone, in its secure storage.</string>
+    <string name="intervals_disclosure_future_only">Only workouts finished after you turn this on are sent. Existing history is never uploaded.</string>
+    <string name="intervals_disclosure_no_edit_sync">Edits and deletions made in Phoenix are not sent later. Each workout uploads once.</string>
+    <string name="intervals_disclosure_no_onward">Phoenix sends workouts only to Intervals.icu — never on to other services.</string>
+    <string name="intervals_disclosure_no_background">Workouts send while Phoenix is open. Background sending is not guaranteed.</string>
+    <string name="intervals_disclosure_backup_tradeoff">Because raw database files cannot be scrubbed of these credentials, support ZIP exports stay off in builds that include this integration. Your regular JSON training backups still work.</string>
+
+    <!-- Three-way status distinction -->
+    <string name="intervals_three_way_title">Saved, queued, sent</string>
+    <string name="intervals_three_way_saved">Saved — the workout is stored on this phone.</string>
+    <string name="intervals_three_way_queued">Queued — waiting to upload to Intervals.icu.</string>
+    <string name="intervals_three_way_sent">Sent — confirmed on Intervals.icu.</string>
+
+    <!-- Credential fields -->
+    <string name="intervals_athlete_id_label">Athlete ID</string>
+    <string name="intervals_athlete_id_hint">e.g. i123456</string>
+    <string name="intervals_api_key_label">API key</string>
+    <string name="intervals_api_key_hint">Your Intervals.icu API key</string>
+    <string name="intervals_api_key_show_cd">Show API key</string>
+    <string name="intervals_api_key_hide_cd">Hide API key</string>
+
+    <!-- Validation and operation errors -->
+    <string name="intervals_error_athlete_id_required">Enter your Intervals.icu athlete ID.</string>
+    <string name="intervals_error_athlete_id_invalid">That athlete ID doesn't look right. Use letters, digits, dashes or underscores, like i123456.</string>
+    <string name="intervals_error_api_key_required">Enter your Intervals.icu API key.</string>
+    <string name="intervals_error_network">Couldn't reach Intervals.icu. Check your connection and try again.</string>
+    <string name="intervals_error_credentials_rejected">Intervals.icu rejected these credentials. Check the athlete ID and API key.</string>
+    <string name="intervals_error_validation_rejected">Intervals.icu rejected the request.</string>
+    <string name="intervals_error_enable_failed">Sending couldn't be turned on. Make sure your credentials are saved and try again.</string>
+
+    <!-- Actions -->
+    <string name="intervals_action_save">Save</string>
+    <string name="intervals_action_test">Test connection</string>
+    <string name="intervals_action_testing">Testing…</string>
+    <string name="intervals_action_enable">Turn on sending</string>
+    <string name="intervals_action_pause">Pause sending</string>
+    <string name="intervals_action_resume">Resume sending</string>
+    <string name="intervals_action_disconnect">Disconnect</string>
+    <string name="intervals_action_check_upload">Check upload status</string>
+    <string name="intervals_action_retry_check">Try the check again</string>
+
+    <!-- Status labels -->
+    <string name="intervals_status_off">Off</string>
+    <string name="intervals_status_draft">Not set up</string>
+    <string name="intervals_status_testing">Testing connection</string>
+    <string name="intervals_status_tested_disabled">Tested — still off</string>
+    <string name="intervals_status_enabled">On</string>
+    <string name="intervals_status_paused">Paused</string>
+    <string name="intervals_status_auth_required">Sign-in needed</string>
+    <string name="intervals_status_secure_store_unavailable">Secure storage unavailable</string>
+    <string name="intervals_status_offline_queued">Queued — waiting to send</string>
+    <string name="intervals_status_retry_exhausted">Upload stopped</string>
+    <string name="intervals_status_uncertain">Upload status unknown</string>
+    <string name="intervals_status_disconnect_confirm">Disconnect?</string>
+
+    <!-- Status messages -->
+    <string name="intervals_message_off">Sending finished workouts to Intervals.icu is off.</string>
+    <string name="intervals_message_draft">Enter your athlete ID and API key to set up sending.</string>
+    <string name="intervals_message_tested_disabled">Connection tested. Sending stays off until you turn it on.</string>
+    <string name="intervals_message_enabled">New finished workouts are sent to Intervals.icu.</string>
+    <string name="intervals_message_paused">Sending is paused. Workouts finished now stay on this phone and are not sent later.</string>
+    <string name="intervals_message_auth_required">Intervals.icu rejected the saved credentials. Update your API key to send again.</string>
+    <string name="intervals_message_secure_store_unavailable">Phoenix keeps your key in the device's secure storage, which is unavailable right now. Sending stays off and nothing is saved in plain text.</string>
+    <string name="intervals_message_offline_queued">Workouts are saved and queued. They send when a connection is available.</string>
+    <string name="intervals_message_retry_exhausted">Some uploads stopped after too many attempts. Nothing is uploaded again automatically.</string>
+    <string name="intervals_message_uncertain">We couldn't confirm whether a workout reached Intervals.icu. Check the upload status first — Phoenix will not upload it again blindly.</string>
+    <string name="intervals_message_checking">Checking upload status…</string>
+    <string name="intervals_message_check_done">Upload status checked.</string>
+    <string name="intervals_message_check_failed">Couldn't check the upload status. Nothing was uploaded again.</string>
+    <string name="intervals_message_saved">Credentials saved on this phone.</string>
+
+    <!-- Profile/destination-scoped counters -->
+    <string name="intervals_counters_title">This profile and athlete</string>
+    <string name="intervals_counters_last_sent">Last sent</string>
+    <string name="intervals_counters_never">Never</string>
+    <string name="intervals_counters_queued">Queued</string>
+    <string name="intervals_counters_sent">Sent</string>
+    <string name="intervals_counters_uncertain">Uncertain</string>
+    <string name="intervals_counters_failed">Failed</string>
+
+    <!-- Disconnect confirmation -->
+    <string name="intervals_disconnect_title">Disconnect Intervals.icu?</string>
+    <string name="intervals_disconnect_message">Phoenix turns off sending and deletes your key from this phone. Workouts already sent to Intervals.icu stay on Intervals.icu.</string>
+    <string name="intervals_disconnect_confirm">Disconnect</string>
+
+    <!-- Permanent-failure reason codes -->
+    <string name="intervals_reason_label">Reason</string>
+    <string name="intervals_reason_retry_exhausted">Too many attempts</string>
+    <string name="intervals_reason_lease_expired">Send attempt expired</string>
+    <string name="intervals_reason_auth_required">Credentials rejected</string>
+    <string name="intervals_reason_validation_rejected">Intervals.icu rejected the workout</string>
+    <string name="intervals_reason_payload_too_large">Workout detail too large to send</string>
+    <string name="intervals_reason_safe_retryable">Temporary problem</string>
+    <string name="intervals_reason_ambiguous_outcome">Delivery not confirmed</string>
+    <string name="intervals_reason_incomplete_reconciliation">Status check was incomplete</string>
+    <string name="intervals_reason_no_remote_match">No matching activity found</string>
+    <string name="intervals_reason_multiple_remote_matches">More than one matching activity found</string>
+    <string name="intervals_reason_suppressed_by_pause">Paused</string>
 </resources>

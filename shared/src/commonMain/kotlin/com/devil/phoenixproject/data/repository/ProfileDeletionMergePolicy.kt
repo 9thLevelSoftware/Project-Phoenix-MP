@@ -56,6 +56,8 @@ object ProfileDeletionMergePolicy {
         "GamificationStats",
         "IntegrationStatus",
         "IntegrationSyncCursor",
+        "IntervalsConnection",
+        "IntervalsOutbox",
         "PendingProfileLocalCleanup",
         "PersonalRecord",
         "ProfileExerciseBaseline",
@@ -68,6 +70,8 @@ object ProfileDeletionMergePolicy {
         "TrainingCycle",
         "UserProfilePreferences",
         "VelocityOneRepMaxEstimate",
+        "WorkoutCompletionJournal",
+        "WorkoutCompletionReceipt",
         "WorkoutDeletion",
         "WorkoutSession",
     )

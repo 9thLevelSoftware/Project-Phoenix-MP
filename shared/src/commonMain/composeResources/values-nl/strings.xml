@@ -757,4 +757,113 @@
     <string name="home_recent_activity_date_pattern">dd-MM-yyyy</string>
     <string name="home_recent_activity_time_pattern">HH:mm</string>
     <string name="home_recent_activity_date_time_separator"> • </string>
+    <!-- ==================== Intervals.icu uitgaande synchronisatie (#1384) ==================== -->
+    <string name="intervals_screen_title">Intervals.icu</string>
+    <string name="intervals_back_cd">Terug</string>
+    <string name="intervals_send_workouts_title">Workouts versturen</string>
+    <string name="intervals_send_workouts_subtitle">Stuur voltooide workouts automatisch naar Intervals.icu</string>
+    <string name="intervals_send_workouts_cd">Instellingen voor Workouts versturen openen</string>
+
+    <!-- Toelichting -->
+    <string name="intervals_disclosure_title">Hoe delen werkt</string>
+    <string name="intervals_disclosure_strength">Elke voltooide workout wordt verstuurd als één krachttraining-activiteit met herhalingen en gewicht van elke set.</string>
+    <string name="intervals_disclosure_hr">Gemiddelde en maximale hartslag worden toegevoegd wanneer een hartslagmeter ze heeft geregistreerd. Geen band nodig.</string>
+    <string name="intervals_disclosure_credentials">Je atleten-ID en API-sleutel worden alleen op deze telefoon bewaard, in de beveiligde opslag.</string>
+    <string name="intervals_disclosure_future_only">Alleen workouts die na het inschakelen zijn voltooid, worden verstuurd. Bestaande geschiedenis wordt nooit geüpload.</string>
+    <string name="intervals_disclosure_no_edit_sync">Wijzigingen en verwijderingen in Phoenix worden later niet verstuurd. Elke workout wordt één keer geüpload.</string>
+    <string name="intervals_disclosure_no_onward">Phoenix stuurt workouts alleen naar Intervals.icu — nooit door naar andere diensten.</string>
+    <string name="intervals_disclosure_no_background">Workouts worden verstuurd terwijl Phoenix open is. Versturen op de achtergrond is niet gegarandeerd.</string>
+    <string name="intervals_disclosure_backup_tradeoff">Omdat ruwe databasebestanden niet van deze inloggegevens kunnen worden ontdaan, blijven ZIP-ondersteuningsexporten uit in builds met deze integratie. Je gewone JSON-trainingsbackups blijven werken.</string>
+
+    <!-- Onderscheid in drie toestanden -->
+    <string name="intervals_three_way_title">Opgeslagen, in wachtrij, verstuurd</string>
+    <string name="intervals_three_way_saved">Opgeslagen — de workout staat op deze telefoon.</string>
+    <string name="intervals_three_way_queued">In wachtrij — wacht op upload naar Intervals.icu.</string>
+    <string name="intervals_three_way_sent">Verstuurd — bevestigd op Intervals.icu.</string>
+
+    <!-- Inloggegevens -->
+    <string name="intervals_athlete_id_label">Atleten-ID</string>
+    <string name="intervals_athlete_id_hint">bijv. i123456</string>
+    <string name="intervals_api_key_label">API-sleutel</string>
+    <string name="intervals_api_key_hint">Je Intervals.icu API-sleutel</string>
+    <string name="intervals_api_key_show_cd">API-sleutel tonen</string>
+    <string name="intervals_api_key_hide_cd">API-sleutel verbergen</string>
+
+    <!-- Validatie- en actiefouten -->
+    <string name="intervals_error_athlete_id_required">Voer je Intervals.icu atleten-ID in.</string>
+    <string name="intervals_error_athlete_id_invalid">Dit atleten-ID lijkt niet correct. Gebruik letters, cijfers, koppelstreepjes of underscores, zoals i123456.</string>
+    <string name="intervals_error_api_key_required">Voer je Intervals.icu API-sleutel in.</string>
+    <string name="intervals_error_network">Kon Intervals.icu niet bereiken. Controleer je verbinding en probeer opnieuw.</string>
+    <string name="intervals_error_credentials_rejected">Intervals.icu heeft deze inloggegevens geweigerd. Controleer het atleten-ID en de API-sleutel.</string>
+    <string name="intervals_error_validation_rejected">Intervals.icu heeft het verzoek geweigerd.</string>
+    <string name="intervals_error_enable_failed">Verzenden kon niet worden ingeschakeld. Controleer of je inloggegevens zijn opgeslagen en probeer opnieuw.</string>
+
+    <!-- Acties -->
+    <string name="intervals_action_save">Opslaan</string>
+    <string name="intervals_action_test">Verbinding testen</string>
+    <string name="intervals_action_testing">Testen…</string>
+    <string name="intervals_action_enable">Versturen aanzetten</string>
+    <string name="intervals_action_pause">Versturen pauzeren</string>
+    <string name="intervals_action_resume">Versturen hervatten</string>
+    <string name="intervals_action_disconnect">Verbinding verbreken</string>
+    <string name="intervals_action_check_upload">Uploadstatus controleren</string>
+    <string name="intervals_action_retry_check">Controle opnieuw proberen</string>
+
+    <!-- Statuslabels -->
+    <string name="intervals_status_off">Uit</string>
+    <string name="intervals_status_draft">Niet ingesteld</string>
+    <string name="intervals_status_testing">Verbinding testen</string>
+    <string name="intervals_status_tested_disabled">Getest — nog uit</string>
+    <string name="intervals_status_enabled">Aan</string>
+    <string name="intervals_status_paused">Gepauzeerd</string>
+    <string name="intervals_status_auth_required">Aanmelding nodig</string>
+    <string name="intervals_status_secure_store_unavailable">Beveiligde opslag niet beschikbaar</string>
+    <string name="intervals_status_offline_queued">In wachtrij — wacht op versturen</string>
+    <string name="intervals_status_retry_exhausted">Upload gestopt</string>
+    <string name="intervals_status_uncertain">Uploadstatus onbekend</string>
+    <string name="intervals_status_disconnect_confirm">Verbinding verbreken?</string>
+
+    <!-- Statusberichten -->
+    <string name="intervals_message_off">Het versturen van voltooide workouts naar Intervals.icu staat uit.</string>
+    <string name="intervals_message_draft">Voer je atleten-ID en API-sleutel in om het versturen in te stellen.</string>
+    <string name="intervals_message_tested_disabled">Verbinding getest. Versturen blijft uit totdat je het aanzet.</string>
+    <string name="intervals_message_enabled">Nieuwe voltooide workouts worden naar Intervals.icu verstuurd.</string>
+    <string name="intervals_message_paused">Versturen is gepauzeerd. Nu voltooide workouts blijven op deze telefoon en worden later niet alsnog verstuurd.</string>
+    <string name="intervals_message_auth_required">Intervals.icu heeft de opgeslagen inloggegevens geweigerd. Werk je API-sleutel bij om opnieuw te versturen.</string>
+    <string name="intervals_message_secure_store_unavailable">Phoenix bewaart je sleutel in de beveiligde opslag van het apparaat, die nu niet beschikbaar is. Versturen blijft uit en er wordt niets in platte tekst bewaard.</string>
+    <string name="intervals_message_offline_queued">Workouts zijn opgeslagen en staan in de wachtrij. Ze worden verstuurd zodra er een verbinding is.</string>
+    <string name="intervals_message_retry_exhausted">Sommige uploads zijn na te veel pogingen gestopt. Er wordt niets automatisch opnieuw geüpload.</string>
+    <string name="intervals_message_uncertain">We konden niet bevestigen of een workout Intervals.icu heeft bereikt. Controleer eerst de uploadstatus — Phoenix uploadt niet blind opnieuw.</string>
+    <string name="intervals_message_checking">Uploadstatus controleren…</string>
+    <string name="intervals_message_check_done">Uploadstatus gecontroleerd.</string>
+    <string name="intervals_message_check_failed">Kon de uploadstatus niet controleren. Er is niets opnieuw geüpload.</string>
+    <string name="intervals_message_saved">Inloggegevens opgeslagen op deze telefoon.</string>
+
+    <!-- Tellers per profiel en bestemming -->
+    <string name="intervals_counters_title">Dit profiel en deze atleet</string>
+    <string name="intervals_counters_last_sent">Laatst verstuurd</string>
+    <string name="intervals_counters_never">Nooit</string>
+    <string name="intervals_counters_queued">In wachtrij</string>
+    <string name="intervals_counters_sent">Verstuurd</string>
+    <string name="intervals_counters_uncertain">Onzeker</string>
+    <string name="intervals_counters_failed">Mislukt</string>
+
+    <!-- Bevestiging verbreken -->
+    <string name="intervals_disconnect_title">Verbinding met Intervals.icu verbreken?</string>
+    <string name="intervals_disconnect_message">Phoenix zet versturen uit en verwijdert je sleutel van deze telefoon. Workouts die al naar Intervals.icu zijn verstuurd, blijven op Intervals.icu.</string>
+    <string name="intervals_disconnect_confirm">Verbinding verbreken</string>
+
+    <!-- Permanente foutcodes -->
+    <string name="intervals_reason_label">Reden</string>
+    <string name="intervals_reason_retry_exhausted">Te veel pogingen</string>
+    <string name="intervals_reason_lease_expired">Verstuurpoging verlopen</string>
+    <string name="intervals_reason_auth_required">Inloggegevens geweigerd</string>
+    <string name="intervals_reason_validation_rejected">Intervals.icu heeft de workout geweigerd</string>
+    <string name="intervals_reason_payload_too_large">Workoutdetails te groot om te versturen</string>
+    <string name="intervals_reason_safe_retryable">Tijdelijk probleem</string>
+    <string name="intervals_reason_ambiguous_outcome">Levering niet bevestigd</string>
+    <string name="intervals_reason_incomplete_reconciliation">Statuscontrole was onvolledig</string>
+    <string name="intervals_reason_no_remote_match">Geen overeenkomende activiteit gevonden</string>
+    <string name="intervals_reason_multiple_remote_matches">Meer dan één overeenkomende activiteit gevonden</string>
+    <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>
 </resources>

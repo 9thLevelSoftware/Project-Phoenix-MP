@@ -12,15 +12,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** Copies each entry's bytes into a zip at [archive]; the source files are only read. */
-internal fun writeDatabaseArchive(entries: List<DatabaseExportEntry>, archive: File) {
+/**
+ * Writes the support archive: a single verified non-sensitive `diagnostics.json` entry
+ * ([DatabaseFileExport.diagnosticsJson]). The candidate files themselves are stat'ed only —
+ * raw DB/WAL/SHM/journal/quarantine bytes must never enter an archive (signoff decision 5).
+ */
+internal fun writeDiagnosticsArchive(files: List<DatabaseDiagnosticFile>, archive: File) {
     archive.parentFile?.mkdirs()
     ZipOutputStream(archive.outputStream().buffered()).use { zip ->
-        for (entry in entries) {
-            zip.putNextEntry(ZipEntry(entry.entryName))
-            File(entry.path).inputStream().use { it.copyTo(zip) }
-            zip.closeEntry()
-        }
+        zip.putNextEntry(ZipEntry(DatabaseFileExport.DIAGNOSTICS_ENTRY_NAME))
+        zip.write(DatabaseFileExport.diagnosticsJson(files).encodeToByteArray())
+        zip.closeEntry()
     }
 }
 
@@ -28,8 +30,11 @@ internal fun writeDatabaseArchive(entries: List<DatabaseExportEntry>, archive: F
 internal fun databaseExportArchive(cacheDir: File): File = File(cacheDir, "exports/${DatabaseFileExport.ARCHIVE_NAME}")
 
 /**
- * Zips every candidate in [databasesDir] into the export archive under [cacheDir], replacing a
- * previous one. Returns null (and leaves no archive) when there is nothing to export.
+ * Writes the diagnostics-only support archive for every candidate in [databasesDir] under
+ * [cacheDir], replacing a previous one. Returns null (and leaves no archive) when there is
+ * nothing to report. Never reads, opens, checkpoints, moves or deletes the candidates —
+ * including unsafe-to-open dual databases and quarantined files, whose bytes are as
+ * unsupportable to share as live database bytes (signoff decision 5).
  */
 internal fun buildDatabaseArchive(databasesDir: File, cacheDir: File): File? {
     val archive = databaseExportArchive(cacheDir)
@@ -38,10 +43,10 @@ internal fun buildDatabaseArchive(databasesDir: File, cacheDir: File): File? {
     val quarantined = quarantine.walkTopDown().filter(File::isFile)
         .map { it.relativeTo(quarantine).invariantSeparatorsPath }
         .toList()
-    val entries = DatabaseFileExport.entries("databases", databasesDir.path) { File(it).isFile } +
-        DatabaseFileExport.quarantineEntries(databasesDir.path, quarantined)
-    if (entries.isEmpty()) return null
-    return archive.also { writeDatabaseArchive(entries, it) }
+    val files = DatabaseFileExport.diagnosticFiles("databases", databasesDir.path, { File(it).isFile }, { File(it).length() }) +
+        DatabaseFileExport.quarantineDiagnosticFiles(databasesDir.path, quarantined) { File(it).length() }
+    if (files.isEmpty()) return null
+    return archive.also { writeDiagnosticsArchive(files, it) }
 }
 
 // The Context comes from the crash-log install in PhoenixApp.onCreate (PR 25), which runs before any UI.
@@ -77,6 +82,9 @@ internal actual fun deleteDatabaseExportArchive() {
     val context = AndroidCrashLog.context() ?: return
     try {
         databaseExportArchive(context.cacheDir).delete()
+        // The pre-rename archive held raw DB/WAL bytes (signoff decision 5): a leftover
+        // copy stays shareable through the exports FileProvider path, so it goes too.
+        File(context.cacheDir, "exports/${DatabaseFileExport.LEGACY_RAW_ARCHIVE_NAME}").delete()
     } catch (_: Exception) {
         // A leftover archive stays in app-private cache; never fail startup for it.
     }

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.util
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -725,6 +726,11 @@ const val CURRENT_BACKUP_VERSION: Int = 7
  * Profile-scoped preference payload. Raw JSON sections intentionally isolate malformed or
  * forward-version values so one bad section cannot prevent valid siblings from restoring.
  * Sync metadata and local-only safety state are deliberately absent from this wire type.
+ *
+ * Privacy allowlist (integration-model §7): the raw sections carry profile training
+ * preferences only. Intervals.icu integration state (connection metadata, secret key
+ * references, completion receipts/journal, outbox jobs, installation authorization) must
+ * never be embedded here or in any other backup section.
  */
 @Serializable
 data class ProfilePreferencesBackup(
@@ -741,6 +747,17 @@ data class ProfilePreferencesBackup(
 
 /**
  * Container for all backup data entities
+ *
+ * PRIVACY ALLOWLIST (binding, integration-model §7, issue #1384 P3): this type is the
+ * complete, explicit set of entities any backup/serializer surface may ever emit. The
+ * Intervals.icu integration state — connection metadata, secret key references, completion
+ * journal/receipt rows, outbox jobs, external-id reservations and installation
+ * authorization — is device-local and MUST NEVER appear here, in [ProfilePreferencesBackup],
+ * or inside any workout/preference JSON section. Those structures live in SQL tables that no
+ * backup query reads and in the platform secure store that no backup can reach. Adding a
+ * field here without updating [BACKUP_CONTENT_ALLOWED_FIELDS] fails
+ * [backupSurfaceAllowlistViolations] (run by IntervalsBackupExclusionTest) — a future field
+ * cannot slip in silently.
  */
 @Serializable
 data class BackupContent(
@@ -900,4 +917,170 @@ data class ImportResult(
             ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
             localOwnershipClaimsSkipped + cycleSyncStatesSkipped +
             polarBeatSamplesSkipped + polarEcgSegmentsSkipped + deletedProfileRowsSkipped
+}
+
+// =====================================================================================
+// BINDING PRIVACY ALLOWLIST — integration-model §7 (issue #1384 P3).
+//
+// Every backup/serializer surface (typed exportAllData/exportToJson, the streaming export,
+// per-session/per-routine auto-exports and their restore counterparts) is an explicit
+// allowlist. The Intervals.icu integration state — IntervalsConnection metadata, secret
+// key references (secrets themselves live only in the platform secure store),
+// WorkoutCompletionJournal / WorkoutCompletionJournalChild / WorkoutCompletionReceipt
+// rows, IntervalsOutbox jobs, IntervalsExternalIdReservation rows and installation
+// authorization — is NEVER serialized into backups, CSV or portal payloads, and it is
+// NEVER restored from them. The lists below are checked by
+// [backupSurfaceAllowlistViolations] (invoked from IntervalsBackupExclusionTest) so a
+// future field or nested type cannot slip into the wire surface silently.
+// =====================================================================================
+
+/** Exact root fields of [BackupData]; anything else is an allowlist violation. */
+internal val BACKUP_DATA_ALLOWED_FIELDS: Set<String> = setOf(
+    "version", "exportedAt", "appVersion", "data", "privacy",
+)
+
+/**
+ * Exact fields of [BackupContent]. Keep in sync with the constructor above: adding or
+ * renaming a field without updating this set fails [backupSurfaceAllowlistViolations].
+ */
+internal val BACKUP_CONTENT_ALLOWED_FIELDS: Set<String> = setOf(
+    "customExercises",
+    "workoutSessions",
+    "metricSamples",
+    "routines",
+    "routineExercises",
+    "supersets",
+    "personalRecords",
+    "trainingCycles",
+    "cycleDays",
+    "cycleProgress",
+    "cycleProgressions",
+    "plannedSets",
+    "completedSets",
+    "progressionEvents",
+    "earnedBadges",
+    "streakHistory",
+    "gamificationStats",
+    "gamificationStatsByProfile",
+    "stockExerciseUserFields",
+    "userProfiles",
+    "profilePreferences",
+    "equipmentRackItems",
+    "sessionNotes",
+    "routineGroups",
+    "profileExerciseBaselines",
+    "workoutDeletions",
+    "pendingProfileRecoveries",
+    "ownershipTransfers",
+    "appliedOwnershipEvents",
+    "localOwnershipClaims",
+    "cycleConflictDrafts",
+    "cycleSyncStates",
+    "polarBeatSamples",
+    "polarEcgSegments",
+)
+
+/**
+ * Name tokens that must never appear in any backup wire name (field or serial class name,
+ * matched case-insensitively against lowercased names). They identify exactly the
+ * Intervals.icu structures integration-model §7 keeps out of every serializer boundary.
+ * Deliberately precise to avoid false positives on legitimate fields (e.g.
+ * BackupPrivacyMetadata.containsRuntimeSecrets is a privacy disclosure boolean, not a
+ * secret; WorkoutSessionBackup.externalAddedLoadKg is training data).
+ */
+internal val INTERVALS_STATE_FORBIDDEN_TOKENS: List<String> = listOf(
+    "intervals",
+    "secretkeyref",
+    "secret_key_ref",
+    "keyref",
+    "key_ref",
+    "apikey",
+    "api_key",
+    "athlete",
+    "outbox",
+    "receipt",
+    "journal",
+    "installation",
+    "dispatch",
+    "lease",
+    "consent",
+)
+
+/**
+ * Backup JSON section names that identify Intervals.icu integration state. An import
+ * refuses these sections outright (they are never staged or restored): restored rows must
+ * never gain completion receipts, outbox jobs or dispatch authorization.
+ */
+internal val INTERVALS_STATE_FORBIDDEN_SECTIONS: Set<String> = setOf(
+    "intervalsConnection",
+    "intervalsConnections",
+    "intervalsOutbox",
+    "intervalsJobs",
+    "intervalsExternalIdReservation",
+    "intervalsExternalIdReservations",
+    "intervalsSecrets",
+    "intervalsSecretRefs",
+    "intervalsInstallationAuthorization",
+    "workoutCompletionJournal",
+    "workoutCompletionJournals",
+    "workoutCompletionJournalChild",
+    "workoutCompletionJournalChildren",
+    "workoutCompletionReceipt",
+    "workoutCompletionReceipts",
+)
+
+/**
+ * Walks the entire [BackupData] serializer tree and returns every privacy-allowlist
+ * violation: (a) a [BackupContent] field missing from [BACKUP_CONTENT_ALLOWED_FIELDS],
+ * (b) a stale allowlist entry naming a field that no longer exists, (c) any field or
+ * serial class name carrying an [INTERVALS_STATE_FORBIDDEN_TOKENS] token. An empty list
+ * proves the backup wire surface carries no Intervals.icu state and cannot grow one
+ * without failing this check.
+ */
+internal fun backupSurfaceAllowlistViolations(): List<String> {
+    val violations = mutableListOf<String>()
+    val visited = mutableSetOf<SerialDescriptor>()
+
+    fun walk(descriptor: SerialDescriptor, path: String) {
+        // Guard against cyclic/self-referential descriptors (e.g. JsonElement).
+        if (!visited.add(descriptor)) return
+        val serialName = descriptor.serialName.lowercase()
+        for (token in INTERVALS_STATE_FORBIDDEN_TOKENS) {
+            if (token in serialName) {
+                violations += "$path: serial name '${descriptor.serialName}' contains forbidden token '$token'"
+            }
+        }
+        for (index in 0 until descriptor.elementsCount) {
+            val elementName = descriptor.getElementName(index)
+            val elementPath = "$path.$elementName"
+            val lowered = elementName.lowercase()
+            for (token in INTERVALS_STATE_FORBIDDEN_TOKENS) {
+                if (token in lowered) {
+                    violations += "$elementPath: field name contains forbidden token '$token'"
+                }
+            }
+            walk(descriptor.getElementDescriptor(index), elementPath)
+        }
+    }
+    walk(BackupData.serializer().descriptor, "BackupData")
+
+    val root = BackupData.serializer().descriptor
+    val rootFields = (0 until root.elementsCount).mapTo(mutableSetOf()) { root.getElementName(it) }
+    (rootFields - BACKUP_DATA_ALLOWED_FIELDS).forEach {
+        violations += "BackupData.$it is not in the binding backup allowlist"
+    }
+    (BACKUP_DATA_ALLOWED_FIELDS - rootFields).forEach {
+        violations += "BACKUP_DATA_ALLOWED_FIELDS names missing field '$it'"
+    }
+
+    val dataIndex = root.getElementIndex("data")
+    val content = root.getElementDescriptor(dataIndex)
+    val contentFields = (0 until content.elementsCount).mapTo(mutableSetOf()) { content.getElementName(it) }
+    (contentFields - BACKUP_CONTENT_ALLOWED_FIELDS).forEach {
+        violations += "BackupContent.$it is not in the binding backup allowlist (integration-model §7)"
+    }
+    (BACKUP_CONTENT_ALLOWED_FIELDS - contentFields).forEach {
+        violations += "BACKUP_CONTENT_ALLOWED_FIELDS names missing field '$it'"
+    }
+    return violations
 }
