@@ -3,22 +3,27 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.BleRepository
+import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.DropSetConfiguration
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.testutil.DWSMTestHarness
+import com.devil.phoenixproject.testutil.TestFixtures
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,8 +34,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -816,5 +824,285 @@ class ActiveSessionEngineIntegrationTest {
         const val SHOULDER_PRESS_ID = "Barbell_Shoulder_Press"
         const val SQUAT_ID = "Barbell_Squat"
         const val DEADLIFT_ID = "Barbell_Deadlift"
+    }
+}
+
+/**
+ * Issue #1356: behavioral coverage for the Just Lift / Echo auto-start readiness cue on
+ * the existing [DWSMTestHarness] seam (no new harness). Scenarios the harness cannot
+ * drive deterministically (rest-transition drop-offer/retry rejections,
+ * `acceptedRetryStartClaim` starts, `PendingResetStart` deferral entry and
+ * `startPendingResetSuccessor` replay, retry/recovery starts) are covered by source
+ * contract instead: `autoStartReadyCue` defaults to false everywhere except the single
+ * `auto_start_successor` call site, so those paths can never carry readiness intent.
+ * The coverage split is reported in the PR.
+ */
+class AutoStartReadyCueLifecycleTest {
+
+    private suspend fun TestScope.prepareAutoStart(harness: DWSMTestHarness, params: com.devil.phoenixproject.domain.model.WorkoutParameters) {
+        harness.setActiveProfilePreferences(UserPreferences(autoStartCountdownSeconds = 2))
+        harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        harness.dwsm.updateWorkoutParameters(params)
+        runCurrent()
+    }
+
+    private fun echoJustLiftAutoStartParams() = TestFixtures.justLiftParams.copy(
+        programMode = ProgramMode.Echo,
+    )
+
+    private fun TestScope.driveAutoStartCountdownToActivation(harness: DWSMTestHarness) {
+        harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+        advanceTimeBy(2_500)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `auto-start Echo Just Lift activation emits exactly one readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            driveAutoStartCountdownToActivation(harness)
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(1, collected.count { it is HapticEvent.AUTO_START_READY }, "exactly one readiness cue")
+            assertEquals(1, collected.count { it is HapticEvent.WORKOUT_START }, "exactly one WORKOUT_START")
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `manual Echo Just Lift start is silent for the readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY }, "manual start must not cue readiness")
+            assertEquals(1, collected.count { it is HapticEvent.WORKOUT_START }, "WORKOUT_START unchanged for manual starts")
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `non-Echo auto-start activation is silent for the readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, TestFixtures.justLiftParams)
+            driveAutoStartCountdownToActivation(harness)
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY }, "non-Echo start must not cue readiness")
+            assertEquals(1, collected.count { it is HapticEvent.WORKOUT_START })
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `handle release mid-countdown cancels without a readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+            advanceTimeBy(1_000)
+            harness.fakeBleRepo.setHandleState(HandleState.Released)
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY })
+            assertEquals(0, collected.count { it is HapticEvent.WORKOUT_START }, "aborted countdown must not start a workout")
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `auto-start disabled produces no readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams().copy(useAutoStart = false))
+            driveAutoStartCountdownToActivation(harness)
+
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY })
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `beeps disabled suppresses the readiness event entirely`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            harness.setActiveProfilePreferences(UserPreferences(autoStartCountdownSeconds = 2, beepsEnabled = false))
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.dwsm.updateWorkoutParameters(echoJustLiftAutoStartParams())
+            runCurrent()
+            driveAutoStartCountdownToActivation(harness)
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY }, "beeps off must never create the readiness event")
+            assertEquals(1, collected.count { it is HapticEvent.WORKOUT_START }, "existing cues unchanged")
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `failed machine configuration produces no readiness cue`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            harness.fakeBleRepo.workoutCommandResult = Result.failure(Exception("config send failed"))
+            driveAutoStartCountdownToActivation(harness)
+
+            assertEquals(0, collected.count { it is HapticEvent.AUTO_START_READY }, "no activation -> no readiness cue")
+            assertEquals(0, collected.count { it is HapticEvent.WORKOUT_START })
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `repeated valid auto-start sets cue exactly once per activation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val collected = mutableListOf<HapticEvent>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(collected)
+        }
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            driveAutoStartCountdownToActivation(harness)
+            assertEquals(1, collected.count { it is HapticEvent.AUTO_START_READY })
+
+            // Complete the Just Lift set; the session returns to Idle and a fresh grab
+            // runs a fresh valid auto-start countdown, which cues normally again.
+            harness.setActiveSummaryCountdownSeconds(-1)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 1, isWarmupComplete = true)
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+            harness.fakeBleRepo.setHandleState(HandleState.Released)
+            runCurrent()
+            harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+            advanceTimeBy(2_500)
+            advanceUntilIdle()
+
+            assertEquals(2, collected.count { it is HapticEvent.AUTO_START_READY }, "one cue per valid activation")
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `no stale readiness cue after lease retirement while WORKOUT_START delivery is suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val release = CompletableDeferred<Unit>()
+        val eventsDeliveredAfterRelease = mutableListOf<HapticEvent>()
+        var block: kotlinx.coroutines.Job? = null
+        try {
+            prepareAutoStart(harness, echoJustLiftAutoStartParams())
+            // Stall the only collector so the cue bus buffer saturates and the existing
+            // suspending WORKOUT_START emit parks the activation path mid-delivery.
+            block = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                harness.coordinator.hapticEvents.collect { event ->
+                    release.await()
+                    eventsDeliveredAfterRelease += event
+                }
+            }
+            runCurrent()
+            val sentinel = HapticEvent.COUNTDOWN_TICK(Int.MIN_VALUE)
+            assertTrue(harness.coordinator._hapticEvents.tryEmit(sentinel))
+            repeat(32) { assertTrue(harness.coordinator._hapticEvents.tryEmit(sentinel)) }
+            assertFalse(harness.coordinator._hapticEvents.tryEmit(sentinel), "buffer must be saturated")
+
+            driveAutoStartCountdownToActivation(harness)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value, "activation reached delivery")
+
+            // Retire the lease while WORKOUT_START delivery is still suspended, then let
+            // delivery resume. The readiness cue must never surface afterwards.
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            release.complete(Unit)
+            runCurrent()
+
+            assertTrue(
+                HapticEvent.AUTO_START_READY !in eventsDeliveredAfterRelease,
+                "no stale readiness cue may be delivered after lease retirement",
+            )
+        } finally {
+            release.complete(Unit)
+            block?.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `readiness cue tryEmit drops silently on a full cue buffer without suspending`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val release = CompletableDeferred<Unit>()
+        var block: kotlinx.coroutines.Job? = null
+        try {
+            block = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                harness.coordinator.hapticEvents.collect { event ->
+                    release.await()
+                    @Suppress("UNUSED_EXPRESSION")
+                    event
+                }
+            }
+            runCurrent()
+            val sentinel = HapticEvent.COUNTDOWN_TICK(Int.MIN_VALUE)
+            assertTrue(harness.coordinator._hapticEvents.tryEmit(sentinel))
+            repeat(32) { assertTrue(harness.coordinator._hapticEvents.tryEmit(sentinel)) }
+            assertFalse(harness.coordinator._hapticEvents.tryEmit(sentinel), "buffer must be saturated")
+
+            // Best-effort delivery contract: tryEmit returns false immediately on a full
+            // buffer (no suspension, no replay). The engine's readiness delivery uses
+            // exactly this call (source contract: tryEmit, not emit).
+            assertFalse(harness.coordinator._hapticEvents.tryEmit(HapticEvent.AUTO_START_READY))
+        } finally {
+            release.complete(Unit)
+            block?.cancel()
+            harness.cleanup()
+        }
     }
 }
