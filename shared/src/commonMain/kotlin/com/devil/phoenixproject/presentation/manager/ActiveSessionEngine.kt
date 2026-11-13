@@ -26,9 +26,11 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
+import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
+import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -7074,7 +7076,34 @@ class ActiveSessionEngine(
         }
     }
 
-    suspend fun getJustLiftDefaults(): JustLiftDefaults = settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
+    suspend fun getJustLiftDefaults(): JustLiftDefaults {
+        // Issue #1366: the JustLiftScreen returned to by STOP -> Exit reloads these
+        // defaults on composition, which races the async exit-snapshot persistence
+        // (persistSnapshot commits the session before its justLiftDefaults write). The
+        // exit snapshot captured the just-ended session's confirmed settings pre-teardown
+        // (Issue #714), so prefer only a retained execution newer than the durable-write
+        // ledger for this profile until that write lands and the snapshot is removed. A
+        // snapshot whose save FAILED stays eligible: its defaults were never written, and
+        // its retry on the next start writes exactly these values. A later write with no
+        // execution (persistJustLiftDefaultsOutOfBand) advances the ledger past it.
+        val currentProfileId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+            ?.profile?.id
+        val profilePendingSnapshots = currentProfileId?.let { profileId ->
+            exitSnapshotStore.retainedSnapshots().filter {
+                it.lease.profileId == profileId && it.justLiftDefaults != null
+            }
+        }.orEmpty()
+        val newestPendingExecutionId = currentProfileId?.let { profileId ->
+            executionGuard.newestPendingJustLiftDefaultsExecutionId(
+                profileId = profileId,
+                candidateExecutionIds = profilePendingSnapshots.map { it.lease.executionId },
+            )
+        }
+        val pending = newestPendingExecutionId?.let { executionId ->
+            profilePendingSnapshots.firstOrNull { it.lease.executionId == executionId }?.justLiftDefaults
+        }
+        return (pending ?: settingsManager.getJustLiftDefaultsDocument()).toRuntimeJustLiftDefaults()
+    }
 
     internal fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
@@ -7103,12 +7132,42 @@ class ActiveSessionEngine(
         restSeconds = restSeconds,
     )
 
-    private suspend fun saveJustLiftDefaultsFromWorkout() {
+    private suspend fun saveJustLiftDefaultsFromWorkout(profileId: String, executionId: Long?) {
         val params = coordinator._workoutParameters.value
         val defaults = toJustLiftDefaultsDocumentOrNull(params) ?: return
         try {
-            settingsManager.saveJustLiftDefaultsDocument(defaults)
-            Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
+            val persistDefaults: suspend () -> Unit = {
+                settingsManager.mutateWorkout(profileId) { workoutPreferences ->
+                    workoutPreferences.copy(justLiftDefaults = defaults)
+                }
+            }
+            val persisted = if (executionId == null) {
+                executionGuard.persistJustLiftDefaultsOutOfBand(profileId, persistDefaults)
+                true
+            } else {
+                executionGuard.persistJustLiftDefaultsIfNewer(
+                    profileId = profileId,
+                    executionId = executionId,
+                    persist = persistDefaults,
+                )
+            }
+            if (persisted) {
+                Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
+            }
+        } catch (e: CancellationException) {
+            // The save suspends (ledger mutex + profile write): a cancelled stop
+            // continuation must stop here, not carry on mutating state.
+            throw e
+        } catch (e: StaleProfileContextException) {
+            // Issue #1366 review: settingsManager.mutateWorkout only accepts the ACTIVE
+            // profile context, so an attributed owner profile that differs (FP-6
+            // fallbacks) throws here. Swallowing that in the generic catch would silently
+            // drop the save — log the skip explicitly. The durable-write ledger is
+            // untouched because persistJustLiftDefaultsIfNewer only records successful
+            // writes.
+            Logger.w(e) { "Just Lift defaults save skipped (attributed profile is not the active profile)" }
+        } catch (e: ProfileContextUnavailableException) {
+            Logger.w(e) { "Just Lift defaults save skipped (active profile context unavailable)" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
@@ -9540,14 +9599,43 @@ class ActiveSessionEngine(
     }
 
     // Issue #714: serialize profile-scoped Just Lift defaults writes by execution id.
-    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
-        val pending = snapshot.justLiftDefaults ?: return
-        executionGuard.persistJustLiftDefaultsIfNewer(
+    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot): Boolean {
+        val pending = snapshot.justLiftDefaults ?: return false
+        return executionGuard.persistJustLiftDefaultsIfNewer(
             profileId = snapshot.lease.profileId,
             executionId = snapshot.lease.executionId,
         ) {
             settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
                 workoutPreferences.copy(justLiftDefaults = pending)
+            }
+        }
+    }
+
+    /**
+     * Issue #714: synchronous best-effort write of the snapshot's frozen Just Lift
+     * defaults. A failure is logged, not raised: the retained snapshot's retry recovers.
+     * A profile-context failure is a skip, not a failure: the retry writes to the same
+     * attributed profile through the same active-profile check, so it cannot recover it.
+     */
+    private suspend fun persistJustLiftDefaultsBestEffort(snapshot: WorkoutExitSnapshot) {
+        try {
+            if (persistCapturedJustLiftDefaultsSnapshot(snapshot)) {
+                val saved = snapshot.justLiftDefaults
+                Logger.d {
+                    "Saved Just Lift defaults: mode=${saved?.workoutModeId}, " +
+                        "weight=${saved?.weightPerCableKg}kg, restSeconds=${saved?.restSeconds}"
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: StaleProfileContextException) {
+            Logger.w(e) { "Just Lift defaults save skipped (attributed profile is not the active profile)" }
+        } catch (e: ProfileContextUnavailableException) {
+            Logger.w(e) { "Just Lift defaults save skipped (active profile context unavailable)" }
+        } catch (e: Throwable) {
+            Logger.w(e) {
+                "Issue #714: synchronous Just Lift defaults write failed; " +
+                    "retained-snapshot retry will recover"
             }
         }
     }
@@ -10685,7 +10773,10 @@ class ActiveSessionEngine(
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                         bleRepository.restartMonitorPolling()
-                        saveJustLiftDefaultsFromWorkout()
+                        // Issue #714: persist the snapshot's pre-teardown capture, never live
+                        // post-teardown params. persistSnapshot writes the same frozen data
+                        // under the same execution id, so whichever lands first is correct.
+                        persistJustLiftDefaultsBestEffort(manualSnapshot)
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
@@ -10734,10 +10825,14 @@ class ActiveSessionEngine(
                 // active runtime document (routine rest transitions publish one); and only
                 // as a last resort from the live active profile, which is all this path
                 // used before.
-                val attributionProfileId = executionContext?.lease?.profileId
+                val attributionLease = executionContext?.lease
+                val attributionProfileId = attributionLease?.profileId
                     ?: activeRuntimeDocument?.profileId
                     ?: userProfileRepository.activeProfile.value?.id
                     ?: "default"
+                // Issue #1366 review: attributionProfileId is derived from this same
+                // lease whenever it exists, so a profile guard here can never be false.
+                val attributionExecutionId = attributionLease?.executionId
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
@@ -10964,7 +11059,12 @@ class ActiveSessionEngine(
                 }
 
                 if (isJustLift) {
-                    saveJustLiftDefaultsFromWorkout()
+                    // Persist before publishing Idle: JustLiftScreen reloads its defaults
+                    // from the durable profile document as soon as this stop returns there.
+                    saveJustLiftDefaultsFromWorkout(
+                        profileId = attributionProfileId,
+                        executionId = attributionExecutionId,
+                    )
                     coordinator._workoutParameters.update { p ->
                         p.copy(selectedExerciseId = null)
                     }
@@ -11669,16 +11769,7 @@ class ActiveSessionEngine(
             // Issue #714: persist the captured Just Lift defaults before publishing
             // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
-                try {
-                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    Logger.w(e) {
-                        "Issue #714: synchronous Just Lift defaults write failed; " +
-                            "retained-snapshot retry will recover"
-                    }
-                }
+                persistJustLiftDefaultsBestEffort(terminalSnapshot)
             }
 
             // Rest actions can be selected while RESET is still in flight. Read the

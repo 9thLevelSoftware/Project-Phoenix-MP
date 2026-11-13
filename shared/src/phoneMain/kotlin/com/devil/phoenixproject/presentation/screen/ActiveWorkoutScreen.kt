@@ -52,7 +52,9 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.exitToJustLift
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -93,6 +95,8 @@ fun ActiveWorkoutScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
+    /** Issue #1366: id of the NavBackStackEntry hosting this screen (from NavGraph). */
+    backStackEntryId: String,
     polarBleManager: PolarH10BleManager = koinInject(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
@@ -289,6 +293,11 @@ fun ActiveWorkoutScreen(
     // Navigation guard to prevent double navigateUp() calls (Issue #204)
     // The LaunchedEffect can re-trigger if workoutParameters changes during navigation,
     // causing navigateUp() to be called twice (ActiveWorkout → JustLift → Home)
+    // Issue #1366: the Just Lift exit identity is the entry that HOSTS this screen,
+    // captured once - never whichever entry is on top during a transition.
+    val justLiftExitContext = remember(backStackEntryId) {
+        JustLiftExitContext(sourceEntryId = backStackEntryId)
+    }
     var hasNavigatedAway by remember { mutableStateOf(false) }
 
     // Watch for workout completion and navigate back
@@ -315,12 +324,17 @@ fun ActiveWorkoutScreen(
             }
 
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
-                // Just Lift completed and reset to Idle - navigate back to Just Lift screen
+                // Just Lift stop/auto-reset settles back on JustLiftScreen with the
+                // selected mode retained (Issue #1366: one shared, idempotent,
+                // destination-specific exit for the stop path — never a second
+                // relative pop that over-pops [Home, JustLift, ActiveWorkout] to Home).
                 Logger.d {
-                    "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen"
+                    "ActiveWorkoutScreen: Just Lift idle, returning to JustLiftScreen"
                 }
+                // A no-op means this entry already left (or JustLift is current), so the
+                // exit is settled either way.
+                navController.exitToJustLift(justLiftExitContext)
                 hasNavigatedAway = true
-                navController.navigateUp()
             }
 
             workoutState is WorkoutState.Idle &&
@@ -654,11 +668,23 @@ fun ActiveWorkoutScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            // Use exitingWorkout=true to reset state to Idle and clear routine context
-                            // This prevents stale SetSummary state from blocking editing after exit
-                            viewModel.stopWorkout(exitingWorkout = true)
-                            showExitConfirmation = false
-                            navController.navigateUp()
+                            // Issue #1366: STOP -> Exit must settle on JustLiftScreen with the
+                            // selected mode retained, never Home. Run the shared idempotent
+                            // Just Lift exit, which the Idle observer also uses; latching the
+                            // guard keeps that observer from adding a second transition.
+                            // Stop/safety ownership stays in stopWorkout(exitingWorkout = true):
+                            // navigation never gates it.
+                            if (workoutParameters.isJustLift) {
+                                viewModel.stopWorkout(exitingWorkout = true)
+                                showExitConfirmation = false
+                                navController.exitToJustLift(justLiftExitContext)
+                                hasNavigatedAway = true
+                            } else {
+                                viewModel.stopWorkout(exitingWorkout = true)
+                                showExitConfirmation = false
+                                hasNavigatedAway = true
+                                navController.navigateUp()
+                            }
                         },
                     ) {
                         Text(stringResource(Res.string.action_exit))

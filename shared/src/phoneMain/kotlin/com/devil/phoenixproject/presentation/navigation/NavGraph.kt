@@ -233,11 +233,12 @@ fun NavGraph(
                     animationSpec = tween(300),
                 ) + fadeOut(animationSpec = tween(300))
             },
-        ) {
+        ) { backStackEntry ->
             ActiveWorkoutScreen(
                 navController = navController,
                 viewModel = viewModel,
                 exerciseRepository = exerciseRepository,
+                backStackEntryId = backStackEntry.id,
             )
         }
 
