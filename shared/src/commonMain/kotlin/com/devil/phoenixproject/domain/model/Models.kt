@@ -598,6 +598,8 @@ data class WorkoutSession(
     val routineSessionId: String? = null, // Unique ID for this routine session
     val routineName: String? = null, // Name of the routine being performed
     val routineId: String? = null, // ID of the originating routine (direct FK, added in migration 12)
+    /** True when a one-shot routine modifier was applied, or provenance is unknown. */
+    val routineModifierApplied: Boolean = true,
     // Safety tracking (parity with parent repo v23)
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,

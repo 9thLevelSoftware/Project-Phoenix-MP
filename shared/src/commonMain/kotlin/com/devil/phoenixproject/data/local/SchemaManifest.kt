@@ -7,13 +7,13 @@ import app.cash.sqldelight.db.SqlDriver
 // SchemaManifest.kt -- Single source of truth for schema reconciliation
 //
 // DriverFactory calls reconcileFullSchema() on open. That drops retired tables
-// (applyTableDrop), creates manifestTables (applyTableCreate), heals
-// manifestColumns (applyColumnHeal), and creates manifestIndexes
+// (applyTableDrop), creates manifestTables and manifestViews (applyTableCreate / applyViewCreate),
+// heals manifestColumns (applyColumnHeal), and creates manifestIndexes
 // (applyIndexCreate). The manifest is COMPLETE, IDEMPOTENT, and CROSS-PLATFORM.
 //
 // Every table that needs guaranteed existence (both bootstrap tables and
-// migration-created tables vulnerable to branch-merge gaps), every column
-// added after its table's initial CREATE, and every index from
+// migration-created tables vulnerable to branch-merge gaps), every required view,
+// every column added after its table's initial CREATE, and every index from
 // PhoenixDatabase.sq is declared here with provenance comments tracing
 // back to migration numbers.
 // ============================================================
@@ -32,6 +32,8 @@ internal data class SchemaIndexOperation(
     val preDropSql: String? = null,
     val beforeCreateSql: List<String> = emptyList(),
 )
+
+internal data class SchemaViewOperation(val name: String, val createSql: String)
 
 internal enum class ReconciliationStatus { CREATED, ALREADY_PRESENT, TABLE_MISSING, FAILED }
 
@@ -92,6 +94,20 @@ internal fun indexExists(driver: SqlDriver, indexName: String): Boolean {
     driver.executeQuery(
         identifier = null,
         sql = "SELECT name FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+        mapper = { cursor ->
+            exists = cursor.next().value
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    return exists
+}
+
+internal fun viewExists(driver: SqlDriver, viewName: String): Boolean {
+    var exists = false
+    driver.executeQuery(
+        identifier = null,
+        sql = "SELECT name FROM sqlite_master WHERE type = 'view' AND name = '$viewName'",
         mapper = { cursor ->
             exists = cursor.next().value
             QueryResult.Value(Unit)
@@ -327,6 +343,20 @@ internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): Reco
     }
 }
 
+internal fun applyViewCreate(driver: SqlDriver, op: SchemaViewOperation): ReconciliationResult {
+    val alreadyExists = viewExists(driver, op.name)
+    return try {
+        driver.execute(identifier = null, sql = op.createSql, parameters = 0)
+        if (alreadyExists) {
+            ReconciliationResult("view", op.name, ReconciliationStatus.ALREADY_PRESENT)
+        } else {
+            ReconciliationResult("view", op.name, ReconciliationStatus.CREATED)
+        }
+    } catch (e: Exception) {
+        ReconciliationResult("view", op.name, ReconciliationStatus.FAILED, e.message)
+    }
+}
+
 // ==================== ENTRY POINT ====================
 
 internal fun applyTableDrop(driver: SqlDriver, table: String): ReconciliationResult {
@@ -356,6 +386,9 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
     }
     for (op in manifestIndexes) {
         report.add(applyIndexCreate(driver, op))
+    }
+    for (op in manifestViews) {
+        report.add(applyViewCreate(driver, op))
     }
     return report
 }
@@ -1055,7 +1088,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
     // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33),
-    // portalOrigin (m48), local/synced_sync_generation (m49)
+    // portalOrigin (m48), local/synced_sync_generation (m49),
+    // routineModifierApplied (m62; unknown legacy/imported rows fail closed)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -1126,7 +1160,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 hrr60Bpm INTEGER,
                 hrr300Bpm INTEGER,
                 maxTorsoPitchDeg REAL,
-                maxTorsoRollDeg REAL
+                maxTorsoRollDeg REAL,
+                routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
             )
         """.trimIndent(),
     ),
@@ -1709,7 +1744,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 39: explicit bodyweight classification (issue #635)
     SchemaHealOperation("Exercise", "isBodyweight", "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER"),
 
-    // ── WorkoutSession (38 columns) ─────────────────────────────────────
+    // ── WorkoutSession (39 columns) ─────────────────────────────────────
 
     // Migration 5: set summary metrics
     SchemaHealOperation("WorkoutSession", "peakForceConcentricA", "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL"),
@@ -1782,6 +1817,12 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "hrr300Bpm", "ALTER TABLE WorkoutSession ADD COLUMN hrr300Bpm INTEGER"),
     SchemaHealOperation("WorkoutSession", "maxTorsoPitchDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoPitchDeg REAL"),
     SchemaHealOperation("WorkoutSession", "maxTorsoRollDeg", "ALTER TABLE WorkoutSession ADD COLUMN maxTorsoRollDeg REAL"),
+    // Migration 62: only explicitly unmodified local sessions are safe 1RM candidates.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "routineModifierApplied",
+        "ALTER TABLE WorkoutSession ADD COLUMN routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))",
+    ),
 
     // ── MetricSample (8 columns) ─────────────────────────────────────────
     // Migration 59: Polar H10 intra-set synchronized telemetry & torso biomechanics
@@ -1953,7 +1994,47 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 )
 
 // ============================================================
-// TASK 5: manifestIndexes -- 78 index operations
+// TASK 5a: manifestViews -- views required by production queries
+//
+// Numbered migrations create these on the upgrade path; the manifest heals them
+// when branch/version skew marks a migration applied without creating the view.
+// ============================================================
+
+internal val manifestViews: List<SchemaViewOperation> = listOf(
+    SchemaViewOperation(
+        name = "CompletedSetLatestAttempt",
+        createSql = """
+            CREATE VIEW IF NOT EXISTS CompletedSetLatestAttempt AS
+            SELECT cs.*
+            FROM CompletedSet cs
+            INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+            WHERE ws.deletedAt IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM CompletedSet newer
+                INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+                WHERE newer_ws.exerciseId = ws.exerciseId
+                  AND newer_ws.profile_id = ws.profile_id
+                  AND newer_ws.deletedAt IS NULL
+                  AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+                  AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+                  AND newer.set_number = cs.set_number
+                  AND (
+                    CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                    > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                    OR (
+                      CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+                      = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+                      AND newer.completed_at > cs.completed_at
+                    )
+                  )
+              );
+        """.trimIndent(),
+    ),
+)
+
+// ============================================================
+// TASK 5: manifestIndexes -- 81 index operations
 //
 // Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
@@ -2170,6 +2251,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── CompletedSet ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_completed_set_session", "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)"),
+    SchemaIndexOperation("idx_completed_set_completed_at", "CREATE INDEX IF NOT EXISTS idx_completed_set_completed_at ON CompletedSet(completed_at)"),
 
     // ── ProgressionEvent ────────────────────────────────────────────────
     SchemaIndexOperation("idx_progression_exercise", "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)"),

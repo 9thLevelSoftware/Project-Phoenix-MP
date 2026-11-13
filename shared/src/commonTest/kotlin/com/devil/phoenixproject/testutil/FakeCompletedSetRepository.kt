@@ -38,11 +38,45 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     var attemptDurabilityReadCount: Int = 0
     private val completedSetsBySession = mutableMapOf<String, MutableList<String>>()
     private val sessionExerciseIds = mutableMapOf<String, String>()
+    private val sessionProfileIds = mutableMapOf<String, String>()
+    private val sessionModes = mutableMapOf<String, String>()
     private val sessionRoutineIds = mutableMapOf<String, String>()
+    private val routineModifierAppliedSessions = mutableSetOf<String>()
     private val deletedSessionIds = mutableSetOf<String>()
+    /**
+     * Explicit repository-approved candidates for resolver policy tests. The fake does
+     * NOT model the SQL query's fail-closed origin/load predicates — tests curate this
+     * list to only contain rows those predicates would admit. Session scoping
+     * (exerciseId/profileId/mode), modifier provenance, and the completedAt window ARE modelled, see
+     * [getEligibleWorkingSetsForOneRepMax].
+     */
+    val eligibleWorkingSetsForOneRepMax = mutableListOf<CompletedSet>()
 
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
+
+    /**
+     * Registers a session's scope (exercise/profile/mode) so
+     * [getEligibleWorkingSetsForOneRepMax] can honour its scoping parameters the way the
+     * SQL query does. Seed paths that add directly to [eligibleWorkingSetsForOneRepMax]
+     * must register their sessions here.
+     */
+    fun registerSessionContext(
+        sessionId: String,
+        exerciseId: String,
+        profileId: String = "default",
+        mode: String,
+        routineModifierApplied: Boolean = false,
+    ) {
+        sessionExerciseIds[sessionId] = exerciseId
+        sessionProfileIds[sessionId] = profileId
+        sessionModes[sessionId] = mode
+        if (routineModifierApplied) {
+            routineModifierAppliedSessions += sessionId
+        } else {
+            routineModifierAppliedSessions -= sessionId
+        }
+    }
 
     fun setSessionRoutine(sessionId: String, routineSessionId: String) {
         sessionRoutineIds[sessionId] = routineSessionId
@@ -107,6 +141,22 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
     }
 
+    override suspend fun getEligibleWorkingSetsForOneRepMax(
+        exerciseId: String,
+        profileId: String,
+        mode: String,
+        completedAtSince: Long,
+        completedAtUntil: Long,
+    ): List<CompletedSet> = eligibleWorkingSetsForOneRepMax
+        .asSequence()
+        .filter { sessionExerciseIds[it.sessionId] == exerciseId }
+        .filter { sessionProfileIds[it.sessionId] == profileId }
+        .filter { sessionModes[it.sessionId] == mode }
+        .filter { it.sessionId !in routineModifierAppliedSessions }
+        .filter { it.completedAt in completedAtSince..completedAtUntil }
+        .sortedByDescending { it.completedAt }
+        .toList()
+
     /**
      * Test-only raw insert. Production writes a completed set through
      * [com.devil.phoenixproject.data.repository.WorkoutRepository.commitCompletedSet],
@@ -128,6 +178,8 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         session.exerciseId?.let { exerciseId ->
             sessionExerciseIds[session.id] = exerciseId
         }
+        sessionProfileIds[session.id] = session.profileId
+        sessionModes[session.id] = session.mode
 
         getCompletedSets(session.id).firstOrNull()?.let { return it }
 

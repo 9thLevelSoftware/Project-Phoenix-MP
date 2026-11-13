@@ -99,6 +99,7 @@ internal class TvCoreFixture(
     private val pr = FakePersonalRecordRepository()
     private val baseline = FakeProfileExerciseBaselineRepository()
     private val velocity = FakeVelocityOneRepMaxRepository()
+    private val completedSets = FakeCompletedSetRepository()
     private val rack = ProfileEquipmentRackRepository(profiles, scope)
     val koin = koinApplication {
         modules(module {
@@ -112,12 +113,12 @@ internal class TvCoreFixture(
             single<PreferencesManager> { FakePreferencesManager() }
             single<GamificationRepository> { FakeGamificationRepository() }
             single<TrainingCycleRepository> { FakeTrainingCycleRepository() }
-            single<CompletedSetRepository> { FakeCompletedSetRepository() }
+            single<CompletedSetRepository> { completedSets }
             single<ActiveWorkoutRuntimeRepository> { FakeActiveWorkoutRuntimeRepository() }
             single { DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()) }
             single { trigger }
-            single { ResolveRoutineWeightsUseCase(pr, baseline, velocity) }
-            single { ApplyRoutineModifierUseCase(pr, baseline, velocity) }
+            single { ResolveRoutineWeightsUseCase(pr, baseline, velocity, completedSets) }
+            single { ApplyRoutineModifierUseCase(pr, baseline, velocity, completedSets) }
             single { RecommendWeightAdjustmentUseCase() }
             single<EquipmentRackRepository> { rack }
             single { ApplyEquipmentRackLoadUseCase() }

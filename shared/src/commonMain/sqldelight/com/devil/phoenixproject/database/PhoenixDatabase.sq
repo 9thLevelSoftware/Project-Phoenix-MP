@@ -132,7 +132,10 @@ CREATE TABLE WorkoutSession (
     hrr60Bpm INTEGER,
     hrr300Bpm INTEGER,
     maxTorsoPitchDeg REAL,
-    maxTorsoRollDeg REAL
+    maxTorsoRollDeg REAL,
+    -- Legacy or imported sessions are unknown until a local workout explicitly records
+    -- whether a one-shot routine modifier was applied. Fail closed for 1RM inputs.
+    routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -1072,6 +1075,9 @@ INSERT INTO WorkoutSession (
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateSessionRoutineModifierApplied:
+UPDATE WorkoutSession SET routineModifierApplied = :routineModifierApplied WHERE id = :id;
 
 -- Insert session only if ID doesn't already exist (for sync pull deduplication).
 -- Includes updatedAt so a pulled row carries the push watermark instead of NULL.
@@ -2231,8 +2237,37 @@ CREATE INDEX idx_cycle_day_cycle ON CycleDay(cycle_id);
 CREATE INDEX idx_cycle_progress_cycle ON CycleProgress(cycle_id);
 CREATE INDEX idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
 CREATE INDEX idx_completed_set_session ON CompletedSet(session_id);
+CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
+
+-- Shared latest-attempt projection for callers that deduplicate before limiting.
+-- Exercise history reads this view so retries do not consume the requested row limit.
+CREATE VIEW CompletedSetLatestAttempt AS
+SELECT cs.*
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.deletedAt IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM CompletedSet newer
+    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+    WHERE newer_ws.exerciseId = ws.exerciseId
+      AND newer_ws.profile_id = ws.profile_id
+      AND newer_ws.deletedAt IS NULL
+      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+      AND newer.set_number = cs.set_number
+      AND (
+        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+        OR (
+          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+          AND newer.completed_at > cs.completed_at
+        )
+      )
+  );
 
 -- ==================== TRAINING CYCLES QUERIES ====================
 
@@ -2579,9 +2614,88 @@ SELECT
     cs.completed_at,
     cs.set_end_reason,
     ws.routineSessionId
-FROM CompletedSet cs
+FROM CompletedSetLatestAttempt cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
+ORDER BY cs.completed_at DESC
+LIMIT ?;
+
+-- Issue #1383: only producer-backed, fully completed, constant-load working sets may
+-- contribute to a rep-derived 1RM. Routine candidates require a valid persisted routine/exercise
+-- link; ordinary routine saves do not materialize PlannedSet rows. Fail closed for missing or
+-- partial routine linkage, portal-origin/legacy, Echo/adaptive, Just Lift, progressed, assisted,
+-- safety-affected, and modified records. Any marked row excludes its whole routine session so
+-- an interrupted/resumed workout cannot leak unmarked continuation sets.
+-- Keep this separate from general history queries:
+-- The parameter-bounded retry check prevents a future retry from suppressing a current
+-- candidate. Return the newest 400 eligible candidates in the 28-day horizon to bound
+-- routine-entry work while retaining the completed_at index-backed time window.
+selectEligibleWorkingSetsForOneRepMax:
+SELECT
+    cs.id,
+    cs.session_id,
+    cs.planned_set_id,
+    cs.routine_exercise_id,
+    cs.set_number,
+    cs.set_type,
+    cs.attempt_number,
+    cs.actual_reps,
+    cs.actual_weight_kg,
+    cs.logged_rpe,
+    cs.is_pr,
+    cs.completed_at,
+    cs.set_end_reason
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+LEFT JOIN RoutineExercise rx ON rx.id = cs.routine_exercise_id
+WHERE ws.exerciseId = :exerciseId
+  AND ws.profile_id = :profileId
+  AND ws.mode = :mode
+  AND UPPER(TRIM(ws.mode)) <> 'ECHO'
+  AND ws.deletedAt IS NULL
+  AND ws.portalOrigin = 0
+  AND ws.routineModifierApplied = 0
+  AND (
+    ws.routineSessionId IS NULL
+    OR TRIM(ws.routineSessionId) = ''
+    OR NOT EXISTS (
+      SELECT 1
+      FROM WorkoutSession modifier_ws
+      WHERE modifier_ws.profile_id = ws.profile_id
+        AND modifier_ws.routineSessionId = ws.routineSessionId
+        AND modifier_ws.routineModifierApplied != 0
+    )
+  )
+  AND (
+    (ws.routineId IS NULL AND ws.routineSessionId IS NULL)
+    OR (
+      ws.routineId IS NOT NULL
+      AND TRIM(ws.routineId) <> ''
+      AND ws.routineSessionId IS NOT NULL
+      AND TRIM(ws.routineSessionId) <> ''
+      AND rx.routineId = ws.routineId
+      AND rx.exerciseId = ws.exerciseId
+    )
+  )
+  AND ws.isJustLift = 0
+  AND ws.progressionKg = 0
+  AND ws.safetyFlags = 0
+  AND ws.deloadWarningCount = 0
+  AND ws.romViolationCount = 0
+  AND ws.spotterActivations = 0
+  AND ws.externalAddedLoadKg = 0
+  AND ws.counterweightKg = 0
+  AND TRIM(ws.rackItemsJson) = '[]'
+  AND ws.workingReps > 0
+  AND ws.workingReps = cs.actual_reps
+  AND ws.weightPerCableKg = cs.actual_weight_kg
+  AND cs.set_type = 'STANDARD'
+  AND cs.set_end_reason = 'TARGET_REPS_REACHED'
+  AND cs.actual_reps > 0
+  AND cs.actual_reps <= 12
+  AND cs.actual_weight_kg > 0
+  AND cs.completed_at >= :completedAtSince
+  AND cs.completed_at <= :completedAtUntil
   AND NOT EXISTS (
     SELECT 1
     FROM CompletedSet newer
@@ -2589,6 +2703,8 @@ WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
     WHERE newer_ws.exerciseId = ws.exerciseId
       AND newer_ws.profile_id = ws.profile_id
       AND newer_ws.deletedAt IS NULL
+      AND newer.completed_at >= :completedAtSince
+      AND newer.completed_at <= :completedAtUntil
       AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
       AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
       AND newer.set_number = cs.set_number
@@ -2603,7 +2719,7 @@ WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
       )
   )
 ORDER BY cs.completed_at DESC
-LIMIT ?;
+LIMIT 400;
 
 insertCompletedSet:
 INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)

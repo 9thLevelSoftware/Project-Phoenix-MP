@@ -138,6 +138,9 @@ data class RoutineExercise(
     // Runtime only: a launch modifier may deliberately shorten an editor-valid timed
     // duration below the editor minimum. This flag is never persisted or synced.
     val isLaunchAdjustedDuration: Boolean = false,
+    // Runtime only: Active Recovery/Heavy Deload changed the launch prescription.
+    // The session persists this provenance; the routine template remains untouched.
+    val isLaunchAdjustedByRoutineModifier: Boolean = false,
 ) {
     companion object {
         const val MIN_TIMED_DURATION_SECONDS = 10

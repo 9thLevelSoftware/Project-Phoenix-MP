@@ -1,13 +1,19 @@
 package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
@@ -31,6 +37,7 @@ class ResolveRoutineWeightsUseCaseTest {
     private lateinit var prRepository: FakePersonalRecordRepository
     private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var velocityRepository: FakeVelocityOneRepMaxRepository
+    private lateinit var completedSetRepository: FakeCompletedSetRepository
     private lateinit var useCase: ResolveRoutineWeightsUseCase
 
     private val testExercise = Exercise(
@@ -45,7 +52,244 @@ class ResolveRoutineWeightsUseCaseTest {
         prRepository.reset()
         baselineRepository = FakeProfileExerciseBaselineRepository()
         velocityRepository = FakeVelocityOneRepMaxRepository()
-        useCase = ResolveRoutineWeightsUseCase(prRepository, baselineRepository, velocityRepository)
+        completedSetRepository = FakeCompletedSetRepository()
+        useCase = ResolveRoutineWeightsUseCase(prRepository, baselineRepository, velocityRepository, completedSetRepository)
+    }
+
+    @Test
+    fun `Echo mode does not use rep-derived completed working sets`() = runTest {
+        val now = currentTimeMillis()
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "echo-completed-set",
+            sessionId = "echo-session",
+            plannedSetId = "echo-planned-set",
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 50f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now - 1_000L,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.Echo,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `modifier-adjusted working set cannot create a rep-derived baseline`() = runTest {
+        val now = currentTimeMillis()
+        completedSetRepository.registerSessionContext(
+            sessionId = "active-recovery-session",
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+            routineModifierApplied = true,
+        )
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "active-recovery-set",
+            sessionId = "active-recovery-session",
+            plannedSetId = "planned-set",
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 50f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `expired passing velocity estimate falls through to stored 1RM`() = runTest {
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 1L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = 1L,
+            profileId = "default",
+        )
+        baselineRepository.set("default", "bench-press", 120f, 1L)
+
+        val result = useCase(
+            RoutineExercise(
+                id = "routine-ex-expired-velocity",
+                exercise = testExercise,
+                orderIndex = 0,
+                weightPerCableKg = 30f,
+                usePercentOfPR = true,
+                weightPercentOfPR = 80,
+                scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                programMode = ProgramMode.OldSchool,
+            ),
+        )
+
+        assertEquals(96f, result.baseWeight)
+        assertEquals(120f, result.usedPR)
+        assertTrue(result.isFromPR)
+    }
+
+    @Test
+    fun `exact 28 day velocity boundary remains valid and reports its age`() = runTest {
+        val now = currentTimeMillis()
+        val twentyEightDays = 28L * 24L * 60L * 60L * 1_000L
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 102L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - twentyEightDays,
+            profileId = "default",
+        )
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.VELOCITY_ESTIMATE, result.source)
+        assertEquals(28L, result.sourceAgeDays)
+    }
+
+    @Test
+    fun `future velocity timestamp is rejected in favor of stored 1RM`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 103L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now + 1L,
+            profileId = "default",
+        )
+        baselineRepository.set("default", "bench-press", 85f, now)
+        val resolver = ResolveRoutineScalingBaselineUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+            nowMillis = { now },
+        )
+
+        val result = resolver(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.STORED_ONE_REP_MAX, result.source)
+        assertEquals(85f, result.weightPerCableKg)
+    }
+
+    @Test
+    fun `eligible newer constant-load set displaces a contradicted velocity estimate`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 101L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 80f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - 1_000L,
+            profileId = "default",
+        )
+        baselineRepository.set("default", "bench-press", 60f, 1L)
+        completedSetRepository.registerSessionContext(
+            sessionId = "eligible-session",
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+        )
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += CompletedSet(
+            id = "eligible-bench-set",
+            sessionId = "eligible-session",
+            plannedSetId = "planned-set-1",
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 10,
+            actualWeightKg = 90f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = now - 500L,
+            setEndReason = SetEndReason.TARGET_REPS_REACHED,
+        )
+
+        val weightsUseCase = ResolveRoutineWeightsUseCase(
+            prRepository = prRepository,
+            baselineRepository = baselineRepository,
+            velocityOneRepMaxRepository = velocityRepository,
+            completedSetRepository = completedSetRepository,
+        )
+        val result = weightsUseCase(
+            RoutineExercise(
+                id = "routine-ex-rep-derived-fallback",
+                exercise = testExercise,
+                orderIndex = 0,
+                weightPerCableKg = 30f,
+                usePercentOfPR = true,
+                weightPercentOfPR = 80,
+                scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                programMode = ProgramMode.OldSchool,
+            ),
+        )
+
+        assertEquals(96f, result.baseWeight)
+        assertEquals(120f, result.usedPR)
     }
 
     // ========== Test 1: Resolves percentage to absolute weight using PR ==========
@@ -602,7 +846,7 @@ class ResolveRoutineWeightsUseCaseTest {
             r2 = 0.98f,
             distinctLoads = 4,
             passedQualityGate = true,
-            computedAt = 1000L,
+            computedAt = currentTimeMillis(),
             profileId = "default",
         )
 
@@ -655,8 +899,8 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
-    fun `ESTIMATED_1RM falls back to max-weight PR when no estimate and no stored 1RM`() = runTest {
-        // Given: no velocity estimate, no stored oneRepMaxKg, but a max-weight PR exists
+    fun `ESTIMATED_1RM keeps absolute weight when only a raw max-weight PR exists`() = runTest {
+        // Raw max-weight PRs and phase peaks are not validated 1RM inputs.
         velocityRepository.latestPassing = null
         prRepository.addRecord(
             PersonalRecord(
@@ -686,12 +930,11 @@ class ResolveRoutineWeightsUseCaseTest {
 
         val result = useCase(routineExercise)
 
-        // 80% of 60 (max-weight PR) = 48 kg — must scale off PR, not drop to absolute 30
-        assertEquals(48f, result.baseWeight)
-        assertEquals(60f, result.usedPR)
-        assertEquals(80, result.percentOfPR)
-        assertTrue(result.isFromPR)
-        assertNull(result.fallbackReason)
+        assertEquals(30f, result.baseWeight)
+        assertNull(result.usedPR)
+        assertNull(result.percentOfPR)
+        assertFalse(result.isFromPR)
+        assertNotNull(result.fallbackReason)
     }
 
     // Issue #644: a velocity-1RM row at the 1.0 kg hardware floor must not be selected as the
@@ -710,7 +953,7 @@ class ResolveRoutineWeightsUseCaseTest {
             r2 = 0.98f,
             distinctLoads = 4,
             passedQualityGate = true, // legacy row from a previous build
-            computedAt = 1000L,
+            computedAt = currentTimeMillis(), // fresh: the floor value must be rejected by isUsableEstimate, not by staleness
             profileId = "default",
         )
         baselineRepository.set("default", "bench-press", 120f, 1L)
@@ -737,8 +980,8 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
-    fun `ESTIMATED_1RM ignores floor-clamped velocity row and falls back to max-weight PR`() = runTest {
-        // Given: floor-clamped velocity row + no stored 1RM + a max-weight PR
+    fun `ESTIMATED_1RM keeps absolute weight when a floor-clamped velocity row and raw max-weight PR exist`() = runTest {
+        // Neither a rejected velocity estimate nor a raw max-weight PR is a valid 1RM baseline.
         velocityRepository.latestPassing = VelocityOneRepMaxEntity(
             id = 2L,
             exerciseId = "bench-press",
@@ -747,7 +990,7 @@ class ResolveRoutineWeightsUseCaseTest {
             r2 = 0.95f,
             distinctLoads = 4,
             passedQualityGate = true,
-            computedAt = 1000L,
+            computedAt = currentTimeMillis(),
             profileId = "default",
         )
         prRepository.addRecord(
@@ -778,12 +1021,12 @@ class ResolveRoutineWeightsUseCaseTest {
 
         val result = useCase(routineExercise)
 
-        // 80% of 60 (max-weight PR) = 48 kg — not 1.0 kg
-        assertEquals(48f, result.baseWeight)
-        assertEquals(60f, result.usedPR)
-        assertEquals(80, result.percentOfPR)
-        assertTrue(result.isFromPR)
-        assertNull(result.fallbackReason)
+        // Only the saved absolute load is safe without an eligible 1RM source.
+        assertEquals(30f, result.baseWeight)
+        assertNull(result.usedPR)
+        assertNull(result.percentOfPR)
+        assertFalse(result.isFromPR)
+        assertNotNull(result.fallbackReason)
     }
 
     @Test
@@ -797,7 +1040,7 @@ class ResolveRoutineWeightsUseCaseTest {
             r2 = 0.98f,
             distinctLoads = 4,
             passedQualityGate = true,
-            computedAt = 1000L,
+            computedAt = currentTimeMillis(),
             profileId = "default",
         )
         baselineRepository.set("default", "bench-press", 120f, 1L)
@@ -954,6 +1197,281 @@ class ResolveRoutineWeightsUseCaseTest {
         result.setWeights.forEach { weight ->
             assertEquals(40f, weight) // Uses base 80% of PR for all sets
         }
+    }
+
+    // ========== Issue #1383 review fixes: rep-derived tier policy ==========
+
+    private fun eligibleWorkingSet(
+        id: String,
+        sessionId: String,
+        weightKg: Float,
+        reps: Int,
+        completedAt: Long,
+    ) = CompletedSet(
+        id = id,
+        sessionId = sessionId,
+        plannedSetId = null,
+        setNumber = 0,
+        setType = SetType.STANDARD,
+        actualReps = reps,
+        actualWeightKg = weightKg,
+        loggedRpe = null,
+        isPr = false,
+        completedAt = completedAt,
+        setEndReason = SetEndReason.TARGET_REPS_REACHED,
+    )
+
+    private fun registerOldSchoolSession(sessionId: String) {
+        completedSetRepository.registerSessionContext(
+            sessionId = sessionId,
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = ProgramMode.OldSchool.displayName,
+        )
+    }
+
+    private fun estimatorResolver(now: Long) = ResolveRoutineScalingBaselineUseCase(
+        prRepository = prRepository,
+        baselineRepository = baselineRepository,
+        velocityOneRepMaxRepository = velocityRepository,
+        completedSetRepository = completedSetRepository,
+        nowMillis = { now },
+    )
+
+    // (a) rep-bound: hybrid Brzycki/Epley estimates beyond ~12 reps are not comparable evidence.
+    @Test
+    fun `rep-derived tier ignores eligible working sets above the 12 rep bound`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 200L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - 1_000L,
+            profileId = "default",
+        )
+        registerOldSchoolSession("high-rep-session")
+        // A 13-rep row's out-of-range Epley estimate (286.7) would contradict and displace
+        // the velocity estimate if the rep bound did not reject the row outright.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "high-rep-set",
+            sessionId = "high-rep-session",
+            weightKg = 200f,
+            reps = 13,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.VELOCITY_ESTIMATE, result.source)
+        assertEquals(100f, result.weightPerCableKg)
+    }
+
+    // (b) contradiction rule: only a newer multi-rep set whose 1RM estimate clears the
+    // velocity estimate by the margin contradicts it.
+    @Test
+    fun `newer multi-rep set whose estimate clears the margin contradicts and displaces the velocity estimate`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 201L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - 1_000L,
+            profileId = "default",
+        )
+        registerOldSchoolSession("contradicting-session")
+        // Brzycki(80, 10) = 106.7 > 100 * 1.05 = 105 → contradicts and displaces.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "contradicting-set",
+            sessionId = "contradicting-session",
+            weightKg = 80f,
+            reps = 10,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE, result.source)
+        assertEquals(OneRepMaxCalculator.estimate(80f, 10), result.weightPerCableKg)
+    }
+
+    @Test
+    fun `newer single-rep set does not contradict a quality-passing velocity estimate`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 202L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - 1_000L,
+            profileId = "default",
+        )
+        registerOldSchoolSession("single-session")
+        // Singles must not displace a multi-load quality-gated velocity estimate even when
+        // the raw load exceeds it.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "single-set",
+            sessionId = "single-session",
+            weightKg = 110f,
+            reps = 1,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.VELOCITY_ESTIMATE, result.source)
+        assertEquals(100f, result.weightPerCableKg)
+    }
+
+    @Test
+    fun `newer set whose estimate stays within the contradiction margin does not displace the velocity estimate`() = runTest {
+        val now = currentTimeMillis()
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 203L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = now - 1_000L,
+            profileId = "default",
+        )
+        registerOldSchoolSession("within-margin-session")
+        // Brzycki(78, 10) = 104.0 <= 100 * 1.05 = 105 → no contradiction.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "within-margin-set",
+            sessionId = "within-margin-session",
+            weightKg = 78f,
+            reps = 10,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.VELOCITY_ESTIMATE, result.source)
+        assertEquals(100f, result.weightPerCableKg)
+    }
+
+    // (c) precedence margin: a noisy eligible set cannot silently demote a stored 1RM.
+    @Test
+    fun `rep-derived estimate below the stored 1RM margin keeps the labeled stored baseline`() = runTest {
+        val now = currentTimeMillis()
+        baselineRepository.set("default", "bench-press", 105f, now - 2_000L)
+        registerOldSchoolSession("below-margin-session")
+        // Brzycki(70, 10) = 93.3 <= 105 * 1.05 = 110.25 → margin not cleared.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "below-margin-set",
+            sessionId = "below-margin-session",
+            weightKg = 70f,
+            reps = 10,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.STORED_ONE_REP_MAX, result.source)
+        assertEquals("Stored 1RM", result.source.displayLabel)
+        assertEquals(105f, result.weightPerCableKg)
+        assertNotNull(result.resolutionReason)
+        assertTrue(result.resolutionReason.orEmpty().contains("did not clear the stored 1RM by the required margin"))
+    }
+
+    @Test
+    fun `rep-derived estimate clearing the stored 1RM margin wins over the stored baseline`() = runTest {
+        val now = currentTimeMillis()
+        baselineRepository.set("default", "bench-press", 100f, now - 2_000L)
+        registerOldSchoolSession("above-margin-session")
+        // estimate(100, 5) = 112.5 > 100 * 1.05 = 105 → margin cleared, rep-derived wins.
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "above-margin-set",
+            sessionId = "above-margin-session",
+            weightKg = 100f,
+            reps = 5,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.OldSchool,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE, result.source)
+        assertEquals(OneRepMaxCalculator.estimate(100f, 5), result.weightPerCableKg)
+    }
+
+    // (d) Echo mode routes the rep-derived tier empty.
+    @Test
+    fun `Echo mode returns no rep-derived tier`() = runTest {
+        val now = currentTimeMillis()
+        baselineRepository.set("default", "bench-press", 120f, 1L)
+        completedSetRepository.registerSessionContext(
+            sessionId = "echo-session",
+            exerciseId = "bench-press",
+            profileId = "default",
+            mode = ProgramMode.Echo.displayName,
+        )
+        completedSetRepository.eligibleWorkingSetsForOneRepMax += eligibleWorkingSet(
+            id = "echo-set",
+            sessionId = "echo-session",
+            weightKg = 90f,
+            reps = 10,
+            completedAt = now - 500L,
+        )
+
+        val result = estimatorResolver(now)(
+            exerciseId = "bench-press",
+            mode = ProgramMode.Echo,
+            profileId = "default",
+            basis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        assertNotNull(result)
+        assertEquals(RoutineScalingBaselineSource.STORED_ONE_REP_MAX, result.source)
+        assertEquals(120f, result.weightPerCableKg)
     }
 }
 

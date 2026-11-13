@@ -67,6 +67,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -91,6 +92,7 @@ import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
+import com.devil.phoenixproject.presentation.viewmodel.ScalingBaselineLoadStatus
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -145,11 +147,13 @@ fun ExerciseEditBottomSheet(
     // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
     val baselineRepository: ProfileExerciseBaselineRepository = koinInject()
+    val completedSetRepository: CompletedSetRepository = koinInject()
     val viewModel = remember {
         ExerciseConfigViewModel(
             personalRecordRepository = personalRecordRepository,
             velocityOneRepMaxRepository = velocityOneRepMaxRepository,
             baselineRepository = baselineRepository,
+            completedSetRepository = completedSetRepository,
         )
     }
     val userProfileRepository: UserProfileRepository = koinInject()
@@ -206,47 +210,66 @@ fun ExerciseEditBottomSheet(
 
     // Additional baselines for the 3-way scaling basis (Issue #517 gating + preview fix)
     val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
-    val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
-    val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
     val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
+    val baselineLoadStatus by viewModel.baselineLoadStatus.collectAsState()
+    val baselineResolutionReason by viewModel.baselineResolutionReason.collectAsState()
+    val estimatedOneRepMaxBaselineAvailable by viewModel.estimatedOneRepMaxBaselineAvailable.collectAsState()
 
-    // Resolved baseline weight for the currently-selected scaling basis, mirroring
-    // ResolveRoutineWeightsUseCase so the editor preview matches workout-start resolution.
-    // For legacy rows with no explicit scalingBasis, derive it from prTypeForScaling
-    // (same as RoutineExercise.effectiveScalingBasis) instead of defaulting to MAX_WEIGHT_PR.
+    // The shared resolver is authoritative for ESTIMATED_1RM so a rejected velocity value
+    // cannot reappear through an editor-only fallback.
     val effectiveScalingBasis = scalingBasis ?: ScalingBasis.fromPrType(prTypeForScaling)
     val maxWeightBaselineKg = currentExercisePR?.weightPerCableKg?.takeIf { it > 0 }
     val maxVolumeBaselineKg = currentMaxVolumePR?.weightPerCableKg?.takeIf { it > 0 }
-    val velocityBaselineKg = velocityEstimateKg?.takeIf { it > 0 }
-    val storedBaselineKg = storedOneRepMaxKg?.takeIf { it > 0 }
-    val sharedBaselineKg = routineScalingBaseline
+    val sharedBaseline = routineScalingBaseline
         ?.takeIf { it.basis == effectiveScalingBasis }
-        ?.weightPerCableKg
-        ?.takeIf { it > 0 }
+        ?.takeIf { it.weightPerCableKg.isFinite() && it.weightPerCableKg > 0f }
+    val sharedBaselineKg = sharedBaseline?.weightPerCableKg
     val baselineWeightKg: Float? = sharedBaselineKg ?: when (effectiveScalingBasis) {
         ScalingBasis.MAX_WEIGHT_PR -> maxWeightBaselineKg
         ScalingBasis.MAX_VOLUME_PR -> maxVolumeBaselineKg
-        ScalingBasis.ESTIMATED_1RM -> velocityBaselineKg ?: storedBaselineKg ?: maxWeightBaselineKg
+        ScalingBasis.ESTIMATED_1RM -> null
     }
-    val baselineSourceMessage = routineScalingBaseline
-        ?.takeIf { it.source == RoutineScalingBaselineSource.CROSS_MODE_PR && it.basis == effectiveScalingBasis }
-        ?.sourceMode
-        ?.let { sourceMode ->
-            val basisLabel = when (effectiveScalingBasis) {
-                ScalingBasis.MAX_WEIGHT_PR -> "Max-weight PR"
-                ScalingBasis.MAX_VOLUME_PR -> "Max-volume PR"
-                ScalingBasis.ESTIMATED_1RM -> "Est. 1RM"
+    val baselineSourceMessage = when {
+        effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM && sharedBaseline != null -> {
+            val ageNote = if (
+                sharedBaseline.source == RoutineScalingBaselineSource.VELOCITY_ESTIMATE ||
+                sharedBaseline.source == RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE
+            ) {
+                sharedBaseline.sourceAgeDays?.let { " ($it days old)" }.orEmpty()
+            } else {
+                ""
             }
-            "No ${selectedMode.displayName} PR yet; using your best available $basisLabel from $sourceMode."
+            "Using ${sharedBaseline.source.displayLabel}$ageNote. ${sharedBaseline.resolutionReason.orEmpty()}"
         }
+
+        effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM && baselineLoadStatus == ScalingBaselineLoadStatus.LOADING ->
+            "Checking eligible 1RM sources…"
+
+        effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM && baselineLoadStatus == ScalingBaselineLoadStatus.UNAVAILABLE ->
+            "No valid 1RM baseline; saved absolute weights will be kept. ${baselineResolutionReason.orEmpty()}"
+
+        sharedBaseline?.source == RoutineScalingBaselineSource.CROSS_MODE_PR ->
+            sharedBaseline.sourceMode?.let { sourceMode ->
+                val basisLabel = when (effectiveScalingBasis) {
+                    ScalingBasis.MAX_WEIGHT_PR -> "Max-weight PR"
+                    ScalingBasis.MAX_VOLUME_PR -> "Max-volume PR"
+                    ScalingBasis.ESTIMATED_1RM -> "Est. 1RM"
+                }
+                "No ${selectedMode.displayName} PR yet; using your best available $basisLabel from $sourceMode."
+            }
+
+        else -> null
+    }
     // True if a baseline exists for AT LEAST ONE basis. Used to gate the % toggle and
     // warning so the user can enable scaling and switch to a basis that has data, rather
     // than being locked out when only the currently-selected basis lacks a baseline (#517).
+    // The ViewModel computes this from the current-basis baseline, either PR, and an
+    // ESTIMATED_1RM resolution probe, so a user whose only 1RM source is a velocity or
+    // rep-derived estimate can still reach the Est. 1RM basis.
     val hasAnyBaseline = maxWeightBaselineKg != null ||
         maxVolumeBaselineKg != null ||
-        velocityBaselineKg != null ||
-        storedBaselineKg != null ||
-        sharedBaselineKg != null
+        sharedBaselineKg != null ||
+        estimatedOneRepMaxBaselineAvailable
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)
@@ -561,6 +584,7 @@ fun ExerciseEditBottomSheet(
                         baselineWeightKg = baselineWeightKg,
                         hasAnyBaseline = hasAnyBaseline,
                         baselineSourceMessage = baselineSourceMessage,
+                        baselineSourceLabel = sharedBaseline?.source?.displayLabel,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
@@ -1398,6 +1422,7 @@ private fun WeightConfigurationCard(
      */
     hasAnyBaseline: Boolean = baselineWeightKg != null,
     baselineSourceMessage: String? = null,
+    baselineSourceLabel: String? = null,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
@@ -1442,7 +1467,7 @@ private fun WeightConfigurationCard(
                     Text(
                         text = when {
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
-                                "Scale weight based on your velocity 1RM estimate"
+                                "Scale weight based on ${baselineSourceLabel ?: "the selected 1RM baseline"}"
 
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
                                 "Scale weight based on your max-volume personal record"

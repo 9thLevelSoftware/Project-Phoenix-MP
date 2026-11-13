@@ -215,6 +215,29 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `routine modifier provenance heal excludes legacy rows by default`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('legacy',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "WorkoutSession" && it.column == "routineModifierApplied" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("1", queryScalar(driver, "SELECT CAST(routineModifierApplied AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+    }
+
+    @Test
     fun `baseline table and remap index reconcile idempotently`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(null, "CREATE TABLE UserProfile(id TEXT PRIMARY KEY)", 0)
@@ -1041,18 +1064,22 @@ class SchemaManifestTest {
         driver.execute(null, "CREATE TABLE CycleDay (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, day_number INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE CycleProgress (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL UNIQUE, current_day_number INTEGER NOT NULL DEFAULT 1)", 0)
         driver.execute(null, "CREATE TABLE PlannedSet (id TEXT PRIMARY KEY, routine_exercise_id TEXT NOT NULL, set_number INTEGER NOT NULL)", 0)
-        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, completed_at INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE ExternalActivity (id TEXT PRIMARY KEY, externalId TEXT NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL, startedAt INTEGER NOT NULL, syncedAt INTEGER NOT NULL, profileId TEXT NOT NULL DEFAULT 'default')", 0)
 
         val report = reconcileFullSchema(driver)
 
         // Verify the report has entries for all manifest items, including dropped tables
         val expectedTotal = manifestDroppedTables.size + manifestTables.size +
-            manifestColumns.size + manifestIndexes.size
+            manifestColumns.size + manifestViews.size + manifestIndexes.size
         assertEquals(expectedTotal, report.total)
 
         // No failures should occur (all prerequisite tables exist)
         assertFalse(report.hasFailures, "Unexpected failures: ${report.failures.map { "${it.target}: ${it.detail}" }}")
+        assertTrue(
+            indexExists(driver, "idx_completed_set_completed_at"),
+            "Schema reconciliation must heal the issue #1383 candidate-window index",
+        )
 
         // Migration 56: a leftover signature table is dropped and not recreated.
         assertFalse(tableExists(driver, "ExerciseSignature"))

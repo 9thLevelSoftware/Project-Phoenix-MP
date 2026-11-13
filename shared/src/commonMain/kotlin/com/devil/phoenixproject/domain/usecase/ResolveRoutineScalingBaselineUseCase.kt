@@ -1,16 +1,22 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.data.repository.preferredPRPhaseForWorkoutMode
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 
 /**
  * Shared resolver for routine percent-of-PR baseline lookup.
@@ -23,6 +29,8 @@ class ResolveRoutineScalingBaselineUseCase(
     private val prRepository: PersonalRecordRepository,
     private val baselineRepository: ProfileExerciseBaselineRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    private val completedSetRepository: CompletedSetRepository,
+    private val nowMillis: () -> Long = ::currentTimeMillis,
 ) {
     suspend operator fun invoke(
         exerciseId: String,
@@ -71,33 +79,99 @@ class ResolveRoutineScalingBaselineUseCase(
         profileId: String,
         basis: ScalingBasis,
     ): RoutineScalingBaseline? {
-        velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
-            ?.estimatedPerCableKg
-            // Issue #644: reject the AssessmentEngine 1.0 kg hardware floor. A row at the
-            // floor is a diagnostic, not a usable baseline — fall through to stored-1RM /
-            // max-weight PR fallback so 80% scaling doesn't collapse to 2.2 lb/cable.
-            // Belt-and-suspenders: SqlDelightVelocityOneRepMaxRepository already filters,
-            // but a different repo impl plugged in here would re-introduce the bug.
-            ?.takeIf { VelocityOneRepMaxEstimator.isUsableEstimate(it) }
-            ?.let { estimate ->
-                return RoutineScalingBaseline(
-                    weightPerCableKg = estimate,
-                    basis = basis,
-                    sourceMode = null,
-                    source = RoutineScalingBaselineSource.VELOCITY_ESTIMATE,
+        val now = nowMillis()
+        val completedWorkingSets = if (mode == ProgramMode.Echo) {
+            emptyList()
+        } else {
+            completedSetRepository.getEligibleWorkingSetsForOneRepMax(
+                exerciseId = exerciseId,
+                profileId = profileId,
+                mode = mode.displayName,
+                completedAtSince = now - MAX_VELOCITY_AGE_MS,
+                completedAtUntil = now,
+            ).filter(::isValidCompletedWorkingSet)
+        }
+        val repEstimates = completedWorkingSets.mapNotNull { set ->
+            OneRepMaxCalculator.estimate(set.actualWeightKg, set.actualReps)
+                .takeIf { it.isFinite() && it > 0f }
+                ?.let { estimate -> set to estimate }
+        }
+        val highestRepEstimate = repEstimates.maxWithOrNull(
+            compareBy<Pair<CompletedSet, Float>> { it.second }.thenBy { it.first.completedAt },
+        )
+
+        val velocityEstimate = velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
+            ?.takeIf { estimate ->
+                estimate.exerciseId == exerciseId &&
+                    estimate.profileId == profileId &&
+                    estimate.passedQualityGate &&
+                    estimate.estimatedPerCableKg.isFinite() &&
+                    VelocityOneRepMaxEstimator.isUsableEstimate(estimate.estimatedPerCableKg) &&
+                    estimate.computedAt <= now &&
+                    estimate.computedAt >= now - MAX_VELOCITY_AGE_MS
+            }
+        val contradictedByNewerWorkingLoad = velocityEstimate != null && completedWorkingSets.any { set ->
+            set.completedAt > velocityEstimate.computedAt &&
+                set.actualReps >= 2 && // single-rep sets must not displace a multi-load quality-gated velocity estimate
+                set.actualWeightKg.isFinite() &&
+                OneRepMaxCalculator.estimate(set.actualWeightKg, set.actualReps) >
+                velocityEstimate.estimatedPerCableKg * (1f + CONTRADICTION_ESTIMATE_MARGIN)
+        }
+        if (velocityEstimate != null && !contradictedByNewerWorkingLoad) {
+            return RoutineScalingBaseline(
+                weightPerCableKg = velocityEstimate.estimatedPerCableKg,
+                basis = basis,
+                sourceMode = null,
+                source = RoutineScalingBaselineSource.VELOCITY_ESTIMATE,
+                sourceTimestamp = velocityEstimate.computedAt,
+                sourceAgeDays = ageInDays(now, velocityEstimate.computedAt),
+                resolutionReason = "Current quality-passing velocity estimate within its 28-day validity window.",
+            )
+        }
+
+        highestRepEstimate?.let { (set, estimate) ->
+            // Precedence guard: the binding tier order stays velocity -> rep-derived ->
+            // labeled stored 1RM, but the margin reconciles that order with the
+            // requirement that stored/legacy baselines are preserved — a noisy eligible
+            // set must clear the stored 1RM by a margin before it may demote an explicit
+            // stored baseline.
+            val storedBaseline = storedOneRepMaxBaseline(profileId, exerciseId, basis)
+            if (storedBaseline != null &&
+                estimate <= storedBaseline.weightPerCableKg * (1f + REP_DERIVED_OVER_STORED_MARGIN)
+            ) {
+                return storedBaseline.copy(
+                    resolutionReason = "An eligible completed working-set estimate was available but did not clear the stored 1RM by the required margin; keeping the stored 1RM.",
                 )
             }
-
-        storedOneRepMaxBaseline(profileId, exerciseId, basis)?.let { return it }
-
-        currentModeWeightPR(exerciseId, mode, profileId)?.let { record ->
-            return record.toBaseline(basis, RoutineScalingBaselineSource.CURRENT_MODE_PR)
+            return RoutineScalingBaseline(
+                weightPerCableKg = estimate,
+                basis = basis,
+                sourceMode = mode.displayName,
+                source = RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE,
+                sourceTimestamp = set.completedAt,
+                sourceAgeDays = ageInDays(now, set.completedAt),
+                resolutionReason = if (contradictedByNewerWorkingLoad) {
+                    "A newer completed working load exceeded the velocity estimate; using the highest eligible rep-derived estimate."
+                } else {
+                    "Velocity estimate unavailable or expired; using the highest eligible completed working-set estimate."
+                },
+            )
         }
-        crossModeWeightPR(exerciseId, mode, profileId)?.let { record ->
-            return record.toBaseline(basis, RoutineScalingBaselineSource.CROSS_MODE_PR)
-        }
-        return null
+
+        // Stored baseline provenance is uncertain; preserve it as a separately labeled
+        // stored value. A raw max-weight PR is not interchangeable with an estimated 1RM.
+        return storedOneRepMaxBaseline(profileId, exerciseId, basis)
+            ?.copy(resolutionReason = "No current velocity or eligible completed working-set estimate is available.")
     }
+
+    private fun isValidCompletedWorkingSet(set: CompletedSet): Boolean =
+        set.setType == SetType.STANDARD &&
+            set.setEndReason == SetEndReason.TARGET_REPS_REACHED &&
+            set.actualReps > 0 &&
+            set.actualReps <= MAX_REP_DERIVED_REPS &&
+            set.actualWeightKg.isFinite() &&
+            set.actualWeightKg > 0f &&
+            set.completedAt > 0L
 
     private suspend fun currentModeWeightPR(
         exerciseId: String,
@@ -110,17 +184,18 @@ class ResolveRoutineScalingBaselineUseCase(
         profileId: String,
         exerciseId: String,
         basis: ScalingBasis,
-    ): RoutineScalingBaseline? = baselineRepository.get(profileId, exerciseId)
-        ?.oneRepMaxPerCableKg
-        ?.takeIf { it > 0 }
-        ?.let { storedOneRepMax ->
-            RoutineScalingBaseline(
-                weightPerCableKg = storedOneRepMax,
-                basis = basis,
-                sourceMode = null,
-                source = RoutineScalingBaselineSource.STORED_ONE_REP_MAX,
-            )
-        }
+    ): RoutineScalingBaseline? {
+        val stored = baselineRepository.get(profileId, exerciseId) ?: return null
+        val weightPerCableKg = stored.oneRepMaxPerCableKg?.takeIf { it.isFinite() && it > 0f } ?: return null
+        return RoutineScalingBaseline(
+            weightPerCableKg = weightPerCableKg,
+            basis = basis,
+            sourceMode = null,
+            source = RoutineScalingBaselineSource.STORED_ONE_REP_MAX,
+            sourceTimestamp = stored.updatedAt,
+            sourceAgeDays = ageInDays(nowMillis(), stored.updatedAt),
+        )
+    }
 
     private suspend fun currentModeVolumePR(
         exerciseId: String,
@@ -169,6 +244,7 @@ class ResolveRoutineScalingBaselineUseCase(
         basis = basis,
         sourceMode = workoutMode,
         source = source,
+        sourceTimestamp = timestamp,
     )
 }
 
@@ -177,11 +253,34 @@ data class RoutineScalingBaseline(
     val basis: ScalingBasis,
     val sourceMode: String?,
     val source: RoutineScalingBaselineSource,
+    val sourceTimestamp: Long? = null,
+    val sourceAgeDays: Long? = null,
+    val resolutionReason: String? = null,
 )
 
-enum class RoutineScalingBaselineSource {
-    CURRENT_MODE_PR,
-    CROSS_MODE_PR,
-    VELOCITY_ESTIMATE,
-    STORED_ONE_REP_MAX,
+
+enum class RoutineScalingBaselineSource(val displayLabel: String) {
+    CURRENT_MODE_PR("Current-mode PR"),
+    CROSS_MODE_PR("Cross-mode PR"),
+    VELOCITY_ESTIMATE("Velocity 1RM estimate"),
+    REP_DERIVED_ESTIMATE("Completed working-set estimate"),
+    STORED_ONE_REP_MAX("Stored 1RM"),
 }
+
+private const val MAX_VELOCITY_AGE_MS = 28L * 24L * 60L * 60L * 1_000L
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1_000L
+
+// Hybrid Brzycki/Epley estimates beyond ~12 reps are not comparable evidence: Epley
+// linearizes and util/Constants.kt notes overestimation risk at high rep counts.
+private const val MAX_REP_DERIVED_REPS = 12
+
+// A candidate working set only contradicts a velocity estimate when its 1RM estimate
+// exceeds the velocity estimate by more than this margin.
+private const val CONTRADICTION_ESTIMATE_MARGIN = 0.05f
+
+// A rep-derived estimate must clear a stored 1RM baseline by this margin before it may
+// demote the explicit stored baseline.
+private const val REP_DERIVED_OVER_STORED_MARGIN = 0.05f
+
+private fun ageInDays(now: Long, timestamp: Long?): Long? =
+    timestamp?.takeIf { it > 0L }?.let { (now - it).coerceAtLeast(0L) / MILLIS_PER_DAY }

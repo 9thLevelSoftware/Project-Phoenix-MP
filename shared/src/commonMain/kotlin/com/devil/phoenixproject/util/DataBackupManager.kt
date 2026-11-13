@@ -1668,6 +1668,11 @@ abstract class BaseDataBackupManager(
                                                     )
                                                 }
                                                 if (inserted != null) {
+                                                    queries.updateSessionRoutineModifierApplied(
+                                                        id = session.id,
+                                                        // Imported backup records have no trusted load provenance.
+                                                        routineModifierApplied = 1L,
+                                                    )
                                                     sessionsImported++
                                                     resolvedRoutineSessionId?.let { groupId ->
                                                         restoredRoutineGroupIds.getOrPut(sessionProfileId) { linkedSetOf() } += groupId
@@ -3596,6 +3601,7 @@ abstract class BaseDataBackupManager(
             hrr300Bpm = session.hrr300Bpm?.toInt(),
             maxTorsoPitchDeg = session.maxTorsoPitchDeg?.toFloat(),
             maxTorsoRollDeg = session.maxTorsoRollDeg?.toFloat(),
+            routineModifierApplied = session.routineModifierApplied == 1L,
         )
     }
 
