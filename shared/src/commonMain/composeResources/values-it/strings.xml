@@ -115,4 +115,113 @@
     <string name="home_recent_activity_date_pattern">dd/MM/yyyy</string>
     <string name="home_recent_activity_time_pattern">HH:mm</string>
     <string name="home_recent_activity_date_time_separator"> • </string>
+    <!-- ==================== Sincronizzazione in uscita Intervals.icu (#1384) ==================== -->
+    <string name="intervals_screen_title">Intervals.icu</string>
+    <string name="intervals_back_cd">Indietro</string>
+    <string name="intervals_send_workouts_title">Invia allenamenti</string>
+    <string name="intervals_send_workouts_subtitle">Invia automaticamente gli allenamenti completati a Intervals.icu</string>
+    <string name="intervals_send_workouts_cd">Apri le impostazioni di Invia allenamenti</string>
+
+    <!-- Informativa -->
+    <string name="intervals_disclosure_title">Come funziona la condivisione</string>
+    <string name="intervals_disclosure_strength">Ogni allenamento completato viene inviato come un'attività di forza con ripetizioni e peso di ogni serie.</string>
+    <string name="intervals_disclosure_hr">La frequenza cardiaca media e massima vengono incluse quando un sensore di frequenza cardiaca le ha registrate. Non serve la fascia.</string>
+    <string name="intervals_disclosure_credentials">Il tuo ID atleta e la tua chiave API sono salvati solo su questo telefono, nel suo archivio sicuro.</string>
+    <string name="intervals_disclosure_future_only">Vengono inviati solo gli allenamenti completati dopo l'attivazione. La cronologia esistente non viene mai caricata.</string>
+    <string name="intervals_disclosure_no_edit_sync">Le modifiche e le eliminazioni fatte in Phoenix non vengono inviate in seguito. Ogni allenamento viene caricato una sola volta.</string>
+    <string name="intervals_disclosure_no_onward">Phoenix invia gli allenamenti solo a Intervals.icu — mai ad altri servizi.</string>
+    <string name="intervals_disclosure_no_background">Gli allenamenti vengono inviati mentre Phoenix è aperto. L'invio in background non è garantito.</string>
+    <string name="intervals_disclosure_backup_tradeoff">Poiché i file grezzi del database non possono essere ripuliti da queste credenziali, le esportazioni ZIP di supporto restano disattivate nelle build con questa integrazione. I tuoi normali backup JSON continuano a funzionare.</string>
+
+    <!-- Distinzione a tre stati -->
+    <string name="intervals_three_way_title">Salvato, in coda, inviato</string>
+    <string name="intervals_three_way_saved">Salvato — l'allenamento è su questo telefono.</string>
+    <string name="intervals_three_way_queued">In coda — in attesa di caricamento su Intervals.icu.</string>
+    <string name="intervals_three_way_sent">Inviato — confermato su Intervals.icu.</string>
+
+    <!-- Credenziali -->
+    <string name="intervals_athlete_id_label">ID atleta</string>
+    <string name="intervals_athlete_id_hint">es. i123456</string>
+    <string name="intervals_api_key_label">Chiave API</string>
+    <string name="intervals_api_key_hint">La tua chiave API di Intervals.icu</string>
+    <string name="intervals_api_key_show_cd">Mostra chiave API</string>
+    <string name="intervals_api_key_hide_cd">Nascondi chiave API</string>
+
+    <!-- Errori di validazione e di operazione -->
+    <string name="intervals_error_athlete_id_required">Inserisci il tuo ID atleta di Intervals.icu.</string>
+    <string name="intervals_error_athlete_id_invalid">Quell'ID atleta non sembra corretto. Usa lettere, cifre, trattini o trattini bassi, come i123456.</string>
+    <string name="intervals_error_api_key_required">Inserisci la tua chiave API di Intervals.icu.</string>
+    <string name="intervals_error_network">Impossibile raggiungere Intervals.icu. Controlla la connessione e riprova.</string>
+    <string name="intervals_error_credentials_rejected">Intervals.icu ha rifiutato queste credenziali. Controlla ID atleta e chiave API.</string>
+    <string name="intervals_error_validation_rejected">Intervals.icu ha rifiutato la richiesta.</string>
+    <string name="intervals_error_enable_failed">Impossibile attivare l'invio. Assicurati che le credenziali siano salvate e riprova.</string>
+
+    <!-- Azioni -->
+    <string name="intervals_action_save">Salva</string>
+    <string name="intervals_action_test">Prova connessione</string>
+    <string name="intervals_action_testing">Verifica…</string>
+    <string name="intervals_action_enable">Attiva invio</string>
+    <string name="intervals_action_pause">Sospendi invio</string>
+    <string name="intervals_action_resume">Riprendi invio</string>
+    <string name="intervals_action_disconnect">Disconnetti</string>
+    <string name="intervals_action_check_upload">Controlla stato del caricamento</string>
+    <string name="intervals_action_retry_check">Riprova il controllo</string>
+
+    <!-- Etichette di stato -->
+    <string name="intervals_status_off">Disattivato</string>
+    <string name="intervals_status_draft">Non configurato</string>
+    <string name="intervals_status_testing">Verifica connessione</string>
+    <string name="intervals_status_tested_disabled">Verificato — ancora disattivato</string>
+    <string name="intervals_status_enabled">Attivato</string>
+    <string name="intervals_status_paused">In pausa</string>
+    <string name="intervals_status_auth_required">Accesso necessario</string>
+    <string name="intervals_status_secure_store_unavailable">Archivio sicuro non disponibile</string>
+    <string name="intervals_status_offline_queued">In coda — in attesa di invio</string>
+    <string name="intervals_status_retry_exhausted">Caricamento interrotto</string>
+    <string name="intervals_status_uncertain">Stato del caricamento sconosciuto</string>
+    <string name="intervals_status_disconnect_confirm">Disconnettere?</string>
+
+    <!-- Messaggi di stato -->
+    <string name="intervals_message_off">L'invio degli allenamenti completati a Intervals.icu è disattivato.</string>
+    <string name="intervals_message_draft">Inserisci ID atleta e chiave API per configurare l'invio.</string>
+    <string name="intervals_message_tested_disabled">Connessione verificata. L'invio resta disattivato finché non lo attivi.</string>
+    <string name="intervals_message_enabled">I nuovi allenamenti completati vengono inviati a Intervals.icu.</string>
+    <string name="intervals_message_paused">L'invio è in pausa. Gli allenamenti completati ora restano su questo telefono e non verranno inviati in seguito.</string>
+    <string name="intervals_message_auth_required">Intervals.icu ha rifiutato le credenziali salvate. Aggiorna la tua chiave API per inviare di nuovo.</string>
+    <string name="intervals_message_secure_store_unavailable">Phoenix conserva la tua chiave nell'archivio sicuro del dispositivo, attualmente non disponibile. L'invio resta disattivato e nulla è salvato in chiaro.</string>
+    <string name="intervals_message_offline_queued">Gli allenamenti sono salvati e in coda. Verranno inviati quando sarà disponibile una connessione.</string>
+    <string name="intervals_message_retry_exhausted">Alcuni caricamenti sono stati interrotti dopo troppi tentativi. Nulla viene caricato di nuovo automaticamente.</string>
+    <string name="intervals_message_uncertain">Non abbiamo potuto confermare se un allenamento è arrivato su Intervals.icu. Controlla prima lo stato del caricamento — Phoenix non lo caricherà di nuovo alla cieca.</string>
+    <string name="intervals_message_checking">Controllo dello stato del caricamento…</string>
+    <string name="intervals_message_check_done">Stato del caricamento verificato.</string>
+    <string name="intervals_message_check_failed">Impossibile verificare lo stato del caricamento. Nulla è stato caricato di nuovo.</string>
+    <string name="intervals_message_saved">Credenziali salvate su questo telefono.</string>
+
+    <!-- Contatori per profilo e destinazione -->
+    <string name="intervals_counters_title">Questo profilo e questo atleta</string>
+    <string name="intervals_counters_last_sent">Ultimo invio</string>
+    <string name="intervals_counters_never">Mai</string>
+    <string name="intervals_counters_queued">In coda</string>
+    <string name="intervals_counters_sent">Inviati</string>
+    <string name="intervals_counters_uncertain">Incerti</string>
+    <string name="intervals_counters_failed">Falliti</string>
+
+    <!-- Conferma disconnessione -->
+    <string name="intervals_disconnect_title">Disconnettere Intervals.icu?</string>
+    <string name="intervals_disconnect_message">Phoenix disattiva l'invio e cancella la tua chiave da questo telefono. Gli allenamenti già inviati a Intervals.icu restano su Intervals.icu.</string>
+    <string name="intervals_disconnect_confirm">Disconnetti</string>
+
+    <!-- Codici di errore permanente -->
+    <string name="intervals_reason_label">Motivo</string>
+    <string name="intervals_reason_retry_exhausted">Troppi tentativi</string>
+    <string name="intervals_reason_lease_expired">Tentativo di invio scaduto</string>
+    <string name="intervals_reason_auth_required">Credenziali rifiutate</string>
+    <string name="intervals_reason_validation_rejected">Intervals.icu ha rifiutato l'allenamento</string>
+    <string name="intervals_reason_payload_too_large">Dettagli dell'allenamento troppo grandi per l'invio</string>
+    <string name="intervals_reason_safe_retryable">Problema temporaneo</string>
+    <string name="intervals_reason_ambiguous_outcome">Consegna non confermata</string>
+    <string name="intervals_reason_incomplete_reconciliation">Il controllo dello stato era incompleto</string>
+    <string name="intervals_reason_no_remote_match">Nessuna attività corrispondente trovata</string>
+    <string name="intervals_reason_multiple_remote_matches">Trovata più di un'attività corrispondente</string>
+    <string name="intervals_reason_suppressed_by_pause">In pausa</string>
 </resources>

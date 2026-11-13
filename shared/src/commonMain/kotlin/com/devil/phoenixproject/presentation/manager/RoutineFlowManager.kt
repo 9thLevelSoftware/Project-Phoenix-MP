@@ -1499,6 +1499,11 @@ class RoutineFlowManager(
             Logger.d(tag = "RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
             return
         }
+        // Issue #1384: runtime-cleanup entry is gated on durable local acceptance — every
+        // routine-finish path (summary no-next-step, restored advance, final-exercise
+        // skip, no-next-step autoplay) durably admits its FINALIZE request via
+        // ActiveSessionEngine.admitRoutineCompletion BEFORE invoking this method, and a
+        // local persistence failure never reaches here. Never an HTTP wait.
         lifecycleDelegate.beginRoutineCompletedRuntimeCleanup()
         supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return

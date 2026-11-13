@@ -64,6 +64,10 @@ sealed class NavigationRoutes(val route: String) {
 
     // Integration routes
     object Integrations : NavigationRoutes("integrations")
+
+    // Intervals.icu outbound "Send workouts" settings (issue #1384)
+    object IntervalsSettings : NavigationRoutes("integrations/intervals")
+
     object ExternalIntegrationHub : NavigationRoutes("external_integration_hub")
     object ExternalActivities : NavigationRoutes("external_activities")
     object ExternalRoutines : NavigationRoutes("external_routines")

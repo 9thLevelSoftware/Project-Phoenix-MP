@@ -3,6 +3,11 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.intervals.CompletionJournalCodec
+import com.devil.phoenixproject.data.integration.intervals.IntervalsLocalKind
+import com.devil.phoenixproject.data.integration.intervals.WorkoutCompletionFinalizer
+import com.devil.phoenixproject.data.integration.intervals.recordStandaloneCompletion
+import com.devil.phoenixproject.data.integration.intervals.resolveIntervalsDrainTriggerOrNull
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -22,6 +27,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +51,7 @@ class SqlDelightWorkoutRepository(
     // shows and restores nothing.
     private val signedInPortalUserId: () -> String? = { null },
     private val activeProfileId: () -> String? = { null },
+    private val onStandaloneExportQueued: () -> Unit = { resolveIntervalsDrainTriggerOrNull()?.signal() },
 ) : WorkoutRepository {
 
     private val queries = db.phoenixDatabaseQueries
@@ -572,29 +579,140 @@ class SqlDelightWorkoutRepository(
     ) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
-                    insertSessionRow(session)
-                }
-                if (metrics.isNotEmpty()) {
-                    queries.deleteMetricsBySession(session.id)
-                    metrics.forEach { metric -> insertMetricRow(session.id, metric) }
-                }
-                if (completedSet != null &&
-                    queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
-                ) {
-                    queries.insertCompletedSetRow(completedSet)
-                }
-                queries.deleteRepMetricsBySession(session.id)
-                repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
-                queries.deleteRepBiomechanicsBySession(session.id)
-                repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
-                // Main's newer sync-dirty contract: every child write marks its
-                // session. The atomic commit writes those children in one
-                // transaction, so it must dirty the session the same way the
-                // old per-repo calls did — otherwise a committed set never pushes.
-                queries.markWorkoutComponentDirty(session.id)
+                commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics)
             }
         }
+    }
+
+    /**
+     * Issue #1384 (packet P2): the completion-aware commit. The set writes are exactly the
+     * [commitCompletedSet] body in their OWN transaction; the completion side effects land
+     * in a SECOND transaction — either the standalone FINALIZED receipt + export intent,
+     * or the routine child membership record with its replay payload cleared. The split is
+     * deliberate: an optional, opt-in export must never cost workout data, so no
+     * export-path failure (DB error, constraint violation) can roll back the user's
+     * completed set and metrics. Replay coverage is per path: a routine child left
+     * uncommitted by a failed second transaction is replayed by the finalizer's journal,
+     * while a standalone export write that fails is lost for that export (there is no
+     * journal row for standalone) — still never workout data. No suspend
+     * calls run inside either transaction.
+     */
+    override suspend fun commitCompletedSetWithCompletion(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
+    ) {
+        val standaloneQueued = withContext(Dispatchers.IO) {
+            db.transaction {
+                commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics)
+            }
+            try {
+                db.transactionWithResult {
+                    when (completion.localKind) {
+                        IntervalsLocalKind.STANDALONE ->
+                            completion.standaloneCapture?.let { capture ->
+                                recordStandaloneCompletion(
+                                    queries = queries,
+                                    membership = completion,
+                                    capture = capture,
+                                    session = session,
+                                    completedSet = completedSet,
+                                    nowMs = currentTimeMillis(),
+                                    finalizer = completionBridge,
+                                )
+                            } ?: false
+                        IntervalsLocalKind.ROUTINE -> {
+                            recordRoutineChildMembership(completion)
+                            false
+                        }
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                Logger.e(t) {
+                    "Intervals completion side-effect write failed for session ${session.id}; workout data is already saved"
+                }
+                false
+            }
+        }
+        if (standaloneQueued) {
+            runCatching { onStandaloneExportQueued() }
+                .onFailure { Logger.w(it) { "Intervals: standalone export drain signal failed" } }
+        }
+    }
+
+    /** Lazy bridge for the standalone receipt path; the finalizer only holds [db] + this. */
+    private val completionBridge by lazy {
+        WorkoutCompletionFinalizer(db, this)
+    }
+
+    /**
+     * Records the completion membership and clears the child's replay record (in the
+     * export-side transaction that follows the durable set write; integration-model §3.2
+     * item 2 keeps the membership record and payload clear atomic with each other).
+     *
+     * The child table cascades from the journal row, so this only applies once the
+     * completion's `REQUESTED` admission exists. A set write that lands BEFORE the
+     * routine's FINALIZE admission cannot record membership here; admission records those
+     * children (as committed, or staged with replay payloads) in its own transaction.
+     */
+    private fun recordRoutineChildMembership(completion: WorkoutCompletionMembership) {
+        queries.selectCompletionJournal(
+            profile_id = completion.profileId,
+            local_kind = completion.localKind.name,
+            completion_id = completion.completionId,
+        ).executeAsOneOrNull() ?: return
+        queries.insertCompletionJournalChildIfAbsent(
+            journal_profile_id = completion.profileId,
+            journal_local_kind = completion.localKind.name,
+            journal_completion_id = completion.completionId,
+            child_key = completion.childKey,
+            child_kind = completion.childKind.name,
+            session_id = completion.sessionId,
+            codec_version = CompletionJournalCodec.CURRENT_VERSION.toLong(),
+            replay_payload = null,
+        )
+        queries.markCompletionChildCommitted(
+            committed_at = currentTimeMillis(),
+            journal_profile_id = completion.profileId,
+            journal_local_kind = completion.localKind.name,
+            journal_completion_id = completion.completionId,
+            child_key = completion.childKey,
+        )
+    }
+
+    private fun commitCompletedSetBody(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+    ) {
+        if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
+            insertSessionRow(session)
+        }
+        if (metrics.isNotEmpty()) {
+            queries.deleteMetricsBySession(session.id)
+            metrics.forEach { metric -> insertMetricRow(session.id, metric) }
+        }
+        if (completedSet != null &&
+            queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
+        ) {
+            queries.insertCompletedSetRow(completedSet)
+        }
+        queries.deleteRepMetricsBySession(session.id)
+        repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
+        queries.deleteRepBiomechanicsBySession(session.id)
+        repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+        // Main's newer sync-dirty contract: every child write marks its
+        // session. The atomic commit writes those children in one
+        // transaction, so it must dirty the session the same way the
+        // old per-repo calls did — otherwise a committed set never pushes.
+        queries.markWorkoutComponentDirty(session.id)
     }
 
     private fun insertSessionRow(session: WorkoutSession) {

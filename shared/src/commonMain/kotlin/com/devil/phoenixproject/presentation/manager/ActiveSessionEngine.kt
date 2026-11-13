@@ -7,6 +7,17 @@ import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutExportBuilder
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
+import com.devil.phoenixproject.data.integration.intervals.AdmissionResult
+import com.devil.phoenixproject.data.integration.intervals.CompletionTimeCapture
+import com.devil.phoenixproject.data.integration.intervals.IntervalsActivityBuilder
+import com.devil.phoenixproject.data.integration.intervals.IntervalsChildKind
+import com.devil.phoenixproject.data.integration.intervals.IntervalsChildRef
+import com.devil.phoenixproject.data.integration.intervals.IntervalsFinishReason
+import com.devil.phoenixproject.data.integration.intervals.IntervalsLocalKind
+import com.devil.phoenixproject.data.integration.intervals.PendingChildReplay
+import com.devil.phoenixproject.data.integration.intervals.PendingChildWrite
+import com.devil.phoenixproject.data.integration.intervals.RoutineCompletionFinalizer
+import com.devil.phoenixproject.data.integration.intervals.RoutineCompletionRequest
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.toDocument
 import com.devil.phoenixproject.data.preferences.toLegacySingleExerciseDefaults
@@ -33,6 +44,7 @@ import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
 import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.WorkoutCompletionMembership
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.ActiveRackSelection
@@ -575,6 +587,11 @@ class ActiveSessionEngine(
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val polarBleManager: PolarH10BleManager? = null,
+    // Issue #1384 (packet P2): narrow completion-finalizer seam. Every routine-finish path
+    // durably admits its FINALIZE request through this seam BEFORE any ID reset, runtime
+    // cleanup or completion UI. Bounded local persistence only — BLE teardown and machine
+    // safety never await it. P3 threads the real finalizer through the DI/native factories.
+    private val completionFinalizer: RoutineCompletionFinalizer = RoutineCompletionFinalizer.NoOp,
 ) {
     private data class PendingRestRackSelection(
         val itemIds: List<String>,
@@ -2456,7 +2473,11 @@ class ActiveSessionEngine(
         coordinator.restTimerJob = null
         coordinator._workoutState.value = WorkoutState.Idle
         if (nextStep == null) {
-            flowDelegate?.showRoutineComplete()
+            // Issue #1384: durably admit the routine FINALIZE request BEFORE the
+            // completion UI / runtime cleanup. Durable local acceptance only.
+            if (admitRoutineCompletion(IntervalsFinishReason.NORMAL_FINISH)) {
+                flowDelegate?.showRoutineComplete()
+            }
         } else {
             flowDelegate?.enterSetReady(nextStep.first, nextStep.second)
         }
@@ -9555,7 +9576,212 @@ class ActiveSessionEngine(
         )
     }
 
+    // ===== Issue #1384: routine completion membership & FINALIZE admission =====
+
+    /** One qualifying set write that belongs to the current routine's completion. */
+    private data class RoutineCompletionMember(
+        val routineSessionId: String,
+        val childKey: String,
+        val childKind: IntervalsChildKind,
+        val sessionId: String,
+    )
+
+    /**
+     * Exact expected membership of the current routine's completion, appended at snapshot
+     * capture — BEFORE the async set write — so an unsettled write is staged as pending at
+     * admission — and after the synchronous legacy commit. Zero-rep `STALL_FAILURE`
+     * attempts and aborted/empty sets never qualify; a positively completed timed hold
+     * qualifies with its captured timed-mode evidence and never invents repetitions.
+     */
+    private val routineCompletionMembers = atomic<List<RoutineCompletionMember>>(emptyList())
+
+    private fun recordRoutineCompletionMember(
+        routineSessionId: String,
+        session: WorkoutSession,
+        completedSet: CompletedSet?,
+        timedModeEvidence: Boolean,
+    ) {
+        if (routineSessionId.isBlank()) return
+        if (!IntervalsActivityBuilder.qualifiesAsValidWork(session, completedSet, timedModeEvidence)) return
+        val member = RoutineCompletionMember(
+            routineSessionId = routineSessionId,
+            childKey = completedSet?.id ?: session.id,
+            childKind = if (completedSet != null) {
+                IntervalsChildKind.COMPLETED_SET
+            } else {
+                IntervalsChildKind.SESSION
+            },
+            sessionId = session.id,
+        )
+        while (true) {
+            val current = routineCompletionMembers.value
+            // Membership belongs to ONE routine run; a new run starts a fresh member set.
+            val scoped = current.filter { it.routineSessionId == routineSessionId }
+            if (scoped.any { it.childKey == member.childKey }) {
+                if (scoped.size != current.size) routineCompletionMembers.compareAndSet(current, scoped)
+                return
+            }
+            if (routineCompletionMembers.compareAndSet(current, scoped + member)) return
+        }
+    }
+
+    /** Completion metadata for one completion-aware set commit (routine or standalone). */
+    private fun completionMembershipFor(
+        session: WorkoutSession,
+        completedSet: CompletedSet?,
+        timedModeEvidence: Boolean,
+    ): WorkoutCompletionMembership {
+        val childKey = completedSet?.id ?: session.id
+        val childKind = if (completedSet != null) {
+            IntervalsChildKind.COMPLETED_SET
+        } else {
+            IntervalsChildKind.SESSION
+        }
+        val routineSessionId = session.routineSessionId
+        return if (routineSessionId != null) {
+            WorkoutCompletionMembership(
+                profileId = session.profileId,
+                localKind = IntervalsLocalKind.ROUTINE,
+                completionId = routineSessionId,
+                sessionId = session.id,
+                childKey = childKey,
+                childKind = childKind,
+                timedModeEvidence = timedModeEvidence,
+            )
+        } else {
+            // Standalone: completion-time eligibility is captured SYNCHRONOUSLY right
+            // before this commit; the FINALIZED receipt + export intent land in a guarded
+            // second transaction after the set write is durable (WorkoutCompletionFinalizer bridge).
+            val startMs = session.timestamp
+            val zone = CompletionTimeCapture.captureLocalStart(startMs)
+            val capture = completionFinalizer.captureCompletionContext(
+                RoutineCompletionRequest(
+                    profileId = session.profileId,
+                    localKind = IntervalsLocalKind.STANDALONE,
+                    completionId = session.id,
+                    routineTitle = null,
+                    finishReason = IntervalsFinishReason.STANDALONE_COMMIT,
+                    externalId = session.id,
+                    startEpochMs = startMs,
+                    startLocalIso = zone.startLocalIso,
+                    timeZoneId = zone.timeZoneId,
+                    utcOffsetMinutes = zone.utcOffsetMinutes,
+                    completedEpochMs = startMs + session.duration,
+                ),
+            )
+            WorkoutCompletionMembership(
+                profileId = session.profileId,
+                localKind = IntervalsLocalKind.STANDALONE,
+                completionId = session.id,
+                sessionId = session.id,
+                childKey = childKey,
+                childKind = childKind,
+                timedModeEvidence = timedModeEvidence,
+                standaloneCapture = capture,
+            )
+        }
+    }
+
+    private fun captureRoutineCompletionRequest(
+        routineSessionId: String,
+        finishReason: IntervalsFinishReason,
+    ): RoutineCompletionRequest? {
+        val startMs = coordinator.routineStartTime
+        if (startMs <= 0L) return null
+        val profileId = coordinator._loadedRoutine.value?.profileId
+            ?: (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)?.profile?.id
+            ?: userProfileRepository.activeProfile.value?.id
+            ?: return null
+        val zone = CompletionTimeCapture.captureLocalStart(startMs)
+        return RoutineCompletionRequest(
+            profileId = profileId,
+            localKind = IntervalsLocalKind.ROUTINE,
+            completionId = routineSessionId,
+            routineTitle = coordinator.currentRoutineName,
+            finishReason = finishReason,
+            externalId = routineSessionId,
+            startEpochMs = startMs,
+            startLocalIso = zone.startLocalIso,
+            timeZoneId = zone.timeZoneId,
+            utcOffsetMinutes = zone.utcOffsetMinutes,
+            completedEpochMs = wallClockMillisProvider(),
+        )
+    }
+
+    /**
+     * Issue #1384: durably admits the routine completion BEFORE the completion UI, ID
+     * reset or runtime cleanup. Returns true only when the FINALIZE admission is durable
+     * (accepted or already admitted) or when there is nothing to admit (no routine
+     * context, or no qualifying work — abandoned/zero-rep runs produce no receipt). A
+     * local persistence failure surfaces a save-failure offer and returns false so the
+     * owning routine state is preserved and retried — never an HTTP wait.
+     */
+    internal fun admitRoutineCompletion(finishReason: IntervalsFinishReason): Boolean {
+        val routineSessionId = coordinator.currentRoutineSessionId ?: return true
+        val members = routineCompletionMembers.value.filter { it.routineSessionId == routineSessionId }
+        if (members.isEmpty()) return true
+        val request = captureRoutineCompletionRequest(routineSessionId, finishReason) ?: return true
+        val expectedChildren = mutableListOf<IntervalsChildRef>()
+        val replayInputs = mutableListOf<PendingChildReplay>()
+        members.sortedBy { it.childKey }.forEach { member ->
+            // A retained exit snapshot means the set write is not yet proven durable; its
+            // input is staged as a replay payload. Removed snapshots are proven durable.
+            val snapshot = exitSnapshotStore.findBySessionId(member.sessionId)
+            val pending = snapshot != null
+            expectedChildren += IntervalsChildRef(
+                childKey = member.childKey,
+                childKind = member.childKind,
+                sessionId = member.sessionId,
+                pendingAtAdmission = pending,
+            )
+            if (snapshot != null) {
+                replayInputs += PendingChildReplay(
+                    childKey = member.childKey,
+                    write = PendingChildWrite(
+                        session = snapshot.session,
+                        metrics = snapshot.metrics,
+                        completedSet = snapshot.completedSet,
+                        repMetrics = snapshot.repMetrics,
+                        repBiomechanics = snapshot.biomechanicsRepResults,
+                    ),
+                )
+            }
+        }
+        val capture = completionFinalizer.captureCompletionContext(request)
+        val result = completionFinalizer.requestFinalize(capture, expectedChildren, replayInputs)
+        return when (result) {
+            AdmissionResult.Accepted,
+            AdmissionResult.AlreadyAdmitted,
+            AdmissionResult.NoQualifyingWork,
+            -> true
+            is AdmissionResult.Conflicting -> {
+                Logger.e {
+                    "Intervals FINALIZE admission conflicting for $routineSessionId: ${result.reason}"
+                }
+                coordinator.offerWorkoutSaveFailure(routineSessionId)
+                false
+            }
+            is AdmissionResult.PersistenceFailed -> {
+                Logger.e {
+                    "Intervals FINALIZE admission not durable for $routineSessionId: ${result.reason}"
+                }
+                coordinator.offerWorkoutSaveFailure(routineSessionId)
+                false
+            }
+        }
+    }
+
     private fun applyRoutineBookkeepingAtCapture(snapshot: WorkoutExitSnapshot) {
+        if (snapshot.isRoutineSet) {
+            snapshot.session.routineSessionId?.let { routineSessionId ->
+                recordRoutineCompletionMember(
+                    routineSessionId = routineSessionId,
+                    session = snapshot.session,
+                    completedSet = snapshot.completedSet,
+                    timedModeEvidence = snapshot.lease.isTimedCable,
+                )
+            }
+        }
         if (!snapshot.shouldAccumulateRoutineCalories || !executionGuard.isCurrent(snapshot.lease)) return
         snapshot.session.estimatedCalories?.takeIf { it > 0f }?.let { calories ->
             coordinator.routineAccumulatedCalories += calories
@@ -9703,12 +9929,20 @@ class ActiveSessionEngine(
             // tables land in ONE transaction. Nothing below this line can leave
             // a half-written set behind, and a sync that runs during the
             // completion can no longer push a session without its sets.
-            workoutRepository.commitCompletedSet(
+            // Issue #1384: routed through the completion-aware entry point so the
+            // completion membership / standalone receipt are recorded in a guarded
+            // follow-up transaction that never threatens the durable set write.
+            workoutRepository.commitCompletedSetWithCompletion(
                 session = snapshot.session,
                 metrics = snapshot.metrics,
                 completedSet = snapshot.completedSet,
                 repMetrics = snapshot.repMetrics,
                 repBiomechanics = snapshot.biomechanicsRepResults,
+                completion = completionMembershipFor(
+                    session = snapshot.session,
+                    completedSet = snapshot.completedSet,
+                    timedModeEvidence = snapshot.lease.isTimedCable,
+                ),
             )
             polarBleManager?.flushSessionTelemetry(sessionId)?.join()
             // Issue #869: the set is durable; Set Summary may now appear.
@@ -11021,13 +11255,31 @@ class ActiveSessionEngine(
                 // session without its set. This path never collected samples or rep
                 // metrics, so those lists stay empty; the session id is freshly generated,
                 // which makes commitCompletedSet's rep-table clears no-ops.
-                workoutRepository.commitCompletedSet(
+                // Issue #1384: the legacy/manual path participates in completion
+                // finalization through the completion-aware entry point, exactly like the
+                // modern snapshot path.
+                val legacyTimedModeEvidence = lease?.isTimedCable == true &&
+                    completedSet?.setEndReason == SetEndReason.TIMER_EXPIRED
+                workoutRepository.commitCompletedSetWithCompletion(
                     session = session,
                     metrics = emptyList(),
                     completedSet = completedSet,
                     repMetrics = emptyList(),
                     repBiomechanics = emptyList(),
+                    completion = completionMembershipFor(
+                        session = session,
+                        completedSet = completedSet,
+                        timedModeEvidence = legacyTimedModeEvidence,
+                    ),
                 )
+                session.routineSessionId?.let { routineSessionId ->
+                    recordRoutineCompletionMember(
+                        routineSessionId = routineSessionId,
+                        session = session,
+                        completedSet = completedSet,
+                        timedModeEvidence = legacyTimedModeEvidence,
+                    )
+                }
                 polarSessionIdAtStop?.let { recordedSourceId ->
                     polarBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
                 }
@@ -11256,7 +11508,11 @@ class ActiveSessionEngine(
                             // Issue #395: Write aggregate health workout before completing routine
                             writeRoutineHealthData()
                             autoBackupRoutineIfEnabled("skip-final-exercise")
-                            flowDelegate?.showRoutineComplete()
+                            // Issue #1384: an explicit partial finish durably admits its
+                            // FINALIZE request before the completion UI / runtime cleanup.
+                            if (admitRoutineCompletion(IntervalsFinishReason.VALID_PARTIAL_FINISH)) {
+                                flowDelegate?.showRoutineComplete()
+                            }
                         }
                     }
 
@@ -13290,28 +13546,34 @@ class ActiveSessionEngine(
             pendingRestRackSelections.clear()
             coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
-            supersedeConfigurationInputIntent()
             val completedCycleId = cachedNavigation?.cycleId ?: coordinator.activeCycleId
             val completedCycleDayNumber = cachedNavigation?.cycleDayNumber ?: coordinator.activeCycleDayNumber
             scope.launch { updateCycleProgressIfNeeded(completedCycleId, completedCycleDayNumber) }
             // Issue #395: Write aggregate health workout BEFORE clearing routine state
             writeRoutineHealthData()
             autoBackupRoutineIfEnabled("routine-complete-autoplay")
-            // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
-            // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
-            // between EnhancedMainScreen and ActiveWorkoutScreen.
-            coordinator._workoutState.value = WorkoutState.Idle
-            flowDelegate?.showRoutineComplete()
-            executionGuard.mutateConfigurationInputs {
-                coordinator._currentSetIndex.value = 0
-                coordinator._currentExerciseIndex.value = 0
-                coordinator.currentRoutineSessionId = null
-                coordinator.currentRoutineName = null
-                coordinator.currentRoutineId = null
-                coordinator._completedRoutineSetKeys.value = emptySet()
+            // Issue #1384: the no-next-step autoplay finish durably admits its FINALIZE
+            // request BEFORE the ID reset / runtime cleanup / completion UI. On a local
+            // persistence failure the owning routine state is preserved (no ID reset, no
+            // completion UI) and the admission is retried from the foreground recovery.
+            if (admitRoutineCompletion(IntervalsFinishReason.NORMAL_FINISH)) {
+                supersedeConfigurationInputIntent()
+                // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
+                // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
+                // between EnhancedMainScreen and ActiveWorkoutScreen.
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.showRoutineComplete()
+                executionGuard.mutateConfigurationInputs {
+                    coordinator._currentSetIndex.value = 0
+                    coordinator._currentExerciseIndex.value = 0
+                    coordinator.currentRoutineSessionId = null
+                    coordinator.currentRoutineName = null
+                    coordinator.currentRoutineId = null
+                    coordinator._completedRoutineSetKeys.value = emptySet()
+                }
+                repCounter.reset()
+                resetAutoStopState()
             }
-            repCounter.reset()
-            resetAutoStopState()
         }
     }
 

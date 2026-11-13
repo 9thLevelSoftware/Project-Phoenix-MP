@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RoutineCsvImportConflictException
 import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
+import com.devil.phoenixproject.data.repository.WorkoutCompletionMembership
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -225,6 +226,28 @@ class FakeWorkoutRepository : WorkoutRepository {
             if (repMetrics.isNotEmpty()) repo.saveRepMetrics(session.id, repMetrics)
         }
         biomechanicsRepository?.replaceForSession(session.id, repBiomechanics)
+    }
+
+    /**
+     * Issue #1384 (packet P2): completion-aware commit. Writes exactly what
+     * [commitCompletedSet] writes, then records the completion membership so tests can
+     * assert which completions claimed which set writes (and that `saveSession` never
+     * manufactures eligibility — it records nothing here).
+     */
+    val committedCompletionMemberships = mutableListOf<WorkoutCompletionMembership>()
+    var commitWithCompletionHook: suspend (WorkoutCompletionMembership) -> Unit = {}
+
+    override suspend fun commitCompletedSetWithCompletion(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
+    ) {
+        commitCompletedSet(session, metrics, completedSet, repMetrics, repBiomechanics)
+        committedCompletionMemberships += completion
+        commitWithCompletionHook(completion)
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

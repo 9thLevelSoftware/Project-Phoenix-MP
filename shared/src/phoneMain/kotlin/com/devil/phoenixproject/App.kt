@@ -36,9 +36,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.DatabaseMigrationFailureCode
+import com.devil.phoenixproject.data.integration.intervals.IntervalsConnectionStore
+import com.devil.phoenixproject.data.integration.intervals.IntervalsExportCoordinator
+import com.devil.phoenixproject.data.integration.intervals.WorkoutCompletionFinalizer
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationState
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
 import com.devil.phoenixproject.presentation.screen.EulaScreen
@@ -60,6 +65,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
+import org.koin.mp.KoinPlatform
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.crash_report_dismiss
@@ -134,7 +140,9 @@ internal fun encodeMailtoComponent(value: String): String = buildString {
 /**
  * Actions offered on the persisted-file startup failure screen. A database conflict stays
  * fail-closed (Phoenix never picks or deletes a copy itself), so the user gets a read-only export
- * of the files and a support route instead of a dead end.
+ * of the files and a support route instead of a dead end. The export action itself is subject
+ * to the raw-database-share suppression (signoff decision 5, issue #1384 P3): it can only
+ * offer verified non-sensitive diagnostics, never raw DB/WAL/quarantine bytes.
  */
 internal fun startupFailureActions(failure: StartupDependencyResolution.Failed): List<StartupFailureAction> = buildList {
     if (failure.diagnosticCode == DUAL_DATABASES_DIAGNOSTIC_CODE) {
@@ -144,6 +152,56 @@ internal fun startupFailureActions(failure: StartupDependencyResolution.Failed):
         add(StartupFailureAction.CONTACT_SUPPORT)
     }
     if (failure.retryAllowed) add(StartupFailureAction.RETRY)
+}
+
+/**
+ * INDEPENDENT Intervals.icu recovery (issue #1384 P3, integration-model §7): replays
+ * admitted-but-unfinished completion journals and signals one bounded export drain. Runs at
+ * initial ready startup and on every ON_RESUME after the startup prerequisites — outside
+ * every portal success/auth/debounce gate. Never awaits network: [WorkoutCompletionFinalizer.
+ * finalizePending] is local-only replay, and [IntervalsExportCoordinator.signalForeground]
+ * just enqueues a coalesced signal into the coordinator's own scope. Non-fatal on error and
+ * on missing dependencies: both singletons resolve lazily via Koin `getOrNull`, so this is a
+ * safe no-op even before the Intervals module lands.
+ */
+internal suspend fun runIntervalsRecovery() {
+    try {
+        val koin = runCatching { KoinPlatform.getKoin() }.getOrNull() ?: return
+        // DB replay is real I/O (SQLDelight reads + one transaction per pending
+        // completion) and this runs from lifecycle/Main scopes: never on the main thread.
+        withContext(Dispatchers.IO) {
+            val connectionStore = runCatching { koin.getOrNull<IntervalsConnectionStore>() }.getOrNull()
+            if (connectionStore != null) {
+                val profileRepo = runCatching { koin.getOrNull<UserProfileRepository>() }.getOrNull()
+                val profileId = (profileRepo?.activeProfileContext?.value as? ActiveProfileContext.Ready)?.profile?.id
+                    ?: profileRepo?.activeProfile?.value?.id
+                try {
+                    if (!profileId.isNullOrBlank()) {
+                        connectionStore.recoverForProfile(profileId)
+                    } else {
+                        connectionStore.cleanOrphanSecrets()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Logger.w(t) { "Intervals connection recovery failed (non-fatal)" }
+                }
+            }
+            runCatching { koin.getOrNull<WorkoutCompletionFinalizer>() }
+                .getOrNull()
+                ?.let { finalizer ->
+                    val outcomes = finalizer.finalizePending()
+                    Logger.d { "Intervals recovery: replayed ${outcomes.size} pending completion(s)" }
+                }
+            runCatching { koin.getOrNull<IntervalsExportCoordinator>() }
+                .getOrNull()
+                ?.signalForeground()
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger.e(e) { "Intervals recovery failed (non-fatal)" }
+    }
 }
 
 /**
@@ -161,8 +219,20 @@ private fun AppLifecycleObserver(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
-                    try {
+                    val startupReady = try {
                         migrationManager.awaitRequiredMigrations()
+                        true
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        Logger.e(e) { "AppLifecycleObserver: awaitRequiredMigrations failed" }
+                        false
+                    }
+                    // INDEPENDENT Intervals recovery (issue #1384 P3): after the startup
+                    // prerequisites but outside every portal success/auth/debounce gate, and
+                    // never awaited by or gating the portal sync below. Non-fatal on error.
+                    if (startupReady) runIntervalsRecovery()
+                    try {
                         syncTriggerManager.onAppForeground()
                     } catch (e: CancellationException) {
                         throw e
@@ -245,6 +315,12 @@ internal fun PersistedFileStartupFailureScreen(
             }
             if (StartupFailureAction.EXPORT_DATABASE_FILES in actions) {
                 Spacer(Modifier.height(16.dp))
+                // Signoff decision 5 (issue #1384 P3, integration-model §7): this action uses
+                // the raw-DB share path, which is suppressed build-wide. shareDatabaseFiles()
+                // offers verified non-sensitive diagnostics only (candidate file names and
+                // byte sizes) — raw DB/WAL/SHM/journal/quarantine bytes are never shared from
+                // here, including for unsafe-to-open dual databases, because DELETE cannot
+                // scrub SQLite pages/WAL. Explicit JSON training backups remain available.
                 Button(
                     enabled = !exporting,
                     onClick = {
@@ -404,6 +480,19 @@ fun AppContent(
     // Startup succeeded, so a database export made from the failure screen is no longer needed.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { deleteDatabaseExportArchive() }
+    }
+
+    // Initial ready-startup Intervals recovery (issue #1384 P3): runs once, when the startup
+    // surface first reaches MAIN (EULA accepted + required migrations ready) — independent
+    // of the ON_RESUME path and of every portal success/auth/debounce gate. Non-fatal and
+    // network-free (see runIntervalsRecovery).
+    var intervalsRecoveryStarted by remember { mutableStateOf(false) }
+    val startupReady = startupSurface(eulaAccepted, launchSplashCompleted, migrationState) == StartupSurface.MAIN
+    LaunchedEffect(startupReady) {
+        if (startupReady && !intervalsRecoveryStarted) {
+            intervalsRecoveryStarted = true
+            runIntervalsRecovery()
+        }
     }
 
     AppLifecycleObserver(syncTriggerManager, migrationManager)

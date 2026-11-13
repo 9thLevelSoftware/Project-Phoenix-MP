@@ -48,12 +48,17 @@ import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.disconnect
 import projectphoenix.shared.generated.resources.disconnect_integration_message
 import projectphoenix.shared.generated.resources.disconnect_integration_title
+import projectphoenix.shared.generated.resources.intervals_screen_title
+import projectphoenix.shared.generated.resources.intervals_send_workouts_cd
+import projectphoenix.shared.generated.resources.intervals_send_workouts_subtitle
+import projectphoenix.shared.generated.resources.intervals_send_workouts_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IntegrationsScreen(
     weightUnit: WeightUnit = WeightUnit.KG,
     onNavigateToExternalData: () -> Unit = {},
+    onNavigateToSendWorkouts: () -> Unit = {},
     onSetTitle: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -607,6 +612,72 @@ fun IntegrationsScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // ── Send workouts section (issue #1384) ────────────────────────────
+            // Outbound export to Intervals.icu — deliberately distinct from the
+            // imports/CSV surfaces above.
+            SectionHeader(
+                icon = Icons.Default.CloudUpload,
+                title = stringResource(Res.string.intervals_send_workouts_title),
+                iconGradient = listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)),
+            )
+
+            ExpressiveCard(
+                onClick = onNavigateToSendWorkouts,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)),
+                                    ),
+                                    MaterialTheme.shapes.small,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Column {
+                            Text(
+                                stringResource(Res.string.intervals_screen_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                stringResource(Res.string.intervals_send_workouts_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = stringResource(Res.string.intervals_send_workouts_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

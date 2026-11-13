@@ -8,7 +8,7 @@ import org.koin.dsl.module
 expect val platformModule: Module
 
 val appModule = module {
-    includes(dataModule, syncModule, domainModule, presentationModule)
+    includes(dataModule, syncModule, domainModule, presentationModule, intervalsModule)
 
     // Resolving this singleton is the persisted-file startup boundary. The
     // values are intentionally resolved in this order so no feature dependency

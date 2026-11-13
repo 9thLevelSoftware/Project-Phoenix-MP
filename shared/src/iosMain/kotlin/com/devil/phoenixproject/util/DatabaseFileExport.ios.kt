@@ -23,10 +23,16 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileCoordinator
 import platform.Foundation.NSFileCoordinatorReadingForUploading
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileType
 import platform.Foundation.NSFileTypeRegular
+import platform.Foundation.NSNumber
+import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSURL
+import platform.Foundation.create
+import platform.Foundation.writeToFile
 
 /** Bounds the wait for UIKit's presentation completion so the screen can never stay "exporting". */
 private const val PRESENTATION_TIMEOUT_MS = 10_000L
@@ -58,6 +64,19 @@ internal actual suspend fun shareDatabaseFiles(): Boolean = try {
 internal actual fun deleteDatabaseExportArchive() {
     try {
         NSFileManager.defaultManager.removeItemAtPath(archivePath(), error = null)
+        // The pre-rename archive held raw DB/WAL bytes (signoff decision 5); a leftover
+        // copy would keep the suppressed raw bytes on disk.
+        NSFileManager.defaultManager.removeItemAtPath(
+            legacyRawArchivePath(),
+            error = null,
+        )
+        // Legacy builds also STAGED raw DB/WAL candidates in a directory next to the zip
+        // and only removed it in the export's finally — a crash mid-export left the
+        // suppressed raw bytes there. It goes with the archive.
+        NSFileManager.defaultManager.removeItemAtPath(
+            legacyRawStagingPath(),
+            error = null,
+        )
     } catch (_: Exception) {
         // A leftover archive stays in the app's tmp folder; never fail startup for it.
     }
@@ -65,41 +84,59 @@ internal actual fun deleteDatabaseExportArchive() {
 
 private fun archivePath(): String = "${NSTemporaryDirectory().trimEnd('/')}/${DatabaseFileExport.ARCHIVE_NAME}"
 
+private fun legacyRawArchivePath(): String =
+    "${NSTemporaryDirectory().trimEnd('/')}/${DatabaseFileExport.LEGACY_RAW_ARCHIVE_NAME}"
+
+private fun legacyRawStagingPath(): String =
+    "${NSTemporaryDirectory().trimEnd('/')}/phoenix-database-files"
+
 /**
- * Stages the candidates in a scratch folder under tmp, then lets NSFileCoordinator zip that folder
- * (the documented ForUploading behaviour for directories). Staging uses hard links where possible
- * so large databases are not duplicated; removing a link never affects the original file.
+ * Builds the support archive from verified non-sensitive diagnostics only.
+ *
+ * Suppressed surface (signoff decision 5, integration-model §7): raw DB/WAL/SHM/journal/
+ * quarantine bytes — including the SQLiter and pre-SQLiter Library-root dual-database
+ * candidates (#764) — are never read, staged or zipped. Only file names and byte sizes
+ * (stat metadata) enter the archive, as `diagnostics.json`. Files are never opened by
+ * SQLite; unsafe-to-open dual databases are handled safely by construction.
  */
 private fun buildDatabaseArchive(): String? {
     val fileManager = NSFileManager.defaultManager
     val archive = archivePath()
     fileManager.removeItemAtPath(archive, error = null)
     val exists = { path: String -> fileManager.fileExistsAtPath(path) }
+    val sizeOf = { path: String ->
+        ((fileManager.attributesOfItemAtPath(path, error = null)?.get(NSFileSize)) as? NSNumber)?.longValue ?: 0L
+    }
     // Guard A involves the SQLiter directory; guards B/C also the pre-SQLiter Library-root vitruvian.db.
     val sqliterDirectory = DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null).substringBeforeLast('/')
     val libraryDirectory = legacyLibraryRootPath().substringBeforeLast('/')
-    val entries = DatabaseFileExport.entries("sqliter", sqliterDirectory, exists) +
-        DatabaseFileExport.entries("library", libraryDirectory, exists) +
-        DatabaseFileExport.quarantineEntries(sqliterDirectory, quarantinedFiles(sqliterDirectory))
-    if (entries.isEmpty()) return null
+    val files = DatabaseFileExport.diagnosticFiles("sqliter", sqliterDirectory, exists, sizeOf) +
+        DatabaseFileExport.diagnosticFiles("library", libraryDirectory, exists, sizeOf) +
+        DatabaseFileExport.quarantineDiagnosticFiles(sqliterDirectory, quarantinedFiles(sqliterDirectory), sizeOf)
+    if (files.isEmpty()) return null
 
-    val staging = "${NSTemporaryDirectory().trimEnd('/')}/phoenix-database-files"
+    // Stage only the diagnostics report; the zip is produced from that single file.
+    val staging = "${NSTemporaryDirectory().trimEnd('/')}/phoenix-support-diagnostics"
     fileManager.removeItemAtPath(staging, error = null)
     try {
-        for (entry in entries) {
-            val destination = "$staging/${entry.entryName}"
-            check(
-                fileManager.createDirectoryAtPath(
-                    destination.substringBeforeLast('/'),
-                    withIntermediateDirectories = true,
-                    attributes = null,
-                    error = null,
-                ),
-            ) { "Could not create the export folder" }
-            val staged = fileManager.linkItemAtPath(entry.path, toPath = destination, error = null) ||
-                fileManager.copyItemAtPath(entry.path, toPath = destination, error = null)
-            check(staged) { "Could not stage ${entry.entryName} for export" }
-        }
+        check(
+            fileManager.createDirectoryAtPath(
+                staging,
+                withIntermediateDirectories = true,
+                attributes = null,
+                error = null,
+            ),
+        ) { "Could not create the export folder" }
+        val reportPath = "$staging/${DatabaseFileExport.DIAGNOSTICS_ENTRY_NAME}"
+        val report = NSString.create(string = DatabaseFileExport.diagnosticsJson(files))
+        check(
+            report.writeToFile(
+                reportPath,
+                atomically = true,
+                encoding = NSUTF8StringEncoding,
+                error = null,
+            ),
+        ) { "Could not stage the diagnostics report for export" }
         return if (zipDirectory(staging, archive)) archive else null
     } finally {
         fileManager.removeItemAtPath(staging, error = null)

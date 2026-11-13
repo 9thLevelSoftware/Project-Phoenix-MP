@@ -70,6 +70,9 @@ val dataModule = module {
             // profile at execution time — both change over the app's lifetime.
             signedInPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.currentUser?.value?.id },
             activeProfileId = { scope.getOrNull<UserProfileRepository>()?.activeProfile?.value?.id },
+            onStandaloneExportQueued = {
+                scope.getOrNull<com.devil.phoenixproject.data.integration.intervals.IntervalsDrainTrigger>()?.signal()
+            },
         )
     }
     single<WorkoutDeletionRepository> { SqlDelightWorkoutDeletionRepository(get()) }

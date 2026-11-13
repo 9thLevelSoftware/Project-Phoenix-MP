@@ -4,6 +4,15 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.data.integration.intervals.AdmissionResult
+import com.devil.phoenixproject.data.integration.intervals.IntervalsChildKind
+import com.devil.phoenixproject.data.integration.intervals.IntervalsChildRef
+import com.devil.phoenixproject.data.integration.intervals.IntervalsCompletionCapture
+import com.devil.phoenixproject.data.integration.intervals.IntervalsCompletionKey
+import com.devil.phoenixproject.data.integration.intervals.IntervalsFinishReason
+import com.devil.phoenixproject.data.integration.intervals.IntervalsJobState
+import com.devil.phoenixproject.data.integration.intervals.IntervalsLocalKind
+import com.devil.phoenixproject.data.integration.intervals.WorkoutCompletionFinalizer
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.AsymmetryResult
@@ -13,6 +22,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.SampleStatus
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
@@ -229,6 +239,312 @@ class CommitCompletedSetTest {
             "The first committed session row wins; a retry must not rewrite it",
         )
     }
+
+    // ==================== Issue #1384: completion-aware commit ====================
+
+    private fun newFinalizer() = WorkoutCompletionFinalizer(
+        db = database,
+        workoutRepository = repository,
+        now = { 1_700_000_060_000L },
+    )
+
+    private fun routineMembership() = WorkoutCompletionMembership(
+        profileId = "default",
+        localKind = IntervalsLocalKind.ROUTINE,
+        completionId = "routine-1384",
+        sessionId = SESSION_ID,
+        childKey = SET_ID,
+        childKind = IntervalsChildKind.COMPLETED_SET,
+    )
+
+    @Test
+    fun `a completion-aware commit marks the admitted child committed in the same transaction`() = runTest {
+        val finalizer = newFinalizer()
+        val write = com.devil.phoenixproject.data.integration.intervals.PendingChildWrite(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+        )
+        assertEquals(
+            AdmissionResult.Accepted,
+            finalizer.requestFinalize(
+                capture(),
+                listOf(
+                    IntervalsChildRef(SET_ID, IntervalsChildKind.COMPLETED_SET, SESSION_ID, pendingAtAdmission = true),
+                ),
+                listOf(
+                    com.devil.phoenixproject.data.integration.intervals.PendingChildReplay(SET_ID, write),
+                ),
+            ),
+        )
+
+        repository.commitCompletedSetWithCompletion(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+            completion = routineMembership(),
+        )
+
+        val child = database.phoenixDatabaseQueries
+            .selectCompletionJournalChildren("default", "ROUTINE", "routine-1384")
+            .executeAsList()
+            .single()
+        assertEquals(1L, child.committed, "the child is committed in the SAME transaction as its set write")
+        assertNull(child.replay_payload, "the replay payload is cleared only by that same transaction")
+    }
+
+    @Test
+    fun `a failed completion-aware commit rolls the child back to uncommitted with its payload`() = runTest {
+        val finalizer = newFinalizer()
+        val write = com.devil.phoenixproject.data.integration.intervals.PendingChildWrite(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+        )
+        assertEquals(
+            AdmissionResult.Accepted,
+            finalizer.requestFinalize(
+                capture(),
+                listOf(
+                    IntervalsChildRef(SET_ID, IntervalsChildKind.COMPLETED_SET, SESSION_ID, pendingAtAdmission = true),
+                ),
+                listOf(
+                    com.devil.phoenixproject.data.integration.intervals.PendingChildReplay(SET_ID, write),
+                ),
+            ),
+        )
+
+        failOnSqlFragment = "INSERT INTO RepMetric"
+        assertFailsWith<IllegalStateException> {
+            repository.commitCompletedSetWithCompletion(
+                session = session(),
+                metrics = listOf(metric()),
+                completedSet = completedSet(),
+                repMetrics = listOf(repMetric()),
+                repBiomechanics = listOf(repBiomechanics()),
+                completion = routineMembership(),
+            )
+        }
+
+        val child = database.phoenixDatabaseQueries
+            .selectCompletionJournalChildren("default", "ROUTINE", "routine-1384")
+            .executeAsList()
+            .single()
+        assertEquals(0L, child.committed, "a failed set write must not acknowledge the child")
+        assertNotNull(child.replay_payload, "the only recoverable copy must survive the failed write")
+    }
+
+    @Test
+    fun `a standalone commit creates its FINALIZED receipt and export intent atomically`() = runTest {
+        val capture = capture(
+            localKind = IntervalsLocalKind.STANDALONE,
+            completionId = SESSION_ID,
+            finishReason = IntervalsFinishReason.STANDALONE_COMMIT,
+        )
+        repository.commitCompletedSetWithCompletion(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+            completion = WorkoutCompletionMembership(
+                profileId = "default",
+                localKind = IntervalsLocalKind.STANDALONE,
+                completionId = SESSION_ID,
+                sessionId = SESSION_ID,
+                childKey = SET_ID,
+                childKind = IntervalsChildKind.COMPLETED_SET,
+                standaloneCapture = capture,
+            ),
+        )
+
+        val q = database.phoenixDatabaseQueries
+        assertNotNull(q.selectSessionById(SESSION_ID).executeAsOneOrNull())
+        val receipt = q.selectCompletionReceipt("default", "STANDALONE", SESSION_ID).executeAsOne()
+        assertEquals(1L, receipt.eligible)
+        assertEquals(SESSION_ID, receipt.external_id)
+        assertNotNull(receipt.export_payload)
+        val job = q.selectIntervalsJob("default", "athlete-1", SESSION_ID).executeAsOne()
+        assertEquals(IntervalsJobState.PENDING.name, job.state)
+    }
+
+    @Test
+    fun `a standalone receipt failure never rolls back or fails the user's set write`() = runTest {
+        val capture = capture(
+            localKind = IntervalsLocalKind.STANDALONE,
+            completionId = SESSION_ID,
+            finishReason = IntervalsFinishReason.STANDALONE_COMMIT,
+        )
+        failOnSqlFragment = "INSERT INTO WorkoutCompletionReceipt"
+        repository.commitCompletedSetWithCompletion(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = emptyList(),
+            repBiomechanics = emptyList(),
+            completion = WorkoutCompletionMembership(
+                profileId = "default",
+                localKind = IntervalsLocalKind.STANDALONE,
+                completionId = SESSION_ID,
+                sessionId = SESSION_ID,
+                childKey = SET_ID,
+                childKind = IntervalsChildKind.COMPLETED_SET,
+                standaloneCapture = capture,
+            ),
+        )
+
+        // The split guarded transaction boundary: an optional, opt-in export must never
+        // cost workout data OR surface an exception to ActiveSessionEngine's set-save
+        // pipeline. The user's set/metric writes are durable and the commit returns
+        // normally even when the export-side receipt write fails.
+        val q = database.phoenixDatabaseQueries
+        assertNotNull(q.selectSessionById(SESSION_ID).executeAsOneOrNull(), "workout data must survive an export failure")
+        assertNotNull(q.selectCompletedSetById(SET_ID).executeAsOneOrNull(), "completed set must survive an export failure")
+        assertEquals(1, q.selectMetricsBySession(SESSION_ID).executeAsList().size, "metrics must survive an export failure")
+        assertNull(q.selectCompletionReceipt("default", "STANDALONE", SESSION_ID).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `a routine journal child side-effect failure never fails the user's set write`() = runTest {
+        val finalizer = newFinalizer()
+        val write = com.devil.phoenixproject.data.integration.intervals.PendingChildWrite(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+        )
+        assertEquals(
+            AdmissionResult.Accepted,
+            finalizer.requestFinalize(
+                capture(),
+                listOf(
+                    IntervalsChildRef(SET_ID, IntervalsChildKind.COMPLETED_SET, SESSION_ID, pendingAtAdmission = true),
+                ),
+                listOf(
+                    com.devil.phoenixproject.data.integration.intervals.PendingChildReplay(SET_ID, write),
+                ),
+            ),
+        )
+
+        failOnSqlFragment = "UPDATE WorkoutCompletionJournalChild"
+        repository.commitCompletedSetWithCompletion(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(repBiomechanics()),
+            completion = routineMembership(),
+        )
+
+        val q = database.phoenixDatabaseQueries
+        assertNotNull(q.selectSessionById(SESSION_ID).executeAsOneOrNull(), "session must survive journal side-effect failure")
+        assertNotNull(q.selectCompletedSetById(SET_ID).executeAsOneOrNull(), "set must survive journal side-effect failure")
+        val child = q.selectCompletionJournalChildren("default", "ROUTINE", "routine-1384").executeAsList().single()
+        assertEquals(0L, child.committed, "failed side-effect transaction leaves replay payload intact for recovery")
+        assertNotNull(child.replay_payload)
+    }
+
+    @Test
+    fun `a standalone eligible commit fires onStandaloneExportQueued once`() = runTest {
+        var signals = 0
+        val exerciseRepository = SqlDelightExerciseRepository(
+            database,
+            ExerciseImporter(database),
+            FakePreferencesManager(),
+        )
+        val signalingRepository = SqlDelightWorkoutRepository(
+            db = database,
+            exerciseRepository = exerciseRepository,
+            onStandaloneExportQueued = { signals++ },
+        )
+        val capture = capture(
+            localKind = IntervalsLocalKind.STANDALONE,
+            completionId = SESSION_ID,
+            finishReason = IntervalsFinishReason.STANDALONE_COMMIT,
+        )
+        signalingRepository.commitCompletedSetWithCompletion(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = emptyList(),
+            repBiomechanics = emptyList(),
+            completion = WorkoutCompletionMembership(
+                profileId = "default",
+                localKind = IntervalsLocalKind.STANDALONE,
+                completionId = SESSION_ID,
+                sessionId = SESSION_ID,
+                childKey = SET_ID,
+                childKind = IntervalsChildKind.COMPLETED_SET,
+                standaloneCapture = capture,
+            ),
+        )
+        assertEquals(1, signals, "eligible standalone commit must signal the export drain")
+    }
+
+    @Test
+    fun `zero-rep standalone work produces no receipt`() = runTest {
+        val capture = capture(
+            localKind = IntervalsLocalKind.STANDALONE,
+            completionId = SESSION_ID,
+            finishReason = IntervalsFinishReason.STANDALONE_COMMIT,
+        )
+        repository.commitCompletedSetWithCompletion(
+            session = session().copy(totalReps = 0, workingReps = 0),
+            metrics = emptyList(),
+            completedSet = completedSet().copy(actualReps = 0, setEndReason = SetEndReason.STALL_FAILURE),
+            repMetrics = emptyList(),
+            repBiomechanics = emptyList(),
+            completion = WorkoutCompletionMembership(
+                profileId = "default",
+                localKind = IntervalsLocalKind.STANDALONE,
+                completionId = SESSION_ID,
+                sessionId = SESSION_ID,
+                childKey = SET_ID,
+                childKind = IntervalsChildKind.COMPLETED_SET,
+                standaloneCapture = capture,
+            ),
+        )
+
+        val q = database.phoenixDatabaseQueries
+        assertNotNull(q.selectSessionById(SESSION_ID).executeAsOneOrNull(), "the workout itself is still saved")
+        assertNull(q.selectCompletionReceipt("default", "STANDALONE", SESSION_ID).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `saveSession never manufactures completion eligibility`() = runTest {
+        repository.saveSession(session())
+        val q = database.phoenixDatabaseQueries
+        assertNull(q.selectCompletionReceipt("default", "STANDALONE", SESSION_ID).executeAsOneOrNull())
+        assertNull(q.selectCompletionReceipt("default", "ROUTINE", SESSION_ID).executeAsOneOrNull())
+        assertTrue(q.selectRequestedCompletions().executeAsList().isEmpty())
+    }
+
+    private fun capture(
+        localKind: IntervalsLocalKind = IntervalsLocalKind.ROUTINE,
+        completionId: String = "routine-1384",
+        finishReason: IntervalsFinishReason = IntervalsFinishReason.NORMAL_FINISH,
+    ) = IntervalsCompletionCapture(
+        key = IntervalsCompletionKey("default", localKind, completionId),
+        installationId = "install-1",
+        finishReason = finishReason,
+        routineTitle = "Push Day",
+        externalId = completionId,
+        startEpochMs = 1_700_000_000_000L,
+        startLocalIso = "2023-11-14T17:13:20",
+        timeZoneId = "America/New_York",
+        utcOffsetMinutes = -300,
+        completedEpochMs = 1_700_000_060_000L,
+        eligible = true,
+        resolvedAthleteId = "athlete-1",
+        connectionGeneration = 7L,
+    )
 
     private fun session(rpe: Int? = null) = WorkoutSession(
         id = SESSION_ID,

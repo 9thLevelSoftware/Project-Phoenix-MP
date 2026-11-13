@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.integration.intervals.IntervalsChildKind
+import com.devil.phoenixproject.data.integration.intervals.IntervalsCompletionCapture
+import com.devil.phoenixproject.data.integration.intervals.IntervalsLocalKind
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PolarBeatSample
@@ -58,6 +61,25 @@ interface WorkoutRepository {
         completedSet: CompletedSet?,
         repMetrics: List<RepMetricData>,
         repBiomechanics: List<BiomechanicsRepResult>,
+    )
+
+    /**
+     * Issue #1384 (packet P2): the completion-aware entry point. Commits the workout set
+     * data atomically in its own transaction (identical to [commitCompletedSet]), and then
+     * records the Intervals completion side effects — either the routine child membership
+     * with its replay payload cleared, or the [IntervalsLocalKind.STANDALONE] FINALIZED
+     * receipt + export intent — in a second guarded transaction that never rolls back or
+     * fails a durable workout set write. Ordinary [saveSession] and [commitCompletedSet]
+     * never manufacture export eligibility: only this entry point accepts completion
+     * metadata, and only from the finalizer or the completion-aware engine paths.
+     */
+    suspend fun commitCompletedSetWithCompletion(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
     )
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
 
@@ -263,3 +285,24 @@ interface WorkoutRepository {
 /** A routine a CSV import was going to overwrite was deleted or moved to another profile (#772). */
 class RoutineCsvImportConflictException(routineId: String) :
     IllegalStateException("Routine $routineId changed since the import was previewed")
+
+/**
+ * Member/ownership metadata for one completion-aware set commit (issue #1384).
+ *
+ * Identifies exactly which completion this set write belongs to and which journal child
+ * it satisfies. [timedModeEvidence] carries the captured timed-mode fact (cable-hold /
+ * `TIMER_EXPIRED`) so a qualifying timed hold is never dropped and never invents reps.
+ * [standaloneCapture] is set ONLY for standalone commits: it is the immutable
+ * capture-time context whose FINALIZED receipt + export intent are written atomically in
+ * the same transaction as the set write.
+ */
+data class WorkoutCompletionMembership(
+    val profileId: String,
+    val localKind: IntervalsLocalKind,
+    val completionId: String,
+    val sessionId: String,
+    val childKey: String,
+    val childKind: IntervalsChildKind,
+    val timedModeEvidence: Boolean = false,
+    val standaloneCapture: IntervalsCompletionCapture? = null,
+)

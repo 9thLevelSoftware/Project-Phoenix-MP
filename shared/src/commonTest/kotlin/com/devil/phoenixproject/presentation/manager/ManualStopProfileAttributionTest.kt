@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.WorkoutCompletionMembership
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -185,6 +186,28 @@ class ManualStopProfileAttributionTest {
         ) {
             commits += session to completedSet
             delegate.commitCompletedSet(session, metrics, completedSet, repMetrics, repBiomechanics)
+        }
+
+        // Issue #1384: the manual-stop path routes through the completion-aware entry
+        // point; the recorder must observe that single transaction exactly as it observed
+        // the plain commit before.
+        override suspend fun commitCompletedSetWithCompletion(
+            session: WorkoutSession,
+            metrics: List<WorkoutMetric>,
+            completedSet: CompletedSet?,
+            repMetrics: List<RepMetricData>,
+            repBiomechanics: List<BiomechanicsRepResult>,
+            completion: WorkoutCompletionMembership,
+        ) {
+            commits += session to completedSet
+            delegate.commitCompletedSetWithCompletion(
+                session,
+                metrics,
+                completedSet,
+                repMetrics,
+                repBiomechanics,
+                completion,
+            )
         }
     }
 

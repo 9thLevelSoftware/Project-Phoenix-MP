@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.intervals.resolveIntervalsConnectionStoreForRestore
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.local.LegacyLabelSanitizer
@@ -428,7 +429,12 @@ abstract class BaseDataBackupManager(
     }
 
     // -- Legacy export (kept for backward compatibility) --
-
+    //
+    // Intervals exclusion (integration-model §7): this serializer reads only the explicit
+    // allowlist queries below and fills only [BackupContent] — no IntervalsConnection,
+    // WorkoutCompletionJournal/JournalChild/Receipt, IntervalsOutbox or
+    // IntervalsExternalIdReservation row is ever selected or emitted (enforced by
+    // BACKUP_CONTENT_ALLOWED_FIELDS + IntervalsBackupExclusionTest).
     override suspend fun exportAllData(): BackupData {
         val backup = exportAllDataUnfiltered()
         val filter = deletedProfileFilter()
@@ -711,6 +717,16 @@ abstract class BaseDataBackupManager(
                 throw IllegalArgumentException("Backup contains duplicate data section '$section'")
             }
             when {
+                // Integration-model §7 (issue #1384 P3): Intervals.icu integration state
+                // (connection metadata, secret key references, completion journal/receipt
+                // rows, outbox jobs, external-id reservations, installation authorization)
+                // never travels through backup files. A file that carries such a section is
+                // refused here — never staged, never restored — so restored rows can never
+                // gain completion receipts, jobs or dispatch authorization.
+                section in INTERVALS_STATE_FORBIDDEN_SECTIONS -> {
+                    Logger.w { "Backup validation: refusing Intervals integration state section '$section'" }
+                    nav.skipValue()
+                }
                 section in ARRAY_BACKUP_SECTIONS -> {
                     staging.beginArray(section)
                     nav.beginArray()
@@ -808,6 +824,75 @@ abstract class BaseDataBackupManager(
         }
     }
 
+    /**
+     * Revokes local Intervals.icu dispatch authorization for every profile that can hold
+     * integration state, BEFORE a restore writes any row (integration-model §7, issue #1384
+     * P3). The secure-store half runs through the real connection store
+     * ([IntervalsConnectionStore.revokeForRestore]): durable generation invalidation first
+     * (same order as disconnect/rotation), then deletion of the app's OWN secure keys —
+     * without it a restore would leave a live Intervals API key in the Keychain /
+     * EncryptedSharedPreferences with no row referencing it. The global orphan-key sweep
+     * covers crash-window keys that never had a metadata row. The SQL half then removes
+     * the replayable completion journal (children first), queued outbox jobs, literal
+     * external-id reservations and the connection metadata row.
+     *
+     * Fail-closed by construction:
+     * - The revocation stands even if the restore later fails (it precedes every write).
+     * - The secure-store half runs whenever the integration is present in the DI graph.
+     *   When it cannot be resolved at all (no Koin app / module set without the Intervals
+     *   module — the unit-test construction), no integration key can have been written
+     *   and the SQL half alone completes the revocation. Known limitation: a store that
+     *   exists but fails to CONSTRUCT (e.g. an EncryptedSharedPreferences
+     *   SecurityException) is indistinguishable from "not wired" here; the SQL rows are
+     *   still purged and the leftover key is inert without its metadata row.
+     * - A replayable `REQUESTED` journal would mint completion receipts/jobs over restored
+     *   rows via the live finalizer, so the journal goes with the rest of the profile state.
+     *   Pre-existing receipts are kept: they are historical facts and survive session
+     *   edit/delete (no cascade).
+     * - Queued jobs capture pre-restore completion identity and generations; they are
+     *   deleted rather than resumed — resumption is only ever allowed for untouched local
+     *   jobs after explicit policy checks, never for restored identities (§4.5).
+     * - Metadata without a secret can never authorize sends; secrets themselves live only
+     *   in the platform secure store and are never in SQL or backups.
+     *
+     * Affected profiles are every profile row plus the profiles of any pending journal
+     * admission plus "default" (a superset of the profiles a backup can name that can hold
+     * pre-existing integration state; restoring elsewhere is a no-op).
+     */
+    private suspend fun revokeIntervalsStateBeforeRestore() {
+        val affectedProfiles = linkedSetOf("default")
+        affectedProfiles += queries.getAllProfiles().executeAsList().map { it.id }
+        affectedProfiles += queries.selectRequestedCompletions().executeAsList().map { it.profile_id }
+        // Secure-store revocation FIRST (generation invalidation + owned-key deletion),
+        // through the same store the integration uses. Errors propagate: a restore whose
+        // revocation cannot run must fail closed rather than proceed unrevoked.
+        resolveIntervalsConnectionStoreForRestore()?.let { store ->
+            for (profileId in affectedProfiles) {
+                store.revokeForRestore(profileId)
+            }
+            // Crash-window keys with no metadata row are only reachable via the sweep.
+            store.cleanOrphanSecretsOrThrow()
+        }
+        database.transaction {
+            for (profileId in affectedProfiles) {
+                queries.selectIntervalsStatus(profileId).executeAsOneOrNull()?.let { status ->
+                    queries.invalidateIntervalsGeneration(
+                        now = KmpUtils.currentTimeMillis(),
+                        profile_id = profileId,
+                        connection_generation = status.connection_generation,
+                    )
+                }
+                // Explicit child cleanup (repo convention: never rely on ON DELETE
+                // CASCADE — foreign_keys may be off).
+                queries.deleteIntervalsProfileJournalChildren(profileId)
+                queries.deleteIntervalsProfileJournal(profileId)
+                queries.deleteIntervalsProfileJobs(profileId)
+                queries.deleteIntervalsProfileReservations(profileId)
+                queries.deleteIntervalsProfileState(profileId)
+            }
+        }
+    }
+
     private suspend fun importValidatedOrderedStream(
         source: BackupStreamSource,
         staging: BackupImportStagingArea,
@@ -873,6 +958,13 @@ abstract class BaseDataBackupManager(
             )
             preferencesManager?.resetOneShotWorkAfterRestore()
         }
+        // Integration-model §7 (issue #1384 P3): revoke local Intervals dispatch
+        // authorization BEFORE the first row replacement, and keep the revocation even if
+        // this restore later fails. Imported/restored rows never gain completion receipts
+        // or export jobs: known training rows replay through this import machinery (raw
+        // inserts), never the live-completion entry point, and the replayable journal that
+        // could mint receipts over restored rows is revoked with the rest of the state.
+        revokeIntervalsStateBeforeRestore()
         try {
             val nav = BackupJsonNavigator(source)
             var legacyRackFieldPresent = false
@@ -3128,6 +3220,11 @@ abstract class BaseDataBackupManager(
         writer: BackupJsonWriter,
         onProgress: (BackupProgress) -> Unit,
     ) {
+        // Intervals exclusion (integration-model §7): the streaming export writes only the
+        // explicit section allowlist below. Intervals.icu state (connection metadata, secret
+        // key refs, completion journal/receipts, outbox jobs, reservations, installation
+        // authorization) has no section here and is never queried — byte-sentinels seeded
+        // into those tables are asserted absent by IntervalsBackupExclusionTest.
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
@@ -4375,6 +4472,10 @@ abstract class BaseDataBackupManager(
             val sessions = listOf(session)
 
             // Session payload plus the profile/custom-exercise parents v6 restore requires.
+            // Intervals exclusion (integration-model §7): the auto-backup subset carries
+            // explicit training rows only — never Intervals connection/secret-receipt/
+            // journal/outbox state — and writing this file never creates completion
+            // eligibility (it is not the live-completion entry point).
             // Note: mapSessionToBackup called without routineNameResolutionContext.
             // This means legacy sessions (pre-migration 12) won't get enriched routine names.
             // Acceptable trade-off: avoids loading all routines for a single-session backup.
@@ -4459,6 +4560,10 @@ abstract class BaseDataBackupManager(
             }
 
             val routineNowMs = KmpUtils.currentTimeMillis()
+            // Intervals exclusion (integration-model §7): the per-routine auto-backup subset
+            // carries explicit training rows only — never Intervals connection/secret-
+            // receipt/journal/outbox state — and writing this file never creates completion
+            // eligibility (it is not the live-completion entry point).
             val backupData = BackupData(
                 version = CURRENT_BACKUP_VERSION,
                 exportedAt = KmpUtils.formatTimestamp(routineNowMs, "yyyy-MM-dd") + "T" +

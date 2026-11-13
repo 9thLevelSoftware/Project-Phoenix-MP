@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.intervals.IntervalsProfileLifecycle
+import com.devil.phoenixproject.data.integration.intervals.resolveIntervalsProfileLifecycleOrNull
 import com.devil.phoenixproject.data.preferences.InMemoryPendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
@@ -263,6 +265,13 @@ class SqlDelightUserProfileRepository(
     private val lastSyncedPortalUserId: () -> String? = { null },
     /** Device-local Recent tagging list (#850); removed with the profile's other local keys. */
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
+    /**
+     * Issue #1384 (packet P3): Intervals connection/secret revocation + personal-payload
+     * purge for profile deletion. Invoked from the retryable local-cleanup recovery, so
+     * a secure-store failure keeps the cleanup queued and retried. Resolved from DI by
+     * default; tests inject fakes explicitly.
+     */
+    private val intervalsProfileLifecycle: () -> IntervalsProfileLifecycle? = { resolveIntervalsProfileLifecycleOrNull() },
 ) : UserProfileRepository {
     private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
@@ -395,6 +404,10 @@ class SqlDelightUserProfileRepository(
                 val deletedAt = currentTimeMillis()
                 queries.enqueueProfileLocalCleanup(id, deletedAt)
                 queries.deleteActiveWorkoutRuntimeByProfile(id)
+                // Issue #1384 (packet P3): Intervals export state is personal and
+                // profile-scoped — purge it (connection metadata, jobs, receipts,
+                // reservations, completion journal). Nothing is transferred anywhere.
+                purgeIntervalsProfileState(id)
                 // Workouts: an id-only tombstone per portal workout (no FK, survives the
                 // profile), then the rows themselves. The tombstone blocks any later pull
                 // from re-inserting them, whichever profile the portal scopes them to.
@@ -584,6 +597,11 @@ class SqlDelightUserProfileRepository(
                 }
                 queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
                 queries.deleteActiveWorkoutRuntimeByProfile(id)
+                // Issue #1384 (packet P3): the merge/reassignment path transfers NOTHING
+                // of the Intervals export state — connection metadata, jobs, receipts,
+                // reservations and the completion journal are purged with the profile,
+                // never reassigned to the target profile.
+                purgeIntervalsProfileState(id)
                 profileScopedDataMerger.mergeForProfileDeletion(id, targetProfileId)
                 queries.reassignRoutineGroupProfile(targetProfileId, id)
                 queries.reassignRoutineProfile(targetProfileId, id)
@@ -774,6 +792,11 @@ class SqlDelightUserProfileRepository(
                     try {
                         profileLocalSafetyStore.delete(pending.profile_id)
                         recentJustLiftExerciseStore?.delete(pending.profile_id)
+                        // Issue #1384 (packet P3): revoke the Intervals generation/secret
+                        // and purge remaining personal payloads. Idempotent; a throw keeps
+                        // this entry queued so the cleanup is retried (secure-key deletion
+                        // failures included) and the profile can never authorize sends.
+                        intervalsProfileLifecycle()?.onProfilePendingCleanup(pending.profile_id)
                         queries.dequeueProfileLocalCleanup(pending.profile_id)
                     } catch (error: CancellationException) {
                         throw error
@@ -784,6 +807,19 @@ class SqlDelightUserProfileRepository(
                     }
                 }
         }
+    }
+
+    /** Issue #1384 (packet P3): idempotent purge of one profile's Intervals rows. */
+    private fun purgeIntervalsProfileState(profileId: String) {
+        queries.deleteIntervalsProfileJobs(profileId)
+        queries.deleteIntervalsProfileReceipts(profileId)
+        queries.deleteIntervalsProfileReservations(profileId)
+        // Explicit child cleanup (repo convention: never rely on ON DELETE CASCADE —
+        // foreign_keys may be off). Child replay payloads hold full session/set/rep
+        // JSON and must not survive the journal delete.
+        queries.deleteIntervalsProfileJournalChildren(profileId)
+        queries.deleteIntervalsProfileJournal(profileId)
+        queries.deleteIntervalsProfileState(profileId)
     }
 
     override suspend fun recoverPendingProfileTransitionForStartup() {
