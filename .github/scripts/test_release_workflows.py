@@ -469,6 +469,30 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 # Later steps (the upload) must not run after a failed build.
                 self.assertNotIn("always()", text[step_end:])
 
+    def test_release_dex_type_check_is_self_tested_with_fixtures(self) -> None:
+        # #1368: the checker must prove it still detects the String/Throwable failure class
+        # before it is allowed to guard a release build, and PR CI must run that proof.
+        build_gradle = (ROOT / "androidApp" / "build.gradle.kts").read_text(encoding="utf-8")
+        self.assertTrue(
+            (ROOT / "androidApp" / "config" / "ReleaseDexTypeCheckFixtures.java").is_file(),
+            "checker fixtures are missing",
+        )
+        self.assertRegex(
+            build_gradle, r'register<TestReleaseDexTypesTask>\("testReleaseDexTypes"\)'
+        )
+        # verifyReleaseDexTypes must not run without its fixtures passing first.
+        verify_task = re.search(
+            r'(?ms)^tasks\.register<VerifyReleaseDexTypesTask>\("verifyReleaseDexTypes"\) \{\n(?P<body>.*?)^\}',
+            build_gradle,
+        )
+        if verify_task is None:
+            self.fail("verifyReleaseDexTypes task registration is missing")
+        self.assertRegex(
+            verify_task.group("body"),
+            r'(?m)^\s*dependsOn\("testReleaseDexTypes"\)\s*$',
+        )
+        self.assertIn(":androidApp:testReleaseDexTypes", workflow("ci-tests.yml"))
+
     def test_ci_host_unit_tests_share_one_gradle_invocation(self) -> None:
         text = workflow("ci-tests.yml")
         job = re.search(
@@ -478,7 +502,8 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         body = job.group("body")
         combined = (
             "run: ./gradlew -Pskip.supabase.check=true "
-            ":shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue\n"
+            ":shared:testAndroidHostTest :androidApp:testDebugUnitTest "
+            ":androidApp:testReleaseDexTypes --continue\n"
         )
         self.assertEqual(body.count(combined), 1)
         self.assertNotIn("Run shared module unit tests", body)
