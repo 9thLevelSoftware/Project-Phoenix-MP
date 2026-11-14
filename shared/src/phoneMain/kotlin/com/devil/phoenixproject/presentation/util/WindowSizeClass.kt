@@ -94,10 +94,17 @@ fun shouldUseCompactAccessibilityLayout(
     fontScale: Float,
     boldTextEnabled: Boolean,
     fontScaleThreshold: Float = 1.15f,
+    effectiveWeightTextScale: Float = 1.0f,
 ): Boolean = windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
     (
         windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
-            (fontScale >= fontScaleThreshold || boldTextEnabled)
+            (
+                fontScale >= fontScaleThreshold ||
+                    boldTextEnabled ||
+                    // Issue #1367 SD7: app weight-text pressure participates in the
+                    // compact decision (stack at compact width when E > 1.0 even at OS 1.0).
+                    effectiveWeightTextScale > 1.0f
+                )
         )
 
 /**

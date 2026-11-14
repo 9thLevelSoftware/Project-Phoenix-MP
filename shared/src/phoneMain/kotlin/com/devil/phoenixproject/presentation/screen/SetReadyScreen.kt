@@ -720,6 +720,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 formatValue = { viewModel.formatWeight(it, weightUnit) },
                                 deltaText = deltaText,
                                 isDeltaPositive = deltaKg >= 0f,
+                                isWeightValue = true,
                             )
 
                             if (!isAMRAP) {

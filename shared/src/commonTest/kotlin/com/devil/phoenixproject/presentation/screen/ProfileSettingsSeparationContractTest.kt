@@ -181,6 +181,8 @@ class ProfileSettingsSeparationContractTest {
                 onBackupDestinationChange: (BackupDestination) -> Unit,
                 selectedLanguage: String,
                 onLanguageChange: (String) -> Unit,
+                weightTextScale: WeightTextScale,
+                onWeightTextScaleChange: (WeightTextScale) -> Unit,
                 modifier: Modifier = Modifier,
             )
         """.trimIndent()
@@ -293,6 +295,16 @@ class ProfileSettingsSeparationContractTest {
             }
 
         assertContains(settings, "private fun GlobalSettingsSectionCard(")
+        // Issue #1367 SD8: the Settings helper wording is a binding signoff correction and
+        // must ship verbatim in the default locale.
+        val weightTextStrings = source("src/commonMain/composeResources/values/strings.xml")
+        listOf(
+            "Enlarges weight values in Set Ready, Routine Overview, rest, exercise setup and workout readouts. Just Lift is unchanged in this first version. Saved on this device only.",
+            "Combines with your device text size, up to 2× the standard base size. Options may look the same at larger device text sizes. This limit also applies to Standard when your device text size exceeds it.",
+        ).forEach { wording ->
+            assertContains(weightTextStrings, wording, message = "SD8 verbatim helper copy missing")
+        }
+        assertContains(functionSource(settings, "WeightTextSizeSelector"), "Role.RadioButton")
         val switchRow = functionSource(settings, "GlobalSettingsSwitchRow")
         listOf("defaultMinSize(minHeight = 48.dp)", ".toggleable(", "role = Role.Switch")
             .forEach { contract -> assertContains(switchRow, contract) }
@@ -366,6 +378,7 @@ class ProfileSettingsSeparationContractTest {
             "backupStats = backupStats",
             "backupDestination = globalSettings.backupDestination",
             "selectedLanguage = globalSettings.language",
+            "weightTextScale = globalSettings.weightTextScale",
             "connectionError = connectionError",
         ).forEach { assignment ->
             assertTrue(
@@ -385,6 +398,7 @@ class ProfileSettingsSeparationContractTest {
             "onOpenBackupFolder" to "openBackupFolder",
             "onBackupDestinationChange" to "setBackupDestination",
             "onLanguageChange" to "setLanguage",
+            "onWeightTextScaleChange" to "setWeightTextScale",
         ).forEach { (parameter, method) -> assertViewModelCallback(call, parameter, method) }
         listOf(
             "onThemeModeChange = onThemeModeChange",
@@ -432,6 +446,7 @@ class ProfileSettingsSeparationContractTest {
         listOf(
             "setEnableVideoPlayback",
             "setBleCompatibilityMode",
+            "setWeightTextScale",
             "setAutoBackupEnabled",
             "setBackupDestination",
             "setLanguage",
@@ -459,6 +474,7 @@ class ProfileSettingsSeparationContractTest {
                 includeRawTelemetryInBackups = includeRawTelemetryInBackups,
                 backupDestination = backupDestination,
                 language = language,
+                weightTextScale = weightTextScale,
             )
         """.trimIndent()
         assertEquals(compactKotlin(expectedMapper), compactKotlin(mapper))

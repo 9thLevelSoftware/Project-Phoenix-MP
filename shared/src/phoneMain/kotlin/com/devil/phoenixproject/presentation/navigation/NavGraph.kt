@@ -496,6 +496,8 @@ fun NavGraph(
                 onBackupDestinationChange = viewModel::setBackupDestination,
                 selectedLanguage = globalSettings.language,
                 onLanguageChange = viewModel::setLanguage,
+                weightTextScale = globalSettings.weightTextScale,
+                onWeightTextScaleChange = viewModel::setWeightTextScale,
             )
         }
 

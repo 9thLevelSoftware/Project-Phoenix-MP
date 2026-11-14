@@ -34,12 +34,14 @@ import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.SetTypeLabel
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
@@ -376,6 +378,11 @@ private fun HudBottomBar(
                 weightUnit = weightUnit,
                 formatWeight = formatWeight,
             )
+            // Issue #1367 SD9: both value-slot branches (numeric/"Adaptive" and bodyweight
+            // "No machine load") get the rendered-cap weight treatment; the supporting
+            // labelSmall labels ("Weight/cable"/"Bodyweight"/rack context) stay unscaled.
+            val weightTextScale = LocalWeightTextScale.current
+            val valueStyle = MaterialTheme.typography.titleLarge.scaledForWeightValue(weightTextScale)
             Column {
                 if (isCurrentExerciseBodyweight) {
                     Text(
@@ -385,7 +392,7 @@ private fun HudBottomBar(
                     )
                     Text(
                         "No machine load",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = valueStyle,
                         fontWeight = FontWeight.Bold,
                     )
                 } else {
@@ -400,7 +407,7 @@ private fun HudBottomBar(
                         } else {
                             formatWeight(selectedDisplayKg, weightUnit)
                         },
-                        style = MaterialTheme.typography.titleLarge,
+                        style = valueStyle,
                         fontWeight = FontWeight.Bold,
                     )
                 }
