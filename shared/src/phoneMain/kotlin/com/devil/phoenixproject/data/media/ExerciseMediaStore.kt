@@ -122,7 +122,9 @@ interface ExerciseMediaStore {
     /**
      * MOVE (not copy) staged files into `<root>/<exerciseId>/` (signoff #4:
      * files land before the row delta). All-or-nothing: on failure, files moved
-     * by THIS call are removed again and the failure is returned (T26).
+     * by THIS call are RESTORED to their staged paths so the draft stays
+     * retryable (SD6 — the moved copies are removed from the exercise dir,
+     * satisfying T26) and the failure is returned.
      * Returns the committed local URLs, in input order.
      */
     fun commitAll(
@@ -130,6 +132,23 @@ interface ExerciseMediaStore {
         staged: List<StagedMedia>,
         exerciseId: String,
     ): Result<List<String>>
+
+    /**
+     * Restore committed files back to their session staging paths — the
+     * inverse of [commitAll] for files THIS session just moved (SD6 retryable
+     * draft), used when the row transaction fails after files landed.
+     * Session-owned only: never touches pre-existing rows/files. [staged] and
+     * [committedUrls] align by file name. A restore failure falls back to
+     * deleting the committed copy so no orphan is left in the exercise dir.
+     * Returns true when every committed copy is back in staging (or gone).
+     */
+    fun restoreToStaging(
+        staged: List<StagedMedia>,
+        committedUrls: List<String>,
+    ): Boolean
+
+    /** Whether a staged draft copy still exists (a pick lost to an external delete can never commit). */
+    fun stagedCopyExists(stagedPath: String): Boolean
 
     /** Delete the managed media directory of [exerciseId] (rows are gone/cascaded). */
     fun deleteForExercise(exerciseId: String): Boolean

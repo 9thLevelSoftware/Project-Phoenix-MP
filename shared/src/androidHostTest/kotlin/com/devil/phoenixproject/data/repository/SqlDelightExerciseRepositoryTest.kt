@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.local.FreeExerciseJson
@@ -1507,6 +1508,66 @@ class SqlDelightExerciseRepositoryTest {
 
         assertTrue(repository.getAllExerciseIds().contains("ex-1"))
         assertTrue(repository.getAllImageUrls().contains("/media/a.jpg"))
+    }
+
+    // T34: attach/remove are sync/backup no-ops (AC9). Behavioral, not
+    // string-inspection: snapshot EVERY user table's row count around each media
+    // row op — only ExerciseImage may ever change; no sync/outbox/backup table
+    // may receive a single row.
+    @Test
+    fun `media row ops write only ExerciseImage and never any sync outbox table`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        val before = allTableRowCounts()
+
+        repository.addImage("ex-1", "/media/a.jpg", 0)
+        val afterAdd = allTableRowCounts()
+        assertEquals(
+            setOf("ExerciseImage"),
+            changedTables(before, afterAdd),
+            "addImage must touch only the ExerciseImage table (T34/AC9)",
+        )
+
+        val firstRow = repository.getImages("ex-1").first()
+        repository.applyMediaDelta("ex-1", listOf("/media/b.jpg"), listOf(firstRow.id))
+        val afterDelta = allTableRowCounts()
+        assertEquals(
+            setOf("ExerciseImage"),
+            changedTables(before, afterDelta),
+            "applyMediaDelta must touch only the ExerciseImage table (T34/AC9)",
+        )
+        assertEquals(listOf("/media/b.jpg"), repository.getImages("ex-1").map { it.url })
+
+        val added = repository.getImages("ex-1").first()
+        repository.removeImage(added.id)
+        val afterRemove = allTableRowCounts()
+        assertEquals(
+            before,
+            afterRemove,
+            "A full add/remove cycle must return every table (sync included) to baseline (T34/AC9)",
+        )
+        assertEquals(emptyList(), repository.getImages("ex-1"), "All media rows must be gone")
+    }
+
+    private fun changedTables(before: Map<String, Long>, after: Map<String, Long>): Set<String> =
+        (before.keys + after.keys).filter { before[it] != after[it] }.toSet()
+
+    private fun allTableRowCounts(): Map<String, Long> {
+        val tables = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+            { cursor ->
+                while (cursor.next().value) tables += checkNotNull(cursor.getString(0))
+                QueryResult.Value(tables)
+            },
+            0,
+        ).value
+        return tables.associateWith { table ->
+            driver.executeQuery(null, "SELECT COUNT(*) FROM \"$table\"", { cursor ->
+                check(cursor.next().value) { "No count for $table" }
+                QueryResult.Value(checkNotNull(cursor.getLong(0)))
+            }, 0).value
+        }
     }
 
     private fun insertExercise(

@@ -183,12 +183,56 @@ class IosExerciseMediaStore(
             }
             return Result.success(moved)
         } catch (e: Exception) {
-            log.w(e) { "Commit failed for $exerciseId; rolling back this attempt's moves" }
-            // SD6: remove only session-owned additions (files moved this attempt).
-            moved.forEach { runCatching { fileManager.removeItemAtPath(it, null) } }
+            log.w(e) { "Commit failed for $exerciseId; restoring this attempt's moves to staging" }
+            // SD6: only session-owned additions (files moved this attempt) are
+            // touched — restored to their staged paths so the draft stays
+            // retryable (T26/T28). Nothing pre-existing is ever mutated.
+            moved.forEachIndexed { index, url ->
+                runCatching { restoreOrDelete(url, staged[index].stagedPath) }
+            }
             return Result.failure(e)
         }
     }
+
+    /**
+     * Restore one moved file to its staged path; delete it only when restore
+     * fails (never leave an orphan in the exercise dir).
+     */
+    private fun restoreOrDelete(target: String, stagedPath: String) {
+        if (!fileManager.fileExistsAtPath(stagedPath.substringBeforeLast('/'))) {
+            fileManager.createDirectoryAtPath(stagedPath.substringBeforeLast('/'), true, null, null)
+        }
+        val restored = fileManager.moveItemAtPath(target, stagedPath, null)
+        if (!restored) {
+            runCatching { fileManager.removeItemAtPath(target, null) }
+        }
+    }
+
+    override fun restoreToStaging(
+        staged: List<StagedMedia>,
+        committedUrls: List<String>,
+    ): Boolean {
+        var allRestored = true
+        committedUrls.forEach { url ->
+            if (!isInsideManagedRoot(url)) {
+                log.w { "Refusing to restore outside managed root: $url" }
+                allRestored = false
+                return@forEach
+            }
+            val targetName = url.substringAfterLast('/')
+            val stagedItem = staged.firstOrNull { it.stagedPath.substringAfterLast('/') == targetName }
+            if (stagedItem == null) {
+                log.w { "No staged source for $url; deleting session-owned copy" }
+                if (!fileManager.removeItemAtPath(url, null)) allRestored = false
+                return@forEach
+            }
+            runCatching { restoreOrDelete(url, stagedItem.stagedPath) }
+            if (fileManager.fileExistsAtPath(url)) allRestored = false
+        }
+        return allRestored
+    }
+
+    override fun stagedCopyExists(stagedPath: String): Boolean = fileManager.fileExistsAtPath(stagedPath)
 
     override fun deleteForExercise(exerciseId: String): Boolean = try {
         val dir = exerciseDirPath(exerciseId)

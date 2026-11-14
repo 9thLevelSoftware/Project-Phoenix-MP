@@ -236,6 +236,11 @@ class ExerciseMediaSaveCoordinator(
             val exerciseId = exercise.id
                 ?: return CustomExerciseSaveOutcome.Failed("Saved exercise has no id")
 
+            // A pick whose staged copy vanished (external delete) can never
+            // commit — drop only the dead entries so the rest of the draft and
+            // the save stay retryable (SD6).
+            stagedAdditions.removeAll { !mediaStore.stagedCopyExists(it.stagedPath) }
+
             val additions = stagedAdditions.toList()
             val removals = queuedRemovals.toList()
 
@@ -264,10 +269,10 @@ class ExerciseMediaSaveCoordinator(
                     removalIds = removals.map { it.imageId },
                 )
                 if (delta.isFailure) {
-                    // Real row-transaction failure: remove only session-owned
-                    // additions (files moved this attempt), never pre-existing
-                    // rows/files (SD6/T26).
-                    committedUrls.forEach { mediaStore.deleteOne(it) }
+                    // Real row-transaction failure: restore only THIS session's
+                    // moved files back to staging so the draft stays retryable
+                    // (SD6/T28); never touch pre-existing rows/files.
+                    mediaStore.restoreToStaging(additions, committedUrls)
                     log.w(delta.exceptionOrNull()) { "Row delta failed for $exerciseId" }
                     phase = MediaPhase.Error
                     return CustomExerciseSaveOutcome.MediaFailed(exercise)

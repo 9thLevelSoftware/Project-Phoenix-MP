@@ -278,7 +278,12 @@ class ExerciseMediaStoreTest {
         val exerciseDir = File(store.exerciseDirPath("custom_5"))
         assertTrue(
             exerciseDir.listFiles()!!.none { it.name == File(p1.first().stagedPath).name },
-            "Session-owned additions moved in the failed attempt must be removed (T26)",
+            "Session-owned additions moved in the failed attempt must be removed from the exercise dir (T26)",
+        )
+        // ...and its staged copy must be RESTORED so the draft stays retryable (SD6/T28).
+        assertTrue(
+            File(p1.first().stagedPath).isFile,
+            "A rolled-back move must restore the staged copy so the save can be retried (SD6/T28)",
         )
     }
 
@@ -314,5 +319,47 @@ class ExerciseMediaStoreTest {
             dir.listFiles()!!.size,
             "Mid-commit leftovers (no rows) must be swept at startup (T30/SD8c)",
         )
+    }
+
+    // ---- SD6 retryable draft: restoreToStaging puts committed files back ----
+
+    @Test
+    fun restoreToStagingMovesCommittedFilesBackToStaging() = runBlocking {
+        val staged = store.stage(
+            "s11",
+            listOf(picked("a.jpg", sourceFile("a.jpg", nonUtf8Payload()))),
+            0,
+        ).getOrThrow()
+        val committed = store.commitAll("s11", staged, "custom_8").getOrThrow()
+        assertEquals(1, committed.size)
+        assertTrue(File(committed.first()).isFile)
+        assertFalse(File(staged.first().stagedPath).exists())
+
+        val restored = store.restoreToStaging(staged, committed)
+
+        assertTrue(restored, "Every session-owned committed copy must restore (SD6)")
+        assertTrue(
+            File(staged.first().stagedPath).isFile,
+            "The staged draft copy must be back in staging after restore (SD6/T28)",
+        )
+        assertFalse(
+            File(committed.first()).exists(),
+            "Restore must leave nothing in the exercise dir (SD6)",
+        )
+        // The restored draft commits cleanly on retry — no duplicates, no loss.
+        val retry = store.commitAll("s11", staged, "custom_8").getOrThrow()
+        assertEquals(1, retry.size)
+        assertTrue(File(retry.first()).isFile)
+    }
+
+    @Test
+    fun restoreToStagingRefusesPathsOutsideManagedRoot() {
+        val outsider = File(root, "user-original.jpg").also { it.writeBytes(nonUtf8Payload(8)) }
+        val restored = store.restoreToStaging(
+            staged = emptyList(),
+            committedUrls = listOf(outsider.absolutePath),
+        )
+        assertFalse(restored, "Out-of-root paths must be refused, never touched (SD8)")
+        assertTrue(outsider.isFile, "A user original outside the managed root must survive untouched")
     }
 }
