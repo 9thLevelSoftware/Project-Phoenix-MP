@@ -26,9 +26,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.ForceCurveResult
@@ -39,6 +41,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
+import com.devil.phoenixproject.presentation.util.ContentAwareFit
 import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -217,48 +220,115 @@ fun SetSummaryCard(
                     )
                     .padding(16.dp), // Reduced from 20dp to fit more content
             ) {
-                // FlowRow so Total reps / Total volume reflow independently at large font scales (#1385).
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "Total reps",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                // FlowRow so Total reps / Total volume reflow independently at large font
+                // scales (#1385); content-aware shrink-to-fit keeps each value's number
+                // token on one line even when the full column is narrower than the token.
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val measurer = rememberTextMeasurer()
+                    val density = LocalDensity.current
+                    val valueStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold)
+                    val repsText = "$displayReps"
+                    val volumeText = WeightDisplayFormatter.formatDisplayNumber(totalVolumeDisplay)
+                    fun fitValueStyle(text: String): androidx.compose.ui.text.TextStyle {
+                        val factor = ContentAwareFit.singleLineFitFontScale(
+                            text = text,
+                            style = valueStyle,
+                            availableDp = maxWidth.value,
+                            measurer = measurer,
+                            density = density,
                         )
-                        Text(
-                            "$displayReps",
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
+                        return valueStyle.copy(fontSize = (valueStyle.fontSize.value * factor).sp)
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "Total volume ($unitLabel)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
-                        )
-                        Text(
-                            WeightDisplayFormatter.formatDisplayNumber(totalVolumeDisplay),
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "Total reps",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                            )
+                            Text(
+                                repsText,
+                                style = fitValueStyle(repsText),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "Total volume ($unitLabel)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                            )
+                            Text(
+                                volumeText,
+                                style = fitValueStyle(volumeText),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Stats Grid: one-column fallback when two cards can't fit content at the current
-        // font scale — measured from actual available width and fontScale (#1385).
+        // Stats Grid: one-column fallback when two cards can't fit their actual content
+        // side by side (#1385). The decision measures rendered text at the current font
+        // scale — values, labels and units — instead of a fixed width/fontScale ratio,
+        // so long or localized content drives stacking.
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val fontScale = LocalDensity.current.fontScale
-            // Each card needs roughly 160dp at its own scale for headline values; below that
-            // the value text wraps mid-number, so fall back to one full-width column.
-            val useTwoColumns = maxWidth.value / fontScale > 200f
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val labelStyle = MaterialTheme.typography.bodySmall
+            val valueStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+            val forceLabelStyle = MaterialTheme.typography.bodySmall
+            val forceValueStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            val arrowStyle = MaterialTheme.typography.titleMedium
+            val rowSpacingDp = 8f // matches ResponsiveStatRow's spacedBy(8.dp)
+            val availableDp = maxWidth.value
+
+            // SummaryStatCard requirement: 12dp inset each side, the label row keeps its
+            // 18dp icon plus a 4dp gap, and the value/unit FlowRow wraps whole items so it
+            // needs the wider item. Units must stay on one line; labels and values may wrap
+            // at spaces but never mid-word.
+            fun statCardRequiredDp(label: String, value: String, unit: String?): Float {
+                val labelRow =
+                    ContentAwareFit.requiredTextWidthDp(label, labelStyle, singleLine = false, measurer, density).value + 4f + 18f
+                val valueRow = maxOf(
+                    ContentAwareFit.requiredTextWidthDp(value, valueStyle, singleLine = false, measurer, density).value,
+                    unit?.let {
+                        ContentAwareFit.requiredTextWidthDp(it, labelStyle, singleLine = true, measurer, density).value
+                    } ?: 0f,
+                )
+                return maxOf(labelRow, valueRow) + 24f
+            }
+
+            // SummaryForceCard requirement: the label may wrap by word; each force item is
+            // one Text (value + arrow) that may wrap at the space before its arrow, and the
+            // FlowRow wraps whole items, so the wider item decides the row's minimum.
+            fun forceCardRequiredDp(label: String, items: List<Pair<String, String>>): Float {
+                val labelW = ContentAwareFit.requiredTextWidthDp(label, forceLabelStyle, singleLine = false, measurer, density).value
+                val itemW = items.maxOf { (value, arrow) ->
+                    maxOf(
+                        ContentAwareFit.requiredTextWidthDp(value, forceValueStyle, singleLine = false, measurer, density).value,
+                        ContentAwareFit.requiredTextWidthDp(arrow, arrowStyle, singleLine = true, measurer, density).value,
+                    )
+                }
+                return maxOf(labelW, itemW) + 24f
+            }
+
+            val peakForceItems = listOf(
+                WeightDisplayFormatter.formatDisplayNumber(peakConcentric) to "\u2191",
+                WeightDisplayFormatter.formatDisplayNumber(peakEccentric) to "\u2193",
+            )
+            val avgForceItems = listOf(
+                WeightDisplayFormatter.formatDisplayNumber(avgConcentric) to "\u2191",
+                WeightDisplayFormatter.formatDisplayNumber(avgEccentric) to "\u2193",
+            )
+            val energyValue = "${summary.estimatedCalories.roundToInt()}"
+
             val pairModifier = Modifier.fillMaxWidth()
             Column(
                 modifier = pairModifier,
@@ -266,23 +336,38 @@ fun SetSummaryCard(
             ) {
                 // Row 1: Mode and Heaviest Lift
                 ResponsiveStatRow(
-                    useTwoColumns,
+                    useTwoColumns = ContentAwareFit.equalColumnsFit(
+                        firstRequiredDp = statCardRequiredDp("Mode", workoutMode, null),
+                        secondRequiredDp = statCardRequiredDp(setWeightLabel, setWeightValueText, setWeightUnitText),
+                        spacingDp = rowSpacingDp,
+                        availableDp = availableDp,
+                    ),
                     first = { mod -> SummaryStatCard(label = "Mode", value = workoutMode, icon = Icons.Default.GridView, modifier = mod) },
                     second = { mod -> SummaryStatCard(label = setWeightLabel, value = setWeightValueText, unit = setWeightUnitText, icon = Icons.Default.FitnessCenter, modifier = mod) },
                 )
 
                 // Row 2: Peak Force (concentric/eccentric)
                 ResponsiveStatRow(
-                    useTwoColumns,
+                    useTwoColumns = ContentAwareFit.equalColumnsFit(
+                        firstRequiredDp = forceCardRequiredDp("Peak Dynamic ($unitLabel)", peakForceItems),
+                        secondRequiredDp = forceCardRequiredDp("Avg Active ($unitLabel)", avgForceItems),
+                        spacingDp = rowSpacingDp,
+                        availableDp = availableDp,
+                    ),
                     first = { mod -> SummaryForceCard(label = "Peak Dynamic ($unitLabel)", concentricValue = peakConcentric, eccentricValue = peakEccentric, modifier = mod) },
                     second = { mod -> SummaryForceCard(label = "Avg Active ($unitLabel)", concentricValue = avgConcentric, eccentricValue = avgEccentric, modifier = mod) },
                 )
 
                 // Row 3: Duration and Energy
                 ResponsiveStatRow(
-                    useTwoColumns,
+                    useTwoColumns = ContentAwareFit.equalColumnsFit(
+                        firstRequiredDp = statCardRequiredDp("Duration", durationFormatted, null),
+                        secondRequiredDp = statCardRequiredDp("Energy", energyValue, "(kCal)"),
+                        spacingDp = rowSpacingDp,
+                        availableDp = availableDp,
+                    ),
                     first = { mod -> SummaryStatCard(label = "Duration", value = durationFormatted, icon = Icons.Default.Timer, modifier = mod) },
-                    second = { mod -> SummaryStatCard(label = "Energy", value = "${summary.estimatedCalories.roundToInt()}", unit = "(kCal)", icon = Icons.Default.LocalFireDepartment, modifier = mod) },
+                    second = { mod -> SummaryStatCard(label = "Energy", value = energyValue, unit = "(kCal)", icon = Icons.Default.LocalFireDepartment, modifier = mod) },
                 )
 
             // Echo Mode Phase Breakdown
@@ -427,9 +512,10 @@ fun SetSummaryCard(
             if (addExerciseAction != null) {
                 OutlinedButton(
                     onClick = addExerciseAction,
+                    // Issue #1385: min height — a fixed 56dp clipped the scaled label.
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.large,
                 ) {
                     Text(
@@ -443,9 +529,10 @@ fun SetSummaryCard(
             }
             Button(
                 onClick = onContinue,
+                // Issue #1385: min height — a fixed 56dp clipped the scaled label.
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,

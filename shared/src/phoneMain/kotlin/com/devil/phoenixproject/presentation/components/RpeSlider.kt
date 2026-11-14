@@ -15,11 +15,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.presentation.util.ContentAwareFit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
@@ -104,11 +107,13 @@ fun RpeIndicator(
 private fun RpeButton(currentRpe: Int?, onClick: () -> Unit) {
     if (currentRpe != null) {
         val rpeInfo = rpeScale.find { it.value == currentRpe } ?: rpeScale.last()
+        // Issue #1385: min height instead of a fixed one — at accessibility font scales
+        // a fixed 40dp clipped the label; the tap target keeps its 40dp floor.
         Surface(
             onClick = onClick,
             shape = MaterialTheme.shapes.small,
             color = getRpeColor(currentRpe).copy(alpha = 0.2f),
-            modifier = Modifier.height(40.dp),
+            modifier = Modifier.heightIn(min = 40.dp),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -132,7 +137,7 @@ private fun RpeButton(currentRpe: Int?, onClick: () -> Unit) {
             onClick = onClick,
             shape = MaterialTheme.shapes.small,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            modifier = Modifier.height(40.dp),
+            modifier = Modifier.heightIn(min = 40.dp),
         ) {
             Icon(
                 Icons.Default.Add,
@@ -248,11 +253,29 @@ private fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss:
 
             Spacer(Modifier.height(Spacing.medium))
 
-            // Confirm/Cancel actions: stack vertically when text would break mid-word
-            // at large font scales (#1385).
+            // Confirm/Cancel actions: stack vertically when the localized action labels
+            // cannot fit side by side at the current font scale (#1385). The decision
+            // measures the rendered Cancel/Confirm text plus the buttons' content padding
+            // instead of a fixed width/fontScale threshold.
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val fontScale = LocalDensity.current.fontScale
-                val stackActions = maxWidth.value / fontScale < 180f
+                val measurer = rememberTextMeasurer()
+                val density = LocalDensity.current
+                val buttonStyle = MaterialTheme.typography.labelLarge
+                val buttonPaddingDp = ButtonDefaults.ContentPadding
+                    .calculateStartPadding(LocalLayoutDirection.current).value
+                val cancelText = stringResource(Res.string.action_cancel)
+                val confirmText = stringResource(Res.string.action_confirm)
+                // Both labels must stay on one line, so each needs its full measured width.
+                val cancelRequiredDp =
+                    ContentAwareFit.requiredTextWidthDp(cancelText, buttonStyle, singleLine = true, measurer, density).value + 2f * buttonPaddingDp
+                val confirmRequiredDp =
+                    ContentAwareFit.requiredTextWidthDp(confirmText, buttonStyle, singleLine = true, measurer, density).value + 2f * buttonPaddingDp
+                val stackActions = !ContentAwareFit.equalColumnsFit(
+                    firstRequiredDp = cancelRequiredDp,
+                    secondRequiredDp = confirmRequiredDp,
+                    spacingDp = Spacing.small.value,
+                    availableDp = maxWidth.value,
+                )
                 if (stackActions) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
