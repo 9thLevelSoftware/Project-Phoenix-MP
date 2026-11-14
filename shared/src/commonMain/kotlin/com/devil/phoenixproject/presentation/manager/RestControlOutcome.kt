@@ -24,12 +24,26 @@ internal enum class RestControlAction {
     RESET,
 }
 
+/** Stable owner identity captured at the UI boundary; independent of runtime-document revisions. */
+internal sealed interface RestControlOwnerIdentity {
+    val generation: Long
+
+    data class LiveExecution(val executionId: Long) : RestControlOwnerIdentity {
+        override val generation: Long get() = executionId
+    }
+
+    data class RestoredRuntime(val ownerId: Long) : RestControlOwnerIdentity {
+        override val generation: Long get() = ownerId
+    }
+}
+
 /** Ephemeral UI-to-engine correlation context; contains only trace-safe fields. */
 internal data class RestControlRequest(
     val actionId: Long,
     val action: RestControlAction,
     val ownerGeneration: Long?,
     val seconds: Int?,
+    val ownerIdentity: RestControlOwnerIdentity? = null,
 )
 
 /** Privacy-safe failure feedback correlation; never carries display text or runtime identity. */

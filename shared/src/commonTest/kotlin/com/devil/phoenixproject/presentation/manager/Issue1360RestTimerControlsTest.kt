@@ -203,6 +203,47 @@ class Issue1360RestTimerControlsTest {
     }
 
     @Test
+    fun twoRestControlRequestsForSamePlanOwnerApplySeriallyAgainstLatestDocument() = runTest {
+        val harness = DWSMTestHarness(this)
+        val receipts = mutableListOf<RestControlReceipt>()
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            prepareTutRest(harness, nextExercise = false)
+            val before = runtime(harness)
+            val remainingBefore = resting(harness).restSecondsRemaining
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val firstRequest = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            val secondRequest = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            assertEquals(firstRequest.ownerGeneration, secondRequest.ownerGeneration)
+
+            val outcomes = mutableListOf<RestControlOutcome>()
+            harness.dwsm.extendRestTimeWithOutcome(15, firstRequest, outcomes::add)
+            harness.dwsm.extendRestTimeWithOutcome(15, secondRequest, outcomes::add)
+            assertTrue(outcomes.isEmpty(), "Both requests must remain pending until serialized mutations complete")
+            runCurrent()
+
+            assertEquals(listOf(true, true), outcomes.map { it == RestControlOutcome.Applied })
+            val committed = runtime(harness)
+            assertEquals(before.originalRestDurationSeconds + 30, committed.originalRestDurationSeconds)
+            assertEquals(committed, committedRuntime(harness, committed))
+            assertEquals(remainingBefore + 30, resting(harness).restSecondsRemaining)
+            assertEquals(replacementsBefore + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            val requestIds = setOf(firstRequest.actionId, secondRequest.actionId)
+            assertEquals(2, receipts.count {
+                it.actionId in requestIds && it.stage == RestControlReceiptStage.PUBLICATION
+            })
+            assertFalse(receipts.any {
+                it.actionId in requestIds && it.stage == RestControlReceiptStage.REJECTED
+            })
+        } finally {
+            receiptCollector.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun divergedPlanOwnedCommitReportsPostWriteDriftWithoutPersistenceFeedback() = runTest {
         val harness = DWSMTestHarness(this)
         val messages = mutableListOf<String>()

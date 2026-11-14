@@ -446,6 +446,53 @@ class RestoredRuntimeTimerControlRaceTest {
     }
 
     @Test
+    fun `two rest control requests for same restored owner apply serially against latest document`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val receipts = mutableListOf<RestControlReceipt>()
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-control-serialized-extends")
+            val before = captureTimerSnapshot(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val firstRequest = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            val secondRequest = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            assertEquals(firstRequest.ownerGeneration, secondRequest.ownerGeneration)
+
+            val outcomes = mutableListOf<RestControlOutcome>()
+            harness.dwsm.extendRestTimeWithOutcome(15, firstRequest, outcomes::add)
+            harness.dwsm.extendRestTimeWithOutcome(15, secondRequest, outcomes::add)
+            assertTrue(outcomes.isEmpty(), "Both restored requests must remain pending until serialized mutations complete")
+            runCurrent()
+
+            assertEquals(listOf(true, true), outcomes.map { it == RestControlOutcome.Applied })
+            val committed = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    installed.document.profileId,
+                    installed.document.routineSessionId,
+                ),
+            )
+            assertEquals(before.originalDurationSeconds + 30, committed.originalRestDurationSeconds)
+            assertEquals(committed, harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(before.remainingSeconds + 30, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(before.remainingSeconds + 30, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
+            assertEquals(replacementsBefore + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            val requestIds = setOf(firstRequest.actionId, secondRequest.actionId)
+            assertEquals(2, receipts.count {
+                it.actionId in requestIds && it.stage == RestControlReceiptStage.PUBLICATION
+            })
+            assertFalse(receipts.any {
+                it.actionId in requestIds && it.stage == RestControlReceiptStage.REJECTED
+            })
+        } finally {
+            receiptCollector.cancel()
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
     fun `restored persistence failure rejects without publishing and reports current-owner feedback`() = runTest {
         val harness = DWSMTestHarness(this)
         val messages = mutableListOf<String>()

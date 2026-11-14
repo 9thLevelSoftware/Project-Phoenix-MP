@@ -13611,15 +13611,24 @@ class ActiveSessionEngine(
 
     // ===== Rest Timer Controls (Issue #297, #228) =====
 
-    internal fun createRestControlRequest(action: RestControlAction, seconds: Int?): RestControlRequest =
-        RestControlRequest(
+    internal fun createRestControlRequest(action: RestControlAction, seconds: Int?): RestControlRequest {
+        val ownerIdentity = if (coordinator._restTransitionPlan.value != null) {
+            restoredRuntimeOwnerRef.value?.let { restoredOwner ->
+                RestControlOwnerIdentity.RestoredRuntime(restoredOwner.guardOwner.id)
+            } ?: executionGuard.currentLease?.let { lease ->
+                RestControlOwnerIdentity.LiveExecution(lease.executionId)
+            }
+        } else {
+            null
+        }
+        return RestControlRequest(
             actionId = restControlActionSequence.incrementAndGet(),
             action = action,
-            ownerGeneration = activeRuntimeDocumentVersion.takeIf {
-                coordinator._restTransitionPlan.value != null
-            },
+            ownerGeneration = ownerIdentity?.generation,
             seconds = seconds,
+            ownerIdentity = ownerIdentity,
         )
+    }
 
     private fun beginRestControl(
         action: RestControlAction,
@@ -13696,6 +13705,7 @@ class ActiveSessionEngine(
         val context = beginRestControl(action, seconds, request)
         val actionId = context.actionId
         val ownerGeneration = context.ownerGeneration
+        val ownerIdentity = context.ownerIdentity
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13712,6 +13722,7 @@ class ActiveSessionEngine(
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
+                    ownerIdentity = ownerIdentity,
                     mutation = RestoredRestTimerMutation.Extend(seconds),
                     actionId = actionId,
                     action = action,
@@ -13721,6 +13732,7 @@ class ActiveSessionEngine(
                 )
             } else {
                 mutatePlanOwnedRest(
+                    ownerIdentity = ownerIdentity,
                     actionId = actionId,
                     action = action,
                     ownerGeneration = ownerGeneration,
@@ -13800,6 +13812,7 @@ class ActiveSessionEngine(
         val context = beginRestControl(action, seconds = null, request)
         val actionId = context.actionId
         val ownerGeneration = context.ownerGeneration
+        val ownerIdentity = context.ownerIdentity
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13816,6 +13829,7 @@ class ActiveSessionEngine(
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
+                    ownerIdentity = ownerIdentity,
                     mutation = RestoredRestTimerMutation.TogglePause,
                     actionId = actionId,
                     action = action,
@@ -13825,6 +13839,7 @@ class ActiveSessionEngine(
                 )
             } else {
                 mutatePlanOwnedRest(
+                    ownerIdentity = ownerIdentity,
                     actionId = actionId,
                     action = action,
                     ownerGeneration = ownerGeneration,
@@ -13889,6 +13904,7 @@ class ActiveSessionEngine(
         val context = beginRestControl(action, seconds = null, request)
         val actionId = context.actionId
         val ownerGeneration = context.ownerGeneration
+        val ownerIdentity = context.ownerIdentity
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13905,6 +13921,7 @@ class ActiveSessionEngine(
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
+                    ownerIdentity = ownerIdentity,
                     mutation = RestoredRestTimerMutation.Reset,
                     actionId = actionId,
                     action = action,
@@ -13914,6 +13931,7 @@ class ActiveSessionEngine(
                 )
             } else {
                 mutatePlanOwnedRest(
+                    ownerIdentity = ownerIdentity,
                     actionId = actionId,
                     action = action,
                     ownerGeneration = ownerGeneration,
@@ -13958,6 +13976,7 @@ class ActiveSessionEngine(
 
     private fun mutateRestoredPlanOwnedRest(
         capturedTimerOwner: RestoredRestTimerOwner,
+        ownerIdentity: RestControlOwnerIdentity?,
         mutation: RestoredRestTimerMutation,
         actionId: Long,
         action: RestControlAction,
@@ -13972,21 +13991,27 @@ class ActiveSessionEngine(
             restTransitionMutex.withLock {
                 val owner = restoredRuntimeOwner
                 val document = activeRuntimeDocument
+                val currentTimerOwner = restoredRestTimerOwnerRef.value
                 val plan = coordinator._restTransitionPlan.value
                 if (coordinator._workoutState.value !is WorkoutState.Resting) {
                     outcome = RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING)
                     return@withLock
                 }
-                if (owner == null || document == null || plan == null ||
-                    restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
+                val expectedRestoredOwnerId =
+                    (ownerIdentity as? RestControlOwnerIdentity.RestoredRuntime)?.ownerId
+                if (owner == null || document == null || currentTimerOwner == null || plan == null ||
+                    expectedRestoredOwnerId == null || ownerGeneration != expectedRestoredOwnerId ||
                     owner.guardOwner != capturedTimerOwner.guardOwner ||
-                    owner.document != capturedTimerOwner.document ||
-                    owner.documentVersion != capturedTimerOwner.documentVersion ||
-                    ownerGeneration != capturedTimerOwner.documentVersion ||
-                    document != capturedTimerOwner.document ||
-                    activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
-                    plan.transitionId != capturedTimerOwner.transitionId ||
-                    plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId
+                    owner.guardOwner.id != expectedRestoredOwnerId ||
+                    currentTimerOwner.guardOwner != capturedTimerOwner.guardOwner ||
+                    owner.document != document ||
+                    owner.documentVersion != currentTimerOwner.documentVersion ||
+                    document != currentTimerOwner.document ||
+                    activeRuntimeDocumentVersion != currentTimerOwner.documentVersion ||
+                    currentTimerOwner.transitionId != capturedTimerOwner.transitionId ||
+                    currentTimerOwner.sourceExecutionId != capturedTimerOwner.sourceExecutionId ||
+                    plan.transitionId != currentTimerOwner.transitionId ||
+                    plan.sourceExecutionId != currentTimerOwner.sourceExecutionId
                 ) {
                     recordRestControlReceipt(
                         actionId,
@@ -14028,7 +14053,7 @@ class ActiveSessionEngine(
                     }
                     pausedRemaining
                 } else {
-                    capturedTimerOwner.monotonicDeadlineElapsedRealtimeMs
+                    currentTimerOwner.monotonicDeadlineElapsedRealtimeMs
                         ?.let { computeRemainingSeconds(it, nowElapsedRealtimeMs) }
                         ?: 0
                 }
@@ -14082,15 +14107,15 @@ class ActiveSessionEngine(
                     originalRestDurationSeconds = updatedOriginalDuration,
                 )
                 val replacementJob = if (updatedMonotonicDeadline != null) {
-                    capturedTimerOwner.job ?: createRestoredRestTimerJob(
-                        guardOwner = capturedTimerOwner.guardOwner,
-                        transitionId = capturedTimerOwner.transitionId,
-                        sourceExecutionId = capturedTimerOwner.sourceExecutionId,
+                    currentTimerOwner.job ?: createRestoredRestTimerJob(
+                        guardOwner = currentTimerOwner.guardOwner,
+                        transitionId = currentTimerOwner.transitionId,
+                        sourceExecutionId = currentTimerOwner.sourceExecutionId,
                     )
                 } else {
                     null
                 }
-                val createdJob = replacementJob?.takeIf { it !== capturedTimerOwner.job }
+                val createdJob = replacementJob?.takeIf { it !== currentTimerOwner.job }
                 recordRestControlReceipt(
                     actionId,
                     action,
@@ -14107,7 +14132,7 @@ class ActiveSessionEngine(
                                 withContext(NonCancellable) {
                                     val reconciled = reconcileRestoredRestTimerMutationCommitLocked(
                                         owner = owner,
-                                        capturedTimerOwner = capturedTimerOwner,
+                                        capturedTimerOwner = currentTimerOwner,
                                         document = document,
                                         plan = plan,
                                         updatedDocument = updatedDocument,
@@ -14183,9 +14208,9 @@ class ActiveSessionEngine(
                     if ((commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR ||
                             commitStatus == RuntimeDocumentCommitStatus.UNKNOWN) &&
                         restoredRuntimeOwnerRef.value === owner &&
-                        restoredRestTimerOwnerRef.value === capturedTimerOwner &&
+                        restoredRestTimerOwnerRef.value === currentTimerOwner &&
                         activeRuntimeDocument == document &&
-                        activeRuntimeDocumentVersion == capturedTimerOwner.documentVersion &&
+                        activeRuntimeDocumentVersion == currentTimerOwner.documentVersion &&
                         coordinator._restTransitionPlan.value == plan &&
                         coordinator._workoutState.value is WorkoutState.Resting
                     ) {
@@ -14210,7 +14235,7 @@ class ActiveSessionEngine(
                 )
                 timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                     owner = owner,
-                    capturedTimerOwner = capturedTimerOwner,
+                    capturedTimerOwner = currentTimerOwner,
                     document = document,
                     plan = plan,
                     updatedDocument = updatedDocument,
@@ -14322,6 +14347,7 @@ class ActiveSessionEngine(
     }
 
     private fun mutatePlanOwnedRest(
+        ownerIdentity: RestControlOwnerIdentity?,
         actionId: Long,
         action: RestControlAction,
         ownerGeneration: Long?,
@@ -14340,7 +14366,11 @@ class ActiveSessionEngine(
                     ?: return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
                 val plan = coordinator._restTransitionPlan.value
                     ?: return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
-                if (ownerGeneration == null || activeRuntimeDocumentVersion != ownerGeneration) {
+                val expectedExecutionId =
+                    (ownerIdentity as? RestControlOwnerIdentity.LiveExecution)?.executionId
+                if (expectedExecutionId == null || ownerGeneration != expectedExecutionId ||
+                    lease.executionId != expectedExecutionId
+                ) {
                     recordRestControlReceipt(
                         actionId,
                         action,
@@ -14351,6 +14381,7 @@ class ActiveSessionEngine(
                     )
                     return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
                 }
+                val documentVersion = activeRuntimeDocumentVersion
                 if (!hasRestTransitionAuthority(document, plan, lease)) {
                     recordRestControlReceipt(
                         actionId,
@@ -14409,7 +14440,7 @@ class ActiveSessionEngine(
                     if ((commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR ||
                             commitStatus == RuntimeDocumentCommitStatus.UNKNOWN) &&
                         activeRuntimeDocument == document &&
-                        activeRuntimeDocumentVersion == ownerGeneration &&
+                        activeRuntimeDocumentVersion == documentVersion &&
                         coordinator._restTransitionPlan.value == plan &&
                         coordinator._workoutState.value is WorkoutState.Resting &&
                         executionGuard.currentLease == lease
@@ -14434,7 +14465,7 @@ class ActiveSessionEngine(
                     seconds,
                 )
                 if (activeRuntimeDocument != document ||
-                    activeRuntimeDocumentVersion != ownerGeneration ||
+                    activeRuntimeDocumentVersion != documentVersion ||
                     !hasRestTransitionAuthority(document, plan, lease)
                 ) {
                     return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.POST_WRITE_DRIFT)
