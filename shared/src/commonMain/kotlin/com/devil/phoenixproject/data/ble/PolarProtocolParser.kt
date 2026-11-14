@@ -122,6 +122,24 @@ fun parseHrMeasurement(data: ByteArray): HrMeasurement? {
 }
 
 /**
+ * Parse the sensor-contact status bits of a raw Heart Rate Measurement (0x2A37)
+ * payload into the SD2 tri-state [ContactReportState].
+ *
+ * Flags bits 1-2:
+ * - `00b` / `01b`: contact sensor not supported → [ContactReportState.NOT_REPORTED]
+ * - `10b`: contact supported, NOT detected → [ContactReportState.REPORTED_NOT_DETECTED]
+ * - `11b`: contact supported and detected → [ContactReportState.REPORTED_DETECTED]
+ */
+fun parseContactReport(data: ByteArray): ContactReportState {
+    if (data.isEmpty()) return ContactReportState.NOT_REPORTED
+    return when ((data[0].toInt() shr 1) and 0x03) {
+        2 -> ContactReportState.REPORTED_NOT_DETECTED
+        3 -> ContactReportState.REPORTED_DETECTED
+        else -> ContactReportState.NOT_REPORTED
+    }
+}
+
+/**
  * Parse Battery Level (0x2A19) payload into percentage (0..100).
  */
 fun parseBatteryLevel(data: ByteArray): Int? {

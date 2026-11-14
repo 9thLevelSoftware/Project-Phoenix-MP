@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
@@ -18,6 +20,7 @@ import com.devil.phoenixproject.util.PolarAccFilter
 import com.devil.phoenixproject.util.HrmTelemetryUtils
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
+import com.juul.kable.DiscoveredService
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
@@ -27,6 +30,7 @@ import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.TimeSource
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -49,6 +53,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
@@ -110,6 +115,9 @@ class HrmBleManager(
         const val MAX_STORED_ECG_SEGMENTS = 36_000L
         private const val MAX_RAW_ECG_SAMPLES = 39_000
         private const val CONTACT_LOSS_DEBOUNCE_MS = 3_000L
+
+        /** Max wait for authoritative service discovery before treating it as inconclusive (SD2). */
+        internal const val SERVICE_DISCOVERY_TIMEOUT_MS = 3_000L
     }
 
     private val monotonicClock: () -> Long = monotonicTimeSource
@@ -650,6 +658,38 @@ class HrmBleManager(
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    // ===== Runtime Capability State (SD2) & Connection Generation (SD3) =====
+    // Per-capability probe state. Everything starts UNKNOWN — there is no
+    // Boolean "capability = true" construction default (SD2 forbids that shape).
+    private val _capabilities = MutableStateFlow(HrmCapabilities())
+    val capabilities: StateFlow<HrmCapabilities> = _capabilities.asStateFlow()
+
+    private val generationLock = reentrantLock()
+
+    @Volatile
+    private var connectionGeneration: Int = 0
+
+    internal val connectionGenerationForTesting: Int get() = connectionGeneration
+
+    /** Late callbacks from a previous connection generation are rejected (SD3). */
+    private fun isCurrentGeneration(gen: Int): Boolean = gen == connectionGeneration
+
+    /**
+     * Reset all connection-owned state: bump the connection-generation token and
+     * return every capability to UNKNOWN. Called on disconnect, new selection and
+     * reconnect (SD3).
+     */
+    private fun resetConnectionOwnedState() {
+        generationLock.withLock { connectionGeneration++ }
+        _capabilities.value = HrmCapabilities()
+    }
+
+    private inline fun updateCapability(gen: Int, transform: (HrmCapabilities) -> HrmCapabilities) {
+        if (isCurrentGeneration(gen)) {
+            _capabilities.value = transform(_capabilities.value)
+        }
+    }
+
     internal fun setConnectedForTesting(connected: Boolean) {
         _isConnected.value = connected
         if (connected) {
@@ -774,6 +814,10 @@ class HrmBleManager(
 
     private suspend fun ensureRecordingTelemetryStreams() = telemetryLifecycleMutex.withLock {
         if (!sessionLock.withLock { activeSessionId != null || _isCooldownActive.value }) return@withLock
+        // PMD-gated (SD2): a sensor without Polar PMD never gets ECG/ACC stream
+        // attempts — and missing PMD must never suppress standard HR recording.
+        val pmdState = _capabilities.value.polarPmd
+        if (pmdState == HrmCapabilityState.ABSENT || pmdState == HrmCapabilityState.FAILED) return@withLock
         if (pmdControlPointJob?.isActive != true || pmdDataJob?.isActive != true) {
             _isEcgStreaming.value = false
             _isAccStreaming.value = false
@@ -1110,7 +1154,36 @@ class HrmBleManager(
 
     private suspend fun onDeviceConnected(p: Peripheral) {
         log.i { "Configuring HRM connection parameters and services" }
+        val gen = connectionGeneration
         startWatchdog()
+
+        // 0. Authoritative service discovery enumeration (SD2): the ONLY source of
+        // ABSENT findings. Inconclusive enumeration never yields ABSENT — probes
+        // that are not run stay UNKNOWN.
+        val services = awaitDiscoveredServices(p)
+
+        // Post-connection HR validation (T8/SD5): a candidate that advertised
+        // 0x180D (or a name) but does not expose the standard Heart Rate
+        // Measurement characteristic is not a standard heart rate sensor. Fail
+        // validation with a clear, non-crash error state — never a throw.
+        val hrMeasurementExposed = services == null || exposesCharacteristic(
+            services,
+            BleConstants.Hrm.HR_SERVICE_UUID,
+            BleConstants.Hrm.HR_MEASUREMENT_UUID,
+        )
+        if (!hrMeasurementExposed) {
+            updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.ABSENT) }
+            log.w { "Connected device does not expose the standard Heart Rate Measurement characteristic (0x2A37)" }
+            logRepo.error(
+                eventType = LogEventType.ERROR,
+                message = "[HRM] Connected device is not a standard heart rate sensor (no Heart Rate Measurement 0x2A37)",
+                tag = "HRM",
+            )
+            _connectionState.value = ConnectionState.Error(
+                "Connected device is not a standard heart rate sensor (missing Heart Rate Measurement 0x2A37)",
+            )
+            return
+        }
 
         // 1. Request MTU 232 if supported
         try {
@@ -1121,53 +1194,77 @@ class HrmBleManager(
             log.w { "MTU negotiation error: ${e.message}" }
         }
 
-        // 2. Read initial battery level (0x2A19)
-        try {
-            val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
-            val level = parseBatteryLevel(batteryBytes)
-            _batteryLevel.value = level
-            log.i { "HRM battery level: $level%" }
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.w { "Could not read Polar battery level: ${e.message}" }
-        }
-
-        batteryObserveJob?.cancel()
-        batteryObserveJob = scope.launch {
+        // 2. Battery probe (0x2A19): CONFIRMED only after a successful read or
+        // notification. Probe error -> FAILED (never ABSENT). ABSENT only when
+        // authoritative enumeration proves 0x2A19 is not exposed (SD2).
+        val batteryExposed = services == null || exposesCharacteristic(
+            services,
+            BleConstants.Hrm.BATTERY_SERVICE_UUID,
+            BleConstants.Hrm.BATTERY_LEVEL_UUID,
+        )
+        if (!batteryExposed) {
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.ABSENT) }
+            log.i { "Battery Level characteristic (0x2A19) not exposed; battery capability ABSENT" }
+        } else {
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.CHECKING) }
             try {
-                p.observe(BleConstants.Hrm.batteryLevelCharacteristic)
-                    .catch { e ->
-                        e.rethrowIfCancellation()
-                        log.d { "Battery notification non-fatal: ${e.message}" }
+                val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
+                val level = parseBatteryLevel(batteryBytes)
+                if (level != null) {
+                    if (isCurrentGeneration(gen)) {
+                        _batteryLevel.value = level
+                        _capabilities.value = _capabilities.value.copy(battery = HrmCapabilityState.CONFIRMED)
+                        log.i { "HRM battery level: $level%" }
                     }
-                    .collect { bytes ->
-                        if (p.state.value !is State.Connected) return@collect
-                        parseBatteryLevel(bytes)?.let { level ->
-                            _batteryLevel.value = level
-                            if (level <= CRITICAL_BATTERY_PERCENTAGE) {
-                                log.w { "HRM battery critical ($level%). Dropping telemetry." }
-                                _isContactDetected.value = false
-                                clearCachedTelemetry()
-                                if (_isCooldownActive.value) {
-                                    cancelCooldown()
-                                }
-                            }
-                        }
-                    }
+                } else {
+                    updateCapability(gen) { it.copy(battery = HrmCapabilityState.FAILED) }
+                    log.w { "Could not parse battery level: empty payload" }
+                }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
+                updateCapability(gen) { it.copy(battery = HrmCapabilityState.FAILED) }
+                log.w { "Could not read battery level: ${e.message}" }
+            }
+
+            batteryObserveJob?.cancel()
+            batteryObserveJob = scope.launch {
+                try {
+                    p.observe(BleConstants.Hrm.batteryLevelCharacteristic)
+                        .catch { e ->
+                            e.rethrowIfCancellation()
+                            log.d { "Battery notification non-fatal: ${e.message}" }
+                        }
+                        .collect { bytes -> handleBatteryNotification(gen, p, bytes) }
+                } catch (e: Exception) {
+                    e.rethrowIfCancellation()
+                }
             }
         }
 
-        // 3. Subscribe to HR/RR notifications (0x2A37)
-        startHrObservation(p)
+        // 3. Subscribe to HR/RR notifications (0x2A37): observation registration
+        // moves standardHr to WAITING_FIRST_SAMPLE — registration is NOT a BPM
+        // sample; the first valid measurement confirms it (SD2, T9/T10).
+        updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.CHECKING) }
+        startHrObservation(p, gen)
 
-        // 4. Pre-subscribe to PMD Control Point & Data so observers are active and shared
-        try {
-            ensurePmdSubscribed(p)
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
+        // 4. Pre-subscribe to PMD Control Point & Data so observers are active and
+        // shared. CONFIRMED only when FB005C80 is present in the discovered
+        // services AND the subscription succeeds — never inferred from device
+        // name/family (SD2/SD3).
+        val pmdExposed = services == null ||
+            services.any { it.serviceUuid == BleConstants.PolarPmd.PMD_SERVICE_UUID }
+        if (!pmdExposed) {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.ABSENT) }
+            log.i { "PMD service (FB005C80) not exposed; ECG/ACC telemetry unavailable" }
+        } else {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.CHECKING) }
+            try {
+                ensurePmdSubscribed(p, gen)
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.FAILED) }
+                log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
+            }
         }
 
         if (activeSessionId != null) {
@@ -1175,50 +1272,135 @@ class HrmBleManager(
         }
     }
 
-    private fun startHrObservation(p: Peripheral) {
+    /**
+     * Await authoritative service discovery for [p]. Returns `null` when service
+     * discovery is inconclusive (never populated before the timeout) — callers
+     * must treat that as UNKNOWN, not ABSENT (SD2).
+     */
+    private suspend fun awaitDiscoveredServices(p: Peripheral): List<DiscoveredService>? {
+        p.services.value?.let { return it }
+        return withTimeoutOrNull(SERVICE_DISCOVERY_TIMEOUT_MS) {
+            p.services.filterNotNull().first()
+        }
+    }
+
+    private fun exposesCharacteristic(
+        services: List<DiscoveredService>,
+        serviceUuid: Uuid,
+        characteristicUuid: Uuid,
+    ): Boolean = services.any { service ->
+        service.serviceUuid == serviceUuid &&
+            service.characteristics.any { it.characteristicUuid == characteristicUuid }
+    }
+
+    private fun startHrObservation(p: Peripheral, gen: Int) {
         hrObserveJob?.cancel()
         hrObserveJob = scope.launch {
             try {
-                log.i { "Subscribing to Polar HR & RR notifications (0x2A37)" }
+                log.i { "Subscribing to heart rate & RR notifications (0x2A37)" }
                 logRepo.info(
                     eventType = LogEventType.NOTIFICATION,
-                    message = "[HRM] Subscribed to Polar HR & RR notifications (0x2A37)",
+                    message = "[HRM] Subscribed to heart rate & RR notifications (0x2A37)",
                     tag = "HRM",
                 )
-                p.observe(BleConstants.Hrm.hrMeasurementCharacteristic)
+                p.observe(
+                    BleConstants.Hrm.hrMeasurementCharacteristic,
+                    onSubscription = {
+                        // Observe-registration success = WAITING_FIRST_SAMPLE, never
+                        // CONFIRMED (an observation is not a sample — SD2, T9).
+                        updateCapability(gen) {
+                            if (it.standardHr == HrmCapabilityState.CHECKING) {
+                                it.copy(standardHr = HrmCapabilityState.WAITING_FIRST_SAMPLE)
+                            } else {
+                                it
+                            }
+                        }
+                    },
+                )
                     .catch { e ->
                         e.rethrowIfCancellation()
-                        log.e { "Polar HR observation error: ${e.message}" }
+                        log.e { "HR observation error: ${e.message}" }
+                        updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.FAILED) }
                     }
-                    .collect { data ->
-                        if (p.state.value !is State.Connected) return@collect
-                        val measurement = parseHrMeasurement(data) ?: return@collect
-                        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-                            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-                            handleNoContact(measurement)
-                            return@collect
-                        }
-
-                        if (previousContactDetected != true) {
-                            previousContactDetected = true
-                            logRepo.debug(
-                                eventType = LogEventType.DIAGNOSTIC,
-                                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
-                                tag = "HRM",
-                            )
-                        }
-
-                        _isContactDetected.value = true
-                        contactLossJob?.cancel()
-                        contactLossJob = null
-                        lastValidPacketTimestampMs = monotonicClock()
-                        _hrMeasurement.value = measurement
-
-                        processRrIntervals(measurement)
-                    }
+                    .collect { data -> handleHrNotification(gen, p, data) }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
-                log.e(e) { "Failed to maintain Polar HR observation: ${e.message}" }
+                log.e(e) { "Failed to maintain HR observation: ${e.message}" }
+                updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.FAILED) }
+            }
+        }
+    }
+
+    /**
+     * Real 0x2A37 notification handler. Bound to the connection generation [gen]
+     * it was registered under: late callbacks from a previous connection are
+     * rejected with no state mutation and no crash (SD3, T11).
+     */
+    internal fun handleHrNotification(gen: Int, p: Peripheral, data: ByteArray) {
+        if (!isCurrentGeneration(gen)) return
+        if (p.state.value !is State.Connected) return
+        val measurement = parseHrMeasurement(data) ?: return
+        // Capability findings (SD2): a valid measurement confirms standard HR;
+        // RR is confirmed only by a measurement actually carrying RR intervals
+        // (T10/T15). Contact is the SD2 tri-state. This is metadata about what
+        // the sensor reports — the contact-safety handling below still drops all
+        // telemetry on poor contact, exactly as before.
+        if (measurement.hr > 0) {
+            updateCapability(gen) {
+                it.copy(
+                    standardHr = HrmCapabilityState.CONFIRMED,
+                    rrIntervals = if (measurement.rrIntervalsMs.isNotEmpty()) {
+                        HrmCapabilityState.CONFIRMED
+                    } else {
+                        it.rrIntervals
+                    },
+                    contact = parseContactReport(data),
+                )
+            }
+        } else {
+            updateCapability(gen) { it.copy(contact = parseContactReport(data)) }
+        }
+        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
+            handleNoContact(measurement)
+            return
+        }
+
+        if (previousContactDetected != true) {
+            previousContactDetected = true
+            logRepo.debug(
+                eventType = LogEventType.DIAGNOSTIC,
+                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
+                tag = "HRM",
+            )
+        }
+
+        _isContactDetected.value = true
+        contactLossJob?.cancel()
+        contactLossJob = null
+        lastValidPacketTimestampMs = monotonicClock()
+        _hrMeasurement.value = measurement
+
+        processRrIntervals(measurement)
+    }
+
+    /**
+     * Real 0x2A19 notification handler. Bound to the connection generation [gen]
+     * (SD3). A successful notification CONFIRMs the battery capability (SD2).
+     */
+    internal fun handleBatteryNotification(gen: Int, p: Peripheral, data: ByteArray) {
+        if (!isCurrentGeneration(gen)) return
+        if (p.state.value !is State.Connected) return
+        parseBatteryLevel(data)?.let { level ->
+            _batteryLevel.value = level
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.CONFIRMED) }
+            if (level <= CRITICAL_BATTERY_PERCENTAGE) {
+                log.w { "HRM battery critical ($level%). Dropping telemetry." }
+                _isContactDetected.value = false
+                clearCachedTelemetry()
+                if (_isCooldownActive.value) {
+                    cancelCooldown()
+                }
             }
         }
     }
@@ -1345,9 +1527,18 @@ class HrmBleManager(
         lastBeatMonotonicMs = nowMonoMs
     }
 
-    private suspend fun ensurePmdSubscribed(p: Peripheral): Boolean = pmdMutex.withLock {
+    private suspend fun ensurePmdSubscribed(p: Peripheral, gen: Int = connectionGeneration): Boolean = pmdMutex.withLock {
         if (pmdControlPointJob?.isActive == true && pmdDataJob?.isActive == true) {
             return true
+        }
+
+        // Authoritative gate (SD3): PMD controls require the real PMD service —
+        // never device name/family. A sensor without FB005C80 gets ABSENT and no
+        // subscription attempt at all.
+        val services = awaitDiscoveredServices(p)
+        if (services != null && services.none { it.serviceUuid == BleConstants.PolarPmd.PMD_SERVICE_UUID }) {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.ABSENT) }
+            return false
         }
 
         pmdControlPointJob?.cancel()
@@ -1364,6 +1555,7 @@ class HrmBleManager(
                     cpSubscribed.complete(Unit)
                 })
                     .collect { cpData ->
+                        if (!isCurrentGeneration(gen)) return@collect
                         log.d { "PMD CP response: ${cpData.size} bytes: ${cpData.joinToString { (it.toInt() and 0xFF).toString(16) }}" }
                         pmdCpResponses.tryEmit(cpData)
                     }
@@ -1388,6 +1580,7 @@ class HrmBleManager(
                     dataSubscribed.complete(Unit)
                 })
                     .collect { data ->
+                        if (!isCurrentGeneration(gen)) return@collect
                         if (p.state.value !is State.Connected) return@collect
                         val measurement = parsePolarPmdData(data) ?: return@collect
                         processPmdMeasurement(measurement)
@@ -1411,14 +1604,18 @@ class HrmBleManager(
                 dataSubscribed.await()
                 true
             }
-            check(ready == true) { "Polar PMD subscription timed out" }
+            check(ready == true) { "PMD subscription timed out" }
         } catch (error: Exception) {
             pmdControlPointJob?.cancel()
             pmdDataJob?.cancel()
             pmdControlPointJob = null
             pmdDataJob = null
+            // Probe/transport failure is FAILED, never ABSENT (SD2).
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.FAILED) }
             throw error
         }
+        // Service present AND subscription succeeded -> CONFIRMED (SD2).
+        updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.CONFIRMED) }
         true
     }
 
@@ -1521,7 +1718,13 @@ class HrmBleManager(
         measurementType: Byte,
         timeoutMs: Long = 2000L,
     ): Result<Int> = pmdCommandMutex.withLock {
-        ensurePmdSubscribed(p)
+        // SD3: PMD controls require the real PMD service plus a successful
+        // subscription — never device name/family.
+        if (!ensurePmdSubscribed(p)) {
+            return Result.failure(
+                IllegalStateException("PMD service not available on this heart rate sensor"),
+            )
+        }
         // Dwell 50ms before writing to ensure Android GATT queue is clean
         delay(50L)
 
@@ -1885,6 +2088,10 @@ class HrmBleManager(
     }
 
     private fun cleanupSessionTelemetry() {
+        // SD3: every live reading and capability finding is connection-owned —
+        // reset on disconnect, new selection and reconnect. The generation bump
+        // rejects any late async callback still in flight from the old connection.
+        resetConnectionOwnedState()
         contactLossJob?.cancel()
         contactLossJob = null
         hrObserveJob?.cancel()

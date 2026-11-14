@@ -226,7 +226,7 @@ fun SessionHeartRateCard(
                     }
                     Column {
                         Text(
-                            text = "POLAR H10 ANALYTICS",
+                            text = "HEART RATE ANALYTICS",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -307,8 +307,10 @@ fun SessionHeartRateCard(
                 }
             }
 
-            // Section 2: HRV & Recovery Metrics
-            if (summary?.rmssdMs != null || summary?.avgRrIntervalMs != null) {
+            // Section 2: HRV & Recovery Metrics — HRV only when enough valid RR
+            // samples produced an RMSSD; otherwise explicitly unavailable (SD1:
+            // HRV is never promised).
+            if (summary != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -323,6 +325,20 @@ fun SessionHeartRateCard(
                             tint = Color(0xFF4CAF50),
                             modifier = Modifier.weight(1f),
                         )
+                    } ?: run {
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                        ) {
+                            Text(
+                                text = "HRV unavailable",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
                     }
                     summary.avgRrIntervalMs?.let { rr ->
                         MetricTile(
@@ -370,7 +386,7 @@ fun SessionHeartRateCard(
 
             // Section 4: 5-Minute Heart Rate Recovery (HRR) Protocol Card
             val hasRecoveryData = summary?.hrr60Bpm != null || summary?.hrr300Bpm != null || isCooldownActive
-            if (hasRecoveryData || isConnected) {
+            if (hasRecoveryData || isConnected || summary != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.medium,
@@ -596,6 +612,14 @@ fun SessionHeartRateCard(
                                         )
                                     }
                                 }
+                            } else {
+                                // SD1: HRR is computed from recovery HR, independently of
+                                // RR intervals. Missing HRR is never blamed on RR data.
+                                Text(
+                                    text = "Heart-rate recovery unavailable · insufficient recovery data",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

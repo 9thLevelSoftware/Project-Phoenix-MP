@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.ble.HrmBleManager
+import com.devil.phoenixproject.data.ble.HrmCapabilityState
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.AccSample
 import com.devil.phoenixproject.domain.model.RrBeat
@@ -94,6 +95,7 @@ private fun HrmWorkoutStripContent(
     val scope = rememberCoroutineScope()
     val hrMeasurement by hrmBleManager.hrMeasurement.collectAsState()
     val isContactDetected by hrmBleManager.isContactDetected.collectAsState()
+    val capabilities by hrmBleManager.capabilities.collectAsState()
     val hasContact = hrMeasurement?.contactDetected == true && isContactDetected
 
     // Sliding window of RR beats for RMSSD calculation
@@ -173,7 +175,7 @@ private fun HrmWorkoutStripContent(
             ) {
                 Icon(
                     Icons.Default.Favorite,
-                    contentDescription = "Polar Heart Rate",
+                    contentDescription = "Heart Rate",
                     tint = if (hasContact) Color(0xFFFF1744) else Color(0xFFFF9100),
                     modifier = Modifier.size(20.dp),
                 )
@@ -195,135 +197,150 @@ private fun HrmWorkoutStripContent(
                 }
             }
 
-            // Section 2: RR Interval & Rolling RMSSD
-            Column(
-                modifier = Modifier.padding(horizontal = 6.dp),
-                horizontalAlignment = Alignment.Start,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "RR: ",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = HrmTelemetryUtils.formatMs(latestRrMs),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+            // Section 2: RR Interval & Rolling RMSSD — only when RR intervals are
+            // actually observed (SD1: HRV is never promised; otherwise unavailable).
+            if (capabilities.rrIntervals == HrmCapabilityState.CONFIRMED) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "RR: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = HrmTelemetryUtils.formatMs(latestRrMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "RMSSD: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = HrmTelemetryUtils.formatMs(rollingRmssd),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF00E676),
+                        )
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "RMSSD: ",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = HrmTelemetryUtils.formatMs(rollingRmssd),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFF00E676),
-                    )
-                }
-            }
-
-            // Section 3: 130 Hz Real-Time ECG Waveform Canvas
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(38.dp)
-                    .padding(horizontal = 6.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(Color(0xFF0D1B2A))
-                    .border(0.5.dp, Color(0xFF1E3A5F), MaterialTheme.shapes.small),
-                contentAlignment = Alignment.Center,
-            ) {
-                EcgWaveformCanvas(
-                    samples = ecgSamples,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .padding(horizontal = 2.dp, vertical = 2.dp),
+            } else {
+                Text(
+                    text = "HRV unavailable",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp),
                 )
             }
 
-            // Section 4: Live Chest Acceleration & 3D Torso Posture with 1-Tap 0° Tare
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(start = 4.dp),
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.End,
+            // Sections 3 & 4 (ECG waveform, chest acceleration & torso posture with
+            // 1-tap tare) exist only for sensors with CONFIRMED Polar PMD (SD2/SD3).
+            if (capabilities.polarPmd == HrmCapabilityState.CONFIRMED) {
+                // Section 3: 130 Hz Real-Time ECG Waveform Canvas
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .padding(horizontal = 6.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(Color(0xFF0D1B2A))
+                        .border(0.5.dp, Color(0xFF1E3A5F), MaterialTheme.shapes.small),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Hinge: ",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (torsoPitchDeg != null) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Tilt: ",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = if (torsoRollDeg != null) Color(0xFF00BCD4) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        text = dynamicAccMg?.let { "$it mG" } ?: (latestAccSample?.let { acc ->
-                            val magnitudeG = sqrt((acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg)) / 1000.0
-                            "${(magnitudeG * 100).roundToInt() / 100.0} G"
-                        } ?: "—"),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    EcgWaveformCanvas(
+                        samples = ecgSamples,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
                     )
                 }
 
-                Surface(
-                    onClick = { hrmBleManager.tareCurrentPosture() },
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+                // Section 4: Live Chest Acceleration & 3D Torso Posture with 1-Tap 0° Tare
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(start = 4.dp),
                 ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center,
+                    Column(
+                        horizontalAlignment = Alignment.End,
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Hinge: ",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (torsoPitchDeg != null) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Tilt: ",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (torsoRollDeg != null) Color(0xFF00BCD4) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
-                            text = "0° Tare",
+                            text = dynamicAccMg?.let { "$it mG" } ?: (latestAccSample?.let { acc ->
+                                val magnitudeG = sqrt((acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg)) / 1000.0
+                                "${(magnitudeG * 100).roundToInt() / 100.0} G"
+                            } ?: "—"),
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+
+                    Surface(
+                        onClick = { hrmBleManager.tareCurrentPosture() },
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "0° Tare",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
                     }
                 }
             }
