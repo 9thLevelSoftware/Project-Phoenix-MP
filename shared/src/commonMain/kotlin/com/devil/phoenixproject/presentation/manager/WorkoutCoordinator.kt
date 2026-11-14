@@ -181,6 +181,15 @@ class WorkoutCoordinator(
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
+    // Typed, ephemeral rest-control failures retain action/owner correlation without changing
+    // the existing string-only feedback event contract for other callers.
+    internal val _restControlFeedbackEvents = MutableSharedFlow<RestControlFeedbackEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    internal val restControlFeedbackEvents: SharedFlow<RestControlFeedbackEvent> =
+        _restControlFeedbackEvents.asSharedFlow()
+
     // Ephemeral receipt stream for rest-control diagnostics. Receipts contain only action,
     // stage/reason codes, seconds and an in-memory owner generation.
     internal val _restControlReceipts = MutableSharedFlow<RestControlReceipt>(
@@ -188,6 +197,10 @@ class WorkoutCoordinator(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     internal val restControlReceipts: SharedFlow<RestControlReceipt> = _restControlReceipts.asSharedFlow()
+
+    internal fun recordRestControlFeedbackEvent(event: RestControlFeedbackEvent) {
+        _restControlFeedbackEvents.tryEmit(event)
+    }
 
     internal fun recordRestControlReceipt(receipt: RestControlReceipt) {
         _restControlReceipts.tryEmit(receipt)

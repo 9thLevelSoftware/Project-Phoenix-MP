@@ -30,7 +30,10 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
@@ -383,6 +386,250 @@ class RestoredRuntimeTimerControlRaceTest {
         } finally {
             harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
             harness.activeSessionEngine.afterRestoredRestTimerControlCaptureForTest = null
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `restored extend applies only after durable replacement and publication`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val messages = mutableListOf<String>()
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val restFeedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-control-applied")
+            val before = captureTimerSnapshot(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(15, request) { outcome = it }
+            assertNull(outcome, "Restored completion must remain asynchronous")
+            runCurrent()
+
+            assertEquals(RestControlOutcome.Applied, outcome)
+            val committed = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    installed.document.profileId,
+                    installed.document.routineSessionId,
+                ),
+            )
+            assertEquals(before.originalDurationSeconds + 15, committed.originalRestDurationSeconds)
+            assertEquals(committed, harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(before.remainingSeconds + 15, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(
+                before.remainingSeconds + 15,
+                assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining,
+            )
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(1, receipts.count { it.stage == RestControlReceiptStage.PUBLICATION })
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.REJECTED })
+            assertTrue(messages.isEmpty())
+            assertTrue(feedbackEvents.isEmpty())
+        } finally {
+            feedbackCollector.cancel()
+            restFeedbackCollector.cancel()
+            receiptCollector.cancel()
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `restored persistence failure rejects without publishing and reports current-owner feedback`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val messages = mutableListOf<String>()
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val restFeedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-control-persistence-failure")
+            val before = captureTimerSnapshot(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val replaceEventsBefore = harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.size
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(15, request) { outcome = it }
+            runCurrent()
+
+            assertEquals(RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED), outcome)
+            assertEquals(before.document, harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(before.document, harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                installed.document.profileId,
+                installed.document.routineSessionId,
+            ))
+            assertEquals(before.remainingSeconds, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(before.originalDurationSeconds, harness.coordinator._restOriginalDuration.value)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(listOf("entered"), harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.drop(replaceEventsBefore))
+            assertTrue(messages.isEmpty(), "Rest-control feedback must not use the legacy string channel")
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PUBLICATION })
+            assertEquals(
+                RestControlRejectionReason.PERSISTENCE_FAILED,
+                receipts.single { it.stage == RestControlReceiptStage.REJECTED }.reason,
+            )
+            val feedback = feedbackEvents.single()
+            assertEquals(request.actionId, feedback.actionId)
+            assertEquals(request.ownerGeneration, feedback.ownerGeneration)
+            assertEquals(RestControlRejectionReason.PERSISTENCE_FAILED, feedback.reason)
+            assertEquals(15, feedback.seconds)
+        } finally {
+            feedbackCollector.cancel()
+            restFeedbackCollector.cancel()
+            receiptCollector.cancel()
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `restored post-write drift rejects without persistence label feedback or publication`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val messages = mutableListOf<String>()
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val restFeedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-control-post-write-drift")
+            val before = captureTimerSnapshot(harness)
+            val diverged = before.document.copy(
+                originalRestDurationSeconds = before.document.originalRestDurationSeconds + 1,
+            )
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = {
+                harness.fakeActiveWorkoutRuntimeRepository.replacePreservingRevisionTimestamp(
+                    before.document.profileId,
+                    before.document.routineSessionId,
+                    diverged,
+                )
+            }
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(15, request) { outcome = it }
+            runCurrent()
+
+            assertEquals(RestControlOutcome.Rejected(RestControlRejectionReason.POST_WRITE_DRIFT), outcome)
+            assertEquals(diverged, harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                installed.document.profileId,
+                installed.document.routineSessionId,
+            ))
+            assertEquals(before.document, harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(before.remainingSeconds, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(before.originalDurationSeconds, harness.coordinator._restOriginalDuration.value)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertTrue(messages.isEmpty())
+            assertTrue(feedbackEvents.isEmpty(), "Post-write drift must not send feedback to an unverified owner")
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PERSISTENCE_FAILED })
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PUBLICATION })
+            assertEquals(
+                RestControlRejectionReason.POST_WRITE_DRIFT,
+                receipts.single { it.stage == RestControlReceiptStage.REJECTED }.reason,
+            )
+        } finally {
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = null
+            feedbackCollector.cancel()
+            restFeedbackCollector.cancel()
+            receiptCollector.cancel()
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `restored unknown commit verification stays uncertain without retry or publication`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val messages = mutableListOf<String>()
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val restFeedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-control-uncertain")
+            val before = captureTimerSnapshot(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val replaceEventsBefore = harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.size
+            val loadCallsBefore = harness.fakeActiveWorkoutRuntimeRepository.loadCalls
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = {
+                error("write acknowledgement lost after durable commit")
+            }
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = { call, _, _ ->
+                if (call > loadCallsBefore) error("verification read unavailable")
+            }
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(15, request) { outcome = it }
+            runCurrent()
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = null
+
+            val attempted = harness.fakeActiveWorkoutRuntimeRepository.replacements.drop(replacementsBefore).single().document
+            assertTrue(attempted != before.document)
+            assertEquals(RestControlRejectionReason.COMMIT_UNCERTAIN, assertIs<RestControlOutcome.Rejected>(outcome).reason)
+            assertEquals(before.document, harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(attempted, harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                installed.document.profileId,
+                installed.document.routineSessionId,
+            ))
+            assertEquals(before.remainingSeconds, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(before.originalDurationSeconds, harness.coordinator._restOriginalDuration.value)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(listOf("entered", "persisted"), harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.drop(replaceEventsBefore))
+            assertTrue(messages.isEmpty())
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PERSISTENCE_FAILED })
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PUBLICATION })
+            assertEquals(
+                RestControlRejectionReason.COMMIT_UNCERTAIN,
+                receipts.single { it.stage == RestControlReceiptStage.COMMIT_UNCERTAIN }.reason,
+            )
+            assertEquals(
+                RestControlRejectionReason.COMMIT_UNCERTAIN,
+                receipts.single { it.stage == RestControlReceiptStage.REJECTED }.reason,
+            )
+            assertTrue(feedbackEvents.isEmpty(), "A restored owner retired after uncertainty must not receive stale feedback")
+        } finally {
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = null
+            feedbackCollector.cancel()
+            restFeedbackCollector.cancel()
+            receiptCollector.cancel()
             harness.cleanup()
             runCurrent()
         }

@@ -14158,25 +14158,30 @@ class ActiveSessionEngine(
                         RuntimeDocumentCommitStatus.COMMITTED -> Unit
                     }
                     val rejection = when (commitStatus) {
-                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR,
-                        RuntimeDocumentCommitStatus.UNKNOWN,
-                        -> RestControlRejectionReason.PERSISTENCE_FAILED
-
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> RestControlRejectionReason.PERSISTENCE_FAILED
                         RuntimeDocumentCommitStatus.DIVERGED -> RestControlRejectionReason.POST_WRITE_DRIFT
+                        RuntimeDocumentCommitStatus.UNKNOWN -> RestControlRejectionReason.COMMIT_UNCERTAIN
                         RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
                     }
-                    if (rejection == RestControlRejectionReason.PERSISTENCE_FAILED) {
+                    val failureStage = when (commitStatus) {
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> RestControlReceiptStage.PERSISTENCE_FAILED
+                        RuntimeDocumentCommitStatus.UNKNOWN -> RestControlReceiptStage.COMMIT_UNCERTAIN
+                        RuntimeDocumentCommitStatus.DIVERGED -> null
+                        RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
+                    }
+                    failureStage?.let { stage ->
                         recordRestControlReceipt(
                             actionId,
                             action,
-                            RestControlReceiptStage.PERSISTENCE_FAILED,
+                            stage,
                             ownerGeneration,
                             seconds,
                             rejection,
                         )
                     }
                     outcome = RestControlOutcome.Rejected(rejection)
-                    if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
+                    if ((commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR ||
+                            commitStatus == RuntimeDocumentCommitStatus.UNKNOWN) &&
                         restoredRuntimeOwnerRef.value === owner &&
                         restoredRestTimerOwnerRef.value === capturedTimerOwner &&
                         activeRuntimeDocument == document &&
@@ -14184,8 +14189,15 @@ class ActiveSessionEngine(
                         coordinator._restTransitionPlan.value == plan &&
                         coordinator._workoutState.value is WorkoutState.Resting
                     ) {
-                        // Non-suspending coordinator event; it is emitted only for this current owner.
-                        coordinator._userFeedbackEvents.tryEmit(REST_CONTROL_FAILURE_FEEDBACK_KEY)
+                        coordinator.recordRestControlFeedbackEvent(
+                            RestControlFeedbackEvent(
+                                actionId = actionId,
+                                action = action,
+                                ownerGeneration = ownerGeneration,
+                                reason = rejection,
+                                seconds = seconds,
+                            ),
+                        )
                     }
                     return@withLock
                 }
@@ -14373,32 +14385,44 @@ class ActiveSessionEngine(
                 }
                 if (commitStatus != RuntimeDocumentCommitStatus.COMMITTED) {
                     val rejection = when (commitStatus) {
-                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR,
-                        RuntimeDocumentCommitStatus.UNKNOWN,
-                        -> RestControlRejectionReason.PERSISTENCE_FAILED
-
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> RestControlRejectionReason.PERSISTENCE_FAILED
                         RuntimeDocumentCommitStatus.DIVERGED -> RestControlRejectionReason.POST_WRITE_DRIFT
+                        RuntimeDocumentCommitStatus.UNKNOWN -> RestControlRejectionReason.COMMIT_UNCERTAIN
                         RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
                     }
-                    if (rejection == RestControlRejectionReason.PERSISTENCE_FAILED) {
+                    val failureStage = when (commitStatus) {
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> RestControlReceiptStage.PERSISTENCE_FAILED
+                        RuntimeDocumentCommitStatus.UNKNOWN -> RestControlReceiptStage.COMMIT_UNCERTAIN
+                        RuntimeDocumentCommitStatus.DIVERGED -> null
+                        RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
+                    }
+                    failureStage?.let { stage ->
                         recordRestControlReceipt(
                             actionId,
                             action,
-                            RestControlReceiptStage.PERSISTENCE_FAILED,
+                            stage,
                             ownerGeneration,
                             seconds,
                             rejection,
                         )
                     }
-                    if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
+                    if ((commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR ||
+                            commitStatus == RuntimeDocumentCommitStatus.UNKNOWN) &&
                         activeRuntimeDocument == document &&
                         activeRuntimeDocumentVersion == ownerGeneration &&
                         coordinator._restTransitionPlan.value == plan &&
                         coordinator._workoutState.value is WorkoutState.Resting &&
                         executionGuard.currentLease == lease
                     ) {
-                        // tryEmit is non-suspending; the owner check and feedback stay serialized.
-                        coordinator._userFeedbackEvents.tryEmit(REST_CONTROL_FAILURE_FEEDBACK_KEY)
+                        coordinator.recordRestControlFeedbackEvent(
+                            RestControlFeedbackEvent(
+                                actionId = actionId,
+                                action = action,
+                                ownerGeneration = ownerGeneration,
+                                reason = rejection,
+                                seconds = seconds,
+                            ),
+                        )
                     }
                     return@withLock RestControlOutcome.Rejected(rejection)
                 }

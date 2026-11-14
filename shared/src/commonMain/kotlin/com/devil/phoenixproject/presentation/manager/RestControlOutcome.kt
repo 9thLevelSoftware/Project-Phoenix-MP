@@ -14,6 +14,7 @@ internal enum class RestControlRejectionReason {
     STALE_OWNER,
     AUTHORITY_FAILED,
     PERSISTENCE_FAILED,
+    COMMIT_UNCERTAIN,
     POST_WRITE_DRIFT,
 }
 
@@ -31,6 +32,15 @@ internal data class RestControlRequest(
     val seconds: Int?,
 )
 
+/** Privacy-safe failure feedback correlation; never carries display text or runtime identity. */
+internal data class RestControlFeedbackEvent(
+    val actionId: Long,
+    val action: RestControlAction,
+    val ownerGeneration: Long?,
+    val reason: RestControlRejectionReason,
+    val seconds: Int?,
+)
+
 internal enum class RestControlReceiptStage {
     TAP_ENTRY,
     ENGINE_DISPATCH,
@@ -39,10 +49,13 @@ internal enum class RestControlReceiptStage {
     PERSISTENCE_STARTED,
     PERSISTENCE_NOT_REQUIRED,
     PERSISTENCE_FAILED,
+    COMMIT_UNCERTAIN,
     PERSISTENCE_CONFIRMED,
     PUBLICATION,
     REJECTED,
-    RENDERED,
+    /** A frame boundary followed the outcome; it does not assert the countdown was painted. */
+    FRAME_BOUNDARY_OBSERVED,
+    FEEDBACK_VISIBLE,
 }
 
 /** Ephemeral, privacy-safe rest-control diagnostic; it contains no runtime document or identity token. */

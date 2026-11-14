@@ -91,6 +91,25 @@ import projectphoenix.shared.generated.resources.voice_stop_unavailable_chip
 import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
 
 /**
+ * Emits feedback-visible only after SnackbarHostState has presented and completed the snackbar.
+ * Cancellation is rethrown, so leaving this screen never fabricates a visible receipt.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+internal suspend fun showRestControlFeedback(
+    snackbarHostState: SnackbarHostState,
+    message: String,
+    event: com.devil.phoenixproject.presentation.manager.RestControlFeedbackEvent,
+    recordVisible: (com.devil.phoenixproject.presentation.manager.RestControlFeedbackEvent) -> Unit,
+) {
+    try {
+        snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+    } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+        throw cancellation
+    }
+    recordVisible(event)
+}
+
+/**
  * Active Workout screen - displays workout controls and metrics during an active workout.
  * This screen is shown when a workout is in progress.
  */
@@ -223,6 +242,19 @@ fun ActiveWorkoutScreen(
         }
     }
     LaunchedEffect(Unit) {
+        viewModel.restControlFeedbackEvents.collect { event ->
+            val localizedMessage = getString(Res.string.rest_control_update_failed)
+            snackbarScope.launch {
+                showRestControlFeedback(
+                    snackbarHostState = snackbarHostState,
+                    message = localizedMessage,
+                    event = event,
+                    recordVisible = viewModel::recordRestControlFeedbackVisible,
+                )
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
         viewModel.restControlReceipts.collect { receipt ->
             Logger.d(tag = "ActiveWorkoutScreen") {
                 "rest_control action_id=${receipt.actionId} action=${receipt.action} stage=${receipt.stage} " +
@@ -233,7 +265,7 @@ fun ActiveWorkoutScreen(
                 receipt.stage == RestControlReceiptStage.REJECTED
             ) {
                 withFrameNanos { }
-                viewModel.recordRestControlRendered(receipt)
+                viewModel.recordRestControlFrameBoundaryObserved(receipt)
             }
         }
     }

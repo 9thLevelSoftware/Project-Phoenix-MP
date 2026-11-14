@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,9 +29,13 @@ class Issue1360RestTimerControlsTest {
     fun failedRestControlPublishesFeedbackForCurrentOwner() = runTest {
         val harness = DWSMTestHarness(this)
         val messages = mutableListOf<String>()
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
         val receipts = mutableListOf<RestControlReceipt>()
         val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val restFeedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
         }
         val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             harness.coordinator.restControlReceipts.toList(receipts)
@@ -50,7 +55,7 @@ class Issue1360RestTimerControlsTest {
             assertEquals(RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED), outcome)
             assertEquals(persistedBefore, runtime(harness))
             assertEquals(remainingBefore, resting(harness).restSecondsRemaining)
-            assertEquals(listOf(REST_CONTROL_FAILURE_FEEDBACK_KEY), messages)
+            assertTrue(messages.isEmpty(), "Rest-control feedback must not be duplicated on the legacy string flow")
             assertEquals(
                 listOf(
                     RestControlReceiptStage.TAP_ENTRY,
@@ -66,11 +71,88 @@ class Issue1360RestTimerControlsTest {
             assertTrue(receipts.all { it.action == RestControlAction.EXTEND })
             assertTrue(receipts.all { it.ownerGeneration == receipts.first().ownerGeneration && it.ownerGeneration != null })
             assertEquals(RestControlRejectionReason.PERSISTENCE_FAILED, receipts.last().reason)
+            val feedback = feedbackEvents.single()
+            assertEquals(receipts.first().actionId, feedback.actionId)
+            assertEquals(receipts.first().ownerGeneration, feedback.ownerGeneration)
+            assertEquals(RestControlAction.EXTEND, feedback.action)
+            assertEquals(RestControlRejectionReason.PERSISTENCE_FAILED, feedback.reason)
+            assertEquals(30, feedback.seconds)
         } finally {
+            feedbackCollector.cancel()
+            restFeedbackCollector.cancel()
+            receiptCollector.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun unknownCommitVerificationIsNotPersistenceFailureAndDoesNotRepeatOrPublish() = runTest {
+        val harness = DWSMTestHarness(this)
+        val feedbackEvents = mutableListOf<RestControlFeedbackEvent>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlFeedbackEvents.toList(feedbackEvents)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            prepareTutRest(harness, nextExercise = false)
+            val prior = runtime(harness)
+            val remainingBefore = resting(harness).restSecondsRemaining
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val replaceEventsBefore = harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.size
+            val loadCallsBefore = harness.fakeActiveWorkoutRuntimeRepository.loadCalls
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = {
+                error("write acknowledgement lost after durable commit")
+            }
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = { call, _, _ ->
+                if (call > loadCallsBefore) error("verification read unavailable")
+            }
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 30)
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(30, request) { outcome = it }
+            runCurrent()
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = null
+
+            val attempted = harness.fakeActiveWorkoutRuntimeRepository.replacements.drop(replacementsBefore).single().document
+            assertNotEquals(prior, attempted)
+            assertEquals(RestControlRejectionReason.COMMIT_UNCERTAIN, assertIs<RestControlOutcome.Rejected>(outcome).reason)
+            assertEquals(prior, runtime(harness), "An uncertain commit must not be published locally")
+            assertEquals(remainingBefore, resting(harness).restSecondsRemaining)
+            assertEquals(attempted, harness.fakeActiveWorkoutRuntimeRepository.committedDocument(prior.profileId, prior.routineSessionId))
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(listOf("entered", "persisted"), harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.drop(replaceEventsBefore))
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PERSISTENCE_FAILED })
+            assertEquals(
+                RestControlRejectionReason.COMMIT_UNCERTAIN,
+                receipts.single { it.stage == RestControlReceiptStage.COMMIT_UNCERTAIN }.reason,
+            )
+            assertEquals(
+                RestControlRejectionReason.COMMIT_UNCERTAIN,
+                receipts.single { it.stage == RestControlReceiptStage.REJECTED }.reason,
+            )
+            val feedback = feedbackEvents.single()
+            assertEquals(request.actionId, feedback.actionId)
+            assertEquals(request.ownerGeneration, feedback.ownerGeneration)
+            assertEquals(RestControlRejectionReason.COMMIT_UNCERTAIN, feedback.reason)
+            assertEquals(30, feedback.seconds)
+        } finally {
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = null
             feedbackCollector.cancel()
             receiptCollector.cancel()
             harness.cleanup()
         }
+    }
+
+    @Test
+    fun receiptUsesFrameBoundaryLabelInsteadOfClaimingRenderedVisibility() {
+        val stages = RestControlReceiptStage.values().map { it.name }
+        assertTrue("FRAME_BOUNDARY_OBSERVED" in stages)
+        assertFalse("RENDERED" in stages)
     }
 
     @Test

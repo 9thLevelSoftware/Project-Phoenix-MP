@@ -788,12 +788,29 @@ class MainViewModel(
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
     internal val restControlReceipts: SharedFlow<com.devil.phoenixproject.presentation.manager.RestControlReceipt>
         get() = workoutSessionManager.coordinator.restControlReceipts
+    internal val restControlFeedbackEvents: SharedFlow<com.devil.phoenixproject.presentation.manager.RestControlFeedbackEvent>
+        get() = workoutSessionManager.coordinator.restControlFeedbackEvents
 
-    internal fun recordRestControlRendered(
+    internal fun recordRestControlFrameBoundaryObserved(
         receipt: com.devil.phoenixproject.presentation.manager.RestControlReceipt,
     ) {
         workoutSessionManager.coordinator.recordRestControlReceipt(
-            receipt.copy(stage = com.devil.phoenixproject.presentation.manager.RestControlReceiptStage.RENDERED),
+            receipt.copy(stage = com.devil.phoenixproject.presentation.manager.RestControlReceiptStage.FRAME_BOUNDARY_OBSERVED),
+        )
+    }
+
+    internal fun recordRestControlFeedbackVisible(
+        event: com.devil.phoenixproject.presentation.manager.RestControlFeedbackEvent,
+    ) {
+        workoutSessionManager.coordinator.recordRestControlReceipt(
+            com.devil.phoenixproject.presentation.manager.RestControlReceipt(
+                actionId = event.actionId,
+                action = event.action,
+                stage = com.devil.phoenixproject.presentation.manager.RestControlReceiptStage.FEEDBACK_VISIBLE,
+                ownerGeneration = event.ownerGeneration,
+                reason = event.reason,
+                seconds = event.seconds,
+            ),
         )
     }
 
