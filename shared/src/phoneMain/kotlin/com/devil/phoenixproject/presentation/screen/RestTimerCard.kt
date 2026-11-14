@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -73,6 +74,7 @@ import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCa
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestControlActions
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -360,7 +362,12 @@ fun RestTimerCard(
             ) {
                 // +30s button
                 FilledTonalButton(
-                    onClick = { onExtendRest(30) },
+                    onClick = {
+                        // Issue #1360: privacy-safe tap receipt (action kind only) for
+                        // tap-to-render correlation of rest-control commands.
+                        Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.EXTEND_REST}" }
+                        onExtendRest(30)
+                    },
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
@@ -378,7 +385,11 @@ fun RestTimerCard(
 
                 // Pause/Resume toggle
                 FilledTonalButton(
-                    onClick = onToggleRestPause,
+                    onClick = {
+                        // Issue #1360: privacy-safe tap receipt (action kind only).
+                        Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.TOGGLE_REST_PAUSE}" }
+                        onToggleRestPause()
+                    },
                     shape = MaterialTheme.shapes.medium,
                     colors = if (isRestPaused) {
                         ButtonDefaults.filledTonalButtonColors(
@@ -409,7 +420,11 @@ fun RestTimerCard(
 
                 // Reset button
                 FilledTonalButton(
-                    onClick = onResetRest,
+                    onClick = {
+                        // Issue #1360: privacy-safe tap receipt (action kind only).
+                        Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.RESET_REST_TIMER}" }
+                        onResetRest()
+                    },
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(

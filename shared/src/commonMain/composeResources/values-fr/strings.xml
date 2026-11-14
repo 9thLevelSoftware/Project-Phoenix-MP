@@ -888,4 +888,10 @@
     <string name="intervals_reason_no_remote_match">Aucune activité correspondante trouvée</string>
     <string name="intervals_reason_multiple_remote_matches">Plusieurs activités correspondantes trouvées</string>
     <string name="intervals_reason_suppressed_by_pause">En pause</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">Le minuteur de repos n'est pas actif pour le moment.</string>
+    <string name="rest_control_stale_owner">Ce repos a changé avant l'application de la modification.</string>
+    <string name="rest_control_authority_failed">Impossible de confirmer le repos actuel. La modification n'a pas été appliquée.</string>
+    <string name="rest_control_persistence_failed">Impossible d'enregistrer la modification du repos. Vous pouvez réessayer.</string>
+    <string name="rest_control_post_write_drift">Le repos a changé pendant l'enregistrement. La modification n'a peut-être pas été appliquée.</string>
 </resources>
