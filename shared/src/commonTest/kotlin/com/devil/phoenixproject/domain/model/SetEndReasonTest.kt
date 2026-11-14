@@ -6,8 +6,9 @@ import kotlin.test.assertEquals
 class SetEndReasonTest {
 
     @Test
-    fun `SetEndReason declares exactly the seven persisted values`() {
+    fun `SetEndReason declares exactly the ten persisted values`() {
         // Catches a durable-schema mutation that adds, removes, renames, or reorders a persisted reason.
+        // Issue #1392 added MAX_REPS_BACKSTOP / POWER_LOSS / SHORT_ROM after TIMER_EXPIRED (before UNKNOWN).
         assertEquals(
             listOf(
                 "TARGET_REPS_REACHED",
@@ -16,6 +17,9 @@ class SetEndReasonTest {
                 "USER_STOPPED",
                 "CABLE_RELEASED",
                 "TIMER_EXPIRED",
+                "MAX_REPS_BACKSTOP",
+                "POWER_LOSS",
+                "SHORT_ROM",
                 "UNKNOWN",
             ),
             SetEndReason.entries.map { it.name },
@@ -32,6 +36,9 @@ class SetEndReasonTest {
             "USER_STOPPED" to SetEndReason.USER_STOPPED,
             "CABLE_RELEASED" to SetEndReason.CABLE_RELEASED,
             "TIMER_EXPIRED" to SetEndReason.TIMER_EXPIRED,
+            "MAX_REPS_BACKSTOP" to SetEndReason.MAX_REPS_BACKSTOP,
+            "POWER_LOSS" to SetEndReason.POWER_LOSS,
+            "SHORT_ROM" to SetEndReason.SHORT_ROM,
             "UNKNOWN" to SetEndReason.UNKNOWN,
         )
 

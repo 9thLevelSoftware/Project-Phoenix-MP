@@ -546,6 +546,9 @@ sealed class HapticEvent {
     /** Issue #313: Velocity loss threshold reached — strong haptic + alert sound */
     data object VELOCITY_THRESHOLD_REACHED : HapticEvent()
 
+    /** Issue #1392: power-loss near-limit cue at max(0, threshold − 5)% loss — once per set */
+    data object POWER_NEAR_LIMIT : HapticEvent()
+
     /** Issue #100: Distinct transition sound from warmup to working sets */
     data object WARMUP_TO_WORKING : HapticEvent()
 

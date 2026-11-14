@@ -374,6 +374,15 @@ enum class SetEndReason {
     /** Timed exercise countdown reached zero */
     TIMER_EXPIRED,
 
+    /** Issue #1392: POWER target mode max-working-reps backstop fired (SD4) */
+    MAX_REPS_BACKSTOP,
+
+    /** Issue #1392: power-loss autostop — MCP dropped >= threshold below best working rep */
+    POWER_LOSS,
+
+    /** Issue #1392: trusted short-ROM observation qualified as triggering (SD1/SD2) */
+    SHORT_ROM,
+
     /** Persisted reason is absent, malformed, or not supported by this app version */
     UNKNOWN,
 

@@ -117,6 +117,9 @@ import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
+import com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan
+import com.devil.phoenixproject.domain.powerloss.PowerLossDecision
+import com.devil.phoenixproject.domain.powerloss.ProtocolRepBounds
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.atomicfu.atomic
@@ -189,6 +192,8 @@ private class ExecutionBiomechanicsContext(
     val engine: BiomechanicsEngine,
     var velocityThresholdAlertEmitted: Boolean = false,
     var consecutiveThresholdReps: Int = 0,
+    // Issue #1392: per-set power-loss policy runner (P3 seam).
+    val powerLoss: PowerLossSetController = PowerLossSetController(),
 )
 
 private data class PendingTeardownReadyContinuation(
@@ -4599,6 +4604,7 @@ class ActiveSessionEngine(
             if (biomechanicsContext.value === context) {
                 context.velocityThresholdAlertEmitted = false
                 context.consecutiveThresholdReps = 0
+                context.powerLoss.reset()
                 coordinator.resetBiomechanicsEngine(context.engine)
             }
         }
@@ -4606,6 +4612,7 @@ class ActiveSessionEngine(
             // The engine is execution-local. An identity-checked reset cannot touch a newer engine.
             context.velocityThresholdAlertEmitted = false
             context.consecutiveThresholdReps = 0
+            context.powerLoss.reset()
             coordinator.resetBiomechanicsEngine(context.engine)
         }
     }
@@ -6575,6 +6582,14 @@ class ActiveSessionEngine(
 
                 // Issue #313: Check velocity threshold for alert and auto-end.
                 evaluateLatestVbtResult(lease, context, result)
+
+                // Issue #1392: power-loss policy evaluation for the completed rep (P3 seam).
+                evaluatePowerLossForRep(
+                    lease = lease,
+                    context = context,
+                    isWarmup = !repCounter.getRepCount().isWarmupComplete,
+                    repMetrics = repMetrics,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -6612,7 +6627,11 @@ class ActiveSessionEngine(
             val runtime = coordinator.vbtRuntimeSettings.value
             if (!runtime.enabled) return@commitIfCurrent
             val velocity = latestResult.velocity
-            if (velocity.shouldStopSet) {
+            // Issue #1392 (SD5): in POWER mode suppress the velocity auto-end and the
+            // velocity-threshold voice/defer side effects entirely; velocity analysis
+            // and display are preserved. REP and legacy behavior is unchanged.
+            val powerModeActive = coordinator.powerLossRuntimeSettings.value.powerActive
+            if (velocity.shouldStopSet && !powerModeActive) {
                 context.consecutiveThresholdReps++
                 if (!context.velocityThresholdAlertEmitted) {
                     context.velocityThresholdAlertEmitted = true
@@ -6646,6 +6665,61 @@ class ActiveSessionEngine(
         if (shouldComplete) {
             Logger.i { "VBT: Auto-ending set — $consecutiveReps consecutive reps above threshold" }
             handleSetCompletion(lease, SetEndReason.VBT_AUTO_END)
+        }
+    }
+
+    /**
+     * Issue #1392 — power-loss autostop evaluation for one completed rep (P3 seam).
+     *
+     * No-op unless the active set's runtime settings arm POWER behind the capability
+     * gate. Decisions: a once-per-set near-limit cue at `max(0, threshold − 5)` loss
+     * (audio/haptic only; never on the stop path), and set termination whose stop
+     * path never waits for audio, animation, or persistence (SD5).
+     */
+    private suspend fun evaluatePowerLossForRep(
+        lease: ExecutionLease,
+        context: ExecutionBiomechanicsContext,
+        isWarmup: Boolean,
+        repMetrics: List<WorkoutMetric>,
+    ) {
+        val runtime = coordinator.powerLossRuntimeSettings.value
+        if (!runtime.powerActive) return
+        if (!executionGuard.isCurrent(lease) || biomechanicsContext.value !== context) return
+        val config = runtime.toConfig()
+        // SD4: derive the plan before use against the PROGRAM byte bound (254 minus
+        // warmup applied at the packet/counter path — P3 remainder). Never hardcode
+        // a guessed Echo bound; an impossible plan simply does not arm (fail-safe).
+        val plan = ExecutionTargetPlan.derive(
+            config = config,
+            bounds = ProtocolRepBounds(
+                maxRepresentableWorkingReps = PROGRAM_MAX_REPRESENTABLE_WORKING_REPS,
+                protocolIdentityFinite = true,
+            ),
+            warmupSetCount = 0,
+            now = currentTimeMillis(),
+        ) ?: return
+        val decision = context.powerLoss.onRep(
+            config = config,
+            plan = plan,
+            isWarmup = isWarmup,
+            repMetrics = repMetrics,
+        ) ?: return
+        when (decision) {
+            is PowerLossDecision.Continue -> Unit
+            is PowerLossDecision.NearLimitWarning -> {
+                if (context.powerLoss.consumeNearLimitCue() &&
+                    settingsManager.userPreferences.value.beepsEnabled &&
+                    executionGuard.isCurrent(lease)
+                ) {
+                    emitVbtAlerts(lease, context, listOf(HapticEvent.POWER_NEAR_LIMIT))
+                    Logger.i { "Power-loss: near-limit cue at ${decision.lossPercent.roundToInt()}% loss (ref rep ${decision.referenceWorkingOrdinal})" }
+                }
+            }
+            is PowerLossDecision.Stop -> {
+                // SD5: never wait for audio/persistence — latch the winner and stop.
+                Logger.i { "Power-loss: stopping set (${decision.reason}) loss=${decision.lossPercentAtDecision} ref=${decision.referenceWorkingOrdinal}" }
+                handleSetCompletion(lease, decision.reason.toSetEndReason())
+            }
         }
     }
 
@@ -14341,5 +14415,10 @@ class ActiveSessionEngine(
         // plus a short post-cue transition window. Exceeding it releases the defer
         // so a racked mid-set handle can end the set normally.
         const val VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS = 30_000L
+
+        // Issue #1392 (SD4): PROGRAM-frame working-rep byte bound. The effective
+        // bound subtracts warmup sets at the packet/counter path; the Echo finite
+        // bound is supplied by the accepted target-plan validator, never guessed.
+        const val PROGRAM_MAX_REPRESENTABLE_WORKING_REPS = 254
     }
 }

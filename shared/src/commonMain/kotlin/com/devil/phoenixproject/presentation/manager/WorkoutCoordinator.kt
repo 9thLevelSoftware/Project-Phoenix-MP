@@ -794,6 +794,16 @@ class WorkoutCoordinator(
         }
     }
 
+    // ===== Power-loss autostop runtime (issue #1392) =====
+
+    private val _powerLossRuntimeSettings = MutableStateFlow(PowerLossRuntimeSettings())
+    internal val powerLossRuntimeSettings: StateFlow<PowerLossRuntimeSettings> =
+        _powerLossRuntimeSettings.asStateFlow()
+
+    internal fun updatePowerLossSettings(settings: PowerLossRuntimeSettings) {
+        _powerLossRuntimeSettings.value = settings
+    }
+
     /**
      * Rep boundary timestamps for MetricSample segmentation.
      * Each entry marks the completion timestamp of a rep, enabling per-rep metric extraction.
