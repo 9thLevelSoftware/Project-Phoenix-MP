@@ -266,6 +266,7 @@
     <string name="rest_resume">Fortsetzen</string>
     <string name="rest_pause">Pause</string>
     <string name="rest_reset">Zurücksetzen</string>
+    <string name="rest_control_update_failed">Die Aktualisierung des Pausentimers konnte nicht bestätigt werden. Prüfe den angezeigten Timer.</string>
     <string name="rest_skip">Pause überspringen</string>
     <string name="rest_end_workout">Training beenden</string>
     <string name="rest_continue">Weiter</string>

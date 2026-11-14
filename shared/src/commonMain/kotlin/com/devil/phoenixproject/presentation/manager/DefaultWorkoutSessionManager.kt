@@ -1179,8 +1179,18 @@ class DefaultWorkoutSessionManager(
     internal val restTransitionPlan: StateFlow<RestTransitionPlan?> get() = coordinator.restTransitionPlan
     internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = activeSessionEngine.applyRestTransitionAwait(command)
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
+    internal fun extendRestTimeWithOutcome(
+        seconds: Int,
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) = activeSessionEngine.extendRestTimeWithOutcome(seconds, onComplete)
     fun toggleRestPause() = activeSessionEngine.toggleRestPause()
+    internal fun toggleRestPauseWithOutcome(
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) = activeSessionEngine.toggleRestPauseWithOutcome(onComplete)
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
+    internal fun resetRestTimerWithOutcome(
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) = activeSessionEngine.resetRestTimerWithOutcome(onComplete)
     fun startNextSet() = activeSessionEngine.startNextSet()
 
     // ===== Exercise Timer Controls — delegated to ActiveSessionEngine =====

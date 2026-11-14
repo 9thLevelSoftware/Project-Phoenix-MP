@@ -324,6 +324,7 @@
     <string name="rest_resume">Resume</string>
     <string name="rest_pause">Pause</string>
     <string name="rest_reset">Reset</string>
+    <string name="rest_control_update_failed">The rest timer update could not be confirmed. Check the displayed timer.</string>
     <string name="rest_skip">Skip Rest</string>
     <string name="rest_end_workout">End Workout</string>
     <string name="rest_continue">Continue</string>

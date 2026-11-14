@@ -181,6 +181,18 @@ class WorkoutCoordinator(
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
+    // Ephemeral receipt stream for rest-control diagnostics. Receipts contain only action,
+    // stage/reason codes, seconds and an in-memory owner generation.
+    internal val _restControlReceipts = MutableSharedFlow<RestControlReceipt>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    internal val restControlReceipts: SharedFlow<RestControlReceipt> = _restControlReceipts.asSharedFlow()
+
+    internal fun recordRestControlReceipt(receipt: RestControlReceipt) {
+        _restControlReceipts.tryEmit(receipt)
+    }
+
     // KD-9: the "command was capped" notice. This is state, not an event, because the
     // screen that shows it is often not composed yet when the command is sent: Just Lift
     // skips the countdown and only navigates to ActiveWorkoutScreen once the state turns

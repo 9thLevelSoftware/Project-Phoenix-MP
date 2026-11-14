@@ -266,6 +266,7 @@
     <string name="rest_resume">Reanudar</string>
     <string name="rest_pause">Pausar</string>
     <string name="rest_reset">Reiniciar</string>
+    <string name="rest_control_update_failed">No se pudo confirmar la actualización del temporizador de descanso. Comprueba el temporizador mostrado.</string>
     <string name="rest_skip">Saltar descanso</string>
     <string name="rest_end_workout">Finalizar entrenamiento</string>
     <string name="rest_continue">Continuar</string>

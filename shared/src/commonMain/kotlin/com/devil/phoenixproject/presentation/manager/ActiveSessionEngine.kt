@@ -1682,6 +1682,7 @@ class ActiveSessionEngine(
     private val pendingTeardownReadyContinuation = atomic<PendingTeardownReadyContinuation?>(null)
     private val deferredMachineConfigurationTeardown = atomic<DeferredMachineConfigurationTeardown?>(null)
     private val resetMachineTeardownOwnerSequence = atomic(0L)
+    private val restControlActionSequence = atomic(0L)
     private val resetMachineTeardownOwner = atomic<ResetMachineTeardownOwner?>(null)
     private val pendingResetStart = atomic<PendingResetStart?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
@@ -13610,21 +13611,112 @@ class ActiveSessionEngine(
 
     // ===== Rest Timer Controls (Issue #297, #228) =====
 
+    private fun beginRestControl(action: RestControlAction, seconds: Int?): Pair<Long, Long?> {
+        val actionId = restControlActionSequence.incrementAndGet()
+        val ownerGeneration = activeRuntimeDocumentVersion.takeIf {
+            coordinator._restTransitionPlan.value != null
+        }
+        recordRestControlReceipt(
+            actionId = actionId,
+            action = action,
+            stage = RestControlReceiptStage.TAP_ENTRY,
+            ownerGeneration = ownerGeneration,
+            seconds = seconds,
+        )
+        recordRestControlReceipt(
+            actionId = actionId,
+            action = action,
+            stage = RestControlReceiptStage.ENGINE_DISPATCH,
+            ownerGeneration = ownerGeneration,
+            seconds = seconds,
+        )
+        return actionId to ownerGeneration
+    }
+
+    private fun recordRestControlReceipt(
+        actionId: Long,
+        action: RestControlAction,
+        stage: RestControlReceiptStage,
+        ownerGeneration: Long?,
+        seconds: Int? = null,
+        reason: RestControlRejectionReason? = null,
+    ) {
+        coordinator.recordRestControlReceipt(
+            RestControlReceipt(
+                actionId = actionId,
+                action = action,
+                stage = stage,
+                ownerGeneration = ownerGeneration,
+                reason = reason,
+                seconds = seconds,
+            ),
+        )
+    }
+
+    private fun completeRestControl(
+        actionId: Long,
+        action: RestControlAction,
+        ownerGeneration: Long?,
+        seconds: Int?,
+        outcome: RestControlOutcome,
+        onComplete: (RestControlOutcome) -> Unit,
+    ) {
+        if (outcome is RestControlOutcome.Rejected) {
+            recordRestControlReceipt(
+                actionId = actionId,
+                action = action,
+                stage = RestControlReceiptStage.REJECTED,
+                ownerGeneration = ownerGeneration,
+                seconds = seconds,
+                reason = outcome.reason,
+            )
+        }
+        onComplete(outcome)
+    }
+
     /**
      * Extend the rest timer by the given number of seconds.
      * Updates both the original duration (for reset) and the current remaining time.
      */
-    fun extendRestTime(seconds: Int) {
-        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+    fun extendRestTime(seconds: Int) = extendRestTimeWithOutcome(seconds) {}
+
+    internal fun extendRestTimeWithOutcome(
+        seconds: Int,
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) {
+        val action = RestControlAction.EXTEND
+        val (actionId, ownerGeneration) = beginRestControl(action, seconds)
+        if (coordinator._workoutState.value !is WorkoutState.Resting) {
+            completeRestControl(
+                actionId,
+                action,
+                ownerGeneration,
+                seconds,
+                RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING),
+                onComplete,
+            )
+            return
+        }
         if (coordinator._restTransitionPlan.value != null) {
             val restoredTimerOwner = restoredRestTimerOwnerRef.value
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
                     mutation = RestoredRestTimerMutation.Extend(seconds),
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = seconds,
+                    onComplete = onComplete,
                 )
             } else {
-                mutatePlanOwnedRest { document ->
+                mutatePlanOwnedRest(
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = seconds,
+                    onComplete = onComplete,
+                ) { document ->
                     val nowEpochMs = wallClockMillisProvider()
                     val remaining = saturatingAddSeconds(
                         RestDeadlineCalculator.remainingSeconds(document, nowEpochMs),
@@ -13665,24 +13757,67 @@ class ActiveSessionEngine(
         } else {
             coordinator._restSecondsRemaining.value += seconds
         }
-        Logger.d(tag = "ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
+        val remaining = coordinator._restSecondsRemaining.value
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PERSISTENCE_NOT_REQUIRED,
+            ownerGeneration,
+            seconds,
+        )
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PUBLICATION,
+            ownerGeneration,
+            remaining,
+        )
+        Logger.d(tag = "ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${remaining}, original=${coordinator._restOriginalDuration.value}" }
+        completeRestControl(actionId, action, ownerGeneration, seconds, RestControlOutcome.Applied, onComplete)
     }
 
     /**
      * Toggle rest timer pause/resume.
      * When paused, the countdown loop skips decrementing. Beeps also stop.
      */
-    fun toggleRestPause() {
-        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+    fun toggleRestPause() = toggleRestPauseWithOutcome {}
+
+    internal fun toggleRestPauseWithOutcome(
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) {
+        val action = RestControlAction.TOGGLE_PAUSE
+        val (actionId, ownerGeneration) = beginRestControl(action, seconds = null)
+        if (coordinator._workoutState.value !is WorkoutState.Resting) {
+            completeRestControl(
+                actionId,
+                action,
+                ownerGeneration,
+                null,
+                RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING),
+                onComplete,
+            )
+            return
+        }
         if (coordinator._restTransitionPlan.value != null) {
             val restoredTimerOwner = restoredRestTimerOwnerRef.value
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
                     mutation = RestoredRestTimerMutation.TogglePause,
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = null,
+                    onComplete = onComplete,
                 )
             } else {
-                mutatePlanOwnedRest { document ->
+                mutatePlanOwnedRest(
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = null,
+                    onComplete = onComplete,
+                ) { document ->
                     val nowEpochMs = wallClockMillisProvider()
                     val pausing = !document.isRestPaused
                     val remaining = RestDeadlineCalculator.remainingSeconds(document, nowEpochMs)
@@ -13708,24 +13843,67 @@ class ActiveSessionEngine(
             coordinator.restDeadlineElapsedRealtimeMs = null
             coordinator._isRestPaused.value = true
         }
+        val remaining = coordinator._restSecondsRemaining.value
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PERSISTENCE_NOT_REQUIRED,
+            ownerGeneration,
+            remaining,
+        )
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PUBLICATION,
+            ownerGeneration,
+            remaining,
+        )
         Logger.d(tag = "ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
+        completeRestControl(actionId, action, ownerGeneration, null, RestControlOutcome.Applied, onComplete)
     }
 
     /**
      * Reset the rest timer to its original duration (including any extensions).
      * Also unpauses if currently paused.
      */
-    fun resetRestTimer() {
-        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+    fun resetRestTimer() = resetRestTimerWithOutcome {}
+
+    internal fun resetRestTimerWithOutcome(
+        onComplete: (RestControlOutcome) -> Unit = {},
+    ) {
+        val action = RestControlAction.RESET
+        val (actionId, ownerGeneration) = beginRestControl(action, seconds = null)
+        if (coordinator._workoutState.value !is WorkoutState.Resting) {
+            completeRestControl(
+                actionId,
+                action,
+                ownerGeneration,
+                null,
+                RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING),
+                onComplete,
+            )
+            return
+        }
         if (coordinator._restTransitionPlan.value != null) {
             val restoredTimerOwner = restoredRestTimerOwnerRef.value
             if (restoredTimerOwner != null) {
                 mutateRestoredPlanOwnedRest(
                     capturedTimerOwner = restoredTimerOwner,
                     mutation = RestoredRestTimerMutation.Reset,
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = null,
+                    onComplete = onComplete,
                 )
             } else {
-                mutatePlanOwnedRest { document ->
+                mutatePlanOwnedRest(
+                    actionId = actionId,
+                    action = action,
+                    ownerGeneration = ownerGeneration,
+                    seconds = null,
+                    onComplete = onComplete,
+                ) { document ->
                     val restored = document.originalRestDurationSeconds
                     document.copy(
                         restDeadlineEpochMs = deadlineEpochMs(wallClockMillisProvider(), restored),
@@ -13743,38 +13921,95 @@ class ActiveSessionEngine(
         coordinator._isRestPaused.value = false
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
         armRestDeadline(coordinator._restOriginalDuration.value)
-        Logger.d(tag = "ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
+        val remaining = coordinator._restSecondsRemaining.value
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PERSISTENCE_NOT_REQUIRED,
+            ownerGeneration,
+            remaining,
+        )
+        recordRestControlReceipt(
+            actionId,
+            action,
+            RestControlReceiptStage.PUBLICATION,
+            ownerGeneration,
+            remaining,
+        )
+        Logger.d(tag = "ActiveSessionEngine") { "resetRestTimer: reset to ${remaining}s" }
+        completeRestControl(actionId, action, ownerGeneration, null, RestControlOutcome.Applied, onComplete)
     }
 
     private fun mutateRestoredPlanOwnedRest(
         capturedTimerOwner: RestoredRestTimerOwner,
         mutation: RestoredRestTimerMutation,
+        actionId: Long,
+        action: RestControlAction,
+        ownerGeneration: Long?,
+        seconds: Int?,
+        onComplete: (RestControlOutcome) -> Unit,
     ) {
         scope.launch {
             afterRestoredRestTimerControlCaptureForTest?.invoke()
             var timerPublication: RestoredRestTimerPublication? = null
+            var outcome: RestControlOutcome = RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
             restTransitionMutex.withLock {
-                val owner = restoredRuntimeOwner ?: return@withLock
-                val document = activeRuntimeDocument ?: return@withLock
-                val plan = coordinator._restTransitionPlan.value ?: return@withLock
-                if (restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
+                val owner = restoredRuntimeOwner
+                val document = activeRuntimeDocument
+                val plan = coordinator._restTransitionPlan.value
+                if (coordinator._workoutState.value !is WorkoutState.Resting) {
+                    outcome = RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING)
+                    return@withLock
+                }
+                if (owner == null || document == null || plan == null ||
+                    restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
                     owner.guardOwner != capturedTimerOwner.guardOwner ||
                     owner.document != capturedTimerOwner.document ||
                     owner.documentVersion != capturedTimerOwner.documentVersion ||
                     document != capturedTimerOwner.document ||
                     activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
                     plan.transitionId != capturedTimerOwner.transitionId ||
-                    plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId ||
-                    coordinator._workoutState.value !is WorkoutState.Resting ||
-                    !hasRestoredRestTransitionAuthority(owner, document, plan)
+                    plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId
                 ) {
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.AUTHORITY_REJECTED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.STALE_OWNER,
+                    )
+                    outcome = RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
                     return@withLock
                 }
-
+                if (!hasRestoredRestTransitionAuthority(owner, document, plan)) {
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.AUTHORITY_REJECTED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.AUTHORITY_FAILED,
+                    )
+                    outcome = RestControlOutcome.Rejected(RestControlRejectionReason.AUTHORITY_FAILED)
+                    return@withLock
+                }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.AUTHORITY_ACCEPTED,
+                    ownerGeneration,
+                    seconds,
+                )
                 val nowElapsedRealtimeMs = elapsedRealtimeProvider()
                 val nowEpochMs = wallClockMillisProvider()
                 val currentRemaining = if (document.isRestPaused) {
-                    document.pausedRestRemainingSeconds ?: return@withLock
+                    val pausedRemaining = document.pausedRestRemainingSeconds
+                    if (pausedRemaining == null) {
+                        outcome = RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
+                        return@withLock
+                    }
+                    pausedRemaining
                 } else {
                     capturedTimerOwner.monotonicDeadlineElapsedRealtimeMs
                         ?.let { computeRemainingSeconds(it, nowElapsedRealtimeMs) }
@@ -13839,6 +14074,13 @@ class ActiveSessionEngine(
                     null
                 }
                 val createdJob = replacementJob?.takeIf { it !== capturedTimerOwner.job }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PERSISTENCE_STARTED,
+                    ownerGeneration,
+                    seconds,
+                )
                 val committed = try {
                     replaceRuntimeDocument(updatedDocument)
                 } catch (error: CancellationException) {
@@ -13880,24 +14122,13 @@ class ActiveSessionEngine(
                     }
                     throw error
                 }
-                if (!committed) {
-                    when (runtimeDocumentCommitStatus(updatedDocument, document)) {
-                        RuntimeDocumentCommitStatus.COMMITTED -> {
-                            timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
-                                owner = owner,
-                                capturedTimerOwner = capturedTimerOwner,
-                                document = document,
-                                plan = plan,
-                                updatedDocument = updatedDocument,
-                                updatedOriginalDuration = updatedOriginalDuration,
-                                updatedRemaining = updatedRemaining,
-                                updatedPaused = updatedPaused,
-                                updatedMonotonicDeadline = updatedMonotonicDeadline,
-                                replacementJob = replacementJob,
-                                createdJob = createdJob,
-                            )
-                        }
-
+                val commitStatus = if (committed) {
+                    RuntimeDocumentCommitStatus.COMMITTED
+                } else {
+                    runtimeDocumentCommitStatus(updatedDocument, document)
+                }
+                if (commitStatus != RuntimeDocumentCommitStatus.COMMITTED) {
+                    when (commitStatus) {
                         RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> createdJob?.cancel()
 
                         RuntimeDocumentCommitStatus.DIVERGED,
@@ -13906,9 +14137,38 @@ class ActiveSessionEngine(
                             createdJob?.cancel()
                             revokeRestoredActionAuthorityLocked(owner.guardOwner)
                         }
+
+                        RuntimeDocumentCommitStatus.COMMITTED -> Unit
+                    }
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.PERSISTENCE_FAILED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.PERSISTENCE_FAILED,
+                    )
+                    outcome = RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED)
+                    if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
+                        restoredRuntimeOwnerRef.value === owner &&
+                        restoredRestTimerOwnerRef.value === capturedTimerOwner &&
+                        activeRuntimeDocument == document &&
+                        activeRuntimeDocumentVersion == capturedTimerOwner.documentVersion &&
+                        coordinator._restTransitionPlan.value == plan &&
+                        coordinator._workoutState.value is WorkoutState.Resting
+                    ) {
+                        // Non-suspending coordinator event; it is emitted only for this current owner.
+                        coordinator._userFeedbackEvents.tryEmit(REST_CONTROL_FAILURE_FEEDBACK_KEY)
                     }
                     return@withLock
                 }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PERSISTENCE_CONFIRMED,
+                    ownerGeneration,
+                    seconds,
+                )
                 timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                     owner = owner,
                     capturedTimerOwner = capturedTimerOwner,
@@ -13922,8 +14182,23 @@ class ActiveSessionEngine(
                     replacementJob = replacementJob,
                     createdJob = createdJob,
                 )
+                outcome = if (timerPublication == null) {
+                    RestControlOutcome.Rejected(RestControlRejectionReason.POST_WRITE_DRIFT)
+                } else {
+                    RestControlOutcome.Applied
+                }
             }
             publishRestoredRestTimerMutationJobs(timerPublication)
+            if (outcome == RestControlOutcome.Applied) {
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PUBLICATION,
+                    ownerGeneration,
+                    coordinator._restSecondsRemaining.value,
+                )
+            }
+            completeRestControl(actionId, action, ownerGeneration, seconds, outcome, onComplete)
         }
     }
 
@@ -14008,18 +14283,100 @@ class ActiveSessionEngine(
     }
 
     private fun mutatePlanOwnedRest(
+        actionId: Long,
+        action: RestControlAction,
+        ownerGeneration: Long?,
+        seconds: Int?,
+        onComplete: (RestControlOutcome) -> Unit,
         mutation: (ActiveWorkoutRuntimeDocument) -> Pair<ActiveWorkoutRuntimeDocument, () -> Unit>,
     ) {
         scope.launch {
-            restTransitionMutex.withLock {
-                val lease = executionGuard.currentLease ?: return@withLock
-                val document = activeRuntimeDocument ?: return@withLock
-                val plan = coordinator._restTransitionPlan.value ?: return@withLock
-                if (!hasRestTransitionAuthority(document, plan, lease)) return@withLock
+            val outcome = restTransitionMutex.withLock {
+                if (coordinator._workoutState.value !is WorkoutState.Resting) {
+                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.NOT_RESTING)
+                }
+                val lease = executionGuard.currentLease
+                    ?: return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
+                val document = activeRuntimeDocument
+                    ?: return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
+                val plan = coordinator._restTransitionPlan.value
+                    ?: return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
+                if (ownerGeneration == null || activeRuntimeDocumentVersion != ownerGeneration) {
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.AUTHORITY_REJECTED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.STALE_OWNER,
+                    )
+                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER)
+                }
+                if (!hasRestTransitionAuthority(document, plan, lease)) {
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.AUTHORITY_REJECTED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.AUTHORITY_FAILED,
+                    )
+                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.AUTHORITY_FAILED)
+                }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.AUTHORITY_ACCEPTED,
+                    ownerGeneration,
+                    seconds,
+                )
                 val (updatedDocument, publish) = mutation(document)
-                if (!replaceRuntimeDocument(updatedDocument)) return@withLock
-                if (activeRuntimeDocument != document || !hasRestTransitionAuthority(document, plan, lease)) {
-                    return@withLock
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PERSISTENCE_STARTED,
+                    ownerGeneration,
+                    seconds,
+                )
+                val committed = replaceRuntimeDocument(updatedDocument)
+                val commitStatus = if (committed) {
+                    RuntimeDocumentCommitStatus.COMMITTED
+                } else {
+                    runtimeDocumentCommitStatus(updatedDocument, document)
+                }
+                if (commitStatus != RuntimeDocumentCommitStatus.COMMITTED) {
+                    recordRestControlReceipt(
+                        actionId,
+                        action,
+                        RestControlReceiptStage.PERSISTENCE_FAILED,
+                        ownerGeneration,
+                        seconds,
+                        RestControlRejectionReason.PERSISTENCE_FAILED,
+                    )
+                    if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
+                        activeRuntimeDocument == document &&
+                        activeRuntimeDocumentVersion == ownerGeneration &&
+                        coordinator._restTransitionPlan.value == plan &&
+                        coordinator._workoutState.value is WorkoutState.Resting &&
+                        executionGuard.currentLease == lease
+                    ) {
+                        // tryEmit is non-suspending; the owner check and feedback stay serialized.
+                        coordinator._userFeedbackEvents.tryEmit(REST_CONTROL_FAILURE_FEEDBACK_KEY)
+                    }
+                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED)
+                }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PERSISTENCE_CONFIRMED,
+                    ownerGeneration,
+                    seconds,
+                )
+                if (activeRuntimeDocument != document ||
+                    activeRuntimeDocumentVersion != ownerGeneration ||
+                    !hasRestTransitionAuthority(document, plan, lease)
+                ) {
+                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.POST_WRITE_DRIFT)
                 }
                 setActiveRuntimeDocument(updatedDocument)
                 coordinator._restTransitionPlan.value = updatedDocument.restTransitionPlan
@@ -14031,7 +14388,16 @@ class ActiveSessionEngine(
                         restSecondsRemaining = coordinator._restSecondsRemaining.value,
                     )
                 }
+                recordRestControlReceipt(
+                    actionId,
+                    action,
+                    RestControlReceiptStage.PUBLICATION,
+                    ownerGeneration,
+                    coordinator._restSecondsRemaining.value,
+                )
+                RestControlOutcome.Applied
             }
+            completeRestControl(actionId, action, ownerGeneration, seconds, outcome, onComplete)
         }
     }
 

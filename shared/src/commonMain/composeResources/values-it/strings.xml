@@ -37,6 +37,7 @@
     <!-- ==================== Rest Timer ==================== -->
     <string name="rest_eccentric_load">CARICO ECCENTRICO</string>
     <string name="rest_echo_level">LIVELLO ECHO</string>
+    <string name="rest_control_update_failed">Non è stato possibile confermare l’aggiornamento del timer di riposo. Controlla il timer visualizzato.</string>
     <string name="drop_set_title">Drop set</string>
     <string name="drop_set_offer_toggle">Offri un drop set dopo un fallimento.</string>
     <string name="drop_set_min_weight">Peso minimo</string>

@@ -786,6 +786,16 @@ class MainViewModel(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+    internal val restControlReceipts: SharedFlow<com.devil.phoenixproject.presentation.manager.RestControlReceipt>
+        get() = workoutSessionManager.coordinator.restControlReceipts
+
+    internal fun recordRestControlRendered(
+        receipt: com.devil.phoenixproject.presentation.manager.RestControlReceipt,
+    ) {
+        workoutSessionManager.coordinator.recordRestControlReceipt(
+            receipt.copy(stage = com.devil.phoenixproject.presentation.manager.RestControlReceiptStage.RENDERED),
+        )
+    }
 
     /**
      * KD-9: "the command was capped" notice, held as state so the screen that shows it can
@@ -1062,8 +1072,18 @@ class MainViewModel(
     fun declineDropSet(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Decline(identity))
     val restTransitionPlan get() = workoutSessionManager.restTransitionPlan
     fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
+    internal fun extendRestTimeWithOutcome(
+        seconds: Int,
+        onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
+    ) = workoutSessionManager.extendRestTimeWithOutcome(seconds, onComplete)
     fun toggleRestPause() = workoutSessionManager.toggleRestPause()
+    internal fun toggleRestPauseWithOutcome(
+        onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
+    ) = workoutSessionManager.toggleRestPauseWithOutcome(onComplete)
     fun resetRestTimer() = workoutSessionManager.resetRestTimer()
+    internal fun resetRestTimerWithOutcome(
+        onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
+    ) = workoutSessionManager.resetRestTimerWithOutcome(onComplete)
     val isRestPaused get() = workoutSessionManager.coordinator.isRestPaused
 
     // Issue #190: Exercise timer controls for timed exercises (TUT/Echo/bodyweight)

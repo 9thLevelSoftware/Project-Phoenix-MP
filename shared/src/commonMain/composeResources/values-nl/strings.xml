@@ -267,6 +267,7 @@
     <string name="rest_resume">Hervatten</string>
     <string name="rest_pause">Pauzeren</string>
     <string name="rest_reset">Resetten</string>
+    <string name="rest_control_update_failed">De update van de rusttimer kon niet worden bevestigd. Controleer de weergegeven timer.</string>
     <string name="rest_skip">Rust overslaan</string>
     <string name="rest_end_workout">Training beëindigen</string>
     <string name="rest_continue">Doorgaan</string>

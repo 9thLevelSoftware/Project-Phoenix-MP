@@ -266,6 +266,7 @@
     <string name="rest_resume">Reprendre</string>
     <string name="rest_pause">Pause</string>
     <string name="rest_reset">Réinitialiser</string>
+    <string name="rest_control_update_failed">La mise à jour du minuteur de repos n’a pas pu être confirmée. Vérifiez le temps affiché.</string>
     <string name="rest_skip">Passer le repos</string>
     <string name="rest_end_workout">Terminer l'entraînement</string>
     <string name="rest_continue">Continuer</string>

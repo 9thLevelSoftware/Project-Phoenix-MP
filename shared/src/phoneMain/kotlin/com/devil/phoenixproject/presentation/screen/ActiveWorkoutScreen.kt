@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -52,6 +53,8 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.REST_CONTROL_FAILURE_FEEDBACK_KEY
+import com.devil.phoenixproject.presentation.manager.RestControlReceiptStage
 import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.exitToJustLift
@@ -71,6 +74,7 @@ import projectphoenix.shared.generated.resources.action_exit
 import projectphoenix.shared.generated.resources.end_workout
 import projectphoenix.shared.generated.resources.exit_workout_message
 import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.rest_control_update_failed
 import projectphoenix.shared.generated.resources.skip_exercise
 import projectphoenix.shared.generated.resources.stop_current_set_message
 import projectphoenix.shared.generated.resources.stop_current_set_title
@@ -204,11 +208,31 @@ fun ActiveWorkoutScreen(
 
     LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
+            val localizedMessage = if (message == REST_CONTROL_FAILURE_FEEDBACK_KEY) {
+                getString(Res.string.rest_control_update_failed)
+            } else {
+                message
+            }
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(
-                    message = message,
+                    message = localizedMessage,
                     duration = SnackbarDuration.Short,
                 )
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.restControlReceipts.collect { receipt ->
+            Logger.d(tag = "ActiveWorkoutScreen") {
+                "rest_control action_id=${receipt.actionId} action=${receipt.action} stage=${receipt.stage} " +
+                    "owner_generation=${receipt.ownerGeneration ?: "none"} seconds=${receipt.seconds ?: "none"} " +
+                    "reason=${receipt.reason ?: "none"}"
+            }
+            if (receipt.stage == RestControlReceiptStage.PUBLICATION ||
+                receipt.stage == RestControlReceiptStage.REJECTED
+            ) {
+                withFrameNanos { }
+                viewModel.recordRestControlRendered(receipt)
             }
         }
     }
