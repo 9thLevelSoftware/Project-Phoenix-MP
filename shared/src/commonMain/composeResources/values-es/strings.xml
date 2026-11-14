@@ -888,4 +888,10 @@
     <string name="intervals_reason_no_remote_match">No se encontró una actividad coincidente</string>
     <string name="intervals_reason_multiple_remote_matches">Se encontró más de una actividad coincidente</string>
     <string name="intervals_reason_suppressed_by_pause">En pausa</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">El temporizador de descanso no está activo ahora mismo.</string>
+    <string name="rest_control_stale_owner">Este descanso cambió antes de aplicarse el cambio.</string>
+    <string name="rest_control_authority_failed">No se pudo confirmar el descanso actual. No se aplicó el cambio.</string>
+    <string name="rest_control_persistence_failed">No se pudo guardar el cambio del descanso. Puedes intentarlo de nuevo.</string>
+    <string name="rest_control_post_write_drift">El descanso cambió durante el guardado. Puede que el cambio no se haya aplicado.</string>
 </resources>

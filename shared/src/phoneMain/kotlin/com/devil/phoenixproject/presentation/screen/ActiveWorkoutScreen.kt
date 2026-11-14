@@ -52,6 +52,7 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.RestControlFeedback
 import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.exitToJustLift
@@ -71,6 +72,11 @@ import projectphoenix.shared.generated.resources.action_exit
 import projectphoenix.shared.generated.resources.end_workout
 import projectphoenix.shared.generated.resources.exit_workout_message
 import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.rest_control_authority_failed
+import projectphoenix.shared.generated.resources.rest_control_not_resting
+import projectphoenix.shared.generated.resources.rest_control_persistence_failed
+import projectphoenix.shared.generated.resources.rest_control_post_write_drift
+import projectphoenix.shared.generated.resources.rest_control_stale_owner
 import projectphoenix.shared.generated.resources.skip_exercise
 import projectphoenix.shared.generated.resources.stop_current_set_message
 import projectphoenix.shared.generated.resources.stop_current_set_title
@@ -204,9 +210,12 @@ fun ActiveWorkoutScreen(
 
     LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
+            // Issue #1360: localize rest-control rejection feedback emitted on the coordinator
+            // feedback plumbing; unknown manager messages pass through unchanged.
+            val displayMessage = restControlFeedbackMessageResource(message)?.let { getString(it) } ?: message
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(
-                    message = message,
+                    message = displayMessage,
                     duration = SnackbarDuration.Short,
                 )
             }
@@ -773,4 +782,18 @@ private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this)
     SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
     SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
     SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
+}
+
+/**
+ * Issue #1360: map rest-control rejection feedback (the canonical English wire text emitted on
+ * the coordinator user-feedback plumbing) to localized string resources. Unknown messages pass
+ * through unchanged so legacy manager feedback is unaffected.
+ */
+private fun restControlFeedbackMessageResource(message: String): StringResource? = when (message) {
+    RestControlFeedback.NOT_RESTING -> Res.string.rest_control_not_resting
+    RestControlFeedback.STALE_OWNER -> Res.string.rest_control_stale_owner
+    RestControlFeedback.AUTHORITY_FAILED -> Res.string.rest_control_authority_failed
+    RestControlFeedback.PERSISTENCE_FAILED -> Res.string.rest_control_persistence_failed
+    RestControlFeedback.POST_WRITE_DRIFT -> Res.string.rest_control_post_write_drift
+    else -> null
 }

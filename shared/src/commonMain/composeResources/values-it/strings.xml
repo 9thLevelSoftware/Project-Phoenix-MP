@@ -224,4 +224,10 @@
     <string name="intervals_reason_no_remote_match">Nessuna attività corrispondente trovata</string>
     <string name="intervals_reason_multiple_remote_matches">Trovata più di un'attività corrispondente</string>
     <string name="intervals_reason_suppressed_by_pause">In pausa</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">Il timer di riposo non è attivo in questo momento.</string>
+    <string name="rest_control_stale_owner">Questo riposo è cambiato prima che la modifica venisse applicata.</string>
+    <string name="rest_control_authority_failed">Impossibile confermare il riposo attuale. La modifica non è stata applicata.</string>
+    <string name="rest_control_persistence_failed">Impossibile salvare la modifica al riposo. Puoi riprovare.</string>
+    <string name="rest_control_post_write_drift">Il riposo è cambiato durante il salvataggio. La modifica potrebbe non essere stata applicata.</string>
 </resources>

@@ -324,6 +324,12 @@
     <string name="rest_resume">Resume</string>
     <string name="rest_pause">Pause</string>
     <string name="rest_reset">Reset</string>
+    <!-- Issue #1360: rest-control rejection feedback (canonical English wire text; see RestControlFeedback). -->
+    <string name="rest_control_not_resting">Rest timer isn't active right now.</string>
+    <string name="rest_control_stale_owner">This rest changed before the change was applied.</string>
+    <string name="rest_control_authority_failed">Couldn't confirm the current rest timer. The change was not applied.</string>
+    <string name="rest_control_persistence_failed">Couldn't save the rest timer change. You can try again.</string>
+    <string name="rest_control_post_write_drift">Rest timer changed while saving. The change may not have been applied.</string>
     <string name="rest_skip">Skip Rest</string>
     <string name="rest_end_workout">End Workout</string>
     <string name="rest_continue">Continue</string>
