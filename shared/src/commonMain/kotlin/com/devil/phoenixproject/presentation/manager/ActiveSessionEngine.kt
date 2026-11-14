@@ -13611,26 +13611,33 @@ class ActiveSessionEngine(
 
     // ===== Rest Timer Controls (Issue #297, #228) =====
 
-    private fun beginRestControl(action: RestControlAction, seconds: Int?): Pair<Long, Long?> {
-        val actionId = restControlActionSequence.incrementAndGet()
-        val ownerGeneration = activeRuntimeDocumentVersion.takeIf {
-            coordinator._restTransitionPlan.value != null
+    internal fun createRestControlRequest(action: RestControlAction, seconds: Int?): RestControlRequest =
+        RestControlRequest(
+            actionId = restControlActionSequence.incrementAndGet(),
+            action = action,
+            ownerGeneration = activeRuntimeDocumentVersion.takeIf {
+                coordinator._restTransitionPlan.value != null
+            },
+            seconds = seconds,
+        )
+
+    private fun beginRestControl(
+        action: RestControlAction,
+        seconds: Int?,
+        request: RestControlRequest?,
+    ): RestControlRequest {
+        val context = request ?: createRestControlRequest(action, seconds)
+        check(context.action == action && context.seconds == seconds) {
+            "Rest-control request does not match dispatched action"
         }
         recordRestControlReceipt(
-            actionId = actionId,
-            action = action,
-            stage = RestControlReceiptStage.TAP_ENTRY,
-            ownerGeneration = ownerGeneration,
-            seconds = seconds,
-        )
-        recordRestControlReceipt(
-            actionId = actionId,
+            actionId = context.actionId,
             action = action,
             stage = RestControlReceiptStage.ENGINE_DISPATCH,
-            ownerGeneration = ownerGeneration,
+            ownerGeneration = context.ownerGeneration,
             seconds = seconds,
         )
-        return actionId to ownerGeneration
+        return context
     }
 
     private fun recordRestControlReceipt(
@@ -13678,14 +13685,17 @@ class ActiveSessionEngine(
      * Extend the rest timer by the given number of seconds.
      * Updates both the original duration (for reset) and the current remaining time.
      */
-    fun extendRestTime(seconds: Int) = extendRestTimeWithOutcome(seconds) {}
+    fun extendRestTime(seconds: Int) = extendRestTimeWithOutcome(seconds, request = null) {}
 
     internal fun extendRestTimeWithOutcome(
         seconds: Int,
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
     ) {
         val action = RestControlAction.EXTEND
-        val (actionId, ownerGeneration) = beginRestControl(action, seconds)
+        val context = beginRestControl(action, seconds, request)
+        val actionId = context.actionId
+        val ownerGeneration = context.ownerGeneration
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13780,13 +13790,16 @@ class ActiveSessionEngine(
      * Toggle rest timer pause/resume.
      * When paused, the countdown loop skips decrementing. Beeps also stop.
      */
-    fun toggleRestPause() = toggleRestPauseWithOutcome {}
+    fun toggleRestPause() = toggleRestPauseWithOutcome(request = null) {}
 
     internal fun toggleRestPauseWithOutcome(
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
     ) {
         val action = RestControlAction.TOGGLE_PAUSE
-        val (actionId, ownerGeneration) = beginRestControl(action, seconds = null)
+        val context = beginRestControl(action, seconds = null, request)
+        val actionId = context.actionId
+        val ownerGeneration = context.ownerGeneration
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13866,13 +13879,16 @@ class ActiveSessionEngine(
      * Reset the rest timer to its original duration (including any extensions).
      * Also unpauses if currently paused.
      */
-    fun resetRestTimer() = resetRestTimerWithOutcome {}
+    fun resetRestTimer() = resetRestTimerWithOutcome(request = null) {}
 
     internal fun resetRestTimerWithOutcome(
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
     ) {
         val action = RestControlAction.RESET
-        val (actionId, ownerGeneration) = beginRestControl(action, seconds = null)
+        val context = beginRestControl(action, seconds = null, request)
+        val actionId = context.actionId
+        val ownerGeneration = context.ownerGeneration
         if (coordinator._workoutState.value !is WorkoutState.Resting) {
             completeRestControl(
                 actionId,
@@ -13966,6 +13982,7 @@ class ActiveSessionEngine(
                     owner.guardOwner != capturedTimerOwner.guardOwner ||
                     owner.document != capturedTimerOwner.document ||
                     owner.documentVersion != capturedTimerOwner.documentVersion ||
+                    ownerGeneration != capturedTimerOwner.documentVersion ||
                     document != capturedTimerOwner.document ||
                     activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
                     plan.transitionId != capturedTimerOwner.transitionId ||
@@ -14140,15 +14157,25 @@ class ActiveSessionEngine(
 
                         RuntimeDocumentCommitStatus.COMMITTED -> Unit
                     }
-                    recordRestControlReceipt(
-                        actionId,
-                        action,
-                        RestControlReceiptStage.PERSISTENCE_FAILED,
-                        ownerGeneration,
-                        seconds,
-                        RestControlRejectionReason.PERSISTENCE_FAILED,
-                    )
-                    outcome = RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED)
+                    val rejection = when (commitStatus) {
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR,
+                        RuntimeDocumentCommitStatus.UNKNOWN,
+                        -> RestControlRejectionReason.PERSISTENCE_FAILED
+
+                        RuntimeDocumentCommitStatus.DIVERGED -> RestControlRejectionReason.POST_WRITE_DRIFT
+                        RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
+                    }
+                    if (rejection == RestControlRejectionReason.PERSISTENCE_FAILED) {
+                        recordRestControlReceipt(
+                            actionId,
+                            action,
+                            RestControlReceiptStage.PERSISTENCE_FAILED,
+                            ownerGeneration,
+                            seconds,
+                            rejection,
+                        )
+                    }
+                    outcome = RestControlOutcome.Rejected(rejection)
                     if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
                         restoredRuntimeOwnerRef.value === owner &&
                         restoredRestTimerOwnerRef.value === capturedTimerOwner &&
@@ -14345,14 +14372,24 @@ class ActiveSessionEngine(
                     runtimeDocumentCommitStatus(updatedDocument, document)
                 }
                 if (commitStatus != RuntimeDocumentCommitStatus.COMMITTED) {
-                    recordRestControlReceipt(
-                        actionId,
-                        action,
-                        RestControlReceiptStage.PERSISTENCE_FAILED,
-                        ownerGeneration,
-                        seconds,
-                        RestControlRejectionReason.PERSISTENCE_FAILED,
-                    )
+                    val rejection = when (commitStatus) {
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR,
+                        RuntimeDocumentCommitStatus.UNKNOWN,
+                        -> RestControlRejectionReason.PERSISTENCE_FAILED
+
+                        RuntimeDocumentCommitStatus.DIVERGED -> RestControlRejectionReason.POST_WRITE_DRIFT
+                        RuntimeDocumentCommitStatus.COMMITTED -> error("Committed status handled above")
+                    }
+                    if (rejection == RestControlRejectionReason.PERSISTENCE_FAILED) {
+                        recordRestControlReceipt(
+                            actionId,
+                            action,
+                            RestControlReceiptStage.PERSISTENCE_FAILED,
+                            ownerGeneration,
+                            seconds,
+                            rejection,
+                        )
+                    }
                     if (commitStatus == RuntimeDocumentCommitStatus.UNCHANGED_PRIOR &&
                         activeRuntimeDocument == document &&
                         activeRuntimeDocumentVersion == ownerGeneration &&
@@ -14363,7 +14400,7 @@ class ActiveSessionEngine(
                         // tryEmit is non-suspending; the owner check and feedback stay serialized.
                         coordinator._userFeedbackEvents.tryEmit(REST_CONTROL_FAILURE_FEEDBACK_KEY)
                     }
-                    return@withLock RestControlOutcome.Rejected(RestControlRejectionReason.PERSISTENCE_FAILED)
+                    return@withLock RestControlOutcome.Rejected(rejection)
                 }
                 recordRestControlReceipt(
                     actionId,

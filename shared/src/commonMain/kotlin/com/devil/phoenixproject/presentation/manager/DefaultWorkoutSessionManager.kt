@@ -1178,19 +1178,35 @@ class DefaultWorkoutSessionManager(
     }
     internal val restTransitionPlan: StateFlow<RestTransitionPlan?> get() = coordinator.restTransitionPlan
     internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = activeSessionEngine.applyRestTransitionAwait(command)
+    internal fun beginRestControlTap(action: RestControlAction, seconds: Int?): RestControlRequest {
+        val request = activeSessionEngine.createRestControlRequest(action, seconds)
+        coordinator.recordRestControlReceipt(
+            RestControlReceipt(
+                actionId = request.actionId,
+                action = request.action,
+                stage = RestControlReceiptStage.TAP_ENTRY,
+                ownerGeneration = request.ownerGeneration,
+                seconds = request.seconds,
+            ),
+        )
+        return request
+    }
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
     internal fun extendRestTimeWithOutcome(
         seconds: Int,
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
-    ) = activeSessionEngine.extendRestTimeWithOutcome(seconds, onComplete)
+    ) = activeSessionEngine.extendRestTimeWithOutcome(seconds, request, onComplete)
     fun toggleRestPause() = activeSessionEngine.toggleRestPause()
     internal fun toggleRestPauseWithOutcome(
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
-    ) = activeSessionEngine.toggleRestPauseWithOutcome(onComplete)
+    ) = activeSessionEngine.toggleRestPauseWithOutcome(request, onComplete)
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
     internal fun resetRestTimerWithOutcome(
+        request: RestControlRequest? = null,
         onComplete: (RestControlOutcome) -> Unit = {},
-    ) = activeSessionEngine.resetRestTimerWithOutcome(onComplete)
+    ) = activeSessionEngine.resetRestTimerWithOutcome(request, onComplete)
     fun startNextSet() = activeSessionEngine.startNextSet()
 
     // ===== Exercise Timer Controls — delegated to ActiveSessionEngine =====

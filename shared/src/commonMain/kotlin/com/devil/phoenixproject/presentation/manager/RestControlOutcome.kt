@@ -23,6 +23,14 @@ internal enum class RestControlAction {
     RESET,
 }
 
+/** Ephemeral UI-to-engine correlation context; contains only trace-safe fields. */
+internal data class RestControlRequest(
+    val actionId: Long,
+    val action: RestControlAction,
+    val ownerGeneration: Long?,
+    val seconds: Int?,
+)
+
 internal enum class RestControlReceiptStage {
     TAP_ENTRY,
     ENGINE_DISPATCH,

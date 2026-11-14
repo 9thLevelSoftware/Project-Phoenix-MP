@@ -1071,19 +1071,26 @@ class MainViewModel(
     fun acceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Accept(identity, percentage))
     fun declineDropSet(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Decline(identity))
     val restTransitionPlan get() = workoutSessionManager.restTransitionPlan
+    internal fun beginRestControlTap(
+        action: com.devil.phoenixproject.presentation.manager.RestControlAction,
+        seconds: Int?,
+    ) = workoutSessionManager.beginRestControlTap(action, seconds)
     fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
     internal fun extendRestTimeWithOutcome(
         seconds: Int,
+        request: com.devil.phoenixproject.presentation.manager.RestControlRequest? = null,
         onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
-    ) = workoutSessionManager.extendRestTimeWithOutcome(seconds, onComplete)
+    ) = workoutSessionManager.extendRestTimeWithOutcome(seconds, request, onComplete)
     fun toggleRestPause() = workoutSessionManager.toggleRestPause()
     internal fun toggleRestPauseWithOutcome(
+        request: com.devil.phoenixproject.presentation.manager.RestControlRequest? = null,
         onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
-    ) = workoutSessionManager.toggleRestPauseWithOutcome(onComplete)
+    ) = workoutSessionManager.toggleRestPauseWithOutcome(request, onComplete)
     fun resetRestTimer() = workoutSessionManager.resetRestTimer()
     internal fun resetRestTimerWithOutcome(
+        request: com.devil.phoenixproject.presentation.manager.RestControlRequest? = null,
         onComplete: (com.devil.phoenixproject.presentation.manager.RestControlOutcome) -> Unit = {},
-    ) = workoutSessionManager.resetRestTimerWithOutcome(onComplete)
+    ) = workoutSessionManager.resetRestTimerWithOutcome(request, onComplete)
     val isRestPaused get() = workoutSessionManager.coordinator.isRestPaused
 
     // Issue #190: Exercise timer controls for timed exercises (TUT/Echo/bodyweight)

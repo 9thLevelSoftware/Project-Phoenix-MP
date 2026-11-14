@@ -54,6 +54,7 @@ import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.REST_CONTROL_FAILURE_FEEDBACK_KEY
+import com.devil.phoenixproject.presentation.manager.RestControlAction
 import com.devil.phoenixproject.presentation.manager.RestControlReceiptStage
 import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -532,9 +533,18 @@ fun ActiveWorkoutScreen(
             onSkipRestWithIdentity = { identity -> viewModel.skipRest(identity) },
             onAcceptDropSetAction = { identity, percentage -> viewModel.acceptDropSet(identity, percentage) },
             onDeclineDropSetAction = { identity -> viewModel.declineDropSet(identity) },
-            onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
-            onToggleRestPause = { viewModel.toggleRestPause() },
-            onResetRest = { viewModel.resetRestTimer() },
+            onExtendRest = { seconds ->
+                val request = viewModel.beginRestControlTap(RestControlAction.EXTEND, seconds)
+                viewModel.extendRestTimeWithOutcome(seconds, request)
+            },
+            onToggleRestPause = {
+                val request = viewModel.beginRestControlTap(RestControlAction.TOGGLE_PAUSE, seconds = null)
+                viewModel.toggleRestPauseWithOutcome(request)
+            },
+            onResetRest = {
+                val request = viewModel.beginRestControlTap(RestControlAction.RESET, seconds = null)
+                viewModel.resetRestTimerWithOutcome(request)
+            },
             onSkipCountdown = { viewModel.skipCountdown() },
             onProceedFromSummary = { viewModel.proceedFromSummary() },
             onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },

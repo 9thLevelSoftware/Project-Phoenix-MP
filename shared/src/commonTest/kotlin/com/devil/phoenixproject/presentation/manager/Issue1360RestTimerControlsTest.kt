@@ -42,7 +42,8 @@ class Issue1360RestTimerControlsTest {
             var outcome: RestControlOutcome? = null
             harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
 
-            harness.dwsm.extendRestTimeWithOutcome(30) { outcome = it }
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 30)
+            harness.dwsm.extendRestTimeWithOutcome(30, request) { outcome = it }
             assertEquals(null, outcome, "Plan-owned completion must not run when the action is only enqueued")
             runCurrent()
 
@@ -85,7 +86,8 @@ class Issue1360RestTimerControlsTest {
             val remainingBefore = resting(harness).restSecondsRemaining
             var outcome: RestControlOutcome? = null
 
-            harness.dwsm.extendRestTimeWithOutcome(30) { completed ->
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 30)
+            harness.dwsm.extendRestTimeWithOutcome(30, request) { completed ->
                 outcome = completed
                 val committed = runtime(harness)
                 assertEquals(before.originalRestDurationSeconds + 30, committed.originalRestDurationSeconds)
@@ -114,6 +116,114 @@ class Issue1360RestTimerControlsTest {
             assertEquals(null, receipts.last().reason)
         } finally {
             receiptCollector.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun divergedPlanOwnedCommitReportsPostWriteDriftWithoutPersistenceFeedback() = runTest {
+        val harness = DWSMTestHarness(this)
+        val messages = mutableListOf<String>()
+        val receipts = mutableListOf<RestControlReceipt>()
+        val feedbackCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.toList(messages)
+        }
+        val receiptCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            prepareTutRest(harness, nextExercise = false)
+            val prior = runtime(harness)
+            val diverged = prior.copy(originalRestDurationSeconds = prior.originalRestDurationSeconds + 1)
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = {
+                harness.fakeActiveWorkoutRuntimeRepository.replacePreservingRevisionTimestamp(
+                    prior.profileId,
+                    prior.routineSessionId,
+                    diverged,
+                )
+            }
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(30) { outcome = it }
+            assertEquals(null, outcome, "The divergence result is asynchronous")
+            runCurrent()
+
+            assertEquals(RestControlOutcome.Rejected(RestControlRejectionReason.POST_WRITE_DRIFT), outcome)
+            assertEquals(diverged, harness.fakeActiveWorkoutRuntimeRepository.committedDocument(prior.profileId, prior.routineSessionId))
+            assertEquals(prior, runtime(harness), "The unconfirmed candidate must not be published")
+            assertTrue(messages.isEmpty(), "A diverged owner must not receive persistence-failure feedback")
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.PERSISTENCE_FAILED })
+            assertEquals(
+                RestControlRejectionReason.POST_WRITE_DRIFT,
+                receipts.single { it.stage == RestControlReceiptStage.REJECTED }.reason,
+            )
+        } finally {
+            feedbackCollector.cancel()
+            receiptCollector.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun tapEntryPrecedesEngineDispatchWithSameActionAndOwnerGeneration() = runTest {
+        val harness = DWSMTestHarness(this)
+        val receipts = mutableListOf<RestControlReceipt>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            prepareTutRest(harness, nextExercise = false)
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 30)
+
+            assertEquals(listOf(RestControlReceiptStage.TAP_ENTRY), receipts.map { it.stage })
+            assertEquals(request.actionId, receipts.single().actionId)
+            assertEquals(request.ownerGeneration, receipts.single().ownerGeneration)
+            assertTrue(request.ownerGeneration != null)
+
+            var outcome: RestControlOutcome? = null
+            harness.dwsm.extendRestTimeWithOutcome(30, request) { outcome = it }
+
+            assertEquals(
+                listOf(RestControlReceiptStage.TAP_ENTRY, RestControlReceiptStage.ENGINE_DISPATCH),
+                receipts.take(2).map { it.stage },
+            )
+            assertEquals(setOf(request.actionId), receipts.map { it.actionId }.toSet())
+            assertEquals(setOf(request.ownerGeneration), receipts.map { it.ownerGeneration }.toSet())
+            assertEquals(null, outcome, "Engine completion remains asynchronous")
+            runCurrent()
+            assertEquals(RestControlOutcome.Applied, outcome)
+        } finally {
+            collector.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun directEngineControlDoesNotFabricateTapEntry() = runTest {
+        val harness = DWSMTestHarness(this)
+        val receipts = mutableListOf<RestControlReceipt>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.restControlReceipts.toList(receipts)
+        }
+        try {
+            harness.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 60,
+                nextExerciseName = "Next",
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 2,
+            )
+            harness.coordinator._restSecondsRemaining.value = 60
+            harness.coordinator._restOriginalDuration.value = 60
+
+            harness.dwsm.extendRestTimeWithOutcome(30)
+
+            assertTrue(receipts.isNotEmpty())
+            assertEquals(RestControlReceiptStage.ENGINE_DISPATCH, receipts.first().stage)
+            assertFalse(receipts.any { it.stage == RestControlReceiptStage.TAP_ENTRY })
+        } finally {
+            collector.cancel()
             harness.cleanup()
         }
     }
@@ -152,7 +262,8 @@ class Issue1360RestTimerControlsTest {
             harness.coordinator._restOriginalDuration.value = 60
             var outcome: RestControlOutcome? = null
 
-            harness.dwsm.extendRestTimeWithOutcome(30) { outcome = it }
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 30)
+            harness.dwsm.extendRestTimeWithOutcome(30, request) { outcome = it }
 
             assertEquals(RestControlOutcome.Applied, outcome)
             assertEquals(90, harness.coordinator._restSecondsRemaining.value)

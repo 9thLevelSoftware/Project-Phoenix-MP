@@ -389,6 +389,46 @@ class RestoredRuntimeTimerControlRaceTest {
     }
 
     @Test
+    fun `tap request from replaced restored owner is rejected by generation guard`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val installedA = installAndResumeActiveTimer(harness, "tap-request-owner-a")
+            val request = harness.dwsm.beginRestControlTap(RestControlAction.EXTEND, seconds = 15)
+            assertNotNull(request.ownerGeneration)
+
+            harness.dwsm.resetForNewWorkout()
+            runCurrent()
+            val installedB = installAndResumeActiveTimer(harness, "tap-request-owner-b")
+            val timerB = captureTimerSnapshot(harness)
+            val replacementsBeforeDispatch = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            var outcome: RestControlOutcome? = null
+
+            harness.dwsm.extendRestTimeWithOutcome(15, request) { outcome = it }
+            runCurrent()
+
+            assertEquals(RestControlOutcome.Rejected(RestControlRejectionReason.STALE_OWNER), outcome)
+            assertExactTimerSnapshot(harness, timerB)
+            assertEquals(replacementsBeforeDispatch, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(
+                installedB.document,
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    installedB.document.profileId,
+                    installedB.document.routineSessionId,
+                ),
+            )
+            assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(
+                harness.fakeActiveWorkoutRuntimeRepository.load(
+                    installedA.document.profileId,
+                    installedA.document.routineSessionId,
+                ),
+            )
+        } finally {
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
+    @Test
     fun `control captured from A before mutex cannot persist publish or clear resumed B`() = runTest {
         val harness = DWSMTestHarness(this)
         val controlCaptured = CompletableDeferred<Unit>()
