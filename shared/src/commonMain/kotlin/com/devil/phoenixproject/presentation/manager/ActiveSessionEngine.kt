@@ -4400,6 +4400,24 @@ class ActiveSessionEngine(
 
     internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
 
+    /**
+     * Issue #1394 merge-gate rework: test-only mirror of the production execution-facts
+     * invalidation (the reset flow's `executionContext = null` after `executionGuard.invalidate`).
+     * Used to prove the duplicate-boundary transition fails conservatively to manual readiness
+     * when the outgoing applied configuration cannot be established — through the real
+     * summary/rest transition seam, not the predicate alone.
+     */
+    internal fun clearExecutionFactsForTest() {
+        executionContext = null
+    }
+
+    /**
+     * Issue #1394 merge-gate rework: test-only read of the current execution's frozen
+     * command-capture facts, used to assert the exact command inputs (reps, weights,
+     * progression, rack snapshot, warmup, AMRAP) a set start captured for the trainer.
+     */
+    internal fun executionFactsForTest(): SetExecutionActivationFacts? = executionContext?.completionFacts
+
     internal fun claimedCompletion(lease: ExecutionLease): SetExecutionCompletion? = executionGuard.claimedCompletion(lease)
 
     internal var completionJobAttachCountForTest: Int = 0
