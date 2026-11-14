@@ -44,9 +44,9 @@ import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
+import com.devil.phoenixproject.presentation.components.SessionHeartRateCard
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -111,12 +111,12 @@ fun SetSummaryCard(
     // summary preference, so this card's auto-continue countdown must be inert there.
     // An explicit tap (onContinue) still proceeds. Non-terminal summaries are unchanged.
     isTerminalSummary: Boolean = false,
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
-    val isCooldownActive = polarBleManager?.isCooldownActive?.collectAsState()?.value ?: false
+    val isCooldownActive = hrmBleManager?.isCooldownActive?.collectAsState()?.value ?: false
     val effectiveHoldAutoContinue = holdAutoContinue || isCooldownActive
 
     // Issue #142: Use a unique key derived from the summary to ensure countdown resets for each new set.
@@ -434,11 +434,11 @@ fun SetSummaryCard(
             }
         }
 
-        // Polar H10 Session Analytics Card (live view only; history renders at bottom below rep details)
+        // HRM Session Analytics Card (live view only; history renders at bottom below rep details)
         if (!isHistoryView) {
-            PolarSessionAnalyticsCard(
+            SessionHeartRateCard(
                 sessionId = summary.sessionId,
-                polarBleManager = polarBleManager,
+                hrmBleManager = hrmBleManager,
                 workoutRepository = workoutRepository,
                 showCooldown = false,
                 modifier = Modifier.padding(bottom = 12.dp),

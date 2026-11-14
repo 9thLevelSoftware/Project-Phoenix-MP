@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
@@ -586,7 +586,7 @@ class ActiveSessionEngine(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
-    private val polarBleManager: PolarH10BleManager? = null,
+    private val hrmBleManager: HrmBleManager? = null,
     // Issue #1384 (packet P2): narrow completion-finalizer seam. Every routine-finish path
     // durably admits its FINALIZE request through this seam BEFORE any ID reset, runtime
     // cleanup or completion UI. Bounded local persistence only — BLE teardown and machine
@@ -6021,10 +6021,10 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Collect metric for history recording, stamping live Polar H10 cardiac & torso biomechanics.
+     * Collect metric for history recording, stamping live HRM cardiac & torso biomechanics.
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
-        val stampedMetric = polarBleManager?.let { polar ->
+        val stampedMetric = hrmBleManager?.let { polar ->
             if (!polar.isConnected.value) return@let null
             val hr = polar.hrMeasurement.value
             val lastAcc = polar.latestAcc.value?.samples?.lastOrNull()
@@ -6729,7 +6729,7 @@ class ActiveSessionEngine(
                 coordinator._repCount.value.workingReps == 0
             ) {
                 coordinator.warmupCompleteTimeMs = metric.timestamp
-                polarBleManager?.updateSessionPhase("WORKING_SET")
+                hrmBleManager?.updateSessionPhase("WORKING_SET")
                 // F-022: start working rep 1's window at the end of warmup. Without a
                 // boundary here the window reaches back to set start, so rep 1's mean
                 // concentric velocity - the baseline for velocity-loss auto-end and for
@@ -8201,7 +8201,7 @@ class ActiveSessionEngine(
             return null
         }
         bodyweightCompletionGate.beginExecution(lease)
-        polarBleManager?.startSessionRecording(
+        hrmBleManager?.startSessionRecording(
             sessionId = lease.sessionId,
             phase = if (coordinator._repCount.value.warmupReps > 0 && !coordinator._repCount.value.isWarmupComplete) "WARMUP" else "WORKING_SET",
         )
@@ -9430,7 +9430,7 @@ class ActiveSessionEngine(
         // window) is not a measurement and must never be read back as achieved load.
         // Shared rule with the manual-stop path: [recordedHeaviestKg].
         val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
-        val polarSummary = polarBleManager?.freezeSessionRecording(lease.sessionId)
+        val polarSummary = hrmBleManager?.freezeSessionRecording(lease.sessionId)
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9944,7 +9944,7 @@ class ActiveSessionEngine(
                     timedModeEvidence = snapshot.lease.isTimedCable,
                 ),
             )
-            polarBleManager?.flushSessionTelemetry(sessionId)?.join()
+            hrmBleManager?.flushSessionTelemetry(sessionId)?.join()
             // Issue #869: the set is durable; Set Summary may now appear.
             commitSettled?.complete(Unit)
             snapshot.singleExerciseDefaults?.let { defaults ->
@@ -11001,10 +11001,10 @@ class ActiveSessionEngine(
         val startAtStopMs = coordinator.workoutStartTime
         val warmupCompleteAtStopMs = coordinator.warmupCompleteTimeMs
         val firstSampleAtStopMs = coordinator.collectedMetrics.snapshot().firstOrNull()?.timestamp
-        val polarSessionIdAtStop = polarBleManager?.currentRecordingSessionId
+        val polarSessionIdAtStop = hrmBleManager?.currentRecordingSessionId
         val polarSummaryAtStop = if (manualSnapshot == null) {
             polarSessionIdAtStop?.let { sessionId ->
-                polarBleManager?.freezeSessionRecording(sessionId)
+                hrmBleManager?.freezeSessionRecording(sessionId)
             }
         } else {
             null
@@ -11281,7 +11281,7 @@ class ActiveSessionEngine(
                     )
                 }
                 polarSessionIdAtStop?.let { recordedSourceId ->
-                    polarBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
+                    hrmBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
                 }
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {

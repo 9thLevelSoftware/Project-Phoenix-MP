@@ -33,11 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
-import com.devil.phoenixproject.data.ble.PolarSessionSummary
+import com.devil.phoenixproject.data.ble.HrmBleManager
+import com.devil.phoenixproject.data.ble.HrmSessionSummary
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PolarMetricSample
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -48,7 +48,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Enhanced Polar H10 Session Analytics Card.
+ * Enhanced Session Heart Rate Analytics Card.
  *
  * Displays post-set and post-workout cardiac performance metrics (Avg/Max/Min HR, RMSSD, RR),
  * 3D Torso Biomechanics (max hip-hinge pitch & lateral roll asymmetry), the 5-minute
@@ -59,41 +59,41 @@ import kotlin.math.roundToInt
  * 3. Saved 130 Hz ECG Waveform Scrubber
  */
 @Composable
-fun PolarSessionAnalyticsCard(
+fun SessionHeartRateCard(
     sessionId: String? = null,
     session: WorkoutSession? = null,
     showCooldown: Boolean = true,
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
 ) {
-    val connectionState = polarBleManager?.connectionState?.collectAsState()?.value ?: ConnectionState.Disconnected
-    val managerCooldownActive = polarBleManager?.isCooldownActive?.collectAsState()?.value ?: false
-    val cooldownSecondsRemaining = polarBleManager?.cooldownSecondsRemaining?.collectAsState()?.value ?: 0
-    val cooldownStartHr = polarBleManager?.cooldownStartHeartRate?.collectAsState()?.value
-    val latestSummary = polarBleManager?.latestSessionSummary?.collectAsState()?.value
-    val hrMeasurement = polarBleManager?.hrMeasurement?.collectAsState()?.value
-    val activeCooldownSessionId = polarBleManager?.activeCooldownSessionId?.collectAsState()?.value
-    val lastRecordedSessionId = polarBleManager?.lastRecordedSessionId?.collectAsState()?.value
+    val connectionState = hrmBleManager?.connectionState?.collectAsState()?.value ?: ConnectionState.Disconnected
+    val managerCooldownActive = hrmBleManager?.isCooldownActive?.collectAsState()?.value ?: false
+    val cooldownSecondsRemaining = hrmBleManager?.cooldownSecondsRemaining?.collectAsState()?.value ?: 0
+    val cooldownStartHr = hrmBleManager?.cooldownStartHeartRate?.collectAsState()?.value
+    val latestSummary = hrmBleManager?.latestSessionSummary?.collectAsState()?.value
+    val hrMeasurement = hrmBleManager?.hrMeasurement?.collectAsState()?.value
+    val activeCooldownSessionId = hrmBleManager?.activeCooldownSessionId?.collectAsState()?.value
+    val lastRecordedSessionId = hrmBleManager?.lastRecordedSessionId?.collectAsState()?.value
 
     val resolvedSessionId = sessionId ?: session?.id ?: if (showCooldown) {
         activeCooldownSessionId
             ?: lastRecordedSessionId
             ?: sessionId
             ?: session?.id
-            ?: polarBleManager?.currentRecordingSessionId
+            ?: hrmBleManager?.currentRecordingSessionId
             ?: latestSummary?.sessionId
     } else null
     val isCooldownActive = showCooldown && managerCooldownActive &&
         resolvedSessionId != null && resolvedSessionId == activeCooldownSessionId
     val isCurrentSession = showCooldown && resolvedSessionId != null &&
-        (resolvedSessionId == lastRecordedSessionId || resolvedSessionId == polarBleManager?.currentRecordingSessionId)
+        (resolvedSessionId == lastRecordedSessionId || resolvedSessionId == hrmBleManager?.currentRecordingSessionId)
     val fallbackSummary = remember(session, resolvedSessionId) {
         session?.takeIf { it.id == resolvedSessionId }?.let { s ->
             if (s.avgHeartRateBpm != null || s.maxHeartRateBpm != null || s.minHeartRateBpm != null ||
                 s.avgRrIntervalMs != null || s.rmssdMs != null || s.hrr60Bpm != null ||
                 s.hrr300Bpm != null || s.maxTorsoPitchDeg != null || s.maxTorsoRollDeg != null) {
-                PolarSessionSummary(
+                HrmSessionSummary(
                     sessionId = s.id,
                     avgHeartRateBpm = s.avgHeartRateBpm,
                     maxHeartRateBpm = s.maxHeartRateBpm,
@@ -106,10 +106,10 @@ fun PolarSessionAnalyticsCard(
                     maxTorsoRollDeg = s.maxTorsoRollDeg,
                 )
             } else null
-        } ?: resolvedSessionId?.let { polarBleManager?.getSessionSummary(it) }
+        } ?: resolvedSessionId?.let { hrmBleManager?.getSessionSummary(it) }
     }
 
-    var persistedSummary by remember(resolvedSessionId) { mutableStateOf<PolarSessionSummary?>(null) }
+    var persistedSummary by remember(resolvedSessionId) { mutableStateOf<HrmSessionSummary?>(null) }
     val summary = if (resolvedSessionId != null && latestSummary?.sessionId == resolvedSessionId) {
         latestSummary
     } else {
@@ -117,7 +117,7 @@ fun PolarSessionAnalyticsCard(
     }
 
     // Historical samples queries for visualizations
-    var beatSamples by remember(resolvedSessionId) { mutableStateOf<List<PolarBeatSample>>(emptyList()) }
+    var beatSamples by remember(resolvedSessionId) { mutableStateOf<List<HrmBeatSample>>(emptyList()) }
     var ecgSegments by remember(resolvedSessionId) { mutableStateOf<List<PolarEcgSegment>>(emptyList()) }
     var metricSamples by remember(resolvedSessionId) { mutableStateOf<List<PolarMetricSample>>(emptyList()) }
 
@@ -125,7 +125,7 @@ fun PolarSessionAnalyticsCard(
         if (resolvedSessionId != null && workoutRepository != null) {
             val savedSession = workoutRepository.getSession(resolvedSessionId)
             persistedSummary = savedSession?.let {
-                PolarSessionSummary(
+                HrmSessionSummary(
                     sessionId = it.id,
                     avgHeartRateBpm = it.avgHeartRateBpm,
                     maxHeartRateBpm = it.maxHeartRateBpm,
@@ -219,7 +219,7 @@ fun PolarSessionAnalyticsCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Favorite,
-                            contentDescription = "Polar H10",
+                            contentDescription = "Heart Rate Sensor",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(18.dp),
                         )
@@ -496,7 +496,7 @@ fun PolarSessionAnalyticsCard(
                                 horizontalArrangement = Arrangement.End,
                             ) {
                                 TextButton(
-                                    onClick = { polarBleManager?.stopCooldown() },
+                                    onClick = { hrmBleManager?.stopCooldown() },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                 ) {
                                     Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -538,7 +538,7 @@ fun PolarSessionAnalyticsCard(
                                     ) {
                                         TextButton(
                                             onClick = {
-                                                polarBleManager?.triggerCooldown(
+                                                hrmBleManager?.triggerCooldown(
                                                     resolvedSessionId,
                                                     forceRestart = true,
                                                 )
@@ -572,7 +572,7 @@ fun PolarSessionAnalyticsCard(
                                     )
                                     FilledTonalButton(
                                         onClick = {
-                                            polarBleManager?.triggerCooldown(
+                                            hrmBleManager?.triggerCooldown(
                                                 resolvedSessionId,
                                                 forceRestart = true,
                                             )
@@ -730,12 +730,12 @@ private fun RecoveryChip(
 }
 
 /**
- * Chart 1 — Continuous HR & Recovery Timeline (`PolarBeatSample`).
+ * Chart 1 — Continuous HR & Recovery Timeline (`HrmBeatSample`).
  * Plots BPM and RMSSD over time with color-coded phase bands and interactive scrubber.
  */
 @Composable
 private fun ContinuousHeartRateTimelineChart(
-    samples: List<PolarBeatSample>,
+    samples: List<HrmBeatSample>,
     modifier: Modifier = Modifier,
 ) {
     val validSamples = remember(samples) {

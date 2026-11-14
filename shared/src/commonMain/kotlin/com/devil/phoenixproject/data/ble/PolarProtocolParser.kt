@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.data.ble
 
-import com.devil.phoenixproject.domain.model.PolarAccSample
-import com.devil.phoenixproject.domain.model.PolarHrMeasurement
+import com.devil.phoenixproject.domain.model.AccSample
+import com.devil.phoenixproject.domain.model.HrMeasurement
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 
 /**
- * Pure byte parsing utility functions for Polar H10 telemetry.
+ * Pure byte parsing utility functions for heart rate sensor telemetry.
  *
  * Implements decoders for:
  * - Heart Rate & RR Intervals (Standard Bluetooth SIG 0x2A37)
@@ -50,7 +50,7 @@ internal fun readSignedBits(data: ByteArray, startByte: Int, bitOffset: Int, bit
 }
 
 /**
- * Parse GATT Heart Rate Measurement (0x2A37) payload into [PolarHrMeasurement].
+ * Parse GATT Heart Rate Measurement (0x2A37) payload into [HrMeasurement].
  *
  * Layout:
  * - Flags (byte 0):
@@ -63,9 +63,9 @@ internal fun readSignedBits(data: ByteArray, startByte: Int, bitOffset: Int, bit
  * - RR intervals (optional): pairs of uint16 LE, units of 1/1024s (converted to ms)
  *
  * @param data The raw byte array received from characteristic 0x2A37.
- * @return Parsed [PolarHrMeasurement] or null if packet is truncated or invalid.
+ * @return Parsed [HrMeasurement] or null if packet is truncated or invalid.
  */
-fun parsePolarHrMeasurement(data: ByteArray): PolarHrMeasurement? {
+fun parseHrMeasurement(data: ByteArray): HrMeasurement? {
     if (data.isEmpty()) return null
 
     val flags = data[0].toInt() and 0xFF
@@ -113,7 +113,7 @@ fun parsePolarHrMeasurement(data: ByteArray): PolarHrMeasurement? {
         }
     }
 
-    return PolarHrMeasurement(
+    return HrMeasurement(
         hr = hr,
         contactDetected = contactDetected,
         energyExpendedKj = energyExpendedKj,
@@ -124,7 +124,7 @@ fun parsePolarHrMeasurement(data: ByteArray): PolarHrMeasurement? {
 /**
  * Parse Battery Level (0x2A19) payload into percentage (0..100).
  */
-fun parsePolarBatteryLevel(data: ByteArray): Int? {
+fun parseBatteryLevel(data: ByteArray): Int? {
     if (data.isEmpty()) return null
     return (data[0].toInt() and 0xFF).coerceIn(0, 100)
 }
@@ -180,13 +180,13 @@ private fun parseAccFrame(data: ByteArray, timestampNs: Long, frameType: Int): P
             0x01 -> 2
             else -> return null
         }
-        val samples = mutableListOf<PolarAccSample>()
+        val samples = mutableListOf<AccSample>()
         var offset = 10
         while (offset + axisByteCount * 3 <= data.size) {
             val x = if (axisByteCount == 1) data[offset].toInt() else getInt16LE(data, offset)
             val y = if (axisByteCount == 1) data[offset + 1].toInt() else getInt16LE(data, offset + 2)
             val z = if (axisByteCount == 1) data[offset + 2].toInt() else getInt16LE(data, offset + 4)
-            samples.add(PolarAccSample(x, y, z))
+            samples.add(AccSample(x, y, z))
             offset += axisByteCount * 3
         }
         PolarPmdMeasurement.Acc(
@@ -200,9 +200,9 @@ private fun parseAccFrame(data: ByteArray, timestampNs: Long, frameType: Int): P
         var currentX = getInt16LE(data, 10)
         var currentY = getInt16LE(data, 12)
         var currentZ = getInt16LE(data, 14)
-        val samples = mutableListOf<PolarAccSample>()
+        val samples = mutableListOf<AccSample>()
         // The baseline sample at index 10..15 is the initial reference sample
-        samples.add(PolarAccSample(currentX, currentY, currentZ))
+        samples.add(AccSample(currentX, currentY, currentZ))
 
         var offset = 16
         while (offset < data.size) {
@@ -221,7 +221,7 @@ private fun parseAccFrame(data: ByteArray, timestampNs: Long, frameType: Int): P
                 bitPos += deltaSizeBits
                 currentZ += readSignedBits(data, offset, bitPos, deltaSizeBits)
                 bitPos += deltaSizeBits
-                samples.add(PolarAccSample(currentX, currentY, currentZ))
+                samples.add(AccSample(currentX, currentY, currentZ))
             }
             offset += blockByteCount
         }

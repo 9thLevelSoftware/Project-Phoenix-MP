@@ -51,13 +51,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.PolarAccSample
-import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.AccSample
+import com.devil.phoenixproject.domain.model.RrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.util.PolarTelemetryUtils
-import com.devil.phoenixproject.util.PolarTelemetryUtils.computeRollingRmssd
+import com.devil.phoenixproject.util.HrmTelemetryUtils
+import com.devil.phoenixproject.util.HrmTelemetryUtils.computeRollingRmssd
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -66,12 +66,12 @@ import kotlin.math.sqrt
 private const val MAX_ECG_DISPLAY_SAMPLES = 260 // ~2 seconds at 130 Hz
 
 @Composable
-fun PolarH10WorkoutStrip(
+fun HrmWorkoutStrip(
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
 ) {
-    if (polarBleManager == null) return
-    val connectionState by polarBleManager.connectionState.collectAsState()
+    if (hrmBleManager == null) return
+    val connectionState by hrmBleManager.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
 
     AnimatedVisibility(
@@ -79,25 +79,25 @@ fun PolarH10WorkoutStrip(
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
     ) {
-        PolarH10WorkoutStripContent(
+        HrmWorkoutStripContent(
             modifier = modifier,
-            polarBleManager = polarBleManager,
+            hrmBleManager = hrmBleManager,
         )
     }
 }
 
 @Composable
-private fun PolarH10WorkoutStripContent(
+private fun HrmWorkoutStripContent(
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager,
+    hrmBleManager: HrmBleManager,
 ) {
     val scope = rememberCoroutineScope()
-    val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
-    val isContactDetected by polarBleManager.isContactDetected.collectAsState()
+    val hrMeasurement by hrmBleManager.hrMeasurement.collectAsState()
+    val isContactDetected by hrmBleManager.isContactDetected.collectAsState()
     val hasContact = hrMeasurement?.contactDetected == true && isContactDetected
 
     // Sliding window of RR beats for RMSSD calculation
-    val recentBeats = remember { mutableStateListOf<PolarRrBeat>() }
+    val recentBeats = remember { mutableStateListOf<RrBeat>() }
     var rollingRmssd by remember { mutableStateOf<Double?>(null) }
     var latestRrMs by remember { mutableStateOf<Double?>(null) }
 
@@ -115,21 +115,21 @@ private fun PolarH10WorkoutStripContent(
     }
 
     // Latest accelerometer sample and filtered posture StateFlows
-    val latestAcc by polarBleManager.latestAcc.collectAsState()
+    val latestAcc by hrmBleManager.latestAcc.collectAsState()
     val latestAccSample = latestAcc?.samples?.lastOrNull()
-    val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
-    val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
-    val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
+    val torsoPitchDeg by hrmBleManager.torsoPitchDeg.collectAsState()
+    val torsoRollDeg by hrmBleManager.torsoRollDeg.collectAsState()
+    val dynamicAccMg by hrmBleManager.dynamicAccMg.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
-            polarBleManager.releaseTelemetryPreviewAsync()
+            hrmBleManager.releaseTelemetryPreviewAsync()
         }
     }
 
     // 2. Stream collectors
     LaunchedEffect(Unit) {
-        polarBleManager.rrBeats.collect { beat ->
+        hrmBleManager.rrBeats.collect { beat ->
             val now = currentTimeMillis()
             latestRrMs = beat.rrIntervalMs
             recentBeats.add(beat)
@@ -142,7 +142,7 @@ private fun PolarH10WorkoutStripContent(
     }
 
     LaunchedEffect(Unit) {
-        polarBleManager.ecgStream.collect { ecg ->
+        hrmBleManager.ecgStream.collect { ecg ->
             ecgSamples.addAll(ecg.samplesMicrovolts)
             while (ecgSamples.size > MAX_ECG_DISPLAY_SAMPLES) {
                 ecgSamples.removeAt(0)
@@ -208,7 +208,7 @@ private fun PolarH10WorkoutStripContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = PolarTelemetryUtils.formatMs(latestRrMs),
+                        text = HrmTelemetryUtils.formatMs(latestRrMs),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -224,7 +224,7 @@ private fun PolarH10WorkoutStripContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = PolarTelemetryUtils.formatMs(rollingRmssd),
+                        text = HrmTelemetryUtils.formatMs(rollingRmssd),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -308,7 +308,7 @@ private fun PolarH10WorkoutStripContent(
                 }
 
                 Surface(
-                    onClick = { polarBleManager.tareCurrentPosture() },
+                    onClick = { hrmBleManager.tareCurrentPosture() },
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),

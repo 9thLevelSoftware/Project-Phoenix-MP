@@ -89,7 +89,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
-import com.devil.phoenixproject.presentation.components.PolarH10SettingsCard
+import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
@@ -1151,8 +1151,8 @@ fun SettingsTab(
             )
         }
 
-        // Polar H10 Heart Rate & Telemetry Sensor
-        PolarH10SettingsCard()
+        // HRM Heart Rate & Telemetry Sensor
+        HrmSensorSettingsCard()
 
         // Developer Tools Section - Material 3 Expressive
         Card(

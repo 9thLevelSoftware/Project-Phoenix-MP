@@ -38,7 +38,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
@@ -46,25 +46,25 @@ import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
 @Composable
-fun PolarH10SettingsCard(
+fun HrmSensorSettingsCard(
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    hrmBleManager: HrmBleManager = koinInject(),
 ) {
     val scope = rememberCoroutineScope()
-    val connectionState by polarBleManager.connectionState.collectAsState()
-    val scannedDevices by polarBleManager.scannedDevices.collectAsState()
-    val batteryLevel by polarBleManager.batteryLevel.collectAsState()
-    val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
+    val connectionState by hrmBleManager.connectionState.collectAsState()
+    val scannedDevices by hrmBleManager.scannedDevices.collectAsState()
+    val batteryLevel by hrmBleManager.batteryLevel.collectAsState()
+    val hrMeasurement by hrmBleManager.hrMeasurement.collectAsState()
 
-    val rememberedAddress by polarBleManager.rememberedAddress.collectAsState()
-    val rememberedName by polarBleManager.rememberedName.collectAsState()
-    val isAutoReconnectEnabled by polarBleManager.isAutoReconnectEnabled.collectAsState()
-    val isRawEcgStorageEnabled by polarBleManager.isRawEcgStorageEnabled.collectAsState()
+    val rememberedAddress by hrmBleManager.rememberedAddress.collectAsState()
+    val rememberedName by hrmBleManager.rememberedName.collectAsState()
+    val isAutoReconnectEnabled by hrmBleManager.isAutoReconnectEnabled.collectAsState()
+    val isRawEcgStorageEnabled by hrmBleManager.isRawEcgStorageEnabled.collectAsState()
 
-    val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
-    val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
-    val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
-    val isContactDetected by polarBleManager.isContactDetected.collectAsState()
+    val torsoPitchDeg by hrmBleManager.torsoPitchDeg.collectAsState()
+    val torsoRollDeg by hrmBleManager.torsoRollDeg.collectAsState()
+    val dynamicAccMg by hrmBleManager.dynamicAccMg.collectAsState()
+    val isContactDetected by hrmBleManager.isContactDetected.collectAsState()
 
 
 
@@ -103,7 +103,7 @@ fun PolarH10SettingsCard(
                     ) {
                         Icon(
                             Icons.Default.Favorite,
-                            contentDescription = "Polar H10",
+                            contentDescription = "Heart Rate Sensor",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(24.dp),
                         )
@@ -111,7 +111,7 @@ fun PolarH10SettingsCard(
                     Spacer(modifier = Modifier.width(Spacing.medium))
                     Column {
                         Text(
-                            "Polar H10 Sensor",
+                            "Heart Rate Sensor",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -138,7 +138,7 @@ fun PolarH10SettingsCard(
                 // Header status badge / action
                 if (connectionState is ConnectionState.Connected) {
                     OutlinedButton(
-                        onClick = { scope.launch { polarBleManager.disconnect() } },
+                        onClick = { scope.launch { hrmBleManager.disconnect() } },
                     ) {
                         Text("Disconnect", color = MaterialTheme.colorScheme.error)
                     }
@@ -161,7 +161,7 @@ fun PolarH10SettingsCard(
                 }
                 Switch(
                     checked = isRawEcgStorageEnabled,
-                    onCheckedChange = polarBleManager::setRawEcgStorageEnabled,
+                    onCheckedChange = hrmBleManager::setRawEcgStorageEnabled,
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -170,7 +170,7 @@ fun PolarH10SettingsCard(
             when (val state = connectionState) {
                 is ConnectionState.Disconnected, is ConnectionState.Error -> {
                     Text(
-                        "Connect your Polar H10 chest strap for real-time heart rate, R-R HRV intervals, 130 Hz ECG trace, and 50 Hz chest acceleration telemetry.",
+                        "Connect your heart rate sensor chest strap for real-time heart rate, R-R HRV intervals, 130 Hz ECG trace, and 50 Hz chest acceleration telemetry.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -199,7 +199,7 @@ fun PolarH10SettingsCard(
                                         color = MaterialTheme.colorScheme.primary,
                                     )
                                     Text(
-                                        rememberedName ?: "Polar H10",
+                                        rememberedName ?: "Heart Rate Sensor",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
@@ -211,12 +211,12 @@ fun PolarH10SettingsCard(
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     OutlinedButton(
-                                        onClick = { polarBleManager.forgetRememberedDevice() },
+                                        onClick = { hrmBleManager.forgetRememberedDevice() },
                                     ) {
                                         Text("Forget", color = MaterialTheme.colorScheme.error)
                                     }
                                     Button(
-                                        onClick = { scope.launch { polarBleManager.autoReconnectIfRemembered() } },
+                                        onClick = { scope.launch { hrmBleManager.autoReconnectIfRemembered() } },
                                     ) {
                                         Text("Reconnect")
                                     }
@@ -227,12 +227,12 @@ fun PolarH10SettingsCard(
                     }
 
                     Button(
-                        onClick = { scope.launch { polarBleManager.startScanning() } },
+                        onClick = { scope.launch { hrmBleManager.startScanning() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Polar H10")
+                        Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Heart Rate Sensors")
                     }
                 }
 
@@ -252,7 +252,7 @@ fun PolarH10SettingsCard(
                             )
                         }
                         OutlinedButton(
-                            onClick = { scope.launch { polarBleManager.stopScanning() } },
+                            onClick = { scope.launch { hrmBleManager.stopScanning() } },
                         ) {
                             Text("Stop")
                         }
@@ -262,7 +262,7 @@ fun PolarH10SettingsCard(
 
                     if (scannedDevices.isEmpty()) {
                         Text(
-                            "Ensure your Polar H10 strap is moistened and worn firmly on your chest.",
+                            "Ensure your heart rate sensor strap is moistened and worn firmly on your chest.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -283,7 +283,7 @@ fun PolarH10SettingsCard(
                                 ) {
                                     Column {
                                         Text(
-                                            device.name.ifBlank { "Polar H10" },
+                                            device.name.ifBlank { "Heart Rate Sensor" },
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
                                         )
@@ -294,7 +294,7 @@ fun PolarH10SettingsCard(
                                         )
                                     }
                                     Button(
-                                        onClick = { scope.launch { polarBleManager.connect(device) } },
+                                        onClick = { scope.launch { hrmBleManager.connect(device) } },
                                     ) {
                                         Text("Connect")
                                     }
@@ -398,7 +398,7 @@ fun PolarH10SettingsCard(
                             }
                             Switch(
                                 checked = isAutoReconnectEnabled,
-                                onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
+                                onCheckedChange = { hrmBleManager.setAutoReconnectEnabled(it) },
                             )
                         }
 
@@ -459,13 +459,13 @@ fun PolarH10SettingsCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             OutlinedButton(
-                                onClick = { polarBleManager.tareCurrentPosture() },
+                                onClick = { hrmBleManager.tareCurrentPosture() },
                                 modifier = Modifier.weight(1f),
                             ) {
                                 Text("Tare Posture")
                             }
                             OutlinedButton(
-                                onClick = { polarBleManager.resetPostureTare() },
+                                onClick = { hrmBleManager.resetPostureTare() },
                                 modifier = Modifier.weight(1f),
                             ) {
                                 Text("Reset Tare")

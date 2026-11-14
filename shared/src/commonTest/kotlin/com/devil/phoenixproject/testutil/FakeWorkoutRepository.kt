@@ -9,7 +9,7 @@ import com.devil.phoenixproject.data.repository.WorkoutCompletionMembership
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -424,8 +424,8 @@ class FakeWorkoutRepository : WorkoutRepository {
         .map { it.exerciseId!! }
         .distinct()
 
-    var polarBeatSamplesBySession: (String) -> List<PolarBeatSample> = { emptyList() }
-    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+    var polarBeatSamplesBySession: (String) -> List<HrmBeatSample> = { emptyList() }
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<HrmBeatSample> =
         polarBeatSamplesBySession(sessionId)
 
     var polarEcgSegmentsBySession: (String) -> List<PolarEcgSegment> = { emptyList() }

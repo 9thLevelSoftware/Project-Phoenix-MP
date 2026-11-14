@@ -4,8 +4,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
-import com.devil.phoenixproject.data.ble.PolarSessionSummary
+import com.devil.phoenixproject.data.ble.HrmBleManager
+import com.devil.phoenixproject.data.ble.HrmSessionSummary
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import io.mockk.coEvery
@@ -32,12 +32,12 @@ class PolarSessionAnalyticsCardRuntimeTest {
         val session = WorkoutSession(id = "without-polar")
         val repository = mockk<WorkoutRepository>(relaxed = true)
         coEvery { repository.getSession(session.id) } returns session
-        val manager = mockk<PolarH10BleManager>(relaxed = true)
+        val manager = mockk<HrmBleManager>(relaxed = true)
         every { manager.connectionState } returns MutableStateFlow(ConnectionState.Connected("Polar", "sensor"))
         every { manager.isCooldownActive } returns MutableStateFlow(true)
         every { manager.cooldownSecondsRemaining } returns MutableStateFlow(240)
         every { manager.cooldownStartHeartRate } returns MutableStateFlow(100)
-        every { manager.latestSessionSummary } returns MutableStateFlow(PolarSessionSummary(sessionId = "other", hrr60Bpm = 20))
+        every { manager.latestSessionSummary } returns MutableStateFlow(HrmSessionSummary(sessionId = "other", hrr60Bpm = 20))
         every { manager.hrMeasurement } returns MutableStateFlow(null)
         every { manager.activeCooldownSessionId } returns MutableStateFlow("other")
         every { manager.lastRecordedSessionId } returns MutableStateFlow("other")
@@ -46,7 +46,7 @@ class PolarSessionAnalyticsCardRuntimeTest {
 
         rule.setContent {
             MaterialTheme {
-                PolarSessionAnalyticsCard(session = session, showCooldown = false, workoutRepository = repository, polarBleManager = manager)
+                SessionHeartRateCard(session = session, showCooldown = false, workoutRepository = repository, hrmBleManager = manager)
             }
         }
         rule.waitForIdle()
@@ -65,7 +65,7 @@ class PolarSessionAnalyticsCardRuntimeTest {
 
         rule.setContent {
             MaterialTheme {
-                PolarSessionAnalyticsCard(session = session, showCooldown = false, workoutRepository = repository)
+                SessionHeartRateCard(session = session, showCooldown = false, workoutRepository = repository)
             }
         }
         rule.waitForIdle()

@@ -4,18 +4,18 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.ScannedDevice
-import com.devil.phoenixproject.data.repository.PolarTelemetryRepository
+import com.devil.phoenixproject.data.repository.HrmTelemetryRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.PolarHrMeasurement
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrMeasurement
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarRecovery
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
-import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.RrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.PolarAccFilter
-import com.devil.phoenixproject.util.PolarTelemetryUtils
+import com.devil.phoenixproject.util.HrmTelemetryUtils
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
@@ -61,9 +61,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 /**
- * Summary metrics for a session recorded by Polar H10.
+ * Summary metrics for a session recorded by a heart rate sensor (HRM).
  */
-data class PolarSessionSummary(
+data class HrmSessionSummary(
     val sessionId: String? = null,
     val avgHeartRateBpm: Int? = null,
     val maxHeartRateBpm: Int? = null,
@@ -77,7 +77,7 @@ data class PolarSessionSummary(
 )
 
 /**
- * Multiplatform BLE Manager for Polar H10 heart rate sensors.
+ * Multiplatform BLE Manager for generic heart rate sensors (HRM).
  *
  * Implements independent connection lifecycle, GATT service discovery,
  * standard Heart Rate (0x180D) and Battery (0x180F) telemetry, and proprietary
@@ -86,9 +86,9 @@ data class PolarSessionSummary(
  * Designed to operate simultaneously alongside [KableBleConnectionManager]
  * without cross-peripheral interference.
  */
-class PolarH10BleManager(
+class HrmBleManager(
     private val settings: Settings? = null,
-    private val telemetryRepository: PolarTelemetryRepository? = null,
+    private val telemetryRepository: HrmTelemetryRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val timeSource: () -> Long = DEFAULT_WALL_CLOCK,
     monotonicTimeSource: (() -> Long)? = null,
@@ -97,18 +97,14 @@ class PolarH10BleManager(
     private val createPeripheral: (Advertisement) -> Peripheral = { Peripheral(it) },
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val log = Logger.withTag("PolarH10BleManager")
+    private val log = Logger.withTag("HrmBleManager")
 
     companion object {
         private val monotonicOrigin = TimeSource.Monotonic.markNow()
         val DEFAULT_MONOTONIC_CLOCK: () -> Long = { monotonicOrigin.elapsedNow().inWholeMilliseconds }
         val DEFAULT_WALL_CLOCK: () -> Long = ::currentTimeMillis
-        const val KEY_POLAR_REMEMBERED_ADDRESS = "polar_h10_remembered_address"
-        const val KEY_POLAR_REMEMBERED_NAME = "polar_h10_remembered_name"
-        const val KEY_POLAR_AUTO_RECONNECT = "polar_h10_auto_reconnect_enabled"
         const val CRITICAL_BATTERY_PERCENTAGE = 5
         const val ECG_RAIL_THRESHOLD_UV = 15_000
-        const val KEY_RAW_ECG_STORAGE = "polar_h10_raw_ecg_storage_enabled"
         const val MAX_RAW_ECG_DURATION_MS = 300_000L
         const val RAW_ECG_RETENTION_DAYS = 30
         const val MAX_STORED_ECG_SEGMENTS = 36_000L
@@ -121,29 +117,32 @@ class PolarH10BleManager(
     private val wallClock: () -> Long = timeSource
 
     // ===== Remembered Device & Auto-Reconnect =====
-    private val _rememberedAddress = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_ADDRESS))
+    // All settings reads/writes/forgets route through [HrmSettingsKeys] (SD4).
+    private val hrmSettings = HrmSettingsKeys(settings)
+
+    private val _rememberedAddress = MutableStateFlow<String?>(hrmSettings.getRememberedAddress())
     val rememberedAddress: StateFlow<String?> = _rememberedAddress.asStateFlow()
 
-    private val _rememberedName = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_NAME))
+    private val _rememberedName = MutableStateFlow<String?>(hrmSettings.getRememberedName())
     val rememberedName: StateFlow<String?> = _rememberedName.asStateFlow()
 
     private val _isAutoReconnectEnabled = MutableStateFlow<Boolean>(
-        settings?.getBoolean(KEY_POLAR_AUTO_RECONNECT, defaultValue = true) ?: true,
+        hrmSettings.getAutoReconnectEnabled(),
     )
     val isAutoReconnectEnabled: StateFlow<Boolean> = _isAutoReconnectEnabled.asStateFlow()
 
     fun setAutoReconnectEnabled(enabled: Boolean) {
-        settings?.putBoolean(KEY_POLAR_AUTO_RECONNECT, enabled)
+        hrmSettings.setAutoReconnectEnabled(enabled)
         _isAutoReconnectEnabled.value = enabled
     }
 
     private val _isRawEcgStorageEnabled = MutableStateFlow(
-        settings?.getBoolean(KEY_RAW_ECG_STORAGE, false) ?: false,
+        hrmSettings.getRawEcgStorageEnabled(),
     )
     val isRawEcgStorageEnabled: StateFlow<Boolean> = _isRawEcgStorageEnabled.asStateFlow()
 
     fun setRawEcgStorageEnabled(enabled: Boolean) {
-        settings?.putBoolean(KEY_RAW_ECG_STORAGE, enabled)
+        hrmSettings.setRawEcgStorageEnabled(enabled)
         sessionLock.withLock {
             _isRawEcgStorageEnabled.value = enabled
             if (!enabled) bufferedEcgSegments.clear()
@@ -151,8 +150,9 @@ class PolarH10BleManager(
     }
 
     fun forgetRememberedDevice() {
-        settings?.remove(KEY_POLAR_REMEMBERED_ADDRESS)
-        settings?.remove(KEY_POLAR_REMEMBERED_NAME)
+        // Clears name/address in BOTH key generations only; the auto-reconnect
+        // and raw-ECG preferences are retained in both (SD4).
+        hrmSettings.forgetRememberedDevice()
         _rememberedAddress.value = null
         _rememberedName.value = null
         reconnectJob?.cancel()
@@ -217,7 +217,7 @@ class PolarH10BleManager(
     private var cooldownStartTimestampMs: Long? = null
     private var lastBeatMonotonicMs: Long? = null
     private var lastHeartRateMonotonicMs: Long? = null
-    private var frozenSessionSummary: PolarSessionSummary? = null
+    private var frozenSessionSummary: HrmSessionSummary? = null
     private var rawEcgStartMs: Long? = null
     private var rawEcgSampleCount = 0
     private val persistenceMutex = Mutex()
@@ -225,13 +225,13 @@ class PolarH10BleManager(
         val sessionId: String,
         val beats: List<BufferedBeatSample> = emptyList(),
         val ecgs: List<BufferedEcgSegment> = emptyList(),
-        val recovery: PolarSessionSummary? = null,
+        val recovery: HrmSessionSummary? = null,
     )
     private val pendingTelemetry = mutableListOf<PendingTelemetry>()
     private data class DetachedRecording(
         val beats: List<BufferedBeatSample>,
         val ecgs: List<BufferedEcgSegment>,
-        val summary: PolarSessionSummary?,
+        val summary: HrmSessionSummary?,
     )
     private val detachedRecordings = mutableMapOf<String, DetachedRecording>()
     private val _telemetryPersistenceError = MutableStateFlow<String?>(null)
@@ -272,8 +272,8 @@ class PolarH10BleManager(
     private val _lastRecordedSessionId = MutableStateFlow<String?>(null)
     val lastRecordedSessionId: StateFlow<String?> = _lastRecordedSessionId.asStateFlow()
 
-    private val _latestSessionSummary = MutableStateFlow<PolarSessionSummary?>(null)
-    val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
+    private val _latestSessionSummary = MutableStateFlow<HrmSessionSummary?>(null)
+    val latestSessionSummary: StateFlow<HrmSessionSummary?> = _latestSessionSummary.asStateFlow()
 
     private val completedCooldownSessionIds = mutableSetOf<String>()
     private var completedCooldownSessionId: String? = null
@@ -337,7 +337,7 @@ class PolarH10BleManager(
         }
     }
 
-    fun freezeSessionRecording(sessionId: String): PolarSessionSummary? = sessionLock.withLock {
+    fun freezeSessionRecording(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         if (sessionId != recordedSessionId) return detachedRecordings[sessionId]?.summary
         if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(sessionId)
         if (!_isCooldownActive.value) activeSessionId = null
@@ -393,7 +393,7 @@ class PolarH10BleManager(
                         repository.saveTelemetry(
                             sessionId = pending.sessionId,
                             beats = pending.beats.map { beat ->
-                                PolarBeatSample(
+                                HrmBeatSample(
                                     id = 0,
                                     sessionId = pending.sessionId,
                                     timestampMs = beat.timestampMs,
@@ -602,7 +602,7 @@ class PolarH10BleManager(
         val rollMax: Double?,
     )
 
-    fun getSessionSummary(sessionId: String): PolarSessionSummary? = sessionLock.withLock {
+    fun getSessionSummary(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         detachedRecordings[sessionId]?.let { return it.summary }
         sessionLock.withLock {
             frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
@@ -623,8 +623,8 @@ class PolarH10BleManager(
         val minHr = snapshot.hrs.minOrNull()
         val validRrs = snapshot.rrs.filter { it in 250.0..2500.0 }
         val avgRr = if (validRrs.isNotEmpty()) validRrs.average().toFloat() else null
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
-        return PolarSessionSummary(
+        val rmssd = HrmTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
+        return HrmSessionSummary(
             sessionId = sessionId,
             avgHeartRateBpm = avgHr,
             maxHeartRateBpm = maxHr,
@@ -655,7 +655,7 @@ class PolarH10BleManager(
         if (connected) {
             wasEverConnected = true
             isExplicitDisconnect = false
-            _connectionState.value = ConnectionState.Connected("Polar H10", "00:11:22:33:44:55")
+            _connectionState.value = ConnectionState.Connected("Heart Rate Sensor", "00:11:22:33:44:55")
         } else {
             wasEverConnected = false
             _connectionState.value = ConnectionState.Disconnected
@@ -707,8 +707,8 @@ class PolarH10BleManager(
     private val _batteryLevel = MutableStateFlow<Int?>(null)
     val batteryLevel: StateFlow<Int?> = _batteryLevel.asStateFlow()
 
-    private val _hrMeasurement = MutableStateFlow<PolarHrMeasurement?>(null)
-    val hrMeasurement: StateFlow<PolarHrMeasurement?> = _hrMeasurement.asStateFlow()
+    private val _hrMeasurement = MutableStateFlow<HrMeasurement?>(null)
+    val hrMeasurement: StateFlow<HrMeasurement?> = _hrMeasurement.asStateFlow()
 
     private val _ecgStream = MutableSharedFlow<PolarPmdMeasurement.Ecg>(
         replay = 0,
@@ -730,12 +730,12 @@ class PolarH10BleManager(
     private val _latestAcc = MutableStateFlow<PolarPmdMeasurement.Acc?>(null)
     val latestAcc: StateFlow<PolarPmdMeasurement.Acc?> = _latestAcc.asStateFlow()
 
-    private val _rrBeats = MutableSharedFlow<PolarRrBeat>(
+    private val _rrBeats = MutableSharedFlow<RrBeat>(
         replay = 0,
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    val rrBeats: SharedFlow<PolarRrBeat> = _rrBeats.asSharedFlow()
+    val rrBeats: SharedFlow<RrBeat> = _rrBeats.asSharedFlow()
 
     // ===== Internal Connection References =====
     @Volatile
@@ -829,10 +829,10 @@ class PolarH10BleManager(
      */
     suspend fun startScanning(): Result<Unit> {
         return try {
-            log.i { "Starting BLE scan for Polar H10 devices" }
+            log.i { "Starting BLE scan for heart rate sensors" }
             logRepo.info(
                 eventType = LogEventType.SCAN_START,
-                message = "[HRM] Scanning for Polar H10 devices",
+                message = "[HRM] Scanning for heart rate sensors",
                 tag = "HRM",
             )
             reconnectJob?.cancel()
@@ -870,10 +870,10 @@ class PolarH10BleManager(
                             }
                     }
                     if (_connectionState.value is ConnectionState.Scanning) {
-                        log.i { "Polar scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)" }
+                        log.i { "HRM scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)" }
                         logRepo.info(
                             eventType = LogEventType.SCAN_STOP,
-                            message = "[HRM] Polar H10 scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)",
+                            message = "[HRM] Scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)",
                             tag = "HRM",
                         )
                         _connectionState.value = ConnectionState.Disconnected
@@ -901,7 +901,7 @@ class PolarH10BleManager(
         if (_connectionState.value is ConnectionState.Scanning) {
             logRepo.info(
                 eventType = LogEventType.SCAN_STOP,
-                message = "[HRM] Polar H10 scan stopped",
+                message = "[HRM] Scan stopped",
                 tag = "HRM",
             )
             _connectionState.value = ConnectionState.Disconnected
@@ -912,7 +912,7 @@ class PolarH10BleManager(
 
     /**
      * Triggers an immediate auto-reconnect attempt unless explicitly disconnected
-     * to a remembered Polar sensor if not already connecting or reconnecting.
+     * to a remembered heart rate sensor if not already connecting or reconnecting.
      */
     fun ensureConnectedOrReconnect() {
         if (isExplicitDisconnect) return
@@ -927,7 +927,7 @@ class PolarH10BleManager(
     }
 
     /**
-     * Auto-reconnect to the remembered Polar H10 if one was previously connected
+     * Auto-reconnect to the remembered heart rate sensor if one was previously connected
      * and auto-reconnect is enabled.
      */
     suspend fun autoReconnectIfRemembered(timeoutMs: Long = 10000L): Result<Unit> {
@@ -942,8 +942,8 @@ class PolarH10BleManager(
             return Result.success(Unit)
         }
         val address = _rememberedAddress.value ?: return Result.success(Unit)
-        val name = _rememberedName.value ?: "Polar H10"
-        log.i { "Attempting auto-reconnect to remembered Polar H10: $name ($address)" }
+        val name = _rememberedName.value ?: "Heart Rate Sensor"
+        log.i { "Attempting auto-reconnect to remembered heart rate sensor: $name ($address)" }
 
         val cachedAdv = cachedAdvertisement(address)
         if (cachedAdv != null) {
@@ -977,21 +977,21 @@ class PolarH10BleManager(
             if (matchedDevice != null) {
                 connect(matchedDevice)
             } else {
-                log.w { "Timed out waiting for remembered Polar H10 ($address)" }
-                Result.failure(IllegalStateException("Timed out waiting for remembered Polar H10"))
+                log.w { "Timed out waiting for remembered heart rate sensor ($address)" }
+                Result.failure(IllegalStateException("Timed out waiting for remembered heart rate sensor"))
             }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
-            log.w { "Auto-reconnect to Polar H10 failed: ${e.message}" }
+            log.w { "Auto-reconnect to heart rate sensor failed: ${e.message}" }
             Result.failure(e)
         }
     }
 
     /**
-     * Connect to the selected Polar H10 device.
+     * Connect to the selected heart rate sensor.
      */
     suspend fun connect(device: ScannedDevice): Result<Unit> {
-        log.i { "Connecting to Polar H10: ${device.name} (${device.address})" }
+        log.i { "Connecting to heart rate sensor: ${device.name} (${device.address})" }
         val currentJob = currentCoroutineContext()[Job]
         if (reconnectJob !== currentJob) {
             reconnectJob?.cancel()
@@ -1004,11 +1004,11 @@ class PolarH10BleManager(
         }
 
         val advertisement = cachedAdvertisement(device.address)
-            ?: return Result.failure(IllegalStateException("Polar device ${device.address} not found in scanned cache"))
+            ?: return Result.failure(IllegalStateException("HRM device ${device.address} not found in scanned cache"))
 
         logRepo.info(
             eventType = LogEventType.CONNECT_START,
-            message = "[HRM] Connecting to Polar H10: ${device.name}",
+            message = "[HRM] Connecting to ${device.name}",
             deviceName = device.name,
             deviceAddress = device.address,
             tag = "HRM",
@@ -1029,7 +1029,7 @@ class PolarH10BleManager(
                         log.d { "Ignoring state change ($state) for stale peripheral $p" }
                         return@collect
                     }
-                    log.d { "Polar H10 state: $state" }
+                    log.d { "HRM state: $state" }
                     when (state) {
                         is State.Connecting -> {
                             _isConnected.value = false
@@ -1044,14 +1044,13 @@ class PolarH10BleManager(
                             )
                             logRepo.info(
                                 eventType = LogEventType.CONNECT_SUCCESS,
-                                message = "[HRM] Connected to Polar H10: ${device.name}",
+                                message = "[HRM] Connected to ${device.name}",
                                 deviceName = device.name,
                                 deviceAddress = device.address,
                                 tag = "HRM",
                             )
                             if (_isAutoReconnectEnabled.value) {
-                                settings?.putString(KEY_POLAR_REMEMBERED_ADDRESS, device.address)
-                                settings?.putString(KEY_POLAR_REMEMBERED_NAME, device.name)
+                                hrmSettings.rememberDevice(device.address, device.name)
                                 _rememberedAddress.value = device.address
                                 _rememberedName.value = device.name
                             }
@@ -1062,7 +1061,7 @@ class PolarH10BleManager(
                         }
                         is State.Disconnected -> {
                             if (!wasEverConnected) {
-                                log.d { "Polar H10 initial state: Disconnected (awaiting connect() call)" }
+                                log.d { "HRM initial state: Disconnected (awaiting connect() call)" }
                                 return@collect
                             }
                             wasEverConnected = false
@@ -1070,7 +1069,7 @@ class PolarH10BleManager(
                             _connectionState.value = ConnectionState.Disconnected
                             logRepo.info(
                                 eventType = LogEventType.DISCONNECT,
-                                message = "[HRM] Polar H10 disconnected",
+                                message = "[HRM] Disconnected",
                                 deviceName = device.name,
                                 deviceAddress = device.address,
                                 tag = "HRM",
@@ -1085,7 +1084,7 @@ class PolarH10BleManager(
                 p.connect()
                 p.state.first { it is State.Connected }
             }
-            check(connected != null) { "Polar H10 connection timed out" }
+            check(connected != null) { "HRM connection timed out" }
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -1095,7 +1094,7 @@ class PolarH10BleManager(
                 _connectionState.value = ConnectionState.Disconnected
             }
             e.rethrowIfCancellation()
-            log.e(e) { "Failed to connect to Polar H10: ${e.message}" }
+            log.e(e) { "Failed to connect to heart rate sensor: ${e.message}" }
             logRepo.error(
                 eventType = LogEventType.CONNECT_FAIL,
                 message = "[HRM] Failed to connect: ${e.message}",
@@ -1110,13 +1109,13 @@ class PolarH10BleManager(
     }
 
     private suspend fun onDeviceConnected(p: Peripheral) {
-        log.i { "Configuring Polar H10 connection parameters and services" }
+        log.i { "Configuring HRM connection parameters and services" }
         startWatchdog()
 
         // 1. Request MTU 232 if supported
         try {
             val mtu = p.requestMtuIfSupported(BleConstants.PolarPmd.DESIRED_PMD_MTU)
-            log.i { "Polar H10 MTU negotiated: $mtu (desired: ${BleConstants.PolarPmd.DESIRED_PMD_MTU})" }
+            log.i { "HRM MTU negotiated: $mtu (desired: ${BleConstants.PolarPmd.DESIRED_PMD_MTU})" }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.w { "MTU negotiation error: ${e.message}" }
@@ -1125,9 +1124,9 @@ class PolarH10BleManager(
         // 2. Read initial battery level (0x2A19)
         try {
             val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
-            val level = parsePolarBatteryLevel(batteryBytes)
+            val level = parseBatteryLevel(batteryBytes)
             _batteryLevel.value = level
-            log.i { "Polar H10 battery level: $level%" }
+            log.i { "HRM battery level: $level%" }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.w { "Could not read Polar battery level: ${e.message}" }
@@ -1143,10 +1142,10 @@ class PolarH10BleManager(
                     }
                     .collect { bytes ->
                         if (p.state.value !is State.Connected) return@collect
-                        parsePolarBatteryLevel(bytes)?.let { level ->
+                        parseBatteryLevel(bytes)?.let { level ->
                             _batteryLevel.value = level
                             if (level <= CRITICAL_BATTERY_PERCENTAGE) {
-                                log.w { "Polar H10 battery critical ($level%). Dropping telemetry." }
+                                log.w { "HRM battery critical ($level%). Dropping telemetry." }
                                 _isContactDetected.value = false
                                 clearCachedTelemetry()
                                 if (_isCooldownActive.value) {
@@ -1193,9 +1192,9 @@ class PolarH10BleManager(
                     }
                     .collect { data ->
                         if (p.state.value !is State.Connected) return@collect
-                        val measurement = parsePolarHrMeasurement(data) ?: return@collect
+                        val measurement = parseHrMeasurement(data) ?: return@collect
                         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-                            log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
+                            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
                             handleNoContact(measurement)
                             return@collect
                         }
@@ -1224,7 +1223,7 @@ class PolarH10BleManager(
         }
     }
 
-    private fun handleNoContact(measurement: PolarHrMeasurement): Unit = sessionLock.withLock {
+    private fun handleNoContact(measurement: HrMeasurement): Unit = sessionLock.withLock {
         val hadContact = previousContactDetected == true
         if (previousContactDetected != false) {
             previousContactDetected = false
@@ -1256,7 +1255,7 @@ class PolarH10BleManager(
      * eliminating packet jitter across connection intervals. Automatically re-anchors
      * if gaps or drift exceed 5 seconds.
      */
-    internal fun processRrIntervals(measurement: PolarHrMeasurement): Unit = sessionLock.withLock {
+    internal fun processRrIntervals(measurement: HrMeasurement): Unit = sessionLock.withLock {
         if (peripheral != null && peripheral?.state?.value !is State.Connected) {
             return
         }
@@ -1308,7 +1307,7 @@ class PolarH10BleManager(
         var runningTs = startingTs
         for (rr in rrs) {
             runningTs += rr.toLong()
-            val beat = PolarRrBeat(
+            val beat = RrBeat(
                 rrIntervalMs = rr,
                 timestampMs = runningTs,
                 hr = measurement.hr,
@@ -1323,7 +1322,7 @@ class PolarH10BleManager(
                     }
                     recentRrs.addLast(beat.rrIntervalMs)
                     if (recentRrs.size > 30) recentRrs.removeFirst()
-                    PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                    HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
                 }
                 sessionLock.withLock {
                     bufferedBeatSamples.add(
@@ -1428,7 +1427,7 @@ class PolarH10BleManager(
             return
         }
         if (!_isContactDetected.value || isBatteryCritical()) {
-            log.w { "Polar H10 PMD packet discarded: zero contact or critical battery (contact=${_isContactDetected.value}, batt=${_batteryLevel.value})" }
+            log.w { "PMD packet discarded: zero contact or critical battery (contact=${_isContactDetected.value}, batt=${_batteryLevel.value})" }
             return
         }
 
@@ -1448,7 +1447,7 @@ class PolarH10BleManager(
                     (samples.isNotEmpty() && samples.all { it == samples[0] })
                 val isRailed = samples.any { abs(it) >= ECG_RAIL_THRESHOLD_UV }
                 if (isFlatlineOrZero || isRailed) {
-                    log.w { "Polar H10 ECG flatline/railing open-circuit noise detected (flatline=$isFlatlineOrZero, railed=$isRailed). Dropping transient frame." }
+                    log.w { "ECG flatline/railing open-circuit noise detected (flatline=$isFlatlineOrZero, railed=$isRailed). Dropping transient frame." }
                     _latestEcg.value = null
                     return
                 }
@@ -1586,9 +1585,9 @@ class PolarH10BleManager(
      * Ensures PMD Control Point and Data notifications are active before sending command.
      */
     suspend fun startEcgStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Starting Polar H10 ECG stream" }
+            log.i { "Starting ECG stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Starting 130Hz ECG stream",
@@ -1602,7 +1601,7 @@ class PolarH10BleManager(
                 measurementType = 0x00,
             ).getOrThrow()
             if (status != 0) {
-                return Result.failure(IllegalStateException("Polar H10 rejected ECG start: status $status"))
+                return Result.failure(IllegalStateException("Sensor rejected ECG start: status $status"))
             }
             _isEcgStreaming.value = true
 
@@ -1646,9 +1645,9 @@ class PolarH10BleManager(
      * Stop the ECG stream.
      */
     suspend fun stopEcgStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Stopping Polar H10 ECG stream" }
+            log.i { "Stopping ECG stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Stopping 130Hz ECG stream",
@@ -1659,7 +1658,7 @@ class PolarH10BleManager(
                 command = BleConstants.PolarPmd.PMD_STOP_ECG_CMD,
                 opCode = 0x03,
                 measurementType = 0x00,
-            ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ECG stop: status $it" } }
+            ).getOrThrow().also { check(it == 0) { "Sensor rejected ECG stop: status $it" } }
             _isEcgStreaming.value = false
             _latestEcg.value = null
             checkAndTeardownPmdObservers()
@@ -1683,9 +1682,9 @@ class PolarH10BleManager(
      * Automatically retries with ascending TLV order or 25Hz/2G fallback if range-first TLV is rejected.
      */
     suspend fun startAccStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Starting Polar H10 ACC stream" }
+            log.i { "Starting ACC stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Starting 50Hz ACC stream",
@@ -1721,13 +1720,13 @@ class PolarH10BleManager(
             }
 
             if (status != 0) {
-                log.e { "Polar H10 rejected ACC start command with status $status" }
+                log.e { "Sensor rejected ACC start command with status $status" }
                 logRepo.error(
                     eventType = LogEventType.COMMAND_RESPONSE,
                     message = "[HRM] ACC start command rejected: status $status",
                     tag = "HRM",
                 )
-                return Result.failure(IllegalStateException("Polar H10 rejected ACC start command: status $status"))
+                return Result.failure(IllegalStateException("Sensor rejected ACC start command: status $status"))
             }
 
             _isAccStreaming.value = true
@@ -1749,9 +1748,9 @@ class PolarH10BleManager(
      * Stop the ACC stream.
      */
     suspend fun stopAccStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Stopping Polar H10 ACC stream" }
+            log.i { "Stopping ACC stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Stopping 50Hz ACC stream",
@@ -1762,7 +1761,7 @@ class PolarH10BleManager(
                 command = BleConstants.PolarPmd.PMD_STOP_ACC_CMD,
                 opCode = 0x03,
                 measurementType = 0x02,
-            ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ACC stop: status $it" } }
+            ).getOrThrow().also { check(it == 0) { "Sensor rejected ACC stop: status $it" } }
             _isAccStreaming.value = false
             _latestAcc.value = null
             accFilter.reset()
@@ -1808,7 +1807,7 @@ class PolarH10BleManager(
         }
         if (lastValidPacketTimestampMs > 0L && (currentTimestampMs - lastValidPacketTimestampMs) > 3000L) {
             if (_hrMeasurement.value != null || _latestEcg.value != null || _latestAcc.value != null || _torsoPitchDeg.value != null) {
-                log.w { "Polar H10 packet absence timeout (>3s). Clearing telemetry streams." }
+                log.w { "HRM packet absence timeout (>3s). Clearing telemetry streams." }
                 logRepo.warning(
                     eventType = LogEventType.DIAGNOSTIC,
                     message = "[HRM] Stream packet absence timeout (>3s). Clearing telemetry.",
@@ -1845,7 +1844,7 @@ class PolarH10BleManager(
     }
 
     /**
-     * Disconnect from the Polar H10 device and clean up all active telemetry streams.
+     * Disconnect from the heart rate sensor and clean up all active telemetry streams.
      */
     suspend fun disconnect() {
         _isConnected.value = false
@@ -1855,10 +1854,10 @@ class PolarH10BleManager(
 
         val p = peripheral
         if (p != null) {
-            log.i { "Disconnecting Polar H10" }
+            log.i { "Disconnecting HRM" }
             logRepo.info(
                 eventType = LogEventType.DISCONNECT,
-                message = "[HRM] Disconnecting Polar H10",
+                message = "[HRM] Disconnecting",
                 tag = "HRM",
             )
             try {

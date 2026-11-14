@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.domain.model
 
-data class PolarBeatSample(
+data class HrmBeatSample(
     val id: Long,
     val sessionId: String,
     val timestampMs: Long,
