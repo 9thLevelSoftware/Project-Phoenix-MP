@@ -13696,7 +13696,7 @@ class ActiveSessionEngine(
             receiptId = receiptId,
             ownerGeneration = ownerGeneration,
             rejectedAtPhase = null,
-            outcome = RestControlOutcome.Applied,
+            outcome = RestControlOutcome.AppliedLocally,
         )
     }
 
@@ -13770,7 +13770,7 @@ class ActiveSessionEngine(
             receiptId = receiptId,
             ownerGeneration = ownerGeneration,
             rejectedAtPhase = null,
-            outcome = RestControlOutcome.Applied,
+            outcome = RestControlOutcome.AppliedLocally,
         )
     }
 
@@ -13836,7 +13836,7 @@ class ActiveSessionEngine(
             receiptId = receiptId,
             ownerGeneration = ownerGeneration,
             rejectedAtPhase = null,
-            outcome = RestControlOutcome.Applied,
+            outcome = RestControlOutcome.AppliedLocally,
         )
     }
 
@@ -13856,17 +13856,20 @@ class ActiveSessionEngine(
                 val owner = restoredRuntimeOwner
                 val document = activeRuntimeDocument
                 val plan = coordinator._restTransitionPlan.value
-                if (owner == null || document == null || plan == null) {
+                val currentTimerOwner = restoredRestTimerOwnerRef.value
+                if (owner == null || document == null || plan == null || currentTimerOwner == null) {
                     rejection = RestControlRejection.StaleOwner
                     rejectedAtPhase = "ownership"
                     return@withLock
                 }
-                if (restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
-                    owner.guardOwner != capturedTimerOwner.guardOwner ||
-                    owner.document != capturedTimerOwner.document ||
-                    owner.documentVersion != capturedTimerOwner.documentVersion ||
-                    document != capturedTimerOwner.document ||
-                    activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
+                if (owner.guardOwner != capturedTimerOwner.guardOwner ||
+                    currentTimerOwner.guardOwner != capturedTimerOwner.guardOwner ||
+                    owner.document != document ||
+                    owner.documentVersion != activeRuntimeDocumentVersion ||
+                    currentTimerOwner.document != document ||
+                    currentTimerOwner.documentVersion != activeRuntimeDocumentVersion ||
+                    currentTimerOwner.transitionId != capturedTimerOwner.transitionId ||
+                    currentTimerOwner.sourceExecutionId != capturedTimerOwner.sourceExecutionId ||
                     plan.transitionId != capturedTimerOwner.transitionId ||
                     plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId
                 ) {
@@ -13894,7 +13897,7 @@ class ActiveSessionEngine(
                         return@withLock
                     }
                 } else {
-                    capturedTimerOwner.monotonicDeadlineElapsedRealtimeMs
+                    currentTimerOwner.monotonicDeadlineElapsedRealtimeMs
                         ?.let { computeRemainingSeconds(it, nowElapsedRealtimeMs) }
                         ?: 0
                 }
@@ -13948,15 +13951,15 @@ class ActiveSessionEngine(
                     originalRestDurationSeconds = updatedOriginalDuration,
                 )
                 val replacementJob = if (updatedMonotonicDeadline != null) {
-                    capturedTimerOwner.job ?: createRestoredRestTimerJob(
-                        guardOwner = capturedTimerOwner.guardOwner,
-                        transitionId = capturedTimerOwner.transitionId,
-                        sourceExecutionId = capturedTimerOwner.sourceExecutionId,
+                    currentTimerOwner.job ?: createRestoredRestTimerJob(
+                        guardOwner = currentTimerOwner.guardOwner,
+                        transitionId = currentTimerOwner.transitionId,
+                        sourceExecutionId = currentTimerOwner.sourceExecutionId,
                     )
                 } else {
                     null
                 }
-                val createdJob = replacementJob?.takeIf { it !== capturedTimerOwner.job }
+                val createdJob = replacementJob?.takeIf { it !== currentTimerOwner.job }
                 logRestControlReceipt(
                     receiptId = receiptId,
                     action = action,
@@ -13972,7 +13975,7 @@ class ActiveSessionEngine(
                                 withContext(NonCancellable) {
                                     val reconciled = reconcileRestoredRestTimerMutationCommitLocked(
                                         owner = owner,
-                                        capturedTimerOwner = capturedTimerOwner,
+                                        capturedTimerOwner = currentTimerOwner,
                                         document = document,
                                         plan = plan,
                                         updatedDocument = updatedDocument,
@@ -14012,11 +14015,11 @@ class ActiveSessionEngine(
                     throw error
                 }
                 if (!committed) {
-                    when (val commitStatus = runtimeDocumentCommitStatus(updatedDocument, document)) {
+                    when (runtimeDocumentCommitStatus(updatedDocument, document)) {
                         RuntimeDocumentCommitStatus.COMMITTED -> {
                             timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                                 owner = owner,
-                                capturedTimerOwner = capturedTimerOwner,
+                                capturedTimerOwner = currentTimerOwner,
                                 document = document,
                                 plan = plan,
                                 updatedDocument = updatedDocument,
@@ -14040,11 +14043,9 @@ class ActiveSessionEngine(
                         -> {
                             createdJob?.cancel()
                             revokeRestoredActionAuthorityLocked(owner.guardOwner)
-                            rejection = if (commitStatus == RuntimeDocumentCommitStatus.DIVERGED) {
-                                RestControlRejection.StaleOwner
-                            } else {
-                                RestControlRejection.PostWriteDrift
-                            }
+                            // DIVERGED and UNKNOWN cannot prove the failed write was refused: the
+                            // candidate may have been replaced or removed after it landed.
+                            rejection = RestControlRejection.PostWriteDrift
                             rejectedAtPhase = "persist"
                         }
                     }
@@ -14052,7 +14053,7 @@ class ActiveSessionEngine(
                 }
                 timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                     owner = owner,
-                    capturedTimerOwner = capturedTimerOwner,
+                    capturedTimerOwner = currentTimerOwner,
                     document = document,
                     plan = plan,
                     updatedDocument = updatedDocument,
@@ -14200,7 +14201,7 @@ class ActiveSessionEngine(
                 if (!replaceRuntimeDocument(updatedDocument)) {
                     // Issue #1360: a committed-but-drifted write must be distinguishable from
                     // a persistence failure that never landed. Never replay or roll back here.
-                    when (val commitStatus = runtimeDocumentCommitStatus(updatedDocument, document)) {
+                    when (runtimeDocumentCommitStatus(updatedDocument, document)) {
                         RuntimeDocumentCommitStatus.COMMITTED -> {
                             rejection = RestControlRejection.PostWriteDrift
                             rejectedAtPhase = "persist"
@@ -14214,11 +14215,9 @@ class ActiveSessionEngine(
                         RuntimeDocumentCommitStatus.DIVERGED,
                         RuntimeDocumentCommitStatus.UNKNOWN,
                         -> {
-                            rejection = if (commitStatus == RuntimeDocumentCommitStatus.DIVERGED) {
-                                RestControlRejection.StaleOwner
-                            } else {
-                                RestControlRejection.PostWriteDrift
-                            }
+                            // A non-prior/non-candidate read cannot establish that the write was
+                            // refused; report uncertainty rather than a definite stale-owner no-op.
+                            rejection = RestControlRejection.PostWriteDrift
                             rejectedAtPhase = "persist"
                         }
                     }
@@ -14264,8 +14263,8 @@ class ActiveSessionEngine(
 
     /**
      * Issue #1360: privacy-safe, ephemeral receipt for one rest-control command. Logs only the
-     * action kind, receipt id, owner-generation counter and phase — never tokens, profile
-     * identifiers, or runtime documents.
+     * action kind, receipt id, stable owner-generation identity (not a document revision) and
+     * phase — never tokens, profile identifiers, or runtime documents.
      */
     private fun logRestControlReceipt(
         receiptId: Long,
@@ -14281,19 +14280,17 @@ class ActiveSessionEngine(
     }
 
     private fun restControlOwnerGeneration(): String =
-        if (coordinator._restTransitionPlan.value != null) {
-            "docV${activeRuntimeDocumentVersion}"
-        } else {
-            "fallback"
-        }
+        restoredRestTimerOwnerRef.value?.let { "restored-${it.guardOwner.id}" }
+            ?: executionGuard.currentLease?.let { "execution-${it.executionId}" }
+            ?: restoredRuntimeOwner?.let { "restored-${it.guardOwner.id}" }
+            ?: "fallback"
 
     /**
-     * Issue #1360: deliver the typed completion for one rest-control command. Called only after
-     * the durable commit/ownership revalidation/publication outcome is known — never on enqueue.
-     * Rejections surface user feedback on the existing coordinator user-feedback plumbing so a
-     * refused mutation can no longer look identical to a dead button; nothing display-side is
-     * changed optimistically. Feedback is emitted without suspending, so this is safe to call
-     * while holding [restTransitionMutex].
+     * Issue #1360: deliver the typed completion for one rest-control command after its outcome is
+     * known — never on enqueue. [RestControlOutcome.Applied] means durable commit, ownership
+     * revalidation and publication succeeded; [RestControlOutcome.AppliedLocally] identifies the
+     * no-plan in-memory fallback. Rejections surface feedback through the existing coordinator
+     * plumbing; feedback is emitted without suspending, so this is safe under [restTransitionMutex].
      */
     private fun publishRestControlCompletion(
         action: String,
@@ -14309,6 +14306,7 @@ class ActiveSessionEngine(
             ownerGeneration = ownerGeneration,
             detail = when (outcome) {
                 RestControlOutcome.Applied -> "outcome=applied"
+                RestControlOutcome.AppliedLocally -> "outcome=applied_locally"
                 is RestControlOutcome.Rejected ->
                     "outcome=rejected reason=${outcome.reason.name} rejected_at=$rejectedAtPhase"
             },

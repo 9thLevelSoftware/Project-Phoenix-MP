@@ -4,25 +4,32 @@ package com.devil.phoenixproject.presentation.manager
  * Issue #1360: internal typed completion contract for rest-timer controls
  * (+30s extension, pause/resume, reset).
  *
- * The public control callbacks remain asynchronous `Unit` commands. An
+ * The public control callbacks remain asynchronous `Unit` commands. A
  * [RestControlOutcome.Applied] completion is delivered only after the durable runtime-document
- * commit, ownership revalidation and state publication all succeeded — never on enqueue. A
- * [RestControlOutcome.Rejected] completion names the exact guard that refused the mutation, so a
- * silently refused control can no longer look identical to a dead button. This contract is
- * observability/error-contract only: it never retries, rolls back, or applies display-only
- * optimistic state.
+ * commit, ownership revalidation and state publication all succeeded — never on enqueue. The
+ * [RestControlOutcome.AppliedLocally] completion distinguishes the legacy no-plan fallback, which
+ * mutates in-memory timer state without a durable runtime-document write. A
+ * [RestControlOutcome.Rejected] completion names the exact guard or uncertain post-write state;
+ * these outcomes never retry, roll back, or apply display-only optimistic state.
  */
 internal sealed interface RestControlOutcome {
     /** The mutation was durably committed, revalidated and published. */
     data object Applied : RestControlOutcome
 
-    /** The mutation was refused; [reason] names the guard that refused it. */
+    /**
+     * The legacy no-plan fallback changed only the in-memory timer state; no durable write was
+     * attempted. This is not evidence that the runtime document was committed.
+     */
+    data object AppliedLocally : RestControlOutcome
+
+    /** The mutation was refused or its authority was lost; [reason] identifies the outcome. */
     data class Rejected(val reason: RestControlRejection) : RestControlOutcome
 }
 
 /**
- * Reason a rest-control mutation was refused. Mirrors the guard classes that previously
- * early-returned silently inside [ActiveSessionEngine].
+ * Refusal or uncertain post-write status for a rest-control mutation. Mirrors the guard and
+ * commit-verification outcomes that previously early-returned silently inside
+ * [ActiveSessionEngine].
  */
 internal enum class RestControlRejection {
     /** The command arrived outside an active rest countdown. */
@@ -42,10 +49,11 @@ internal enum class RestControlRejection {
     PersistenceFailed,
 
     /**
-     * The durable write landed (or may have landed) but ownership/publication drifted before
-     * completion (commit status COMMITTED-without-publication or UNKNOWN). Kept distinct from
-     * [PersistenceFailed]: a possibly-committed +30/pause must never be blindly retried or
-     * rolled back.
+     * The write may have landed but ownership/publication drifted before completion (commit
+     * status COMMITTED-without-publication, DIVERGED, or UNKNOWN). DIVERGED is not proof of a
+     * refused write: the candidate may have been changed or removed after commit. Kept distinct
+     * from [PersistenceFailed], this uncertain mutation must never be blindly retried or rolled
+     * back.
      */
     PostWriteDrift,
 }
@@ -59,8 +67,8 @@ internal object RestControlActions {
 
 /**
  * Ephemeral, privacy-safe completion event for one rest-control command. Carries the action
- * kind, receipt id, owner-generation counter and the phase a rejection happened at — never
- * tokens, profile identifiers, or runtime documents.
+ * kind, receipt id, stable owner-generation identity (not a document revision) and the phase a
+ * rejection happened at — never tokens, profile identifiers, or runtime documents.
  */
 internal data class RestControlCompletion(
     val action: String,
@@ -74,7 +82,7 @@ internal data class RestControlCompletion(
  * Canonical feedback strings for rest-control rejections, emitted on
  * `WorkoutCoordinator._userFeedbackEvents` (the existing coordinator user-feedback plumbing).
  * The phone UI localizes these exact strings via its feedback message map; the English text is
- * the wire contract. These messages state failure only — never implied success.
+ * the wire contract. Known rejections state failure; post-write drift explicitly remains uncertain.
  */
 internal object RestControlFeedback {
     const val NOT_RESTING = "Rest timer isn't active right now."

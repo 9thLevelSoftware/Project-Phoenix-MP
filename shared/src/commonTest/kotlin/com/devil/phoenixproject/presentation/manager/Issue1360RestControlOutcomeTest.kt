@@ -8,6 +8,7 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -23,10 +24,11 @@ import kotlinx.coroutines.test.runTest
  * Issue #1360: observability/error-contract tests for the rest-control outcome contract.
  *
  * These tests verify that every rest-control command (+30s, pause, reset) delivers exactly one
- * typed Applied/Rejected completion after the durable commit/revalidation/publication outcome is
- * known, that rejections surface user feedback instead of looking like dead buttons, and that
- * committed-but-drifted writes are reported distinctly from persistence failures that never
- * landed. They do NOT claim native acceptance for the reported defects.
+ * typed Applied/AppliedLocally/Rejected completion: plan-owned Applied follows durable commit,
+ * revalidation and publication, while the no-plan fallback is explicitly non-durable. Rejections
+ * surface feedback instead of looking like dead buttons, and committed-but-drifted writes remain
+ * distinct from persistence failures that never landed. They do NOT claim native acceptance for
+ * the reported defects.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class Issue1360RestControlOutcomeTest {
@@ -81,6 +83,134 @@ class Issue1360RestControlOutcomeTest {
             assertTrue(paused.isRestPaused)
             assertEquals(paused, committedRuntime(harness, paused))
         } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun fallbackExtend_reportsLocalApplicationWithoutDurableCommit() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareTutRest(harness)
+            val before = runtime(harness)
+            val remainingBefore = harness.coordinator._restSecondsRemaining.value
+            harness.coordinator._restTransitionPlan.value = null
+            val completions = collectCompletions(harness)
+            val feedback = collectFeedback(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            assertEquals(1, completions.size)
+            assertEquals(RestControlActions.EXTEND_REST, completions.single().action)
+            assertEquals(RestControlOutcome.AppliedLocally, completions.single().outcome)
+            assertEquals(emptyList(), feedback)
+            assertEquals(replacementsBefore, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(before, committedRuntime(harness, before))
+            assertEquals(before.originalRestDurationSeconds + 15, harness.coordinator._restOriginalDuration.value)
+            assertEquals(remainingBefore + 15, harness.coordinator._restSecondsRemaining.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun fallbackPause_reportsLocalApplicationWithoutDurableCommit() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareTutRest(harness)
+            val before = runtime(harness)
+            harness.coordinator._restTransitionPlan.value = null
+            val completions = collectCompletions(harness)
+            val feedback = collectFeedback(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+
+            assertEquals(1, completions.size)
+            assertEquals(RestControlActions.TOGGLE_REST_PAUSE, completions.single().action)
+            assertEquals(RestControlOutcome.AppliedLocally, completions.single().outcome)
+            assertEquals(emptyList(), feedback)
+            assertEquals(replacementsBefore, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(before, committedRuntime(harness, before))
+            assertTrue(harness.coordinator.isRestPaused.value)
+            assertTrue(resting(harness).restSecondsRemaining >= 0)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun fallbackReset_reportsLocalApplicationWithoutDurableCommit() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareTutRest(harness)
+            val before = runtime(harness)
+            harness.coordinator._restTransitionPlan.value = null
+            harness.dwsm.extendRestTime(15)
+            harness.dwsm.toggleRestPause()
+            val completions = collectCompletions(harness)
+            val feedback = collectFeedback(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.resetRestTimer()
+            runCurrent()
+
+            assertEquals(1, completions.size)
+            assertEquals(RestControlActions.RESET_REST_TIMER, completions.single().action)
+            assertEquals(RestControlOutcome.AppliedLocally, completions.single().outcome)
+            assertEquals(emptyList(), feedback)
+            assertEquals(replacementsBefore, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(before, committedRuntime(harness, before))
+            assertFalse(harness.coordinator.isRestPaused.value)
+            assertEquals(before.originalRestDurationSeconds + 15, harness.coordinator._restSecondsRemaining.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun extendRest_divergedAfterFailedReplace_reportsUncertainPostWriteDrift() = runTest {
+        val harness = DWSMTestHarness(this)
+        var divergedDocument: ActiveWorkoutRuntimeDocument? = null
+        try {
+            prepareTutRest(harness)
+            val before = runtime(harness)
+            val remainingBefore = resting(harness).restSecondsRemaining
+            val completions = collectCompletions(harness)
+            val feedback = collectFeedback(harness)
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = { candidate ->
+                val divergedDuration = candidate.originalRestDurationSeconds + 1
+                divergedDocument = candidate.copy(
+                    restTransitionPlan = assertNotNull(candidate.restTransitionPlan)
+                        .withRestDurationSeconds(divergedDuration),
+                    originalRestDurationSeconds = divergedDuration,
+                )
+                harness.fakeActiveWorkoutRuntimeRepository.replacePreservingRevisionTimestamp(
+                    profileId = candidate.profileId,
+                    routineSessionId = candidate.routineSessionId,
+                    document = assertNotNull(divergedDocument),
+                )
+                throw IllegalStateException("test replacement changed after commit")
+            }
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            assertEquals(1, completions.size)
+            val rejection = assertIs<RestControlOutcome.Rejected>(completions.single().outcome)
+            assertEquals(RestControlRejection.PostWriteDrift, rejection.reason)
+            assertEquals("persist", completions.single().rejectedAtPhase)
+            assertEquals(listOf(RestControlFeedback.POST_WRITE_DRIFT), feedback)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(assertNotNull(divergedDocument), committedRuntime(harness, before))
+            assertEquals(before, runtime(harness))
+            assertEquals(remainingBefore, resting(harness).restSecondsRemaining)
+        } finally {
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
             harness.cleanup()
         }
     }
