@@ -259,6 +259,8 @@ private object AndroidCueResources {
         HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock, // Issue #611
         HapticEvent.WARMUP_TO_WORKING to beepBoop,
         HapticEvent.VELOCITY_THRESHOLD_REACHED to boopBeepBeep,
+        // Issue #1392: power-loss near-limit cue (reuses existing beepboop asset)
+        HapticEvent.POWER_NEAR_LIMIT to beepBoop,
     )
 
     val badgeCues: List<AndroidCueResource> = listOf(
@@ -525,6 +527,16 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             VibrationEffect.createWaveform(
                 longArrayOf(0, 120, 80, 150),
                 intArrayOf(0, 255, 0, 255),
+                -1,
+            )
+        }
+
+        // Issue #1392: power-loss near-limit cue — double medium pulse, distinct
+        // from the velocity-threshold alert's double heavy pulse.
+        is HapticEvent.POWER_NEAR_LIMIT -> {
+            VibrationEffect.createWaveform(
+                longArrayOf(0, 90, 60, 130),
+                intArrayOf(0, 160, 0, 190),
                 -1,
             )
         }

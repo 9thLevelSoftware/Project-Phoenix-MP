@@ -81,7 +81,7 @@ class PowerLossAcquisitionTest {
     }
 
     @Test
-    fun `gap, stale, rejected, and overflow contamination are enumerable and reject the window`() {
+    fun `gap stale rejected and overflow contamination are enumerable and reject the window`() {
         val gap = MeanConcentricPower.compute(
             listOf(sample(), sample(ts = 1_010L, quality = SampleQualityMarkers(gapBefore = true)), sample(ts = 1_020L)),
         )

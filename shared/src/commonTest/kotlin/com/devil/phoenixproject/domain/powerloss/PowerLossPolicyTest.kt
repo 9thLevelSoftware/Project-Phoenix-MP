@@ -60,7 +60,7 @@ class PowerLossPolicyTest {
     // ===== Warmup exclusion =====
 
     @Test
-    fun `warmup observations never establish reference, tally, or trigger`() {
+    fun `warmup observations never establish reference or tally or trigger`() {
         val s1 = feed(observation = obs(0, mcp = 10f, warmup = true))
         assertTrue(s1.decision is PowerLossDecision.Continue)
         assertNull(s1.state.reference)
@@ -207,7 +207,7 @@ class PowerLossPolicyTest {
     }
 
     @Test
-    fun `trusted short ROM with null MCP qualifies (SD1)`() {
+    fun `trusted short ROM with null MCP qualifies per SD1`() {
         val s1 = feed(observation = obs(1, mcp = 64f))
         val s2 = feed(
             state = s1.state,
@@ -247,7 +247,7 @@ class PowerLossPolicyTest {
     }
 
     @Test
-    fun `unknown ROM never promotes the reference (SD3)`() {
+    fun `unknown ROM never promotes the reference per SD3`() {
         val s1 = feed(observation = obs(1, mcp = 64f))
         // Rep 2 has better power but an unknown ROM window: reference must not upgrade.
         val s2 = feed(

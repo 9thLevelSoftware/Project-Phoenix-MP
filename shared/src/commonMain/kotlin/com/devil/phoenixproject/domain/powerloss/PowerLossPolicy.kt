@@ -154,7 +154,7 @@ data class PowerLossStep(
 object PowerLossPolicy {
 
     /** Short-ROM bound: strictly below 85% of the reference ROM is short (equality is not). */
-    const val SHORT_ROM_FRACTION = 0.85f
+    const val SHORT_ROM_FRACTION = 0.85
 
     /** SD1 guard: ≥2 working reps before any fatigue trigger (earliest 2nd working attempt). */
     const val MIN_ATTEMPTS_FOR_TRIGGER = 2
