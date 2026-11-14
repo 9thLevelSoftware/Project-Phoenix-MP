@@ -62,6 +62,60 @@ class FakeExerciseRepository : ExerciseRepository {
 
     override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = images[exerciseId] ?: emptyList()
 
+    // ========== Exercise Media Rows (issue #1358, SD3/SD4) ==========
+
+    private var nextImageId = 1L
+    var applyMediaDeltaResult: Result<Unit>? = null // test seam: inject row-transaction failure
+
+    override suspend fun addImage(exerciseId: String, url: String, sortOrder: Int): Result<Unit> {
+        val row = ExerciseImageEntity(
+            id = nextImageId++,
+            exerciseId = exerciseId,
+            url = url,
+            sortOrder = sortOrder,
+        )
+        images[exerciseId] = (images[exerciseId] ?: emptyList()) + row
+        return Result.success(Unit)
+    }
+
+    override suspend fun removeImage(imageId: Long): Result<Unit> {
+        for ((key, rows) in images) {
+            val remaining = rows.filterNot { it.id == imageId }
+            if (remaining.size != rows.size) {
+                images[key] = remaining
+                return Result.success(Unit)
+            }
+        }
+        return Result.failure(IllegalArgumentException("Image row not found: $imageId"))
+    }
+
+    override suspend fun getImageCount(exerciseId: String): Int = images[exerciseId]?.size ?: 0
+
+    override suspend fun applyMediaDelta(
+        exerciseId: String,
+        additionUrls: List<String>,
+        removalIds: List<Long>,
+    ): Result<Unit> {
+        applyMediaDeltaResult?.let { return it }
+        val existing = images[exerciseId] ?: emptyList()
+        val kept = existing.filterNot { it.id in removalIds }
+        var nextSort = kept.maxOfOrNull { it.sortOrder }?.plus(1) ?: 0
+        val added = additionUrls.map { url ->
+            ExerciseImageEntity(
+                id = nextImageId++,
+                exerciseId = exerciseId,
+                url = url,
+                sortOrder = nextSort++,
+            )
+        }
+        images[exerciseId] = kept + added
+        return Result.success(Unit)
+    }
+
+    override suspend fun getAllExerciseIds(): List<String> = exercises.keys.toList()
+
+    override suspend fun getAllImageUrls(): List<String> = images.values.flatten().map { it.url }
+
     override suspend fun importExercises(): Result<Unit> = importResult
 
     override suspend fun updateFromWger(): Result<Int> = updateFromWgerResult

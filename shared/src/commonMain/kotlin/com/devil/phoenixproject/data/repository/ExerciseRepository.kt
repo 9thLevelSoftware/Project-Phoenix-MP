@@ -53,6 +53,48 @@ interface ExerciseRepository {
      */
     suspend fun getImages(exerciseId: String): List<ExerciseImageEntity>
 
+    // ========== Exercise Media Rows (issue #1358, SD4) ==========
+    // Row-level only: these methods never reference files, paths, or any
+    // platform media type. The file store is a separate phoneMain collaborator.
+
+    /**
+     * Add one image row for an exercise.
+     * @param url Row value (a local app-private file path for user photos)
+     */
+    suspend fun addImage(exerciseId: String, url: String, sortOrder: Int): Result<Unit>
+
+    /**
+     * Remove exactly the image row with this id (SD3 removal identity).
+     */
+    suspend fun removeImage(imageId: Long): Result<Unit>
+
+    /**
+     * Number of image rows currently attached to [exerciseId].
+     */
+    suspend fun getImageCount(exerciseId: String): Int
+
+    /**
+     * Apply additions and removals in ONE transaction (SD3): all succeed or
+     * nothing changes. [additionUrls] are inserted after existing rows in order;
+     * [removalIds] are deleted by row id.
+     */
+    suspend fun applyMediaDelta(
+        exerciseId: String,
+        additionUrls: List<String>,
+        removalIds: List<Long>,
+    ): Result<Unit>
+
+    /**
+     * All exercise ids with a row (including soft-deleted rows — conservative
+     * input to the phone-only media reconciler, SD8).
+     */
+    suspend fun getAllExerciseIds(): List<String>
+
+    /**
+     * Every `ExerciseImage.url` value (input to the phone-only reconciler, SD8).
+     */
+    suspend fun getAllImageUrls(): List<String>
+
     /**
      * Import exercises from platform-specific source (e.g., assets, bundle)
      * Should only import if the database is empty

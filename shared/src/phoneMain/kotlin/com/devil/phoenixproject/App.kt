@@ -56,6 +56,7 @@ import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import com.devil.phoenixproject.util.CrashLog
 import com.devil.phoenixproject.util.CrashReportAnswer
 import com.devil.phoenixproject.util.deleteDatabaseExportArchive
+import com.devil.phoenixproject.data.media.ExerciseMediaReconciler
 import com.devil.phoenixproject.util.shareDatabaseFiles
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -480,6 +481,24 @@ fun AppContent(
     // Startup succeeded, so a database export made from the failure screen is no longer needed.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { deleteDatabaseExportArchive() }
+    }
+
+    // Issue #1358 (SD8): phone-only, reference-aware startup media reconciliation.
+    // Silent, non-blocking, never throws (ExerciseMediaReconciler catches all):
+    // removes orphan exercise dirs, abandoned staging dirs and unreferenced
+    // files inside live dirs; preserves referenced files and active sessions.
+    // No commonMain sweep and no tvOS stub exist — media is phone-only.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) {
+            try {
+                ExerciseMediaReconciler(
+                    repository = KoinPlatform.getKoin().get(),
+                    mediaStore = KoinPlatform.getKoin().get(),
+                ).reconcile()
+            } catch (e: Exception) {
+                // Startup must never fail or block on media cleanup.
+            }
+        }
     }
 
     // Initial ready-startup Intervals recovery (issue #1384 P3): runs once, when the startup

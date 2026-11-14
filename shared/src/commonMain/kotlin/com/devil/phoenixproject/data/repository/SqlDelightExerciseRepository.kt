@@ -130,6 +130,70 @@ class SqlDelightExerciseRepository(
         }
     }
 
+    // ========== Exercise Media Rows (issue #1358, SD3/SD4) ==========
+    // Row-level only: never touches files, paths, or platform media types (F1).
+
+    override suspend fun addImage(exerciseId: String, url: String, sortOrder: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                queries.insertImage(exerciseId, url, sortOrder.toLong())
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Logger.e(e) { "Failed to add image row for $exerciseId" }
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun removeImage(imageId: Long): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                queries.deleteImageById(imageId)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Logger.e(e) { "Failed to delete image row $imageId" }
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun getImageCount(exerciseId: String): Int = withContext(Dispatchers.IO) {
+        queries.selectImagesByExercise(exerciseId).executeAsList().size
+    }
+
+    override suspend fun applyMediaDelta(
+        exerciseId: String,
+        additionUrls: List<String>,
+        removalIds: List<Long>,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            // SD3: additions and removals apply in ONE transaction — a real SQL
+            // failure anywhere (FK violation, closed driver, ...) rolls the whole
+            // batch back; rows are never partially mutated.
+            queries.transaction {
+                removalIds.forEach { queries.deleteImageById(it) }
+                var nextSort = queries.selectImagesByExercise(exerciseId)
+                    .executeAsList()
+                    .maxOfOrNull { it.sortOrder }
+                    ?.plus(1L) ?: 0L
+                additionUrls.forEach { url ->
+                    queries.insertImage(exerciseId, url, nextSort)
+                    nextSort += 1L
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Logger.e(e) { "Failed media delta for $exerciseId" }
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getAllExerciseIds(): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllExerciseIds().executeAsList()
+    }
+
+    override suspend fun getAllImageUrls(): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllImageUrls().executeAsList()
+    }
+
     override suspend fun importExercises(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val currentSource = preferencesManager.getExerciseCatalogSource()

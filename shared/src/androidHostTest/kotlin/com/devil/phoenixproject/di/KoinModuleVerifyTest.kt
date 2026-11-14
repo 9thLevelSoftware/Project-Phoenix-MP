@@ -40,6 +40,8 @@ class KoinModuleVerifyTest {
                 HealthWorkoutWriter::class,
                 WorkoutServiceController::class,
                 CoroutineScope::class,
+                // Issue #1358: platform-provided exercise media store (phoneMain)
+                com.devil.phoenixproject.data.media.ExerciseMediaStore::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
                 // Function-typed collaborators of ComputeVelocityOneRepMaxUseCase (issue #517):

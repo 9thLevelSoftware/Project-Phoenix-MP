@@ -1053,4 +1053,33 @@
     <string name="intervals_reason_no_remote_match">No matching activity found</string>
     <string name="intervals_reason_multiple_remote_matches">More than one matching activity found</string>
     <string name="intervals_reason_suppressed_by_pause">Paused</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="media_photos_count">Photos · %1$d of %2$d</string>
+    <string name="media_add_photos">Add photos</string>
+    <string name="media_photos_helper">Up to 6 photos · 10 MB each</string>
+    <string name="media_photos_privacy_note">Copies are stored privately on this device. Your originals stay unchanged.</string>
+    <string name="media_flipbook_note">In workouts, up to 2 photos are shown in rotation.</string>
+    <string name="media_preference_off_notice">Exercise Demos is off. Enable it in Settings to add or view photos.</string>
+    <string name="media_copying_progress">Copying photos… %1$d of %2$d</string>
+    <string name="media_photo_badge">Photo</string>
+    <string name="media_preview_title">Photo %1$d of %2$d</string>
+    <string name="media_preview_close">Close</string>
+    <string name="media_preview_previous">Previous</string>
+    <string name="media_preview_next">Next</string>
+    <string name="media_remove_photo">Remove photo</string>
+    <string name="media_remove_confirm_title">Remove this photo?</string>
+    <string name="media_remove_confirm_message">Save to remove this copy from the exercise. Your original stays unchanged.</string>
+    <string name="media_removal_queued">Removal queued. Save to apply.</string>
+    <string name="media_error_too_many">No photos added: up to 6 photos per exercise.</string>
+    <string name="media_error_too_large">No photos added: %1$s is over 10 MB.</string>
+    <string name="media_error_unsupported">No photos added: %1$s is not a supported image.</string>
+    <string name="media_error_unreadable">No photos added: %1$s could not be read.</string>
+    <string name="media_error_generic">No photos added. Try again.</string>
+    <string name="media_save_media_failed">Exercise saved; photos could not be saved. Retry adding photos.</string>
+    <string name="media_cleanup_pending">Some local copies couldn't be removed. Phoenix will retry cleanup.</string>
+    <string name="media_delete_cleanup_transient">Exercise deleted. Cleaning up local photos…</string>
+    <string name="media_save_failed">Could not save the exercise. Try again.</string>
+    <string name="media_delete_failed">Could not delete the exercise. Try again.</string>
+    <string name="delete_exercise_media_message">Delete this exercise and its attached photos? Your originals stay unchanged.</string>
+    <string name="settings_exercise_demos_photos_note">Exercise Demos also controls photos you attach to custom exercises.</string>
 </resources>
