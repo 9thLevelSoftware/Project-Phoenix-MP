@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.first
@@ -817,7 +818,13 @@ class PolarH10BleManager(
     private var lastBeatTimestampMs: Long? = null
 
     /**
-     * Start scanning for Polar H10 devices (by name prefix or Heart Rate 0x180D UUID).
+     * Start scanning for heart-rate sensors: advertisers of the Bluetooth SIG
+     * standard Heart Rate Service (0x180D) — including unnamed ones, because
+     * 0x180D is a vendor-neutral standard service that identifies a heart-rate
+     * broadcaster (any compliant Garmin/Wahoo/Polar/etc. sensor in broadcast
+     * mode) — plus devices matching the bounded HRM name allow-list
+     * ([classifyHrmAdvertisement]). Non-HR advertisements (e.g. NUS-only
+     * machine trainers) are rejected.
      * Automatically stops when [BleConstants.SCAN_TIMEOUT_MS] elapses.
      */
     suspend fun startScanning(): Result<Unit> {
@@ -843,11 +850,11 @@ class PolarH10BleManager(
                 try {
                     withTimeoutOrNull(BleConstants.SCAN_TIMEOUT_MS) {
                         advertisements()
-                            .filter { adv -> isPolarH10Advertisement(adv) }
-                            .collect { adv ->
+                            .mapNotNull { adv -> classifyHrmAdvertisement(adv)?.let { adv to it } }
+                            .collect { (adv, classification) ->
                                 val identifier = adv.identifier.toString()
                                 advertisementLock.withLock { discoveredAdvertisements[identifier] = adv }
-                                val name = adv.name ?: "Polar H10"
+                                val name = classification.displayName
                                 val scanned = ScannedDevice(name = name, address = identifier, rssi = adv.rssi)
 
                                 val updated = currentDevices.toMutableList()
@@ -952,7 +959,7 @@ class PolarH10BleManager(
                 var found: ScannedDevice? = null
                 try {
                     advertisements()
-                        .filter { isPolarH10Advertisement(it) }
+                        .filter { classifyHrmAdvertisement(it) != null }
                         .collect { adv ->
                             val id = adv.identifier.toString()
                             advertisementLock.withLock { discoveredAdvertisements[id] = adv }
@@ -1108,8 +1115,8 @@ class PolarH10BleManager(
 
         // 1. Request MTU 232 if supported
         try {
-            val mtu = p.requestMtuIfSupported(BleConstants.Polar.DESIRED_PMD_MTU)
-            log.i { "Polar H10 MTU negotiated: $mtu (desired: ${BleConstants.Polar.DESIRED_PMD_MTU})" }
+            val mtu = p.requestMtuIfSupported(BleConstants.PolarPmd.DESIRED_PMD_MTU)
+            log.i { "Polar H10 MTU negotiated: $mtu (desired: ${BleConstants.PolarPmd.DESIRED_PMD_MTU})" }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.w { "MTU negotiation error: ${e.message}" }
@@ -1117,7 +1124,7 @@ class PolarH10BleManager(
 
         // 2. Read initial battery level (0x2A19)
         try {
-            val batteryBytes = p.read(BleConstants.Polar.batteryLevelCharacteristic)
+            val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
             val level = parsePolarBatteryLevel(batteryBytes)
             _batteryLevel.value = level
             log.i { "Polar H10 battery level: $level%" }
@@ -1129,7 +1136,7 @@ class PolarH10BleManager(
         batteryObserveJob?.cancel()
         batteryObserveJob = scope.launch {
             try {
-                p.observe(BleConstants.Polar.batteryLevelCharacteristic)
+                p.observe(BleConstants.Hrm.batteryLevelCharacteristic)
                     .catch { e ->
                         e.rethrowIfCancellation()
                         log.d { "Battery notification non-fatal: ${e.message}" }
@@ -1179,7 +1186,7 @@ class PolarH10BleManager(
                     message = "[HRM] Subscribed to Polar HR & RR notifications (0x2A37)",
                     tag = "HRM",
                 )
-                p.observe(BleConstants.Polar.hrMeasurementCharacteristic)
+                p.observe(BleConstants.Hrm.hrMeasurementCharacteristic)
                     .catch { e ->
                         e.rethrowIfCancellation()
                         log.e { "Polar HR observation error: ${e.message}" }
@@ -1353,7 +1360,7 @@ class PolarH10BleManager(
         // 1. Subscribe to PMD Control Point (FB005C81)
         pmdControlPointJob = scope.launch {
             try {
-                p.observe(BleConstants.Polar.pmdControlPointCharacteristic, onSubscription = {
+                p.observe(BleConstants.PolarPmd.pmdControlPointCharacteristic, onSubscription = {
                     log.i { "PMD Control Point (FB005C81) subscribed" }
                     cpSubscribed.complete(Unit)
                 })
@@ -1377,7 +1384,7 @@ class PolarH10BleManager(
         // 2. Subscribe to PMD Data (FB005C82)
         pmdDataJob = scope.launch {
             try {
-                p.observe(BleConstants.Polar.pmdDataCharacteristic, onSubscription = {
+                p.observe(BleConstants.PolarPmd.pmdDataCharacteristic, onSubscription = {
                     log.i { "PMD Data (FB005C82) subscribed" }
                     dataSubscribed.complete(Unit)
                 })
@@ -1537,7 +1544,7 @@ class PolarH10BleManager(
 
         try {
             p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
+                characteristic = BleConstants.PolarPmd.pmdControlPointCharacteristic,
                 data = command,
                 writeType = WriteType.WithResponse,
             )
@@ -1590,7 +1597,7 @@ class PolarH10BleManager(
             hasReceivedFirstEcgPacket = false
             val status = sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_START_ECG_CMD,
+                command = BleConstants.PolarPmd.PMD_START_ECG_CMD,
                 opCode = 0x02,
                 measurementType = 0x00,
             ).getOrThrow()
@@ -1613,7 +1620,7 @@ class PolarH10BleManager(
                     if (activePeripheral != null && _connectionState.value is ConnectionState.Connected) {
                         sendPmdControlCommand(
                             p = activePeripheral,
-                            command = BleConstants.Polar.PMD_START_ECG_CMD,
+                            command = BleConstants.PolarPmd.PMD_START_ECG_CMD,
                             opCode = 0x02,
                             measurementType = 0x00,
                         )
@@ -1649,7 +1656,7 @@ class PolarH10BleManager(
             )
             sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_STOP_ECG_CMD,
+                command = BleConstants.PolarPmd.PMD_STOP_ECG_CMD,
                 opCode = 0x03,
                 measurementType = 0x00,
             ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ECG stop: status $it" } }
@@ -1688,7 +1695,7 @@ class PolarH10BleManager(
             // Try 1: standard command (range-first)
             var status = sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_START_ACC_CMD,
+                command = BleConstants.PolarPmd.PMD_START_ACC_CMD,
                 opCode = 0x02,
                 measurementType = 0x02,
             ).getOrThrow()
@@ -1697,7 +1704,7 @@ class PolarH10BleManager(
                 log.w { "Starting ACC with range-first TLV returned status $status. Retrying with ascending TLV (50Hz, 16-bit, 8G)..." }
                 status = sendPmdControlCommand(
                     p = p,
-                    command = BleConstants.Polar.PMD_START_ACC_ASCENDING_CMD,
+                    command = BleConstants.PolarPmd.PMD_START_ACC_ASCENDING_CMD,
                     opCode = 0x02,
                     measurementType = 0x02,
                 ).getOrThrow()
@@ -1707,7 +1714,7 @@ class PolarH10BleManager(
                 log.w { "Starting ACC with ascending TLV returned status $status. Retrying with 25Hz/2G fallback..." }
                 status = sendPmdControlCommand(
                     p = p,
-                    command = BleConstants.Polar.PMD_START_ACC_FALLBACK_25HZ_CMD,
+                    command = BleConstants.PolarPmd.PMD_START_ACC_FALLBACK_25HZ_CMD,
                     opCode = 0x02,
                     measurementType = 0x02,
                 ).getOrThrow()
@@ -1752,7 +1759,7 @@ class PolarH10BleManager(
             )
             sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_STOP_ACC_CMD,
+                command = BleConstants.PolarPmd.PMD_STOP_ACC_CMD,
                 opCode = 0x03,
                 measurementType = 0x02,
             ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ACC stop: status $it" } }
@@ -1984,8 +1991,5 @@ class PolarH10BleManager(
         }
     }
 
-    internal fun isPolarH10Advertisement(adv: Advertisement): Boolean {
-        val name = adv.name ?: return false
-        return name.equals("Polar H10", ignoreCase = true) || name.startsWith("Polar H10 ", ignoreCase = true)
-    }
+    internal fun isHrmAdvertisement(adv: Advertisement): Boolean = classifyHrmAdvertisement(adv) != null
 }

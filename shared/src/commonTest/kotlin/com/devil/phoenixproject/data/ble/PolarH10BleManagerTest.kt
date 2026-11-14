@@ -47,29 +47,35 @@ class PolarH10BleManagerTest {
     // ==================== Advertisement Filter Tests ====================
 
     @Test
-    fun `isPolarH10Advertisement matches Polar H10 device names case-insensitively`() {
+    fun `isHrmAdvertisement accepts standard 0x180D advertisers and known HRM names`() {
         val manager = PolarH10BleManager()
+        val hrUuid = BleConstants.Hrm.HR_SERVICE_UUID
 
-        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H10 12345678", uuids = emptyList())))
-        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "polar h10 9999", uuids = emptyList())))
-        assertTrue(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "POLAR H10", uuids = emptyList())))
+        // The Bluetooth SIG standard Heart Rate Service identifies a broadcaster
+        // regardless of name (SD5): Garmin/Wahoo/Polar sensors in broadcast mode.
+        assertTrue(manager.isHrmAdvertisement(CompositionAdvertisement(name = null, uuids = listOf(hrUuid))))
 
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Vee_Trainer", uuids = emptyList())))
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "VIT-200", uuids = emptyList())))
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = emptyList())))
+        // Existing Polar H10 name matching preserved (case-insensitive).
+        assertTrue(manager.isHrmAdvertisement(CompositionAdvertisement(name = "Polar H10 12345678", uuids = emptyList())))
+        assertTrue(manager.isHrmAdvertisement(CompositionAdvertisement(name = "polar h10 9999", uuids = emptyList())))
+        assertTrue(manager.isHrmAdvertisement(CompositionAdvertisement(name = "POLAR H10", uuids = emptyList())))
     }
 
     @Test
-    fun `standard Heart Rate UUID alone never identifies an H10`() {
+    fun `isHrmAdvertisement rejects non-HR advertisements`() {
         val manager = PolarH10BleManager()
 
-        val hrUuid = BleConstants.Polar.HR_SERVICE_UUID
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = null, uuids = listOf(hrUuid))))
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H9", uuids = listOf(hrUuid))))
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Polar H100", uuids = listOf(hrUuid))))
+        // Negative cases preserved from the legacy name-only filter suite.
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = "Vee_Trainer", uuids = emptyList())))
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = "VIT-200", uuids = emptyList())))
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = null, uuids = emptyList())))
+
+        // Near-miss Polar names are not allow-listed (bounded list, no wildcard).
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = "Polar H9", uuids = emptyList())))
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = "Polar H100", uuids = emptyList())))
 
         val nusUuid = BleConstants.NUS_SERVICE_UUID
-        assertFalse(manager.isPolarH10Advertisement(CompositionAdvertisement(name = "Unknown", uuids = listOf(nusUuid))))
+        assertFalse(manager.isHrmAdvertisement(CompositionAdvertisement(name = "Unknown", uuids = listOf(nusUuid))))
     }
 
     // ==================== Initial State Tests ====================
@@ -845,7 +851,7 @@ class PolarH10BleManagerTest {
         val fakeAd = CompositionAdvertisement(
             id = "00000000-0000-0000-0000-24acac0e5b59",
             name = "Polar H10 12345678",
-            uuids = listOf(BleConstants.Polar.HR_SERVICE_UUID),
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
         )
         val rememberedId = fakeAd.identifier.toString()
         val settings = MapSettings()
@@ -1205,7 +1211,7 @@ class PolarH10BleManagerTest {
         val peripheral = object : Peripheral by fake {
             override fun observe(characteristic: Characteristic, onSubscription: suspend () -> Unit): Flow<ByteArray> = flow {
                 onSubscription()
-                if (characteristic.characteristicUuid == BleConstants.Polar.pmdControlPointCharacteristic.characteristicUuid) {
+                if (characteristic.characteristicUuid == BleConstants.PolarPmd.pmdControlPointCharacteristic.characteristicUuid) {
                     emitAll(responses)
                 } else {
                     awaitCancellation()
