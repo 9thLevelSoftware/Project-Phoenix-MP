@@ -106,20 +106,41 @@ class ExerciseMediaWiringTest {
         assertTrue(table.contains("sortOrder INTEGER NOT NULL"), "ExerciseImage.sortOrder must be unchanged (T5).")
     }
 
-    // T6: no schema migration for Phase 1 — no .sqm mentions ExerciseImage at all.
+    // T6: Phase 1 adds NO migration. Two guards, both history-aware (SD14):
+    // (a) the migration set must not grow past the implementation base's latest
+    //     (63.sqm at 4d4de558) — bump this ratchet only when a real migration lands;
+    // (b) the only migration allowed to mention ExerciseImage is 43.sqm, the
+    //     historical migration that CREATED the table; nothing may ALTER/DROP it.
     @Test
     fun noMigrationTouchesExerciseImage() {
-        // The largest known migration at the implementation base; Phase 1 must
-        // not add a migration on top (compare-by-content, not a frozen number — SD14).
+        val mentions = mutableListOf<String>()
+        var maxSeen = 0
         for (n in 1..70) {
             val src = readProjectFile(
                 "src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/$n.sqm",
             ) ?: continue
-            assertFalse(
-                src.contains("ExerciseImage"),
-                "Migration $n.sqm must not touch ExerciseImage (Phase 1 adds NO migration; T6/AC13).",
-            )
+            maxSeen = maxOf(maxSeen, n)
+            if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
+        assertTrue(
+            maxSeen <= 63,
+            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 63.sqm (T6/AC13).",
+        )
+        assertTrue(
+            mentions == listOf("43.sqm"),
+            "Only 43.sqm (the ExerciseImage creator) may mention ExerciseImage; found $mentions (T6/AC13).",
+        )
+        val creator = readProjectFile(
+            "src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/43.sqm",
+        )!!
+        assertTrue(
+            creator.contains("CREATE TABLE ExerciseImage"),
+            "43.sqm must remain the table creator (T6).",
+        )
+        assertFalse(
+            creator.contains("ALTER TABLE ExerciseImage") || creator.contains("DROP TABLE ExerciseImage"),
+            "43.sqm must not ALTER/DROP ExerciseImage (T6/AC13).",
+        )
     }
 
     // T7: tvOS stays media-free — no picker, store, or sweep stub (SD8).
@@ -161,8 +182,12 @@ class ExerciseMediaWiringTest {
             android!!.contains("ActivityResultContracts.OpenMultipleDocuments()"),
             "Android picker must stay on OpenMultipleDocuments (SD1).",
         )
+        // Absence checks run on comment-stripped code: doc comments legitimately
+        // name the banned contracts ("NOT PickVisualMedia"), and a drift guard
+        // must not trip on its own prose (SD1 stays about the code).
+        val androidCode = stripKotlinComments(android)
         assertFalse(
-            android.contains("PickVisualMedia") || android.contains("OpenDocument()"),
+            androidCode.contains("PickVisualMedia") || androidCode.contains("OpenDocument()"),
             "Android picker must not fall back to single-select contracts (SD1).",
         )
 
@@ -191,5 +216,29 @@ class ExerciseMediaWiringTest {
             src.contains("MAX_PHOTOS_PER_EXERCISE = 6"),
             "The photo count cap must stay 6 (SD11).",
         )
+    }
+
+    /** Strip `//` line comments and `/* */` block comments before absence checks. */
+    private fun stripKotlinComments(src: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < src.length) {
+            val c = src[i]
+            when {
+                c == '/' && i + 1 < src.length && src[i + 1] == '/' -> {
+                    while (i < src.length && src[i] != '\n') i++
+                }
+                c == '/' && i + 1 < src.length && src[i + 1] == '*' -> {
+                    i += 2
+                    while (i + 1 < src.length && !(src[i] == '*' && src[i + 1] == '/')) i++
+                    i += 2
+                }
+                else -> {
+                    sb.append(c)
+                    i++
+                }
+            }
+        }
+        return sb.toString()
     }
 }
