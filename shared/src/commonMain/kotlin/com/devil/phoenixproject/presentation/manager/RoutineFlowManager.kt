@@ -381,13 +381,15 @@ class RoutineFlowManager(
             return currentExIndex to (currentSetIndex + 1)
         }
 
-        // Issue #572: when the current entry's setReps are exhausted, advance to the next
-        // non-skipped entry. If that entry references the same physical exercise as the
-        // current one (e.g. adjacent "Sumo Belt Squat 2x8 OldSchool" -> "Sumo Belt Squat 1x8
-        // TUT" entries that the user intends as a single logical movement), the consumer
-        // (ActiveSessionEngine.startNextSetOrExercise) needs to know it's a same-exercise
-        // continuation so it can carry per-set programMode forward without sending a fresh
-        // 0x04 BLE CONFIG frame (which would de-energise the cable on a mode change).
+        // Issue #572 / #1394: when the current entry's setReps are exhausted, advance to
+        // the next non-skipped entry. If that entry references the same physical exercise
+        // as the current one (e.g. adjacent "Sumo Belt Squat 2x8 OldSchool" -> "Sumo Belt
+        // Squat 1x8 TUT" entries that the user intends as a single logical movement), the
+        // consumer (ActiveSessionEngine.startNextSetOrExercise) needs to know it's a
+        // same-exercise continuation so it can defer a genuine configuration-transition
+        // CONFIG frame (a fresh 0x04 on a mode change de-energises the cable) to an
+        // explicit Start — while equivalent-settings duplicates auto-continue like any
+        // other lift (Issue #1394).
         // We return the (nextExIndex, 0) pair unchanged so the existing navigation flow
         // is preserved; the same-exercise signal is computed in one place via
         // [isSameExercise] which [ActiveSessionEngine] consults directly.

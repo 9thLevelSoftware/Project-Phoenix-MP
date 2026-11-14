@@ -66,6 +66,8 @@ import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
 import com.devil.phoenixproject.domain.model.ProfileSectionMetadata
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -157,6 +159,40 @@ internal fun UserPreferences.verbalEncouragementEventOrNull(): HapticEvent.VERBA
         dominatrixMode = effectiveDominatrix,
         vulgarMode = effectiveVulgar,
     )
+}
+
+/**
+ * Issue #1394: the machine-configuration settings a set start CONFIGs on the trainer —
+ * program mode plus the Echo level and eccentric load carried by the Echo (0x4E) frame.
+ *
+ * Two snapshots of this triple answer "does this entry boundary change what the
+ * machine is configured to do?": the OUTGOING execution's applied configuration
+ * (frozen at command-capture time — never the mutable coordinator block, which rest
+ * screen edits can overwrite) and the fully RESOLVED successor configuration (entry
+ * defaults + per-set Echo values + rest overrides).
+ */
+internal data class AppliedMachineConfiguration(
+    val programMode: ProgramMode,
+    val echoLevel: EchoLevel,
+    val eccentricLoad: EccentricLoad,
+)
+
+/**
+ * Issue #1394: does this transition require a deferred, explicitly started successor
+ * CONFIG (the Issue #572 manual Start gate), or are the resolved settings equivalent
+ * to what the trainer is already running?
+ *
+ * Adjacent-duplicate IDENTITY alone must not answer this question. Manual readiness
+ * is preserved only for real configuration transitions and for the conservative case
+ * where the outgoing applied configuration cannot be established ([outgoingApplied]
+ * is null), because there is no proof the successor would re-CONFIG the same mode.
+ */
+internal fun requiresExplicitConfigurationTransition(
+    outgoingApplied: AppliedMachineConfiguration?,
+    destination: AppliedMachineConfiguration,
+): Boolean {
+    if (outgoingApplied == null) return true
+    return outgoingApplied != destination
 }
 
 data class BiomechanicsRepInput(
@@ -13335,6 +13371,32 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Issue #1394: the machine configuration the OUTGOING execution actually applied,
+     * read from the lease-matched execution facts frozen at command-capture time. This
+     * immutable snapshot survives the summary/rest phases; the coordinator's
+     * `WorkoutParameters` must never be read for this purpose because rest-screen
+     * edits (`updateWorkoutParameters` / `adjustWeight`) overwrite them before the
+     * successor transition runs.
+     *
+     * Returns null when the outgoing applied configuration cannot be established
+     * (no lease-matched execution context). Callers must then fail conservatively to
+     * manual readiness.
+     */
+    private fun outgoingAppliedConfiguration(lease: ExecutionLease?): AppliedMachineConfiguration? {
+        if (lease == null) return null
+        val template = executionContext
+            ?.takeIf { it.lease.executionId == lease.executionId && it.lease.sessionId == lease.sessionId }
+            ?.completionFacts
+            ?.logicalPreRackCommandTemplate
+            ?: return null
+        return AppliedMachineConfiguration(
+            programMode = template.programMode,
+            echoLevel = template.echoLevel,
+            eccentricLoad = template.eccentricLoad,
+        )
+    }
+
+    /**
      * Issue #525: write one backup for the completed routine instead of per-set files.
      */
     private fun autoBackupRoutineIfEnabled(context: String) {
@@ -13392,15 +13454,21 @@ class ActiveSessionEngine(
             val autoplay = settingsManager.autoplayEnabled.value
 
             val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
-            // Issue #572: when getNextStep advances to the next entry but the new entry
-            // is the same physical exercise as the current one (e.g. "Sumo Belt Squat 2x8
-            // OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
-            // logical movement with a mode change between sets), treat this as a
-            // same-exercise continuation. We do NOT want to send a fresh 0x04 BLE CONFIG
-            // frame mid-movement, because the Phoenix firmware de-energises the cable
-            // on a mode change, which the user perceives as "the set deloads". The mode
-            // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
-            // the CONFIG frame is deferred until the user explicitly starts that set.
+            // Issue #572 / #1394: when getNextStep advances to the next entry but the new
+            // entry is the same physical exercise as the current one (e.g. "Sumo Belt Squat
+            // 2x8 OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
+            // logical movement with a mode change between sets), detect this as a
+            // same-exercise continuation. The detection is IDENTITY ONLY: whether the
+            // boundary may auto-continue is a separate configuration-transition decision
+            // (Issue #1394), because adjacent same-exercise entries are also the standard
+            // unilateral left/right pattern (one-arm rows left then right) that must
+            // auto-advance like every other lift-to-lift transition.
+            //
+            // When the transition genuinely changes the machine configuration (Issue #572:
+            // a program-mode change such as OldSchool -> TUT de-energises the cable
+            // mid-movement on a fresh CONFIG frame), the successor CONFIG is deferred until
+            // the user explicitly starts that set. That manual gate no longer fires for
+            // equivalent settings.
             val isAdjacentLinearExercise =
                 nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
                     currentExercise?.supersetId == null &&
@@ -13409,6 +13477,12 @@ class ActiveSessionEngine(
                 currentExercise != null &&
                 isAdjacentLinearExercise &&
                 flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
+
+            // Issue #1394: capture the OUTGOING execution's applied machine configuration
+            // before the successor mutates any state below. It is the immutable snapshot
+            // frozen at command-capture time and preserved across summary/rest — never the
+            // mutable coordinator block, which rest-screen edits overwrite.
+            val outgoingAppliedConfiguration = outgoingAppliedConfiguration(lease)
 
             coordinator._currentExerciseIndex.value = nextExIdx
             coordinator._currentSetIndex.value = nextSetIdx
@@ -13448,24 +13522,48 @@ class ActiveSessionEngine(
             val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
             val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
-            // Issue #572: for a same-exercise continuation, the on-screen programMode
-            // label and the per-set weight should reflect the new entry (so the user
-            // sees the TUT finisher weight + mode), but the firmware stays in the
-            // current programMode until the user explicitly starts that set, at which
+            // Issue #1394: adjacent-duplicate IDENTITY is not a safety gate. Defer the
+            // successor CONFIG to a manual Start only for real configuration transitions:
+            // autoplay off, or the fully resolved successor configuration (entry mode +
+            // per-set Echo values + rest overrides, exactly what the successor start will
+            // CONFIG) differs from the trainer's outgoing applied configuration, or that
+            // outgoing configuration is unknown. Equivalent effective settings use the
+            // existing authorized autoplay start path, exactly like a distinct-lift
+            // boundary.
+            val resolvedSuccessorConfiguration = AppliedMachineConfiguration(
+                programMode = nextExercise.programMode,
+                echoLevel = nextEchoLevel,
+                eccentricLoad = nextEccentricLoad,
+            )
+            val deferManualStart = isSameExerciseContinuation &&
+                (
+                    !autoplay ||
+                        requiresExplicitConfigurationTransition(
+                            outgoingApplied = outgoingAppliedConfiguration,
+                            destination = resolvedSuccessorConfiguration,
+                        )
+                    )
+
+            // Issue #572: for a deferred same-exercise continuation, the on-screen
+            // programMode label and the per-set weight should reflect the new entry (so
+            // the user sees the TUT finisher weight + mode), but the firmware stays in
+            // the current programMode until the user explicitly starts that set, at which
             // point a fresh 0x04 BLE CONFIG frame is sent. Keeping the firmware in the
             // current mode across the boundary is what prevents the cable from
-            // de-energising mid-movement.
-            val carryProgramMode = if (isSameExerciseContinuation) {
+            // de-energising mid-movement. Every other case (including an authorized
+            // auto-start of an equivalent duplicate) publishes the resolved successor
+            // configuration, matching the distinct-lift path.
+            val carryProgramMode = if (deferManualStart) {
                 currentParams.programMode
             } else {
                 nextExercise.programMode
             }
-            val carryEchoLevel = if (isSameExerciseContinuation) {
+            val carryEchoLevel = if (deferManualStart) {
                 currentParams.echoLevel
             } else {
                 nextEchoLevel
             }
-            val carryEccentricLoad = if (isSameExerciseContinuation) {
+            val carryEccentricLoad = if (deferManualStart) {
                 currentParams.eccentricLoad
             } else {
                 nextEccentricLoad
@@ -13487,10 +13585,11 @@ class ActiveSessionEngine(
             Logger.d {
                 "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for " +
                     "${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, " +
-                    "isAMRAP=$nextIsAMRAP, isSameExerciseContinuation=$isSameExerciseContinuation"
+                    "isAMRAP=$nextIsAMRAP, isSameExerciseContinuation=$isSameExerciseContinuation, " +
+                    "deferManualStart=$deferManualStart"
             }
 
-            if (isChangingExercise && !isSameExerciseContinuation) {
+            if (isChangingExercise && !deferManualStart) {
                 if (autoplay) {
                     // Autoplay bypasses SetReady, so publish the destination defaults and
                     // then consume the rest edit before startWorkout captures command inputs.
@@ -13511,15 +13610,16 @@ class ActiveSessionEngine(
                     // Manual progression lets SetReady seed destination defaults first.
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 }
-            } else if (isSameExerciseContinuation) {
-                // Issue #572: same-exercise continuation across entries. We do NOT call
-                // startWorkout() here even when autoplay is on, because that would send
-                // a fresh 0x04 BLE CONFIG frame for the TUT finisher (or any other mode
-                // change embedded in a same-exercise continuation) mid-movement, which
-                // de-energises the cable. Instead we go to SetReady so the user
-                // explicitly starts the next set, at which point the fresh CONFIG is
-                // sent at the right time. The on-screen label and per-set weight have
-                // already been updated above to reflect the new entry.
+            } else if (deferManualStart) {
+                // Issue #572 / #1394: deferred manual configuration transition across
+                // entries (autoplay off, a real program-mode/Echo/eccentric change, or an
+                // unknown outgoing applied configuration). We do NOT call startWorkout()
+                // here because that would send a fresh 0x04 BLE CONFIG frame for the TUT
+                // finisher (or any other mode change embedded in a same-exercise
+                // continuation) mid-movement, which de-energises the cable. Instead we go
+                // to SetReady so the user explicitly starts the next set, at which point
+                // the fresh CONFIG is sent at the right time. The on-screen label and
+                // per-set weight have already been updated above to reflect the new entry.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
                 // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
