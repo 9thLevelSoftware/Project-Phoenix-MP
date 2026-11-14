@@ -805,6 +805,20 @@ VALUES (?, ?, ?);
 deleteImagesForExercise:
 DELETE FROM ExerciseImage WHERE exerciseId = ?;
 
+-- Issue #1358 (SD3): single-photo removal identity is the ExerciseImage row id.
+-- Query addition only — no schema change.
+deleteImageById:
+DELETE FROM ExerciseImage WHERE id = ?;
+
+-- Issue #1358 (SD8): row-only reads for the phone-only media reconciler. Row
+-- values only — no file/media types ever enter commonMain (F1). Conservative:
+-- soft-deleted rows still count as live so their media is never swept.
+selectAllExerciseIds:
+SELECT id FROM Exercise;
+
+selectAllImageUrls:
+SELECT url FROM ExerciseImage;
+
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
 -- deleted rows out of the read path so local tombstones do not leave

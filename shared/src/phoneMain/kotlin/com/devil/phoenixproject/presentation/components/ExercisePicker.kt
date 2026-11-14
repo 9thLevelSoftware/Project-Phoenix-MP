@@ -122,6 +122,8 @@ fun ExercisePickerDialog(
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
+    // Issue #1358 SD9: bumped after media save/removal so picker rows re-query images.
+    var mediaRefreshTick by remember { mutableStateOf(0) }
 
     // Issue #1227 (signoff B3): equipment selections are label-keyed, so a rename or a
     // profile switch must re-key or clear them through the token identity. A label-only
@@ -195,37 +197,37 @@ fun ExercisePickerDialog(
 
     // Create/Edit Exercise Dialog
     if (showCreateDialog || exerciseToEdit != null) {
+        // Issue #1358 (SD5): one session-scoped media coordinator per dialog
+        // open owns files and the shared commit/rollback tail for this entry
+        // point (ExercisePicker). Dismiss discards the draft only (SD2).
+        val mediaStore: com.devil.phoenixproject.data.media.ExerciseMediaStore = org.koin.compose.koinInject()
+        val mediaCoordinator = remember { ExerciseMediaSaveCoordinator(mediaStore) }
+        var mediaSavedImages by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
+        LaunchedEffect(exerciseToEdit?.id, mediaRefreshTick) {
+            mediaSavedImages = exerciseToEdit?.id?.let { exerciseRepository.getImages(it) } ?: emptyList()
+        }
         CreateExerciseDialog(
             existingExercise = exerciseToEdit,
             customEquipmentOverlay = customEquipmentOverlay,
-            onSave = { exercise ->
-                val editExerciseId = exerciseToEdit?.id
+            exerciseRepository = exerciseRepository,
+            mediaCoordinator = mediaCoordinator,
+            savedImages = mediaSavedImages,
+            enablePhotoAttach = enableVideoPlayback,
+            onSave = { exercise, _delta ->
+                // Issue #1358 (SD9): media is committed by the shared
+                // coordinator before this runs; re-query so rows show the
+                // fresh images (same-id refresh proven at this entry point).
                 showCreateDialog = false
                 exerciseToEdit = null
-                val action = resolveCustomExerciseSaveAction(
-                    draftExercise = exercise,
-                    editingExerciseId = editExerciseId,
-                )
-                coroutineScope.launch {
-                    when (action) {
-                        is CustomExerciseSaveAction.Create -> {
-                            exerciseRepository.createCustomExercise(action.exercise)
-                        }
-
-                        is CustomExerciseSaveAction.Update -> {
-                            exerciseRepository.updateCustomExercise(action.exercise)
-                        }
-                    }
-                }
+                mediaRefreshTick += 1
             },
             onDelete = if (exerciseToEdit != null) {
                 {
-                    val deleteExerciseId = exerciseToEdit?.id
+                    // Issue #1358 (P4): delete already ran through the shared
+                    // media tail (rows cascade, then files).
                     showCreateDialog = false
                     exerciseToEdit = null
-                    coroutineScope.launch {
-                        deleteExerciseId?.let { exerciseRepository.deleteCustomExercise(it) }
-                    }
+                    mediaRefreshTick += 1
                 }
             } else {
                 null
@@ -233,6 +235,7 @@ fun ExercisePickerDialog(
             onDismiss = {
                 showCreateDialog = false
                 exerciseToEdit = null
+                mediaCoordinator.discardAll()
             },
         )
     }
@@ -311,6 +314,7 @@ fun ExercisePickerDialog(
                         onCreateExercise = { showCreateDialog = true },
                         onEditExercise = { exercise -> exerciseToEdit = exercise },
                         isLoading = isCompletedFilterLoading,
+                        mediaRefreshTick = mediaRefreshTick,
                         fullScreen = true,
                     )
                 }
@@ -378,6 +382,7 @@ fun ExercisePickerDialog(
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
                 isLoading = isCompletedFilterLoading,
+                mediaRefreshTick = mediaRefreshTick,
                 fullScreen = false,
             )
         }
@@ -433,6 +438,8 @@ fun ExercisePickerContent(
     fullScreen: Boolean,
     /** Row name typography. Defaults to [androidx.compose.material3.Typography.titleMedium] everywhere; the Tag exercise dialog passes titleSmall (#363). */
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    /** Issue #1358 SD9: forwarded to rows so a same-id media edit re-queries images. */
+    mediaRefreshTick: Int = 0,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
     var videoDialogExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -579,6 +586,7 @@ fun ExercisePickerContent(
                 grouped = !(enableRecentFilter && showRecentOnly),
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
+                mediaRefreshTick = mediaRefreshTick,
                 onExerciseSelected = onExerciseSelected,
                 onToggleFavorite = onToggleFavorite,
                 onShowVideo = { exercise, images ->

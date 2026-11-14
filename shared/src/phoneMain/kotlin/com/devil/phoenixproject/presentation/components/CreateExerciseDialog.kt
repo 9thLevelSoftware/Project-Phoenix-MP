@@ -21,10 +21,15 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.devil.phoenixproject.data.media.ExerciseMediaDelta
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCategory
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.rememberMediaPicker
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -43,7 +48,11 @@ import projectphoenix.shared.generated.resources.Res
 fun CreateExerciseDialog(
     existingExercise: Exercise? = null,
     customEquipmentOverlay: Map<String, String> = emptyMap(),
-    onSave: (Exercise) -> Unit,
+    exerciseRepository: ExerciseRepository? = null,
+    mediaCoordinator: ExerciseMediaSaveCoordinator? = null,
+    savedImages: List<ExerciseImageEntity> = emptyList(),
+    enablePhotoAttach: Boolean = true,
+    onSave: (Exercise, ExerciseMediaDelta) -> Unit,
     onDelete: (() -> Unit)? = null,
     onViewHistory: (() -> Unit)? = null,
     onDismiss: () -> Unit,
@@ -88,6 +97,23 @@ fun CreateExerciseDialog(
     var showEquipmentDropdown by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    // Issue #1358 (Phase 1): media draft state + picker (SD2/SD5).
+    val coroutineScope = rememberCoroutineScope()
+    val mediaPicker = rememberMediaPicker()
+    var showMediaPicker by remember { mutableStateOf(false) }
+    var isSavingExercise by remember { mutableStateOf(false) }
+    var saveErrorText by remember { mutableStateOf<String?>(null) }
+    val mediaSaveFailedMessage = stringResource(Res.string.media_save_media_failed)
+    val mediaSaveFailedGenericMessage = stringResource(Res.string.media_save_failed)
+    val mediaDeleteFailedMessage = stringResource(Res.string.media_delete_failed)
+
+    if (showMediaPicker && mediaCoordinator != null) {
+        mediaPicker.LaunchPhotoPicker { result ->
+            showMediaPicker = false
+            mediaCoordinator.onPickResult(result, existingCount = savedImages.size)
+        }
+    }
 
     val backgroundGradient = screenBackgroundBrush()
 
@@ -298,6 +324,17 @@ fun CreateExerciseDialog(
                         Spacer(modifier = Modifier.height(Spacing.large))
                     }
 
+                    // Issue #1358 (Phase 1): photo attach/manage section (SD2/SD10/SD12).
+                    if (mediaCoordinator != null) {
+                        Spacer(modifier = Modifier.height(Spacing.large))
+                        ExerciseMediaAttachments(
+                            coordinator = mediaCoordinator,
+                            savedImages = savedImages,
+                            enableAttach = enablePhotoAttach,
+                            onRequestPick = { showMediaPicker = true },
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(Spacing.large))
 
                     // History (issue #362): edit mode + a host that opted in + a saved id.
@@ -325,6 +362,16 @@ fun CreateExerciseDialog(
                         }
 
                         Spacer(modifier = Modifier.height(Spacing.small))
+                    }
+
+                    // Issue #1358: inline save/delete error (retryable draft; SD6)
+                    saveErrorText?.let { message ->
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
 
                     // Buttons
@@ -380,9 +427,45 @@ fun CreateExerciseDialog(
                                         isFavorite = existingExercise?.isFavorite ?: false,
                                         isCustom = true,
                                     )
-                                    onSave(exercise)
+                                    // Issue #1358 (SD5/SD6): the shared coordinator runs the
+                                    // create/update -> files -> rows -> cleanup tail for BOTH
+                                    // entry points. A media failure keeps the minted id and the
+                                    // draft retryable; only success closes the dialog.
+                                    val coordinator = mediaCoordinator
+                                    val repo = exerciseRepository
+                                    if (coordinator != null && repo != null) {
+                                        val delta = ExerciseMediaDelta(
+                                            pendingAdditions = coordinator.stagedAdditions.toList(),
+                                            pendingRemovals = coordinator.queuedRemovals.toList(),
+                                        )
+                                        isSavingExercise = true
+                                        saveErrorText = null
+                                        coroutineScope.launch {
+                                            val outcome = coordinator.saveWithMedia(
+                                                draftExercise = exercise,
+                                                editingExerciseId = existingExercise?.id,
+                                                repository = repo,
+                                            )
+                                            isSavingExercise = false
+                                            when (outcome) {
+                                                is CustomExerciseSaveOutcome.Saved -> {
+                                                    onSave(outcome.exercise, delta)
+                                                }
+                                                is CustomExerciseSaveOutcome.MediaFailed -> {
+                                                    // SD6: exercise kept; retry adds media only.
+                                                    saveErrorText = mediaSaveFailedMessage
+                                                }
+                                                is CustomExerciseSaveOutcome.Failed -> {
+                                                    saveErrorText = mediaSaveFailedGenericMessage
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        onSave(exercise, ExerciseMediaDelta.EMPTY)
+                                    }
                                 }
                             },
+                            enabled = !isSavingExercise,
                             modifier = Modifier.weight(1f).height(56.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
@@ -401,19 +484,33 @@ fun CreateExerciseDialog(
         }
     }
 
-    // Delete Confirmation Dialog
+    // Delete Confirmation Dialog (issue #1358: photo-aware copy)
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             title = { Text(stringResource(Res.string.delete_exercise_title)) },
             text = {
-                Text(stringResource(Res.string.delete_exercise_message, name))
+                Text(stringResource(Res.string.delete_exercise_media_message))
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showDeleteConfirmation = false
-                        onDelete?.invoke()
+                        // Issue #1358 (P4/SD7): shared delete tail — rows cascade
+                        // first, then managed files; a DB failure preserves files.
+                        val deleteId = existingExercise?.id
+                        val coordinator = mediaCoordinator
+                        val repo = exerciseRepository
+                        if (deleteId != null && coordinator != null && repo != null) {
+                            coroutineScope.launch {
+                                when (coordinator.deleteExerciseWithMedia(deleteId, repo)) {
+                                    is CustomExerciseSaveOutcome.Saved -> onDelete?.invoke()
+                                    else -> saveErrorText = mediaDeleteFailedMessage
+                                }
+                            }
+                        } else {
+                            onDelete?.invoke()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,

@@ -59,6 +59,8 @@ fun GroupedExerciseList(
     emptyContent: @Composable () -> Unit = {},
     /** False lists [exercises] in their given order, with no letter headers or alphabet strip. */
     grouped: Boolean = true,
+    /** Issue #1358 SD9: bumped after media save/removal so rows re-query images (same-id refresh). */
+    mediaRefreshTick: Int = 0,
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -94,6 +96,7 @@ fun GroupedExerciseList(
             exercise = exercise,
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = enableVideoPlayback,
+            mediaRefreshTick = mediaRefreshTick,
             rowNameStyle = rowNameStyle,
             customEquipmentOverlay = customEquipmentOverlay,
             onSelect = { onExerciseSelected(exercise) },
@@ -168,6 +171,7 @@ private fun ExerciseItemWithImage(
     exercise: Exercise,
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean,
+    mediaRefreshTick: Int = 0,
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     customEquipmentOverlay: Map<String, String> = emptyMap(),
     onSelect: () -> Unit,
@@ -181,7 +185,7 @@ private fun ExerciseItemWithImage(
     var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     var isLoadingImage by remember { mutableStateOf(enableVideoPlayback) }
 
-    LaunchedEffect(exercise.id, enableVideoPlayback) {
+    LaunchedEffect(exercise.id, enableVideoPlayback, mediaRefreshTick) {
         if (!enableVideoPlayback) {
             images = emptyList()
             isLoadingImage = false
