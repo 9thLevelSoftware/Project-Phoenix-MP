@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +53,7 @@ private val rpeScale = listOf(
  * Compact RPE indicator that shows current RPE or "Add RPE" button.
  * Tapping expands to show the full slider.
  *
- * [leadingContent] sits in the same row, before the button; give it `Modifier.weight(1f)`.
+ * [leadingContent] stacks above the button so its text gets full width at all font scales.
  * Issue #1345: the slider expands below that row at the full width of [modifier], so a
  * caller must not place this composable beside other content in its own Row, where the
  * slider would only get the leftover width.
@@ -62,15 +63,16 @@ fun RpeIndicator(
     currentRpe: Int?,
     onRpeChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    leadingContent: @Composable RowScope.() -> Unit = {},
+    leadingContent: @Composable () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
-        Row(
+        // Stack leading content above the RPE button so text gets full width at all
+        // font scales (#1385). A Row squeezed "Log your perceived exertion" at fontScale 3.0.
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             leadingContent()
             RpeButton(currentRpe = currentRpe, onClick = { expanded = !expanded })
@@ -165,36 +167,35 @@ private fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss:
             modifier = Modifier.padding(Spacing.medium),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Header with emoji and description
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+            // Header with emoji and description stacked vertically so the description
+            // gets full width at all font scales (#1385). FlowRow left the text in a
+            // narrow remainder beside the emoji at fontScale 3.0, breaking mid-word.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = currentRpeInfo.emoji,
                     fontSize = 32.sp,
                 )
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "RPE ${sliderValue.roundToInt()}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = getRpeColor(sliderValue.roundToInt()),
-                    )
-                    Text(
-                        text = "${currentRpeInfo.label} • ${currentRpeInfo.riR}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "RPE ${sliderValue.roundToInt()}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = getRpeColor(sliderValue.roundToInt()),
+                )
+                Text(
+                    text = "${currentRpeInfo.label} • ${currentRpeInfo.riR}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Spacer(Modifier.height(Spacing.medium))
 
-            // Emoji row
-            Row(
+            // Emoji row: FlowRow so RPE choices wrap at large font scales (#1385).
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -247,27 +248,57 @@ private fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss:
 
             Spacer(Modifier.height(Spacing.medium))
 
-            // Confirm button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-                Button(
-                    onClick = { onRpeSelected(sliderValue.roundToInt()) },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.small,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = getRpeColor(sliderValue.roundToInt()),
-                    ),
-                ) {
-                    Text(stringResource(Res.string.action_confirm))
+            // Confirm/Cancel actions: stack vertically when text would break mid-word
+            // at large font scales (#1385).
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val fontScale = LocalDensity.current.fontScale
+                val stackActions = maxWidth.value / fontScale < 180f
+                if (stackActions) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(stringResource(Res.string.action_cancel))
+                        }
+                        Button(
+                            onClick = { onRpeSelected(sliderValue.roundToInt()) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = getRpeColor(sliderValue.roundToInt()),
+                            ),
+                        ) {
+                            Text(stringResource(Res.string.action_confirm))
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(stringResource(Res.string.action_cancel))
+                        }
+                        Button(
+                            onClick = { onRpeSelected(sliderValue.roundToInt()) },
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = getRpeColor(sliderValue.roundToInt()),
+                            ),
+                        ) {
+                            Text(stringResource(Res.string.action_confirm))
+                        }
+                    }
                 }
             }
         }

@@ -6,13 +6,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -155,6 +161,212 @@ class SetSummaryCardTextLayoutRuntimeTest {
 
     @Test
     fun setSummaryText_staysWhole_atAccessibilityTextSize() = assertTextStaysWhole(fontScale = 2f)
+
+    @Test
+    fun setSummaryText_staysWhole_atAccessibilityLargeTextSize() = assertTextStaysWhole(fontScale = 2.25f)
+
+    @Test
+    fun setSummaryText_staysWhole_atAccessibilityExtraLargeTextSize() = assertTextStaysWhole(fontScale = 2.5f)
+
+    @Test
+    fun setSummaryText_staysWhole_atAccessibilityMaximumTextSize() = assertTextStaysWhole(fontScale = 3f)
+
+    /** #1385: the total-volume header token must not split mid-number at any supported scale. */
+    @Test
+    fun totalVolumeToken_staysWhole_atAllScales() {
+        var currentScale by mutableFloatStateOf(1f)
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(3f, currentScale)) {
+                MaterialTheme {
+                    Box(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        SetSummaryCard(
+                            summary = summary,
+                            workoutMode = "Old School",
+                            weightUnit = WeightUnit.LB,
+                            kgToDisplay = { kg, unit -> WeightDisplayFormatter.toDisplayWeight(kg, unit) },
+                            onContinue = {},
+                            autoplayEnabled = false,
+                            summaryCountdownSeconds = 0,
+                            onRpeLogged = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (scale in listOf(1f, 1.3f, 2f, 2.25f, 2.5f, 3f)) {
+            currentScale = scale
+            rule.waitForIdle()
+            rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+            rule.waitForIdle()
+            val layouts = renderedTextLayouts()
+            val broken = layouts.mapNotNull { (text, layout) ->
+                midWordBreaks(text, layout).takeIf { it.isNotEmpty() }
+                    ?.let { "fontScale $scale: \"$text\" (${layout.lineCount} lines, mid-word breaks at $it)" }
+            }
+            assertTrue("fontScale $scale: total-volume and metric text must not break mid-token: $broken", broken.isEmpty())
+        }
+    }
+
+    /**
+     * #1385: Echo mode — peak text, phase labels, and phase values must stay whole
+     * at all scales. The summary fixture uses Echo mode with warmup/working/burnout phases.
+     */
+    @Test
+    fun echoPhaseText_staysWhole_atAllScales() {
+        val echoSummary = summary.copy(
+            isEchoMode = true,
+            warmupAvgWeightKg = 9.07f,
+            workingAvgWeightKg = 13.6f,
+            burnoutAvgWeightKg = 6.8f,
+            warmupReps = 3,
+            workingReps = 5,
+            burnoutReps = 2,
+            peakWeightKg = 13.6f,
+            measuredWorkingPeakKgPerCable = 13.6f,
+        )
+        var currentScale by mutableFloatStateOf(1f)
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(3f, currentScale)) {
+                MaterialTheme {
+                    Box(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        SetSummaryCard(
+                            summary = echoSummary,
+                            workoutMode = "Old School",
+                            weightUnit = WeightUnit.LB,
+                            kgToDisplay = { kg, unit -> WeightDisplayFormatter.toDisplayWeight(kg, unit) },
+                            onContinue = {},
+                            autoplayEnabled = false,
+                            summaryCountdownSeconds = 0,
+                            onRpeLogged = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (scale in listOf(1f, 1.3f, 2f, 2.25f, 2.5f, 3f)) {
+            currentScale = scale
+            rule.waitForIdle()
+            val layouts = renderedTextLayouts()
+            val broken = layouts.mapNotNull { (text, layout) ->
+                midWordBreaks(text, layout).takeIf { it.isNotEmpty() }
+                    ?.let { "fontScale $scale: \"$text\" (${layout.lineCount} lines, mid-word breaks at $it)" }
+            }
+            assertTrue("fontScale $scale: Echo text must not break mid-token: $broken", broken.isEmpty())
+        }
+    }
+
+    /**
+     * #1385: RPE interaction — all 6-10 choices, intact "10", exactly-once confirm,
+     * cancel-without-save, reachable description/actions.
+     */
+    @Test
+    fun rpeInteraction_allChoices_intactAtAllScales() {
+        var confirmCount = 0
+        var currentScale by mutableFloatStateOf(1f)
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(3f, currentScale)) {
+                MaterialTheme {
+                    Box(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        SetSummaryCard(
+                            summary = summary,
+                            workoutMode = "Old School",
+                            weightUnit = WeightUnit.LB,
+                            kgToDisplay = { kg, unit -> WeightDisplayFormatter.toDisplayWeight(kg, unit) },
+                            onContinue = {},
+                            autoplayEnabled = false,
+                            summaryCountdownSeconds = 0,
+                            onRpeLogged = { confirmCount++ },
+                        )
+                    }
+                }
+            }
+        }
+        for (scale in listOf(1f, 1.3f, 2f, 2.25f, 2.5f, 3f)) {
+            currentScale = scale
+            rule.waitForIdle()
+            // Find RPE button — text is "Log RPE" before logging, "RPE N" after
+            val rpeButtonText = if (confirmCount > 0) "RPE 7" else "Log RPE"
+            rule.onNodeWithText(rpeButtonText).performScrollTo().performClick()
+            rule.waitForIdle()
+            // All choices 6-10 must be rendered (use merged tree to find clickable choices)
+            for (rpe in 6..10) {
+                rule.onAllNodesWithText(rpe.toString(), useUnmergedTree = true).fetchSemanticsNodes().let {
+                    assertTrue("fontScale $scale: RPE choice $rpe should exist", it.isNotEmpty())
+                }
+            }
+            // Description and actions must be reachable
+            rule.onNodeWithText("Cancel").assertExists()
+            rule.onNodeWithText("Confirm").assertExists()
+            // Select RPE 7 and confirm
+            rule.onAllNodesWithText("7", useUnmergedTree = true).onFirst().performScrollTo().performClick()
+            rule.waitForIdle()
+            val beforeConfirm = confirmCount
+            rule.onNodeWithText("Confirm").performScrollTo().performClick()
+            rule.mainClock.advanceTimeBy(2000)
+            rule.waitForIdle()
+            assertTrue("fontScale $scale: confirm callback fired", confirmCount > beforeConfirm)
+        }
+    }
+
+    /** #1385: cancel must not trigger save. */
+    @Test
+    fun rpeInteraction_cancelDoesNotSave() {
+        var confirmCount = 0
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(3f, 1f)) {
+                MaterialTheme {
+                    Box(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        SetSummaryCard(
+                            summary = summary,
+                            workoutMode = "Old School",
+                            weightUnit = WeightUnit.LB,
+                            kgToDisplay = { kg, unit -> WeightDisplayFormatter.toDisplayWeight(kg, unit) },
+                            onContinue = {},
+                            autoplayEnabled = false,
+                            summaryCountdownSeconds = 0,
+                            onRpeLogged = { confirmCount++ },
+                        )
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Cancel").performClick()
+        rule.waitForIdle()
+        assertTrue("cancel must not trigger save", confirmCount == 0)
+    }
+
+    /**
+     * #1385: deliberately squeezed failing detector control — a text node forced into
+     * a 20dp-wide box must register mid-word breaks, proving the detector works.
+     */
+    @Test
+    fun detectorControl_catchesDeliberateSqueezing() {
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 350.dp)) {
+                    // Very narrow box forces the text to wrap character-by-character
+                    Box(Modifier.fillMaxWidth().padding(start = 195.dp)) {
+                        Text(
+                            text = "SqueezedText",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        val layouts = renderedTextLayouts()
+        val squeezed = layouts.firstOrNull { it.first == "SqueezedText" }
+        assertTrue("Detector control: squeezed text should be found", squeezed != null)
+        val breaks = squeezed?.let { midWordBreaks(it.first, it.second) }
+        assertTrue(
+            "Detector control: squeezed text must register mid-word breaks (got $breaks)",
+            breaks != null && breaks.isNotEmpty(),
+        )
+    }
 
     private companion object {
         /** Characters a line may legitimately break after inside a run of text. */

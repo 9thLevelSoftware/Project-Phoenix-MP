@@ -901,7 +901,7 @@ class PolarH10BleManager(
         }
     }
 
-    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException()
+    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException("Auto-reconnect match found")
 
     /**
      * Triggers an immediate auto-reconnect attempt unless explicitly disconnected

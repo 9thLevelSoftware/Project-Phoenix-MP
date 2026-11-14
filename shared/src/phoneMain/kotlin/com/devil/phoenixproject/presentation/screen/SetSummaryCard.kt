@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -216,7 +217,8 @@ fun SetSummaryCard(
                     )
                     .padding(16.dp), // Reduced from 20dp to fit more content
             ) {
-                Row(
+                // FlowRow so Total reps / Total volume reflow independently at large font scales (#1385).
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
@@ -250,69 +252,38 @@ fun SetSummaryCard(
             }
         }
 
-        // Stats Grid
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp), // Reduced from 8dp to fit more content
-        ) {
-            // Row 1: Mode and Heaviest Lift
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // Stats Grid: one-column fallback when two cards can't fit content at the current
+        // font scale — measured from actual available width and fontScale (#1385).
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val fontScale = LocalDensity.current.fontScale
+            // Each card needs roughly 160dp at its own scale for headline values; below that
+            // the value text wraps mid-number, so fall back to one full-width column.
+            val useTwoColumns = maxWidth.value / fontScale > 200f
+            val pairModifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = pairModifier,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                SummaryStatCard(
-                    label = "Mode",
-                    value = workoutMode,
-                    icon = Icons.Default.GridView,
-                    modifier = Modifier.weight(1f),
+                // Row 1: Mode and Heaviest Lift
+                ResponsiveStatRow(
+                    useTwoColumns,
+                    first = { mod -> SummaryStatCard(label = "Mode", value = workoutMode, icon = Icons.Default.GridView, modifier = mod) },
+                    second = { mod -> SummaryStatCard(label = setWeightLabel, value = setWeightValueText, unit = setWeightUnitText, icon = Icons.Default.FitnessCenter, modifier = mod) },
                 )
-                SummaryStatCard(
-                    label = setWeightLabel,
-                    value = setWeightValueText,
-                    unit = setWeightUnitText,
-                    icon = Icons.Default.FitnessCenter,
-                    modifier = Modifier.weight(1f),
-                )
-            }
 
-            // Row 2: Peak Force (concentric/eccentric)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SummaryForceCard(
-                    label = "Peak Dynamic ($unitLabel)",
-                    concentricValue = peakConcentric,
-                    eccentricValue = peakEccentric,
-                    modifier = Modifier.weight(1f),
+                // Row 2: Peak Force (concentric/eccentric)
+                ResponsiveStatRow(
+                    useTwoColumns,
+                    first = { mod -> SummaryForceCard(label = "Peak Dynamic ($unitLabel)", concentricValue = peakConcentric, eccentricValue = peakEccentric, modifier = mod) },
+                    second = { mod -> SummaryForceCard(label = "Avg Active ($unitLabel)", concentricValue = avgConcentric, eccentricValue = avgEccentric, modifier = mod) },
                 )
-                SummaryForceCard(
-                    label = "Avg Active ($unitLabel)",
-                    concentricValue = avgConcentric,
-                    eccentricValue = avgEccentric,
-                    modifier = Modifier.weight(1f),
-                )
-            }
 
-            // Row 3: Duration and Energy
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SummaryStatCard(
-                    label = "Duration",
-                    value = durationFormatted,
-                    icon = Icons.Default.Timer,
-                    modifier = Modifier.weight(1f),
+                // Row 3: Duration and Energy
+                ResponsiveStatRow(
+                    useTwoColumns,
+                    first = { mod -> SummaryStatCard(label = "Duration", value = durationFormatted, icon = Icons.Default.Timer, modifier = mod) },
+                    second = { mod -> SummaryStatCard(label = "Energy", value = "${summary.estimatedCalories.roundToInt()}", unit = "(kCal)", icon = Icons.Default.LocalFireDepartment, modifier = mod) },
                 )
-                SummaryStatCard(
-                    label = "Energy",
-                    value = "${summary.estimatedCalories.roundToInt()}",
-                    unit = "(kCal)",
-                    icon = Icons.Default.LocalFireDepartment,
-                    modifier = Modifier.weight(1f),
-                )
-            }
 
             // Echo Mode Phase Breakdown
             // Echo weights are per-cable; primary display stays per-cable.
@@ -416,7 +387,7 @@ fun SetSummaryCard(
                             .fillMaxWidth()
                             .padding(12.dp), // Reduced from 16dp to fit more content
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 "How hard was that?",
                                 style = MaterialTheme.typography.titleSmall,
@@ -433,6 +404,7 @@ fun SetSummaryCard(
                 }
             }
         }
+        } // closes BoxWithConstraints
 
         // Polar H10 Session Analytics Card (live view only; history renders at bottom below rep details)
         if (!isHistoryView) {
@@ -580,6 +552,35 @@ private fun ExerciseTagSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Lays out two stat cards side-by-side when [useTwoColumns], or stacked full-width otherwise.
+ * The caller decides via actual width/fontScale metrics; this keeps each row responsive (#1385).
+ */
+@Composable
+private fun ResponsiveStatRow(
+    useTwoColumns: Boolean,
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit,
+) {
+    if (useTwoColumns) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
+        }
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            first(Modifier.fillMaxWidth())
+            second(Modifier.fillMaxWidth())
         }
     }
 }
@@ -749,29 +750,32 @@ private fun EchoPhaseBreakdownCard(
                 .fillMaxWidth()
                 .padding(16.dp),
         ) {
-            // Header
-            Row(
+            // Header: FlowRow so the peak text wraps below the title at large font scales
+            // instead of being squeezed into a narrow remainder (#1385).
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     "Echo Phase Breakdown",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterVertically),
                 )
                 Text(
                     "Peak: ${WeightDisplayFormatter.formatDisplayNumber(peakWeight)} $unitLabel/cable",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterVertically),
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Phase breakdown row
-            Row(
+            // Phase breakdown: FlowRow so phase columns wrap at large font scales (#1385).
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
