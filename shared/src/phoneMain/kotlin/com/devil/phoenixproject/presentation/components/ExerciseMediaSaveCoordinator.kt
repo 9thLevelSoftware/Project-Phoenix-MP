@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.media.ExerciseMediaSessionRegistry
 import com.devil.phoenixproject.data.media.ExerciseMediaStore
 import com.devil.phoenixproject.data.media.MediaGuardrailError
 import com.devil.phoenixproject.data.media.MediaGuardrailException
@@ -15,9 +16,13 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.MediaPickResult
 import com.devil.phoenixproject.util.PickedPhoto
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.media_error_generic
+import projectphoenix.shared.generated.resources.media_error_missing_staged
 import projectphoenix.shared.generated.resources.media_error_too_large
 import projectphoenix.shared.generated.resources.media_error_too_many
 import projectphoenix.shared.generated.resources.media_error_unreadable
@@ -65,6 +70,10 @@ sealed interface MediaPhase {
  */
 class ExerciseMediaSaveCoordinator(
     private val mediaStore: ExerciseMediaStore,
+    /** Finding D: blocking import I/O runs here — never on the Main dispatcher. */
+    private val ioDispatcher: CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
+    /** Finding B: import/commit sessions coordinate with the cleanup sweep here. */
+    private val sessionRegistry: ExerciseMediaSessionRegistry = ExerciseMediaSessionRegistry.shared,
 ) {
     val sessionId: String = generateUUID()
 
@@ -72,6 +81,7 @@ class ExerciseMediaSaveCoordinator(
     private val scope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main,
     )
+    private var stagingJob: Job? = null
     private var disposed = false
 
     var phase by mutableStateOf<MediaPhase>(MediaPhase.Idle)
@@ -126,8 +136,18 @@ class ExerciseMediaSaveCoordinator(
         onDone: () -> Unit,
     ) {
         phase = MediaPhase.Copying(0, photos.size)
-        scope.launch {
-            val result = mediaStore.stage(sessionId, photos, existingCount + stagedAdditions.size)
+        val targetCount = existingCount + stagedAdditions.size
+        stagingJob = scope.launch {
+            // Finding D: blocking import I/O runs OFF the Main dispatcher, and
+            // the copy reports real per-file progress. Finding B: staging is a
+            // live import session — the startup sweep never observes it.
+            val result = withContext(ioDispatcher) {
+                sessionRegistry.withActiveSession(sessionId) {
+                    mediaStore.stage(sessionId, photos, targetCount) { done, total ->
+                        phase = MediaPhase.Copying(done, total)
+                    }
+                }
+            }
             if (disposed) return@launch // T27: late callback after disposal mutates nothing
             result.fold(
                 onSuccess = { staged ->
@@ -163,6 +183,16 @@ class ExerciseMediaSaveCoordinator(
         null -> org.jetbrains.compose.resources.getString(Res.string.media_error_generic)
     }
 
+    /**
+     * Finding C: user-facing copy naming the photos that need re-selection.
+     * Localized via compose-resources (P6); falls back to the same copy when
+     * resource resolution is unavailable (e.g. host unit tests).
+     */
+    private suspend fun missingStagedMessage(names: String): String =
+        runCatching {
+            org.jetbrains.compose.resources.getString(Res.string.media_error_missing_staged, names)
+        }.getOrNull() ?: "Not saved: $names could not be found. Remove or re-pick them, then try again."
+
     /** Queue one saved photo for removal at Save (SD2). */
     fun queueRemove(imageId: Long, localUrl: String) {
         if (queuedRemovals.none { it.imageId == imageId }) {
@@ -179,10 +209,14 @@ class ExerciseMediaSaveCoordinator(
 
     /**
      * SD2 rollback: discard staged copies and queued removals ONLY. Saved rows
-     * and files are never mutated by Cancel/dismiss.
+     * and files are never mutated by Cancel/dismiss. Finding D: an in-flight
+     * copy is cancelled and owns its partials. Finding B: the live session is
+     * released so the startup sweep may reclaim its staging dir afterwards.
      */
     fun discardAll() {
         disposed = true
+        stagingJob?.cancel()
+        scope.launch { sessionRegistry.releaseSession(sessionId) }
         mediaStore.discardStaging(sessionId)
         stagedAdditions.clear()
         queuedRemovals.clear()
@@ -209,6 +243,17 @@ class ExerciseMediaSaveCoordinator(
         repository: ExerciseRepository,
     ): CustomExerciseSaveOutcome {
         phase = MediaPhase.Saving
+        // Finding C: a pick whose staged copy vanished (external delete) is
+        // NEVER silently pruned. The intended selection is preserved exactly as
+        // the user made it, and the save fails with a retryable error naming the
+        // photos that need re-selection — never a silent success with less
+        // media, and never before the user fixes or removes the dead pick.
+        val missing = stagedAdditions.filter { !mediaStore.stagedCopyExists(it.stagedPath) }
+        if (missing.isNotEmpty()) {
+            phase = MediaPhase.Error
+            errorMessage = missingStagedMessage(missing.joinToString(", ") { it.displayName })
+            return CustomExerciseSaveOutcome.Failed(errorMessage ?: "Selected photos are missing")
+        }
         return try {
             val exercise: Exercise
             val minted = savedExerciseId
@@ -236,47 +281,53 @@ class ExerciseMediaSaveCoordinator(
             val exerciseId = exercise.id
                 ?: return CustomExerciseSaveOutcome.Failed("Saved exercise has no id")
 
-            // A pick whose staged copy vanished (external delete) can never
-            // commit — drop only the dead entries so the rest of the draft and
-            // the save stay retryable (SD6).
-            stagedAdditions.removeAll { !mediaStore.stagedCopyExists(it.stagedPath) }
-
             val additions = stagedAdditions.toList()
             val removals = queuedRemovals.toList()
 
             // Media commit: files move first (signoff #4), rows in one
             // transaction (SD3). On failure only THIS session's moved files are
-            // rolled back (SD6) and the minted id is kept.
-            val committedUrls = if (additions.isNotEmpty()) {
-                val moved = mediaStore.commitAll(sessionId, additions, exerciseId)
-                val urls = moved.getOrNull()
-                if (urls == null) {
-                    log.w(moved.exceptionOrNull()) { "Media commit failed for $exerciseId" }
-                    // Rollback of moved files happens inside commitAll. Keep the
-                    // staged copies so a retry can commit them to the same id.
-                    phase = MediaPhase.Error
-                    return CustomExerciseSaveOutcome.MediaFailed(exercise)
+            // rolled back (SD6) and the minted id is kept. Finding B: the whole
+            // move+row window runs as an in-flight commit session — the startup
+            // sweep can neither observe a stale snapshot nor delete just-moved,
+            // not-yet-referenced files.
+            var commitFailed = false
+            var committedUrls: List<String> = emptyList()
+            sessionRegistry.withActiveCommit(sessionId, exerciseId) {
+                if (additions.isNotEmpty()) {
+                    val moved = withContext(ioDispatcher) {
+                        mediaStore.commitAll(sessionId, additions, exerciseId)
+                    }
+                    val urls = moved.getOrNull()
+                    if (urls == null) {
+                        log.w(moved.exceptionOrNull()) { "Media commit failed for $exerciseId" }
+                        // Rollback of moved files happens inside commitAll. Keep the
+                        // staged copies so a retry can commit them to the same id.
+                        commitFailed = true
+                    } else {
+                        committedUrls = urls
+                    }
                 }
-                urls
-            } else {
-                emptyList()
+                if (!commitFailed && (committedUrls.isNotEmpty() || removals.isNotEmpty())) {
+                    val delta = repository.applyMediaDelta(
+                        exerciseId = exerciseId,
+                        additionUrls = committedUrls,
+                        removalIds = removals.map { it.imageId },
+                    )
+                    if (delta.isFailure) {
+                        // Real row-transaction failure: restore only THIS session's
+                        // moved files back to staging so the draft stays retryable
+                        // (SD6/T28); never touch pre-existing rows/files.
+                        withContext(ioDispatcher) {
+                            mediaStore.restoreToStaging(additions, committedUrls)
+                        }
+                        log.w(delta.exceptionOrNull()) { "Row delta failed for $exerciseId" }
+                        commitFailed = true
+                    }
+                }
             }
-
-            if (committedUrls.isNotEmpty() || removals.isNotEmpty()) {
-                val delta = repository.applyMediaDelta(
-                    exerciseId = exerciseId,
-                    additionUrls = committedUrls,
-                    removalIds = removals.map { it.imageId },
-                )
-                if (delta.isFailure) {
-                    // Real row-transaction failure: restore only THIS session's
-                    // moved files back to staging so the draft stays retryable
-                    // (SD6/T28); never touch pre-existing rows/files.
-                    mediaStore.restoreToStaging(additions, committedUrls)
-                    log.w(delta.exceptionOrNull()) { "Row delta failed for $exerciseId" }
-                    phase = MediaPhase.Error
-                    return CustomExerciseSaveOutcome.MediaFailed(exercise)
-                }
+            if (commitFailed) {
+                phase = MediaPhase.Error
+                return CustomExerciseSaveOutcome.MediaFailed(exercise)
             }
 
             // Rows committed. Best-effort file cleanup for queued removals
@@ -294,6 +345,9 @@ class ExerciseMediaSaveCoordinator(
             phase = MediaPhase.Idle
             errorMessage = null
             cleanupPendingNotice = cleanupPending
+            // Finding B: rows reference the committed files now — end the
+            // session's sweep protection.
+            sessionRegistry.releaseSession(sessionId)
             CustomExerciseSaveOutcome.Saved(exercise, cleanupPending)
         } catch (e: Exception) {
             log.w(e) { "saveWithMedia failed" }

@@ -63,34 +63,9 @@ class MediaGuardrailException(
 ) : Exception("Media batch rejected: $guardrail")
 
 /**
- * True when [header] starts with a decodable still-image signature (SD11:
- * decodable-image-type validation; unsupported/corrupt input rejects the batch).
- * Covers JPEG, PNG, GIF, WebP (RIFF/WEBP), BMP, and HEIC/AVIF (ftyp brands).
+ * Decodable still-image validation lives in [StillImageValidator] (finding A:
+ * format-aware structure + platform decode checks — never bare magic prefixes).
  */
-internal fun isSupportedImageMagic(header: ByteArray): Boolean {
-    fun atLeast(n: Int) = header.size >= n
-    // JPEG
-    if (atLeast(3) && header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte()) return true
-    // PNG
-    if (atLeast(4) && header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() && header[3] == 0x47.toByte()) return true
-    // GIF
-    if (atLeast(4) && header[0] == 'G'.code.toByte() && header[1] == 'I'.code.toByte() && header[2] == 'F'.code.toByte() && header[3] == '8'.code.toByte()) return true
-    // BMP
-    if (atLeast(2) && header[0] == 'B'.code.toByte() && header[1] == 'M'.code.toByte()) return true
-    // WebP: RIFF....WEBP
-    if (atLeast(12) &&
-        header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte() &&
-        header[2] == 'F'.code.toByte() && header[3] == 'F'.code.toByte() &&
-        header[8] == 'W'.code.toByte() && header[9] == 'E'.code.toByte() &&
-        header[10] == 'B'.code.toByte() && header[11] == 'P'.code.toByte()
-    ) return true
-    // HEIC/AVIF: ....ftyp<brand>
-    if (atLeast(12) &&
-        header[4] == 'f'.code.toByte() && header[5] == 't'.code.toByte() &&
-        header[6] == 'y'.code.toByte() && header[7] == 'p'.code.toByte()
-    ) return true
-    return false
-}
 
 /**
  * App-private exercise media file store (issue #1358, P3).
@@ -111,12 +86,18 @@ interface ExerciseMediaStore {
      * Guardrails run BEFORE any copy (SD11): remaining count ([existingCount]
      * saved photos already on the exercise) and size; any violation rejects the
      * WHOLE new batch — partial copies of this batch are deleted and prior
-     * accepted media is untouched.
+     * accepted media is untouched. Each accepted file must also pass
+     * [StillImageValidator] structure plus the platform decode check —
+     * corrupt, truncated and misleading-brand input rejects the whole batch.
+     *
+     * [onProgress] reports (completedCopies, totalPicks) after each staged file
+     * so callers can show real copy progress (merge-gate finding D).
      */
     suspend fun stage(
         sessionId: String,
         picked: List<PickedPhoto>,
         existingCount: Int,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Result<List<StagedMedia>>
 
     /**

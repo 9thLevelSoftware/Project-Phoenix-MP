@@ -57,6 +57,7 @@ import com.devil.phoenixproject.util.CrashLog
 import com.devil.phoenixproject.util.CrashReportAnswer
 import com.devil.phoenixproject.util.deleteDatabaseExportArchive
 import com.devil.phoenixproject.data.media.ExerciseMediaReconciler
+import com.devil.phoenixproject.data.media.ExerciseMediaSessionRegistry
 import com.devil.phoenixproject.util.shareDatabaseFiles
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -494,7 +495,7 @@ fun AppContent(
                 ExerciseMediaReconciler(
                     repository = KoinPlatform.getKoin().get(),
                     mediaStore = KoinPlatform.getKoin().get(),
-                ).reconcile()
+                ).reconcile(ExerciseMediaSessionRegistry.shared)
             } catch (e: Exception) {
                 // Startup must never fail or block on media cleanup.
             }

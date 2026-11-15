@@ -1074,6 +1074,7 @@
     <string name="media_error_too_large">No photos added: %1$s is over 10 MB.</string>
     <string name="media_error_unsupported">No photos added: %1$s is not a supported image.</string>
     <string name="media_error_unreadable">No photos added: %1$s could not be read.</string>
+    <string name="media_error_missing_staged">Not saved: %1$s could not be found. Remove or re-pick them, then try again.</string>
     <string name="media_error_generic">No photos added. Try again.</string>
     <string name="media_save_media_failed">Exercise saved; photos could not be saved. Retry adding photos.</string>
     <string name="media_cleanup_pending">Some local copies couldn't be removed. Phoenix will retry cleanup.</string>

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import com.devil.phoenixproject.data.media.AndroidExerciseMediaStore
+import com.devil.phoenixproject.data.media.ExerciseMediaSessionRegistry
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.util.MediaPickResult
@@ -61,9 +62,15 @@ class ExerciseMediaSaveCoordinatorTest {
         0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(),
     )
 
+    /**
+     * Structurally COMPLETE tiny JPEG (finding A: fixtures are valid input,
+     * never prefix+garbage): header + body + EOI terminator.
+     */
     private fun payload(size: Int = 64): ByteArray {
-        val bytes = ByteArray(size) { (it * 17 + 3).toByte() }
+        val bytes = ByteArray(maxOf(size, 16)) { (it * 17 + 3).toByte() }
         jpegHeader.copyInto(bytes)
+        bytes[bytes.size - 2] = 0xFF.toByte() // EOI
+        bytes[bytes.size - 1] = 0xD9.toByte()
         return bytes
     }
 
@@ -90,7 +97,7 @@ class ExerciseMediaSaveCoordinatorTest {
         // runs first, and only then does the queued copy execute (SD2).
         val dispatcher = StandardTestDispatcher()
         Dispatchers.setMain(dispatcher)
-        val coordinator = ExerciseMediaSaveCoordinator(store)
+        val coordinator = ExerciseMediaSaveCoordinator(store, ioDispatcher = Dispatchers.Unconfined, sessionRegistry = ExerciseMediaSessionRegistry())
 
         coordinator.onPickResult(MediaPickResult.Picked(listOf(picked("late.jpg"))), existingCount = 0)
         coordinator.discardAll()
@@ -106,7 +113,7 @@ class ExerciseMediaSaveCoordinatorTest {
 
     @Test
     fun cancelledPickIsCleanNoOp() {
-        val coordinator = ExerciseMediaSaveCoordinator(store)
+        val coordinator = ExerciseMediaSaveCoordinator(store, ioDispatcher = Dispatchers.Unconfined, sessionRegistry = ExerciseMediaSessionRegistry())
         coordinator.onPickResult(MediaPickResult.Cancelled, existingCount = 0)
         assertTrue(coordinator.stagedAdditions.isEmpty())
         assertEquals(MediaPhase.Idle, coordinator.phase)
@@ -117,7 +124,7 @@ class ExerciseMediaSaveCoordinatorTest {
 
     @Test
     fun rowTransactionFailureKeepsMintedIdAndRetryCommitsExactlyOnce() = runBlocking {
-        val coordinator = ExerciseMediaSaveCoordinator(store)
+        val coordinator = ExerciseMediaSaveCoordinator(store, ioDispatcher = Dispatchers.Unconfined, sessionRegistry = ExerciseMediaSessionRegistry())
         coordinator.onPickResult(MediaPickResult.Picked(listOf(picked("a.jpg"))), existingCount = 0)
         assertEquals(1, coordinator.stagedAdditions.size)
 
@@ -144,8 +151,10 @@ class ExerciseMediaSaveCoordinatorTest {
     }
 
     @Test
-    fun vanishedStagedPickIsPrunedAndRemainingPicksCommit() = runBlocking {
-        val coordinator = ExerciseMediaSaveCoordinator(store)
+    fun vanishedStagedPickFailsRetryablyWithoutSilentPruning() = runBlocking {
+        // Merge-gate finding C: a staged pick whose copy vanished is NEVER
+        // silently pruned and must never reduce the saved selection.
+        val coordinator = ExerciseMediaSaveCoordinator(store, ioDispatcher = Dispatchers.Unconfined, sessionRegistry = ExerciseMediaSessionRegistry())
         coordinator.onPickResult(
             MediaPickResult.Picked(listOf(picked("keep.jpg"), picked("lost.jpg"))),
             existingCount = 0,
@@ -156,17 +165,40 @@ class ExerciseMediaSaveCoordinatorTest {
 
         val outcome = coordinator.saveWithMedia(draft(), editingExerciseId = null, repository = repository)
 
-        assertTrue(outcome is CustomExerciseSaveOutcome.Saved, "A dead draft entry must not poison the save (SD6)")
-        val saved = outcome as CustomExerciseSaveOutcome.Saved
-        assertEquals(1, repository.getAllExercises().first().size, "The exercise must be created exactly once")
-        assertEquals(1, repository.getImages(saved.exercise.id!!).size, "Only the surviving pick commits")
+        assertTrue(
+            outcome is CustomExerciseSaveOutcome.Failed,
+            "A vanished staged pick must fail the save as a retryable error (finding C) — never Saved with less media",
+        )
+        assertEquals(
+            2,
+            coordinator.stagedAdditions.size,
+            "The intended selection must be preserved, never silently pruned (finding C)",
+        )
+        assertNotNull(coordinator.errorMessage, "The error must report the photos needing re-selection (finding C)")
+        assertTrue(
+            coordinator.errorMessage!!.contains("lost.jpg"),
+            "The error must name the missing photo (finding C: 'report which photos need re-selection')",
+        )
+        assertEquals(0, repository.getAllExercises().first().size, "A missing-photo failure creates nothing")
+
+        // Retryable: once the lost pick's copy exists again (the user re-picked
+        // it), the SAME draft saves with the FULL selection.
+        File(coordinator.stagedAdditions[1].stagedPath).writeBytes(payload())
+        val retry = coordinator.saveWithMedia(draft(), editingExerciseId = null, repository = repository)
+        assertTrue(retry is CustomExerciseSaveOutcome.Saved, "The save must succeed once the selection is complete again")
+        val saved = retry as CustomExerciseSaveOutcome.Saved
+        assertEquals(
+            2,
+            repository.getImages(saved.exercise.id!!).size,
+            "The full intended selection commits on retry (finding C)",
+        )
     }
 
     // ---- SD7: row removal succeeds but file cleanup fails -> "cleanup pending" debt ----
 
     @Test
     fun fileCleanupFailureAfterRowRemovalSurfacesCleanupPendingAndDebt() = runBlocking {
-        val coordinator = ExerciseMediaSaveCoordinator(store)
+        val coordinator = ExerciseMediaSaveCoordinator(store, ioDispatcher = Dispatchers.Unconfined, sessionRegistry = ExerciseMediaSessionRegistry())
         // Pre-existing exercise with one saved photo.
         repository.addExercise(draft(id = "custom-9"))
         repository.addImage("custom-9", "/media/custom-9/saved.jpg", 0)
@@ -188,5 +220,53 @@ class ExerciseMediaSaveCoordinatorTest {
         assertTrue(coordinator.cleanupPendingNotice, "The UI notice must reflect cleanup pending (SD7)")
         assertEquals(0, repository.getImages("custom-9").size, "Committed row removals are never replayed (SD7)")
         assertEquals(1, store.drainCleanupDebt(), "The failed delete must be recorded as retryable cleanup debt (SD7/T29)")
+    }
+
+    // ---- merge-gate finding D: off-main import, live Copying phase, real progress ----
+
+    @Test
+    fun slowProviderCopyRunsOffCallerThreadAndNeverBlocksIt() = runBlocking {
+        val callerThread = Thread.currentThread().name
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val copyThreads = mutableListOf<String>()
+        val slowStore = AndroidExerciseMediaStore(
+            mediaRoot = File(root, "media"),
+            openPickedStream = { handle ->
+                copyThreads += Thread.currentThread().name
+                val raw = File(handle).inputStream()
+                object : java.io.InputStream() {
+                    override fun read(): Int {
+                        gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                        return raw.read()
+                    }
+                }
+            },
+        )
+        val coordinator = ExerciseMediaSaveCoordinator(
+            slowStore,
+            ioDispatcher = Dispatchers.IO,
+            sessionRegistry = ExerciseMediaSessionRegistry(),
+        )
+        val done = java.util.concurrent.CountDownLatch(1)
+        coordinator.onPickResult(MediaPickResult.Picked(listOf(picked("slow.jpg"))), existingCount = 0) {
+            done.countDown()
+        }
+
+        // The caller thread is already past onPickResult while the copy is
+        // blocked on the slow provider — import I/O must never block Main, and
+        // the Copying phase must be live so the dialog can disable Save.
+        assertEquals(
+            MediaPhase.Copying(0, 1),
+            coordinator.phase,
+            "The copy phase must be live while copying (finding D — Save disables on it)",
+        )
+        gate.countDown()
+        assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS), "Staging must complete once the provider unblocks")
+        assertEquals(1, coordinator.stagedAdditions.size)
+        assertEquals(MediaPhase.Idle, coordinator.phase)
+        assertTrue(
+            copyThreads.isNotEmpty() && copyThreads.all { it != callerThread },
+            "Import I/O must run off the caller/main thread (finding D)",
+        )
     }
 }

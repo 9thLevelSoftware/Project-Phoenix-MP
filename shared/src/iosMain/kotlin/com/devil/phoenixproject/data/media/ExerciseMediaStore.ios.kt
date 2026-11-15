@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.media
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.PickedPhoto
+import kotlin.coroutines.coroutineContext
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -10,6 +11,8 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSInputStream
@@ -67,6 +70,7 @@ class IosExerciseMediaStore(
         sessionId: String,
         picked: List<PickedPhoto>,
         existingCount: Int,
+        onProgress: (done: Int, total: Int) -> Unit,
     ): Result<List<StagedMedia>> {
         // SD11: guardrails BEFORE any copy; whole-batch rejection on violation.
         val remaining = ExerciseMediaLimits.MAX_PHOTOS_PER_EXERCISE - existingCount
@@ -88,58 +92,104 @@ class IosExerciseMediaStore(
 
         val sessionDir = "$stagingRootPath/$sessionId"
         fileManager.createDirectoryAtPath(sessionDir, true, null, null)
+        val ctx = coroutineContext // captured for non-suspend lambdas (finding D checkpoints)
 
         val batchFiles = mutableListOf<String>()
         val staged = mutableListOf<StagedMedia>()
-        for (photo in picked) {
-            val target = "$sessionDir/${generateUUID()}.${extensionFor(photo.displayName)}"
-            try {
-                batchFiles += target // tracked BEFORE copy so partials are always cleaned
-                val input = NSInputStream(uRL = NSURL.fileURLWithPath(photo.handle))
-                    ?: return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
-                input.open()
+        try {
+            for (photo in picked) {
+                // Finding D: cancellation is honored between copies — a
+                // cancelled session never keeps writing under the user's feet.
+                ctx.ensureActive()
+                val target = "$sessionDir/${generateUUID()}.${extensionFor(photo.displayName)}"
                 try {
-                    val header = readHeader(input, 12)
-                    if (!isSupportedImageMagic(header)) {
-                        return rejectBatch(batchFiles, picked, MediaGuardrailError.UnsupportedType(photo.displayName))
-                    }
-                    // NSOutputStream has no file-backed constructor in the klib —
-                    // posix stdio gives binary-exact writes with stable interop.
-                    val output = fopen(target, "wb")
+                    batchFiles += target // tracked BEFORE copy so partials are always cleaned
+                    val input = NSInputStream(uRL = NSURL.fileURLWithPath(photo.handle))
                         ?: return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
+                    input.open()
                     try {
-                        var written = 0L
-                        writeFully(output, header, header.size)
-                        written += header.size
-                        val buffer = ByteArray(8 * 1024)
-                        while (true) {
-                            val read = buffer.usePinned { pinned ->
-                                input.read(pinned.addressOf(0).reinterpret(), buffer.size.convert())
-                            }.toInt()
-                            if (read <= 0) break
-                            written += read
-                            if (written > ExerciseMediaLimits.MAX_PHOTO_BYTES) {
-                                return rejectBatch(batchFiles, picked, MediaGuardrailError.PhotoTooLarge(photo.displayName))
-                            }
-                            writeFully(output, buffer, read)
+                        // Finding A/E: strict header read — a negative read is a
+                        // stream error, never EOF. Unknown signature or a
+                        // misleading ftyp brand rejects the whole batch BEFORE
+                        // any bytes are written.
+                        val header = readHeaderStrict(input, 16, photo.displayName)
+                        if (StillImageValidator.detectFormat(header) == null) {
+                            return rejectBatch(batchFiles, picked, MediaGuardrailError.UnsupportedType(photo.displayName))
                         }
-                        staged += StagedMedia(
-                            stagedPath = target,
-                            displayName = photo.displayName,
-                            byteSize = written,
-                        )
+                        // NSOutputStream has no file-backed constructor in the klib —
+                        // posix stdio gives binary-exact writes with stable interop.
+                        val output = fopen(target, "wb")
+                            ?: return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
+                        var finalized = false
+                        try {
+                            writeFully(output, header, header.size)
+                            val tail = RollingTail()
+                            tail.append(header)
+                            // Finding E: strict stream semantics (negative read
+                            // = ERROR, never EOF) with checked write AND
+                            // finalization; any read/write/finalization failure
+                            // rejects and compensates the whole batch below.
+                            val pump = MediaStreamPump(
+                                displayName = photo.displayName,
+                                maxBytes = ExerciseMediaLimits.MAX_PHOTO_BYTES - header.size,
+                            )
+                            val bodyBytes = pump.copy(
+                                readChunk = { buffer ->
+                                    buffer.usePinned { pinned ->
+                                        input.read(pinned.addressOf(0).reinterpret(), buffer.size.convert())
+                                    }.toInt()
+                                },
+                                writeChunk = { buffer, count -> writeFully(output, buffer, count) },
+                                finalizeOutput = {
+                                    finalized = true
+                                    if (fclose(output) != 0) {
+                                        throw MediaStreamWriteException("fclose failed for $target")
+                                    }
+                                },
+                                checkpoint = { ctx.ensureActive() },
+                                onChunk = { buffer, count -> tail.append(buffer, 0, count) },
+                            )
+                            val written = header.size + bodyBytes
+                            // Finding A: the bytes actually written must form a
+                            // COMPLETE still image — truncated/corrupt input
+                            // rejects the whole batch, never stages.
+                            if (!StillImageValidator.validate(header, written, tail.snapshot())) {
+                                return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
+                            }
+                            // Finding A: platform decode gate — structurally
+                            // plausible bytes that cannot actually decode are
+                            // rejected exactly like corrupt input.
+                            if (!imageDecodeCheck(target)) {
+                                return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
+                            }
+                            staged += StagedMedia(
+                                stagedPath = target,
+                                displayName = photo.displayName,
+                                byteSize = written,
+                            )
+                        } finally {
+                            if (!finalized) runCatching { fclose(output) }
+                        }
                     } finally {
-                        fclose(output)
+                        input.close()
                     }
-                } finally {
-                    input.close()
+                } catch (e: CancellationException) {
+                    throw e // finding D: cancellation is never a guardrail failure
+                } catch (e: MediaGuardrailException) {
+                    return rejectBatch(batchFiles, picked, e.guardrail)
+                } catch (e: Exception) {
+                    log.w(e) { "Failed to stage ${photo.displayName}" }
+                    return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
                 }
-            } catch (e: MediaGuardrailException) {
-                return rejectBatch(batchFiles, picked, e.guardrail)
-            } catch (e: Exception) {
-                log.w(e) { "Failed to stage ${photo.displayName}" }
-                return rejectBatch(batchFiles, picked, MediaGuardrailError.Unreadable(photo.displayName))
+                // Finding D: real per-file progress for the copy UI.
+                onProgress(staged.size, picked.size)
             }
+        } catch (e: CancellationException) {
+            // Finding D: a cancelled copy owns its partials — delete them and
+            // the consumed picker handles; nothing half-written survives.
+            batchFiles.forEach { runCatching { fileManager.removeItemAtPath(it, null) } }
+            consumeHandles(picked)
+            throw e
         }
         consumeHandles(picked)
         return Result.success(staged)
@@ -366,26 +416,34 @@ class IosExerciseMediaStore(
         return canonical == rootCanonical || canonical.startsWith("$rootCanonical/")
     }
 
-    private fun readHeader(input: NSInputStream, n: Int): ByteArray {
+    /**
+     * Strict header read (finding E): a negative read is a stream ERROR, never
+     * EOF — an error here can never masquerade as a short header.
+     */
+    private fun readHeaderStrict(input: NSInputStream, n: Int, displayName: String): ByteArray {
         val header = ByteArray(n)
         var filled = 0
         while (filled < n) {
             val read = header.usePinned { pinned ->
                 input.read(pinned.addressOf(filled).reinterpret(), (n - filled).convert())
             }.toInt()
-            if (read <= 0) break
+            if (read < 0) {
+                throw MediaStreamReadException("Header read failed for $displayName")
+            }
+            if (read == 0) break
             filled += read
         }
         return if (filled == n) header else header.copyOf(filled)
     }
 
+    /** Checked write (finding E): a short/failed write throws, never proceeds. */
     private fun writeFully(output: CPointer<FILE>, bytes: ByteArray, count: Int) {
         bytes.usePinned { pinned ->
             var offset = 0
             while (offset < count) {
                 val written = fwrite(pinned.addressOf(offset), 1.convert(), (count - offset).convert(), output)
                     .toInt()
-                if (written <= 0) throw MediaStoreIOException("fwrite failed")
+                if (written <= 0) throw MediaStreamWriteException("fwrite failed")
                 offset += written
             }
         }
@@ -402,7 +460,8 @@ class IosExerciseMediaStore(
                 val read = buffer.usePinned { pinned ->
                     input.read(pinned.addressOf(0).reinterpret(), buffer.size.convert())
                 }.toInt()
-                if (read <= 0) break
+                if (read < 0) throw MediaStreamReadException("Stream read failed for $path")
+                if (read == 0) break
                 for (i in 0 until read) chunks += buffer[i]
             }
             return chunks.toByteArray().decodeToString()
@@ -430,4 +489,18 @@ class IosExerciseMediaStore(
             "img"
         }
     }
+}
+
+/**
+ * Platform decode gate (merge-gate finding A): a real UIImage decode proves the
+ * staged bytes are a decodable image on this device, not just a recognizable
+ * prefix. Structurally plausible bytes that cannot decode are rejected exactly
+ * like corrupt input.
+ */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun imageDecodeCheck(path: String): Boolean = try {
+    val image = platform.UIKit.UIImage(contentsOfFile = path)
+    image != null && image.CGImage != null
+} catch (e: Throwable) {
+    false
 }

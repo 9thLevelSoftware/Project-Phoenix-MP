@@ -20,19 +20,24 @@ class ExerciseMediaReconciler(
     private val mediaStore: ExerciseMediaStore,
 ) {
     /**
-     * @param activeSessions session ids (staging) and in-flight commit exercise
-     * ids that must survive this sweep. Startup passes none; a mid-session sweep
-     * would pass the live coordinator's registry.
+     * Runs the DB snapshot AND the sweep serialized against every live
+     * import/commit operation (merge-gate finding B), receiving the REAL active
+     * session ids (staging sessions plus in-flight commit exercise ids) from
+     * [sessionRegistry] — never an empty hand-supplied set.
      */
-    suspend fun reconcile(activeSessions: Set<String> = emptySet()) {
+    suspend fun reconcile(
+        sessionRegistry: ExerciseMediaSessionRegistry = ExerciseMediaSessionRegistry.shared,
+    ) {
         try {
-            val liveExerciseIds = repository.getAllExerciseIds().toSet()
-            val referencedUrls = repository.getAllImageUrls().toSet()
-            mediaStore.reconcile(
-                liveExerciseIds = liveExerciseIds,
-                referencedUrls = referencedUrls,
-                activeSessions = activeSessions,
-            )
+            sessionRegistry.withSweep { activeSessions ->
+                val liveExerciseIds = repository.getAllExerciseIds().toSet()
+                val referencedUrls = repository.getAllImageUrls().toSet()
+                mediaStore.reconcile(
+                    liveExerciseIds = liveExerciseIds,
+                    referencedUrls = referencedUrls,
+                    activeSessions = activeSessions,
+                )
+            }
         } catch (e: Exception) {
             log.w(e) { "Startup media reconcile failed (ignored)" }
         }

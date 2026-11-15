@@ -47,14 +47,20 @@ class ExerciseMediaStoreTest {
         0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(),
     )
 
-    /** Non-UTF8 payload: invalid continuation bytes that a text pipeline would corrupt (T9). */
+    /**
+     * Structurally COMPLETE tiny JPEG payload (finding A: fixtures are valid
+     * input, never prefix+garbage — the gate flagged exactly that gap): JPEG
+     * header, non-UTF8 middle bytes (T9), EOI terminator.
+     */
     private fun nonUtf8Payload(size: Int = 64): ByteArray {
-        val bytes = ByteArray(size) { (it * 31 + 7).toByte() }
+        val bytes = ByteArray(maxOf(size, 16)) { (it * 31 + 7).toByte() }
         jpegHeader.copyInto(bytes)
         bytes[4] = 0xC3.toByte() // invalid UTF-8 continuation start
         bytes[5] = 0x28.toByte()
         bytes[6] = 0x00.toByte() // NUL would truncate a text read
         bytes[7] = 0xFE.toByte()
+        bytes[bytes.size - 2] = 0xFF.toByte() // EOI
+        bytes[bytes.size - 1] = 0xD9.toByte()
         return bytes
     }
 
@@ -361,5 +367,126 @@ class ExerciseMediaStoreTest {
         )
         assertFalse(restored, "Out-of-root paths must be refused, never touched (SD8)")
         assertTrue(outsider.isFile, "A user original outside the managed root must survive untouched")
+    }
+
+    // ---- merge-gate finding A: corrupt/truncated/misleading input ----
+
+    @Test
+    fun truncatedImageRejectsWholeBatchAndStagesNothing() = runBlocking {
+        val good = sourceFile("ok.jpg", nonUtf8Payload())
+        val truncated = sourceFile("cut.jpg", nonUtf8Payload(64).copyOf(62)) // EOI cut off
+        val result = store.stage(
+            "sa1",
+            listOf(picked("ok.jpg", good), picked("cut.jpg", truncated)),
+            existingCount = 0,
+        )
+        assertTrue(result.isFailure, "Truncated/corrupt input must reject the whole batch (finding A)")
+        assertTrue(
+            stagingDir("sa1").listFiles().isNullOrEmpty(),
+            "A truncated-file rejection must leave nothing staged — batch compensation (finding A)",
+        )
+    }
+
+    @Test
+    fun misleadingFtypVideoBrandRejectsWholeBatch() = runBlocking {
+        val mp42 = ByteArray(64) { 0 }
+        byteArrayOf(0, 0, 0, 0x20).copyInto(mp42)
+        "ftypmp42".encodeToByteArray().copyInto(mp42, 4)
+        val good = sourceFile("ok.jpg", nonUtf8Payload())
+        val bad = sourceFile("clip.mp4", mp42)
+        val result = store.stage(
+            "sa2",
+            listOf(picked("ok.jpg", good), picked("clip.mp4", bad)),
+            existingCount = 0,
+        )
+        assertTrue(result.isFailure, "A video ftyp brand must never pass as a still image (finding A)")
+        assertTrue(stagingDir("sa2").listFiles().isNullOrEmpty(), "Nothing may be staged")
+    }
+
+    @Test
+    fun bareBmpPrefixRejectsWholeBatch() = runBlocking {
+        // Gate probe: the old magic check accepted a two-byte "BM".
+        val bareBm = sourceFile("tiny.bmp", byteArrayOf('B'.code.toByte(), 'M'.code.toByte()))
+        val result = store.stage("sa3", listOf(picked("tiny.bmp", bareBm)), existingCount = 0)
+        assertTrue(result.isFailure, "A bare two-byte prefix is not a decodable image (finding A)")
+        assertTrue(stagingDir("sa3").listFiles().isNullOrEmpty(), "Nothing may be staged")
+    }
+
+    @Test
+    fun decodeGateRejectionRejectsWholeBatch() = runBlocking {
+        // Structurally valid bytes that the platform decoder rejects are
+        // corrupt input too (finding A: "not just magic prefixes").
+        val gated = AndroidExerciseMediaStore(
+            mediaRoot = File(root, "media"),
+            openPickedStream = { handle -> File(handle).takeIf { it.isFile }?.inputStream() },
+            isDecodableImage = { false },
+        )
+        val good = sourceFile("ok.jpg", nonUtf8Payload())
+        val result = gated.stage("sa4", listOf(picked("ok.jpg", good)), existingCount = 0)
+        assertTrue(result.isFailure, "A file the platform decoder rejects must reject the batch (finding A)")
+        assertTrue(stagingDir("sa4").listFiles().isNullOrEmpty(), "Nothing may be staged")
+    }
+
+    @Test
+    fun decodeGateIsConsultedForEveryStagedFile() = runBlocking {
+        val consulted = mutableListOf<String>()
+        val gated = AndroidExerciseMediaStore(
+            mediaRoot = File(root, "media"),
+            openPickedStream = { handle -> File(handle).takeIf { it.isFile }?.inputStream() },
+            isDecodableImage = { path -> consulted += path; true },
+        )
+        val a = sourceFile("a.jpg", nonUtf8Payload())
+        val b = sourceFile("b.jpg", nonUtf8Payload(32))
+        val result = gated.stage("sa5", listOf(picked("a.jpg", a), picked("b.jpg", b)), existingCount = 0)
+        assertEquals(2, result.getOrThrow().size)
+        assertEquals(2, consulted.size, "Every staged file must pass the platform decode gate (finding A)")
+    }
+
+    // ---- merge-gate finding D: real per-file progress ----
+
+    @Test
+    fun stageReportsPerFileProgress() = runBlocking {
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val a = sourceFile("a.jpg", nonUtf8Payload())
+        val b = sourceFile("b.jpg", nonUtf8Payload(32))
+        val result = store.stage(
+            "sd1",
+            listOf(picked("a.jpg", a), picked("b.jpg", b)),
+            existingCount = 0,
+        ) { done, total -> progress += done to total }
+        assertEquals(2, result.getOrThrow().size)
+        assertEquals(listOf(1 to 2, 2 to 2), progress, "Progress must advance per copied file (finding D)")
+    }
+
+    // ---- merge-gate finding E: read/write/finalization failures compensate the batch ----
+
+    @Test
+    fun readFailureMidCopyCompensatesWholeBatch() = runBlocking {
+        // A provider/stream error AFTER the accepted header — like the iOS
+        // negative-read case, expressed as the Java stream error signal.
+        val payload = nonUtf8Payload()
+        val failing = object : java.io.InputStream() {
+            var pos = 0
+            override fun read(): Int =
+                if (pos < 16) payload[pos++].toInt() and 0xFF else throw java.io.IOException("injected read failure")
+        }
+        val failingStore = AndroidExerciseMediaStore(
+            mediaRoot = File(root, "media"),
+            openPickedStream = { handle -> if (handle == "fail-handle") failing else File(handle).takeIf { it.isFile }?.inputStream() },
+        )
+        val good = sourceFile("ok.jpg", nonUtf8Payload())
+        val result = failingStore.stage(
+            "se1",
+            listOf(
+                picked("ok.jpg", good),
+                PickedPhoto(handle = "fail-handle", displayName = "fail.jpg", byteSize = null),
+            ),
+            existingCount = 0,
+        )
+        assertTrue(result.isFailure, "A stream error must fail the batch, never stage a truncated file (finding E)")
+        assertTrue(
+            stagingDir("se1").listFiles().isNullOrEmpty(),
+            "A read failure must compensate the whole batch, including valid batchmates (finding E)",
+        )
     }
 }

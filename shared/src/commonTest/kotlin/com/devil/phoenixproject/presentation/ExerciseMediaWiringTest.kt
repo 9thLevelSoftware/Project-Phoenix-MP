@@ -218,6 +218,61 @@ class ExerciseMediaWiringTest {
         )
     }
 
+    // Merge-gate findings B/C/D/E wiring (issue #1358 rework): the sweep
+    // coordinates with real live sessions, missing staged picks are never
+    // silently pruned, imports run off the main dispatcher with Save disabled
+    // while copying, and iOS stream reads distinguish errors from EOF. Source
+    // guards so the fixes cannot silently revert (SD14).
+    @Test
+    fun mergeGateFixWiringStaysInPlace() {
+        val coordinator = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/ExerciseMediaSaveCoordinator.kt",
+        )
+        assertTrue(coordinator != null, "ExerciseMediaSaveCoordinator.kt must exist")
+        assertTrue(
+            coordinator!!.contains("withActiveSession(sessionId)") &&
+                coordinator.contains("withActiveCommit(sessionId, exerciseId)") &&
+                coordinator.contains("sessionRegistry.releaseSession(sessionId)"),
+            "Staging/commit must stay coordinated with the cleanup sweep via the session registry (finding B).",
+        )
+        assertTrue(
+            coordinator.contains("Dispatchers.Default") || coordinator.contains("Dispatchers.IO"),
+            "Import I/O must run on a background dispatcher (finding D).",
+        )
+        assertFalse(
+            coordinator.contains("stagedAdditions.removeAll { !mediaStore.stagedCopyExists"),
+            "Missing staged picks must never be silently pruned (finding C).",
+        )
+        val reconciler = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/data/media/ExerciseMediaReconciler.kt",
+        )
+        assertTrue(reconciler != null, "ExerciseMediaReconciler.kt must exist")
+        assertTrue(
+            reconciler!!.contains("withSweep"),
+            "The startup sweep must serialize with live import/commit sessions (finding B).",
+        )
+        val dialog = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/CreateExerciseDialog.kt",
+        )
+        assertTrue(dialog != null, "CreateExerciseDialog.kt must exist")
+        assertTrue(
+            dialog!!.contains("!is MediaPhase.Copying"),
+            "Dialog Save must disable while photos are copying (finding D).",
+        )
+        val iosStore = readProjectFile(
+            "src/iosMain/kotlin/com/devil/phoenixproject/data/media/ExerciseMediaStore.ios.kt",
+        )
+        assertTrue(iosStore != null, "ExerciseMediaStore.ios.kt must exist")
+        assertTrue(
+            iosStore!!.contains("MediaStreamPump(") && iosStore.contains("readHeaderStrict"),
+            "iOS staging must route through the strict stream pump (finding E: negative reads are errors).",
+        )
+        assertFalse(
+            iosStore.contains("if (read <= 0) break"),
+            "iOS reads must never conflate stream errors with EOF (finding E).",
+        )
+    }
+
     /** Strip `//` line comments and `/* */` block comments before absence checks. */
     private fun stripKotlinComments(src: String): String {
         val sb = StringBuilder()

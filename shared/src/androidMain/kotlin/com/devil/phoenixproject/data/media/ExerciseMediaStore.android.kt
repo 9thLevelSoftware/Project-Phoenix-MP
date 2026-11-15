@@ -7,8 +7,30 @@ import com.devil.phoenixproject.util.PickedPhoto
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 
 private val log = Logger.withTag("ExerciseMediaStore.Android")
+
+/**
+ * Platform decode gate (merge-gate finding A): a bounded BitmapFactory decode
+ * proves the staged bytes are a REAL decodable image on this device, not just
+ * a recognizable prefix. A structurally plausible file that cannot decode is
+ * rejected exactly like corrupt input.
+ */
+private fun bitmapDecodeCheck(path: String): Boolean = try {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        false
+    } else {
+        val probe = android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 }
+        android.graphics.BitmapFactory.decodeFile(path, probe) != null
+    }
+} catch (e: Throwable) {
+    false
+}
 
 /**
  * Android [ExerciseMediaStore] (issue #1358, P3).
@@ -19,11 +41,14 @@ private val log = Logger.withTag("ExerciseMediaStore.Android")
  *
  * The secondary constructor is the androidHostTest seam: real temp dirs plus an
  * injected handle→stream opener, so behavior tests run on real files without a
- * Context.
+ * Context. [isDecodableImage] is the extra platform decode gate; the Context
+ * constructor installs a BitmapFactory-backed check, and the seam constructor
+ * lets host tests exercise the decode-gate wiring directly.
  */
 class AndroidExerciseMediaStore(
     private val mediaRoot: File,
     private val openPickedStream: (String) -> InputStream?,
+    private val isDecodableImage: ((String) -> Boolean)? = null,
 ) : ExerciseMediaStore {
 
     constructor(context: Context) : this(
@@ -38,6 +63,7 @@ class AndroidExerciseMediaStore(
                 null
             }
         },
+        isDecodableImage = { path -> bitmapDecodeCheck(path) },
     )
 
     private val stagingRoot: File get() = File(mediaRoot, "staging")
@@ -50,6 +76,7 @@ class AndroidExerciseMediaStore(
         sessionId: String,
         picked: List<PickedPhoto>,
         existingCount: Int,
+        onProgress: (done: Int, total: Int) -> Unit,
     ): Result<List<StagedMedia>> {
         // SD11: guardrails BEFORE any copy. Any violation rejects the whole new
         // batch; prior accepted media is untouched.
@@ -79,38 +106,65 @@ class AndroidExerciseMediaStore(
 
         val batchFiles = mutableListOf<File>()
         val staged = mutableListOf<StagedMedia>()
-        for (photo in picked) {
-            val target = File(sessionDir, "${generateUUID()}.${extensionFor(photo.displayName)}")
-            try {
-                batchFiles += target // tracked BEFORE copy so partials are always cleaned
-                val stream = openPickedStream(photo.handle)
-                    ?: return rejectBatch(batchFiles, MediaGuardrailError.Unreadable(photo.displayName))
-                stream.use { input ->
-                    val header = input.readHeader(12)
-                    if (!isSupportedImageMagic(header)) {
-                        return rejectBatch(
-                            batchFiles,
-                            MediaGuardrailError.UnsupportedType(photo.displayName),
-                        )
-                    }
-                    // Binary streaming copy; the 10,000,000-byte cap is enforced
-                    // DURING the copy for unknown sizes; a partial file is
-                    // discarded on exceed (SD11).
-                    target.outputStream().use { out ->
+        try {
+            for (photo in picked) {
+                // Finding D: cancellation is honored between copies — a cancelled
+                // session never keeps writing under the user's feet.
+                coroutineContext.ensureActive()
+                val target = File(sessionDir, "${generateUUID()}.${extensionFor(photo.displayName)}")
+                try {
+                    batchFiles += target // tracked BEFORE copy so partials are always cleaned
+                    val stream = openPickedStream(photo.handle)
+                        ?: return rejectBatch(batchFiles, MediaGuardrailError.Unreadable(photo.displayName))
+                    stream.use { input ->
+                        val header = input.readHeader(16)
+                        // Finding A: unknown signature or misleading ftyp brand
+                        // rejects the whole batch BEFORE any bytes are copied.
+                        if (StillImageValidator.detectFormat(header) == null) {
+                            return rejectBatch(
+                                batchFiles,
+                                MediaGuardrailError.UnsupportedType(photo.displayName),
+                            )
+                        }
+                        val tail = RollingTail()
+                        tail.append(header)
+                        // Binary streaming copy; the 10,000,000-byte cap is enforced
+                        // DURING the copy for unknown sizes; a partial file is
+                        // discarded on exceed (SD11).
                         var written = 0L
-                        out.write(header, 0, header.size)
-                        written += header.size
-                        val buffer = ByteArray(8 * 1024)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            written += read
-                            if (written > ExerciseMediaLimits.MAX_PHOTO_BYTES) {
-                                throw MediaGuardrailException(
-                                    MediaGuardrailError.PhotoTooLarge(photo.displayName),
-                                )
+                        target.outputStream().use { out ->
+                            out.write(header, 0, header.size)
+                            written += header.size
+                            val buffer = ByteArray(8 * 1024)
+                            while (true) {
+                                coroutineContext.ensureActive()
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                written += read
+                                if (written > ExerciseMediaLimits.MAX_PHOTO_BYTES) {
+                                    throw MediaGuardrailException(
+                                        MediaGuardrailError.PhotoTooLarge(photo.displayName),
+                                    )
+                                }
+                                out.write(buffer, 0, read)
+                                tail.append(buffer, 0, read)
                             }
-                            out.write(buffer, 0, read)
+                        }
+                        // Finding A: the bytes actually written must form a
+                        // COMPLETE still image — truncated/corrupt input rejects
+                        // the whole batch, never stages.
+                        if (!StillImageValidator.validate(header, written, tail.snapshot())) {
+                            return rejectBatch(
+                                batchFiles,
+                                MediaGuardrailError.Unreadable(photo.displayName),
+                            )
+                        }
+                        val decodeGate = isDecodableImage
+                        if (decodeGate != null && !decodeGate(target.absolutePath)) {
+                            return rejectBatch(
+                                batchFiles,
+                                MediaGuardrailError.Unreadable(photo.displayName),
+                            )
                         }
                         staged += StagedMedia(
                             stagedPath = target.absolutePath,
@@ -118,13 +172,22 @@ class AndroidExerciseMediaStore(
                             byteSize = written,
                         )
                     }
+                } catch (e: CancellationException) {
+                    throw e // finding D: cancellation is never a guardrail failure
+                } catch (e: MediaGuardrailException) {
+                    return rejectBatch(batchFiles, e.guardrail)
+                } catch (e: Exception) {
+                    log.w(e) { "Failed to stage ${photo.displayName}" }
+                    return rejectBatch(batchFiles, MediaGuardrailError.Unreadable(photo.displayName))
                 }
-            } catch (e: MediaGuardrailException) {
-                return rejectBatch(batchFiles, e.guardrail)
-            } catch (e: Exception) {
-                log.w(e) { "Failed to stage ${photo.displayName}" }
-                return rejectBatch(batchFiles, MediaGuardrailError.Unreadable(photo.displayName))
+                // Finding D: real per-file progress for the copy UI.
+                onProgress(staged.size, picked.size)
             }
+        } catch (e: CancellationException) {
+            // Finding D: a cancelled copy owns its partials — delete them and
+            // stop; nothing from this batch is ever left half-written.
+            batchFiles.forEach { it.delete() }
+            throw e
         }
         return Result.success(staged)
     }

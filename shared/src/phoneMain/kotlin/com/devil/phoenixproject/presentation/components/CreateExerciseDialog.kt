@@ -453,10 +453,14 @@ fun CreateExerciseDialog(
                                                 }
                                                 is CustomExerciseSaveOutcome.MediaFailed -> {
                                                     // SD6: exercise kept; retry adds media only.
-                                                    saveErrorText = mediaSaveFailedMessage
+                                                    // Finding C: surface the specific message
+                                                    // (e.g. which photos need re-selection).
+                                                    saveErrorText = coordinator.errorMessage
+                                                        ?: mediaSaveFailedMessage
                                                 }
                                                 is CustomExerciseSaveOutcome.Failed -> {
-                                                    saveErrorText = mediaSaveFailedGenericMessage
+                                                    saveErrorText = coordinator.errorMessage
+                                                        ?: mediaSaveFailedGenericMessage
                                                 }
                                             }
                                         }
@@ -465,7 +469,9 @@ fun CreateExerciseDialog(
                                     }
                                 }
                             },
-                            enabled = !isSavingExercise,
+                            enabled = !isSavingExercise &&
+                                mediaCoordinator?.phase !is MediaPhase.Copying &&
+                                mediaCoordinator?.phase !is MediaPhase.Picking,
                             modifier = Modifier.weight(1f).height(56.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
