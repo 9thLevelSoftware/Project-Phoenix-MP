@@ -406,24 +406,27 @@ class SetSummaryCardTextLayoutRuntimeTest {
     }
 
     /**
-     * #1345 report fixture at the production host, all scales: the original unit, value
-     * and RPE control tokens must render on one line with the slider expanded.
+     * #1345 report fixture at the production host, all supported widths and scales:
+     * the original unit, value and expanded RPE control tokens must stay whole.
      */
     @Test
-    fun productionMatrix_reportFixture_textStaysWhole_allScales() {
+    fun productionMatrix_reportFixture_textStaysWhole_allWidthsAndScales() {
         val widthDp = mutableFloatStateOf(402f)
         val scale = mutableFloatStateOf(1f)
         setContentFor(widthDp, scale, "Old School") { SetSummaryCardFor(it, summary) }
-        for (s in SCALES) {
-            scale.floatValue = s
-            rule.waitForIdle()
-            if (rule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) {
-                rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+        for (width in SUPPORTED_WIDTHS) {
+            widthDp.floatValue = width
+            for (s in SCALES) {
+                scale.floatValue = s
                 rule.waitForIdle()
+                if (rule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) {
+                    rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+                    rule.waitForIdle()
+                }
+                val context = "report fixture width ${width}dp fontScale $s"
+                assertWhole(context, REPORT_SINGLE_LINE)
+                assertGlyphsFitParentsAndDoNotOverlap(context)
             }
-            val context = "report fixture fontScale $s"
-            assertWhole(context, REPORT_SINGLE_LINE)
-            assertGlyphsFitParentsAndDoNotOverlap(context)
         }
     }
 
@@ -452,10 +455,10 @@ class SetSummaryCardTextLayoutRuntimeTest {
 
     /**
      * #1385: Echo mode — peak text, phase labels and phase values stay whole at all
-     * scales through the production host.
+     * supported widths and scales through the production host.
      */
     @Test
-    fun echoPhaseText_staysWhole_allScales() {
+    fun echoPhaseText_staysWhole_allWidthsAndScales() {
         val echoSummary = summary.copy(
             isEchoMode = true,
             warmupAvgWeightKg = 9.07f,
@@ -470,12 +473,15 @@ class SetSummaryCardTextLayoutRuntimeTest {
         val widthDp = mutableFloatStateOf(402f)
         val scale = mutableFloatStateOf(1f)
         setContentFor(widthDp, scale, "Old School") { SetSummaryCardFor(it, echoSummary) }
-        for (s in SCALES) {
-            scale.floatValue = s
-            rule.waitForIdle()
-            val context = "Echo fontScale $s"
-            assertWhole(context, listOf(), listOf("Peak: 30.0 lbs/cable", "Warmup", "Working", "Burnout"))
-            assertGlyphsFitParentsAndDoNotOverlap(context)
+        for (width in SUPPORTED_WIDTHS) {
+            widthDp.floatValue = width
+            for (s in SCALES) {
+                scale.floatValue = s
+                rule.waitForIdle()
+                val context = "Echo width ${width}dp fontScale $s"
+                assertWhole(context, listOf(), listOf("Peak: 30.0 lbs/cable", "Warmup", "Working", "Burnout"))
+                assertGlyphsFitParentsAndDoNotOverlap(context)
+            }
         }
     }
 
@@ -509,15 +515,31 @@ class SetSummaryCardTextLayoutRuntimeTest {
         assertSideBySide("normal content keeps two columns", "Mode", "Set Weight")
     }
 
+    /**
+     * Regression for proportional glyph widths: the character-longest run is not
+     * necessarily the widest. At this supported width/scale, ten narrow i glyphs
+     * fit in a half-card while the shorter six-W run does not. The production host
+     * must measure every legal run and stack the grid so WWWWWW stays intact.
+     */
+    @Test
+    fun shorterButWiderRun_stacksGridInProductionConstraintChain() {
+        val widthDp = mutableFloatStateOf(402f)
+        val scale = mutableFloatStateOf(2f)
+        val mode = "iiiiiiiiii WWWWWW"
+        setContentFor(widthDp, scale, mode) { SetSummaryCardFor(it, tutSummary) }
+        rule.waitForIdle()
+        assertWhole("proportional-width regression", emptyList(), listOf(mode))
+        assertStacked("proportional-width regression", "Mode", "Set Weight")
+    }
+
     // ===== RPE interaction =====
 
     /**
-     * #1385: every choice 6-10 is selectable at every scale, "10" stays intact, the
-     * selection is reflected in the header, and one Confirm click fires exactly one
-     * callback with the selected value — then the slider collapses.
+     * #1385: every choice 6-10 is selectable at every supported width and scale, "10"
+     * stays intact, and one Confirm fires exactly once with the selected value.
      */
     @Test
-    fun rpeInteraction_allChoices_exactlyOneConfirm_allScales() {
+    fun rpeInteraction_allChoices_exactlyOneConfirm_allWidthsAndScales() {
         var confirmCount = 0
         var lastRpe = -1
         val widthDp = mutableFloatStateOf(402f)
@@ -525,60 +547,63 @@ class SetSummaryCardTextLayoutRuntimeTest {
         setContentFor(widthDp, scale, "Old School", onRpeLogged = { confirmCount++; lastRpe = it }) {
             SetSummaryCardFor(it, tutSummary)
         }
-        for (s in SCALES) {
-            scale.floatValue = s
-            rule.waitForIdle()
-            val opener = if (confirmCount == 0) "Log RPE" else "RPE 10"
-            rule.onAllNodesWithText(opener).onFirst().performScrollTo().performClick()
-            rule.waitForIdle()
-            for (rpe in 6..10) {
-                rpeChoice(rpe).performScrollTo().performClick()
+        for (width in SUPPORTED_WIDTHS) {
+            widthDp.floatValue = width
+            for (s in SCALES) {
+                scale.floatValue = s
                 rule.waitForIdle()
-                val reflected = rule.onAllNodesWithText("RPE $rpe").fetchSemanticsNodes().isNotEmpty()
-                assertTrue("fontScale $s: selecting $rpe must be reflected in the header", reflected)
+                val opener = if (confirmCount == 0) "Log RPE" else "RPE 10"
+                rule.onAllNodesWithText(opener).onFirst().performScrollTo().performClick()
+                rule.waitForIdle()
+                for (rpe in 6..10) {
+                    rpeChoice(rpe).performScrollTo().performClick()
+                    rule.waitForIdle()
+                    val reflected = rule.onAllNodesWithText("RPE $rpe").fetchSemanticsNodes().isNotEmpty()
+                    assertTrue("width ${width}dp fontScale $s: selecting $rpe must be reflected in the header", reflected)
+                }
+                val tenLayout = layoutOf(rpeChoice(10).fetchSemanticsNode())
+                assertEquals("width ${width}dp fontScale $s: '10' must render on one line", 1, tenLayout?.lineCount)
+                rule.onNodeWithText("Log your perceived exertion").assertExists()
+                rule.onNodeWithText("Cancel").assertExists()
+                rule.onNodeWithText("Confirm").assertExists()
+                val before = confirmCount
+                rule.onNodeWithText("Confirm").performScrollTo().performClick()
+                rule.mainClock.advanceTimeBy(2000)
+                rule.waitForIdle()
+                assertEquals("width ${width}dp fontScale $s: Confirm fires exactly once", before + 1, confirmCount)
+                assertEquals("width ${width}dp fontScale $s: confirmed value matches selection", 10, lastRpe)
+                rule.onNodeWithText("Confirm").assertDoesNotExist()
+                rule.onNodeWithText("Cancel").assertDoesNotExist()
+                assertTrue(rule.onAllNodesWithText("RPE 10").fetchSemanticsNodes().isNotEmpty())
             }
-            // The double-digit choice must stay intact, not split into "1" and "0".
-            val tenLayout = layoutOf(rpeChoice(10).fetchSemanticsNode())
-            assertEquals("fontScale $s: the '10' choice must render on one line", 1, tenLayout?.lineCount)
-            // Description and actions reachable.
-            rule.onNodeWithText("Log your perceived exertion").assertExists()
-            rule.onNodeWithText("Cancel").assertExists()
-            rule.onNodeWithText("Confirm").assertExists()
-            val before = confirmCount
-            rule.onNodeWithText("Confirm").performScrollTo().performClick()
-            rule.mainClock.advanceTimeBy(2000)
-            rule.waitForIdle()
-            assertEquals("fontScale $s: Confirm must fire exactly one callback", before + 1, confirmCount)
-            assertEquals("fontScale $s: the confirmed value must be the selection", 10, lastRpe)
-            // Collapsed after confirm: actions gone, logged RPE shown.
-            rule.onNodeWithText("Confirm").assertDoesNotExist()
-            rule.onNodeWithText("Cancel").assertDoesNotExist()
-            assertTrue(rule.onAllNodesWithText("RPE 10").fetchSemanticsNodes().isNotEmpty())
         }
-        assertEquals("one confirmation per scale", SCALES.size, confirmCount)
+        assertEquals("one confirmation per width/scale cell", SUPPORTED_WIDTHS.size * SCALES.size, confirmCount)
     }
 
-    /** #1385: cancel must never save, at any scale. */
+    /** #1385: cancel must never save at any supported width or scale. */
     @Test
-    fun rpeInteraction_cancelNeverSaves_allScales() {
+    fun rpeInteraction_cancelNeverSaves_allWidthsAndScales() {
         var confirmCount = 0
         val widthDp = mutableFloatStateOf(402f)
         val scale = mutableFloatStateOf(1f)
         setContentFor(widthDp, scale, "Old School", onRpeLogged = { confirmCount++ }) {
             SetSummaryCardFor(it, tutSummary)
         }
-        for (s in SCALES) {
-            scale.floatValue = s
-            rule.waitForIdle()
-            rule.onNodeWithText("Log RPE").performScrollTo().performClick()
-            rule.waitForIdle()
-            rpeChoice(9).performScrollTo().performClick()
-            rule.waitForIdle()
-            rule.onNodeWithText("Cancel").performScrollTo().performClick()
-            rule.waitForIdle()
-            assertEquals("fontScale $s: cancel must not trigger save", 0, confirmCount)
-            rule.onNodeWithText("Confirm").assertDoesNotExist()
-            rule.onNodeWithText("Log RPE").assertExists()
+        for (width in SUPPORTED_WIDTHS) {
+            widthDp.floatValue = width
+            for (s in SCALES) {
+                scale.floatValue = s
+                rule.waitForIdle()
+                rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+                rule.waitForIdle()
+                rpeChoice(9).performScrollTo().performClick()
+                rule.waitForIdle()
+                rule.onNodeWithText("Cancel").performScrollTo().performClick()
+                rule.waitForIdle()
+                assertEquals("width ${width}dp fontScale $s: cancel must not trigger save", 0, confirmCount)
+                rule.onNodeWithText("Confirm").assertDoesNotExist()
+                rule.onNodeWithText("Log RPE").assertExists()
+            }
         }
     }
 

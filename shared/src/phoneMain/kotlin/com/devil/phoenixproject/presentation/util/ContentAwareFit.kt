@@ -32,7 +32,7 @@ object ContentAwareFit {
      * whitespace or one of [BREAK_AFTER], so runs split there. Leading/trailing
      * separator whitespace is trimmed from each run before comparing.
      */
-    fun longestUnbreakableRun(text: String): String {
+    private fun unbreakableRuns(text: String): List<String> {
         val runs = mutableListOf<String>()
         val current = StringBuilder()
         for (ch in text) {
@@ -43,16 +43,20 @@ object ContentAwareFit {
             }
         }
         if (current.isNotEmpty()) runs += current.toString()
-        return runs.maxByOrNull { it.trim().length }?.trim() ?: ""
+        return runs.map(String::trim).filter(String::isNotEmpty)
     }
+
+    /** The character-longest unbreakable run, retained for diagnostics/tests. */
+    fun longestUnbreakableRun(text: String): String =
+        unbreakableRuns(text).maxByOrNull(String::length) ?: ""
 
     /**
      * The width [text] needs to fit its layout slot.
      *
      * [singleLine] = true measures the whole string: tokens like `(lbs/cable)` or a
      * button label must stay on ONE line, so the slot has to fit the full text.
-     * [singleLine] = false measures only [longestUnbreakableRun]: labels and values
-     * may wrap at spaces or separators, they just must not break mid-word.
+     * [singleLine] = false measures every unbreakable run and uses the widest rendered
+     * run; labels and values may wrap at spaces or separators, but never mid-word.
      */
     fun requiredTextWidthDp(
         text: String,
@@ -61,10 +65,11 @@ object ContentAwareFit {
         measurer: TextMeasurer,
         density: Density,
     ): Dp {
-        val measured = if (singleLine) text else longestUnbreakableRun(text)
-        return with(density) {
-            measurer.measure(AnnotatedString(measured), style = style).size.width.toDp()
-        }
+        val candidates = if (singleLine) listOf(text) else unbreakableRuns(text)
+        val requiredWidthPx = candidates.maxOfOrNull { candidate ->
+            measurer.measure(AnnotatedString(candidate), style = style).size.width
+        } ?: 0
+        return with(density) { requiredWidthPx.toDp() }
     }
 
     /**
