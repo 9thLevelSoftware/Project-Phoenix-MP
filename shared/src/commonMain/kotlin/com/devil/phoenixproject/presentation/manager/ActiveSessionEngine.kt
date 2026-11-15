@@ -13856,20 +13856,17 @@ class ActiveSessionEngine(
                 val owner = restoredRuntimeOwner
                 val document = activeRuntimeDocument
                 val plan = coordinator._restTransitionPlan.value
-                val currentTimerOwner = restoredRestTimerOwnerRef.value
-                if (owner == null || document == null || plan == null || currentTimerOwner == null) {
+                if (owner == null || document == null || plan == null) {
                     rejection = RestControlRejection.StaleOwner
                     rejectedAtPhase = "ownership"
                     return@withLock
                 }
-                if (owner.guardOwner != capturedTimerOwner.guardOwner ||
-                    currentTimerOwner.guardOwner != capturedTimerOwner.guardOwner ||
-                    owner.document != document ||
-                    owner.documentVersion != activeRuntimeDocumentVersion ||
-                    currentTimerOwner.document != document ||
-                    currentTimerOwner.documentVersion != activeRuntimeDocumentVersion ||
-                    currentTimerOwner.transitionId != capturedTimerOwner.transitionId ||
-                    currentTimerOwner.sourceExecutionId != capturedTimerOwner.sourceExecutionId ||
+                if (restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
+                    owner.guardOwner != capturedTimerOwner.guardOwner ||
+                    owner.document != capturedTimerOwner.document ||
+                    owner.documentVersion != capturedTimerOwner.documentVersion ||
+                    document != capturedTimerOwner.document ||
+                    activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
                     plan.transitionId != capturedTimerOwner.transitionId ||
                     plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId
                 ) {
@@ -13897,7 +13894,7 @@ class ActiveSessionEngine(
                         return@withLock
                     }
                 } else {
-                    currentTimerOwner.monotonicDeadlineElapsedRealtimeMs
+                    capturedTimerOwner.monotonicDeadlineElapsedRealtimeMs
                         ?.let { computeRemainingSeconds(it, nowElapsedRealtimeMs) }
                         ?: 0
                 }
@@ -13951,15 +13948,15 @@ class ActiveSessionEngine(
                     originalRestDurationSeconds = updatedOriginalDuration,
                 )
                 val replacementJob = if (updatedMonotonicDeadline != null) {
-                    currentTimerOwner.job ?: createRestoredRestTimerJob(
-                        guardOwner = currentTimerOwner.guardOwner,
-                        transitionId = currentTimerOwner.transitionId,
-                        sourceExecutionId = currentTimerOwner.sourceExecutionId,
+                    capturedTimerOwner.job ?: createRestoredRestTimerJob(
+                        guardOwner = capturedTimerOwner.guardOwner,
+                        transitionId = capturedTimerOwner.transitionId,
+                        sourceExecutionId = capturedTimerOwner.sourceExecutionId,
                     )
                 } else {
                     null
                 }
-                val createdJob = replacementJob?.takeIf { it !== currentTimerOwner.job }
+                val createdJob = replacementJob?.takeIf { it !== capturedTimerOwner.job }
                 logRestControlReceipt(
                     receiptId = receiptId,
                     action = action,
@@ -13975,7 +13972,7 @@ class ActiveSessionEngine(
                                 withContext(NonCancellable) {
                                     val reconciled = reconcileRestoredRestTimerMutationCommitLocked(
                                         owner = owner,
-                                        capturedTimerOwner = currentTimerOwner,
+                                        capturedTimerOwner = capturedTimerOwner,
                                         document = document,
                                         plan = plan,
                                         updatedDocument = updatedDocument,
@@ -14019,7 +14016,7 @@ class ActiveSessionEngine(
                         RuntimeDocumentCommitStatus.COMMITTED -> {
                             timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                                 owner = owner,
-                                capturedTimerOwner = currentTimerOwner,
+                                capturedTimerOwner = capturedTimerOwner,
                                 document = document,
                                 plan = plan,
                                 updatedDocument = updatedDocument,
@@ -14053,7 +14050,7 @@ class ActiveSessionEngine(
                 }
                 timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
                     owner = owner,
-                    capturedTimerOwner = currentTimerOwner,
+                    capturedTimerOwner = capturedTimerOwner,
                     document = document,
                     plan = plan,
                     updatedDocument = updatedDocument,

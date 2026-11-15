@@ -315,13 +315,17 @@ class RestoredRuntimeTimerControlRaceTest {
     }
 
     @Test
-    fun `queued same-owner extensions both apply across document revisions`() = runTest {
+    fun `queued same-owner extension across a document revision is refused`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             val installed = installAndResumeActiveTimer(harness, "queued-same-owner-extends")
             val completions = mutableListOf<RestControlCompletion>()
+            val feedback = mutableListOf<String>()
             backgroundScope.launch {
                 harness.coordinator._restControlOutcomes.collect { completions += it }
+            }
+            backgroundScope.launch {
+                harness.coordinator._userFeedbackEvents.collect { feedback += it }
             }
             runCurrent()
             val ownerBefore = assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
@@ -331,15 +335,25 @@ class RestoredRuntimeTimerControlRaceTest {
             harness.dwsm.extendRestTime(15)
             runCurrent()
 
+            // The captured timer-owner guard refuses the queued second command once the first
+            // command's commit produced a new document revision. This pins the original
+            // ownership acceptance predicate: a queued command must not apply across revisions,
+            // so the diagnostics-only outcome contract cannot silently change acceptance.
             assertEquals(2, completions.size)
-            assertEquals(listOf(RestControlOutcome.Applied, RestControlOutcome.Applied), completions.map { it.outcome })
-            assertEquals(1, completions.map { it.ownerGeneration }.distinct().size)
+            assertEquals(RestControlOutcome.Applied, completions[0].outcome)
             assertEquals(
-                installed.document.originalRestDurationSeconds + 30,
+                RestControlOutcome.Rejected(RestControlRejection.StaleOwner),
+                completions[1].outcome,
+            )
+            assertEquals("owner_identity", completions[1].rejectedAtPhase)
+            assertEquals(1, completions.map { it.ownerGeneration }.distinct().size)
+            assertEquals(listOf(RestControlFeedback.STALE_OWNER), feedback)
+            assertEquals(
+                installed.document.originalRestDurationSeconds + 15,
                 assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest()).originalRestDurationSeconds,
             )
             assertEquals(
-                installed.document.originalRestDurationSeconds + 30,
+                installed.document.originalRestDurationSeconds + 15,
                 assertNotNull(
                     harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
                         installed.document.profileId,
@@ -347,7 +361,7 @@ class RestoredRuntimeTimerControlRaceTest {
                     ),
                 ).originalRestDurationSeconds,
             )
-            assertEquals(replacementsBefore + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
             assertEquals(ownerBefore, harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
             assertTrue(assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerJobForTest()).isActive)
         } finally {
