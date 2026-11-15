@@ -952,7 +952,7 @@ class HrmBleManager(
         }
     }
 
-    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException()
+    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException("AutoReconnectMatchFound")
 
     /**
      * Triggers an immediate auto-reconnect attempt unless explicitly disconnected
