@@ -221,7 +221,7 @@ class HrmCapabilityStateTest {
     // ==================== T12 — connection-owned resets ====================
 
     @Test
-    fun `T12 capabilities reset on disconnect, new selection and reconnect`() = runTest {
+    fun `T12 capabilities reset on disconnect - new selection and reconnect`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val advertisement = CompositionAdvertisement(
             name = "Polar H10 1234",
@@ -316,7 +316,7 @@ class HrmCapabilityStateTest {
     // ==================== T14 — battery CONFIRMED / ABSENT distinctions ====================
 
     @Test
-    fun `T14 battery CONFIRMED on successful read or notification, ABSENT only from authoritative enumeration`() = runTest {
+    fun `T14 battery CONFIRMED on successful read or notification - ABSENT only from authoritative enumeration`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         // (a) Successful 0x2A19 read -> CONFIRMED.
@@ -459,7 +459,7 @@ class HrmCapabilityStateTest {
     // ==================== T16 — PMD requires service + subscription ====================
 
     @Test
-    fun `T16 PMD ABSENT on Garmin-style device with healthy connection, controls never inferred from name`() = runTest {
+    fun `T16 PMD ABSENT on Garmin-style device with healthy connection - controls never inferred from name`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         // The ADVERTISED NAME says Polar H10 — name/family must NEVER imply PMD.
         val advertisement = CompositionAdvertisement(
@@ -499,7 +499,7 @@ class HrmCapabilityStateTest {
     }
 
     @Test
-    fun `T16 PMD CONFIRMED when service present and subscription succeeds, FAILED on subscription error`() = runTest {
+    fun `T16 PMD CONFIRMED when service present and subscription succeeds - FAILED on subscription error`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         // (a) Polar-style services + working subscription -> CONFIRMED.
@@ -618,7 +618,7 @@ class HrmCapabilityStateTest {
     // ==================== T27 (manager seam) — PMD-only ECG controls ====================
 
     @Test
-    fun `T27 ECG stream controls require PMD, a non-PMD device never reaches the preference path`() = runTest {
+    fun `T27 ECG stream controls require PMD - a non-PMD device never reaches the preference path`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val advertisement = CompositionAdvertisement(
             name = "Garmin Forerunner 245",

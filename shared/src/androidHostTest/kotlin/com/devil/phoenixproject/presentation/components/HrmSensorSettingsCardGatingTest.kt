@@ -54,12 +54,19 @@ class HrmSensorSettingsCardGatingTest {
         return manager
     }
 
+    private val currentManager = androidx.compose.runtime.mutableStateOf<HrmBleManager?>(null)
+
     private fun showCard(manager: HrmBleManager) {
-        rule.setContent {
-            MaterialTheme {
-                HrmSensorSettingsCard(hrmBleManager = manager)
+        // setContent may be called only once per test activity; later calls in
+        // the same test swap the manager under the already-composed card.
+        if (currentManager.value == null) {
+            rule.setContent {
+                MaterialTheme {
+                    currentManager.value?.let { HrmSensorSettingsCard(hrmBleManager = it) }
+                }
             }
         }
+        currentManager.value = manager
         rule.waitForIdle()
     }
 
@@ -262,13 +269,20 @@ class HrmSensorSettingsCardGatingTest {
 
     @Test
     fun t36ScanCopyIsGenericWithNoStaticPolarH10AndNoSecureBleClaim() {
+        // The scan button lives in the disconnected branch; the Scanning branch
+        // shows the progress copy (SD6).
+        showCard(
+            managerWith(connectionState = ConnectionState.Disconnected),
+        )
+        rule.onNodeWithText("Scan for Heart Rate Sensors").assertExists()
+        rule.onNodeWithText("Polar H10", substring = true, useUnmergedTree = true).assertDoesNotExist()
+
         showCard(
             managerWith(connectionState = ConnectionState.Scanning),
         )
         rule.onNodeWithText("Looking for nearby heart rate sensors...").assertExists()
         rule.onNodeWithText("Looking for nearby Polar devices...").assertDoesNotExist()
         rule.onNodeWithText("Polar H10", substring = true, useUnmergedTree = true).assertDoesNotExist()
-        rule.onNodeWithText("Scan for Heart Rate Sensors").assertExists()
 
         showCard(
             managerWith(connectionState = ConnectionState.Connecting),

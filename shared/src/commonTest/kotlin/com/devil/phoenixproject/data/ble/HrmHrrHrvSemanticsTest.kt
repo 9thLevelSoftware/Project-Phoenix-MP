@@ -103,7 +103,7 @@ class HrmHrrHrvSemanticsTest {
     // ==================== T32 — HR-only source, HRR populated ====================
 
     @Test
-    fun `T32 HR-only source with valid recovery populates HRR 60s and 300s, HRR never depends on RR`() = runTest {
+    fun `T32 HR-only source with valid recovery populates HRR 60s and 300s - HRR never depends on RR`() = runTest {
         var simulatedTime = 100_000L
         val repo = CapturingHrmTelemetryRepository()
         val manager = HrmBleManager(
@@ -126,11 +126,13 @@ class HrmHrrHrvSemanticsTest {
         simulatedTime += 65_000L
         manager.processRrIntervals(HrMeasurement(hr = 130, contactDetected = true, rrIntervalsMs = emptyList()))
         testScheduler.advanceTimeBy(1000L)
+        testScheduler.runCurrent() // run the cooldown tick scheduled at the boundary
         assertEquals(30, manager.cooldownHrr60.value, "HRR-60 computed from recovery HR alone")
 
         simulatedTime += 240_000L
         manager.processRrIntervals(HrMeasurement(hr = 110, contactDetected = true, rrIntervalsMs = emptyList()))
         testScheduler.advanceTimeBy(1000L)
+        testScheduler.runCurrent() // run the cooldown tick scheduled at the boundary
         assertFalse(manager.isCooldownActive.value, "cooldown completes at 300s")
         assertEquals(50, manager.cooldownHrr300.value, "HRR-300 computed from recovery HR alone")
 
@@ -169,6 +171,7 @@ class HrmHrrHrvSemanticsTest {
         simulatedTime += 20_000L
         manager.processRrIntervals(HrMeasurement(hr = 140, contactDetected = true, rrIntervalsMs = listOf(820.0)))
         testScheduler.advanceTimeBy(1000L)
+        testScheduler.runCurrent() // run the cooldown tick scheduled at the boundary
         manager.stopCooldown()
 
         assertNull(manager.cooldownHrr60.value)
@@ -230,7 +233,7 @@ class HrmHrrHrvSemanticsTest {
     // ==================== T35 — HRV requires enough valid RR ====================
 
     @Test
-    fun `T35 RMSSD requires enough valid RR intervals, a single RR is insufficient`() = runTest {
+    fun `T35 RMSSD requires enough valid RR intervals - a single RR is insufficient`() = runTest {
         var simulatedTime = 100_000L
         val manager = HrmBleManager(scope = this, timeSource = { simulatedTime })
 
@@ -272,11 +275,13 @@ class HrmHrrHrvSemanticsTest {
         simulatedTime += 65_000L
         manager.processRrIntervals(HrMeasurement(hr = 125, contactDetected = true, rrIntervalsMs = emptyList()))
         testScheduler.advanceTimeBy(1000L)
+        testScheduler.runCurrent() // run the cooldown tick scheduled at the boundary
         assertEquals(30, manager.cooldownHrr60.value)
 
         simulatedTime += 240_000L
         manager.processRrIntervals(HrMeasurement(hr = 105, contactDetected = true, rrIntervalsMs = emptyList()))
         testScheduler.advanceTimeBy(1000L)
+        testScheduler.runCurrent() // run the cooldown tick scheduled at the boundary
         assertEquals(50, manager.cooldownHrr300.value)
 
         val summary = manager.getSessionSummary("t35-hrr")

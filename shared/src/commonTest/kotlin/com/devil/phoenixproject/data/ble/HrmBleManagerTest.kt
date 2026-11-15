@@ -1168,7 +1168,7 @@ class HrmBleManagerTest {
         runCurrent()
         assertTrue(manager.connect(ScannedDevice("Polar H10 missing PMD", advertisement.identifier.toString())).isSuccess)
         runCurrent()
-        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 1)
+        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 500) // margin over in-flight GATT reads before the timeout starts
         assertTrue(manager.isConnected.value)
         fake.dropConnection()
         runCurrent()
@@ -1193,7 +1193,7 @@ class HrmBleManagerTest {
         manager.startScanning()
         runCurrent()
         assertTrue(manager.connect(ScannedDevice("Polar H10 stalled PMD", advertisement.identifier.toString())).isSuccess)
-        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 1)
+        advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS + 500) // margin over in-flight GATT reads before the timeout starts
         runCurrent()
         assertTrue(manager.isConnected.value)
         fake.dropConnection()
@@ -1273,7 +1273,7 @@ class HrmBleManagerTest {
     // ==================== Reconnect Targeting (T26, SD4) ====================
 
     @Test
-    fun `T26 auto-reconnect targets only the remembered identity, never the strongest signal`() = runTest {
+    fun `T26 auto-reconnect targets only the remembered identity - never the strongest signal`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val strongUnrelated = CompositionAdvertisement(
             id = "00000000-0000-0000-0000-0000000000aa",
