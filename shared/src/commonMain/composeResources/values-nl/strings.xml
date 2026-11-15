@@ -865,7 +865,8 @@
     <string name="intervals_reason_incomplete_reconciliation">Statuscontrole was onvolledig</string>
     <string name="intervals_reason_no_remote_match">Geen overeenkomende activiteit gevonden</string>
     <string name="intervals_reason_multiple_remote_matches">Meer dan één overeenkomende activiteit gevonden</string>
-    <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Foto's · %1$d van %2$d</string>
     <string name="media_add_photos">Foto's toevoegen</string>
     <string name="media_photos_helper">Tot 6 foto's · 10 MB per stuk</string>
@@ -886,6 +887,7 @@
     <string name="media_error_too_large">Geen foto's toegevoegd: %1$s is groter dan 10 MB.</string>
     <string name="media_error_unsupported">Geen foto's toegevoegd: %1$s is geen ondersteunde afbeelding.</string>
     <string name="media_error_unreadable">Geen foto's toegevoegd: %1$s kon niet worden gelezen.</string>
+    <string name="media_error_missing_staged">Niet opgeslagen: %1$s kon niet worden gevonden. Verwijder ze of selecteer ze opnieuw en probeer het opnieuw.</string>
     <string name="media_error_generic">Geen foto's toegevoegd. Probeer het opnieuw.</string>
     <string name="media_save_media_failed">Oefening opgeslagen; foto's konden niet worden opgeslagen. Voeg foto's opnieuw toe.</string>
     <string name="media_cleanup_pending">Sommige lokale kopieën konden niet worden verwijderd. Phoenix probeert het later opnieuw.</string>
@@ -894,4 +896,10 @@
     <string name="media_delete_failed">De oefening kon niet worden verwijderd. Probeer het opnieuw.</string>
     <string name="delete_exercise_media_message">Deze oefening en de bijbehorende foto's verwijderen? Je originen blijven ongewijzigd.</string>
     <string name="settings_exercise_demos_photos_note">Oefendemo's bepalen ook of foto's die je aan aangepaste oefeningen toevoegt zichtbaar zijn.</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">De rusttimer is nu niet actief.</string>
+    <string name="rest_control_stale_owner">Deze rust is gewijzigd voordat de wijziging is toegepast.</string>
+    <string name="rest_control_authority_failed">De huidige rust kon niet worden bevestigd. De wijziging is niet toegepast.</string>
+    <string name="rest_control_persistence_failed">De wijziging aan de rust kon niet worden opgeslagen. Je kunt het opnieuw proberen.</string>
+    <string name="rest_control_post_write_drift">De rust is gewijzigd tijdens het opslaan. De wijziging is mogelijk niet toegepast.</string>
 </resources>

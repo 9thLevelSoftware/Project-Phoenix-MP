@@ -887,7 +887,8 @@
     <string name="intervals_reason_incomplete_reconciliation">La vérification de l'état était incomplète</string>
     <string name="intervals_reason_no_remote_match">Aucune activité correspondante trouvée</string>
     <string name="intervals_reason_multiple_remote_matches">Plusieurs activités correspondantes trouvées</string>
-    <string name="intervals_reason_suppressed_by_pause">En pause</string>    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="intervals_reason_suppressed_by_pause">En pause</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Photos · %1$d sur %2$d</string>
     <string name="media_add_photos">Ajouter des photos</string>
     <string name="media_photos_helper">Jusqu'à 6 photos · 10 Mo chacune</string>
@@ -908,6 +909,7 @@
     <string name="media_error_too_large">Aucune photo ajoutée : %1$s dépasse 10 Mo.</string>
     <string name="media_error_unsupported">Aucune photo ajoutée : %1$s n'est pas une image prise en charge.</string>
     <string name="media_error_unreadable">Aucune photo ajoutée : %1$s n'a pas pu être lue.</string>
+    <string name="media_error_missing_staged">Non enregistré : %1$s est introuvable. Retirez-les ou resélectionnez-les, puis réessayez.</string>
     <string name="media_error_generic">Aucune photo ajoutée. Réessayez.</string>
     <string name="media_save_media_failed">Exercice enregistré ; les photos n'ont pas pu être enregistrées. Réajoutez des photos.</string>
     <string name="media_cleanup_pending">Certaines copies locales n'ont pas pu être supprimées. Phoenix réessaiera.</string>
@@ -916,4 +918,10 @@
     <string name="media_delete_failed">Impossible de supprimer l'exercice. Réessayez.</string>
     <string name="delete_exercise_media_message">Supprimer cet exercice et ses photos ? Vos originaux restent inchangés.</string>
     <string name="settings_exercise_demos_photos_note">Les démonstrations d'exercices contrôlent aussi les photos ajoutées à vos exercices personnalisés.</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">Le minuteur de repos n'est pas actif pour le moment.</string>
+    <string name="rest_control_stale_owner">Ce repos a changé avant l'application de la modification.</string>
+    <string name="rest_control_authority_failed">Impossible de confirmer le repos actuel. La modification n'a pas été appliquée.</string>
+    <string name="rest_control_persistence_failed">Impossible d'enregistrer la modification du repos. Vous pouvez réessayer.</string>
+    <string name="rest_control_post_write_drift">Le repos a changé pendant l'enregistrement. La modification n'a peut-être pas été appliquée.</string>
 </resources>

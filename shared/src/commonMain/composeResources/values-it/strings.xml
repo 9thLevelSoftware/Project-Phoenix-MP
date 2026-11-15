@@ -223,7 +223,8 @@
     <string name="intervals_reason_incomplete_reconciliation">Il controllo dello stato era incompleto</string>
     <string name="intervals_reason_no_remote_match">Nessuna attività corrispondente trovata</string>
     <string name="intervals_reason_multiple_remote_matches">Trovata più di un'attività corrispondente</string>
-    <string name="intervals_reason_suppressed_by_pause">In pausa</string>    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="intervals_reason_suppressed_by_pause">In pausa</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Foto · %1$d di %2$d</string>
     <string name="media_add_photos">Aggiungi foto</string>
     <string name="media_photos_helper">Fino a 6 foto · 10 MB ciascuna</string>
@@ -244,6 +245,7 @@
     <string name="media_error_too_large">Nessuna foto aggiunta: %1$s supera i 10 MB.</string>
     <string name="media_error_unsupported">Nessuna foto aggiunta: %1$s non è un'immagine supportata.</string>
     <string name="media_error_unreadable">Nessuna foto aggiunta: %1$s non è stato possibile leggerlo.</string>
+    <string name="media_error_missing_staged">Non salvato: %1$s non è stato trovato. Rimuovili o riselezionali, poi riprova.</string>
     <string name="media_error_generic">Nessuna foto aggiunta. Riprova.</string>
     <string name="media_save_media_failed">Esercizio salvato; non è stato possibile salvare le foto. Riaggiungile.</string>
     <string name="media_cleanup_pending">Alcune copie locali non sono state rimosse. Phoenix riproverà.</string>
@@ -252,4 +254,10 @@
     <string name="media_delete_failed">Impossibile eliminare l'esercizio. Riprova.</string>
     <string name="delete_exercise_media_message">Eliminare questo esercizio e le sue foto? I tuoi originali restano invariati.</string>
     <string name="settings_exercise_demos_photos_note">Le demo degli esercizi controllano anche le foto che aggiungi agli esercizi personalizzati.</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">Il timer di riposo non è attivo in questo momento.</string>
+    <string name="rest_control_stale_owner">Questo riposo è cambiato prima che la modifica venisse applicata.</string>
+    <string name="rest_control_authority_failed">Impossibile confermare il riposo attuale. La modifica non è stata applicata.</string>
+    <string name="rest_control_persistence_failed">Impossibile salvare la modifica al riposo. Puoi riprovare.</string>
+    <string name="rest_control_post_write_drift">Il riposo è cambiato durante il salvataggio. La modifica potrebbe non essere stata applicata.</string>
 </resources>

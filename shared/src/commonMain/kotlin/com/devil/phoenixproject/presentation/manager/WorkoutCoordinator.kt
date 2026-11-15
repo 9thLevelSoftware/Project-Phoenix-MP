@@ -181,6 +181,15 @@ class WorkoutCoordinator(
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
+    // Issue #1360: typed completion events for rest-timer controls (+30s, pause, reset).
+    // Internal contract: delivered only after the durable commit/ownership revalidation/
+    // publication outcome of the command is known, never on enqueue.
+    internal val _restControlOutcomes = MutableSharedFlow<RestControlCompletion>(
+        extraBufferCapacity = 5,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    internal val restControlOutcomes: SharedFlow<RestControlCompletion> = _restControlOutcomes.asSharedFlow()
+
     // KD-9: the "command was capped" notice. This is state, not an event, because the
     // screen that shows it is often not composed yet when the command is sent: Just Lift
     // skips the countdown and only navigates to ActiveWorkoutScreen once the state turns

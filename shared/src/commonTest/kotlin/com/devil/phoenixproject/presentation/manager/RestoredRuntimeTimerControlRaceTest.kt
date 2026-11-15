@@ -30,6 +30,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -309,6 +311,115 @@ class RestoredRuntimeTimerControlRaceTest {
                 harness.cleanup()
                 runCurrent()
             }
+        }
+    }
+
+    @Test
+    fun `queued same-owner extension across a document revision is refused`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val installed = installAndResumeActiveTimer(harness, "queued-same-owner-extends")
+            val completions = mutableListOf<RestControlCompletion>()
+            val feedback = mutableListOf<String>()
+            backgroundScope.launch {
+                harness.coordinator._restControlOutcomes.collect { completions += it }
+            }
+            backgroundScope.launch {
+                harness.coordinator._userFeedbackEvents.collect { feedback += it }
+            }
+            runCurrent()
+            val ownerBefore = assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.extendRestTime(15)
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            // The captured timer-owner guard refuses the queued second command once the first
+            // command's commit produced a new document revision. This pins the original
+            // ownership acceptance predicate: a queued command must not apply across revisions,
+            // so the diagnostics-only outcome contract cannot silently change acceptance.
+            assertEquals(2, completions.size)
+            assertEquals(RestControlOutcome.Applied, completions[0].outcome)
+            assertEquals(
+                RestControlOutcome.Rejected(RestControlRejection.StaleOwner),
+                completions[1].outcome,
+            )
+            assertEquals("owner_identity", completions[1].rejectedAtPhase)
+            assertEquals(1, completions.map { it.ownerGeneration }.distinct().size)
+            assertEquals(listOf(RestControlFeedback.STALE_OWNER), feedback)
+            assertEquals(
+                installed.document.originalRestDurationSeconds + 15,
+                assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest()).originalRestDurationSeconds,
+            )
+            assertEquals(
+                installed.document.originalRestDurationSeconds + 15,
+                assertNotNull(
+                    harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                        installed.document.profileId,
+                        installed.document.routineSessionId,
+                    ),
+                ).originalRestDurationSeconds,
+            )
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(ownerBefore, harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
+            assertTrue(assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerJobForTest()).isActive)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `restored failed replace after candidate removal is uncertain and retires timer owner`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var candidateRemoved = false
+        try {
+            val installed = installAndResumeActiveTimer(harness, "restored-diverged-candidate-removed")
+            val before = captureTimerSnapshot(harness)
+            val previousJob = assertNotNull(before.job)
+            val completions = mutableListOf<RestControlCompletion>()
+            val feedback = mutableListOf<String>()
+            backgroundScope.launch {
+                harness.coordinator._restControlOutcomes.collect { completions += it }
+            }
+            backgroundScope.launch {
+                harness.coordinator._userFeedbackEvents.collect { feedback += it }
+            }
+            runCurrent()
+            val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = { candidate ->
+                candidateRemoved = true
+                harness.fakeActiveWorkoutRuntimeRepository.delete(
+                    candidate.profileId,
+                    candidate.routineSessionId,
+                )
+                throw IllegalStateException("test removes candidate after commit")
+            }
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            assertTrue(candidateRemoved)
+            assertEquals(1, completions.size)
+            val rejection = assertIs<RestControlOutcome.Rejected>(completions.single().outcome)
+            assertEquals(RestControlRejection.PostWriteDrift, rejection.reason)
+            assertEquals("persist", completions.single().rejectedAtPhase)
+            assertEquals(listOf(RestControlFeedback.POST_WRITE_DRIFT), feedback)
+            assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    installed.document.profileId,
+                    installed.document.routineSessionId,
+                ),
+            )
+            assertNull(harness.activeSessionEngine.currentRestoredRuntimeOwnerForTest())
+            assertNull(harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
+            assertNull(harness.activeSessionEngine.currentRestoredRestTimerJobForTest())
+            assertTrue(previousJob.isCancelled)
+        } finally {
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            harness.cleanup()
+            runCurrent()
         }
     }
 

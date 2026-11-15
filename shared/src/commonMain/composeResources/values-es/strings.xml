@@ -887,7 +887,8 @@
     <string name="intervals_reason_incomplete_reconciliation">La comprobación de estado estuvo incompleta</string>
     <string name="intervals_reason_no_remote_match">No se encontró una actividad coincidente</string>
     <string name="intervals_reason_multiple_remote_matches">Se encontró más de una actividad coincidente</string>
-    <string name="intervals_reason_suppressed_by_pause">En pausa</string>    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="intervals_reason_suppressed_by_pause">En pausa</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Fotos · %1$d de %2$d</string>
     <string name="media_add_photos">Añadir fotos</string>
     <string name="media_photos_helper">Hasta 6 fotos · 10 MB cada una</string>
@@ -908,6 +909,7 @@
     <string name="media_error_too_large">No se añadieron fotos: %1$s supera los 10 MB.</string>
     <string name="media_error_unsupported">No se añadieron fotos: %1$s no es una imagen admitida.</string>
     <string name="media_error_unreadable">No se añadieron fotos: no se pudo leer %1$s.</string>
+    <string name="media_error_missing_staged">No se guardó: no se encontró %1$s. Quítalos o selecciónalos de nuevo y vuelve a intentarlo.</string>
     <string name="media_error_generic">No se añadieron fotos. Inténtalo de nuevo.</string>
     <string name="media_save_media_failed">Ejercicio guardado; no se pudieron guardar las fotos. Vuelve a añadirlas.</string>
     <string name="media_cleanup_pending">Algunas copias locales no se pudieron eliminar. Phoenix lo reintentará.</string>
@@ -916,4 +918,10 @@
     <string name="media_delete_failed">No se pudo eliminar el ejercicio. Inténtalo de nuevo.</string>
     <string name="delete_exercise_media_message">¿Eliminar este ejercicio y sus fotos? Tus originales no cambian.</string>
     <string name="settings_exercise_demos_photos_note">Las demos de ejercicios también controlan las fotos que añades a los ejercicios personalizados.</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">El temporizador de descanso no está activo ahora mismo.</string>
+    <string name="rest_control_stale_owner">Este descanso cambió antes de aplicarse el cambio.</string>
+    <string name="rest_control_authority_failed">No se pudo confirmar el descanso actual. No se aplicó el cambio.</string>
+    <string name="rest_control_persistence_failed">No se pudo guardar el cambio del descanso. Puedes intentarlo de nuevo.</string>
+    <string name="rest_control_post_write_drift">El descanso cambió durante el guardado. Puede que el cambio no se haya aplicado.</string>
 </resources>
