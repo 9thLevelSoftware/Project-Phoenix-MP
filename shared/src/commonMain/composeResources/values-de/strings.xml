@@ -888,4 +888,10 @@
     <string name="intervals_reason_no_remote_match">Keine passende Aktivität gefunden</string>
     <string name="intervals_reason_multiple_remote_matches">Mehr als eine passende Aktivität gefunden</string>
     <string name="intervals_reason_suppressed_by_pause">Pausiert</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">Die Ruhezeit läuft gerade nicht.</string>
+    <string name="rest_control_stale_owner">Diese Ruhezeit hat sich geändert, bevor die Änderung übernommen wurde.</string>
+    <string name="rest_control_authority_failed">Die aktuelle Ruhezeit konnte nicht bestätigt werden. Die Änderung wurde nicht übernommen.</string>
+    <string name="rest_control_persistence_failed">Die Änderung an der Ruhezeit konnte nicht gespeichert werden. Du kannst es erneut versuchen.</string>
+    <string name="rest_control_post_write_drift">Die Ruhezeit hat sich während des Speicherns geändert. Die Änderung wurde möglicherweise nicht übernommen.</string>
 </resources>
