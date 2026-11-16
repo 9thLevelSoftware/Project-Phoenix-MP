@@ -252,23 +252,12 @@ fun CreateExerciseDialog(
                     )
                     Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                    ) {
-                        FilterChip(
-                            selected = usesCables,
-                            onClick = { usesCables = true },
-                            label = { Text(stringResource(Res.string.label_cables)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        FilterChip(
-                            selected = !usesCables,
-                            onClick = { usesCables = false },
-                            label = { Text(stringResource(Res.string.label_bodyweight)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                    // Issue #1358 visual QA F1: chips size to their labels and wrap as
+                    // whole items (never mid-word) at accessibility text scales.
+                    ResistanceTypeSelector(
+                        usesCables = usesCables,
+                        onUsesCablesChange = { usesCables = it },
+                    )
 
                     // Equipment (issue #970): single-select accessory dropdown, shown only
                     // for Cables. Same outlined-field + overlay + DropdownMenu pattern as the
@@ -533,3 +522,37 @@ fun CreateExerciseDialog(
         )
     }
 }
+
+/**
+ * Issue #1358 visual QA F1: the Cables/Bodyweight choice. Chips size to their
+ * label's intrinsic width and the row wraps whole chips to the next line
+ * (FlowRow) instead of forcing 50/50 slots, so "Bodyweight" never breaks
+ * mid-word at accessibility text scales. [ResistanceTypeChipMinWidth] keeps
+ * the pair looking like balanced buttons at default text size.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ResistanceTypeSelector(
+    usesCables: Boolean,
+    onUsesCablesChange: (Boolean) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+    ) {
+        FilterChip(
+            selected = usesCables,
+            onClick = { onUsesCablesChange(true) },
+            label = { Text(stringResource(Res.string.label_cables)) },
+            modifier = Modifier.defaultMinSize(minWidth = ResistanceTypeChipMinWidth),
+        )
+        FilterChip(
+            selected = !usesCables,
+            onClick = { onUsesCablesChange(false) },
+            label = { Text(stringResource(Res.string.label_bodyweight)) },
+            modifier = Modifier.defaultMinSize(minWidth = ResistanceTypeChipMinWidth),
+        )
+    }
+}
+
+private val ResistanceTypeChipMinWidth = 120.dp
