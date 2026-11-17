@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.preferences.InMemoryRecentJustLiftExerciseStore
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeAttributionEnvelope
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDiscoveryResult
@@ -260,7 +260,7 @@ class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
 internal class DWSMTestHarness(
     val testScope: TestScope,
     workoutRepositoryOverride: WorkoutRepository? = null,
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     completedSetRepositoryOverride: CompletedSetRepository? = null,
     biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
@@ -434,7 +434,7 @@ internal class DWSMTestHarness(
         wallClockMillisProvider = wallClockMillisProvider ?: { nowMs },
         machineSafetyCoordinator = machineSafetyCoordinator,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
-        polarBleManager = polarBleManager,
+        hrmBleManager = hrmBleManager,
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)

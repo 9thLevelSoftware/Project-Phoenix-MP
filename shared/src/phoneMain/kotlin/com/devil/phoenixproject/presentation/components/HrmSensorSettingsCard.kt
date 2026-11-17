@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,35 +37,49 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.ContactReportState
+import com.devil.phoenixproject.data.ble.HrmBleManager
+import com.devil.phoenixproject.data.ble.HrmCapabilityState
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
+/**
+ * Capability-gated heart rate sensor settings card (SD2/SD6).
+ *
+ * Gating rules:
+ * - Connected device name (advertised, blank -> "Heart Rate Sensor") + address: always.
+ * - Live HR: always after HR observation, with distinct Unknown / waiting-for-first-sample
+ *   / failed presentations.
+ * - Skin contact: always, three-state wording (not reported / detected / not detected).
+ * - Battery: a value ONLY when the battery capability is CONFIRMED — never fabricated.
+ * - RR/HRV: only when rrIntervals is CONFIRMED, otherwise "HRV unavailable" (never promised).
+ * - "Save raw ECG" + "Torso Biomechanics" + Tare/Reset: ONLY when polarPmd is CONFIRMED.
+ * - ECG copy distinguishes the default explanation ("Off by default") from the
+ *   current toggle state (SD6).
+ */
 @Composable
-fun PolarH10SettingsCard(
+fun HrmSensorSettingsCard(
     modifier: Modifier = Modifier,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    hrmBleManager: HrmBleManager = koinInject(),
 ) {
     val scope = rememberCoroutineScope()
-    val connectionState by polarBleManager.connectionState.collectAsState()
-    val scannedDevices by polarBleManager.scannedDevices.collectAsState()
-    val batteryLevel by polarBleManager.batteryLevel.collectAsState()
-    val hrMeasurement by polarBleManager.hrMeasurement.collectAsState()
+    val connectionState by hrmBleManager.connectionState.collectAsState()
+    val scannedDevices by hrmBleManager.scannedDevices.collectAsState()
+    val batteryLevel by hrmBleManager.batteryLevel.collectAsState()
+    val hrMeasurement by hrmBleManager.hrMeasurement.collectAsState()
+    val capabilities by hrmBleManager.capabilities.collectAsState()
 
-    val rememberedAddress by polarBleManager.rememberedAddress.collectAsState()
-    val rememberedName by polarBleManager.rememberedName.collectAsState()
-    val isAutoReconnectEnabled by polarBleManager.isAutoReconnectEnabled.collectAsState()
-    val isRawEcgStorageEnabled by polarBleManager.isRawEcgStorageEnabled.collectAsState()
+    val rememberedAddress by hrmBleManager.rememberedAddress.collectAsState()
+    val rememberedName by hrmBleManager.rememberedName.collectAsState()
+    val isAutoReconnectEnabled by hrmBleManager.isAutoReconnectEnabled.collectAsState()
+    val isRawEcgStorageEnabled by hrmBleManager.isRawEcgStorageEnabled.collectAsState()
 
-    val torsoPitchDeg by polarBleManager.torsoPitchDeg.collectAsState()
-    val torsoRollDeg by polarBleManager.torsoRollDeg.collectAsState()
-    val dynamicAccMg by polarBleManager.dynamicAccMg.collectAsState()
-    val isContactDetected by polarBleManager.isContactDetected.collectAsState()
-
-
+    val torsoPitchDeg by hrmBleManager.torsoPitchDeg.collectAsState()
+    val torsoRollDeg by hrmBleManager.torsoRollDeg.collectAsState()
+    val dynamicAccMg by hrmBleManager.dynamicAccMg.collectAsState()
 
     Card(
         modifier = modifier
@@ -103,7 +116,7 @@ fun PolarH10SettingsCard(
                     ) {
                         Icon(
                             Icons.Default.Favorite,
-                            contentDescription = "Polar H10",
+                            contentDescription = "Heart Rate Sensor",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(24.dp),
                         )
@@ -111,7 +124,7 @@ fun PolarH10SettingsCard(
                     Spacer(modifier = Modifier.width(Spacing.medium))
                     Column {
                         Text(
-                            "Polar H10 Sensor",
+                            "Heart Rate Sensor",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -138,7 +151,7 @@ fun PolarH10SettingsCard(
                 // Header status badge / action
                 if (connectionState is ConnectionState.Connected) {
                     OutlinedButton(
-                        onClick = { scope.launch { polarBleManager.disconnect() } },
+                        onClick = { scope.launch { hrmBleManager.disconnect() } },
                     ) {
                         Text("Disconnect", color = MaterialTheme.colorScheme.error)
                     }
@@ -147,30 +160,11 @@ fun PolarH10SettingsCard(
 
             Spacer(modifier = Modifier.height(Spacing.medium))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Save raw ECG", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Off by default. Save up to 5 minutes per recording locally. Raw ECG is removed after 30 days or when its workout is deleted; a storage limit can remove older traces sooner. ECG is not synced to the portal.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = isRawEcgStorageEnabled,
-                    onCheckedChange = polarBleManager::setRawEcgStorageEnabled,
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
             // Body based on ConnectionState
             when (val state = connectionState) {
                 is ConnectionState.Disconnected, is ConnectionState.Error -> {
                     Text(
-                        "Connect your Polar H10 chest strap for real-time heart rate, R-R HRV intervals, 130 Hz ECG trace, and 50 Hz chest acceleration telemetry.",
+                        "Connect a heart rate sensor for real-time heart rate. Chest straps may also provide R-R intervals, ECG, and motion telemetry when supported.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -199,7 +193,7 @@ fun PolarH10SettingsCard(
                                         color = MaterialTheme.colorScheme.primary,
                                     )
                                     Text(
-                                        rememberedName ?: "Polar H10",
+                                        rememberedName?.takeIf { it.isNotBlank() } ?: "Heart Rate Sensor",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
@@ -211,12 +205,12 @@ fun PolarH10SettingsCard(
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     OutlinedButton(
-                                        onClick = { polarBleManager.forgetRememberedDevice() },
+                                        onClick = { hrmBleManager.forgetRememberedDevice() },
                                     ) {
                                         Text("Forget", color = MaterialTheme.colorScheme.error)
                                     }
                                     Button(
-                                        onClick = { scope.launch { polarBleManager.autoReconnectIfRemembered() } },
+                                        onClick = { scope.launch { hrmBleManager.autoReconnectIfRemembered() } },
                                     ) {
                                         Text("Reconnect")
                                     }
@@ -227,12 +221,12 @@ fun PolarH10SettingsCard(
                     }
 
                     Button(
-                        onClick = { scope.launch { polarBleManager.startScanning() } },
+                        onClick = { scope.launch { hrmBleManager.startScanning() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Polar H10")
+                        Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Heart Rate Sensors")
                     }
                 }
 
@@ -246,23 +240,28 @@ fun PolarH10SettingsCard(
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Looking for nearby Polar devices...",
+                                "Looking for nearby heart rate sensors...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         OutlinedButton(
-                            onClick = { scope.launch { polarBleManager.stopScanning() } },
+                            onClick = { scope.launch { hrmBleManager.stopScanning() } },
                         ) {
                             Text("Stop")
                         }
                     }
-
                     Spacer(modifier = Modifier.height(Spacing.small))
+                    Text(
+                        "Garmin watch or strap? Enable its Heart Rate Broadcast mode (e.g. Settings > Sensors & Accessories > Broadcast Heart Rate) so it appears here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
 
                     if (scannedDevices.isEmpty()) {
                         Text(
-                            "Ensure your Polar H10 strap is moistened and worn firmly on your chest.",
+                            "Ensure your heart rate sensor strap is moistened and worn firmly on your chest.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -283,7 +282,7 @@ fun PolarH10SettingsCard(
                                 ) {
                                     Column {
                                         Text(
-                                            device.name.ifBlank { "Polar H10" },
+                                            device.name.ifBlank { "Heart Rate Sensor" },
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
                                         )
@@ -294,7 +293,7 @@ fun PolarH10SettingsCard(
                                         )
                                     }
                                     Button(
-                                        onClick = { scope.launch { polarBleManager.connect(device) } },
+                                        onClick = { scope.launch { hrmBleManager.connect(device) } },
                                     ) {
                                         Text("Connect")
                                     }
@@ -313,13 +312,14 @@ fun PolarH10SettingsCard(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            "Establishing secure BLE connection...",
+                            "Connecting to heart rate sensor...",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
 
                 is ConnectionState.Connected -> {
+                    val caps = capabilities
                     // Device info & metrics grid
                     Column(
                         modifier = Modifier
@@ -331,51 +331,114 @@ fun PolarH10SettingsCard(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        // Device Name & Address
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                "Device: ${state.deviceName}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                        // Device Name & Address (advertised name; blank -> generic) — always shown.
+                        Text(
+                            "Device: ${state.deviceName.ifBlank { "Heart Rate Sensor" }}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Address: ${state.deviceAddress}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        // Battery — a value ONLY when CONFIRMED; never fabricated.
+                        if (caps.battery == HrmCapabilityState.CONFIRMED) {
                             Text(
                                 "Battery: ${batteryLevel?.let { "$it%" } ?: "—"}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if ((batteryLevel ?: 100) < 20) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                             )
+                        } else {
+                            Text(
+                                "Battery unavailable",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
 
-                        // Skin contact & live HR
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val contact = isContactDetected
-                                Icon(
-                                    if (contact) Icons.Default.CheckCircle else Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = if (contact) Color(0xFF00C853) else Color(0xFFFFB300),
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    if (contact) "Skin Contact OK" else "Poor Skin Contact",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (contact) Color(0xFF00C853) else Color(0xFFFFB300),
-                                )
-                            }
-
-                            Text(
+                        // Live HR — distinct Unknown / waiting-for-first-sample / failed states (SD2).
+                        when (caps.standardHr) {
+                            HrmCapabilityState.UNKNOWN -> Text(
+                                "Live HR: unknown",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            HrmCapabilityState.CHECKING -> Text(
+                                "Live HR: subscribing to heart rate data...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            HrmCapabilityState.WAITING_FIRST_SAMPLE -> Text(
+                                "Live HR: waiting for first sample...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            HrmCapabilityState.CONFIRMED -> Text(
                                 "Live HR: ${hrMeasurement?.hr?.let { "$it BPM" } ?: "—"}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            HrmCapabilityState.ABSENT -> Text(
+                                "Live HR: unavailable — not a standard heart rate sensor",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            HrmCapabilityState.FAILED -> Text(
+                                "Live HR: unavailable (heart rate sensor error)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+
+                        // Skin contact — always, three-state wording (SD2).
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val (contactLabel, contactColor) = when (caps.contact) {
+                                ContactReportState.REPORTED_DETECTED ->
+                                    "Skin contact detected" to Color(0xFF00C853)
+                                ContactReportState.REPORTED_NOT_DETECTED ->
+                                    "Skin contact not detected" to Color(0xFFFFB300)
+                                ContactReportState.NOT_REPORTED ->
+                                    "Skin contact: not reported" to MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Icon(
+                                if (caps.contact == ContactReportState.REPORTED_DETECTED) {
+                                    Icons.Default.CheckCircle
+                                } else {
+                                    Icons.Default.Warning
+                                },
+                                contentDescription = null,
+                                tint = contactColor,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                contactLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contactColor,
+                            )
+                        }
+
+                        // RR/HRV — only promised when RR intervals were actually observed (SD1).
+                        if (caps.rrIntervals == HrmCapabilityState.CONFIRMED) {
+                            Text(
+                                "R-R intervals available · HRV (RMSSD)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF00E676),
+                            )
+                        } else {
+                            Text(
+                                "HRV unavailable",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
 
@@ -398,81 +461,109 @@ fun PolarH10SettingsCard(
                             }
                             Switch(
                                 checked = isAutoReconnectEnabled,
-                                onCheckedChange = { polarBleManager.setAutoReconnectEnabled(it) },
+                                onCheckedChange = { hrmBleManager.setAutoReconnectEnabled(it) },
                             )
                         }
-
                     }
 
-                    // Torso Biomechanics Posture Section
-                    Spacer(modifier = Modifier.height(Spacing.small))
-                    Text(
-                        "Torso Biomechanics (50 Hz ACC)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainer,
-                                MaterialTheme.shapes.small,
-                            )
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                    // PMD-gated controls (SD2/SD3): raw ECG storage, Torso Biomechanics and
+                    // Tare/Reset only exist for a sensor whose Polar PMD service is CONFIRMED.
+                    if (caps.polarPmd == HrmCapabilityState.CONFIRMED) {
+                        Spacer(modifier = Modifier.height(Spacing.medium))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column {
-                                Text("Pitch", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Save raw ECG", style = MaterialTheme.typography.titleSmall)
                                 Text(
-                                    text = torsoPitchDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    "Off by default. Save up to 5 minutes per recording locally. Raw ECG is removed after 30 days or when its workout is deleted; a storage limit can remove older traces sooner. ECG is not synced to the portal.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    "Currently: ${if (isRawEcgStorageEnabled) "On" else "Off"}",
+                                    style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
+                                    color = if (isRawEcgStorageEnabled) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Column {
-                                Text("Roll", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(
-                                    text = torsoRollDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                            Column {
-                                Text("Dynamic Acc", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(
-                                    text = dynamicAccMg?.let { "$it mG" } ?: "—",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
+                            Switch(
+                                checked = isRawEcgStorageEnabled,
+                                onCheckedChange = hrmBleManager::setRawEcgStorageEnabled,
+                            )
                         }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        // Torso Biomechanics Posture Section
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        Text(
+                            "Torso Biomechanics (50 Hz ACC)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainer,
+                                    MaterialTheme.shapes.small,
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedButton(
-                                onClick = { polarBleManager.tareCurrentPosture() },
-                                modifier = Modifier.weight(1f),
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Text("Tare Posture")
+                                Column {
+                                    Text("Pitch", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = torsoPitchDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Column {
+                                    Text("Roll", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = torsoRollDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Column {
+                                    Text("Dynamic Acc", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = dynamicAccMg?.let { "$it mG" } ?: "—",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
                             }
-                            OutlinedButton(
-                                onClick = { polarBleManager.resetPostureTare() },
-                                modifier = Modifier.weight(1f),
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text("Reset Tare")
+                                OutlinedButton(
+                                    onClick = { hrmBleManager.tareCurrentPosture() },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Tare Posture")
+                                }
+                                OutlinedButton(
+                                    onClick = { hrmBleManager.resetPostureTare() },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Reset Tare")
+                                }
                             }
-                                   }
+                        }
+                    }
                 }
-            }
             }
         }
     }

@@ -35,7 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -49,7 +49,7 @@ import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueueSta
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
-import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
+import com.devil.phoenixproject.presentation.components.HrmWorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.RestControlFeedback
 import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
@@ -102,7 +102,7 @@ fun ActiveWorkoutScreen(
     exerciseRepository: ExerciseRepository,
     /** Issue #1366: id of the NavBackStackEntry hosting this screen (from NavGraph). */
     backStackEntryId: String,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    hrmBleManager: HrmBleManager = koinInject(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
@@ -137,8 +137,8 @@ fun ActiveWorkoutScreen(
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
     val isRestPaused by viewModel.isRestPaused.collectAsState()
-    val isPolarCooldownActive by polarBleManager.isCooldownActive.collectAsState()
-    val activePolarCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
+    val isPolarCooldownActive by hrmBleManager.isCooldownActive.collectAsState()
+    val activePolarCooldownSessionId by hrmBleManager.activeCooldownSessionId.collectAsState()
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     // Issue #113: Just Lift visual rest countdown
@@ -567,8 +567,8 @@ fun ActiveWorkoutScreen(
                 )
             }
 
-            // Polar H10 Live Telemetry Strip (visible when connected)
-            PolarH10WorkoutStrip(polarBleManager = viewModel.polarBleManager)
+            // HRM Live Telemetry Strip (visible when connected)
+            HrmWorkoutStrip(hrmBleManager = viewModel.hrmBleManager)
 
             WorkoutTab(
                 state = workoutUiState,
@@ -580,7 +580,7 @@ fun ActiveWorkoutScreen(
                 personalRecordRepository = viewModel.personalRecordRepository,
                 userPreferences = userPreferences,
                 customEquipmentOverlay = customEquipmentOverlay,
-                polarBleManager = viewModel.polarBleManager,
+                hrmBleManager = viewModel.hrmBleManager,
                 workoutRepository = viewModel.workoutRepository,
             )
         }

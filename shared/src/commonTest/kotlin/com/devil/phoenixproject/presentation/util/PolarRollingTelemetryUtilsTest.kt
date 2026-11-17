@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.presentation.util
 
-import com.devil.phoenixproject.domain.model.PolarRrBeat
-import com.devil.phoenixproject.util.PolarTelemetryUtils
-import com.devil.phoenixproject.util.PolarTelemetryUtils.computeRollingRmssd
+import com.devil.phoenixproject.domain.model.RrBeat
+import com.devil.phoenixproject.util.HrmTelemetryUtils
+import com.devil.phoenixproject.util.HrmTelemetryUtils.computeRollingRmssd
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -14,7 +14,7 @@ class PolarRollingTelemetryUtilsTest {
     fun testEmptyOrSingleBeatReturnsNull() {
         val now = 100_000L
         assertNull(computeRollingRmssd(emptyList(), currentTimeMs = now))
-        assertNull(computeRollingRmssd(listOf(PolarRrBeat(800.0, now, 75)), currentTimeMs = now))
+        assertNull(computeRollingRmssd(listOf(RrBeat(800.0, now, 75)), currentTimeMs = now))
     }
 
     @Test
@@ -23,15 +23,15 @@ class PolarRollingTelemetryUtilsTest {
         // Intervals: 800, 850 (+50), 820 (-30)
         // Diffs: 50, -30 -> Squared: 2500, 900 -> Mean: 3400 / 2 = 1700 -> sqrt(1700) = 41.231
         val beats = listOf(
-            PolarRrBeat(800.0, now - 2000, 75),
-            PolarRrBeat(850.0, now - 1150, 71),
-            PolarRrBeat(820.0, now - 330, 73),
+            RrBeat(800.0, now - 2000, 75),
+            RrBeat(850.0, now - 1150, 71),
+            RrBeat(820.0, now - 330, 73),
         )
 
         val rmssd = computeRollingRmssd(beats, windowMs = 60_000L, currentTimeMs = now)
         assertTrue(rmssd != null)
         assertEquals(41.23, rmssd, 0.01)
-        assertEquals("41 ms", PolarTelemetryUtils.formatMs(rmssd))
+        assertEquals("41 ms", HrmTelemetryUtils.formatMs(rmssd))
     }
 
     @Test
@@ -39,9 +39,9 @@ class PolarRollingTelemetryUtilsTest {
         val now = 100_000L
         // Beat at now - 70_000 is outside 60s window
         val beats = listOf(
-            PolarRrBeat(1200.0, now - 70_000, 50),
-            PolarRrBeat(800.0, now - 1000, 75),
-            PolarRrBeat(850.0, now - 150, 71),
+            RrBeat(1200.0, now - 70_000, 50),
+            RrBeat(800.0, now - 1000, 75),
+            RrBeat(850.0, now - 150, 71),
         )
 
         // Only 2 beats are within window: 800 and 850 (diff 50) -> sqrt(2500) = 50.0
@@ -55,10 +55,10 @@ class PolarRollingTelemetryUtilsTest {
         val now = 100_000L
         val beats = listOf(
             // Beat 1 and 2: huge gap of 10 seconds (dropped connection / dropped packet)
-            PolarRrBeat(800.0, now - 12_000, 75),
-            PolarRrBeat(820.0, now - 2_000, 73),
+            RrBeat(800.0, now - 12_000, 75),
+            RrBeat(820.0, now - 2_000, 73),
             // Beat 3: valid time gap (1000ms), diff = +20 -> squared = 400
-            PolarRrBeat(840.0, now - 1_000, 71),
+            RrBeat(840.0, now - 1_000, 71),
         )
 
         val rmssd = computeRollingRmssd(beats, windowMs = 60_000L, currentTimeMs = now)
@@ -71,13 +71,13 @@ class PolarRollingTelemetryUtilsTest {
     fun testDoubledRrIntervalArtifactIsRejected() {
         val now = 100_000L
         val beats = listOf(
-            PolarRrBeat(850.0, now - 3500, 71),
+            RrBeat(850.0, now - 3500, 71),
             // Dropped R-peak / strap slip doubles the RR interval to 1700ms
-            PolarRrBeat(1700.0, now - 1800, 35),
+            RrBeat(1700.0, now - 1800, 35),
             // Recovery back to normal RR
-            PolarRrBeat(850.0, now - 950, 71),
+            RrBeat(850.0, now - 950, 71),
             // Next valid consecutive beat
-            PolarRrBeat(870.0, now - 80, 69),
+            RrBeat(870.0, now - 80, 69),
         )
 
         val rmssd = computeRollingRmssd(beats, windowMs = 60_000L, currentTimeMs = now)

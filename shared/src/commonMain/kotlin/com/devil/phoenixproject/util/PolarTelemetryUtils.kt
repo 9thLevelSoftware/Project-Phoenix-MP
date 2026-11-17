@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.RrBeat
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -24,7 +24,7 @@ data class PolarTorsoBiomechanics(
     val filteredZMg: Double,
 )
 
-object PolarTelemetryUtils {
+object HrmTelemetryUtils {
 
     const val DEFAULT_EMA_ALPHA = 0.2
     const val GRAVITY_1G_MG = 1000.0
@@ -109,9 +109,9 @@ object PolarTelemetryUtils {
     }
 
     /**
-     * Compute RMSSD directly from PolarRrBeat list with contiguous timestamp validation.
+     * Compute RMSSD directly from RrBeat list with contiguous timestamp validation.
      */
-    fun calculateRmssdFromBeats(beats: List<PolarRrBeat>): Double? {
+    fun calculateRmssdFromBeats(beats: List<RrBeat>): Double? {
         if (beats.size < 2) return null
         return calculateRmssdMs(
             rrs = beats.map { it.rrIntervalMs },
@@ -125,7 +125,7 @@ object PolarTelemetryUtils {
      * Filters beats by the sliding window and delegates to canonical [calculateRmssdFromBeats].
      */
     fun computeRollingRmssd(
-        beats: List<PolarRrBeat>,
+        beats: List<RrBeat>,
         windowMs: Long = 60_000L,
         currentTimeMs: Long,
     ): Double? {
@@ -145,7 +145,7 @@ object PolarTelemetryUtils {
  * Stateful exponential moving average (EMA) low-pass filter for 50 Hz Polar ACC stream.
  */
 class PolarAccFilter(
-    private val alpha: Double = PolarTelemetryUtils.DEFAULT_EMA_ALPHA,
+    private val alpha: Double = HrmTelemetryUtils.DEFAULT_EMA_ALPHA,
     var tarePitchDeg: Double = 0.0,
     var tareRollDeg: Double = 0.0,
 ) {
@@ -166,8 +166,8 @@ class PolarAccFilter(
         val fx = filteredX ?: return
         val fy = filteredY ?: return
         val fz = filteredZ ?: return
-        tarePitchDeg = PolarTelemetryUtils.calculateTorsoPitchDeg(fx, fy, fz, tarePitchDeg = 0.0)
-        tareRollDeg = PolarTelemetryUtils.calculateTorsoRollDeg(fx, fy, fz, tareRollDeg = 0.0)
+        tarePitchDeg = HrmTelemetryUtils.calculateTorsoPitchDeg(fx, fy, fz, tarePitchDeg = 0.0)
+        tareRollDeg = HrmTelemetryUtils.calculateTorsoRollDeg(fx, fy, fz, tareRollDeg = 0.0)
     }
 
     fun processSample(xMg: Int, yMg: Int, zMg: Int): PolarTorsoBiomechanics {
@@ -183,9 +183,9 @@ class PolarAccFilter(
         filteredY = curY
         filteredZ = curZ
 
-        val pitch = PolarTelemetryUtils.calculateTorsoPitchDeg(curX, curY, curZ, tarePitchDeg)
-        val roll = PolarTelemetryUtils.calculateTorsoRollDeg(curX, curY, curZ, tareRollDeg)
-        val dynamicAcc = PolarTelemetryUtils.calculateDynamicAccMg(curX, curY, curZ)
+        val pitch = HrmTelemetryUtils.calculateTorsoPitchDeg(curX, curY, curZ, tarePitchDeg)
+        val roll = HrmTelemetryUtils.calculateTorsoRollDeg(curX, curY, curZ, tareRollDeg)
+        val dynamicAcc = HrmTelemetryUtils.calculateDynamicAccMg(curX, curY, curZ)
 
         return PolarTorsoBiomechanics(
             pitchDeg = pitch,
