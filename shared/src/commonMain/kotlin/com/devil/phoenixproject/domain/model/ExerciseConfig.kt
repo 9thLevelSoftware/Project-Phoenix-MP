@@ -23,6 +23,11 @@ data class ExerciseConfig(
     // absolute weight — template exercises use live %-of-1RM resolution unless the
     // user deliberately overrides it. (#633 review)
     val userEditedWeight: Boolean = false,
+
+    // Issue #1392 — per-exercise set-target mode (REP_TARGET default; POWER opt-in).
+    // Pure domain config; default is inert. Never affects legacy routine semantics.
+    val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossConfig =
+        com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT,
 ) {
     companion object {
         /**

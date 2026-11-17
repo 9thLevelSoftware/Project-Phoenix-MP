@@ -388,6 +388,12 @@ internal data class WorkoutExitSnapshot(
     val cycleId: String?,
     val cycleDayNumber: Int?,
     val postSaveInput: PostSaveWorkoutInput,
+    /**
+     * Issue #1392 — frozen power-loss evidence captured at the leased-completion latch
+     * (P3), persisted with the set by P4. Null for REP/legacy sets and any set without
+     * an armed power policy; never fabricated.
+     */
+    val powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence? = null,
 )
 
 internal data class WorkoutExecutionContext(
