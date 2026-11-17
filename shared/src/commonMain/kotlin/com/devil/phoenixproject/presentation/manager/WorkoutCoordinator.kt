@@ -812,6 +812,14 @@ class WorkoutCoordinator(
     internal val repBoundaryTimestamps = MutableStateFlow<List<Long>>(emptyList())
 
     /**
+     * Issue #1400 (F2): sample-clock time of the last warmup-only rep notification in the
+     * current set (0 = none observed). Working rep 1 starts here when no sample-based warmup
+     * mark exists. Cleared with [repBoundaryTimestamps].
+     */
+    @Volatile
+    internal var warmupRepEventSampleMs: Long = 0L
+
+    /**
      * Latest biomechanics result for HUD display.
      * Stable across the per-execution biomechanics engines installed by ActiveSessionEngine.
      */

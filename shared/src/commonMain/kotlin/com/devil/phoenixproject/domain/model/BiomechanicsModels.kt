@@ -143,6 +143,12 @@ data class AsymmetryResult(
  * @property asymmetry Left/right balance analysis
  * @property repNumber 1-indexed rep number
  * @property timestamp Rep completion timestamp (ms since epoch)
+ * @property aggregateEligible Issue #1400: false when this rep must stay out of set-level
+ *   velocity aggregates (set MCV, set velocity loss, zone distribution, the velocity-loss
+ *   baseline). A rep is ineligible when its window may contain warmup/calibration pulls
+ *   (rep 1 with no known warmup boundary) or when it was lifted while a constant-load
+ *   mode was still ramping to the commanded weight. Counts, volume, PRs and the per-rep
+ *   display are unaffected. Defaults to true, so legacy rows and journals stay eligible.
  */
 data class BiomechanicsRepResult(
     val velocity: VelocityResult,
@@ -150,16 +156,19 @@ data class BiomechanicsRepResult(
     val asymmetry: AsymmetryResult,
     val repNumber: Int,
     val timestamp: Long,
+    val aggregateEligible: Boolean = true,
 )
 
 /**
  * Aggregated biomechanics statistics for a complete set.
  *
- * @property repResults All per-rep biomechanics results
- * @property avgMcvMmS Average MCV across all reps in mm/s
+ * @property repResults All per-rep biomechanics results (eligible and ineligible)
+ * @property avgMcvMmS Average MCV in mm/s over aggregate-eligible reps with a valid MCV
+ *   (0 when none qualify)
  * @property peakVelocityMmS Highest peak velocity in the set in mm/s
- * @property totalVelocityLossPercent MCV drop from first to last rep (null if < 2 reps)
- * @property zoneDistribution Count of reps in each velocity zone
+ * @property totalVelocityLossPercent MCV drop from the first to the last aggregate-eligible
+ *   valid rep, clamped to 0-100 (null if fewer than 2 such reps)
+ * @property zoneDistribution Count of aggregate-eligible valid reps in each velocity zone
  * @property avgAsymmetryPercent Average asymmetry across all reps
  * @property dominantSide Overall dominant side for the set ("A", "B", or "BALANCED")
  * @property strengthProfile Most common strength profile in the set

@@ -1517,6 +1517,14 @@ WHERE gs.rowid = (
         )""",
     )
 
+    // Migration 64: Issue #1400 per-rep aggregate eligibility (calibration/ramp reps) and the
+    // 0-100 set velocity-loss clamp for legacy rows. Mirrors 64.sqm exactly; the column is
+    // additive (legacy rows default to eligible) and the UPDATE is idempotent on replay.
+    64 -> listOf(
+        "ALTER TABLE RepBiomechanics ADD COLUMN aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1))",
+        "UPDATE WorkoutSession SET totalVelocityLossPercent = 0 WHERE totalVelocityLossPercent < 0",
+    )
+
     else -> emptyList()
 }
 

@@ -1580,7 +1580,8 @@ class SqlDelightSyncRepository(
         rpe = rpe?.toInt(),
         avgMcvMmS = avgMcvMmS?.toFloat(),
         avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
-        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+        // Issue #1400: set velocity loss is 0-100; a legacy negative is never pushed.
+        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat()?.coerceIn(0f, 100f),
         dominantSide = dominantSide,
         strengthProfile = strengthProfile,
         formScore = formScore?.toInt(),

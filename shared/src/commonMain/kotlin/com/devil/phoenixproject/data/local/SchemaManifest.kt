@@ -738,7 +738,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // RepBiomechanics -- migration 15 (VBT, force curve, asymmetry per rep)
-    // Full shape: no later migrations add columns
+    // Full current shape: aggregateEligible (m64, Issue #1400)
     SchemaTableOperation(
         table = "RepBiomechanics",
         createSql = """
@@ -761,6 +761,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 avgLoadA REAL NOT NULL,
                 avgLoadB REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
+                aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1)),
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -2135,6 +2136,14 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 45: stable logical-set attempt identity (Issue #673 PR 2)
     SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
     SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
+
+    // ── RepBiomechanics (1 column, migration 64) ───────────────────────
+    // Migration 64: Issue #1400 per-rep aggregate eligibility; legacy rows stay eligible
+    SchemaHealOperation(
+        "RepBiomechanics",
+        "aggregateEligible",
+        "ALTER TABLE RepBiomechanics ADD COLUMN aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1))",
+    ),
 )
 
 // ============================================================
