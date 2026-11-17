@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  All user-facing copy for the Phoenix Remote watch app (issue #1391 B7).
+  Views load these via WatchUi.loadResource(Rez.Strings.*) - no hard-coded
+  English in the views where avoidable. WIRE-PROTOCOL strings (type names,
+  action names, readiness/reason enum codes) live in PhoenixProtocol.mc and
+  must NEVER be localized or reworded.
+-->
+<strings>
+    <string id="AppName">Phoenix Remote</string>
+
+    <!-- Main screen (minimal target + readiness; the full workout view is
+         Phase 2 and must not ship here) -->
+    <string id="StatusWaiting">Waiting for phone</string>
+    <string id="StatusNoLink">Open Phoenix on phone</string>
+    <string id="StatusLabelFallback">Workout</string>
+
+    <!-- Mandatory press feedback (contract: pending, applied, stale,
+         UNKNOWN_RESULT, and the REJECTED reason code) -->
+    <string id="FeedbackPending">Sending</string>
+    <string id="FeedbackApplied">Done</string>
+    <string id="FeedbackStale">Stale - press again</string>
+    <string id="FeedbackUnknown">No reply - press again</string>
+    <string id="FeedbackRejected">Rejected: </string>
+    <string id="FeedbackBusy">One command at a time</string>
+    <string id="FeedbackNotAvailable">Not available now</string>
+    <string id="FeedbackPhoneRequired">Open Phoenix on phone</string>
+    <string id="FeedbackInvalid">Invalid message</string>
+    <string id="FeedbackLinkLost">Link lost - press again</string>
+    <string id="FeedbackDismissed">Dismissed</string>
+    <string id="FeedbackArmed">Cancel armed</string>
+    <string id="FeedbackConfirmExpired">Confirm expired - reopen</string>
+
+    <!-- Cancel confirmation (names the exercise from STATE confirmationLabel) -->
+    <string id="ConfirmTitlePrefix">Cancel </string>
+    <string id="ConfirmTitleSuffix">?</string>
+    <string id="ConfirmCopyPrefix">Skip only </string>
+    <string id="ConfirmCopyMid">, not the whole routine. Previously saved sets stay saved</string>
+    <string id="ConfirmCopySuffix">.</string>
+    <string id="ConfirmSafety">Ergonomic remote, NOT an emergency stop</string>
+    <string id="ConfirmHintConfirm">Top-right: confirm</string>
+    <string id="ConfirmHintStop">Bottom-right: Urgent Stop</string>
+    <string id="ConfirmHintDismiss">Middle-left: dismiss</string>
+</strings>

@@ -1,0 +1,10 @@
+# Phoenix Remote (issue #1391 packet B7).
+#
+# Keep the build minimal: sources plus the Run No Evil test module. The
+# (:test) annotation keeps test functions inert unless monkeyc -t / monkeydo -t
+# runs them, so `tests` can safely sit on the base source path.
+
+project.manifest = manifest.xml
+
+base.sourcePath = source; tests
+base.resourcePath = resources

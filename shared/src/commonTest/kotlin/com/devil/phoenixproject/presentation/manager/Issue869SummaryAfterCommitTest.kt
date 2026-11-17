@@ -1,7 +1,11 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -196,5 +200,128 @@ class Issue869SummaryAfterCommitTest {
         harness.testScope.testScheduler.advanceUntilIdle()
         harness.coordinator._repCount.value = RepCount(workingReps = 2)
         harness.fakeBleRepo.stopWorkoutCallCount = 0
+    }
+
+    // ===== Issue #1391 (packet B1): the remote receipt comes from the commit path =====
+
+    private fun remoteRoutine() = Routine(
+        id = "remote-b1-routine",
+        name = "Remote B1",
+        exercises = listOf(
+            RoutineExercise(
+                id = "remote-rex-1",
+                exercise = Exercise(
+                    id = "remote-ex-1",
+                    name = "Cable Row",
+                    muscleGroup = "Back",
+                    muscleGroups = "Back",
+                    equipment = "Cable",
+                ),
+                orderIndex = 0,
+                setReps = listOf(8, 8),
+                weightPerCableKg = 40f,
+                programMode = ProgramMode.OldSchool,
+            ),
+        ),
+    )
+
+    private suspend fun startRealRoutineSet(
+        harness: DWSMTestHarness,
+        workingReps: Int,
+        summarySeconds: Int = 0,
+    ) {
+        harness.setActiveSummaryCountdownSeconds(summarySeconds)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.loadRoutineAsync(remoteRoutine())
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.coordinator._repCount.value = RepCount(
+            workingReps = workingReps,
+            totalReps = workingReps,
+            isWarmupComplete = true,
+        )
+    }
+
+    @Test
+    fun `the remote receipt reports the exact observed commit, not the summary`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRealRoutineSet(harness, workingReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+
+            assertEquals(RemoteCompletionDecision.SAVED_AND_ADVANCED, receipt.completionDecision)
+            assertEquals(RemotePersistenceOutcome.SUCCEEDED, receipt.persistence)
+            assertEquals(RemoteTeardownState.READY, receipt.teardownState)
+            assertEquals(RemoteSetControlTerminal.PREPARED, receipt.terminal)
+            assertEquals(identity, receipt.expectedExecutionIdentity)
+            assertEquals(identity, receipt.observedExecutionIdentity)
+            // The receipt is truthful about the commit: the exact session exists.
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a save still stuck at the end of the result window stays PENDING and blocks the next start`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            startRealRoutineSet(harness, workingReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+
+            assertEquals(RemotePersistenceOutcome.PENDING, receipt.persistence)
+            assertEquals(RemoteSetControlTerminal.FAILED, receipt.terminal)
+            // A stuck save must never fabricate a prepared successor to start.
+            assertFalse(harness.coordinator._routineFlowState.value is RoutineFlowState.SetReady)
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a failed commit surfaces FAILED and blocks the next start`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRealRoutineSet(harness, workingReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { throw IllegalStateException("disk full") }
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+
+            assertEquals(RemotePersistenceOutcome.FAILED, receipt.persistence)
+            assertEquals(RemoteSetControlTerminal.FAILED, receipt.terminal)
+            assertFalse(harness.coordinator._routineFlowState.value is RoutineFlowState.SetReady)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `the receipt is honest even when the summary presentation is skipped`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // summaryCountdownSeconds < 0: the summary is skipped entirely — the
+            // receipt must still come from the commit path.
+            startRealRoutineSet(harness, workingReps = 3, summarySeconds = -1)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+
+            assertEquals(RemotePersistenceOutcome.SUCCEEDED, receipt.persistence)
+            assertEquals(RemoteCompletionDecision.SAVED_AND_ADVANCED, receipt.completionDecision)
+            assertEquals(RemoteSetControlTerminal.PREPARED, receipt.terminal)
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
+        } finally {
+            harness.cleanup()
+        }
     }
 }

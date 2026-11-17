@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phoenix Remote watch app - issue #1391 packet B7 (Garmin watch button controls, Phase 1).
+
+  Product allowlist (signoff correction 3): five-button products only. Every
+  product below exposes the five-button layout/key events the button mapping
+  depends on (top-right START/ENTER, bottom-right BACK/LAP, bottom-left DOWN,
+  middle-left UP, top-left LIGHT not intercepted). Touch-only or non-matching
+  products are excluded entirely, not half-supported. The shortlist is
+  PROVISIONAL pending simulator verification - see garmin/README.md.
+
+  App id is a development UUID; store submission (release-time only) may
+  replace it with the registered store id.
+-->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application id="996ea08a8af34f9e9702be9502394c9b"
+                    type="watch-app"
+                    name="@Strings.AppName"
+                    entry="PhoenixApp"
+                    launcherIcon="@Drawables.LauncherIcon"
+                    minSdkVersion="3.2.0"
+                    version="0.1.0">
+        <iq:products>
+            <!-- Forerunner 255 -->
+            <iq:product id="fr255"/>
+            <!-- Forerunner 265 (acceptable per signoff correction 3) -->
+            <iq:product id="fr265"/>
+            <!-- Forerunner 965 -->
+            <iq:product id="fr965"/>
+            <!-- fenix 7 -->
+            <iq:product id="fenix7"/>
+        </iq:products>
+        <iq:permissions>
+            <!-- Connect IQ Mobile SDK foreground messaging (transmit /
+                 registerForPhoneAppMessages) with the Phoenix phone app. -->
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>

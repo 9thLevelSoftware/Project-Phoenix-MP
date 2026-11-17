@@ -1,13 +1,23 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -343,6 +353,195 @@ class WorkoutTeardownRecoveryTest {
         } finally {
             harness.cleanup()
         }
+    }
+
+    // ===== Issue #1391 (packet B1): teardown observation + start-path invariants =====
+
+    private fun remoteRoutine() = Routine(
+        id = "teardown-remote-routine",
+        name = "Teardown Remote",
+        exercises = listOf(
+            RoutineExercise(
+                id = "teardown-rex-1",
+                exercise = Exercise(
+                    id = "teardown-ex-1",
+                    name = "Cable Row",
+                    muscleGroup = "Back",
+                    muscleGroups = "Back",
+                    equipment = "Cable",
+                ),
+                orderIndex = 0,
+                setReps = listOf(8, 8),
+                weightPerCableKg = 40f,
+                programMode = ProgramMode.OldSchool,
+            ),
+        ),
+    )
+
+    private suspend fun startRemoteRoutineSet(harness: DWSMTestHarness, summarySeconds: Int = 0) {
+        harness.setActiveSummaryCountdownSeconds(summarySeconds)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.loadRoutineAsync(remoteRoutine())
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        harness.coordinator._repCount.value = RepCount(
+            workingReps = 3,
+            totalReps = 3,
+            isWarmupComplete = true,
+        )
+    }
+
+    @Test
+    fun `the remote operation observes teardown Ready before preparing the successor`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetGate = CompletableDeferred<Result<Unit>>()
+        var receipt: RemoteSetControlReceipt? = null
+        try {
+            startRemoteRoutineSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+            harness.fakeBleRepo.stopWorkoutBlock = { resetGate.await() }
+
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+            }
+            runCurrent()
+
+            // Teardown initiated independently of the save, still in flight: the
+            // operation must not have prepared anything yet.
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
+            assertNull(receipt, "the receipt must not be produced before teardown settles")
+            assertEquals(0, harness.coordinator._currentSetIndex.value, "no successor preparation before Ready")
+
+            resetGate.complete(Result.success(Unit))
+            advanceUntilIdle()
+
+            val settled = assertNotNullReceipt(receipt)
+            assertEquals(RemoteTeardownState.READY, settled.teardownState)
+            assertEquals(RemoteSetControlTerminal.PREPARED, settled.terminal)
+            assertEquals(RemotePersistenceOutcome.SUCCEEDED, settled.persistence)
+            val ready = assertIs<RoutineFlowState.SetReady>(harness.coordinator._routineFlowState.value)
+            assertEquals(1, ready.setIndex)
+        } finally {
+            if (!resetGate.isCompleted) resetGate.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a failed teardown reports FAILED and never fabricates a prepared successor`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRemoteRoutineSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                Result.failure(IllegalStateException("initial RESET failed"))
+            }
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+
+            assertEquals(RemoteSetControlTerminal.FAILED, receipt.terminal)
+            assertEquals(RemoteTeardownState.PENDING, receipt.teardownState)
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.dwsm.machineTeardownState.value)
+            assertFalse(harness.coordinator._routineFlowState.value is RoutineFlowState.SetReady)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `an identity mismatch returns SUPERSEDED without mutating anything`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRemoteRoutineSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+            val stopsBefore = harness.fakeBleRepo.stopWorkoutCallCount
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext("999:stale-identity")
+
+            assertEquals(RemoteSetControlTerminal.SUPERSEDED, receipt.terminal)
+            assertEquals(RemoteCompletionDecision.NO_COMPLETION, receipt.completionDecision)
+            assertEquals(RemotePersistenceOutcome.NOT_REQUIRED, receipt.persistence)
+            assertEquals(identity, receipt.observedExecutionIdentity, "the observed identity is reported honestly")
+            // Without mutating: the set is still running, nothing saved, no RESET.
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(3, harness.coordinator._repCount.value.workingReps)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
+            assertEquals(stopsBefore, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(lease, harness.activeSessionEngine.currentExecutionLeaseForTest())
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `the prepared successor starts through the routine start path exactly like the phone START`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRemoteRoutineSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val commandsBefore = harness.fakeBleRepo.commandsReceived.size
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+            assertEquals(RemoteSetControlTerminal.PREPARED, receipt.terminal)
+
+            // The one routine start path — RoutineFlowManager.startSetFromReady(),
+            // whose final step is startWorkout(skipCountdown = true) (the phone START).
+            harness.routineFlowManager.startSetFromReady()
+            runCurrent()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(1, harness.coordinator._currentSetIndex.value, "the prepared set is the one that starts")
+            val successor = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(successor.executionId != lease.executionId, "the successor is a fresh execution")
+            assertTrue(
+                harness.fakeBleRepo.commandsReceived.size > commandsBefore,
+                "the started set must command the machine, exactly like the phone START",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `the prepared successor is never auto-started even with autoplay enabled`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // summaryCountdownSeconds > 0 => autoplay enabled; a timed summary also
+            // exercises the summary auto-advance suppression inside the operation.
+            startRemoteRoutineSet(harness, summarySeconds = 5)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val commandsBefore = harness.fakeBleRepo.commandsReceived.size
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(executionIdentityOf(lease))
+            assertEquals(RemoteSetControlTerminal.PREPARED, receipt.terminal)
+
+            advanceTimeBy(60_000)
+            runCurrent()
+
+            val ready = assertIs<RoutineFlowState.SetReady>(harness.coordinator._routineFlowState.value)
+            assertEquals(1, ready.setIndex, "the prepared successor must be untouched")
+            assertEquals(
+                commandsBefore,
+                harness.fakeBleRepo.commandsReceived.size,
+                "no auto-start may command the machine after the operation",
+            )
+            val leaseAfter = harness.activeSessionEngine.currentExecutionLeaseOrNull()
+            assertTrue(
+                leaseAfter == null || leaseAfter.executionId == lease.executionId,
+                "no successor execution may be started automatically",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private fun assertNotNullReceipt(receipt: RemoteSetControlReceipt?): RemoteSetControlReceipt {
+        assertTrue(receipt != null, "the operation must produce a receipt after teardown settles")
+        return receipt
     }
 
     private fun DWSMTestHarness.forceResetFailureThenRecoveryRequired() {
