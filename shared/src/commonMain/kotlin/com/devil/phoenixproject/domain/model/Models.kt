@@ -123,6 +123,9 @@ sealed class WorkoutState {
         val taggedExerciseId: String? = null,
         val taggedExerciseName: String? = null,
         val isAmrap: Boolean = false,
+        // Issue #1392 — power-loss summary facts (null when POWER was not armed;
+        // never fabricated). Rendered only with the SD6 completed/attempt clarification.
+        val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossSetSummaryFacts? = null,
     ) : WorkoutState()
     data class BodyweightRepEntry(
         val exerciseKey: String,

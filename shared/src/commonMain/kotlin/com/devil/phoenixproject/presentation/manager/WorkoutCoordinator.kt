@@ -800,6 +800,17 @@ class WorkoutCoordinator(
     internal val powerLossRuntimeSettings: StateFlow<PowerLossRuntimeSettings> =
         _powerLossRuntimeSettings.asStateFlow()
 
+    // Issue #1392 (P3 → P5): live power-loss HUD facts. Updated per working rep
+    // and at the committed `Ending set…` transition; default is inert (POWER off).
+    private val _powerLossHud =
+        MutableStateFlow(com.devil.phoenixproject.domain.powerloss.PowerLossHudState())
+    internal val powerLossHud: StateFlow<com.devil.phoenixproject.domain.powerloss.PowerLossHudState> =
+        _powerLossHud.asStateFlow()
+
+    internal fun setPowerLossHud(state: com.devil.phoenixproject.domain.powerloss.PowerLossHudState) {
+        _powerLossHud.value = state
+    }
+
     internal fun updatePowerLossSettings(settings: PowerLossRuntimeSettings) {
         _powerLossRuntimeSettings.value = settings
     }

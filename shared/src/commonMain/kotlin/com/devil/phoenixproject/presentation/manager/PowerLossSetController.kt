@@ -8,6 +8,10 @@ import com.devil.phoenixproject.domain.powerloss.ConcentricPhaseNormalizer
 import com.devil.phoenixproject.domain.powerloss.MeanConcentricPower
 import com.devil.phoenixproject.domain.powerloss.PowerCable
 import com.devil.phoenixproject.domain.powerloss.PowerLossDecision
+import com.devil.phoenixproject.domain.powerloss.PowerLossAttemptRecord
+import com.devil.phoenixproject.domain.powerloss.PowerLossHudState
+import com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence
+import com.devil.phoenixproject.domain.powerloss.PowerLossSetSummaryFacts
 import com.devil.phoenixproject.domain.powerloss.PowerLossObservation
 import com.devil.phoenixproject.domain.powerloss.PowerLossPolicy
 import com.devil.phoenixproject.domain.powerloss.PowerLossPolicyState
@@ -36,10 +40,31 @@ internal class PowerLossSetController {
     /** Near-limit cue latch (once per set). Backed by the reducer state too. */
     private var nearLimitCueEmitted = false
 
+    // ===== Issue #1392 P3: deep-frozen evidence (immutable winner latch) =====
+
+    /** Ordered per-attempt records for P4 evidence / P5 summary+history. */
+    private val attemptRecords = mutableListOf<PowerLossAttemptRecord>()
+    private var lastConfig: com.devil.phoenixproject.domain.powerloss.PowerLossConfig? = null
+    private var frozenActiveCables: Set<PowerCable> = setOf(PowerCable.A, PowerCable.B)
+    /** Immutable winning reason; latched once, never overwritten (SD2). */
+    private var winnerReason: PowerStopReason? = null
+    private var shortRomObserved = false
+    private var powerLossObserved = false
+    private var lossAtStop: Float? = null
+    private var stoppedAtOrdinal: Int? = null
+
     fun reset() {
         state = PowerLossPolicyState.INITIAL
         workingOrdinal = 0
         nearLimitCueEmitted = false
+        attemptRecords.clear()
+        lastConfig = null
+        frozenActiveCables = setOf(PowerCable.A, PowerCable.B)
+        winnerReason = null
+        shortRomObserved = false
+        powerLossObserved = false
+        lossAtStop = null
+        stoppedAtOrdinal = null
     }
 
     /**
@@ -61,8 +86,49 @@ internal class PowerLossSetController {
             romB = romFor(repMetrics, PowerCable.B),
             activeCables = activeCables(repMetrics),
         )
+        return onObservation(config, plan, observation)
+    }
+
+    /**
+     * Policy step + evidence capture for one sealed observation (P3 latch).
+     * Extracted from [onRep] so fixtures can drive the immutable winner latch
+     * directly. Both qualification facts are persisted together (SD2); the
+     * winner is latched once and never overwritten.
+     */
+    internal fun onObservation(
+        config: com.devil.phoenixproject.domain.powerloss.PowerLossConfig,
+        plan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan,
+        observation: PowerLossObservation,
+    ): PowerLossDecision {
         val step = PowerLossPolicy.observe(state, observation, config, plan)
         state = step.state
+        lastConfig = config
+        if (!observation.isWarmup) {
+            if (attemptRecords.isEmpty()) {
+                frozenActiveCables = observation.activeCables
+            }
+            attemptRecords += PowerLossAttemptRecord(
+                workingConcentricOrdinal = step.record.workingConcentricOrdinal,
+                completed = true,
+                mcpWatts = step.record.mcpWatts,
+                lossPercentAtDecision = step.record.lossPercentAtDecision,
+                referenceWorkingOrdinal = step.record.referenceWorkingOrdinal,
+                romAMm = observation.romA.romMm,
+                romBMm = observation.romB.romMm,
+                romAPercentOfReference = step.record.romAPercentOfReference,
+                romBPercentOfReference = step.record.romBPercentOfReference,
+                romTrustworthy = observation.romA.isTrusted || observation.romB.isTrusted,
+                shortRom = step.record.shortRomQualified,
+                powerLossQualified = step.record.powerLossQualified,
+            )
+            if (step.record.shortRomQualified) shortRomObserved = true
+            if (step.record.powerLossQualified) powerLossObserved = true
+        }
+        if (step.decision is PowerLossDecision.Stop && winnerReason == null) {
+            winnerReason = step.decision.reason
+            lossAtStop = step.decision.lossPercentAtDecision
+            stoppedAtOrdinal = step.record.workingConcentricOrdinal
+        }
         return step.decision
     }
 
@@ -71,6 +137,86 @@ internal class PowerLossSetController {
         if (nearLimitCueEmitted) return false
         nearLimitCueEmitted = true
         return true
+    }
+
+    /**
+     * Deep-frozen evidence for the exit snapshot / P4 companions (P3 latch).
+     * Null when POWER was never armed (no config seen) — never fabricated.
+     */
+    fun buildEvidence(sessionId: String, setId: String): PowerLossSetEvidence? {
+        val config = lastConfig ?: return null
+        if (attemptRecords.isEmpty() && winnerReason == null) return null
+        val reference = state.reference
+        return PowerLossSetEvidence(
+            sessionId = sessionId,
+            setId = setId,
+            targetMode = config.targetMode,
+            thresholdPercent = config.thresholdPercent,
+            maxWorkingReps = config.maxWorkingReps,
+            requireTwoConsecutive = config.requireTwoConsecutive,
+            savedNominalReps = config.savedNominalReps,
+            activeCables = frozenActiveCables,
+            activeCableProvenance = "rep-metric-load-scan:first-working-attempt",
+            referenceWorkingOrdinal = reference?.workingConcentricOrdinal,
+            referenceMcpWatts = reference?.mcpWatts,
+            referenceRomAMm = reference?.romA?.romMm,
+            referenceRomBMm = reference?.romB?.romMm,
+            triggerWorkingOrdinal = stoppedAtOrdinal,
+            winnerReason = winnerReason,
+            shortRomObserved = shortRomObserved,
+            powerLossObserved = powerLossObserved,
+            lossPercentAtDecision = lossAtStop,
+            attempts = attemptRecords.toList(),
+        )
+    }
+
+    /** Summary facts for `WorkoutState.SetSummary.powerLoss` (P5 renders with SD6 clarification). */
+    fun buildSummaryFacts(completedRepCount: Int): PowerLossSetSummaryFacts? {
+        val config = lastConfig ?: return null
+        return PowerLossSetSummaryFacts(
+            winnerReason = winnerReason,
+            thresholdPercent = config.thresholdPercent,
+            maxWorkingReps = config.maxWorkingReps,
+            requireTwoConsecutive = config.requireTwoConsecutive,
+            stoppedAtWorkingAttempt = stoppedAtOrdinal,
+            completedRepCount = completedRepCount,
+            lossPercentAtStop = lossAtStop,
+            bestWorkingOrdinal = state.reference?.workingConcentricOrdinal,
+            shortRomObserved = shortRomObserved,
+            powerLossObserved = powerLossObserved,
+            attempts = attemptRecords.toList(),
+        )
+    }
+
+    /** Live HUD facts (P3 → P5 `WorkoutHud`). [endingSet] is the committed `Ending set…` state. */
+    fun hudState(completedRepCount: Int, endingSet: Boolean): PowerLossHudState {
+        val config = lastConfig ?: com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT
+        val lastAttempt = attemptRecords.lastOrNull()
+        val lastValid = attemptRecords.lastOrNull { it.mcpWatts != null }
+        return PowerLossHudState(
+            powerActive = lastConfig != null,
+            thresholdPercent = config.thresholdPercent,
+            nearLimitLossPercent = config.nearLimitLossPercent,
+            maxWorkingReps = config.maxWorkingReps,
+            savedNominalReps = config.savedNominalReps,
+            currentAttemptOrdinal = workingOrdinal,
+            completedRepCount = completedRepCount,
+            referenceEstablished = state.reference != null,
+            referenceWorkingOrdinal = state.reference?.workingConcentricOrdinal,
+            lastLossPercent = lastAttempt?.lossPercentAtDecision,
+            lastValidAttemptOrdinal = lastValid?.workingConcentricOrdinal,
+            invalidPowerReason = if (lastAttempt != null && lastAttempt.mcpWatts == null) {
+                "phase unavailable"
+            } else {
+                null
+            },
+            nearLimitCueEmitted = nearLimitCueEmitted,
+            cableRomPercentOfReference = buildMap {
+                lastAttempt?.romAPercentOfReference?.let { put(PowerCable.A, it) }
+                lastAttempt?.romBPercentOfReference?.let { put(PowerCable.B, it) }
+            },
+            endingSet = endingSet,
+        )
     }
 
     /**
