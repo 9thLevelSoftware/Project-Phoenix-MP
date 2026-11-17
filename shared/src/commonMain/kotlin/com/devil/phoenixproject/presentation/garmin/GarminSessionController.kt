@@ -95,7 +95,7 @@ class GarminSessionController(
     private val preferences: GarminControlPreferences,
     private val session: DefaultWorkoutSessionManager,
     private val scope: CoroutineScope,
-    private val monotonicNowMs: () -> Long = { kotlin.system.getTimeMillis() },
+    private val monotonicNowMs: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) {
     private val _connectionState = MutableStateFlow(GarminConnectionUiState())
     val connectionState: StateFlow<GarminConnectionUiState> = _connectionState.asStateFlow()

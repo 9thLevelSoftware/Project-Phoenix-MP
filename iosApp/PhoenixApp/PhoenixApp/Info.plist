@@ -28,6 +28,11 @@
 	</dict>
 	<key>CFBundleDisplayName</key>
 	<string>Project Phoenix</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<!-- Query scheme only: lets the Connect IQ bridge detect Garmin Connect Mobile. -->
+		<string>gcm-ciq</string>
+	</array>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>

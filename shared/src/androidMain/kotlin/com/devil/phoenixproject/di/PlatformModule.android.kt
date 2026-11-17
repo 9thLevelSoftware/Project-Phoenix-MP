@@ -6,6 +6,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
+import com.devil.phoenixproject.data.garmin.AndroidGarminCompanionTransport
+import com.devil.phoenixproject.data.garmin.GarminCompanionTransport
+import com.devil.phoenixproject.data.garmin.GarminControlPreferences
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.integration.intervals.IntegrationStorageGate
@@ -92,6 +95,16 @@ actual val platformModule: Module = module {
     single { HealthIntegration(androidContext()) }
     single<HealthWorkoutWriter> { get<HealthIntegration>() }
     single<WorkoutServiceController> { AndroidWorkoutServiceController(androidContext()) }
+    // Garmin watch-button companion transport (issue #1391): CIQ companion app SDK over
+    // the Garmin Connect Mobile service relay. The production watch-app UUID comes from
+    // GarminControlPreferences and stays lazy so the graph resolves even before that
+    // binding exists (fail-closed provenance in the meantime).
+    single<GarminCompanionTransport> {
+        AndroidGarminCompanionTransport(
+            context = androidContext(),
+            watchAppUuid = { getOrNull<GarminControlPreferences>()?.watchAppUuid },
+        )
+    }
     viewModel {
         MainViewModel(
             bleRepository = get(),
