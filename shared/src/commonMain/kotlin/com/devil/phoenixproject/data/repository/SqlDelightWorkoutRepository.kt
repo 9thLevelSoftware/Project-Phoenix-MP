@@ -13,7 +13,7 @@ import com.devil.phoenixproject.database.Routine as RoutineRow
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -188,7 +188,8 @@ class SqlDelightWorkoutRepository(
         // Biomechanics summary
         avgMcvMmS = avgMcvMmS?.toFloat(),
         avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
-        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+        // Issue #1400: set velocity loss is 0-100; a pulled/imported legacy negative never surfaces.
+        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat()?.coerceIn(0f, 100f),
         dominantSide = dominantSide,
         strengthProfile = strengthProfile,
         // Form Check score
@@ -1814,10 +1815,10 @@ class SqlDelightWorkoutRepository(
             queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
         }
 
-    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample> =
+    override suspend fun getPolarBeatSamplesBySession(sessionId: String): List<HrmBeatSample> =
         withContext(Dispatchers.IO) {
             queries.selectPolarBeatSamplesBySession(sessionId).executeAsList().map { row ->
-                PolarBeatSample(
+                HrmBeatSample(
                     id = row.id,
                     sessionId = row.sessionId,
                     timestampMs = row.timestampMs,

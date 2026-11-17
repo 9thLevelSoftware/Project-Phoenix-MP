@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.local.FreeExerciseJson
@@ -1406,6 +1407,167 @@ class SqlDelightExerciseRepositoryTest {
             cable_count = 2,
             uuid = null,
         )
+    }
+
+    // ========== Issue #1358: Exercise media rows (T17-T19b, T25) ==========
+
+    @Test
+    fun `addImage rows are visible via getImages ordered by sortOrder`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/a.jpg", 1)
+        repository.addImage("ex-1", "/media/b.jpg", 0)
+
+        val images = repository.getImages("ex-1")
+        assertEquals(2, images.size)
+        assertEquals("/media/b.jpg", images[0].url)
+        assertEquals(0, images[0].sortOrder)
+        assertEquals("/media/a.jpg", images[1].url)
+    }
+
+    @Test
+    fun `removeImage removes exactly the targeted row`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/a.jpg", 0)
+        repository.addImage("ex-1", "/media/b.jpg", 1)
+        val target = repository.getImages("ex-1").first { it.url == "/media/a.jpg" }
+
+        repository.removeImage(target.id)
+
+        val remaining = repository.getImages("ex-1")
+        assertEquals(1, remaining.size)
+        assertEquals("/media/b.jpg", remaining.first().url)
+    }
+
+    @Test
+    fun `getImageCount counts rows`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        assertEquals(0, repository.getImageCount("ex-1"))
+        repository.addImage("ex-1", "/media/a.jpg", 0)
+        repository.addImage("ex-1", "/media/b.jpg", 1)
+        assertEquals(2, repository.getImageCount("ex-1"))
+    }
+
+    @Test
+    fun `applyMediaDelta applies additions and removals in one transaction`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/old.jpg", 0)
+        val oldRow = repository.getImages("ex-1").first()
+
+        repository.applyMediaDelta("ex-1", listOf("/media/new.jpg"), listOf(oldRow.id))
+
+        val after = repository.getImages("ex-1")
+        assertEquals(1, after.size)
+        assertEquals("/media/new.jpg", after.first().url)
+    }
+
+    // T19b: atomicity under a REAL SQL failure (FK violation mid-transaction
+    // with foreign_keys=ON) — rows change nothing, never a partial batch.
+    @Test
+    fun `applyMediaDelta is atomic when the row transaction fails`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/keep.jpg", 0)
+        val existing = repository.getImages("ex-1").first()
+
+        // The removal targets a real row, but the addition references a
+        // NONEXISTENT exercise id — the FK check fails on insert and SQLite
+        // rolls the whole transaction back, including the earlier delete.
+        val failed = repository.applyMediaDelta(
+            exerciseId = "missing-exercise",
+            additionUrls = listOf("/media/new.jpg"),
+            removalIds = listOf(existing.id),
+        )
+        assertTrue(failed.isFailure, "A real SQL failure must surface as a failed Result (T19b)")
+
+        val after = repository.getImages("ex-1")
+        assertEquals(1, after.size)
+        assertEquals("/media/keep.jpg", after.first().url)
+    }
+
+    // T25: after the failed transaction, old media is preserved and a retry on
+    // the SAME exercise id adds no duplicates.
+    @Test
+    fun `failed delta preserves old media and retry adds no duplicates`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/keep.jpg", 0)
+
+        val failed = repository.applyMediaDelta("missing-exercise", listOf("/media/a.jpg"), emptyList())
+        assertTrue(failed.isFailure)
+        assertEquals(1, repository.getImages("ex-1").size)
+
+        // Retry targets the existing id (SD6) and applies exactly once.
+        val retried = repository.applyMediaDelta("ex-1", listOf("/media/a.jpg"), emptyList())
+        assertTrue(retried.isSuccess)
+        val after = repository.getImages("ex-1")
+        assertEquals(2, after.size)
+    }
+
+    @Test
+    fun `getAllExerciseIds and getAllImageUrls are row-only reconciler inputs`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        repository.addImage("ex-1", "/media/a.jpg", 0)
+
+        assertTrue(repository.getAllExerciseIds().contains("ex-1"))
+        assertTrue(repository.getAllImageUrls().contains("/media/a.jpg"))
+    }
+
+    // T34: attach/remove are sync/backup no-ops (AC9). Behavioral, not
+    // string-inspection: snapshot EVERY user table's row count around each media
+    // row op — only ExerciseImage may ever change; no sync/outbox/backup table
+    // may receive a single row.
+    @Test
+    fun `media row ops write only ExerciseImage and never any sync outbox table`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench", muscleGroup = "Chest", equipment = "BAR")
+        val before = allTableRowCounts()
+
+        repository.addImage("ex-1", "/media/a.jpg", 0)
+        val afterAdd = allTableRowCounts()
+        assertEquals(
+            setOf("ExerciseImage"),
+            changedTables(before, afterAdd),
+            "addImage must touch only the ExerciseImage table (T34/AC9)",
+        )
+
+        val firstRow = repository.getImages("ex-1").first()
+        repository.applyMediaDelta("ex-1", listOf("/media/b.jpg"), listOf(firstRow.id))
+        val afterDelta = allTableRowCounts()
+        assertEquals(
+            setOf("ExerciseImage"),
+            changedTables(before, afterDelta),
+            "applyMediaDelta must touch only the ExerciseImage table (T34/AC9)",
+        )
+        assertEquals(listOf("/media/b.jpg"), repository.getImages("ex-1").map { it.url })
+
+        val added = repository.getImages("ex-1").first()
+        repository.removeImage(added.id)
+        val afterRemove = allTableRowCounts()
+        assertEquals(
+            before,
+            afterRemove,
+            "A full add/remove cycle must return every table (sync included) to baseline (T34/AC9)",
+        )
+        assertEquals(emptyList(), repository.getImages("ex-1"), "All media rows must be gone")
+    }
+
+    private fun changedTables(before: Map<String, Long>, after: Map<String, Long>): Set<String> =
+        (before.keys + after.keys).filter { before[it] != after[it] }.toSet()
+
+    private fun allTableRowCounts(): Map<String, Long> {
+        val tables = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+            { cursor ->
+                while (cursor.next().value) tables += checkNotNull(cursor.getString(0))
+                QueryResult.Value(tables)
+            },
+            0,
+        ).value
+        return tables.associateWith { table ->
+            driver.executeQuery(null, "SELECT COUNT(*) FROM \"$table\"", { cursor ->
+                check(cursor.next().value) { "No count for $table" }
+                QueryResult.Value(checkNotNull(cursor.getLong(0)))
+            }, 0).value
+        }
     }
 
     private fun insertExercise(

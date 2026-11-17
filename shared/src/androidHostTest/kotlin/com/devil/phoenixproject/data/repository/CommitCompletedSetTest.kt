@@ -139,6 +139,33 @@ class CommitCompletedSetTest {
     }
 
     @Test
+    fun `issue 1400 - rep aggregate eligibility persists and reads back per rep`() = runTest {
+        val calibrationRep = repBiomechanics().copy(aggregateEligible = false)
+        val workingRep = repBiomechanics().let { rep ->
+            rep.copy(
+                velocity = rep.velocity.copy(repNumber = 2),
+                repNumber = 2,
+                timestamp = rep.timestamp + 1_000L,
+            )
+        }
+
+        repository.commitCompletedSet(
+            session = session(),
+            metrics = listOf(metric()),
+            completedSet = completedSet(),
+            repMetrics = listOf(repMetric()),
+            repBiomechanics = listOf(calibrationRep, workingRep),
+        )
+
+        val rows = database.phoenixDatabaseQueries.selectRepBiomechanicsBySession(SESSION_ID).executeAsList()
+        assertEquals(listOf(0L, 1L), rows.map { it.aggregateEligible }, "Raw column must store 0 for the ineligible rep")
+
+        val readBack = SqlDelightBiomechanicsRepository(database).getRepBiomechanics(SESSION_ID)
+        assertEquals(listOf(1, 2), readBack.map { it.repNumber })
+        assertEquals(listOf(false, true), readBack.map { it.aggregateEligible })
+    }
+
+    @Test
     fun `commitCompletedSet round trips selected cable samples exactly`() = runTest {
         val samples = (0..16).map { index ->
             val positionA = when (index) {

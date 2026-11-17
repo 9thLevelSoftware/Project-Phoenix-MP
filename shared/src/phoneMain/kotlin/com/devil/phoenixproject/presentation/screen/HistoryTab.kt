@@ -52,7 +52,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -77,7 +77,7 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.WorkoutHistoryCardSkeleton
-import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
+import com.devil.phoenixproject.presentation.components.SessionHeartRateCard
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
@@ -135,7 +135,7 @@ fun HistoryTab(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -233,7 +233,7 @@ fun HistoryTab(
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
-                                polarBleManager = polarBleManager,
+                                hrmBleManager = hrmBleManager,
                                 workoutRepository = workoutRepository,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
@@ -251,7 +251,7 @@ fun HistoryTab(
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                                 customEquipmentOverlay = customEquipmentOverlay,
-                                polarBleManager = polarBleManager,
+                                hrmBleManager = hrmBleManager,
                                 workoutRepository = workoutRepository,
                                 // Issue #591 follow-up: thread the
                                 // routine-level delete callback so the
@@ -283,7 +283,7 @@ private fun WorkoutHistoryCard(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
     onDelete: () -> Unit,
 ) {
@@ -507,7 +507,7 @@ private fun WorkoutHistoryCard(
                             summaryCountdownSeconds = 0, // History view - no auto-continue
                             isHistoryView = true,
                             savedRpe = session.rpe,
-                            polarBleManager = polarBleManager,
+                            hrmBleManager = hrmBleManager,
                             // #972: the tag section doubles as the label editor on History —
                             // it shows the stored name with Change/Clear once a segment is
                             // labeled, and the Tag prompt when it is not.
@@ -574,11 +574,11 @@ private fun WorkoutHistoryCard(
                     // Biomechanics Section (v0.5.0+, tier-gated)
                     BiomechanicsSection(session = session)
 
-                    // Polar H10 Cardiac & Biomechanics Telemetry Section
-                    PolarSessionAnalyticsCard(
+                    // HRM Cardiac & Biomechanics Telemetry Section
+                    SessionHeartRateCard(
                         sessionId = session.id,
                         session = session,
-                        polarBleManager = polarBleManager,
+                        hrmBleManager = hrmBleManager,
                         workoutRepository = workoutRepository,
                         showCooldown = false,
                     )
@@ -847,7 +847,7 @@ private fun GroupedRoutineCard(
     recentJustLiftExerciseIds: List<String> = emptyList(),
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the tag picker.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
@@ -1133,7 +1133,7 @@ private fun GroupedRoutineCard(
                                 summaryCountdownSeconds = 0, // History view - no auto-continue
                                 isHistoryView = true,
                                 savedRpe = session.rpe,
-                                polarBleManager = polarBleManager,
+                                hrmBleManager = hrmBleManager,
                                 // #972: label editing, same treatment as the single-session card.
                                 isJustLiftTaggingEnabled = canEditJustLiftLabel,
                                 taggedExerciseName = session.exerciseName,
@@ -1201,7 +1201,7 @@ private fun GroupedRoutineCard(
                         }
                     }
 
-                    // Polar H10 Cardiac & Biomechanics Telemetry Section (rendered below all exercises & rep details)
+                    // HRM Cardiac & Biomechanics Telemetry Section (rendered below all exercises & rep details)
                     val polarSession = groupedItem.sessions
                         .filter {
                             it.avgHeartRateBpm != null || it.maxHeartRateBpm != null ||
@@ -1224,10 +1224,10 @@ private fun GroupedRoutineCard(
                             },
                             style = MaterialTheme.typography.labelMedium,
                         )
-                        PolarSessionAnalyticsCard(
+                        SessionHeartRateCard(
                             sessionId = polarSession.id,
                             session = polarSession,
-                            polarBleManager = polarBleManager,
+                            hrmBleManager = hrmBleManager,
                             workoutRepository = workoutRepository,
                             showCooldown = false,
                         )

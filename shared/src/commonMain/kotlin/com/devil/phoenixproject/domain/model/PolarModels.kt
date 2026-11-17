@@ -8,7 +8,7 @@ package com.devil.phoenixproject.domain.model
  * @param energyExpendedKj Optional accumulated energy expended in kiloJoules.
  * @param rrIntervalsMs R-R peak intervals in milliseconds, converted from 1/1024s resolution.
  */
-data class PolarHrMeasurement(
+data class HrMeasurement(
     val hr: Int,
     val contactDetected: Boolean,
     val energyExpendedKj: Int? = null,
@@ -22,7 +22,7 @@ data class PolarHrMeasurement(
  * @param timestampMs Reconstructed beat timestamp in epoch milliseconds.
  * @param hr Instantaneous heart rate in BPM at this beat.
  */
-data class PolarRrBeat(
+data class RrBeat(
     val rrIntervalMs: Double,
     val timestampMs: Long,
     val hr: Int = 0,
@@ -31,7 +31,7 @@ data class PolarRrBeat(
 /**
  * Tri-axial acceleration sample in milli-G (mG).
  */
-data class PolarAccSample(
+data class AccSample(
     val xMg: Int,
     val yMg: Int,
     val zMg: Int,
@@ -62,6 +62,6 @@ sealed class PolarPmdMeasurement {
      */
     data class Acc(
         override val sensorTimestampNs: Long,
-        val samples: List<PolarAccSample>,
+        val samples: List<AccSample>,
     ) : PolarPmdMeasurement()
 }

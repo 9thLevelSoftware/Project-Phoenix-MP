@@ -91,7 +91,7 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
-import com.devil.phoenixproject.presentation.components.PolarH10SettingsCard
+import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -113,6 +113,7 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.settings_exercise_demos_photos_note
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_ok
 import projectphoenix.shared.generated.resources.delete_all
@@ -875,6 +876,14 @@ fun SettingsTab(
                 checked = enableVideoPlayback,
                 onCheckedChange = onEnableVideoPlaybackChange,
             )
+            // Issue #1358 (SD10/SD15): Exercise Demos also gates photos attached to
+            // custom exercises — no new preference key is introduced.
+            Text(
+                text = stringResource(Res.string.settings_exercise_demos_photos_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.medium),
+            )
             Spacer(modifier = Modifier.height(Spacing.small))
             OutlinedButton(
                 onClick = {
@@ -1264,8 +1273,8 @@ fun SettingsTab(
             )
         }
 
-        // Polar H10 Heart Rate & Telemetry Sensor
-        PolarH10SettingsCard()
+        // HRM Heart Rate & Telemetry Sensor
+        HrmSensorSettingsCard()
 
         // Developer Tools Section - Material 3 Expressive
         Card(

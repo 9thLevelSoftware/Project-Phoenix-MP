@@ -477,6 +477,8 @@ CREATE TABLE RepBiomechanics (
     avgLoadB REAL NOT NULL,
     -- Metadata
     timestamp INTEGER NOT NULL,
+    -- Issue #1400 (migration 64): 0 = kept out of set-level velocity aggregates
+    aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -804,6 +806,20 @@ VALUES (?, ?, ?);
 
 deleteImagesForExercise:
 DELETE FROM ExerciseImage WHERE exerciseId = ?;
+
+-- Issue #1358 (SD3): single-photo removal identity is the ExerciseImage row id.
+-- Query addition only — no schema change.
+deleteImageById:
+DELETE FROM ExerciseImage WHERE id = ?;
+
+-- Issue #1358 (SD8): row-only reads for the phone-only media reconciler. Row
+-- values only — no file/media types ever enter commonMain (F1). Conservative:
+-- soft-deleted rows still count as live so their media is never swept.
+selectAllExerciseIds:
+SELECT id FROM Exercise;
+
+selectAllImageUrls:
+SELECT url FROM ExerciseImage;
 
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
@@ -1716,8 +1732,8 @@ INSERT OR REPLACE INTO RepBiomechanics (
     sessionId, repNumber, mcvMmS, peakVelocityMmS, velocityZone,
     velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
     normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
-    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp, aggregateEligible
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRepBiomechanicsBySession:
 DELETE FROM RepBiomechanics WHERE sessionId = ?;

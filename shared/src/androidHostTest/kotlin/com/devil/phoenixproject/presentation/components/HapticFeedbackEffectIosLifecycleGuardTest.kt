@@ -11,6 +11,10 @@ import kotlin.test.assertTrue
  * on init, removes them on release, and that the play path defensively
  * re-prepares the selected [AVAudioPlayer] before playback without
  * repeatedly reconfiguring the process-wide audio session.
+ *
+ * Issue #1357: focus loss arms a player-pool rebuild, which the UIKit-free
+ * IosSoundRecoveryPolicy decides (behaviour is covered by its iosTest); these
+ * guards lock the native wiring.
  */
 class HapticFeedbackEffectIosLifecycleGuardTest {
     private val projectRoot: File by lazy {
@@ -25,6 +29,12 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         get() = File(
             projectRoot,
             "shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.ios.kt",
+        )
+
+    private val iosRecoveryPolicySource: File
+        get() = File(
+            projectRoot,
+            "shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/IosSoundRecoveryPolicy.kt",
         )
 
     @Test
@@ -117,6 +127,10 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
             clearIndex >= 0 && clearIndex > releaseIndex,
             "release() must clear the lifecycleObservers list after detaching tokens.",
         )
+        assertTrue(
+            releaseBody.contains("recoveryPolicy.release()"),
+            "release() must release the recovery policy so nothing arms or rebuilds after release (Issue #1357).",
+        )
     }
 
     @Test
@@ -163,26 +177,45 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
     }
 
     @Test
-    fun iosHapticFeedbackEffect_recoveryPreparesAllCachedPlayers() {
+    fun iosHapticFeedbackEffect_recoveryRebuildsArmedPoolAndOtherwiseRepreparesAllCachedPlayers() {
         val source = iosHapticSource.readText()
 
-        // The lifecycle-recovery path must prepare every cached player list
-        // (event map, badge sounds, PR sounds, rep count sounds, the
-        // countdown tick player, and the four verbal-encouragement pools).
-        // This guards against a regression where only a subset of players
-        // is re-primed.
+        // Issue #1357: re-preparing the cached players alone left a pool the
+        // system invalidated while backgrounded silent until the app was
+        // restarted. Lifecycle recovery goes through the recovery policy:
+        // when focus loss armed a rebuild, its host rebuilds the pool through
+        // the media-reset path; otherwise it re-primes every cached player.
         val recoverIndex = source.indexOf("private fun recoverAudioSession()")
-        val prepareHelperIndex = source.indexOf("prepareAllPlayers()", recoverIndex)
-
         assertTrue(
             recoverIndex >= 0,
             "IosSoundManager must define a recoverAudioSession() helper for lifecycle recovery.",
         )
+        val recoverBody = source.substring(recoverIndex, source.indexOf("\n    }", recoverIndex))
         assertTrue(
-            prepareHelperIndex >= 0 && prepareHelperIndex > recoverIndex,
-            "recoverAudioSession() must call prepareAllPlayers() so every cached player is re-primed.",
+            "if (released) return" in recoverBody && "recoveryPolicy.recover(" in recoverBody,
+            "recoverAudioSession() must short-circuit after release and delegate to the recovery policy.",
         )
 
+        val rebuildHostIndex = source.indexOf("override fun rebuildPlayers(reason: String)")
+        assertTrue(rebuildHostIndex >= 0, "The recovery host must implement rebuildPlayers().")
+        val rebuildHostBody = source.substring(rebuildHostIndex, source.indexOf("\n            }", rebuildHostIndex))
+        assertTrue(
+            rebuildHostBody.indexOf("stopAndClearPlayers()") in 0 until rebuildHostBody.indexOf("loadAllSounds()"),
+            "An armed recovery must rebuild the pool with stopAndClearPlayers() then loadAllSounds(), not re-prepare stale players.",
+        )
+        assertTrue(
+            "\"players_rebuilt\"" in rebuildHostBody && "reason=\$reason" in rebuildHostBody,
+            "A pool rebuild must record a players_rebuilt diagnostic with its arming reason.",
+        )
+        assertTrue(
+            source.contains("override fun reprepareCachedPlayers() = prepareAllPlayers()"),
+            "An unarmed recovery must still re-prime every cached player through prepareAllPlayers().",
+        )
+
+        // The re-prime path must prepare every cached player list (event map,
+        // badge sounds, PR sounds, rep count sounds, the countdown tick
+        // player, and the four verbal-encouragement pools). This guards
+        // against a regression where only a subset of players is re-primed.
         val helperIndex = source.indexOf("private fun prepareAllPlayers()")
         assertTrue(helperIndex >= 0, "IosSoundManager must define prepareAllPlayers().")
         val helperBody = source.substring(helperIndex)
@@ -224,7 +257,7 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         )
     }
 
-    // ---- Issue #1357: recovery must notice failure and retry ----
+    // ---- Issue #1357: recovery must notice failure, rebuild and retry ----
 
     @Test
     fun iosHapticFeedbackEffect_readsSessionActivationResult() {
@@ -237,8 +270,9 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
             "Audio session activation must pass an NSError pointer and read the result.",
         )
         assertTrue(
-            source.contains("sessionNeedsRecovery = !setupAudioSession()"),
-            "A failed activation must leave a recovery flag set for the next cue.",
+            source.contains("recoveryPolicy.onInitialActivation(setupAudioSession())") &&
+                source.contains("override fun activateSession(): Boolean = setupAudioSession()"),
+            "Activation results must reach the recovery policy so a failed activation stays flagged for the next cue.",
         )
     }
 
@@ -247,24 +281,101 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         val source = iosHapticSource.readText()
 
         val beganIndex = source.indexOf("typeValue == AVAudioSessionInterruptionTypeBegan")
-        val flagIndex = source.indexOf("sessionNeedsRecovery = true", beganIndex)
+        val flagIndex = source.indexOf("recoveryPolicy.onInterruptionBegan()", beganIndex)
         assertTrue(beganIndex >= 0, "iOS does not guarantee an ended interruption, so began must be handled.")
-        assertTrue(flagIndex > beganIndex, "A began interruption must flag the session for recovery.")
+        assertTrue(flagIndex > beganIndex, "A began interruption must arm session recovery and a pool rebuild.")
     }
 
     @Test
-    fun iosHapticFeedbackEffect_retriesWhenPlaybackIsRefused() {
+    fun iosHapticFeedbackEffect_backgroundTransitionArmsPoolRebuild() {
+        val source = iosHapticSource.readText()
+
+        val observerIndex = source.indexOf("name = UIApplicationDidEnterBackgroundNotification")
+        assertTrue(observerIndex >= 0, "DidEnterBackground needs its own observer, not only a diagnostic entry.")
+        val armIndex = source.indexOf("if (!released) recoveryPolicy.onEnteredBackground()", observerIndex)
+        assertTrue(
+            armIndex > observerIndex,
+            "Entering the background must arm a pool rebuild (short-circuited after release).",
+        )
+        assertTrue(
+            source.contains("lifecycleObservers += backgroundObserver"),
+            "The background observer must be tracked so release() removes it.",
+        )
+        assertTrue(
+            !source.contains("UIApplicationDidEnterBackgroundNotification to \"app_background\""),
+            "DidEnterBackground must not stay a diagnostic-only observer.",
+        )
+    }
+
+    @Test
+    fun iosHapticFeedbackEffect_recoversBeforeSelectingAndRetriesOnReselectedPlayer() {
         val source = iosHapticSource.readText()
 
         val playSoundIndex = source.indexOf("fun playSound(event: HapticEvent)")
-        val playSoundBody = source.substring(playSoundIndex, source.indexOf("fun release()", playSoundIndex))
+        val selectIndex = source.indexOf("private fun selectPlayer(event: HapticEvent)", playSoundIndex)
+        assertTrue(playSoundIndex >= 0 && selectIndex > playSoundIndex)
+        val playSoundBody = source.substring(playSoundIndex, selectIndex)
         assertTrue(
-            playSoundBody.contains("if (sessionNeedsRecovery && isAppActive())"),
-            "playSound() must retry a flagged session only while the app is in the foreground.",
+            playSoundBody.contains("recoveryPolicy.playCue<AVAudioPlayer>("),
+            "playSound() must route every cue through the recovery policy.",
         )
         assertTrue(
-            playSoundBody.contains("if (!played)"),
+            playSoundBody.contains("selectPlayer = { selectPlayer(event) }"),
+            "The policy must select the player itself so it can re-select after a rebuild.",
+        )
+        assertTrue(
+            !playSoundBody.contains("val player = when (event)"),
+            "playSound() must not capture a player before flagged recovery runs; a rebuild would discard it.",
+        )
+        assertTrue(
+            playSoundBody.contains("val played = player.play()"),
             "playSound() must check play()'s result instead of assuming the cue played.",
+        )
+
+        val policy = iosRecoveryPolicySource.readText()
+        val playCueIndex = policy.indexOf("fun <P : Any> playCue(")
+        assertTrue(playCueIndex >= 0, "IosSoundRecoveryPolicy must define playCue().")
+        val playCue = policy.substring(playCueIndex)
+        val flaggedRecovery = playCue.indexOf("recover(appActive = true, trigger = \"flagged_cue\")")
+        val firstSelect = playCue.indexOf("val player = selectPlayer()")
+        val refusedRecovery = playCue.indexOf("recover(appActive = true, trigger = \"play_refused\")")
+        val retrySelect = playCue.indexOf("val retryPlayer = selectPlayer()")
+        assertTrue(
+            flaggedRecovery in 0 until firstSelect,
+            "Flagged recovery must run before the player is selected.",
+        )
+        assertTrue(
+            refusedRecovery in firstSelect until retrySelect,
+            "A refused play() must recover, then re-select from the rebuilt pool before its single retry.",
+        )
+        assertTrue(
+            playCue.contains("play(retryPlayer, true)") && !playCue.contains("play(player, true)"),
+            "The retry must play the instance re-selected after recovery, never one obtained before a rebuild.",
+        )
+    }
+
+    @Test
+    fun iosSoundRecoveryPolicy_staysFreeOfUIKitAndAVFAudio() {
+        val policy = iosRecoveryPolicySource.readText()
+
+        assertTrue(
+            !policy.contains("import platform."),
+            "IosSoundRecoveryPolicy must stay free of UIKit/AVFAudio so iosTest can exercise it with fakes.",
+        )
+        assertTrue(policy.contains("internal class IosSoundRecoveryPolicy("))
+    }
+
+    @Test
+    fun iosApp_declaresNoAudioBackgroundMode() {
+        val plist = File(projectRoot, "iosApp/PhoenixApp/PhoenixApp/Info.plist").readText()
+
+        val keyIndex = plist.indexOf("<key>UIBackgroundModes</key>")
+        assertTrue(keyIndex >= 0, "Info.plist must declare UIBackgroundModes.")
+        val modes = plist.substring(keyIndex, plist.indexOf("</array>", keyIndex))
+        assertTrue("<string>bluetooth-central</string>" in modes)
+        assertTrue(
+            "<string>audio</string>" !in modes,
+            "Issue #1357 recovers cues on return to the foreground; it must not add the audio background mode.",
         )
     }
 
@@ -280,5 +391,9 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         assertTrue(rebuildIndex >= 0, "IosSoundManager must define rebuildAfterMediaServicesReset().")
         val rebuildBody = source.substring(rebuildIndex, source.indexOf("\n    }", rebuildIndex))
         assertTrue("stopAndClearPlayers()" in rebuildBody && "loadAllSounds()" in rebuildBody)
+        assertTrue(
+            "recoveryPolicy.onPoolRebuiltExternally(activated, isAppActive())" in rebuildBody,
+            "A media-reset rebuild must report activation and app state so it only consumes a pending rebuild in the foreground.",
+        )
     }
 }

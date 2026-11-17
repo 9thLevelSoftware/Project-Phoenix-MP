@@ -83,7 +83,7 @@ class PolarTelemetryUtilsTest {
         val y = 0.0
         val z = 0.0
 
-        val dynamicAcc = PolarTelemetryUtils.calculateDynamicAccMg(x, y, z)
+        val dynamicAcc = HrmTelemetryUtils.calculateDynamicAccMg(x, y, z)
         assertEquals(500, dynamicAcc, "Dynamic acceleration should be 500 mG")
     }
 
@@ -94,11 +94,11 @@ class PolarTelemetryUtilsTest {
         val initialRawY = 0.0
         val initialRawZ = -87.16 // ~5° angle with inverted Z
 
-        val initialPitch = PolarTelemetryUtils.calculateTorsoPitchDeg(initialRawX, initialRawY, initialRawZ, tarePitchDeg = 0.0)
+        val initialPitch = HrmTelemetryUtils.calculateTorsoPitchDeg(initialRawX, initialRawY, initialRawZ, tarePitchDeg = 0.0)
         assertTrue(abs(initialPitch - 5.0) < toleranceDeg)
 
         // With tare applied
-        val taredPitch = PolarTelemetryUtils.calculateTorsoPitchDeg(initialRawX, initialRawY, initialRawZ, tarePitchDeg = initialPitch)
+        val taredPitch = HrmTelemetryUtils.calculateTorsoPitchDeg(initialRawX, initialRawY, initialRawZ, tarePitchDeg = initialPitch)
         assertTrue(abs(taredPitch) < 0.001, "Tared standing pitch should be exactly 0°")
     }
 
@@ -128,7 +128,7 @@ class PolarTelemetryUtilsTest {
         // squared diffs: 400, 100, 400 -> sum = 900
         // mean: 900 / 3 = 300
         // sqrt: sqrt(300) = 17.3205
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(rrs)
+        val rmssd = HrmTelemetryUtils.calculateRmssdMs(rrs)
         assertTrue(rmssd != null && abs(rmssd - 17.32) < 0.05)
     }
 
@@ -136,7 +136,7 @@ class PolarTelemetryUtilsTest {
     fun rmssdCalculationRejectsDoubledRrAndArtifactSpikes() {
         // Normal intervals with a single missed-beat / strap-slip spike (820 -> 1700 -> 810)
         val rrsWithSpike = listOf(800.0, 820.0, 1700.0, 810.0, 830.0)
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(rrsWithSpike)
+        val rmssd = HrmTelemetryUtils.calculateRmssdMs(rrsWithSpike)
         // Valid pairs: (800, 820) [diff 20], (810, 830) [diff 20]
         // Mean squared diff: (400 + 400) / 2 = 400 -> sqrt = 20.0
         assertTrue(rmssd != null)
@@ -146,7 +146,7 @@ class PolarTelemetryUtilsTest {
     @Test
     fun rmssdCalculationRejectsNonPhysiologicalIntervals() {
         val nonPhysiological = listOf(100.0, 800.0, 820.0, 3000.0)
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(nonPhysiological)
+        val rmssd = HrmTelemetryUtils.calculateRmssdMs(nonPhysiological)
         // Only valid pair is (800, 820) [diff 20] -> sqrt(400 / 1) = 20.0
         assertTrue(rmssd != null)
         assertEquals(20.0, rmssd, 0.01)

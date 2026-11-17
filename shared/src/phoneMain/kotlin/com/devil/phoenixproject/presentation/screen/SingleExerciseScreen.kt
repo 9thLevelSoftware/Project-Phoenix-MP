@@ -32,7 +32,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.CreateExerciseDialog
-import com.devil.phoenixproject.presentation.components.CustomExerciseSaveAction
+import com.devil.phoenixproject.presentation.components.ExerciseMediaSaveCoordinator
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
@@ -41,7 +41,6 @@ import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.components.rekeyEquipmentSelection
-import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -52,6 +51,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.media_cleanup_pending
 import projectphoenix.shared.generated.resources.single_exercise_unavailable
 import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
@@ -119,6 +119,8 @@ fun SingleExerciseScreen(
     var showPreviouslyCompletedOnly by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
+    // Issue #1358 SD9: bumped after media save/removal so rows re-query images.
+    var mediaRefreshTick by remember { mutableStateOf(0) }
 
     // Get exercises from repository
     val candidateExercises by remember(searchQuery) {
@@ -228,36 +230,44 @@ fun SingleExerciseScreen(
     }
 
     if (showCreateDialog || exerciseToEdit != null) {
+        // Issue #1358 (SD5): one session-scoped media coordinator per dialog
+        // open owns files and the shared commit/rollback tail for this entry
+        // point (SingleExerciseScreen). Dismiss discards the draft only (SD2).
+        val mediaStore: com.devil.phoenixproject.data.media.ExerciseMediaStore = org.koin.compose.koinInject()
+        val mediaCoordinator = remember { ExerciseMediaSaveCoordinator(mediaStore) }
+        var mediaSavedImages by remember { mutableStateOf<List<com.devil.phoenixproject.data.repository.ExerciseImageEntity>>(emptyList()) }
+        LaunchedEffect(exerciseToEdit?.id, mediaRefreshTick) {
+            mediaSavedImages = exerciseToEdit?.id?.let { exerciseRepository.getImages(it) } ?: emptyList()
+        }
+        val mediaCleanupPendingMessage = stringResource(Res.string.media_cleanup_pending)
         CreateExerciseDialog(
             existingExercise = exerciseToEdit,
             customEquipmentOverlay = customEquipmentOverlay,
-            onSave = { exercise ->
-                val editExerciseId = exerciseToEdit?.id
+            exerciseRepository = exerciseRepository,
+            mediaCoordinator = mediaCoordinator,
+            savedImages = mediaSavedImages,
+            enablePhotoAttach = enableVideoPlayback,
+            onSave = { exercise, _delta ->
+                // Issue #1358 (SD9): media is committed by the shared
+                // coordinator before this runs; re-query so rows and in-use
+                // return paths show fresh images (same-id refresh).
                 showCreateDialog = false
                 exerciseToEdit = null
-                val action = resolveCustomExerciseSaveAction(
-                    draftExercise = exercise,
-                    editingExerciseId = editExerciseId,
-                )
-                coroutineScope.launch {
-                    when (action) {
-                        is CustomExerciseSaveAction.Create -> {
-                            exerciseRepository.createCustomExercise(action.exercise)
-                        }
-
-                        is CustomExerciseSaveAction.Update -> {
-                            exerciseRepository.updateCustomExercise(action.exercise)
-                        }
-                    }
+                mediaRefreshTick += 1
+                // SD7: surface the transient "cleanup pending" status.
+                if (mediaCoordinator.cleanupPendingNotice) {
+                    coroutineScope.launch { snackbarHostState.showSnackbar(mediaCleanupPendingMessage) }
                 }
             },
             onDelete = if (exerciseToEdit != null) {
                 {
-                    val deleteExerciseId = exerciseToEdit?.id
+                    // Issue #1358 (P4): delete already ran through the shared
+                    // media tail (rows cascade, then files).
                     showCreateDialog = false
                     exerciseToEdit = null
-                    coroutineScope.launch {
-                        deleteExerciseId?.let { exerciseRepository.deleteCustomExercise(it) }
+                    mediaRefreshTick += 1
+                    if (mediaCoordinator.cleanupPendingNotice) {
+                        coroutineScope.launch { snackbarHostState.showSnackbar(mediaCleanupPendingMessage) }
                     }
                 }
             } else {
@@ -277,6 +287,7 @@ fun SingleExerciseScreen(
             onDismiss = {
                 showCreateDialog = false
                 exerciseToEdit = null
+                mediaCoordinator.discardAll()
             },
         )
     }
@@ -346,6 +357,7 @@ fun SingleExerciseScreen(
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
                 isLoading = isCompletedFilterLoading,
+                mediaRefreshTick = mediaRefreshTick,
                 onViewExerciseDetail = { exercise ->
                     exercise.id?.let { id ->
                         navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(id))

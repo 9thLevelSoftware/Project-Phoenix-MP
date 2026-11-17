@@ -168,27 +168,35 @@ object BleConstants {
     val firmwareRevisionCharacteristic = characteristicOf(service = DIS_SERVICE_UUID, characteristic = FIRMWARE_REVISION_UUID)
 
     // -------------------------------------------------------------------------
-    // Polar H10 GATT constants & commands
+    // Standard Bluetooth SIG Heart Rate / Battery GATT constants (vendor-neutral)
     // -------------------------------------------------------------------------
-    object Polar {
+    object Hrm {
         const val HR_SERVICE_UUID_STRING = "0000180d-0000-1000-8000-00805f9b34fb"
         const val HR_MEASUREMENT_CHAR_UUID_STRING = "00002a37-0000-1000-8000-00805f9b34fb"
         const val BATTERY_SERVICE_UUID_STRING = "0000180f-0000-1000-8000-00805f9b34fb"
         const val BATTERY_LEVEL_CHAR_UUID_STRING = "00002a19-0000-1000-8000-00805f9b34fb"
-        const val PMD_SERVICE_UUID_STRING = "fb005c80-02e7-f387-1cad-8acd2d8df0c8"
-        const val PMD_CONTROL_POINT_CHAR_UUID_STRING = "fb005c81-02e7-f387-1cad-8acd2d8df0c8"
-        const val PMD_DATA_CHAR_UUID_STRING = "fb005c82-02e7-f387-1cad-8acd2d8df0c8"
 
         val HR_SERVICE_UUID = Uuid.parse(HR_SERVICE_UUID_STRING)
         val HR_MEASUREMENT_UUID = Uuid.parse(HR_MEASUREMENT_CHAR_UUID_STRING)
         val BATTERY_SERVICE_UUID = Uuid.parse(BATTERY_SERVICE_UUID_STRING)
         val BATTERY_LEVEL_UUID = Uuid.parse(BATTERY_LEVEL_CHAR_UUID_STRING)
+
+        val hrMeasurementCharacteristic = characteristicOf(service = HR_SERVICE_UUID, characteristic = HR_MEASUREMENT_UUID)
+        val batteryLevelCharacteristic = characteristicOf(service = BATTERY_SERVICE_UUID, characteristic = BATTERY_LEVEL_UUID)
+    }
+
+    // -------------------------------------------------------------------------
+    // Polar PMD (Measurement Data) GATT constants & commands — Polar-specific
+    // -------------------------------------------------------------------------
+    object PolarPmd {
+        const val PMD_SERVICE_UUID_STRING = "fb005c80-02e7-f387-1cad-8acd2d8df0c8"
+        const val PMD_CONTROL_POINT_CHAR_UUID_STRING = "fb005c81-02e7-f387-1cad-8acd2d8df0c8"
+        const val PMD_DATA_CHAR_UUID_STRING = "fb005c82-02e7-f387-1cad-8acd2d8df0c8"
+
         val PMD_SERVICE_UUID = Uuid.parse(PMD_SERVICE_UUID_STRING)
         val PMD_CONTROL_POINT_UUID = Uuid.parse(PMD_CONTROL_POINT_CHAR_UUID_STRING)
         val PMD_DATA_UUID = Uuid.parse(PMD_DATA_CHAR_UUID_STRING)
 
-        val hrMeasurementCharacteristic = characteristicOf(service = HR_SERVICE_UUID, characteristic = HR_MEASUREMENT_UUID)
-        val batteryLevelCharacteristic = characteristicOf(service = BATTERY_SERVICE_UUID, characteristic = BATTERY_LEVEL_UUID)
         val pmdControlPointCharacteristic = characteristicOf(service = PMD_SERVICE_UUID, characteristic = PMD_CONTROL_POINT_UUID)
         val pmdDataCharacteristic = characteristicOf(service = PMD_SERVICE_UUID, characteristic = PMD_DATA_UUID)
 

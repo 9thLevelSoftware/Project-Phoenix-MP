@@ -44,9 +44,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.presentation.components.PolarSessionAnalyticsCard
+import com.devil.phoenixproject.presentation.components.SessionHeartRateCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -145,7 +145,7 @@ fun WorkoutTab(
     // Issue #1227: TOKEN -> LABEL custom-equipment overlay for the picker dialogs. The host
     // passes the active profile's overlay; the empty default is for previews/tests only.
     customEquipmentOverlay: Map<String, String> = emptyMap(),
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
 ) {
     val connectionState = state.connectionState
@@ -302,7 +302,7 @@ fun WorkoutTab(
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
                             machineTeardownState = machineTeardownState,
-                            polarBleManager = polarBleManager,
+                            hrmBleManager = hrmBleManager,
                             workoutRepository = workoutRepository,
                         )
                     }
@@ -430,7 +430,7 @@ fun WorkoutTab(
                             workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
-                            polarBleManager = polarBleManager,
+                            hrmBleManager = hrmBleManager,
                             workoutRepository = workoutRepository,
                             onContinue = {
                                 // Intercept dismissal once to nudge tagging of an untagged
@@ -588,6 +588,11 @@ fun WorkoutTab(
                                 },
                                 exerciseRepository = exerciseRepository,
                                 enableVideoPlayback = false,
+                                // Issue #1358 round-4 P1: attach follows the Exercise
+                                // Demos preference (same value already collected for
+                                // ExerciseEditBottomSheet below), decoupled from the
+                                // picker's list-thumbnail suppression above.
+                                enablePhotoAttach = enableVideoPlayback,
                             )
                         }
 
@@ -950,7 +955,7 @@ private fun CompletedCard(
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
     machineTeardownState: MachineTeardownState,
-    polarBleManager: PolarH10BleManager? = null,
+    hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
@@ -1041,10 +1046,10 @@ private fun CompletedCard(
                 }
             }
 
-            // Polar H10 Session Analytics & Cooldown Protocol (rendered below exercise cards, above action button)
-            PolarSessionAnalyticsCard(
+            // HRM Session Analytics & Cooldown Protocol (rendered below exercise cards, above action button)
+            SessionHeartRateCard(
                 modifier = Modifier.padding(vertical = Spacing.small),
-                polarBleManager = polarBleManager,
+                hrmBleManager = hrmBleManager,
                 workoutRepository = workoutRepository,
             )
 

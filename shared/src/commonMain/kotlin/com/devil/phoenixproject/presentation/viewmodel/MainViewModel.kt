@@ -3,7 +3,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -549,7 +549,7 @@ class MainViewModel(
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
-    val polarBleManager: PolarH10BleManager? = null,
+    val hrmBleManager: HrmBleManager? = null,
     /**
      * Issue #1384 (packet P3): the narrow completion-finalizer seam, threaded through
      * [DefaultWorkoutSessionManager] into [ActiveSessionEngine]. Defaults to the no-op
@@ -745,7 +745,7 @@ class MainViewModel(
         machineSafetyCoordinator = machineSafetyCoordinator,
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
-        polarBleManager = polarBleManager,
+        hrmBleManager = hrmBleManager,
         completionFinalizer = completionFinalizer,
     )
 
@@ -1477,7 +1477,7 @@ class MainViewModel(
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
             }
             try {
-                polarBleManager?.disconnect()
+                hrmBleManager?.disconnect()
                 Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }

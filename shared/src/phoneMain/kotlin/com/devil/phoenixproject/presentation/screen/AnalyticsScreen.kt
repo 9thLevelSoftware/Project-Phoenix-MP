@@ -572,7 +572,7 @@ fun AnalyticsScreen(
                         },
                         recentJustLiftExerciseIds = recentJustLiftExerciseIds,
                         customEquipmentOverlay = customEquipmentOverlay,
-                        polarBleManager = viewModel.polarBleManager,
+                        hrmBleManager = viewModel.hrmBleManager,
                         workoutRepository = viewModel.workoutRepository,
                         modifier = Modifier.fillMaxSize(),
                     )

@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
@@ -96,6 +96,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
+import com.devil.phoenixproject.domain.premium.reachedCommandedLoadForAggregates
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
@@ -164,6 +165,8 @@ data class BiomechanicsRepInput(
     val concentricMetrics: List<WorkoutMetric>,
     val allRepMetrics: List<WorkoutMetric>,
     val timestamp: Long,
+    /** Issue #1400: false keeps this rep out of set-level velocity aggregates and the loss baseline. */
+    val aggregateEligible: Boolean = true,
 )
 
 fun interface BiomechanicsRepProcessor {
@@ -179,6 +182,7 @@ fun interface BiomechanicsRepProcessor {
                 concentricMetrics = input.concentricMetrics,
                 allRepMetrics = input.allRepMetrics,
                 timestamp = input.timestamp,
+                aggregateEligible = input.aggregateEligible,
             )
         }
     }
@@ -586,7 +590,7 @@ class ActiveSessionEngine(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
-    private val polarBleManager: PolarH10BleManager? = null,
+    private val hrmBleManager: HrmBleManager? = null,
     // Issue #1384 (packet P2): narrow completion-finalizer seam. Every routine-finish path
     // durably admits its FINALIZE request through this seam BEFORE any ID reset, runtime
     // cleanup or completion UI. Bounded local persistence only — BLE teardown and machine
@@ -6021,10 +6025,10 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Collect metric for history recording, stamping live Polar H10 cardiac & torso biomechanics.
+     * Collect metric for history recording, stamping live HRM cardiac & torso biomechanics.
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
-        val stampedMetric = polarBleManager?.let { polar ->
+        val stampedMetric = hrmBleManager?.let { polar ->
             if (!polar.isConnected.value) return@let null
             val hr = polar.hrMeasurement.value
             val lastAcc = polar.latestAcc.value?.samples?.lastOrNull()
@@ -6264,7 +6268,8 @@ class ActiveSessionEngine(
         val rawPosA = currentPositions?.positionA ?: 0f
         val rawPosB = currentPositions?.positionB ?: 0f
 
-        val repCountBefore = repCounter.getRepCount().totalReps
+        val countsBefore = repCounter.getRepCount()
+        val repCountBefore = countsBefore.totalReps
         logRepNotificationReceipt(notification, repCountBefore)
 
         // Seed ROM from machine (only has effect on first notification with valid data)
@@ -6291,7 +6296,21 @@ class ActiveSessionEngine(
         coordinator._repRanges.value = repCounter.getRepRanges()
 
         // Score the rep if rep count actually incremented
-        val repCountAfter = repCounter.getRepCount().totalReps
+        val countsAfter = repCounter.getRepCount()
+        val repCountAfter = countsAfter.totalReps
+
+        // Issue #1400 (F2): remember the last warmup rep event from the rep-event stream, on the
+        // sample clock (the newest monitor sample when the event arrived). Only a notification
+        // that advances the warmup count without counting a working rep qualifies, so the
+        // mark can never land after working rep 1 (#252 / R-1 intent). It is consumed only when
+        // working rep 1 arrives with no sample-based warmup mark (see below).
+        if (repCountAfter == repCountBefore &&
+            countsAfter.workingReps == 0 &&
+            countsAfter.warmupReps > countsBefore.warmupReps
+        ) {
+            currentPositions?.timestamp?.let { coordinator.warmupRepEventSampleMs = it }
+        }
+
         if (repCountAfter > repCountBefore) {
             // Issue #649: a completed working rep proves the user is back in
             // motion; let normal AMRAP / stall auto-stop resume by zeroing the
@@ -6304,6 +6323,28 @@ class ActiveSessionEngine(
             // can survive a subsequent valid rep and later auto-complete the set.
             resetStallTimer()
 
+            // Issue #1400 (F2): working rep 1 of a set with a configured warmup (warmupReps > 0
+            // once working reps count) and no sample-based warmup mark (F-022 seed). Without a
+            // lower bound its window would reach back to set start and include the calibration
+            // pulls. Start it at the last observed warmup rep event instead of 0L. The boundary
+            // is only trustworthy when the warmup completed in an EARLIER notification; when
+            // this notification force-completed it (coalesced warmup + working rep 1) the
+            // window still holds unobserved calibration pulls. Either way an untrusted rep 1
+            // stays counted and displayed but is kept out of set-level velocity aggregates.
+            var warmupBoundaryKnown = true
+            if (countsBefore.workingReps == 0 &&
+                countsAfter.warmupReps > 0 &&
+                coordinator.repBoundaryTimestamps.value.isEmpty()
+            ) {
+                val warmupEventMs = coordinator.warmupRepEventSampleMs
+                if (warmupEventMs > 0L) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(warmupEventMs) else boundaries
+                    }
+                }
+                warmupBoundaryKnown = warmupEventMs > 0L && countsAfter.warmupReps == countsBefore.warmupReps
+            }
+
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
             val now = KmpUtils.currentTimeMillis()
@@ -6312,7 +6353,7 @@ class ActiveSessionEngine(
             scoreCurrentRep(repCountAfter)
 
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
-            processBiomechanicsForRep(lease, repCountAfter, now)
+            processBiomechanicsForRep(lease, repCountAfter, now, warmupBoundaryKnown = warmupBoundaryKnown)
         }
     }
 
@@ -6489,11 +6530,15 @@ class ActiveSessionEngine(
      *
      * @param repNumber 1-indexed rep number
      * @param timestamp Rep completion timestamp
+     * @param warmupBoundaryKnown Issue #1400: false when a warmup was configured but no warmup
+     *   boundary was recorded before this (first) working rep, so its window may include the
+     *   calibration pulls and the rep must stay out of set-level aggregates.
      */
     private fun processBiomechanicsForRep(
         lease: ExecutionLease,
         repNumber: Int,
         timestamp: Long,
+        warmupBoundaryKnown: Boolean = true,
     ) {
         if (!executionGuard.isCurrent(lease)) return
         val context = biomechanicsContextFor(lease) ?: return
@@ -6503,6 +6548,14 @@ class ActiveSessionEngine(
             Logger.d { "Biomechanics: no rep boundary for rep $repNumber" }
             return
         }
+        // Issue #1400 (F2): the commanded load in force when this rep completed. The machine
+        // never holds more than the connected model's per-cable ceiling, so a request above it
+        // must not make every rep look like a ramp rep.
+        val paramsAtRep = coordinator._workoutParameters.value
+        val commandedPerCableKgAtRep = minOf(
+            paramsAtRep.weightPerCableKg,
+            CommandLimits.maxWeightPerCableKg(bleRepository.connectedModel),
+        )
 
         scope.launch(biomechanicsDispatcher) {
             if (!executionGuard.isCurrent(lease)) return@launch
@@ -6553,6 +6606,23 @@ class ActiveSessionEngine(
                     if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
                 }
 
+                // Issue #1400 (F2): calibration-contaminated rep 1 and constant-load ramp reps
+                // are analysed and kept for the per-rep display, but not aggregated.
+                val reachedCommandedLoad = reachedCommandedLoadForAggregates(
+                    programMode = paramsAtRep.programMode,
+                    progressionRegressionKg = paramsAtRep.progressionRegressionKg,
+                    commandedPerCableKg = commandedPerCableKgAtRep,
+                    concentricMetrics = concentricMetrics,
+                    counterweightKg = paramsAtRep.counterweightKg,
+                )
+                val aggregateEligible = warmupBoundaryKnown && reachedCommandedLoad
+                if (!aggregateEligible) {
+                    Logger.d {
+                        "Biomechanics: rep $repNumber excluded from set aggregates " +
+                            "(warmupBoundaryKnown=$warmupBoundaryKnown, reachedCommandedLoad=$reachedCommandedLoad)"
+                    }
+                }
+
                 if (!executionGuard.isCurrent(lease)) return@launch
                 val result = biomechanicsRepProcessor.process(
                     engine = context.engine,
@@ -6561,6 +6631,7 @@ class ActiveSessionEngine(
                         concentricMetrics = concentricMetrics,
                         allRepMetrics = repMetrics,
                         timestamp = timestamp,
+                        aggregateEligible = aggregateEligible,
                     ),
                 )
 
@@ -6729,11 +6800,14 @@ class ActiveSessionEngine(
                 coordinator._repCount.value.workingReps == 0
             ) {
                 coordinator.warmupCompleteTimeMs = metric.timestamp
-                polarBleManager?.updateSessionPhase("WORKING_SET")
+                hrmBleManager?.updateSessionPhase("WORKING_SET")
                 // F-022: start working rep 1's window at the end of warmup. Without a
                 // boundary here the window reaches back to set start, so rep 1's mean
                 // concentric velocity - the baseline for velocity-loss auto-end and for
                 // the VBT 1RM estimate - averaged in every warmup rep.
+                // Issue #1400: when no sample arrives between the warmup and working rep 1
+                // (the coalesced path), handleRepNotification starts rep 1 at the last warmup
+                // rep event instead and keeps an untrusted rep 1 out of set aggregates.
                 if (coordinator._repCount.value.warmupReps > 0) {
                     coordinator.repBoundaryTimestamps.update { boundaries ->
                         if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
@@ -7660,6 +7734,7 @@ class ActiveSessionEngine(
         coordinator.setRepMetrics.clear()
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
@@ -8201,7 +8276,7 @@ class ActiveSessionEngine(
             return null
         }
         bodyweightCompletionGate.beginExecution(lease)
-        polarBleManager?.startSessionRecording(
+        hrmBleManager?.startSessionRecording(
             sessionId = lease.sessionId,
             phase = if (coordinator._repCount.value.warmupReps > 0 && !coordinator._repCount.value.isWarmupComplete) "WARMUP" else "WORKING_SET",
         )
@@ -8231,6 +8306,7 @@ class ActiveSessionEngine(
         // covers every set-start path; the handleSetCompletion resets remain (they
         // must run before the summary is displayed) and are idempotent with these.
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
         // Reset quality streak only at actual workout start, not between sets.
         // skipCountdown=true indicates a set-to-set transition within the same workout.
         if (!skipCountdown) {
@@ -9430,7 +9506,7 @@ class ActiveSessionEngine(
         // window) is not a measurement and must never be read back as achieved load.
         // Shared rule with the manual-stop path: [recordedHeaviestKg].
         val recordedHeaviestKgPerCable = summary.recordedHeaviestKg(params.isEchoMode)
-        val polarSummary = polarBleManager?.freezeSessionRecording(lease.sessionId)
+        val polarSummary = hrmBleManager?.freezeSessionRecording(lease.sessionId)
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = timing.startMs,
@@ -9477,7 +9553,8 @@ class ActiveSessionEngine(
             burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
             peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
             rpe = coordinator._currentSetRpe.value,
-            avgMcvMmS = biomechanicsSummary?.avgMcvMmS,
+            // Issue #1400: 0 means no aggregate-eligible rep had a valid MCV - store no MCV.
+            avgMcvMmS = biomechanicsSummary?.avgMcvMmS?.takeIf { it > 0f },
             avgAsymmetryPercent = biomechanicsSummary?.avgAsymmetryPercent,
             totalVelocityLossPercent = biomechanicsSummary?.totalVelocityLossPercent,
             dominantSide = biomechanicsSummary?.dominantSide,
@@ -9944,7 +10021,7 @@ class ActiveSessionEngine(
                     timedModeEvidence = snapshot.lease.isTimedCable,
                 ),
             )
-            polarBleManager?.flushSessionTelemetry(sessionId)?.join()
+            hrmBleManager?.flushSessionTelemetry(sessionId)?.join()
             // Issue #869: the set is durable; Set Summary may now appear.
             commitSettled?.complete(Unit)
             snapshot.singleExerciseDefaults?.let { defaults ->
@@ -10139,6 +10216,7 @@ class ActiveSessionEngine(
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
     }
 
     private fun detachEndedRoutineFromCoordinator() {
@@ -11001,10 +11079,10 @@ class ActiveSessionEngine(
         val startAtStopMs = coordinator.workoutStartTime
         val warmupCompleteAtStopMs = coordinator.warmupCompleteTimeMs
         val firstSampleAtStopMs = coordinator.collectedMetrics.snapshot().firstOrNull()?.timestamp
-        val polarSessionIdAtStop = polarBleManager?.currentRecordingSessionId
+        val polarSessionIdAtStop = hrmBleManager?.currentRecordingSessionId
         val polarSummaryAtStop = if (manualSnapshot == null) {
             polarSessionIdAtStop?.let { sessionId ->
-                polarBleManager?.freezeSessionRecording(sessionId)
+                hrmBleManager?.freezeSessionRecording(sessionId)
             }
         } else {
             null
@@ -11031,6 +11109,7 @@ class ActiveSessionEngine(
                     coordinator.repQualityScorer.reset()
                     coordinator._latestRepQuality.value = null
                     coordinator.repBoundaryTimestamps.value = emptyList()
+                    coordinator.warmupRepEventSampleMs = 0L
 
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
@@ -11206,7 +11285,8 @@ class ActiveSessionEngine(
                     burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
                     peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
                     rpe = coordinator._currentSetRpe.value,
-                    avgMcvMmS = bioSummary?.avgMcvMmS,
+                    // Issue #1400: 0 means no aggregate-eligible rep had a valid MCV - store no MCV.
+                    avgMcvMmS = bioSummary?.avgMcvMmS?.takeIf { it > 0f },
                     avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
                     totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
                     dominantSide = bioSummary?.dominantSide,
@@ -11281,7 +11361,7 @@ class ActiveSessionEngine(
                     )
                 }
                 polarSessionIdAtStop?.let { recordedSourceId ->
-                    polarBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
+                    hrmBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
                 }
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {
@@ -12002,6 +12082,7 @@ class ActiveSessionEngine(
             resetBiomechanicsContext(lease)
             coordinator.deferAutoStopDeadlineMs = 0L
             coordinator.repBoundaryTimestamps.value = emptyList()
+            coordinator.warmupRepEventSampleMs = 0L
 
             val completedReps = snapshot.postSaveInput.workingReps
             val summary = snapshot.presentationSummary

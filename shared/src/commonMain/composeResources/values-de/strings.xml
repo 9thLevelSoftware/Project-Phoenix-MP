@@ -896,6 +896,37 @@
     <string name="settings_weight_text_size_large">Groß</string>
     <string name="settings_weight_text_size_extra_large">Sehr groß</string>
     <string name="cd_weight_text_size">Gewichtsschriftgröße</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="media_photos_count">Fotos · %1$d von %2$d</string>
+    <string name="media_add_photos">Fotos hinzufügen</string>
+    <string name="media_photos_helper">Bis zu 6 Fotos · je 10 MB</string>
+    <string name="media_photos_privacy_note">Kopien werden privat auf diesem Gerät gespeichert. Deine Originale bleiben unverändert.</string>
+    <string name="media_flipbook_note">Im Training werden bis zu 2 Fotos im Wechsel angezeigt.</string>
+    <string name="media_preference_off_notice">Übungs-Demos sind deaktiviert. Aktiviere sie in den Einstellungen, um Fotos hinzuzufügen oder anzuzeigen.</string>
+    <string name="media_copying_progress">Fotos werden kopiert… %1$d von %2$d</string>
+    <string name="media_photo_badge">Foto</string>
+    <string name="media_preview_title">Foto %1$d von %2$d</string>
+    <string name="media_preview_close">Schließen</string>
+    <string name="media_preview_previous">Zurück</string>
+    <string name="media_preview_next">Weiter</string>
+    <string name="media_remove_photo">Foto entfernen</string>
+    <string name="media_remove_confirm_title">Dieses Foto entfernen?</string>
+    <string name="media_remove_confirm_message">Speichern, um diese Kopie von der Übung zu entfernen. Dein Original bleibt unverändert.</string>
+    <string name="media_removal_queued">Entfernung vorgemerkt. Speichern zum Anwenden.</string>
+    <string name="media_error_too_many">Keine Fotos hinzugefügt: bis zu 6 Fotos pro Übung.</string>
+    <string name="media_error_too_large">Keine Fotos hinzugefügt: %1$s ist größer als 10 MB.</string>
+    <string name="media_error_unsupported">Keine Fotos hinzugefügt: %1$s ist kein unterstütztes Bild.</string>
+    <string name="media_error_unreadable">Keine Fotos hinzugefügt: %1$s konnte nicht gelesen werden.</string>
+    <string name="media_error_missing_staged">Nicht gespeichert: %1$s konnte nicht gefunden werden. Entferne sie oder wähle sie erneut aus und versuche es dann erneut.</string>
+    <string name="media_error_generic">Keine Fotos hinzugefügt. Versuche es erneut.</string>
+    <string name="media_save_media_failed">Übung gespeichert; Fotos konnten nicht gespeichert werden. Füge Fotos erneut hinzu.</string>
+    <string name="media_save_busy">Fotos werden noch hinzugefügt. Warte, bis die Auswahl abgeschlossen ist, und speichere dann.</string>
+    <string name="media_cleanup_pending">Einige lokale Kopien konnten nicht entfernt werden. Phoenix versucht es später erneut.</string>
+    <string name="media_delete_cleanup_transient">Übung gelöscht. Lokale Fotos werden bereinigt…</string>
+    <string name="media_save_failed">Übung konnte nicht gespeichert werden. Versuche es erneut.</string>
+    <string name="media_delete_failed">Übung konnte nicht gelöscht werden. Versuche es erneut.</string>
+    <string name="delete_exercise_media_message">Diese Übung und ihre Fotos löschen? Deine Originale bleiben unverändert.</string>
+    <string name="settings_exercise_demos_photos_note">Übungs-Demos steuern auch Fotos, die du eigenen Übungen hinzufügst.</string>
     <!-- Issue #1360: rest-control rejection feedback. -->
     <string name="rest_control_not_resting">Die Ruhezeit läuft gerade nicht.</string>
     <string name="rest_control_stale_owner">Diese Ruhezeit hat sich geändert, bevor die Änderung übernommen wurde.</string>

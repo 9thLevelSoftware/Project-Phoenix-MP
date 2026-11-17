@@ -106,18 +106,48 @@ private class IosSoundManager {
     private val lifecycleObservers = mutableListOf<NSObjectProtocol>()
     private var released = false
 
-    // Issue #1357: true while the system holds the session away from us (an
-    // interruption began, a reactivation failed, or a cue was refused). The
-    // next foreground cue retries activation instead of staying silent until
-    // the workout is restarted.
-    private var sessionNeedsRecovery = false
+    // Issue #1357: session-recovery and player-rebuild flags, the rebuild cap
+    // and the retry decision live in the UIKit-free IosSoundRecoveryPolicy.
+    // Focus loss (background, interruption, background cue, refused play)
+    // arms a pool rebuild; re-preparing the cached players alone left them
+    // silent until the app was restarted.
+    private val recoveryPolicy = IosSoundRecoveryPolicy(
+        object : IosSoundRecoveryHost {
+            override fun activateSession(): Boolean = setupAudioSession()
+
+            override fun rebuildPlayers(reason: String) {
+                stopAndClearPlayers()
+                loadAllSounds()
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_rebuilt") {
+                    "reason=$reason ${playerCountsSummary()}"
+                }
+            }
+
+            override fun reprepareCachedPlayers() = prepareAllPlayers()
+
+            override fun recordRecovery(trigger: String, outcome: IosSoundRecoveryOutcome) {
+                IosAudioDiagnostics.record(
+                    AUDIO_DIAGNOSTIC_TAG,
+                    "recovery_result",
+                    warning = outcome == IosSoundRecoveryOutcome.ACTIVATION_FAILED,
+                ) { "trigger=$trigger outcome=$outcome" }
+            }
+        },
+    )
 
     init {
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "manager_init")
-        sessionNeedsRecovery = !setupAudioSession()
+        recoveryPolicy.onInitialActivation(setupAudioSession())
         loadAllSounds()
         installLifecycleObservers()
     }
+
+    private fun playerCountsSummary(): String =
+        "eventPlayers=${players.values.count { it != null }} badge=${badgeSoundPlayers.count { it != null }} " +
+            "pr=${prSoundPlayers.count { it != null }} rep=${repCountSoundPlayers.count { it != null }} " +
+            "countdown=${countdownTickPlayer != null} neutral=${encouragementNeutralSoundPlayers.size} " +
+            "mild=${encouragementMildSoundPlayers.size} strong=${encouragementStrongSoundPlayers.size} " +
+            "dominatrix=${encouragementDominatrixSoundPlayers.size}"
 
     private fun loadAllSounds() {
         loadSounds()
@@ -130,11 +160,7 @@ private class IosSoundManager {
         loadEncouragementSounds("vulgar_strong", 12, encouragementStrongSoundPlayers, "vulgar strong sounds")
         loadEncouragementSounds("dominatrix", 12, encouragementDominatrixSoundPlayers, "dominatrix sounds")
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_loaded") {
-            "eventPlayers=${players.values.count { it != null }} badge=${badgeSoundPlayers.count { it != null }} " +
-                "pr=${prSoundPlayers.count { it != null }} rep=${repCountSoundPlayers.count { it != null }} " +
-                "countdown=${countdownTickPlayer != null} neutral=${encouragementNeutralSoundPlayers.size} " +
-                "mild=${encouragementMildSoundPlayers.size} strong=${encouragementStrongSoundPlayers.size} " +
-                "dominatrix=${encouragementDominatrixSoundPlayers.size} ${IosAudioDiagnostics.sessionDetails()}"
+            "${playerCountsSummary()} ${IosAudioDiagnostics.sessionDetails()}"
         }
     }
 
@@ -183,9 +209,11 @@ private class IosSoundManager {
      * notifications so that voice prompts and sound effects resume after the
      * user backgrounds then foregrounds the app, or after a phone call /
      * Siri / Alarm interruption ends. On either event we re-activate the
-     * session and re-prepare the cached AVAudioPlayer instances (which can
-     * become invalid when the underlying AVAudioSession tears itself down
-     * during backgrounding).
+     * session. Issue #1357: the cached AVAudioPlayer instances can become
+     * invalid when the underlying AVAudioSession tears itself down during
+     * backgrounding, and prepareToPlay() does not revive them, so a background
+     * transition or interruption Began arms a full pool rebuild for that
+     * recovery; otherwise the cached players are re-prepared.
      */
     private fun installLifecycleObservers() {
         if (released) return
@@ -215,11 +243,12 @@ private class IosSoundManager {
                         "wasSuspended=${(userInfo?.get(AVAudioSessionInterruptionWasSuspendedKey) as? NSNumber)?.boolValue} " +
                         "released=$released ${IosAudioDiagnostics.sessionDetails()}"
                 }
-                // "Began" means the system has already deactivated us. Mark it
-                // so the next cue reactivates even if "ended" never arrives,
-                // which iOS does not guarantee (Issue #1357).
+                // "Began" means the system has already deactivated us. Arm
+                // reactivation and a pool rebuild so the next foreground cue
+                // recovers even if "ended" never arrives, which iOS does not
+                // guarantee (Issue #1357).
                 if (typeValue == AVAudioSessionInterruptionTypeBegan) {
-                    sessionNeedsRecovery = true
+                    recoveryPolicy.onInterruptionBegan()
                 } else if (typeValue == AVAudioSessionInterruptionTypeEnded) {
                     recoverAudioSession()
                 }
@@ -235,14 +264,28 @@ private class IosSoundManager {
                 rebuildAfterMediaServicesReset()
             },
         )
+        // Issue #1357: the system can invalidate the cached players while we
+        // are backgrounded, so entering the background arms a pool rebuild
+        // for the next foreground recovery. Nothing runs in the background.
+        val backgroundObserver = center.addObserverForName(
+            name = UIApplicationDidEnterBackgroundNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue(),
+            usingBlock = { _ ->
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "app_background") {
+                    "released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
+                if (!released) recoveryPolicy.onEnteredBackground()
+            },
+        )
         lifecycleObservers += foregroundObserver
         lifecycleObservers += interruptionObserver
         lifecycleObservers += mediaResetObserver
+        lifecycleObservers += backgroundObserver
         // Observation only: these notifications do not add recovery or change session ownership.
-        // (The media services reset rebuild above is a separate observer.)
+        // (The media services reset rebuild and the background arming above are separate observers.)
         listOf(
             UIApplicationWillResignActiveNotification to "app_resign_active",
-            UIApplicationDidEnterBackgroundNotification to "app_background",
             AVAudioSessionRouteChangeNotification to "route_change",
             AVAudioSessionMediaServicesWereLostNotification to "media_services_lost",
             AVAudioSessionMediaServicesWereResetNotification to "media_services_reset",
@@ -265,26 +308,31 @@ private class IosSoundManager {
         }
     }
 
+    /**
+     * Issue #1357: activates the session, then rebuilds the player pool when
+     * focus loss armed a rebuild (stopAndClearPlayers() + loadAllSounds() via
+     * the policy host), otherwise re-prepares the cached players. Skipped
+     * while the app is not active or after release.
+     */
     private fun recoverAudioSession() {
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "recovery_requested") { "released=$released" }
         if (released) return
-        sessionNeedsRecovery = !setupAudioSession()
-        prepareAllPlayers()
+        recoveryPolicy.recover(appActive = isAppActive(), trigger = "lifecycle")
     }
 
     private fun rebuildAfterMediaServicesReset() {
         if (released) return
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "rebuild_after_media_reset", warning = true)
         stopAndClearPlayers()
-        sessionNeedsRecovery = !setupAudioSession()
+        val activated = setupAudioSession()
         loadAllSounds()
+        recoveryPolicy.onPoolRebuiltExternally(activated, isAppActive())
     }
 
     /**
-     * Re-prepare every cached AVAudioPlayer. After long backgrounding or an
-     * AVAudioSession interruption the players' underlying audio files can be
-     * deallocated; calling prepareToPlay() makes them usable again before
-     * the next playSound() call.
+     * Re-prepare every cached AVAudioPlayer for a recovery that did not arm a
+     * rebuild. Issue #1357: this cannot revive players the system invalidated
+     * while backgrounded; those recoveries rebuild the pool instead.
      */
     private fun prepareAllPlayers() {
         players.values.forEach { it?.prepareToPlay() }
@@ -461,7 +509,53 @@ private class IosSoundManager {
             return
         }
 
-        val player = when (event) {
+        try {
+            // Issue #1357: flagged recovery (which may rebuild the pool) runs
+            // BEFORE a player is selected, and a refused play() gets one
+            // recovery and one retry on a player re-selected afterwards. A
+            // player captured before a rebuild is never played. While the app
+            // is not active a cue only arms recovery for the next foreground.
+            val outcome = recoveryPolicy.playCue<AVAudioPlayer>(
+                appActive = { isAppActive() },
+                selectPlayer = { selectPlayer(event) },
+                play = { player, isRetry ->
+                    // Issue #522: Defensively re-prepare the chosen player. The
+                    // lifecycle observers and the recovery policy own session
+                    // reactivation so this hot path does not reconfigure the
+                    // process-wide AVAudioSession on every cue or downgrade
+                    // SafeWordListener's PlayAndRecord category.
+                    val prepared = player.prepareToPlay()
+                    // Reset to beginning if already playing
+                    player.currentTime = 0.0
+                    if (event is HapticEvent.COUNTDOWN_TICK) {
+                        player.enableRate = true
+                        player.rate = ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)
+                    }
+                    val played = player.play()
+                    IosAudioDiagnostics.record(
+                        AUDIO_DIAGNOSTIC_TAG,
+                        if (isRetry) "player_retry_result" else "player_result",
+                        warning = !prepared || !played,
+                    ) {
+                        "cue=${event::class.simpleName} prepared=$prepared played=$played isPlaying=${player.isPlaying()} " +
+                            "playerVolume=${player.volume} released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                    }
+                    played
+                },
+            )
+            if (outcome == IosCuePlaybackOutcome.NO_PLAYER || outcome == IosCuePlaybackOutcome.RETRY_NO_PLAYER) {
+                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_missing", warning = true) {
+                    "cue=${event::class.simpleName} outcome=$outcome released=$released ${IosAudioDiagnostics.sessionDetails()}"
+                }
+            }
+        } catch (e: Exception) {
+            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_exception", warning = true) { "cue=${event::class.simpleName}" }
+            log.w { "Sound playback failed for $event: ${e.message}" }
+        }
+    }
+
+    private fun selectPlayer(event: HapticEvent): AVAudioPlayer? {
+        return when (event) {
             is HapticEvent.BADGE_EARNED -> {
                 if (badgeSoundPlayers.isNotEmpty()) {
                     badgeSoundPlayers.randomPoolEntry()
@@ -524,56 +618,6 @@ private class IosSoundManager {
 
             else -> players[event]
         }
-
-        if (player != null) {
-            // Issue #1357: the lifecycle observers get one chance to reactivate.
-            // If that lost the race with another app, retry here, but only when
-            // flagged and in the foreground (no audio background mode, so a
-            // backgrounded retry can only fail).
-            if (sessionNeedsRecovery && isAppActive()) {
-                recoverAudioSession()
-            }
-            try {
-                // Issue #522: Defensively re-prepare the chosen player. The
-                // lifecycle observers own session reactivation so this hot
-                // path does not repeatedly reconfigure the process-wide
-                // AVAudioSession or downgrade SafeWordListener's PlayAndRecord
-                // category during active workouts.
-                val prepared = player.prepareToPlay()
-                // Reset to beginning if already playing
-                player.currentTime = 0.0
-                if (event is HapticEvent.COUNTDOWN_TICK) {
-                    player.enableRate = true
-                    player.rate = ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)
-                }
-                val played = player.play()
-                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_result", warning = !prepared || !played) {
-                    "cue=${event::class.simpleName} prepared=$prepared played=$played isPlaying=${player.isPlaying()} " +
-                        "playerVolume=${player.volume} released=$released ${IosAudioDiagnostics.sessionDetails()}"
-                }
-                if (!played) {
-                    // Issue #1357: reactivate once and retry; otherwise leave the
-                    // flag set so the next foreground cue tries again.
-                    sessionNeedsRecovery = true
-                    if (isAppActive()) {
-                        recoverAudioSession()
-                        player.currentTime = 0.0
-                        val retried = player.play()
-                        if (!retried) sessionNeedsRecovery = true
-                        IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_retry_result", warning = !retried) {
-                            "cue=${event::class.simpleName} played=$retried ${IosAudioDiagnostics.sessionDetails()}"
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_exception", warning = true) { "cue=${event::class.simpleName}" }
-                log.w { "Sound playback failed for $event: ${e.message}" }
-            }
-        } else {
-            IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_missing", warning = true) {
-                "cue=${event::class.simpleName} released=$released ${IosAudioDiagnostics.sessionDetails()}"
-            }
-        }
     }
 
     fun release() {
@@ -582,6 +626,7 @@ private class IosSoundManager {
         // notifications from re-activating the session after we have already
         // torn it down, and remove the observers we installed in init.
         released = true
+        recoveryPolicy.release()
         lifecycleObservers.forEach { observer ->
             try {
                 NSNotificationCenter.defaultCenter.removeObserver(observer)
