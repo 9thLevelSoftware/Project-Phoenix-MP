@@ -239,6 +239,9 @@ kotlin {
 
             dependencies {
                 implementation(libs.sqldelight.native.driver)
+                // Issue #1403 UIKit fixture: Compose UI test harness on the iOS
+                // test runtime (same CMP version as the app; test-only scope).
+                implementation(libs.cmp.ui.test)
             }
         }
     }

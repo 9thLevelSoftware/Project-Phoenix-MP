@@ -35,6 +35,11 @@ class FakeGamificationRepository : GamificationRepository {
     val badgeLookupProfileIds = mutableListOf<String>()
     val updateStatsProfileIds = mutableListOf<String>()
 
+    // Every markBadgesCelebrated invocation, in order (badge IDs + profile id),
+    // including empty-ID calls that the fake itself ignores.
+    val markBadgesCelebratedCalls = mutableListOf<List<String>>()
+    val markBadgesCelebratedProfileIds = mutableListOf<String>()
+
     // Captured RPG profile from saveRpgProfile calls
     var savedRpgProfile: RpgProfile? = null
     var saveRpgProfileCallCount = 0
@@ -76,6 +81,8 @@ class FakeGamificationRepository : GamificationRepository {
     }
 
     override suspend fun markBadgesCelebrated(badgeIds: List<String>, profileId: String) {
+        markBadgesCelebratedCalls += badgeIds
+        markBadgesCelebratedProfileIds += profileId
         if (badgeIds.isEmpty()) return
         val now = currentTimeMillis()
         badgeIds.forEach { badgeId ->
