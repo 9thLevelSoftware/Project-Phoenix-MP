@@ -36,6 +36,10 @@ import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.powerloss.PowerLossSetSummaryFacts
+import com.devil.phoenixproject.presentation.powerloss.PowerLossSummaryUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiFacts
+import com.devil.phoenixproject.presentation.powerloss.powerLossSummaryUi
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.DurationFormatter
@@ -113,6 +117,10 @@ fun SetSummaryCard(
     isTerminalSummary: Boolean = false,
     polarBleManager: PolarH10BleManager? = null,
     workoutRepository: WorkoutRepository? = null,
+    // Issue #1392: power-loss set-summary facts. `WorkoutState.SetSummary.powerLoss`
+    // arrives with the parallel packet; passed through PowerLossUiFacts until then.
+    // Null renders no power block (plain REP sets unchanged).
+    powerLossFacts: PowerLossSetSummaryFacts? = null,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -186,6 +194,12 @@ fun SetSummaryCard(
     val setWeightUnitText: String = primary.unitText
     val durationFormatted = DurationFormatter.formatDuration(summary.durationMs)
 
+    // Issue #1392 — power-loss summary projection (ui-spec §6). SD6: the headline
+    // renders ONLY with its adjacent `8 completed reps · lifting attempt 9`
+    // clarification; the completed count is never promoted to the headline.
+    val powerLossSummary = PowerLossUiFacts.summaryFacts(powerLossFacts)
+        ?.let { powerLossSummaryUi(it) }
+
     // Peak/Avg forces - take max of both cables for display
     // Force values are per-cable measurements; primary display stays per-cable.
     val peakConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB), weightUnit)
@@ -248,6 +262,11 @@ fun SetSummaryCard(
                     }
                 }
             }
+        }
+
+        // Issue #1392 — power-loss block (renders only for POWER sets).
+        powerLossSummary?.let { powerUi ->
+            PowerLossSummaryBlock(ui = powerUi)
         }
 
         // Stats Grid
@@ -1908,6 +1927,95 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
                 "${weakest.name}: ${weakest.tip}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
+}
+
+/**
+ * Issue #1392 — power-loss summary block (ui-spec §6, SD6 binding).
+ *
+ * The `Stopped at rep 9 — 21% power loss (best: rep 2)` headline renders ONLY
+ * adjacent to its `8 completed reps · lifting attempt 9` clarification; the
+ * completed count comes from actualReps and is never promoted to the headline.
+ */
+@Composable
+private fun PowerLossSummaryBlock(ui: PowerLossSummaryUi) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ui.powerActiveBadge?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            ui.headline?.let { headline ->
+                Text(
+                    text = headline,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                // SD6: the clarification must render adjacent to the headline.
+                ui.clarification?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            ui.unavailableLine?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ui.secondaryLine?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = ui.configLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = ui.helpLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            )
+            Text(
+                text = ui.savedRepsHeader,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ui.savedRepReadback?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = ui.disclosure,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
             )
         }
     }

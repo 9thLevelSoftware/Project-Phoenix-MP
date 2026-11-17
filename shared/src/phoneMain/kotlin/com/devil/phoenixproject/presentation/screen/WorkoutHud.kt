@@ -27,6 +27,10 @@ import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.powerloss.PowerLossHudState
+import com.devil.phoenixproject.presentation.powerloss.PowerLossHudUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiFacts
+import com.devil.phoenixproject.presentation.powerloss.powerLossHudUi
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
@@ -93,6 +97,10 @@ fun WorkoutHud(
     velocityLossThresholdPercent: Int = 20,
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
+    // Issue #1392: live power-loss HUD facts. The parallel engine packet adds the
+    // `powerLossHud` StateFlow; until it lands, callers pass null and the
+    // PowerLossUiFacts adapter supplies the inert state (never a fabricated readout).
+    powerLossHudState: PowerLossHudState? = null,
     modifier: Modifier = Modifier,
 ) {
     // Determine if we're in Echo mode
@@ -100,6 +108,11 @@ fun WorkoutHud(
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
+
+    // Issue #1392 — HUD projection (ui-spec §4): `Power-loss target · 20%` /
+    // `Max 20 working reps` readback plus the completed-vs-attempt identity line.
+    // Strictly from PowerLossHudUi facts; nothing renders for REP sets.
+    val powerLossHud = powerLossHudUi(PowerLossUiFacts.hudFacts(powerLossHudState))
 
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
@@ -140,25 +153,30 @@ fun WorkoutHud(
                         val exerciseName = currentRoutineExercise?.exercise?.name
                         val totalSets = currentRoutineExercise?.setReps?.size ?: 0
 
-                        ExecutionPage(
-                            metric = metric,
-                            repCount = repCount,
-                            weightUnit = weightUnit,
-                            formatWeight = formatWeight,
-                            workoutParameters = workoutParameters,
-                            isEchoMode = isEchoMode,
-                            echoForceKgMax = currentHeuristicKgMax,
-                            exerciseName = exerciseName,
-                            currentSetIndex = currentSetIndex,
-                            totalSets = totalSets,
-                            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
-                            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                            isExerciseTimerPaused = isExerciseTimerPaused,
-                            onPauseExerciseTimer = onPauseExerciseTimer,
-                            onResumeExerciseTimer = onResumeExerciseTimer,
-                            onResetExerciseTimer = onResetExerciseTimer,
-                            currentWarmupSetIndex = currentWarmupSetIndex,
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (powerLossHud.visible) {
+                                PowerLossHudReadout(hud = powerLossHud)
+                            }
+                            ExecutionPage(
+                                metric = metric,
+                                repCount = repCount,
+                                weightUnit = weightUnit,
+                                formatWeight = formatWeight,
+                                workoutParameters = workoutParameters,
+                                isEchoMode = isEchoMode,
+                                echoForceKgMax = currentHeuristicKgMax,
+                                exerciseName = exerciseName,
+                                currentSetIndex = currentSetIndex,
+                                totalSets = totalSets,
+                                timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
+                                isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                                isExerciseTimerPaused = isExerciseTimerPaused,
+                                onPauseExerciseTimer = onPauseExerciseTimer,
+                                onResumeExerciseTimer = onResumeExerciseTimer,
+                                onResetExerciseTimer = onResetExerciseTimer,
+                                currentWarmupSetIndex = currentWarmupSetIndex,
+                            )
+                        }
                     }
 
                     1 -> InstructionPage(
@@ -1221,5 +1239,43 @@ private fun ExerciseTimerControls(
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+/**
+ * Issue #1392 — power-loss HUD readout (ui-spec §4).
+ *
+ * `Power-loss target · 20%` / `Max 20 working reps` (never a nominal `9 / 12`
+ * fraction) plus the completed-vs-attempt identity line, rendered strictly from
+ * [PowerLossHudUi] facts. Missing data shows `—` with a reason, never a zero.
+ */
+@Composable
+private fun PowerLossHudReadout(hud: PowerLossHudUi) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = hud.targetReadback,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            if (hud.capReadback.isNotEmpty()) {
+                Text(
+                    text = hud.capReadback,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            text = hud.completedLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
