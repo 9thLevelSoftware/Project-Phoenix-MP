@@ -477,6 +477,8 @@ CREATE TABLE RepBiomechanics (
     avgLoadB REAL NOT NULL,
     -- Metadata
     timestamp INTEGER NOT NULL,
+    -- Issue #1400 (migration 64): 0 = kept out of set-level velocity aggregates
+    aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -1716,8 +1718,8 @@ INSERT OR REPLACE INTO RepBiomechanics (
     sessionId, repNumber, mcvMmS, peakVelocityMmS, velocityZone,
     velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
     normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
-    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp, aggregateEligible
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRepBiomechanicsBySession:
 DELETE FROM RepBiomechanics WHERE sessionId = ?;

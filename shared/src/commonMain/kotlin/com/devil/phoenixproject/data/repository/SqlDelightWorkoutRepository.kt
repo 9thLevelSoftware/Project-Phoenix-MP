@@ -188,7 +188,8 @@ class SqlDelightWorkoutRepository(
         // Biomechanics summary
         avgMcvMmS = avgMcvMmS?.toFloat(),
         avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
-        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+        // Issue #1400: set velocity loss is 0-100; a pulled/imported legacy negative never surfaces.
+        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat()?.coerceIn(0f, 100f),
         dominantSide = dominantSide,
         strengthProfile = strengthProfile,
         // Form Check score

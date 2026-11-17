@@ -52,8 +52,13 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
     private val repResults = MutableStateFlow<List<BiomechanicsRepResult>>(emptyList())
     // FINDING-56: @Volatile ensures cross-dispatcher visibility — computeVelocity reads on
     // Dispatchers.Default while reset() writes null from the main dispatcher.
+    // Issue #1400: the baseline MCV together with the rep that set it (the first eligible rep with
+    // a valid MCV), so the reps-remaining projection counts reps since the baseline, not since
+    // rep 1. One reference keeps the pair consistent across dispatchers.
     @Volatile
-    private var firstRepMcv: Float? = null
+    private var baseline: VelocityBaseline? = null
+
+    private data class VelocityBaseline(val mcvMmS: Float, val repNumber: Int)
 
     /**
      * Process a completed rep's metric samples and produce biomechanics results.
@@ -65,6 +70,9 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
      * @param concentricMetrics List of WorkoutMetric samples for this rep's concentric phase
      * @param allRepMetrics All metrics for this rep (concentric + eccentric)
      * @param timestamp Rep completion timestamp
+     * @param aggregateEligible Issue #1400: false for a calibration-contaminated or load-ramp rep.
+     *   The rep is still analysed and listed, but it never becomes the velocity-loss baseline,
+     *   never signals auto-end and is excluded from set-level velocity aggregates.
      * @return Combined biomechanics result for this rep
      */
     fun processRep(
@@ -72,8 +80,9 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
         concentricMetrics: List<WorkoutMetric>,
         allRepMetrics: List<WorkoutMetric>,
         timestamp: Long,
+        aggregateEligible: Boolean = true,
     ): BiomechanicsRepResult {
-        val velocity = computeVelocity(repNumber, concentricMetrics)
+        val velocity = computeVelocity(repNumber, concentricMetrics, aggregateEligible)
         val forceCurve = computeForceCurve(repNumber, concentricMetrics)
         val asymmetry = computeAsymmetry(repNumber, allRepMetrics)
 
@@ -83,6 +92,7 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
             asymmetry = asymmetry,
             repNumber = repNumber,
             timestamp = timestamp,
+            aggregateEligible = aggregateEligible,
         )
 
         repResults.value = repResults.value + result
@@ -100,19 +110,20 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
         val results = repResults.value
         if (results.isEmpty()) return null
 
-        val velocities = results.map { it.velocity.meanConcentricVelocityMmS }
-        val avgMcv = velocities.average().toFloat()
+        // Issue #1400 (F3): set MCV, set velocity loss and the zone distribution use only the
+        // reps that count under the shared baseline policy (aggregate-eligible, finite MCV > 0).
+        // Calibration-contaminated and load-ramp reps stay in repResults for the per-rep display.
+        val countingResults = results.filter(VelocityLossBaseline::countsTowardsAggregates)
+        val avgMcv = if (countingResults.isEmpty()) {
+            0f
+        } else {
+            countingResults.map { it.velocity.meanConcentricVelocityMmS }.average().toFloat()
+        }
         val peakVelocity = results.maxOf { it.velocity.peakVelocityMmS }
 
-        val totalVelocityLoss = if (results.size >= 2) {
-            val firstMcv = results.first().velocity.meanConcentricVelocityMmS
-            val lastMcv = results.last().velocity.meanConcentricVelocityMmS
-            if (firstMcv > 0) ((firstMcv - lastMcv) / firstMcv * 100f) else null
-        } else {
-            null
-        }
+        val totalVelocityLoss = VelocityLossBaseline.setLossPercent(results)
 
-        val zoneDistribution = results
+        val zoneDistribution = countingResults
             .map { it.velocity.zone }
             .groupingBy { it }
             .eachCount()
@@ -187,7 +198,7 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
      */
     fun reset() {
         repResults.value = emptyList()
-        firstRepMcv = null
+        baseline = null
         _latestRepResult.value = null
     }
 
@@ -209,9 +220,14 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
      *
      * @param repNumber 1-indexed rep number
      * @param concentricMetrics Metrics from concentric (lifting) phase only
+     * @param aggregateEligible Issue #1400: false for a calibration-contaminated or load-ramp rep
      * @return VBT result with zone classification and fatigue indicators
      */
-    internal fun computeVelocity(repNumber: Int, concentricMetrics: List<WorkoutMetric>): VelocityResult {
+    internal fun computeVelocity(
+        repNumber: Int,
+        concentricMetrics: List<WorkoutMetric>,
+        aggregateEligible: Boolean = true,
+    ): VelocityResult {
         // VBT-01: Calculate Mean Concentric Velocity (MCV)
         // For each sample, take max(abs(velocityA), abs(velocityB)) since cables move together
         val sampleVelocities = concentricMetrics.map { metric ->
@@ -229,41 +245,33 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
         // VBT-02: Zone classification
         val zone = BiomechanicsVelocityZone.fromMcv(mcv)
 
-        // VBT-03: Velocity loss tracking
-        // First rep establishes baseline — only record it when MCV is non-zero.
-        // FINDING-57: If rep 1 produces empty concentric metrics (mcv == 0f), storing 0f as
-        // the baseline would cause the baseline > 0f guard to return null for every subsequent
-        // rep's velocityLossPercent, silently breaking velocity-loss tracking for the entire set.
-        // Leave firstRepMcv null and log a warning so the caller can investigate data quality.
-        if (firstRepMcv == null) {
-            if (mcv > 0f) {
-                firstRepMcv = mcv
-            } else {
-                log.w { "rep $repNumber produced 0 MCV — firstRepMcv baseline not set (empty or zero concentric metrics)" }
-            }
-        }
-
-        // For rep 1: velocity loss is null
-        // For rep 2+: calculate loss relative to first rep
-        val velocityLossPercent: Float? = if (repNumber == 1) {
-            null
-        } else {
-            firstRepMcv?.let { baseline ->
-                if (baseline > 0f) {
-                    // Calculate loss percentage, clamp to 0-100 range
-                    // If current rep is faster than first rep, loss is 0
-                    ((baseline - mcv) / baseline * 100f).coerceIn(0f, 100f)
+        // VBT-03: Velocity loss tracking (Issue #1400: shared policy in VelocityLossBaseline).
+        // The baseline is the first aggregate-eligible rep with a valid MCV. That rep reports
+        // null loss; later eligible reps report clamped loss against it.
+        // FINDING-57: a rep with empty concentric metrics (mcv == 0f) never becomes the
+        // baseline - storing 0f would null out every later rep's velocity loss for the set.
+        // Issue #1400: an ineligible (calibration/ramp) rep never becomes the baseline either,
+        // and it reports null loss, so it can neither set nor trigger velocity-loss auto-end.
+        val currentBaseline = baseline
+        val velocityLossPercent: Float? = when {
+            !aggregateEligible -> null
+            currentBaseline == null -> {
+                if (VelocityLossBaseline.isValidMcv(mcv)) {
+                    baseline = VelocityBaseline(mcvMmS = mcv, repNumber = repNumber)
                 } else {
-                    null
+                    log.w { "rep $repNumber produced 0 MCV — firstRepMcv baseline not set (empty or zero concentric metrics)" }
                 }
+                null
             }
+            // Clamped 0-100: a rep faster than the baseline reads 0 %; an invalid MCV reads null.
+            else -> VelocityLossBaseline.lossPercent(currentBaseline.mcvMmS, mcv)
         }
 
         // VBT-04: Rep projection
         // Estimate remaining reps based on velocity decay rate
         val thresholdPercent = velocityLossThresholdPercent.value
         val estimatedRepsRemaining: Int? = calculateEstimatedRepsRemaining(
-            repNumber = repNumber,
+            repsSinceBaseline = repNumber - (baseline?.repNumber ?: repNumber),
             currentLossPercent = velocityLossPercent,
             thresholdPercent = thresholdPercent,
         )
@@ -289,25 +297,24 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
      *
      * Uses linear projection based on average velocity loss per rep.
      *
-     * @param repNumber Current rep number (1-indexed)
-     * @param currentLossPercent Current velocity loss percentage (null for rep 1)
+     * @param repsSinceBaseline Reps completed since the velocity-loss baseline rep (Issue #1400)
+     * @param currentLossPercent Current velocity loss percentage (null for the baseline rep)
      * @return Estimated reps remaining (0-99), or null if projection is not valid
      */
     private fun calculateEstimatedRepsRemaining(
-        repNumber: Int,
+        repsSinceBaseline: Int,
         currentLossPercent: Float?,
         thresholdPercent: Float,
     ): Int? {
-        // Can't project from rep 1 (no decay data yet)
-        if (repNumber < 2 || currentLossPercent == null) return null
+        // Can't project from the baseline rep itself (no decay data yet)
+        if (repsSinceBaseline < 1 || currentLossPercent == null) return null
 
         // If velocity is increasing (negative loss) or zero loss, projection is nonsensical
         if (currentLossPercent <= 0f) return null
 
         // Calculate average loss per rep
-        // currentLossPercent is the total loss from rep 1 to current rep
-        // We've completed (repNumber - 1) reps since rep 1
-        val avgLossPerRep = currentLossPercent / (repNumber - 1)
+        // currentLossPercent is the total loss from the baseline rep to the current rep
+        val avgLossPerRep = currentLossPercent / repsSinceBaseline
 
         // Project how many more reps until we hit the threshold
         val remainingLossToThreshold = thresholdPercent - currentLossPercent

@@ -1415,12 +1415,15 @@ class Issue687WorkoutExecutionIsolationTest {
         packetTimestamp: Long,
     ) {
         val metricTimestamp = KmpUtils.currentTimeMillis() - 10L
+        // Issue #1400: full commanded Old School load (25 kg/cable) so the rep is not a ramp
+        // rep, and a recorded lower boundary just before the seeded samples so working rep 1 is
+        // not the boundary-unknown (forced-warmup) case. Both keep the rep aggregate-eligible.
         harness.coordinator.collectedMetrics.seedAll(
             List(4) { index ->
                 WorkoutMetric(
                     timestamp = metricTimestamp + index,
-                    loadA = 20f,
-                    loadB = 20f,
+                    loadA = 25f,
+                    loadB = 25f,
                     positionA = index * 50f,
                     positionB = index * 50f,
                     velocityA = velocityMmS,
@@ -1428,7 +1431,7 @@ class Issue687WorkoutExecutionIsolationTest {
                 )
             },
         )
-        harness.coordinator.repBoundaryTimestamps.value = emptyList()
+        harness.coordinator.repBoundaryTimestamps.value = listOf(metricTimestamp - 1L)
         harness.fakeBleRepo.emitRepNotification(
             harness.modernRepPacket(
                 repsSetCount = repNumber,

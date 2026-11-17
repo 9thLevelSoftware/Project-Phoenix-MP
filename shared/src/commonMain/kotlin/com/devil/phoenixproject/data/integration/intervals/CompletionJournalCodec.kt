@@ -526,6 +526,8 @@ internal data class PersistedBiomechanicsRepDto(
     val velocity: PersistedVelocityDto,
     val forceCurve: PersistedForceCurveDto,
     val asymmetry: PersistedAsymmetryDto,
+    // Issue #1400: absent in journals written before the field existed -> eligible.
+    val aggregateEligible: Boolean = true,
 ) {
     fun toDomain() = BiomechanicsRepResult(
         velocity = velocity.toDomain(),
@@ -533,6 +535,7 @@ internal data class PersistedBiomechanicsRepDto(
         asymmetry = asymmetry.toDomain(),
         repNumber = repNumber,
         timestamp = timestamp,
+        aggregateEligible = aggregateEligible,
     )
 
     companion object {
@@ -542,6 +545,7 @@ internal data class PersistedBiomechanicsRepDto(
             velocity = PersistedVelocityDto.from(result.velocity),
             forceCurve = PersistedForceCurveDto.from(result.forceCurve),
             asymmetry = PersistedAsymmetryDto.from(result.asymmetry),
+            aggregateEligible = result.aggregateEligible,
         )
     }
 }
