@@ -42,7 +42,6 @@ import com.devil.phoenixproject.presentation.garmin.GarminControlEvent
 import com.devil.phoenixproject.presentation.garmin.GarminSessionController
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.garmin_cd_status
 import projectphoenix.shared.generated.resources.garmin_controls_arm_action
@@ -95,8 +94,13 @@ import projectphoenix.shared.generated.resources.garmin_event_unknown
 @Composable
 fun GarminControlsSettingsCard(
     modifier: Modifier = Modifier,
-    garminController: GarminSessionController = koinInject(),
+    garminControllerOrNull: GarminSessionController? = null,
 ) {
+    // Best-effort resolution (issue #1391): without the Garmin Koin bindings (unit
+    // tests, early startup) the card stays hidden instead of failing composition.
+    val garminController = garminControllerOrNull
+        ?: rememberGarminSessionControllerOrNull()
+        ?: return
     val connection by garminController.connectionState.collectAsState()
     val arm by garminController.armState.collectAsState()
     val lastEvent by garminController.lastEvent.collectAsState()

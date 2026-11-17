@@ -1718,7 +1718,11 @@ class DefaultWorkoutSessionManager(
         }
 
         val completionDecision = when {
-            saveClaimed && terminal != RemoteSetControlTerminal.SUPERSEDED ->
+            // A deferred bodyweight save owns no completion decision yet: the rep-entry
+            // dialog completes (and saves) the set later, so SAVED_AND_ADVANCED would
+            // misreport a save that has not happened (frozen receipt semantics:
+            // NO_COMPLETION = "no completion decision was reached").
+            saveClaimed && !bodyweightPromptPending && terminal != RemoteSetControlTerminal.SUPERSEDED ->
                 RemoteCompletionDecision.SAVED_AND_ADVANCED
             reservation.route == RemoteCompletionRoute.DISCARD_AND_RETRY ->
                 RemoteCompletionDecision.DISCARDED_AND_RETRIED

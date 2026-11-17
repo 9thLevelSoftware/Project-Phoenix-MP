@@ -201,7 +201,7 @@ class PhoenixView extends WatchUi.View {
                     if (line.length() == 0) {
                         line = word;
                     } else if ((line.length() + word.length() + 1) > maxChars) {
-                        lines.push(line);
+                        lines.add(line);
                         line = word;
                     } else {
                         line = line + " " + word;
@@ -216,14 +216,14 @@ class PhoenixView extends WatchUi.View {
             if (line.length() == 0) {
                 line = word;
             } else if ((line.length() + word.length() + 1) > maxChars) {
-                lines.push(line);
+                lines.add(line);
                 line = word;
             } else {
                 line = line + " " + word;
             }
         }
         if (line.length() > 0) {
-            lines.push(line);
+            lines.add(line);
         }
         return lines;
     }

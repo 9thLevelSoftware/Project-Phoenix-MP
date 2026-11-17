@@ -270,6 +270,9 @@ internal class BodyweightCompletionGate {
         ?.completion
         ?.takeIf { it.lease.sameExecutionAs(lease) }
 
+    /** The pending completion, if any — resolvable without a live lease lookup. */
+    fun pending(): SetExecutionCompletion? = (state.value as? BodyweightCompletionState.Pending)?.completion
+
     fun hasClaimedCompletion(lease: ExecutionLease): Boolean = when (val current = state.value) {
         is BodyweightCompletionState.Pending -> current.completion.lease.sameExecutionAs(lease)
         is BodyweightCompletionState.Consuming -> current.completion.lease.sameExecutionAs(lease)

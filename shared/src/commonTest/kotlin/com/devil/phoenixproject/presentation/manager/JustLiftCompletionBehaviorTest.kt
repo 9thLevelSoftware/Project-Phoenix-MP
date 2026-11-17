@@ -569,7 +569,13 @@ class JustLiftCompletionBehaviorTest {
             // re-select — never fabricate a target.
             assertNull(harness.coordinator._workoutParameters.value.selectedExerciseId)
             assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
-            assertEquals(HandleState.Grabbed, harness.fakeBleRepo.handleState.value)
+            // The shared JustLift completion machinery arms the machine's JustLift
+            // waiting mode on every set end (enableJustLiftWaitingMode — machine waits
+            // for the next grab WITHOUT arming auto-start). The fake conflates machine
+            // mode with the polled handle signal, so the post-completion reading is
+            // WaitingForRest; the "handles still held, never auto starts" invariants
+            // are pinned by the suppressed auto-start assertions below.
+            assertEquals(HandleState.WaitingForRest, harness.fakeBleRepo.handleState.value)
 
             advanceTimeBy(15_000)
             runCurrent()

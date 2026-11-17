@@ -586,7 +586,7 @@ module PhoenixProtocol {
             var keys = mHeld.keys();
             for (var i = 0; i < keys.size(); i++) {
                 if (now - mHeld[keys[i]] > maxHoldMs) {
-                    stale.push(keys[i]);
+                    stale.add(keys[i]);
                 }
             }
             for (var j = 0; j < stale.size(); j++) {

@@ -24,10 +24,10 @@ private val log = Logger.withTag("IosGarminTransport")
  * separate from the OAuth scheme (`com.devil.phoenixproject`); a callback is only ever
  * accepted when it arrives on this scheme (signoff decision 3).
  */
-const val GARMIN_CALLBACK_URL_SCHEME: String = "com.devil.phoenixproject.garmin"
+internal const val GARMIN_CALLBACK_URL_SCHEME: String = "com.devil.phoenixproject.garmin"
 
 /** Maximum age of a phone-initiated selection request; signoff decision 3 requires <= 5 minutes. */
-const val GARMIN_SELECTION_REQUEST_TTL_MS: Long = 5 * 60 * 1000L
+internal const val GARMIN_SELECTION_REQUEST_TTL_MS: Long = 5 * 60 * 1000L
 
 // ---------------------------------------------------------------------------
 // Native bridge seam. GarminCompanionBridge.swift (app target) implements

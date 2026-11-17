@@ -11857,6 +11857,17 @@ class ActiveSessionEngine(
         expectedExecutionIdentity: String,
         operationId: String,
     ): RemoteSetControlReserveResult {
+        // A bodyweight rep-entry prompt already owns this completion: the phone must
+        // decide before anything else may end the set again. The prompt outlives the
+        // execution lease, so this runs before the live-lease checks and is anchored
+        // to the pressed identity — a stale press cannot hijack another execution's
+        // prompt (it falls through to the honest SUPERSEDED path below).
+        val pendingBodyweight = bodyweightCompletionGate.pending()
+        if (pendingBodyweight != null &&
+            executionIdentityOf(pendingBodyweight.lease) == expectedExecutionIdentity
+        ) {
+            return RemoteSetControlReserveResult.PhoneInputPending
+        }
         val lease = executionGuard.currentLease ?: return RemoteSetControlReserveResult.Superseded
         // One transition per invocation: only a genuinely running set may be ended.
         // (The Issue #320 Active check — rep counts survive past set end, so a press

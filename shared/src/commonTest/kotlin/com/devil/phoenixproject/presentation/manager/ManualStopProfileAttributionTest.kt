@@ -186,7 +186,10 @@ class ManualStopProfileAttributionTest {
                     equipment = "Cable",
                 ),
                 orderIndex = 0,
-                setReps = listOf(3),
+                // Two sets: the seam must save set 1's timed work AND prepare the exact
+                // next set. (A one-set fixture would legitimately end COMPLETE — the run
+                // completed — and could not exercise "advance to the next set".)
+                setReps = listOf(3, 3),
                 weightPerCableKg = 20f,
                 programMode = ProgramMode.OldSchool,
                 duration = 45,
@@ -418,11 +421,20 @@ class ManualStopProfileAttributionTest {
             harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
             advanceUntilIdle()
 
+            // Auto-completion auto-started the successor execution (the "extra"
+            // execution). The pressed identity is now stale; the receipt must report
+            // the LIVE execution identity honestly (same semantics as
+            // WorkoutTeardownRecoveryTest: "the observed identity is reported honestly").
+            val successor = requireNotNull(
+                harness.activeSessionEngine.currentExecutionLeaseOrNull()?.let(::executionIdentityOf),
+            ) { "autoplay must have started the successor execution" }
+            assertTrue(successor != identity, "the live execution must differ from the completed one")
+
             val receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
 
             assertEquals(RemoteSetControlTerminal.SUPERSEDED, receipt.terminal)
             assertEquals(RemoteCompletionDecision.NO_COMPLETION, receipt.completionDecision)
-            assertEquals(identity, receipt.observedExecutionIdentity)
+            assertEquals(successor, receipt.observedExecutionIdentity, "the live execution is reported honestly")
             // One transition, never two.
             assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
         } finally {

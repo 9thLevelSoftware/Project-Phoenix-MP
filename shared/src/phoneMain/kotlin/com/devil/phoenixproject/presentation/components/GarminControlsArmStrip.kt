@@ -43,7 +43,6 @@ import com.devil.phoenixproject.presentation.garmin.GarminReadiness
 import com.devil.phoenixproject.presentation.garmin.GarminSessionController
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_dismiss
 import projectphoenix.shared.generated.resources.garmin_cancel_body
@@ -87,9 +86,15 @@ import projectphoenix.shared.generated.resources.garmin_strip_recovery_title
 @Composable
 fun GarminControlsArmStrip(
     modifier: Modifier = Modifier,
-    garminController: GarminSessionController = koinInject(),
+    garminControllerOrNull: GarminSessionController? = null,
     onConfirmSkipExercise: (() -> Unit)? = null,
 ) {
+    // Best-effort resolution (issue #1391): the controller is composed by MainViewModel
+    // and published through GarminSessionControllerHolder; environments whose Koin graph
+    // lacks the Garmin bindings hide the strip instead of failing composition.
+    val garminController = garminControllerOrNull
+        ?: rememberGarminSessionControllerOrNull()
+        ?: return
     val connection by garminController.connectionState.collectAsState()
     val arm by garminController.armState.collectAsState()
     var showCancelSheet by remember { mutableStateOf(false) }
@@ -358,3 +363,17 @@ fun GarminCancelExerciseConfirmation(
         },
     )
 }
+
+/**
+ * Best-effort Garmin controller resolution (issue #1391). The controller is composed by
+ * MainViewModel (single session manager, integration-model §5) and published through
+ * GarminSessionControllerHolder; environments whose Koin graph lacks the Garmin bindings
+ * (unit tests, early startup) resolve `null` and the Garmin controls stay hidden — the
+ * release boundary keeps the feature OFF rather than failing composition.
+ */
+@Composable
+internal fun rememberGarminSessionControllerOrNull(): GarminSessionController? =
+    remember {
+        runCatching { org.koin.mp.KoinPlatform.getKoin().get<GarminSessionController>() }
+            .getOrNull()
+    }
