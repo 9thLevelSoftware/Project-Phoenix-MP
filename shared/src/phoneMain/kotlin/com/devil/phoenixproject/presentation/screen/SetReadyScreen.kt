@@ -78,6 +78,7 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
+import com.devil.phoenixproject.presentation.components.GarminControlsArmStrip
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -276,6 +277,15 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         onReconnect = { viewModel.reconnectWorkoutTeardown() },
                         modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
                     )
+
+                    // Garmin watch-controls Arm strip (issue #1391). Slim band above the
+                    // Prev/START/Next/Stop row — those controls are unchanged and stay
+                    // fully visible at all text sizes.
+                    GarminControlsArmStrip(
+                        modifier = Modifier.fillMaxWidth(),
+                        onConfirmSkipExercise = { viewModel.setReadySkip() },
+                    )
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
