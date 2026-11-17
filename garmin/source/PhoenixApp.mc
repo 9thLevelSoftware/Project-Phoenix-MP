@@ -27,11 +27,11 @@ class PhoenixSendListener extends Communications.ConnectionListener {
         mApp = app;
     }
 
-    function onComplete() {
+    function onComplete() as Void {
         mApp.onSendOutcome(true);
     }
 
-    function onError() {
+    function onError() as Void {
         mApp.onSendOutcome(false);
     }
 }
@@ -157,7 +157,7 @@ class PhoenixApp extends Application.AppBase {
     //  Phone message intake (STATE / RESULT only)
     // ------------------------------------------------------------------
 
-    function onPhoneMessage(message) {
+    function onPhoneMessage(message as Communications.PhoneAppMessage) as Void {
         var data = message.data;
         if (!(data instanceof Dictionary)) {
             return;
@@ -194,7 +194,7 @@ class PhoenixApp extends Application.AppBase {
         // Unknown message types are ignored (forward compatibility).
     }
 
-    function onPhoneMessageError(error) {
+    function onPhoneMessageError(error as Communications.PhoneAppMessageError) as Void {
         // Link trouble: retained gestures are invalid; show link-lost text.
         // Recovery is user-driven (fresh press sends a throttled HELLO).
         mMachine.onDisconnect();
@@ -219,7 +219,7 @@ class PhoenixApp extends Application.AppBase {
     //  Periodic housekeeping (never network traffic)
     // ------------------------------------------------------------------
 
-    function onTick() {
+    function onTick() as Void {
         var now = System.getTimer();
         var env = mMachine.tick(now);
         if (env["feedback"] != null) {
