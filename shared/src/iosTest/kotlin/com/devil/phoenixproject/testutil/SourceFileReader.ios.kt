@@ -45,8 +45,8 @@ actual fun readProjectFile(relativePath: String): String? {
         bundle.executablePath?.substringBeforeLast('/'),
         bundle.resourcePath,
     ).filterNotNull()
-    val envRoots = listOf("PWD", "SRCROOT", "PROJECT_DIR").mapNotNull { key ->
-        NSProcessInfo.processInfo.environment[key]?.toString()
+    val envRoots = listOf("PWD", "SRCROOT", "PROJECT_DIR").mapNotNull { envName ->
+        NSProcessInfo.processInfo.environment[envName]?.toString()
     }
     val roots: List<String> = envRoots + bundleRoots + listOf(cwd)
     roots.forEach { root ->
