@@ -2,6 +2,7 @@
 
 package com.devil.phoenixproject.testutil
 
+import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSString
@@ -34,27 +35,37 @@ actual fun readProjectFile(relativePath: String): String? {
         listOf(relativePath, phoneSourcePath)
     }
 
-    // Build the candidate list: env-provided roots, cwd, then up to 6 parents.
+    // Build the candidate list: env-provided roots, the test bundle's own path
+    // (the simulator runs the test binary straight from the project build tree,
+    // so its executable/bundle path anchors the project root), cwd, then parents.
     val candidates = mutableListOf<String>()
-    val envRoots = listOf(
-        NSProcessInfo.processInfo.environment["PWD"],
-        NSProcessInfo.processInfo.environment["SRCROOT"],
-        NSProcessInfo.processInfo.environment["PROJECT_DIR"],
+    val bundle = NSBundle.mainBundle
+    val bundleRoots = listOf(
+        bundle.bundlePath,
+        bundle.executablePath?.substringBeforeLast('/'),
+        bundle.resourcePath,
     ).filterNotNull()
-    (envRoots + listOf(cwd)).forEach { root ->
+    val envRoots = listOf("PWD", "SRCROOT", "PROJECT_DIR").mapNotNull { key ->
+        NSProcessInfo.processInfo.environment[key]?.toString()
+    }
+    val roots: List<String> = envRoots + bundleRoots + listOf(cwd)
+    roots.forEach { root ->
         sourcePaths.forEach { candidates.add("$root/$it") }
         sourcePaths.forEach { candidates.add("$root/shared/$it") }
     }
-    var dir: String? = cwd
-    repeat(6) {
-        if (dir == null) return@repeat
-        sourcePaths.forEach { candidates.add("$dir/shared/$it") }
-        if (fm.fileExistsAtPath("$dir/.git") || fm.fileExistsAtPath("$dir/settings.gradle.kts")) {
-            sourcePaths.forEach { candidates.add("$dir/$it") }
+    roots.forEach { start ->
+        var dir: String? = start
+        repeat(10) {
+            if (dir == null) return@repeat
+            val current: String = dir
+            sourcePaths.forEach { candidates.add("$current/shared/$it") }
+            if (fm.fileExistsAtPath("$current/.git") || fm.fileExistsAtPath("$current/settings.gradle.kts")) {
+                sourcePaths.forEach { candidates.add("$current/$it") }
+            }
+            val parent = current.substringBeforeLast('/', missingDelimiterValue = "")
+            if (parent.isEmpty() || parent == current) return@repeat
+            dir = parent
         }
-        val parent = dir.substringBeforeLast('/', missingDelimiterValue = "")
-        if (parent.isEmpty() || parent == dir) return@repeat
-        dir = parent
     }
 
     for (candidate in candidates) {

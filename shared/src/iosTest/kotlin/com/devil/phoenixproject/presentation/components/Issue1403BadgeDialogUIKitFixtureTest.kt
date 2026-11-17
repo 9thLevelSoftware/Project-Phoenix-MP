@@ -21,6 +21,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -133,7 +134,7 @@ class Issue1403BadgeDialogUIKitFixtureTest {
                 fontScale = LocalDensity.current.fontScale,
             )!!
             budget = b
-            UnboundedDialogWidthLayout(maxHeightPx = with(LocalDensity.current) { windowHeight.toPx() }) {
+            UnboundedDialogWidthLayout(maxHeightPx = with(LocalDensity.current) { windowHeight.toPx().toInt() }) {
                 BatchedBadgeCelebrationDialogContent(
                     badges = badges(7),
                     budget = b,
