@@ -27,6 +27,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -35,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -237,6 +241,53 @@ internal fun badgeCelebrationLayoutBudget(
     )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #1403 merge-audit R2-F1: observation-only measurement probe.
+//
+// The audit rejected test evidence that printed assumed constraints or measured
+// content under a test-owned unbounded shim instead of the production Dialog.
+// This seam lets an iOS fixture record the constraints the REAL dialog layer
+// imposes (incoming to the content root and to the grid) and the rendered bounds
+// actually laid out inside the real Dialog subtree — measured, never assumed.
+// Production passes no probe (the CompositionLocal defaults to null and the
+// modifier chain is untouched), so runtime behavior is unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Observation-only probe receiving measure-time constraints and post-layout
+ * rendered bounds at named points of the production dialog content.
+ */
+internal interface BadgeDialogMeasurementProbe {
+    /** Observed measure-time constraints at [point] ("card", "grid", "dismissButton"). */
+    fun onConstraints(point: String, constraints: Constraints)
+
+    /** Observed rendered bounds in window pixels at [point] after layout. */
+    fun onBounds(point: String, left: Float, top: Float, width: Float, height: Float)
+}
+
+internal val LocalBadgeDialogMeasurementProbe: ProvidableCompositionLocal<BadgeDialogMeasurementProbe?> =
+    compositionLocalOf { null }
+
+/**
+ * Attaches the probe at one observation point. With no probe provided this is
+ * the identity modifier. The `layout` pass-through records the constraints the
+ * parent actually imposes; `onGloballyPositioned` records what was rendered.
+ */
+@Composable
+private fun Modifier.badgeDialogProbePoint(point: String): Modifier {
+    val probe = LocalBadgeDialogMeasurementProbe.current ?: return this
+    return this
+        .layout { measurable, constraints ->
+            probe.onConstraints(point, constraints)
+            val placeable = measurable.measure(constraints)
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+        .onGloballyPositioned { coordinates ->
+            val bounds = coordinates.boundsInWindow()
+            probe.onBounds(point, bounds.left, bounds.top, bounds.width, bounds.height)
+        }
+}
+
 /**
  * Batched celebration dialog that shows all earned badges in a single dialog.
  * Displays badges in a 3-column grid with expandable details when tapped.
@@ -347,6 +398,9 @@ internal fun BatchedBadgeCelebrationDialogContent(
 
     Card(
         modifier = Modifier
+            // R2-F1 observation point "card": constraints incoming from the real
+            // dialog layer + rendered Card bounds (identity without a probe).
+            .badgeDialogProbePoint("card")
             // Issue #1403: finite responsive width enforced before the grid is
             // measured (≈90% usable width, capped at 580dp). Modifier.width coerces
             // into tighter parent constraints; never requiredWidth.
@@ -414,6 +468,9 @@ internal fun BatchedBadgeCelebrationDialogContent(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier
+                    // R2-F1 observation point "grid": constraints the Card/Column
+                    // imposes on the grid + rendered grid bounds.
+                    .badgeDialogProbePoint("grid")
                     .fillMaxWidth()
                     .heightIn(max = gridHeight)
                     .testTag("badge-celebration-grid"),
@@ -508,6 +565,8 @@ internal fun BatchedBadgeCelebrationDialogContent(
                     onDismiss()
                 },
                 modifier = Modifier
+                    // R2-F1 observation point "dismissButton": rendered bounds.
+                    .badgeDialogProbePoint("dismissButton")
                     .fillMaxWidth()
                     .height(48.dp),
                 colors = ButtonDefaults.buttonColors(
