@@ -350,7 +350,7 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         )
         assertTrue(
             playCue.contains("play(retryPlayer, true)") && !playCue.contains("play(player, true)"),
-            "The retry must play the re-selected instance, never the one that refused.",
+            "The retry must play the instance re-selected after recovery, never one obtained before a rebuild.",
         )
     }
 
@@ -392,8 +392,8 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         val rebuildBody = source.substring(rebuildIndex, source.indexOf("\n    }", rebuildIndex))
         assertTrue("stopAndClearPlayers()" in rebuildBody && "loadAllSounds()" in rebuildBody)
         assertTrue(
-            "recoveryPolicy.onPoolRebuiltExternally(activated)" in rebuildBody,
-            "A media-reset rebuild must consume any pending rebuild so the pool is not reloaded twice.",
+            "recoveryPolicy.onPoolRebuiltExternally(activated, isAppActive())" in rebuildBody,
+            "A media-reset rebuild must report activation and app state so it only consumes a pending rebuild in the foreground.",
         )
     }
 }

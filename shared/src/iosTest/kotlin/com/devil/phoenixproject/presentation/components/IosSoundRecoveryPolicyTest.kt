@@ -202,12 +202,54 @@ class IosSoundRecoveryPolicyTest {
     }
 
     @Test
-    fun externalMediaResetRebuild_consumesPendingRebuild() {
+    fun foregroundMediaResetRebuild_consumesPendingRebuild() {
         policy.onEnteredBackground()
-        policy.onPoolRebuiltExternally(activated = true)
+        policy.onPoolRebuiltExternally(activated = true, appActive = true)
 
         assertFalse(policy.needsRecovery())
         assertEquals(IosSoundRecoveryOutcome.REPREPARED, policy.recover(appActive = true, trigger = "app_active"))
         assertEquals(0, host.rebuilds)
+    }
+
+    @Test
+    fun backgroundMediaResetRebuild_keepsPendingRebuild() {
+        policy.onEnteredBackground()
+        policy.onPoolRebuiltExternally(activated = true, appActive = false)
+
+        assertTrue(policy.playersNeedRebuild)
+        assertTrue(policy.sessionNeedsRecovery)
+        assertEquals(IosSoundRecoveryOutcome.REBUILT, policy.recover(appActive = true, trigger = "app_active"))
+    }
+
+    @Test
+    fun mediaResetRebuildWithFailedActivation_keepsPendingRebuild() {
+        policy.onEnteredBackground()
+        policy.onPoolRebuiltExternally(activated = false, appActive = true)
+
+        assertTrue(policy.playersNeedRebuild)
+        assertTrue(policy.sessionNeedsRecovery)
+        assertEquals(IosSoundRecoveryOutcome.REBUILT, policy.recover(appActive = true, trigger = "app_active"))
+    }
+
+    @Test
+    fun backgroundRefusal_doesNotConsumeForegroundFailureArming() {
+        assertEquals(IosCuePlaybackOutcome.FAILED_NO_RETRY, cue(appActive = false, results = listOf(false)))
+        assertEquals(IosSoundRecoveryOutcome.REBUILT, policy.recover(appActive = true, trigger = "app_active"))
+        assertEquals(1, host.rebuilds)
+
+        // First foreground refusal after returning still arms its own rebuild (AC3).
+        assertEquals(IosCuePlaybackOutcome.RETRY_PLAYED, cue(results = listOf(false, true)))
+        assertEquals(2, host.rebuilds)
+        assertEquals(listOf("background_cue", "play_refused"), host.rebuildReasons)
+    }
+
+    @Test
+    fun rebuildReason_keepsFirstArmingEventSinceLastRebuild() {
+        policy.onEnteredBackground()
+        policy.onInterruptionBegan()
+        cue(appActive = false)
+        policy.recover(appActive = true, trigger = "app_active")
+
+        assertEquals(listOf("app_background"), host.rebuildReasons)
     }
 }

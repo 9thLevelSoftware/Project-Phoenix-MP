@@ -129,7 +129,7 @@ internal class IosSoundRecoveryPolicy(private val host: IosSoundRecoveryHost) {
      * Plays one cue. Flagged recovery runs BEFORE the player is selected,
      * because a rebuild discards the cached instances. A refused play() gets
      * at most one recovery and one retry, on a player re-selected after that
-     * recovery; the instance that refused is never retried.
+     * recovery, so an instance obtained before a rebuild is never played.
      */
     fun <P : Any> playCue(
         appActive: () -> Boolean,
@@ -148,8 +148,14 @@ internal class IosSoundRecoveryPolicy(private val host: IosSoundRecoveryHost) {
             return IosCuePlaybackOutcome.PLAYED
         }
 
-        onPlayFailed()
-        if (released || !appActive()) return IosCuePlaybackOutcome.FAILED_NO_RETRY
+        if (released || !appActive()) {
+            // A background refusal is expected (no audio background mode) and
+            // the cue already armed a rebuild; it must not consume the
+            // foreground failure-run arming.
+            sessionNeedsRecovery = true
+            return IosCuePlaybackOutcome.FAILED_NO_RETRY
+        }
+        onForegroundPlayFailed()
 
         recover(appActive = true, trigger = "play_refused")
         val retryPlayer = selectPlayer() ?: return IosCuePlaybackOutcome.RETRY_NO_PLAYER
@@ -157,23 +163,30 @@ internal class IosSoundRecoveryPolicy(private val host: IosSoundRecoveryHost) {
             onPlaySucceeded()
             IosCuePlaybackOutcome.RETRY_PLAYED
         } else {
-            onPlayFailed()
+            onForegroundPlayFailed()
             IosCuePlaybackOutcome.RETRY_FAILED
         }
     }
 
-    /** The pool was rebuilt outside [recover] (media-services reset). */
-    fun onPoolRebuiltExternally(activated: Boolean) {
-        playersNeedRebuild = false
-        rebuildReason = null
-        sessionNeedsRecovery = !activated
+    /**
+     * The pool was rebuilt outside [recover] (media-services reset). It only
+     * satisfies a pending rebuild when it was built in the foreground on an
+     * activated session; a pool built in the background or on a refused
+     * activation is as suspect as the one it replaced.
+     */
+    fun onPoolRebuiltExternally(activated: Boolean, appActive: Boolean) {
+        if (activated && appActive) {
+            playersNeedRebuild = false
+            rebuildReason = null
+        }
+        sessionNeedsRecovery = !activated || playersNeedRebuild
     }
 
     fun release() {
         released = true
     }
 
-    private fun onPlayFailed() {
+    private fun onForegroundPlayFailed() {
         sessionNeedsRecovery = true
         if (!playFailureRunArmed) {
             playFailureRunArmed = true
@@ -189,6 +202,7 @@ internal class IosSoundRecoveryPolicy(private val host: IosSoundRecoveryHost) {
         if (released) return
         sessionNeedsRecovery = true
         playersNeedRebuild = true
-        rebuildReason = reason
+        // Keep the first arming reason since the last rebuild for diagnostics.
+        rebuildReason = rebuildReason ?: reason
     }
 }

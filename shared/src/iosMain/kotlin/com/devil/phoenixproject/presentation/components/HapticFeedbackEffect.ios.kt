@@ -209,9 +209,11 @@ private class IosSoundManager {
      * notifications so that voice prompts and sound effects resume after the
      * user backgrounds then foregrounds the app, or after a phone call /
      * Siri / Alarm interruption ends. On either event we re-activate the
-     * session and re-prepare the cached AVAudioPlayer instances (which can
-     * become invalid when the underlying AVAudioSession tears itself down
-     * during backgrounding).
+     * session. Issue #1357: the cached AVAudioPlayer instances can become
+     * invalid when the underlying AVAudioSession tears itself down during
+     * backgrounding, and prepareToPlay() does not revive them, so a background
+     * transition or interruption Began arms a full pool rebuild for that
+     * recovery; otherwise the cached players are re-prepared.
      */
     private fun installLifecycleObservers() {
         if (released) return
@@ -324,14 +326,13 @@ private class IosSoundManager {
         stopAndClearPlayers()
         val activated = setupAudioSession()
         loadAllSounds()
-        recoveryPolicy.onPoolRebuiltExternally(activated)
+        recoveryPolicy.onPoolRebuiltExternally(activated, isAppActive())
     }
 
     /**
-     * Re-prepare every cached AVAudioPlayer. After long backgrounding or an
-     * AVAudioSession interruption the players' underlying audio files can be
-     * deallocated; calling prepareToPlay() makes them usable again before
-     * the next playSound() call.
+     * Re-prepare every cached AVAudioPlayer for a recovery that did not arm a
+     * rebuild. Issue #1357: this cannot revive players the system invalidated
+     * while backgrounded; those recoveries rebuild the pool instead.
      */
     private fun prepareAllPlayers() {
         players.values.forEach { it?.prepareToPlay() }
