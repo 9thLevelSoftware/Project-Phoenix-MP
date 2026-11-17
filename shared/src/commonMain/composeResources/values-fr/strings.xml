@@ -912,6 +912,7 @@
     <string name="media_error_missing_staged">Non enregistré : %1$s est introuvable. Retirez-les ou resélectionnez-les, puis réessayez.</string>
     <string name="media_error_generic">Aucune photo ajoutée. Réessayez.</string>
     <string name="media_save_media_failed">Exercice enregistré ; les photos n'ont pas pu être enregistrées. Réajoutez des photos.</string>
+    <string name="media_save_busy">Les photos sont toujours en cours d'ajout. Attendez la fin de la sélection, puis enregistrez.</string>
     <string name="media_cleanup_pending">Certaines copies locales n'ont pas pu être supprimées. Phoenix réessaiera.</string>
     <string name="media_delete_cleanup_transient">Exercice supprimé. Nettoyage des photos locales…</string>
     <string name="media_save_failed">Impossible d'enregistrer l'exercice. Réessayez.</string>

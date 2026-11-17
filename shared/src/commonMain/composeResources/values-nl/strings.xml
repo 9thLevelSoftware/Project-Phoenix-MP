@@ -890,6 +890,7 @@
     <string name="media_error_missing_staged">Niet opgeslagen: %1$s kon niet worden gevonden. Verwijder ze of selecteer ze opnieuw en probeer het opnieuw.</string>
     <string name="media_error_generic">Geen foto's toegevoegd. Probeer het opnieuw.</string>
     <string name="media_save_media_failed">Oefening opgeslagen; foto's konden niet worden opgeslagen. Voeg foto's opnieuw toe.</string>
+    <string name="media_save_busy">Foto's worden nog toegevoegd. Wacht tot de selectie klaar is en sla daarna op.</string>
     <string name="media_cleanup_pending">Sommige lokale kopieën konden niet worden verwijderd. Phoenix probeert het later opnieuw.</string>
     <string name="media_delete_cleanup_transient">Oefening verwijderd. Lokale foto's opschonen…</string>
     <string name="media_save_failed">De oefening kon niet worden opgeslagen. Probeer het opnieuw.</string>

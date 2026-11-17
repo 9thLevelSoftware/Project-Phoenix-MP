@@ -248,6 +248,7 @@
     <string name="media_error_missing_staged">Non salvato: %1$s non è stato trovato. Rimuovili o riselezionali, poi riprova.</string>
     <string name="media_error_generic">Nessuna foto aggiunta. Riprova.</string>
     <string name="media_save_media_failed">Esercizio salvato; non è stato possibile salvare le foto. Riaggiungile.</string>
+    <string name="media_save_busy">Le foto sono ancora in fase di aggiunta. Attendi il termine della selezione, poi salva.</string>
     <string name="media_cleanup_pending">Alcune copie locali non sono state rimosse. Phoenix riproverà.</string>
     <string name="media_delete_cleanup_transient">Esercizio eliminato. Pulizia delle foto locali…</string>
     <string name="media_save_failed">Impossibile salvare l'esercizio. Riprova.</string>

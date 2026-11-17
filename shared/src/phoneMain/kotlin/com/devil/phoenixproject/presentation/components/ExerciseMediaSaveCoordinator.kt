@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.MediaPickResult
 import com.devil.phoenixproject.util.PickedPhoto
+import com.devil.phoenixproject.util.releasePickerOwnedHandle
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -27,6 +28,7 @@ import projectphoenix.shared.generated.resources.media_error_too_large
 import projectphoenix.shared.generated.resources.media_error_too_many
 import projectphoenix.shared.generated.resources.media_error_unreadable
 import projectphoenix.shared.generated.resources.media_error_unsupported
+import projectphoenix.shared.generated.resources.media_save_busy
 
 private val log = Logger.withTag("ExerciseMediaSave")
 
@@ -74,6 +76,12 @@ class ExerciseMediaSaveCoordinator(
     private val ioDispatcher: CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
     /** Finding B: import/commit sessions coordinate with the cleanup sweep here. */
     private val sessionRegistry: ExerciseMediaSessionRegistry = ExerciseMediaSessionRegistry.shared,
+    /**
+     * R3: release a picker-owned transient handle whose pick never reached
+     * staging (a cancelled/disposed session). Idempotent — a handle the media
+     * store already consumed at stage time is already gone.
+     */
+    private val releasePickerHandle: (PickedPhoto) -> Unit = { releasePickerOwnedHandle(it) },
 ) {
     val sessionId: String = generateUUID()
 
@@ -83,6 +91,14 @@ class ExerciseMediaSaveCoordinator(
     )
     private var stagingJob: Job? = null
     private var disposed = false
+
+    /**
+     * R3: picks handed to an in-flight staging job. The media store consumes
+     * their transient handles at stage time; if the session is cancelled or
+     * disposed before staging ever runs, [discardAll] releases them instead so
+     * no picker-owned temp copy outlives its session.
+     */
+    private var pendingPicks: List<PickedPhoto> = emptyList()
 
     var phase by mutableStateOf<MediaPhase>(MediaPhase.Idle)
         private set
@@ -108,11 +124,38 @@ class ExerciseMediaSaveCoordinator(
     var savedExerciseId by mutableStateOf<String?>(null)
         private set
 
+    /**
+     * R1: the picker's busy state is owned from LAUNCH — not from the terminal
+     * result. iOS dismisses PHPicker while provider loads still run, so the
+     * whole launch → provider loading → staging → terminal-result window is one
+     * owned busy session: the dialog disables Save on [MediaPhase.Picking] and
+     * [saveWithMedia] refuses a save inside it.
+     */
+    fun onPickerLaunched() {
+        if (disposed) return
+        when (phase) {
+            MediaPhase.Idle, MediaPhase.Error, MediaPhase.Picking -> {
+                phase = MediaPhase.Picking
+                errorMessage = null
+            }
+            else -> {} // Copying/Saving: an owned session is already in flight.
+        }
+    }
+
     fun onPickResult(
         result: MediaPickResult,
         existingCount: Int,
         onDone: () -> Unit = {},
     ) {
+        if (disposed) {
+            // T27/R1: a late terminal result after Cancel/dismiss mutates
+            // nothing. R3: a picked batch still owns its transient handles —
+            // release them since staging will never consume them.
+            if (result is MediaPickResult.Picked) {
+                result.photos.forEach(releasePickerHandle)
+            }
+            return
+        }
         when (result) {
             is MediaPickResult.Cancelled -> {
                 // Clean no-op (SD1): no error UI, no state change.
@@ -137,6 +180,9 @@ class ExerciseMediaSaveCoordinator(
     ) {
         phase = MediaPhase.Copying(0, photos.size)
         val targetCount = existingCount + stagedAdditions.size
+        // R3: the store consumes the picker handles at stage time; until then
+        // this session owns them (released by discardAll if staging never runs).
+        pendingPicks = photos
         stagingJob = scope.launch {
             // Finding D: blocking import I/O runs OFF the Main dispatcher, and
             // the copy reports real per-file progress. Finding B: staging is a
@@ -148,6 +194,9 @@ class ExerciseMediaSaveCoordinator(
                     }
                 }
             }
+            // stage() consumed the picker handles on every exit that ran
+            // (success, whole-batch rejection, in-stage cancellation).
+            pendingPicks = emptyList()
             if (disposed) return@launch // T27: late callback after disposal mutates nothing
             result.fold(
                 onSuccess = { staged ->
@@ -193,6 +242,15 @@ class ExerciseMediaSaveCoordinator(
             org.jetbrains.compose.resources.getString(Res.string.media_error_missing_staged, names)
         }.getOrNull() ?: "Not saved: $names could not be found. Remove or re-pick them, then try again."
 
+    /**
+     * R1: user-facing copy for a save attempted while a picker/staging session
+     * is still outstanding. Same localization fallback as [missingStagedMessage].
+     */
+    private suspend fun pickerBusyMessage(): String =
+        runCatching {
+            org.jetbrains.compose.resources.getString(Res.string.media_save_busy)
+        }.getOrNull() ?: "Photos are still being added. Wait for the selection to finish, then save."
+
     /** Queue one saved photo for removal at Save (SD2). */
     fun queueRemove(imageId: Long, localUrl: String) {
         if (queuedRemovals.none { it.imageId == imageId }) {
@@ -217,6 +275,12 @@ class ExerciseMediaSaveCoordinator(
         disposed = true
         stagingJob?.cancel()
         scope.launch { sessionRegistry.releaseSession(sessionId) }
+        // R3: a staging job cancelled before the store consumed the picker
+        // handles leaves them owned by this session — release every pending
+        // pick so no picker-owned temp copy outlives cancellation/disposal.
+        // Idempotent: already-consumed handles are already gone.
+        pendingPicks.forEach(releasePickerHandle)
+        pendingPicks = emptyList()
         mediaStore.discardStaging(sessionId)
         stagedAdditions.clear()
         queuedRemovals.clear()
@@ -242,6 +306,18 @@ class ExerciseMediaSaveCoordinator(
         editingExerciseId: String?,
         repository: ExerciseRepository,
     ): CustomExerciseSaveOutcome {
+        // R1: coordinator admission boundary mirroring the dialog's Save guard.
+        // An outstanding picker session (launch → provider loading → terminal
+        // result) or in-flight staging/save owns the busy state; a save inside
+        // that window is refused before anything is created, moved or written,
+        // so a slow provider load can never produce a save with an empty stage.
+        if (
+            phase is MediaPhase.Picking ||
+            phase is MediaPhase.Copying ||
+            phase is MediaPhase.Saving
+        ) {
+            return CustomExerciseSaveOutcome.Failed(pickerBusyMessage())
+        }
         phase = MediaPhase.Saving
         // Finding C: a pick whose staged copy vanished (external delete) is
         // NEVER silently pruned. The intended selection is preserved exactly as

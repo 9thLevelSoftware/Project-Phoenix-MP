@@ -912,6 +912,7 @@
     <string name="media_error_missing_staged">No se guardó: no se encontró %1$s. Quítalos o selecciónalos de nuevo y vuelve a intentarlo.</string>
     <string name="media_error_generic">No se añadieron fotos. Inténtalo de nuevo.</string>
     <string name="media_save_media_failed">Ejercicio guardado; no se pudieron guardar las fotos. Vuelve a añadirlas.</string>
+    <string name="media_save_busy">Las fotos siguen añadiéndose. Espera a que termine la selección y luego guarda.</string>
     <string name="media_cleanup_pending">Algunas copias locales no se pudieron eliminar. Phoenix lo reintentará.</string>
     <string name="media_delete_cleanup_transient">Ejercicio eliminado. Limpiando fotos locales…</string>
     <string name="media_save_failed">No se pudo guardar el ejercicio. Inténtalo de nuevo.</string>

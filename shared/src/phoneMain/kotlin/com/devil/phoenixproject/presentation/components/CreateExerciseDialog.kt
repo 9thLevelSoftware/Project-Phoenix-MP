@@ -320,7 +320,13 @@ fun CreateExerciseDialog(
                             coordinator = mediaCoordinator,
                             savedImages = savedImages,
                             enableAttach = enablePhotoAttach,
-                            onRequestPick = { showMediaPicker = true },
+                            onRequestPick = {
+                                // R1: the busy state is owned from picker LAUNCH
+                                // through provider loading to the terminal
+                                // result — Save stays disabled in between.
+                                mediaCoordinator.onPickerLaunched()
+                                showMediaPicker = true
+                            },
                         )
                     }
 
@@ -459,6 +465,7 @@ fun CreateExerciseDialog(
                                 }
                             },
                             enabled = !isSavingExercise &&
+                                !showMediaPicker &&
                                 mediaCoordinator?.phase !is MediaPhase.Copying &&
                                 mediaCoordinator?.phase !is MediaPhase.Picking,
                             modifier = Modifier.weight(1f).height(56.dp),

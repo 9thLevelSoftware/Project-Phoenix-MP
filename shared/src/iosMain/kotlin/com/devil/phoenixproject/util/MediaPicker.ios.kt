@@ -1,14 +1,14 @@
 package com.devil.phoenixproject.util
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import co.touchlab.kermit.Logger
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import platform.Foundation.*
 import platform.PhotosUI.*
 import platform.UIKit.UIViewController
@@ -28,6 +28,11 @@ import platform.darwin.dispatch_get_main_queue
  * transient handles are consumed at pick time). The resulting handle is that
  * temp path; the media store stages it with the byte cap and deletes it.
  *
+ * R3: every temp copy is OWNED by [PhotoPickerDelegate] from creation until it
+ * is either deleted (batch error, cancel, disposal, late arrival) or its
+ * ownership is transferred to the media store with a delivered `Picked`
+ * result (consumed at stage time). A cancelled/disposed session keeps none.
+ *
  * All delegate state is touched only on the main queue (load completions are
  * marshalled there), so no lock is needed.
  */
@@ -36,13 +41,17 @@ actual class MediaPicker {
 
     @Composable
     actual fun LaunchPhotoPicker(onResult: (MediaPickResult) -> Unit) {
-        val scope = rememberCoroutineScope()
+        // The delegate is remembered across recompositions; read the latest
+        // callback so a late result never hits a stale dialog state.
+        val currentOnResult by rememberUpdatedState(onResult)
 
         val delegate = remember {
             PhotoPickerDelegate(
-                onFinished = { result ->
-                    scope.launch(Dispatchers.Main) { onResult(result) }
-                },
+                // R1/R3: deliver synchronously on the main queue — the delegate
+                // only reports "finished" AFTER the consumer received the
+                // result, so ownership handoff has no gap where a cancelled
+                // coroutine could drop a batch with live temp copies.
+                onFinished = { result -> currentOnResult(result) },
                 log = log,
             )
         }
@@ -50,6 +59,15 @@ actual class MediaPicker {
         LaunchedEffect(Unit) {
             dispatch_async(dispatch_get_main_queue()) {
                 presentPhotoPicker(delegate)
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                // R3: leaving composition without a result (dialog dismissed
+                // while provider loads run) ends the session — accumulated and
+                // late-arriving copies are deleted, nothing is delivered.
+                delegate.dispose()
             }
         }
     }
@@ -60,6 +78,18 @@ actual class MediaPicker {
  */
 @Composable
 actual fun rememberMediaPicker(): MediaPicker = remember { MediaPicker() }
+
+/**
+ * iOS picker temps are app-owned `NSTemporaryDirectory` copies — delete a copy
+ * whose pick never reached staging (idempotent: a handle the store consumed at
+ * stage time is already gone).
+ */
+@OptIn(ExperimentalForeignApi::class)
+actual fun releasePickerOwnedHandle(photo: PickedPhoto) {
+    if (photo.handle.startsWith("/")) {
+        runCatching { NSFileManager.defaultManager.removeItemAtPath(photo.handle, null) }
+    }
+}
 
 private val log = Logger.withTag("MediaPicker.iOS")
 
@@ -84,10 +114,23 @@ private fun presentPhotoPicker(delegate: PhotoPickerDelegate) {
     presenter.presentViewController(picker, animated = true, completion = null)
 }
 
+/**
+ * One picking session's state machine (R3: explicit picker-temp ownership).
+ *
+ * `internal` so the iosTest failure-injection suite can drive the exact
+ * accumulate/finish/dispose transitions with real temp files; the UIKit layer
+ * above only marshals load completions onto the main queue and copies the
+ * transient files.
+ */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private class PhotoPickerDelegate(
+internal class PhotoPickerDelegate(
     private val onFinished: (MediaPickResult) -> Unit,
     private val log: Logger,
+    /** Injectable for failure-injection tests; deletes one owned temp copy. */
+    private val deleteTemp: (String) -> Unit = { path ->
+        NSFileManager.defaultManager.removeItemAtPath(path, null)
+        Unit
+    },
 ) : NSObject(), PHPickerViewControllerDelegateProtocol {
 
     // Touched only on the main queue.
@@ -95,12 +138,77 @@ private class PhotoPickerDelegate(
     private var remaining = 0
     private val photos = mutableListOf<PickedPhoto>()
 
+    /**
+     * R3: every temp copy this session created. Entries leave this list only
+     * by deletion (failure/cancel/dispose/late arrival) or by transfer to the
+     * media store with a delivered `Picked` result.
+     */
+    private val ownedTemps = mutableListOf<String>()
+
+    /** Test/diagnostic view of copies still owned by this session. */
+    fun ownedTempPaths(): List<String> = ownedTemps.toList()
+
+    /** Start one batch of [count] asynchronous provider loads. */
+    fun beginBatch(count: Int) {
+        remaining = count
+    }
+
     fun finish(result: MediaPickResult) {
         // Exactly one result per picking session; late load callbacks after a
         // failure or dispose mutate nothing (T27).
         if (finished) return
         finished = true
-        onFinished(result)
+        when (result) {
+            is MediaPickResult.Picked -> {
+                // Ownership transfers to the media store, which consumes the
+                // handles at stage time (D4: real transient-file consumption).
+                ownedTemps.clear()
+                onFinished(result)
+            }
+            else -> {
+                // R3: failure/cancel — delete every copy accumulated so far.
+                discardOwnedTemps()
+                onFinished(result)
+            }
+        }
+    }
+
+    /**
+     * R3: session disposal (the picker composable left composition before a
+     * terminal result). Nothing is delivered and no temp copy survives —
+     * including copies whose provider loads arrive after this call.
+     */
+    fun dispose() {
+        if (finished) return
+        finished = true
+        discardOwnedTemps()
+    }
+
+    /** R3: one provider load finished; [tempPath] is its transient copy, if any. */
+    fun onItemLoaded(tempPath: String?, displayName: String?, loadFailed: Boolean) {
+        if (finished) {
+            // R3: a late-arriving copy after the session ended is deleted
+            // immediately — never orphaned in the picker temp namespace.
+            tempPath?.let { releaseTemp(it) }
+            return
+        }
+        if (loadFailed || tempPath == null) {
+            log.w { "PHPicker item load failed" }
+            finish(MediaPickResult.Error("A picked photo could not be read"))
+            return
+        }
+        ownedTemps += tempPath
+        photos.add(
+            PickedPhoto(
+                handle = tempPath,
+                displayName = displayName ?: "photo",
+                byteSize = null, // revalidated at stage time (SD11)
+            ),
+        )
+        remaining -= 1
+        if (remaining == 0) {
+            finish(MediaPickResult.Picked(photos.toList()))
+        }
     }
 
     override fun picker(picker: PHPickerViewController, didFinishPicking: List<*>) {
@@ -113,33 +221,32 @@ private class PhotoPickerDelegate(
             return
         }
 
-        remaining = results.size
+        beginBatch(results.size)
         results.forEach { result ->
             val provider: NSItemProvider = result.itemProvider
             provider.loadFileRepresentationForTypeIdentifier("public.image") { url, error ->
                 // Transient handle: copy it before the callback returns (D4).
                 val tempPath = url?.let { copyToPickerTemp(it) }
                 dispatch_async(dispatch_get_main_queue()) {
-                    if (finished) return@dispatch_async
-                    if (url == null || tempPath == null) {
-                        log.w { "PHPicker item load failed: ${error?.localizedDescription}" }
-                        finish(MediaPickResult.Error("A picked photo could not be read"))
-                        return@dispatch_async
-                    }
-                    photos.add(
-                        PickedPhoto(
-                            handle = tempPath,
-                            displayName = url.lastPathComponent ?: "photo",
-                            byteSize = null, // revalidated at stage time (SD11)
-                        ),
+                    onItemLoaded(
+                        tempPath = tempPath,
+                        displayName = url?.lastPathComponent,
+                        loadFailed = url == null || tempPath == null,
                     )
-                    remaining -= 1
-                    if (remaining == 0) {
-                        finish(MediaPickResult.Picked(photos.toList()))
-                    }
                 }
             }
         }
+    }
+
+    private fun discardOwnedTemps() {
+        ownedTemps.toList().forEach { releaseTemp(it) }
+        ownedTemps.clear()
+        photos.clear()
+    }
+
+    private fun releaseTemp(path: String) {
+        runCatching { deleteTemp(path) }
+            .onFailure { log.w(it) { "Failed to release picker temp $path" } }
     }
 }
 

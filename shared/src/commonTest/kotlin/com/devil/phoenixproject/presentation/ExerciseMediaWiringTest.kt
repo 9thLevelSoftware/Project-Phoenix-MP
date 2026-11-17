@@ -273,6 +273,70 @@ class ExerciseMediaWiringTest {
         )
     }
 
+    // Round-2 merge-gate R1/R2/R3 wiring (issue #1358 picker lifecycle rework):
+    // the busy state is owned from picker launch to terminal result and guarded
+    // at BOTH UI and coordinator boundaries, Android provider metadata I/O runs
+    // off-main under the owned lifecycle, and the iOS picker owns its temp
+    // copies with cleanup on failure/cancel/disposal. Source guards so the
+    // fixes cannot silently revert (SD14).
+    @Test
+    fun pickerLifecycleFixWiringStaysInPlace() {
+        val coordinator = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/ExerciseMediaSaveCoordinator.kt",
+        )
+        assertTrue(coordinator != null, "ExerciseMediaSaveCoordinator.kt must exist")
+        assertTrue(
+            coordinator!!.contains("fun onPickerLaunched(") &&
+                coordinator.contains("phase = MediaPhase.Picking"),
+            "The coordinator must enter MediaPhase.Picking at picker launch (R1 — it was never assigned).",
+        )
+        assertTrue(
+            coordinator.contains("phase is MediaPhase.Picking") &&
+                coordinator.contains("pickerBusyMessage()"),
+            "saveWithMedia must refuse a save across the owned picker/staging window at the coordinator boundary (R1).",
+        )
+        assertTrue(
+            coordinator.contains("pendingPicks.forEach(releasePickerHandle)") &&
+                coordinator.contains("if (disposed)"),
+            "A disposed/cancelled session must release picks staging never consumed and ignore late results (R3).",
+        )
+
+        val dialog = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/CreateExerciseDialog.kt",
+        )
+        assertTrue(dialog != null, "CreateExerciseDialog.kt must exist")
+        assertTrue(
+            dialog!!.contains("mediaCoordinator.onPickerLaunched()") && dialog.contains("!showMediaPicker"),
+            "The dialog must enter the busy state at picker launch and guard Save in the UI too (R1).",
+        )
+        assertTrue(
+            dialog.contains("!is MediaPhase.Picking"),
+            "Dialog Save must disable for the whole picker-loading window (R1).",
+        )
+
+        val android = readProjectFile("src/androidMain/kotlin/com/devil/phoenixproject/util/MediaPicker.android.kt")
+        assertTrue(android != null, "MediaPicker.android.kt must exist")
+        assertTrue(
+            android!!.contains("AndroidPickerBatch(") && android.contains("Dispatchers.IO"),
+            "Android provider metadata resolution must run off-main under the owned lifecycle (R2).",
+        )
+        assertTrue(
+            android.contains("actual fun releasePickerOwnedHandle"),
+            "Android must implement the shared picker-handle release contract (R3).",
+        )
+
+        val ios = readProjectFile("src/iosMain/kotlin/com/devil/phoenixproject/util/MediaPicker.ios.kt")
+        assertTrue(ios != null, "MediaPicker.ios.kt must exist")
+        assertTrue(
+            ios!!.contains("ownedTemps") && ios.contains("delegate.dispose()") && ios.contains("DisposableEffect"),
+            "The iOS picker must own its temp copies and clean them on failure/cancel/disposal (R3).",
+        )
+        assertTrue(
+            ios.contains("actual fun releasePickerOwnedHandle"),
+            "iOS must implement the shared picker-handle release contract (R3).",
+        )
+    }
+
     /** Strip `//` line comments and `/* */` block comments before absence checks. */
     private fun stripKotlinComments(src: String): String {
         val sb = StringBuilder()

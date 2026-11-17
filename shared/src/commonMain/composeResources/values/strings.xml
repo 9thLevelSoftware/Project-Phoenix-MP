@@ -1083,6 +1083,7 @@
     <string name="media_error_missing_staged">Not saved: %1$s could not be found. Remove or re-pick them, then try again.</string>
     <string name="media_error_generic">No photos added. Try again.</string>
     <string name="media_save_media_failed">Exercise saved; photos could not be saved. Retry adding photos.</string>
+    <string name="media_save_busy">Photos are still being added. Wait for the selection to finish, then save.</string>
     <string name="media_cleanup_pending">Some local copies couldn't be removed. Phoenix will retry cleanup.</string>
     <string name="media_delete_cleanup_transient">Exercise deleted. Cleaning up local photos…</string>
     <string name="media_save_failed">Could not save the exercise. Try again.</string>

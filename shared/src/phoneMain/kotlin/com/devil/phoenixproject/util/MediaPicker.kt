@@ -55,3 +55,14 @@ expect class MediaPicker {
  */
 @Composable
 expect fun rememberMediaPicker(): MediaPicker
+
+/**
+ * Release a picker-owned transient handle whose pick never reached staging
+ * (R3: a cancelled/disposed session must keep no temp copies). Idempotent —
+ * a handle the media store already consumed at stage time is already gone.
+ *
+ * iOS: the picker's `NSTemporaryDirectory` copies are app-owned files → delete.
+ * Android: handles are provider `content://` URIs with transient grants;
+ * there is nothing app-owned to delete.
+ */
+expect fun releasePickerOwnedHandle(photo: PickedPhoto)

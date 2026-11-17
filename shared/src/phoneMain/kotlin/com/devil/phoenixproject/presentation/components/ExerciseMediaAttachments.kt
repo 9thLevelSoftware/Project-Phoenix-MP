@@ -129,7 +129,11 @@ fun ExerciseMediaAttachments(
     }
     val total = entries.size
     val remaining = ExerciseMediaLimits.MAX_PHOTOS_PER_EXERCISE - total
-    val copying = coordinator.phase is MediaPhase.Copying
+    // R1: Add is disabled for the whole owned busy window — an outstanding
+    // picker session (Picking), a copy in flight, or a save in progress.
+    val busy = coordinator.phase is MediaPhase.Copying ||
+        coordinator.phase is MediaPhase.Picking ||
+        coordinator.phase is MediaPhase.Saving
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Header count: "Photos · N of 6"
@@ -172,7 +176,7 @@ fun ExerciseMediaAttachments(
             // Empty state
             OutlinedButton(
                 onClick = onRequestPick,
-                enabled = enableAttach && !copying,
+                enabled = enableAttach && !busy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp),
@@ -207,7 +211,7 @@ fun ExerciseMediaAttachments(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onRequestPick,
-                enabled = enableAttach && !copying && remaining > 0,
+                enabled = enableAttach && !busy && remaining > 0,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp),
@@ -218,7 +222,7 @@ fun ExerciseMediaAttachments(
             }
         }
 
-        // Copy progress: "Copying photos… n of m" (Add disabled above while copying)
+        // Copy progress: "Copying photos… n of m" (Add disabled above while busy)
         val phase = coordinator.phase
         if (phase is MediaPhase.Copying) {
             Spacer(Modifier.height(8.dp))

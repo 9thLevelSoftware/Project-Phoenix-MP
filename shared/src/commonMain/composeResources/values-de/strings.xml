@@ -912,6 +912,7 @@
     <string name="media_error_missing_staged">Nicht gespeichert: %1$s konnte nicht gefunden werden. Entferne sie oder wähle sie erneut aus und versuche es dann erneut.</string>
     <string name="media_error_generic">Keine Fotos hinzugefügt. Versuche es erneut.</string>
     <string name="media_save_media_failed">Übung gespeichert; Fotos konnten nicht gespeichert werden. Füge Fotos erneut hinzu.</string>
+    <string name="media_save_busy">Fotos werden noch hinzugefügt. Warte, bis die Auswahl abgeschlossen ist, und speichere dann.</string>
     <string name="media_cleanup_pending">Einige lokale Kopien konnten nicht entfernt werden. Phoenix versucht es später erneut.</string>
     <string name="media_delete_cleanup_transient">Übung gelöscht. Lokale Fotos werden bereinigt…</string>
     <string name="media_save_failed">Übung konnte nicht gespeichert werden. Versuche es erneut.</string>
