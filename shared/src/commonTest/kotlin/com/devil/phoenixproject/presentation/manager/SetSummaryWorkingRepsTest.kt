@@ -306,7 +306,9 @@ class SetSummaryWorkingRepsTest {
     fun `working rep 1 still produces a result when the warmup mark carries the rep`() = runTest {
         val harness = DWSMTestHarness(this, biomechanicsDispatcher = StandardTestDispatcher(testScheduler))
         startWarmupSet(harness)
-        completeWarmup(harness, markVelocity = 300.0)
+        // The mark sample carries working rep 1 at the full 25 kg/cable load (Issue #1400:
+        // a below-90 % ramp sample would make rep 1 aggregate-ineligible, not the baseline).
+        completeWarmup(harness, markVelocity = 300.0, markLoad = 25f)
 
         completeWorkingRep1WithoutFurtherSamples(harness)
 
@@ -320,6 +322,7 @@ class SetSummaryWorkingRepsTest {
             result.velocity.meanConcentricVelocityMmS,
             "The baseline must be the moving sample the window fell back to",
         )
+        assertTrue(result.aggregateEligible, "Rep 1 must count as the velocity-loss baseline")
         assertEquals(
             1,
             harness.coordinator.setRepMetrics.size,
@@ -396,7 +399,11 @@ class SetSummaryWorkingRepsTest {
      * Three slow warm-up reps, then the machine reports the warm-up as complete and one more
      * sample arrives - that sample stamps [warmupEndTimestamp] as the warm-up mark.
      */
-    private suspend fun completeWarmup(harness: DWSMTestHarness, markVelocity: Double = 2.0) {
+    private suspend fun completeWarmup(
+        harness: DWSMTestHarness,
+        markVelocity: Double = 2.0,
+        markLoad: Float = 12f,
+    ) {
         listOf(1_000L, 1_500L, 2_000L, 2_500L, 3_000L).forEach { timestamp ->
             harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, load = 12f, velocity = 30.0))
         }
@@ -415,7 +422,7 @@ class SetSummaryWorkingRepsTest {
         harness.testScope.testScheduler.advanceUntilIdle()
 
         harness.fakeBleRepo.emitMetric(
-            metric(timestamp = warmupEndTimestamp, load = 12f, velocity = markVelocity),
+            metric(timestamp = warmupEndTimestamp, load = markLoad, velocity = markVelocity),
         )
         harness.testScope.testScheduler.advanceUntilIdle()
     }

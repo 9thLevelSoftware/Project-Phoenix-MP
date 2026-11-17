@@ -10,6 +10,9 @@ import kotlin.test.fail
  * Locks the shared iOS sound-pool pick. [playSound] used to index every pool
  * with Random.nextInt; one helper owns that pick. Empty-pool routing stays at
  * the call sites. The helper is Kotlin/Native and does not run on the host.
+ *
+ * Issue #1357: the pool picks live in selectPlayer() so a refused cue can
+ * re-select from a rebuilt pool; playSound() selects through it.
  */
 class IosHapticRandomPoolContractTest {
 
@@ -31,12 +34,16 @@ class IosHapticRandomPoolContractTest {
     }
 
     @Test
-    fun playSoundPicksEveryPoolThroughTheHelper() {
+    fun selectPlayerPicksEveryPoolThroughTheHelper() {
         val source = requireSource(
             "src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.ios.kt",
         )
         val playSound = functionBody(source, "fun playSound(event: HapticEvent)")
         assertTrue(!playSound.contains("Random.nextInt"), "playSound no longer indexes pools itself")
+        assertTrue(playSound.contains("selectPlayer(event)"), "playSound picks its player through selectPlayer")
+
+        val picker = functionBody(source, "private fun selectPlayer(event: HapticEvent)")
+        assertTrue(!picker.contains("Random.nextInt"), "selectPlayer does not index pools itself")
 
         val picks = listOf(
             "badgeSoundPlayers.randomPoolEntry()",
@@ -48,37 +55,37 @@ class IosHapticRandomPoolContractTest {
             "combined.randomPoolEntry()",
         )
         for (pick in picks) {
-            assertTrue(playSound.contains(pick), "playSound picks through $pick")
+            assertTrue(picker.contains(pick), "selectPlayer picks through $pick")
         }
         assertEquals(
             2,
-            playSound.split("encouragementNeutralSoundPlayers.randomPoolEntry()").size - 1,
+            picker.split("encouragementNeutralSoundPlayers.randomPoolEntry()").size - 1,
             "vulgar-off and fallback both pick the neutral pool",
         )
         assertEquals(
             8,
-            playSound.split("randomPoolEntry()").size - 1,
+            picker.split("randomPoolEntry()").size - 1,
             "every former nextInt pool pick uses the helper",
         )
 
-        assertTrue(playSound.contains("event.dominatrixMode -> null"), "empty dominatrix pool stays silent")
+        assertTrue(picker.contains("event.dominatrixMode -> null"), "empty dominatrix pool stays silent")
         assertTrue(
-            playSound.contains(
+            picker.contains(
                 "event.vulgarTier == VulgarTier.MILD && encouragementMildSoundPlayers.isNotEmpty()",
             ),
             "empty mild pool still falls through",
         )
         assertTrue(
-            playSound.contains(
+            picker.contains(
                 "event.vulgarTier == VulgarTier.STRONG && encouragementStrongSoundPlayers.isNotEmpty()",
             ),
             "empty strong pool still falls through",
         )
         assertTrue(
-            playSound.contains("encouragementMildSoundPlayers + encouragementStrongSoundPlayers"),
+            picker.contains("encouragementMildSoundPlayers + encouragementStrongSoundPlayers"),
             "mix still draws from both vulgar pools",
         )
-        assertTrue(playSound.contains("repCountSoundPlayers[index]"), "rep-count sounds stay numbered, not random")
+        assertTrue(picker.contains("repCountSoundPlayers[index]"), "rep-count sounds stay numbered, not random")
     }
 
     private fun requireSource(relativePath: String): String =

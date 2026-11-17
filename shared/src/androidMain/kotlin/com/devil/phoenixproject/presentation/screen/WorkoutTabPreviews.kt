@@ -688,6 +688,16 @@ private class PreviewExerciseRepository : ExerciseRepository {
     override suspend fun toggleFavorite(id: String) {}
     override suspend fun getExerciseById(id: String): Exercise? = null
     override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = emptyList()
+    override suspend fun addImage(exerciseId: String, url: String, sortOrder: Int): Result<Unit> = Result.success(Unit)
+    override suspend fun removeImage(imageId: Long): Result<Unit> = Result.success(Unit)
+    override suspend fun getImageCount(exerciseId: String): Int = 0
+    override suspend fun applyMediaDelta(
+        exerciseId: String,
+        additionUrls: List<String>,
+        removalIds: List<Long>,
+    ): Result<Unit> = Result.success(Unit)
+    override suspend fun getAllExerciseIds(): List<String> = emptyList()
+    override suspend fun getAllImageUrls(): List<String> = emptyList()
     override suspend fun importExercises(): Result<Unit> = Result.success(Unit)
     override suspend fun updateFromWger(): Result<Int> = Result.success(0)
 

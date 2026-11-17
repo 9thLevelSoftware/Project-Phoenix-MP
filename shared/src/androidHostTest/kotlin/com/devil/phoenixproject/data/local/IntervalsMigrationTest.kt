@@ -418,8 +418,10 @@ class IntervalsMigrationTest {
     @Test
     fun `an older binary opening a schema 64 database fails safely without deleting data`() {
         // Schema.version is the version every open validates against; the six
-        // additive tables are what a 64-schema database carries beyond v63.
-        assertEquals(64L, PhoenixDatabase.Schema.version)
+        // additive tables are what a 64-schema database carries beyond v63. This
+        // fixture pins a v64 database itself, so it stays valid as the schema advances
+        // (v65 adds RepBiomechanics.aggregateEligible, Issue #1400).
+        assertTrue(PhoenixDatabase.Schema.version >= 64L, "Schema must include the v64 Intervals tables")
 
         val file = File.createTempFile("intervals-migration-downgrade", ".db")
         try {
@@ -535,7 +537,7 @@ class IntervalsMigrationTest {
     // ==================== EXPECTED 63.sqm SHAPE ====================
 
     private companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 64L
+        private const val EXPECTED_SCHEMA_VERSION = 65L
 
         private val EXPECTED_TABLES: Map<String, Map<String, String>> = linkedMapOf(
             "IntervalsConnection" to linkedMapOf(
