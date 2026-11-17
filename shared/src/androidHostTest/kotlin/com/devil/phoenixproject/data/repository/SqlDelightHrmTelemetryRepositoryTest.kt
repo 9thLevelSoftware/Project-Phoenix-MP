@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarRecovery
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -11,16 +11,17 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class SqlDelightPolarTelemetryRepositoryTest {
+class SqlDelightHrmTelemetryRepositoryTest {
     @Test
     fun `a batch for a deleted session is discarded and the next valid batch saves`() = runTest {
         val driver = createTestDriver()
         try {
             val database = PhoenixDatabase(driver)
             val workouts = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
-            val repository = SqlDelightPolarTelemetryRepository(
+            val repository = SqlDelightHrmTelemetryRepository(
                 database, { NOW_MS }, StandardTestDispatcher(testScheduler),
             )
             workouts.saveSession(session("deleted"))
@@ -49,10 +50,10 @@ class SqlDelightPolarTelemetryRepositoryTest {
             val database = PhoenixDatabase(driver)
             SqlDelightWorkoutRepository(database, FakeExerciseRepository()).saveSession(session("retention"))
             var now = NOW_MS
-            val repository = SqlDelightPolarTelemetryRepository(
+            val repository = SqlDelightHrmTelemetryRepository(
                 database, { now }, StandardTestDispatcher(testScheduler),
             )
-            val cutoff = now - SqlDelightPolarTelemetryRepository.RAW_ECG_RETENTION_DAYS * 86_400_000L
+            val cutoff = now - SqlDelightHrmTelemetryRepository.RAW_ECG_RETENTION_DAYS * 86_400_000L
 
             repository.saveTelemetry(
                 "retention",
@@ -83,10 +84,10 @@ class SqlDelightPolarTelemetryRepositoryTest {
         try {
             val database = PhoenixDatabase(driver)
             SqlDelightWorkoutRepository(database, FakeExerciseRepository()).saveSession(session("cap"))
-            val repository = SqlDelightPolarTelemetryRepository(
+            val repository = SqlDelightHrmTelemetryRepository(
                 database, { NOW_MS }, StandardTestDispatcher(testScheduler),
             )
-            val count = SqlDelightPolarTelemetryRepository.MAX_STORED_ECG_SEGMENTS.toInt() + 2
+            val count = SqlDelightHrmTelemetryRepository.MAX_STORED_ECG_SEGMENTS.toInt() + 2
             val segments = List(count) { index ->
                 ecg("cap").copy(wallClockTimestampMs = NOW_MS - count + index, sensorTimestampNs = index.toLong())
             }
@@ -102,6 +103,44 @@ class SqlDelightPolarTelemetryRepositoryTest {
         }
     }
 
+    // T29: beat/HRR persistence path unchanged; ECG/ACC columns stay null for a
+    // non-PMD (e.g. Garmin broadcast) connection (repository-level, SD9).
+    @Test
+    fun `T29 non-PMD beat and HRR persistence stores null ECG and ACC columns`() = runTest {
+        val driver = createTestDriver()
+        try {
+            val database = PhoenixDatabase(driver)
+            SqlDelightWorkoutRepository(database, FakeExerciseRepository()).saveSession(session("garmin-style"))
+            val repository = SqlDelightHrmTelemetryRepository(
+                database, { NOW_MS }, StandardTestDispatcher(testScheduler),
+            )
+
+            repository.saveTelemetry(
+                "garmin-style",
+                listOf(beat("garmin-style").copy(rmssdMs = 42.0)),
+                emptyList(), // non-PMD connection: no ECG segments ever produced
+                PolarRecovery(15, 25),
+            )
+
+            val queries = database.phoenixDatabaseQueries
+            val row = queries.selectPolarBeatSamplesBySession("garmin-style").executeAsOne()
+            // Beat path unchanged.
+            assertEquals(145L, row.hrBpm)
+            assertEquals(800.0, row.rrMs)
+            assertEquals(42.0, row.rmssdMs)
+            // ECG/ACC columns are null for a non-PMD connection.
+            assertNull(row.torsoPitchDeg)
+            assertNull(row.torsoRollDeg)
+            assertNull(row.dynamicAccMg)
+            assertTrue(queries.selectPolarEcgSegmentsBySession("garmin-style").executeAsList().isEmpty())
+            // HRR persistence path unchanged.
+            assertEquals(15L, queries.selectSessionById("garmin-style").executeAsOne().hrr60Bpm)
+            assertEquals(25L, queries.selectSessionById("garmin-style").executeAsOne().hrr300Bpm)
+        } finally {
+            driver.close()
+        }
+    }
+
     private fun session(sessionId: String) = WorkoutSession(
         id = sessionId,
         timestamp = NOW_MS,
@@ -112,7 +151,7 @@ class SqlDelightPolarTelemetryRepositoryTest {
         workingReps = 10,
     )
 
-    private fun beat(sessionId: String) = PolarBeatSample(
+    private fun beat(sessionId: String) = HrmBeatSample(
         id = 900,
         sessionId = sessionId,
         timestampMs = NOW_MS,

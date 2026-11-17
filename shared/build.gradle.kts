@@ -239,6 +239,9 @@ kotlin {
 
             dependencies {
                 implementation(libs.sqldelight.native.driver)
+                // Issue #1403 UIKit fixture: Compose UI test harness on the iOS
+                // test runtime (same CMP version as the app; test-only scope).
+                implementation(libs.cmp.ui.test)
             }
         }
     }
@@ -965,6 +968,9 @@ tasks.withType<Test>().configureEach {
         "phoenix.evidence.dir",
         providers.systemProperty("phoenix.evidence.dir").orElse("").get(),
     )
+    // Issue #1385: the production-width/scale layout matrix renders many full Compose
+    // trees per test; the default test-worker heap (512m) runs out of Java heap space.
+    maxHeapSize = "4g"
     testLogging {
         showStandardStreams = true
     }

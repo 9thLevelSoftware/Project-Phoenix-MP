@@ -72,6 +72,9 @@ internal class CompositionGattFake(
     var disconnectReturnGate: CompletableDeferred<Unit>? = null
     var readGate: CompletableDeferred<Unit>? = null
     var writeFailure: Exception? = null
+
+    /** Optional authoritative service-discovery override (SD2 enumeration tests). */
+    var profileOverride: List<DiscoveredService>? = null
     var connectCalls = 0
     var disconnectCalls = 0
     var activeObservations = 0
@@ -103,6 +106,12 @@ internal class CompositionGattFake(
         GattCharacteristic(BleConstants.versionCharacteristic, 0x12),
         GattCharacteristic(BleConstants.modeCharacteristic, 0x10),
         GattCharacteristic(BleConstants.firmwareRevisionCharacteristic, 0x02),
+        // Standard Heart Rate (0x180D/0x2A37), Battery (0x180F/0x2A19) and Polar
+        // PMD (FB005C80) services — the generic-HRM fixture surface (issue #1359).
+        GattCharacteristic(BleConstants.Hrm.hrMeasurementCharacteristic, 0x10),
+        GattCharacteristic(BleConstants.Hrm.batteryLevelCharacteristic, 0x12),
+        GattCharacteristic(BleConstants.PolarPmd.pmdControlPointCharacteristic, 0x18),
+        GattCharacteristic(BleConstants.PolarPmd.pmdDataCharacteristic, 0x10),
     ).groupBy { it.serviceUuid }.map { (uuid, chars) ->
         object : DiscoveredService {
             override val serviceUuid = uuid
@@ -116,7 +125,7 @@ internal class CompositionGattFake(
         connectGate?.await()
         val connected = CoroutineScope(SupervisorJob() + dispatcher)
         connectionScope = connected
-        services.value = profile
+        services.value = profileOverride ?: profile
         state.value = State.Connected(connected)
         return connected
     }
@@ -180,6 +189,7 @@ internal class CompositionGattFake(
                     it[12] = 25
                 }
                 BleConstants.FIRMWARE_REVISION_UUID -> "composition-fixture".encodeToByteArray()
+                BleConstants.Hrm.BATTERY_LEVEL_UUID -> byteArrayOf(87)
                 else -> byteArrayOf()
             }
         }
@@ -218,6 +228,29 @@ internal class CompositionGattFake(
         notifications.getValue(BleConstants.REPS_UUID).emit(bytes)
     }
 
+    /** Deliver a notification for any observed characteristic (HR 0x2A37, battery, PMD data, ...). */
+    suspend fun notify(characteristic: Characteristic, bytes: ByteArray) {
+        notifications.getOrPut(characteristic.characteristicUuid) { MutableSharedFlow() }.emit(bytes)
+    }
+
     override suspend fun read(descriptor: Descriptor): ByteArray = error("Unexpected descriptor read")
     override suspend fun write(descriptor: Descriptor, data: ByteArray): Unit = error("Unexpected descriptor write")
 }
+
+/**
+ * Build a discovered-service entry for authoritative service-enumeration tests
+ * (SD2 ABSENT derivation). Properties flag 0x12 = read + notify, sufficient for
+ * the manager's probe calls.
+ */
+internal fun fakeDiscoveredService(serviceUuid: Uuid, characteristicUuids: List<Uuid>): DiscoveredService =
+    object : DiscoveredService {
+        override val serviceUuid = serviceUuid
+        override val characteristics: List<DiscoveredCharacteristic> = characteristicUuids.map { charUuid ->
+            object : DiscoveredCharacteristic {
+                override val serviceUuid = serviceUuid
+                override val characteristicUuid = charUuid
+                override val properties = Characteristic.Properties(0x12)
+                override val descriptors = emptyList<DiscoveredDescriptor>()
+            }
+        }
+    }

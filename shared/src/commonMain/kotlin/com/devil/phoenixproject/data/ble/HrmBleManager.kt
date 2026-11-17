@@ -1,23 +1,26 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.ScannedDevice
-import com.devil.phoenixproject.data.repository.PolarTelemetryRepository
+import com.devil.phoenixproject.data.repository.HrmTelemetryRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.PolarHrMeasurement
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrMeasurement
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarRecovery
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
-import com.devil.phoenixproject.domain.model.PolarRrBeat
+import com.devil.phoenixproject.domain.model.RrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.PolarAccFilter
-import com.devil.phoenixproject.util.PolarTelemetryUtils
+import com.devil.phoenixproject.util.HrmTelemetryUtils
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
+import com.juul.kable.DiscoveredService
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
@@ -27,6 +30,7 @@ import kotlin.concurrent.Volatile
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.TimeSource
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -49,6 +53,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.first
@@ -60,9 +66,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 /**
- * Summary metrics for a session recorded by Polar H10.
+ * Summary metrics for a session recorded by a heart rate sensor (HRM).
  */
-data class PolarSessionSummary(
+data class HrmSessionSummary(
     val sessionId: String? = null,
     val avgHeartRateBpm: Int? = null,
     val maxHeartRateBpm: Int? = null,
@@ -76,7 +82,7 @@ data class PolarSessionSummary(
 )
 
 /**
- * Multiplatform BLE Manager for Polar H10 heart rate sensors.
+ * Multiplatform BLE Manager for generic heart rate sensors (HRM).
  *
  * Implements independent connection lifecycle, GATT service discovery,
  * standard Heart Rate (0x180D) and Battery (0x180F) telemetry, and proprietary
@@ -85,9 +91,9 @@ data class PolarSessionSummary(
  * Designed to operate simultaneously alongside [KableBleConnectionManager]
  * without cross-peripheral interference.
  */
-class PolarH10BleManager(
+class HrmBleManager(
     private val settings: Settings? = null,
-    private val telemetryRepository: PolarTelemetryRepository? = null,
+    private val telemetryRepository: HrmTelemetryRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val timeSource: () -> Long = DEFAULT_WALL_CLOCK,
     monotonicTimeSource: (() -> Long)? = null,
@@ -96,23 +102,22 @@ class PolarH10BleManager(
     private val createPeripheral: (Advertisement) -> Peripheral = { Peripheral(it) },
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val log = Logger.withTag("PolarH10BleManager")
+    private val log = Logger.withTag("HrmBleManager")
 
     companion object {
         private val monotonicOrigin = TimeSource.Monotonic.markNow()
         val DEFAULT_MONOTONIC_CLOCK: () -> Long = { monotonicOrigin.elapsedNow().inWholeMilliseconds }
         val DEFAULT_WALL_CLOCK: () -> Long = ::currentTimeMillis
-        const val KEY_POLAR_REMEMBERED_ADDRESS = "polar_h10_remembered_address"
-        const val KEY_POLAR_REMEMBERED_NAME = "polar_h10_remembered_name"
-        const val KEY_POLAR_AUTO_RECONNECT = "polar_h10_auto_reconnect_enabled"
         const val CRITICAL_BATTERY_PERCENTAGE = 5
         const val ECG_RAIL_THRESHOLD_UV = 15_000
-        const val KEY_RAW_ECG_STORAGE = "polar_h10_raw_ecg_storage_enabled"
         const val MAX_RAW_ECG_DURATION_MS = 300_000L
         const val RAW_ECG_RETENTION_DAYS = 30
         const val MAX_STORED_ECG_SEGMENTS = 36_000L
         private const val MAX_RAW_ECG_SAMPLES = 39_000
         private const val CONTACT_LOSS_DEBOUNCE_MS = 3_000L
+
+        /** Max wait for authoritative service discovery before treating it as inconclusive (SD2). */
+        internal const val SERVICE_DISCOVERY_TIMEOUT_MS = 3_000L
     }
 
     private val monotonicClock: () -> Long = monotonicTimeSource
@@ -120,29 +125,32 @@ class PolarH10BleManager(
     private val wallClock: () -> Long = timeSource
 
     // ===== Remembered Device & Auto-Reconnect =====
-    private val _rememberedAddress = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_ADDRESS))
+    // All settings reads/writes/forgets route through [HrmSettingsKeys] (SD4).
+    private val hrmSettings = HrmSettingsKeys(settings)
+
+    private val _rememberedAddress = MutableStateFlow<String?>(hrmSettings.getRememberedAddress())
     val rememberedAddress: StateFlow<String?> = _rememberedAddress.asStateFlow()
 
-    private val _rememberedName = MutableStateFlow<String?>(settings?.getStringOrNull(KEY_POLAR_REMEMBERED_NAME))
+    private val _rememberedName = MutableStateFlow<String?>(hrmSettings.getRememberedName())
     val rememberedName: StateFlow<String?> = _rememberedName.asStateFlow()
 
     private val _isAutoReconnectEnabled = MutableStateFlow<Boolean>(
-        settings?.getBoolean(KEY_POLAR_AUTO_RECONNECT, defaultValue = true) ?: true,
+        hrmSettings.getAutoReconnectEnabled(),
     )
     val isAutoReconnectEnabled: StateFlow<Boolean> = _isAutoReconnectEnabled.asStateFlow()
 
     fun setAutoReconnectEnabled(enabled: Boolean) {
-        settings?.putBoolean(KEY_POLAR_AUTO_RECONNECT, enabled)
+        hrmSettings.setAutoReconnectEnabled(enabled)
         _isAutoReconnectEnabled.value = enabled
     }
 
     private val _isRawEcgStorageEnabled = MutableStateFlow(
-        settings?.getBoolean(KEY_RAW_ECG_STORAGE, false) ?: false,
+        hrmSettings.getRawEcgStorageEnabled(),
     )
     val isRawEcgStorageEnabled: StateFlow<Boolean> = _isRawEcgStorageEnabled.asStateFlow()
 
     fun setRawEcgStorageEnabled(enabled: Boolean) {
-        settings?.putBoolean(KEY_RAW_ECG_STORAGE, enabled)
+        hrmSettings.setRawEcgStorageEnabled(enabled)
         sessionLock.withLock {
             _isRawEcgStorageEnabled.value = enabled
             if (!enabled) bufferedEcgSegments.clear()
@@ -150,8 +158,9 @@ class PolarH10BleManager(
     }
 
     fun forgetRememberedDevice() {
-        settings?.remove(KEY_POLAR_REMEMBERED_ADDRESS)
-        settings?.remove(KEY_POLAR_REMEMBERED_NAME)
+        // Clears name/address in BOTH key generations only; the auto-reconnect
+        // and raw-ECG preferences are retained in both (SD4).
+        hrmSettings.forgetRememberedDevice()
         _rememberedAddress.value = null
         _rememberedName.value = null
         reconnectJob?.cancel()
@@ -216,7 +225,7 @@ class PolarH10BleManager(
     private var cooldownStartTimestampMs: Long? = null
     private var lastBeatMonotonicMs: Long? = null
     private var lastHeartRateMonotonicMs: Long? = null
-    private var frozenSessionSummary: PolarSessionSummary? = null
+    private var frozenSessionSummary: HrmSessionSummary? = null
     private var rawEcgStartMs: Long? = null
     private var rawEcgSampleCount = 0
     private val persistenceMutex = Mutex()
@@ -224,13 +233,13 @@ class PolarH10BleManager(
         val sessionId: String,
         val beats: List<BufferedBeatSample> = emptyList(),
         val ecgs: List<BufferedEcgSegment> = emptyList(),
-        val recovery: PolarSessionSummary? = null,
+        val recovery: HrmSessionSummary? = null,
     )
     private val pendingTelemetry = mutableListOf<PendingTelemetry>()
     private data class DetachedRecording(
         val beats: List<BufferedBeatSample>,
         val ecgs: List<BufferedEcgSegment>,
-        val summary: PolarSessionSummary?,
+        val summary: HrmSessionSummary?,
     )
     private val detachedRecordings = mutableMapOf<String, DetachedRecording>()
     private val _telemetryPersistenceError = MutableStateFlow<String?>(null)
@@ -271,8 +280,8 @@ class PolarH10BleManager(
     private val _lastRecordedSessionId = MutableStateFlow<String?>(null)
     val lastRecordedSessionId: StateFlow<String?> = _lastRecordedSessionId.asStateFlow()
 
-    private val _latestSessionSummary = MutableStateFlow<PolarSessionSummary?>(null)
-    val latestSessionSummary: StateFlow<PolarSessionSummary?> = _latestSessionSummary.asStateFlow()
+    private val _latestSessionSummary = MutableStateFlow<HrmSessionSummary?>(null)
+    val latestSessionSummary: StateFlow<HrmSessionSummary?> = _latestSessionSummary.asStateFlow()
 
     private val completedCooldownSessionIds = mutableSetOf<String>()
     private var completedCooldownSessionId: String? = null
@@ -336,7 +345,7 @@ class PolarH10BleManager(
         }
     }
 
-    fun freezeSessionRecording(sessionId: String): PolarSessionSummary? = sessionLock.withLock {
+    fun freezeSessionRecording(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         if (sessionId != recordedSessionId) return detachedRecordings[sessionId]?.summary
         if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(sessionId)
         if (!_isCooldownActive.value) activeSessionId = null
@@ -392,7 +401,7 @@ class PolarH10BleManager(
                         repository.saveTelemetry(
                             sessionId = pending.sessionId,
                             beats = pending.beats.map { beat ->
-                                PolarBeatSample(
+                                HrmBeatSample(
                                     id = 0,
                                     sessionId = pending.sessionId,
                                     timestampMs = beat.timestampMs,
@@ -601,7 +610,7 @@ class PolarH10BleManager(
         val rollMax: Double?,
     )
 
-    fun getSessionSummary(sessionId: String): PolarSessionSummary? = sessionLock.withLock {
+    fun getSessionSummary(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         detachedRecordings[sessionId]?.let { return it.summary }
         sessionLock.withLock {
             frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
@@ -622,8 +631,8 @@ class PolarH10BleManager(
         val minHr = snapshot.hrs.minOrNull()
         val validRrs = snapshot.rrs.filter { it in 250.0..2500.0 }
         val avgRr = if (validRrs.isNotEmpty()) validRrs.average().toFloat() else null
-        val rmssd = PolarTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
-        return PolarSessionSummary(
+        val rmssd = HrmTelemetryUtils.calculateRmssdMs(snapshot.rrs)?.toFloat()
+        return HrmSessionSummary(
             sessionId = sessionId,
             avgHeartRateBpm = avgHr,
             maxHeartRateBpm = maxHr,
@@ -649,12 +658,44 @@ class PolarH10BleManager(
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    // ===== Runtime Capability State (SD2) & Connection Generation (SD3) =====
+    // Per-capability probe state. Everything starts UNKNOWN — there is no
+    // Boolean "capability = true" construction default (SD2 forbids that shape).
+    private val _capabilities = MutableStateFlow(HrmCapabilities())
+    val capabilities: StateFlow<HrmCapabilities> = _capabilities.asStateFlow()
+
+    private val generationLock = reentrantLock()
+
+    @Volatile
+    private var connectionGeneration: Int = 0
+
+    internal val connectionGenerationForTesting: Int get() = connectionGeneration
+
+    /** Late callbacks from a previous connection generation are rejected (SD3). */
+    private fun isCurrentGeneration(gen: Int): Boolean = gen == connectionGeneration
+
+    /**
+     * Reset all connection-owned state: bump the connection-generation token and
+     * return every capability to UNKNOWN. Called on disconnect, new selection and
+     * reconnect (SD3).
+     */
+    private fun resetConnectionOwnedState() {
+        generationLock.withLock { connectionGeneration++ }
+        _capabilities.value = HrmCapabilities()
+    }
+
+    private inline fun updateCapability(gen: Int, transform: (HrmCapabilities) -> HrmCapabilities) {
+        if (isCurrentGeneration(gen)) {
+            _capabilities.value = transform(_capabilities.value)
+        }
+    }
+
     internal fun setConnectedForTesting(connected: Boolean) {
         _isConnected.value = connected
         if (connected) {
             wasEverConnected = true
             isExplicitDisconnect = false
-            _connectionState.value = ConnectionState.Connected("Polar H10", "00:11:22:33:44:55")
+            _connectionState.value = ConnectionState.Connected("Heart Rate Sensor", "00:11:22:33:44:55")
         } else {
             wasEverConnected = false
             _connectionState.value = ConnectionState.Disconnected
@@ -706,8 +747,8 @@ class PolarH10BleManager(
     private val _batteryLevel = MutableStateFlow<Int?>(null)
     val batteryLevel: StateFlow<Int?> = _batteryLevel.asStateFlow()
 
-    private val _hrMeasurement = MutableStateFlow<PolarHrMeasurement?>(null)
-    val hrMeasurement: StateFlow<PolarHrMeasurement?> = _hrMeasurement.asStateFlow()
+    private val _hrMeasurement = MutableStateFlow<HrMeasurement?>(null)
+    val hrMeasurement: StateFlow<HrMeasurement?> = _hrMeasurement.asStateFlow()
 
     private val _ecgStream = MutableSharedFlow<PolarPmdMeasurement.Ecg>(
         replay = 0,
@@ -729,12 +770,12 @@ class PolarH10BleManager(
     private val _latestAcc = MutableStateFlow<PolarPmdMeasurement.Acc?>(null)
     val latestAcc: StateFlow<PolarPmdMeasurement.Acc?> = _latestAcc.asStateFlow()
 
-    private val _rrBeats = MutableSharedFlow<PolarRrBeat>(
+    private val _rrBeats = MutableSharedFlow<RrBeat>(
         replay = 0,
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    val rrBeats: SharedFlow<PolarRrBeat> = _rrBeats.asSharedFlow()
+    val rrBeats: SharedFlow<RrBeat> = _rrBeats.asSharedFlow()
 
     // ===== Internal Connection References =====
     @Volatile
@@ -773,6 +814,10 @@ class PolarH10BleManager(
 
     private suspend fun ensureRecordingTelemetryStreams() = telemetryLifecycleMutex.withLock {
         if (!sessionLock.withLock { activeSessionId != null || _isCooldownActive.value }) return@withLock
+        // PMD-gated (SD2): a sensor without Polar PMD never gets ECG/ACC stream
+        // attempts — and missing PMD must never suppress standard HR recording.
+        val pmdState = _capabilities.value.polarPmd
+        if (pmdState == HrmCapabilityState.ABSENT || pmdState == HrmCapabilityState.FAILED) return@withLock
         if (pmdControlPointJob?.isActive != true || pmdDataJob?.isActive != true) {
             _isEcgStreaming.value = false
             _isAccStreaming.value = false
@@ -817,15 +862,21 @@ class PolarH10BleManager(
     private var lastBeatTimestampMs: Long? = null
 
     /**
-     * Start scanning for Polar H10 devices (by name prefix or Heart Rate 0x180D UUID).
+     * Start scanning for heart-rate sensors: advertisers of the Bluetooth SIG
+     * standard Heart Rate Service (0x180D) — including unnamed ones, because
+     * 0x180D is a vendor-neutral standard service that identifies a heart-rate
+     * broadcaster (any compliant Garmin/Wahoo/Polar/etc. sensor in broadcast
+     * mode) — plus devices matching the bounded HRM name allow-list
+     * ([classifyHrmAdvertisement]). Non-HR advertisements (e.g. NUS-only
+     * machine trainers) are rejected.
      * Automatically stops when [BleConstants.SCAN_TIMEOUT_MS] elapses.
      */
     suspend fun startScanning(): Result<Unit> {
         return try {
-            log.i { "Starting BLE scan for Polar H10 devices" }
+            log.i { "Starting BLE scan for heart rate sensors" }
             logRepo.info(
                 eventType = LogEventType.SCAN_START,
-                message = "[HRM] Scanning for Polar H10 devices",
+                message = "[HRM] Scanning for heart rate sensors",
                 tag = "HRM",
             )
             reconnectJob?.cancel()
@@ -843,11 +894,11 @@ class PolarH10BleManager(
                 try {
                     withTimeoutOrNull(BleConstants.SCAN_TIMEOUT_MS) {
                         advertisements()
-                            .filter { adv -> isPolarH10Advertisement(adv) }
-                            .collect { adv ->
+                            .mapNotNull { adv -> classifyHrmAdvertisement(adv)?.let { adv to it } }
+                            .collect { (adv, classification) ->
                                 val identifier = adv.identifier.toString()
                                 advertisementLock.withLock { discoveredAdvertisements[identifier] = adv }
-                                val name = adv.name ?: "Polar H10"
+                                val name = classification.displayName
                                 val scanned = ScannedDevice(name = name, address = identifier, rssi = adv.rssi)
 
                                 val updated = currentDevices.toMutableList()
@@ -863,10 +914,10 @@ class PolarH10BleManager(
                             }
                     }
                     if (_connectionState.value is ConnectionState.Scanning) {
-                        log.i { "Polar scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)" }
+                        log.i { "HRM scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)" }
                         logRepo.info(
                             eventType = LogEventType.SCAN_STOP,
-                            message = "[HRM] Polar H10 scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)",
+                            message = "[HRM] Scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)",
                             tag = "HRM",
                         )
                         _connectionState.value = ConnectionState.Disconnected
@@ -894,18 +945,18 @@ class PolarH10BleManager(
         if (_connectionState.value is ConnectionState.Scanning) {
             logRepo.info(
                 eventType = LogEventType.SCAN_STOP,
-                message = "[HRM] Polar H10 scan stopped",
+                message = "[HRM] Scan stopped",
                 tag = "HRM",
             )
             _connectionState.value = ConnectionState.Disconnected
         }
     }
 
-    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException()
+    private class AutoReconnectMatchFound(val device: ScannedDevice) : CancellationException("Auto-reconnect match found")
 
     /**
      * Triggers an immediate auto-reconnect attempt unless explicitly disconnected
-     * to a remembered Polar sensor if not already connecting or reconnecting.
+     * to a remembered heart rate sensor if not already connecting or reconnecting.
      */
     fun ensureConnectedOrReconnect() {
         if (isExplicitDisconnect) return
@@ -920,7 +971,7 @@ class PolarH10BleManager(
     }
 
     /**
-     * Auto-reconnect to the remembered Polar H10 if one was previously connected
+     * Auto-reconnect to the remembered heart rate sensor if one was previously connected
      * and auto-reconnect is enabled.
      */
     suspend fun autoReconnectIfRemembered(timeoutMs: Long = 10000L): Result<Unit> {
@@ -935,8 +986,8 @@ class PolarH10BleManager(
             return Result.success(Unit)
         }
         val address = _rememberedAddress.value ?: return Result.success(Unit)
-        val name = _rememberedName.value ?: "Polar H10"
-        log.i { "Attempting auto-reconnect to remembered Polar H10: $name ($address)" }
+        val name = _rememberedName.value ?: "Heart Rate Sensor"
+        log.i { "Attempting auto-reconnect to remembered heart rate sensor: $name ($address)" }
 
         val cachedAdv = cachedAdvertisement(address)
         if (cachedAdv != null) {
@@ -952,7 +1003,7 @@ class PolarH10BleManager(
                 var found: ScannedDevice? = null
                 try {
                     advertisements()
-                        .filter { isPolarH10Advertisement(it) }
+                        .filter { classifyHrmAdvertisement(it) != null }
                         .collect { adv ->
                             val id = adv.identifier.toString()
                             advertisementLock.withLock { discoveredAdvertisements[id] = adv }
@@ -970,21 +1021,21 @@ class PolarH10BleManager(
             if (matchedDevice != null) {
                 connect(matchedDevice)
             } else {
-                log.w { "Timed out waiting for remembered Polar H10 ($address)" }
-                Result.failure(IllegalStateException("Timed out waiting for remembered Polar H10"))
+                log.w { "Timed out waiting for remembered heart rate sensor ($address)" }
+                Result.failure(IllegalStateException("Timed out waiting for remembered heart rate sensor"))
             }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
-            log.w { "Auto-reconnect to Polar H10 failed: ${e.message}" }
+            log.w { "Auto-reconnect to heart rate sensor failed: ${e.message}" }
             Result.failure(e)
         }
     }
 
     /**
-     * Connect to the selected Polar H10 device.
+     * Connect to the selected heart rate sensor.
      */
     suspend fun connect(device: ScannedDevice): Result<Unit> {
-        log.i { "Connecting to Polar H10: ${device.name} (${device.address})" }
+        log.i { "Connecting to heart rate sensor: ${device.name} (${device.address})" }
         val currentJob = currentCoroutineContext()[Job]
         if (reconnectJob !== currentJob) {
             reconnectJob?.cancel()
@@ -997,11 +1048,11 @@ class PolarH10BleManager(
         }
 
         val advertisement = cachedAdvertisement(device.address)
-            ?: return Result.failure(IllegalStateException("Polar device ${device.address} not found in scanned cache"))
+            ?: return Result.failure(IllegalStateException("HRM device ${device.address} not found in scanned cache"))
 
         logRepo.info(
             eventType = LogEventType.CONNECT_START,
-            message = "[HRM] Connecting to Polar H10: ${device.name}",
+            message = "[HRM] Connecting to ${device.name}",
             deviceName = device.name,
             deviceAddress = device.address,
             tag = "HRM",
@@ -1022,7 +1073,7 @@ class PolarH10BleManager(
                         log.d { "Ignoring state change ($state) for stale peripheral $p" }
                         return@collect
                     }
-                    log.d { "Polar H10 state: $state" }
+                    log.d { "HRM state: $state" }
                     when (state) {
                         is State.Connecting -> {
                             _isConnected.value = false
@@ -1037,14 +1088,13 @@ class PolarH10BleManager(
                             )
                             logRepo.info(
                                 eventType = LogEventType.CONNECT_SUCCESS,
-                                message = "[HRM] Connected to Polar H10: ${device.name}",
+                                message = "[HRM] Connected to ${device.name}",
                                 deviceName = device.name,
                                 deviceAddress = device.address,
                                 tag = "HRM",
                             )
                             if (_isAutoReconnectEnabled.value) {
-                                settings?.putString(KEY_POLAR_REMEMBERED_ADDRESS, device.address)
-                                settings?.putString(KEY_POLAR_REMEMBERED_NAME, device.name)
+                                hrmSettings.rememberDevice(device.address, device.name)
                                 _rememberedAddress.value = device.address
                                 _rememberedName.value = device.name
                             }
@@ -1055,7 +1105,7 @@ class PolarH10BleManager(
                         }
                         is State.Disconnected -> {
                             if (!wasEverConnected) {
-                                log.d { "Polar H10 initial state: Disconnected (awaiting connect() call)" }
+                                log.d { "HRM initial state: Disconnected (awaiting connect() call)" }
                                 return@collect
                             }
                             wasEverConnected = false
@@ -1063,7 +1113,7 @@ class PolarH10BleManager(
                             _connectionState.value = ConnectionState.Disconnected
                             logRepo.info(
                                 eventType = LogEventType.DISCONNECT,
-                                message = "[HRM] Polar H10 disconnected",
+                                message = "[HRM] Disconnected",
                                 deviceName = device.name,
                                 deviceAddress = device.address,
                                 tag = "HRM",
@@ -1078,7 +1128,7 @@ class PolarH10BleManager(
                 p.connect()
                 p.state.first { it is State.Connected }
             }
-            check(connected != null) { "Polar H10 connection timed out" }
+            check(connected != null) { "HRM connection timed out" }
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -1088,7 +1138,7 @@ class PolarH10BleManager(
                 _connectionState.value = ConnectionState.Disconnected
             }
             e.rethrowIfCancellation()
-            log.e(e) { "Failed to connect to Polar H10: ${e.message}" }
+            log.e(e) { "Failed to connect to heart rate sensor: ${e.message}" }
             logRepo.error(
                 eventType = LogEventType.CONNECT_FAIL,
                 message = "[HRM] Failed to connect: ${e.message}",
@@ -1103,65 +1153,118 @@ class PolarH10BleManager(
     }
 
     private suspend fun onDeviceConnected(p: Peripheral) {
-        log.i { "Configuring Polar H10 connection parameters and services" }
+        log.i { "Configuring HRM connection parameters and services" }
+        val gen = connectionGeneration
         startWatchdog()
+
+        // 0. Authoritative service discovery enumeration (SD2): the ONLY source of
+        // ABSENT findings. Inconclusive enumeration never yields ABSENT — probes
+        // that are not run stay UNKNOWN.
+        val services = awaitDiscoveredServices(p)
+
+        // Post-connection HR validation (T8/SD5): a candidate that advertised
+        // 0x180D (or a name) but does not expose the standard Heart Rate
+        // Measurement characteristic is not a standard heart rate sensor. Fail
+        // validation with a clear, non-crash error state — never a throw.
+        val hrMeasurementExposed = services == null || exposesCharacteristic(
+            services,
+            BleConstants.Hrm.HR_SERVICE_UUID,
+            BleConstants.Hrm.HR_MEASUREMENT_UUID,
+        )
+        if (!hrMeasurementExposed) {
+            updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.ABSENT) }
+            log.w { "Connected device does not expose the standard Heart Rate Measurement characteristic (0x2A37)" }
+            logRepo.error(
+                eventType = LogEventType.ERROR,
+                message = "[HRM] Connected device is not a standard heart rate sensor (no Heart Rate Measurement 0x2A37)",
+                tag = "HRM",
+            )
+            _connectionState.value = ConnectionState.Error(
+                "Connected device is not a standard heart rate sensor (missing Heart Rate Measurement 0x2A37)",
+            )
+            return
+        }
 
         // 1. Request MTU 232 if supported
         try {
-            val mtu = p.requestMtuIfSupported(BleConstants.Polar.DESIRED_PMD_MTU)
-            log.i { "Polar H10 MTU negotiated: $mtu (desired: ${BleConstants.Polar.DESIRED_PMD_MTU})" }
+            val mtu = p.requestMtuIfSupported(BleConstants.PolarPmd.DESIRED_PMD_MTU)
+            log.i { "HRM MTU negotiated: $mtu (desired: ${BleConstants.PolarPmd.DESIRED_PMD_MTU})" }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.w { "MTU negotiation error: ${e.message}" }
         }
 
-        // 2. Read initial battery level (0x2A19)
-        try {
-            val batteryBytes = p.read(BleConstants.Polar.batteryLevelCharacteristic)
-            val level = parsePolarBatteryLevel(batteryBytes)
-            _batteryLevel.value = level
-            log.i { "Polar H10 battery level: $level%" }
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.w { "Could not read Polar battery level: ${e.message}" }
-        }
-
-        batteryObserveJob?.cancel()
-        batteryObserveJob = scope.launch {
+        // 2. Battery probe (0x2A19): CONFIRMED only after a successful read or
+        // notification. Probe error -> FAILED (never ABSENT). ABSENT only when
+        // authoritative enumeration proves 0x2A19 is not exposed (SD2).
+        val batteryExposed = services == null || exposesCharacteristic(
+            services,
+            BleConstants.Hrm.BATTERY_SERVICE_UUID,
+            BleConstants.Hrm.BATTERY_LEVEL_UUID,
+        )
+        if (!batteryExposed) {
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.ABSENT) }
+            log.i { "Battery Level characteristic (0x2A19) not exposed; battery capability ABSENT" }
+        } else {
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.CHECKING) }
             try {
-                p.observe(BleConstants.Polar.batteryLevelCharacteristic)
-                    .catch { e ->
-                        e.rethrowIfCancellation()
-                        log.d { "Battery notification non-fatal: ${e.message}" }
+                val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
+                val level = parseBatteryLevel(batteryBytes)
+                if (level != null) {
+                    if (isCurrentGeneration(gen)) {
+                        _batteryLevel.value = level
+                        _capabilities.value = _capabilities.value.copy(battery = HrmCapabilityState.CONFIRMED)
+                        log.i { "HRM battery level: $level%" }
                     }
-                    .collect { bytes ->
-                        if (p.state.value !is State.Connected) return@collect
-                        parsePolarBatteryLevel(bytes)?.let { level ->
-                            _batteryLevel.value = level
-                            if (level <= CRITICAL_BATTERY_PERCENTAGE) {
-                                log.w { "Polar H10 battery critical ($level%). Dropping telemetry." }
-                                _isContactDetected.value = false
-                                clearCachedTelemetry()
-                                if (_isCooldownActive.value) {
-                                    cancelCooldown()
-                                }
-                            }
-                        }
-                    }
+                } else {
+                    updateCapability(gen) { it.copy(battery = HrmCapabilityState.FAILED) }
+                    log.w { "Could not parse battery level: empty payload" }
+                }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
+                updateCapability(gen) { it.copy(battery = HrmCapabilityState.FAILED) }
+                log.w { "Could not read battery level: ${e.message}" }
+            }
+
+            batteryObserveJob?.cancel()
+            batteryObserveJob = scope.launch {
+                try {
+                    p.observe(BleConstants.Hrm.batteryLevelCharacteristic)
+                        .catch { e ->
+                            e.rethrowIfCancellation()
+                            log.d { "Battery notification non-fatal: ${e.message}" }
+                        }
+                        .collect { bytes -> handleBatteryNotification(gen, p, bytes) }
+                } catch (e: Exception) {
+                    e.rethrowIfCancellation()
+                }
             }
         }
 
-        // 3. Subscribe to HR/RR notifications (0x2A37)
-        startHrObservation(p)
+        // 3. Subscribe to HR/RR notifications (0x2A37): observation registration
+        // moves standardHr to WAITING_FIRST_SAMPLE — registration is NOT a BPM
+        // sample; the first valid measurement confirms it (SD2, T9/T10).
+        updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.CHECKING) }
+        startHrObservation(p, gen)
 
-        // 4. Pre-subscribe to PMD Control Point & Data so observers are active and shared
-        try {
-            ensurePmdSubscribed(p)
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
+        // 4. Pre-subscribe to PMD Control Point & Data so observers are active and
+        // shared. CONFIRMED only when FB005C80 is present in the discovered
+        // services AND the subscription succeeds — never inferred from device
+        // name/family (SD2/SD3).
+        val pmdExposed = services == null ||
+            services.any { it.serviceUuid == BleConstants.PolarPmd.PMD_SERVICE_UUID }
+        if (!pmdExposed) {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.ABSENT) }
+            log.i { "PMD service (FB005C80) not exposed; ECG/ACC telemetry unavailable" }
+        } else {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.CHECKING) }
+            try {
+                ensurePmdSubscribed(p, gen)
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.FAILED) }
+                log.w { "Pre-subscribing PMD non-fatal (will retry on stream start): ${e.message}" }
+            }
         }
 
         if (activeSessionId != null) {
@@ -1169,55 +1272,140 @@ class PolarH10BleManager(
         }
     }
 
-    private fun startHrObservation(p: Peripheral) {
+    /**
+     * Await authoritative service discovery for [p]. Returns `null` when service
+     * discovery is inconclusive (never populated before the timeout) — callers
+     * must treat that as UNKNOWN, not ABSENT (SD2).
+     */
+    private suspend fun awaitDiscoveredServices(p: Peripheral): List<DiscoveredService>? {
+        p.services.value?.let { return it }
+        return withTimeoutOrNull(SERVICE_DISCOVERY_TIMEOUT_MS) {
+            p.services.filterNotNull().first()
+        }
+    }
+
+    private fun exposesCharacteristic(
+        services: List<DiscoveredService>,
+        serviceUuid: Uuid,
+        characteristicUuid: Uuid,
+    ): Boolean = services.any { service ->
+        service.serviceUuid == serviceUuid &&
+            service.characteristics.any { it.characteristicUuid == characteristicUuid }
+    }
+
+    private fun startHrObservation(p: Peripheral, gen: Int) {
         hrObserveJob?.cancel()
         hrObserveJob = scope.launch {
             try {
-                log.i { "Subscribing to Polar HR & RR notifications (0x2A37)" }
+                log.i { "Subscribing to heart rate & RR notifications (0x2A37)" }
                 logRepo.info(
                     eventType = LogEventType.NOTIFICATION,
-                    message = "[HRM] Subscribed to Polar HR & RR notifications (0x2A37)",
+                    message = "[HRM] Subscribed to heart rate & RR notifications (0x2A37)",
                     tag = "HRM",
                 )
-                p.observe(BleConstants.Polar.hrMeasurementCharacteristic)
+                p.observe(
+                    BleConstants.Hrm.hrMeasurementCharacteristic,
+                    onSubscription = {
+                        // Observe-registration success = WAITING_FIRST_SAMPLE, never
+                        // CONFIRMED (an observation is not a sample — SD2, T9).
+                        updateCapability(gen) {
+                            if (it.standardHr == HrmCapabilityState.CHECKING) {
+                                it.copy(standardHr = HrmCapabilityState.WAITING_FIRST_SAMPLE)
+                            } else {
+                                it
+                            }
+                        }
+                    },
+                )
                     .catch { e ->
                         e.rethrowIfCancellation()
-                        log.e { "Polar HR observation error: ${e.message}" }
+                        log.e { "HR observation error: ${e.message}" }
+                        updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.FAILED) }
                     }
-                    .collect { data ->
-                        if (p.state.value !is State.Connected) return@collect
-                        val measurement = parsePolarHrMeasurement(data) ?: return@collect
-                        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-                            log.w { "Polar H10 strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-                            handleNoContact(measurement)
-                            return@collect
-                        }
-
-                        if (previousContactDetected != true) {
-                            previousContactDetected = true
-                            logRepo.debug(
-                                eventType = LogEventType.DIAGNOSTIC,
-                                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
-                                tag = "HRM",
-                            )
-                        }
-
-                        _isContactDetected.value = true
-                        contactLossJob?.cancel()
-                        contactLossJob = null
-                        lastValidPacketTimestampMs = monotonicClock()
-                        _hrMeasurement.value = measurement
-
-                        processRrIntervals(measurement)
-                    }
+                    .collect { data -> handleHrNotification(gen, p, data) }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
-                log.e(e) { "Failed to maintain Polar HR observation: ${e.message}" }
+                log.e(e) { "Failed to maintain HR observation: ${e.message}" }
+                updateCapability(gen) { it.copy(standardHr = HrmCapabilityState.FAILED) }
             }
         }
     }
 
-    private fun handleNoContact(measurement: PolarHrMeasurement): Unit = sessionLock.withLock {
+    /**
+     * Real 0x2A37 notification handler. Bound to the connection generation [gen]
+     * it was registered under: late callbacks from a previous connection are
+     * rejected with no state mutation and no crash (SD3, T11).
+     */
+    internal fun handleHrNotification(gen: Int, p: Peripheral, data: ByteArray) {
+        if (!isCurrentGeneration(gen)) return
+        if (p.state.value !is State.Connected) return
+        val measurement = parseHrMeasurement(data) ?: return
+        // Capability findings (SD2): a valid measurement confirms standard HR;
+        // RR is confirmed only by a measurement actually carrying RR intervals
+        // (T10/T15). Contact is the SD2 tri-state. This is metadata about what
+        // the sensor reports — the contact-safety handling below still drops all
+        // telemetry on poor contact, exactly as before.
+        if (measurement.hr > 0) {
+            updateCapability(gen) {
+                it.copy(
+                    standardHr = HrmCapabilityState.CONFIRMED,
+                    rrIntervals = if (measurement.rrIntervalsMs.isNotEmpty()) {
+                        HrmCapabilityState.CONFIRMED
+                    } else {
+                        it.rrIntervals
+                    },
+                    contact = parseContactReport(data),
+                )
+            }
+        } else {
+            updateCapability(gen) { it.copy(contact = parseContactReport(data)) }
+        }
+        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
+            handleNoContact(measurement)
+            return
+        }
+
+        if (previousContactDetected != true) {
+            previousContactDetected = true
+            logRepo.debug(
+                eventType = LogEventType.DIAGNOSTIC,
+                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
+                tag = "HRM",
+            )
+        }
+
+        _isContactDetected.value = true
+        contactLossJob?.cancel()
+        contactLossJob = null
+        lastValidPacketTimestampMs = monotonicClock()
+        _hrMeasurement.value = measurement
+
+        processRrIntervals(measurement)
+    }
+
+    /**
+     * Real 0x2A19 notification handler. Bound to the connection generation [gen]
+     * (SD3). A successful notification CONFIRMs the battery capability (SD2).
+     */
+    internal fun handleBatteryNotification(gen: Int, p: Peripheral, data: ByteArray) {
+        if (!isCurrentGeneration(gen)) return
+        if (p.state.value !is State.Connected) return
+        parseBatteryLevel(data)?.let { level ->
+            _batteryLevel.value = level
+            updateCapability(gen) { it.copy(battery = HrmCapabilityState.CONFIRMED) }
+            if (level <= CRITICAL_BATTERY_PERCENTAGE) {
+                log.w { "HRM battery critical ($level%). Dropping telemetry." }
+                _isContactDetected.value = false
+                clearCachedTelemetry()
+                if (_isCooldownActive.value) {
+                    cancelCooldown()
+                }
+            }
+        }
+    }
+
+    private fun handleNoContact(measurement: HrMeasurement): Unit = sessionLock.withLock {
         val hadContact = previousContactDetected == true
         if (previousContactDetected != false) {
             previousContactDetected = false
@@ -1249,7 +1437,7 @@ class PolarH10BleManager(
      * eliminating packet jitter across connection intervals. Automatically re-anchors
      * if gaps or drift exceed 5 seconds.
      */
-    internal fun processRrIntervals(measurement: PolarHrMeasurement): Unit = sessionLock.withLock {
+    internal fun processRrIntervals(measurement: HrMeasurement): Unit = sessionLock.withLock {
         if (peripheral != null && peripheral?.state?.value !is State.Connected) {
             return
         }
@@ -1301,7 +1489,7 @@ class PolarH10BleManager(
         var runningTs = startingTs
         for (rr in rrs) {
             runningTs += rr.toLong()
-            val beat = PolarRrBeat(
+            val beat = RrBeat(
                 rrIntervalMs = rr,
                 timestampMs = runningTs,
                 hr = measurement.hr,
@@ -1316,7 +1504,7 @@ class PolarH10BleManager(
                     }
                     recentRrs.addLast(beat.rrIntervalMs)
                     if (recentRrs.size > 30) recentRrs.removeFirst()
-                    PolarTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                    HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
                 }
                 sessionLock.withLock {
                     bufferedBeatSamples.add(
@@ -1339,9 +1527,18 @@ class PolarH10BleManager(
         lastBeatMonotonicMs = nowMonoMs
     }
 
-    private suspend fun ensurePmdSubscribed(p: Peripheral): Boolean = pmdMutex.withLock {
+    private suspend fun ensurePmdSubscribed(p: Peripheral, gen: Int = connectionGeneration): Boolean = pmdMutex.withLock {
         if (pmdControlPointJob?.isActive == true && pmdDataJob?.isActive == true) {
             return true
+        }
+
+        // Authoritative gate (SD3): PMD controls require the real PMD service —
+        // never device name/family. A sensor without FB005C80 gets ABSENT and no
+        // subscription attempt at all.
+        val services = awaitDiscoveredServices(p)
+        if (services != null && services.none { it.serviceUuid == BleConstants.PolarPmd.PMD_SERVICE_UUID }) {
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.ABSENT) }
+            return false
         }
 
         pmdControlPointJob?.cancel()
@@ -1353,11 +1550,12 @@ class PolarH10BleManager(
         // 1. Subscribe to PMD Control Point (FB005C81)
         pmdControlPointJob = scope.launch {
             try {
-                p.observe(BleConstants.Polar.pmdControlPointCharacteristic, onSubscription = {
+                p.observe(BleConstants.PolarPmd.pmdControlPointCharacteristic, onSubscription = {
                     log.i { "PMD Control Point (FB005C81) subscribed" }
                     cpSubscribed.complete(Unit)
                 })
                     .collect { cpData ->
+                        if (!isCurrentGeneration(gen)) return@collect
                         log.d { "PMD CP response: ${cpData.size} bytes: ${cpData.joinToString { (it.toInt() and 0xFF).toString(16) }}" }
                         pmdCpResponses.tryEmit(cpData)
                     }
@@ -1377,11 +1575,12 @@ class PolarH10BleManager(
         // 2. Subscribe to PMD Data (FB005C82)
         pmdDataJob = scope.launch {
             try {
-                p.observe(BleConstants.Polar.pmdDataCharacteristic, onSubscription = {
+                p.observe(BleConstants.PolarPmd.pmdDataCharacteristic, onSubscription = {
                     log.i { "PMD Data (FB005C82) subscribed" }
                     dataSubscribed.complete(Unit)
                 })
                     .collect { data ->
+                        if (!isCurrentGeneration(gen)) return@collect
                         if (p.state.value !is State.Connected) return@collect
                         val measurement = parsePolarPmdData(data) ?: return@collect
                         processPmdMeasurement(measurement)
@@ -1405,14 +1604,18 @@ class PolarH10BleManager(
                 dataSubscribed.await()
                 true
             }
-            check(ready == true) { "Polar PMD subscription timed out" }
+            check(ready == true) { "PMD subscription timed out" }
         } catch (error: Exception) {
             pmdControlPointJob?.cancel()
             pmdDataJob?.cancel()
             pmdControlPointJob = null
             pmdDataJob = null
+            // Probe/transport failure is FAILED, never ABSENT (SD2).
+            updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.FAILED) }
             throw error
         }
+        // Service present AND subscription succeeded -> CONFIRMED (SD2).
+        updateCapability(gen) { it.copy(polarPmd = HrmCapabilityState.CONFIRMED) }
         true
     }
 
@@ -1421,7 +1624,7 @@ class PolarH10BleManager(
             return
         }
         if (!_isContactDetected.value || isBatteryCritical()) {
-            log.w { "Polar H10 PMD packet discarded: zero contact or critical battery (contact=${_isContactDetected.value}, batt=${_batteryLevel.value})" }
+            log.w { "PMD packet discarded: zero contact or critical battery (contact=${_isContactDetected.value}, batt=${_batteryLevel.value})" }
             return
         }
 
@@ -1441,7 +1644,7 @@ class PolarH10BleManager(
                     (samples.isNotEmpty() && samples.all { it == samples[0] })
                 val isRailed = samples.any { abs(it) >= ECG_RAIL_THRESHOLD_UV }
                 if (isFlatlineOrZero || isRailed) {
-                    log.w { "Polar H10 ECG flatline/railing open-circuit noise detected (flatline=$isFlatlineOrZero, railed=$isRailed). Dropping transient frame." }
+                    log.w { "ECG flatline/railing open-circuit noise detected (flatline=$isFlatlineOrZero, railed=$isRailed). Dropping transient frame." }
                     _latestEcg.value = null
                     return
                 }
@@ -1515,7 +1718,13 @@ class PolarH10BleManager(
         measurementType: Byte,
         timeoutMs: Long = 2000L,
     ): Result<Int> = pmdCommandMutex.withLock {
-        ensurePmdSubscribed(p)
+        // SD3: PMD controls require the real PMD service plus a successful
+        // subscription — never device name/family.
+        if (!ensurePmdSubscribed(p)) {
+            return Result.failure(
+                IllegalStateException("PMD service not available on this heart rate sensor"),
+            )
+        }
         // Dwell 50ms before writing to ensure Android GATT queue is clean
         delay(50L)
 
@@ -1537,7 +1746,7 @@ class PolarH10BleManager(
 
         try {
             p.write(
-                characteristic = BleConstants.Polar.pmdControlPointCharacteristic,
+                characteristic = BleConstants.PolarPmd.pmdControlPointCharacteristic,
                 data = command,
                 writeType = WriteType.WithResponse,
             )
@@ -1579,9 +1788,9 @@ class PolarH10BleManager(
      * Ensures PMD Control Point and Data notifications are active before sending command.
      */
     suspend fun startEcgStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Starting Polar H10 ECG stream" }
+            log.i { "Starting ECG stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Starting 130Hz ECG stream",
@@ -1590,12 +1799,12 @@ class PolarH10BleManager(
             hasReceivedFirstEcgPacket = false
             val status = sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_START_ECG_CMD,
+                command = BleConstants.PolarPmd.PMD_START_ECG_CMD,
                 opCode = 0x02,
                 measurementType = 0x00,
             ).getOrThrow()
             if (status != 0) {
-                return Result.failure(IllegalStateException("Polar H10 rejected ECG start: status $status"))
+                return Result.failure(IllegalStateException("Sensor rejected ECG start: status $status"))
             }
             _isEcgStreaming.value = true
 
@@ -1613,7 +1822,7 @@ class PolarH10BleManager(
                     if (activePeripheral != null && _connectionState.value is ConnectionState.Connected) {
                         sendPmdControlCommand(
                             p = activePeripheral,
-                            command = BleConstants.Polar.PMD_START_ECG_CMD,
+                            command = BleConstants.PolarPmd.PMD_START_ECG_CMD,
                             opCode = 0x02,
                             measurementType = 0x00,
                         )
@@ -1639,9 +1848,9 @@ class PolarH10BleManager(
      * Stop the ECG stream.
      */
     suspend fun stopEcgStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Stopping Polar H10 ECG stream" }
+            log.i { "Stopping ECG stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Stopping 130Hz ECG stream",
@@ -1649,10 +1858,10 @@ class PolarH10BleManager(
             )
             sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_STOP_ECG_CMD,
+                command = BleConstants.PolarPmd.PMD_STOP_ECG_CMD,
                 opCode = 0x03,
                 measurementType = 0x00,
-            ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ECG stop: status $it" } }
+            ).getOrThrow().also { check(it == 0) { "Sensor rejected ECG stop: status $it" } }
             _isEcgStreaming.value = false
             _latestEcg.value = null
             checkAndTeardownPmdObservers()
@@ -1676,9 +1885,9 @@ class PolarH10BleManager(
      * Automatically retries with ascending TLV order or 25Hz/2G fallback if range-first TLV is rejected.
      */
     suspend fun startAccStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Starting Polar H10 ACC stream" }
+            log.i { "Starting ACC stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Starting 50Hz ACC stream",
@@ -1688,7 +1897,7 @@ class PolarH10BleManager(
             // Try 1: standard command (range-first)
             var status = sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_START_ACC_CMD,
+                command = BleConstants.PolarPmd.PMD_START_ACC_CMD,
                 opCode = 0x02,
                 measurementType = 0x02,
             ).getOrThrow()
@@ -1697,7 +1906,7 @@ class PolarH10BleManager(
                 log.w { "Starting ACC with range-first TLV returned status $status. Retrying with ascending TLV (50Hz, 16-bit, 8G)..." }
                 status = sendPmdControlCommand(
                     p = p,
-                    command = BleConstants.Polar.PMD_START_ACC_ASCENDING_CMD,
+                    command = BleConstants.PolarPmd.PMD_START_ACC_ASCENDING_CMD,
                     opCode = 0x02,
                     measurementType = 0x02,
                 ).getOrThrow()
@@ -1707,20 +1916,20 @@ class PolarH10BleManager(
                 log.w { "Starting ACC with ascending TLV returned status $status. Retrying with 25Hz/2G fallback..." }
                 status = sendPmdControlCommand(
                     p = p,
-                    command = BleConstants.Polar.PMD_START_ACC_FALLBACK_25HZ_CMD,
+                    command = BleConstants.PolarPmd.PMD_START_ACC_FALLBACK_25HZ_CMD,
                     opCode = 0x02,
                     measurementType = 0x02,
                 ).getOrThrow()
             }
 
             if (status != 0) {
-                log.e { "Polar H10 rejected ACC start command with status $status" }
+                log.e { "Sensor rejected ACC start command with status $status" }
                 logRepo.error(
                     eventType = LogEventType.COMMAND_RESPONSE,
                     message = "[HRM] ACC start command rejected: status $status",
                     tag = "HRM",
                 )
-                return Result.failure(IllegalStateException("Polar H10 rejected ACC start command: status $status"))
+                return Result.failure(IllegalStateException("Sensor rejected ACC start command: status $status"))
             }
 
             _isAccStreaming.value = true
@@ -1742,9 +1951,9 @@ class PolarH10BleManager(
      * Stop the ACC stream.
      */
     suspend fun stopAccStream(): Result<Unit> {
-        val p = peripheral ?: return Result.failure(IllegalStateException("Polar H10 not connected"))
+        val p = peripheral ?: return Result.failure(IllegalStateException("HRM not connected"))
         return try {
-            log.i { "Stopping Polar H10 ACC stream" }
+            log.i { "Stopping ACC stream" }
             logRepo.info(
                 eventType = LogEventType.COMMAND_SENT,
                 message = "[HRM] Stopping 50Hz ACC stream",
@@ -1752,10 +1961,10 @@ class PolarH10BleManager(
             )
             sendPmdControlCommand(
                 p = p,
-                command = BleConstants.Polar.PMD_STOP_ACC_CMD,
+                command = BleConstants.PolarPmd.PMD_STOP_ACC_CMD,
                 opCode = 0x03,
                 measurementType = 0x02,
-            ).getOrThrow().also { check(it == 0) { "Polar H10 rejected ACC stop: status $it" } }
+            ).getOrThrow().also { check(it == 0) { "Sensor rejected ACC stop: status $it" } }
             _isAccStreaming.value = false
             _latestAcc.value = null
             accFilter.reset()
@@ -1801,7 +2010,7 @@ class PolarH10BleManager(
         }
         if (lastValidPacketTimestampMs > 0L && (currentTimestampMs - lastValidPacketTimestampMs) > 3000L) {
             if (_hrMeasurement.value != null || _latestEcg.value != null || _latestAcc.value != null || _torsoPitchDeg.value != null) {
-                log.w { "Polar H10 packet absence timeout (>3s). Clearing telemetry streams." }
+                log.w { "HRM packet absence timeout (>3s). Clearing telemetry streams." }
                 logRepo.warning(
                     eventType = LogEventType.DIAGNOSTIC,
                     message = "[HRM] Stream packet absence timeout (>3s). Clearing telemetry.",
@@ -1838,7 +2047,7 @@ class PolarH10BleManager(
     }
 
     /**
-     * Disconnect from the Polar H10 device and clean up all active telemetry streams.
+     * Disconnect from the heart rate sensor and clean up all active telemetry streams.
      */
     suspend fun disconnect() {
         _isConnected.value = false
@@ -1848,10 +2057,10 @@ class PolarH10BleManager(
 
         val p = peripheral
         if (p != null) {
-            log.i { "Disconnecting Polar H10" }
+            log.i { "Disconnecting HRM" }
             logRepo.info(
                 eventType = LogEventType.DISCONNECT,
-                message = "[HRM] Disconnecting Polar H10",
+                message = "[HRM] Disconnecting",
                 tag = "HRM",
             )
             try {
@@ -1879,6 +2088,10 @@ class PolarH10BleManager(
     }
 
     private fun cleanupSessionTelemetry() {
+        // SD3: every live reading and capability finding is connection-owned —
+        // reset on disconnect, new selection and reconnect. The generation bump
+        // rejects any late async callback still in flight from the old connection.
+        resetConnectionOwnedState()
         contactLossJob?.cancel()
         contactLossJob = null
         hrObserveJob?.cancel()
@@ -1984,8 +2197,5 @@ class PolarH10BleManager(
         }
     }
 
-    internal fun isPolarH10Advertisement(adv: Advertisement): Boolean {
-        val name = adv.name ?: return false
-        return name.equals("Polar H10", ignoreCase = true) || name.startsWith("Polar H10 ", ignoreCase = true)
-    }
+    internal fun isHrmAdvertisement(adv: Advertisement): Boolean = classifyHrmAdvertisement(adv) != null
 }

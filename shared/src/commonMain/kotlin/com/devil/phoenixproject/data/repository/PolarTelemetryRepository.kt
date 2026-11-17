@@ -1,13 +1,13 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarRecovery
 
-interface PolarTelemetryRepository {
+interface HrmTelemetryRepository {
     suspend fun saveTelemetry(
         sessionId: String,
-        beats: List<PolarBeatSample>,
+        beats: List<HrmBeatSample>,
         ecgs: List<PolarEcgSegment>,
         recovery: PolarRecovery? = null,
     )

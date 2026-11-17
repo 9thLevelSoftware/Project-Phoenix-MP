@@ -133,8 +133,8 @@ class Issue1366JustLiftExitNavigationTest {
                     single { TemplateConverter(get(), get()) }
                     viewModel { RoutineCsvViewModel(get(), get(), get()) }
                     // ActiveWorkoutScreen resolves these through Koin in production.
-                    single<com.devil.phoenixproject.data.ble.PolarH10BleManager> {
-                        com.devil.phoenixproject.data.ble.PolarH10BleManager()
+                    single<com.devil.phoenixproject.data.ble.HrmBleManager> {
+                        com.devil.phoenixproject.data.ble.HrmBleManager()
                     }
                     single<com.devil.phoenixproject.domain.voice.SafeWordDetectionManager> {
                         com.devil.phoenixproject.domain.voice.SafeWordDetectionManager(
