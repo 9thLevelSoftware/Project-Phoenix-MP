@@ -28,6 +28,12 @@ struct PhoenixAppEntry: App {
             logger.error("Koin initialization failed: \(failure)")
         }
 
+        // Garmin watch-button controls (issue #1391): register the DEDICATED Garmin
+        // callback scheme and the Connect IQ bridge. This scheme is kept strictly
+        // separate from the OAuth scheme (`com.devil.phoenixproject`, registered in
+        // Info.plist CFBundleURLTypes — that entry must stay intact).
+        GarminCompanionBridge.shared.install(urlScheme: GarminCompanionBridge.callbackUrlScheme)
+
         // Persisted-file and row-level migrations are gated by IosAppHost so
         // failures render a retryable shared screen instead of being ignored.
         // That host is only reached through ContentView, after Koin has started.
@@ -40,6 +46,15 @@ struct PhoenixAppEntry: App {
             } else {
                 KoinInitializationFailureView()
             }
+        }
+        // Garmin Connect Mobile returns device-selection results on the dedicated
+        // Garmin scheme only. Every other URL (including the OAuth scheme) is left
+        // to its own handler; the bridge re-verifies the scheme before parsing.
+        .onOpenURL { url in
+            guard url.scheme?.lowercased() == GarminCompanionBridge.callbackUrlScheme.lowercased() else {
+                return
+            }
+            GarminCompanionBridge.shared.handleDeviceSelectionCallback(url: url, sourceApplication: nil)
         }
     }
 }
