@@ -39,14 +39,13 @@ import com.devil.phoenixproject.data.ble.PolarH10BleManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.voice.SafeWordState
 import com.devil.phoenixproject.domain.voice.SafeWordUnavailableReason
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueueState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
@@ -159,22 +158,23 @@ fun ActiveWorkoutScreen(
     var showExitConfirmation by remember { mutableStateOf(false) }
     val isRoutineFlow = routineFlowState != RoutineFlowState.NotInRoutine
 
-    // PR Celebration state
-    var prCelebrationEvent by remember { mutableStateOf<PRCelebrationEvent?>(null) }
-    LaunchedEffect(Unit) {
-        viewModel.prCelebrationEvent.collect { event ->
-            prCelebrationEvent = event
-        }
-    }
-
-    // Badge Celebration state
+    // PR + badge celebration queue (Issue #1403 seam): the PR dialog shows first
+    // and earned badges stay queued behind it until the PR dialog is dismissed.
     val gamificationRepository: GamificationRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
-    var earnedBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
+    val celebrationScope = rememberCoroutineScope()
+    val celebrationQueue = remember {
+        BadgeCelebrationQueueState(
+            gamificationRepository = gamificationRepository,
+            userProfileRepository = userProfileRepository,
+            scope = celebrationScope,
+        )
+    }
     LaunchedEffect(Unit) {
-        viewModel.badgeEarnedEvents.collect { badges ->
-            earnedBadges = badges
-        }
+        celebrationQueue.collectCelebrationEvents(
+            prEvents = viewModel.prCelebrationEvent,
+            badgeEvents = viewModel.badgeEarnedEvents,
+        )
     }
 
     // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
@@ -717,7 +717,7 @@ fun ActiveWorkoutScreen(
     }
 
     // PR Celebration Dialog - shows first if both PR and badges earned
-    prCelebrationEvent?.let { event ->
+    celebrationQueue.prCelebrationEvent?.let { event ->
         PRCelebrationDialog(
             show = true,
             exerciseName = event.exerciseName,
@@ -727,23 +727,19 @@ fun ActiveWorkoutScreen(
             )} × ${event.reps} reps",
             workoutMode = event.workoutMode,
             phaseLabel = event.phaseLabel,
-            onDismiss = { prCelebrationEvent = null },
+            onDismiss = { celebrationQueue.onPrDialogDismissed() },
             onSoundTrigger = { viewModel.emitPRSound() },
         )
     }
 
     // Batched Badge Celebration Dialog - only shows when PR dialog is not showing (queued)
     // This prevents both dialogs from stacking and multiple sounds playing at once
-    if (earnedBadges.isNotEmpty() && prCelebrationEvent == null) {
-        val scope = rememberCoroutineScope()
+    if (celebrationQueue.badgeDialogVisible) {
         BatchedBadgeCelebrationDialog(
-            badges = earnedBadges,
-            onDismiss = { earnedBadges = emptyList() },
+            badges = celebrationQueue.queuedBadges,
+            onDismiss = { celebrationQueue.onBadgeDialogDismissed() },
             onMarkAllCelebrated = { badgeIds ->
-                scope.launch {
-                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                    gamificationRepository.markBadgesCelebrated(badgeIds, profileId)
-                }
+                celebrationQueue.onBadgeCelebrationDismissed(badgeIds)
             },
             onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )

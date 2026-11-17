@@ -26,16 +26,19 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Issue #1403 — merge audit remediation item 3: PR-to-badge queue handoff through
- * the real screen state entry point.
+ * Issue #1403 — merge audit remediation: PRODUCER-LEVEL integration evidence for
+ * the PR-to-badge celebration handoff.
  *
- * This is INTEGRATION evidence, not a direct dialog test: it drives the real
- * [GamificationManager] event flows (the exact objects `MainViewModel` exposes and
- * `ActiveWorkoutScreen` collects to build its celebration queue), asserts the
- * PR-before-badge ordering that the screen's queue rule depends on, and pins the
- * screen wiring that routes the dialog's dismissal IDs into
- * `gamificationRepository.markBadgesCelebrated`. Direct dialog rendering/ID
- * behavior is covered separately by
+ * This test is producer-level only, NOT screen runtime coverage: it drives the
+ * real [GamificationManager] event flows (the exact objects `MainViewModel`
+ * exposes and the screen collects) and asserts the PR-before-badge emission
+ * order the screen's queue rule depends on. It does not execute
+ * `ActiveWorkoutScreen`'s collectors or state gating, dismiss either dialog, or
+ * verify persistence through a screen callback. Screen-consumer behavior — queue
+ * gating, PR-dismissal handoff, invalid-metrics deferral, and dismissal
+ * persistence — is covered by [Issue1403BadgeQueueScreenConsumerTest], which
+ * drives the production-used [BadgeCelebrationQueueState] seam. Direct dialog
+ * rendering/ID behavior is covered by
  * [Issue1403BadgeDialogUnboundedWidthRuntimeTest].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,7 +61,7 @@ class Issue1403PrToBadgeHandoffIntegrationTest {
     }
 
     @Test
-    fun prEventPrecedesBadgeQueue_atTheRealScreenStateEntryPoint() = runTest {
+    fun prEventPrecedesBadgeQueue_atTheManagerFlowProducerLevel() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val manager = GamificationManager(
@@ -80,9 +83,10 @@ class Issue1403PrToBadgeHandoffIntegrationTest {
                 ),
             )
 
-            // One ordered event log across both flows — the screen collects both
-            // and its queue rule (PR dialog first, badges queued behind it) depends
-            // on the PR event arriving before the badge batch.
+            // One ordered event log across both producer flows. The screen's
+            // queue rule (PR dialog first, badges queued behind it) DEPENDS on
+            // the PR event being emitted before the badge batch; this test pins
+            // that producer-side ordering only.
             val ordered = mutableListOf<String>()
             val badgeIds = mutableListOf<List<String>>()
             val prJob = launch { manager.prCelebrationEvent.collect { ordered += "pr" } }
@@ -105,19 +109,19 @@ class Issue1403PrToBadgeHandoffIntegrationTest {
             )
             advanceUntilIdle()
 
-            assertTrue(ordered.isNotEmpty(), "the entry point must emit celebration events")
+            assertTrue(ordered.isNotEmpty(), "the manager must emit celebration events")
             val prIndex = ordered.indexOf("pr")
             val badgesIndex = ordered.indexOf("badges")
-            assertTrue(prIndex >= 0, "a PR event must reach the screen's PR queue")
-            assertTrue(badgesIndex >= 0, "a badge batch must reach the screen's badge queue")
+            assertTrue(prIndex >= 0, "a PR event must be emitted on the PR celebration flow")
+            assertTrue(badgesIndex >= 0, "a badge batch must be emitted on the badge earned flow")
             assertTrue(
                 prIndex < badgesIndex,
-                "PR must be queued before badges so the screen shows the PR dialog first " +
-                    "(ordered=$ordered)",
+                "the producer must emit the PR event before the badge batch so the " +
+                    "screen's queue rule can show the PR dialog first (ordered=$ordered)",
             )
             assertTrue(
                 badgeIds == listOf(listOf(badge.id)),
-                "the badge queue must carry the exact celebration IDs, got $badgeIds",
+                "the badge flow must carry the exact celebration IDs, got $badgeIds",
             )
 
             prJob.cancel()
@@ -127,38 +131,63 @@ class Issue1403PrToBadgeHandoffIntegrationTest {
         }
     }
 
+    /**
+     * Static source pin — NOT runtime coverage. After the Issue #1403 seam
+     * extraction, the queue gating and dismissal-to-persistence wiring live in
+     * [BadgeCelebrationQueueState]; this asserts only that the production source
+     * declares that wiring and that the screen delegates to the seam. Runtime
+     * screen-consumer behavior is covered by
+     * [Issue1403BadgeQueueScreenConsumerTest].
+     */
     @Test
     fun screenWiring_routesDismissalIdsToCelebrationPersistence() {
+        val seam = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/BadgeCelebrationQueueState.kt",
+        )
+        assertNotNull(seam, "Could not read BadgeCelebrationQueueState.kt for the handoff wiring check.")
+        val seamSrc = seam!!
+
+        val prCollectIdx = seamSrc.indexOf("prEvents.collect")
+        val badgeCollectIdx = seamSrc.indexOf("badgeEvents.collect")
+        val gateIdx = seamSrc.indexOf("queuedBadges.isNotEmpty() && prCelebrationEvent == null")
+        val persistIdx = seamSrc.indexOf("gamificationRepository.markBadgesCelebrated(badgeIds, profileId)")
+
+        assertTrue(prCollectIdx >= 0, "the seam must collect the PR celebration flow")
+        assertTrue(badgeCollectIdx >= 0, "the seam must collect the badge earned flow")
+        assertTrue(
+            gateIdx >= 0,
+            "the badge dialog must be gated behind the PR event (badges stay queued while a PR celebration is showing)",
+        )
+        assertTrue(
+            persistIdx > gateIdx,
+            "the dismissal IDs must route to markBadgesCelebrated(badgeIds, profileId)",
+        )
+
         val screen = readProjectFile(
             "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt",
         )
-        assertNotNull(screen, "Could not read ActiveWorkoutScreen.kt for the handoff wiring check.")
-        val src = screen!!
+        assertNotNull(screen, "Could not read ActiveWorkoutScreen.kt for the seam wiring check.")
+        val screenSrc = screen!!
 
-        val prCollectIdx = src.indexOf("viewModel.prCelebrationEvent.collect")
-        val badgeCollectIdx = src.indexOf("viewModel.badgeEarnedEvents.collect")
-        val gateIdx = src.indexOf("if (earnedBadges.isNotEmpty() && prCelebrationEvent == null)")
-        val dialogIdx = src.indexOf("BatchedBadgeCelebrationDialog(")
-        val callbackIdx = src.indexOf("onMarkAllCelebrated = { badgeIds ->")
-        val persistIdx = src.indexOf("gamificationRepository.markBadgesCelebrated(badgeIds, profileId)")
-
-        assertTrue(prCollectIdx >= 0, "the screen must collect the PR celebration flow")
-        assertTrue(badgeCollectIdx >= 0, "the screen must collect the badge earned flow")
         assertTrue(
-            gateIdx > badgeCollectIdx,
-            "the badge queue must be gated after collection",
+            screenSrc.contains("BadgeCelebrationQueueState("),
+            "the screen must construct the celebration queue seam",
         )
         assertTrue(
-            src.contains("prCelebrationEvent == null"),
-            "badges must stay queued while a PR celebration is showing (PR-to-badge order)",
+            screenSrc.contains("celebrationQueue.collectCelebrationEvents("),
+            "the screen must feed the seam the manager celebration flows",
         )
         assertTrue(
-            dialogIdx > gateIdx,
-            "the batched dialog must be gated behind the queue rule",
+            screenSrc.contains("celebrationQueue.badgeDialogVisible"),
+            "the screen must gate the badge dialog on the seam state",
         )
         assertTrue(
-            callbackIdx > dialogIdx && persistIdx > callbackIdx,
-            "the dialog's dismissal IDs must route to markBadgesCelebrated(badgeIds, profileId)",
+            screenSrc.contains("celebrationQueue.onPrDialogDismissed()"),
+            "the screen must route PR dialog dismissal into the seam",
+        )
+        assertTrue(
+            screenSrc.contains("celebrationQueue.onBadgeCelebrationDismissed(badgeIds)"),
+            "the screen must route the dialog's dismissal IDs into the seam's persistence handoff",
         )
     }
 }

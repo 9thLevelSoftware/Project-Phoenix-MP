@@ -59,7 +59,11 @@ import org.robolectric.annotation.GraphicsMode
  * usePlatformDefaultWidth = false), and CMP 1.12.2 rememberColumnWidthSums threw
  * "LazyVerticalGrid's width should be bound by parent." (EXC_CRASH SIGABRT).
  *
- * Coverage (merge audit remediation items 1, 3 and 4):
+ * Coverage (merge audit remediation items 1, 3 and 4) — COMPONENT-LEVEL dialog
+ * coverage only, not screen runtime coverage: it exercises the badge dialog
+ * composable and its layout-budget seam, not ActiveWorkoutScreen's queue
+ * state/gating or the PR-to-badge handoff (covered by
+ * [Issue1403BadgeQueueScreenConsumerTest]):
  * - [unboundedWidth_productionContentRendersWithoutTermination] composes the ACTUAL
  *   production dialog content under the same unbounded outer width.
  * - [unboundedWidth_missingBoundStillFailsAsExpected] is the harness-sensitivity
