@@ -4,21 +4,20 @@ package com.devil.phoenixproject.testutil
 
 import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
 
 /**
  * iOS test implementation of [readProjectFile]. Resolves the project root from
- * (in order) the `PWD`, `SRCROOT` and `PROJECT_DIR` environment variables (the
- * Kotlin/Native test runner's CWD is not the project root on the simulator), then
- * walks up from the current working directory looking for either `shared/<path>`
- * or `<path>` (when a `.git` / `settings.gradle.kts` marker is hit) and returns
+ * the test bundle's own path (the Kotlin/Native test runner's CWD is not the
+ * project root on the simulator, but it runs the test binary straight from the
+ * project build tree), then walks up looking for either `shared/<path>` or
+ * `<path>` (when a `.git` / `settings.gradle.kts` marker is hit) and returns
  * the file's text, or null if the file cannot be located.
  *
  * The Xcode test runner's working directory may differ between local runs and
- * CI; the env candidates plus the up-walk make this robust without changing the
+ * CI; the bundle-anchored up-walk makes this robust without changing the
  * test's public API. Merge audit item 5: the previous CWD-only up-walk made
  * source-contract tests fail on iosSimulatorArm64Test runs.
  */
@@ -35,9 +34,9 @@ actual fun readProjectFile(relativePath: String): String? {
         listOf(relativePath, phoneSourcePath)
     }
 
-    // Build the candidate list: env-provided roots, the test bundle's own path
-    // (the simulator runs the test binary straight from the project build tree,
-    // so its executable/bundle path anchors the project root), cwd, then parents.
+    // Build the candidate list: the test bundle's own path (the simulator runs
+    // the test binary straight from the project build tree, so its
+    // executable/bundle path anchors the project root), cwd, then parents.
     val candidates = mutableListOf<String>()
     val bundle = NSBundle.mainBundle
     val bundleRoots = listOf(
@@ -45,10 +44,7 @@ actual fun readProjectFile(relativePath: String): String? {
         bundle.executablePath?.substringBeforeLast('/'),
         bundle.resourcePath,
     ).filterNotNull()
-    val envRoots = listOf("PWD", "SRCROOT", "PROJECT_DIR").mapNotNull { envName ->
-        NSProcessInfo.processInfo.environment[envName]?.toString()
-    }
-    val roots: List<String> = envRoots + bundleRoots + listOf(cwd)
+    val roots: List<String> = bundleRoots + listOf(cwd)
     roots.forEach { root ->
         sourcePaths.forEach { candidates.add("$root/$it") }
         sourcePaths.forEach { candidates.add("$root/shared/$it") }
