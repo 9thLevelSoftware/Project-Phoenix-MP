@@ -5,7 +5,7 @@ import com.devil.phoenixproject.data.integration.intervals.IntervalsCompletionCa
 import com.devil.phoenixproject.data.integration.intervals.IntervalsLocalKind
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
-import com.devil.phoenixproject.domain.model.PolarBeatSample
+import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.PolarMetricSample
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -313,7 +313,7 @@ interface WorkoutRepository {
     suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String>
 
     /** Historical Polar beat samples for a session. */
-    suspend fun getPolarBeatSamplesBySession(sessionId: String): List<PolarBeatSample>
+    suspend fun getPolarBeatSamplesBySession(sessionId: String): List<HrmBeatSample>
 
     /** Historical Polar ECG segments for a session. */
     suspend fun getPolarEcgSegmentsBySession(sessionId: String): List<PolarEcgSegment>

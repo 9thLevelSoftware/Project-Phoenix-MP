@@ -126,7 +126,7 @@ actual val platformModule: Module = module {
             machineSafetyCoordinator = get(),
             profileRecoveryActivityTracker = get(),
             recentJustLiftExerciseStore = get(),
-            polarBleManager = getOrNull(),
+            hrmBleManager = getOrNull(),
             // Issue #1384 (packet P3): real completion finalizer (symmetric with iOS).
             completionFinalizer = get(),
         )

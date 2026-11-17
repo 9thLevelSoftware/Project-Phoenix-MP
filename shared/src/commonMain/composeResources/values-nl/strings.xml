@@ -866,4 +866,10 @@
     <string name="intervals_reason_no_remote_match">Geen overeenkomende activiteit gevonden</string>
     <string name="intervals_reason_multiple_remote_matches">Meer dan één overeenkomende activiteit gevonden</string>
     <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>
+    <!-- Issue #1360: rest-control rejection feedback. -->
+    <string name="rest_control_not_resting">De rusttimer is nu niet actief.</string>
+    <string name="rest_control_stale_owner">Deze rust is gewijzigd voordat de wijziging is toegepast.</string>
+    <string name="rest_control_authority_failed">De huidige rust kon niet worden bevestigd. De wijziging is niet toegepast.</string>
+    <string name="rest_control_persistence_failed">De wijziging aan de rust kon niet worden opgeslagen. Je kunt het opnieuw proberen.</string>
+    <string name="rest_control_post_write_drift">De rust is gewijzigd tijdens het opslaan. De wijziging is mogelijk niet toegepast.</string>
 </resources>

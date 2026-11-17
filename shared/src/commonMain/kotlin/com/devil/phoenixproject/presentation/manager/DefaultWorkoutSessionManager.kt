@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
@@ -266,7 +266,7 @@ class DefaultWorkoutSessionManager(
     private val scope: CoroutineScope,
     private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
-    private val polarBleManager: PolarH10BleManager? = null,
+    private val hrmBleManager: HrmBleManager? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
@@ -440,7 +440,7 @@ class DefaultWorkoutSessionManager(
         healthExportCursorRepository = healthExportCursorRepository,
         elapsedRealtimeProvider = elapsedRealtimeProvider,
         wallClockMillisProvider = wallClockMillisProvider,
-        polarBleManager = polarBleManager,
+        hrmBleManager = hrmBleManager,
         completionFinalizer = completionFinalizer,
     )
 
@@ -526,31 +526,31 @@ class DefaultWorkoutSessionManager(
             }
         }
 
-        if (polarBleManager != null) {
+        if (hrmBleManager != null) {
             scope.launch {
                 try {
                     coordinator.workoutState.collect { state ->
                         when (state) {
                             is WorkoutState.Resting -> {
-                                polarBleManager.updateSessionPhase("REST")
+                                hrmBleManager.updateSessionPhase("REST")
                             }
                             is WorkoutState.Active -> {
                                 val repCount = coordinator.repCount.value
                                 val phase = if (repCount.warmupReps > 0 && !repCount.isWarmupComplete) "WARMUP" else "WORKING_SET"
-                                polarBleManager.updateSessionPhase(phase)
+                                hrmBleManager.updateSessionPhase(phase)
                             }
                             is WorkoutState.Completed, WorkoutState.RoutineComplete -> {
-                                if (polarBleManager.isConnected.value) {
-                                    polarBleManager.endSessionRecording()
+                                if (hrmBleManager.isConnected.value) {
+                                    hrmBleManager.endSessionRecording()
                                 }
                             }
                             is WorkoutState.SetSummary -> {
-                                polarBleManager.updateSessionPhase("REST")
+                                hrmBleManager.updateSessionPhase("REST")
                             }
                             is WorkoutState.Idle -> {
-                                if (!polarBleManager.isCooldownActive.value &&
+                                if (!hrmBleManager.isCooldownActive.value &&
                                     coordinator.routineFlowState.value !is RoutineFlowState.Complete) {
-                                    polarBleManager.discardActiveRecording()
+                                    hrmBleManager.discardActiveRecording()
                                 }
                             }
                             else -> {}
@@ -566,8 +566,8 @@ class DefaultWorkoutSessionManager(
                 try {
                     coordinator.routineFlowState.collect { flowState ->
                         if (flowState is RoutineFlowState.Complete) {
-                            if (polarBleManager.isConnected.value) {
-                                polarBleManager.endSessionRecording()
+                            if (hrmBleManager.isConnected.value) {
+                                hrmBleManager.endSessionRecording()
                             }
                         }
                     }

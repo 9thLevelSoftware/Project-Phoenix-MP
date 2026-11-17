@@ -35,23 +35,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.ble.PolarH10BleManager
+import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.voice.SafeWordState
 import com.devil.phoenixproject.domain.voice.SafeWordUnavailableReason
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueueState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
-import com.devil.phoenixproject.presentation.components.PolarH10WorkoutStrip
+import com.devil.phoenixproject.presentation.components.HrmWorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.RestControlFeedback
 import com.devil.phoenixproject.presentation.navigation.JustLiftExitContext
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.exitToJustLift
@@ -71,6 +71,11 @@ import projectphoenix.shared.generated.resources.action_exit
 import projectphoenix.shared.generated.resources.end_workout
 import projectphoenix.shared.generated.resources.exit_workout_message
 import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.rest_control_authority_failed
+import projectphoenix.shared.generated.resources.rest_control_not_resting
+import projectphoenix.shared.generated.resources.rest_control_persistence_failed
+import projectphoenix.shared.generated.resources.rest_control_post_write_drift
+import projectphoenix.shared.generated.resources.rest_control_stale_owner
 import projectphoenix.shared.generated.resources.skip_exercise
 import projectphoenix.shared.generated.resources.stop_current_set_message
 import projectphoenix.shared.generated.resources.stop_current_set_title
@@ -97,7 +102,7 @@ fun ActiveWorkoutScreen(
     exerciseRepository: ExerciseRepository,
     /** Issue #1366: id of the NavBackStackEntry hosting this screen (from NavGraph). */
     backStackEntryId: String,
-    polarBleManager: PolarH10BleManager = koinInject(),
+    hrmBleManager: HrmBleManager = koinInject(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
@@ -132,8 +137,8 @@ fun ActiveWorkoutScreen(
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
     val isRestPaused by viewModel.isRestPaused.collectAsState()
-    val isPolarCooldownActive by polarBleManager.isCooldownActive.collectAsState()
-    val activePolarCooldownSessionId by polarBleManager.activeCooldownSessionId.collectAsState()
+    val isPolarCooldownActive by hrmBleManager.isCooldownActive.collectAsState()
+    val activePolarCooldownSessionId by hrmBleManager.activeCooldownSessionId.collectAsState()
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     // Issue #113: Just Lift visual rest countdown
@@ -153,22 +158,23 @@ fun ActiveWorkoutScreen(
     var showExitConfirmation by remember { mutableStateOf(false) }
     val isRoutineFlow = routineFlowState != RoutineFlowState.NotInRoutine
 
-    // PR Celebration state
-    var prCelebrationEvent by remember { mutableStateOf<PRCelebrationEvent?>(null) }
-    LaunchedEffect(Unit) {
-        viewModel.prCelebrationEvent.collect { event ->
-            prCelebrationEvent = event
-        }
-    }
-
-    // Badge Celebration state
+    // PR + badge celebration queue (Issue #1403 seam): the PR dialog shows first
+    // and earned badges stay queued behind it until the PR dialog is dismissed.
     val gamificationRepository: GamificationRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
-    var earnedBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
+    val celebrationScope = rememberCoroutineScope()
+    val celebrationQueue = remember {
+        BadgeCelebrationQueueState(
+            gamificationRepository = gamificationRepository,
+            userProfileRepository = userProfileRepository,
+            scope = celebrationScope,
+        )
+    }
     LaunchedEffect(Unit) {
-        viewModel.badgeEarnedEvents.collect { badges ->
-            earnedBadges = badges
-        }
+        celebrationQueue.collectCelebrationEvents(
+            prEvents = viewModel.prCelebrationEvent,
+            badgeEvents = viewModel.badgeEarnedEvents,
+        )
     }
 
     // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
@@ -204,9 +210,12 @@ fun ActiveWorkoutScreen(
 
     LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
+            // Issue #1360: localize rest-control rejection feedback emitted on the coordinator
+            // feedback plumbing; unknown manager messages pass through unchanged.
+            val displayMessage = restControlFeedbackMessageResource(message)?.let { getString(it) } ?: message
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(
-                    message = message,
+                    message = displayMessage,
                     duration = SnackbarDuration.Short,
                 )
             }
@@ -558,8 +567,8 @@ fun ActiveWorkoutScreen(
                 )
             }
 
-            // Polar H10 Live Telemetry Strip (visible when connected)
-            PolarH10WorkoutStrip(polarBleManager = viewModel.polarBleManager)
+            // HRM Live Telemetry Strip (visible when connected)
+            HrmWorkoutStrip(hrmBleManager = viewModel.hrmBleManager)
 
             WorkoutTab(
                 state = workoutUiState,
@@ -571,7 +580,7 @@ fun ActiveWorkoutScreen(
                 personalRecordRepository = viewModel.personalRecordRepository,
                 userPreferences = userPreferences,
                 customEquipmentOverlay = customEquipmentOverlay,
-                polarBleManager = viewModel.polarBleManager,
+                hrmBleManager = viewModel.hrmBleManager,
                 workoutRepository = viewModel.workoutRepository,
             )
         }
@@ -708,7 +717,7 @@ fun ActiveWorkoutScreen(
     }
 
     // PR Celebration Dialog - shows first if both PR and badges earned
-    prCelebrationEvent?.let { event ->
+    celebrationQueue.prCelebrationEvent?.let { event ->
         PRCelebrationDialog(
             show = true,
             exerciseName = event.exerciseName,
@@ -718,23 +727,19 @@ fun ActiveWorkoutScreen(
             )} × ${event.reps} reps",
             workoutMode = event.workoutMode,
             phaseLabel = event.phaseLabel,
-            onDismiss = { prCelebrationEvent = null },
+            onDismiss = { celebrationQueue.onPrDialogDismissed() },
             onSoundTrigger = { viewModel.emitPRSound() },
         )
     }
 
     // Batched Badge Celebration Dialog - only shows when PR dialog is not showing (queued)
     // This prevents both dialogs from stacking and multiple sounds playing at once
-    if (earnedBadges.isNotEmpty() && prCelebrationEvent == null) {
-        val scope = rememberCoroutineScope()
+    if (celebrationQueue.badgeDialogVisible) {
         BatchedBadgeCelebrationDialog(
-            badges = earnedBadges,
-            onDismiss = { earnedBadges = emptyList() },
+            badges = celebrationQueue.queuedBadges,
+            onDismiss = { celebrationQueue.onBadgeDialogDismissed() },
             onMarkAllCelebrated = { badgeIds ->
-                scope.launch {
-                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                    gamificationRepository.markBadgesCelebrated(badgeIds, profileId)
-                }
+                celebrationQueue.onBadgeCelebrationDismissed(badgeIds)
             },
             onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )
@@ -773,4 +778,18 @@ private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this)
     SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
     SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
     SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
+}
+
+/**
+ * Issue #1360: map rest-control rejection feedback (the canonical English wire text emitted on
+ * the coordinator user-feedback plumbing) to localized string resources. Unknown messages pass
+ * through unchanged so legacy manager feedback is unaffected.
+ */
+private fun restControlFeedbackMessageResource(message: String): StringResource? = when (message) {
+    RestControlFeedback.NOT_RESTING -> Res.string.rest_control_not_resting
+    RestControlFeedback.STALE_OWNER -> Res.string.rest_control_stale_owner
+    RestControlFeedback.AUTHORITY_FAILED -> Res.string.rest_control_authority_failed
+    RestControlFeedback.PERSISTENCE_FAILED -> Res.string.rest_control_persistence_failed
+    RestControlFeedback.POST_WRITE_DRIFT -> Res.string.rest_control_post_write_drift
+    else -> null
 }

@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.ble
 
-import com.devil.phoenixproject.domain.model.PolarAccSample
+import com.devil.phoenixproject.domain.model.AccSample
 import com.devil.phoenixproject.domain.model.PolarPmdMeasurement
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,19 +15,19 @@ class PolarProtocolParserTest {
     // ==================== Heart Rate (0x2A37) Tests ====================
 
     @Test
-    fun `parsePolarHrMeasurement returns null for empty or truncated payload`() {
-        assertNull(parsePolarHrMeasurement(byteArrayOf()))
+    fun `parseHrMeasurement returns null for empty or truncated payload`() {
+        assertNull(parseHrMeasurement(byteArrayOf()))
         // Flag claims 16-bit HR (bit 0 = 1), but payload is only 2 bytes total
-        assertNull(parsePolarHrMeasurement(byteArrayOf(0x01, 0x48)))
+        assertNull(parseHrMeasurement(byteArrayOf(0x01, 0x48)))
         // Flag claims energy present (bit 3 = 1), but energy bytes missing
-        assertNull(parsePolarHrMeasurement(byteArrayOf(0x08, 0x48)))
+        assertNull(parseHrMeasurement(byteArrayOf(0x08, 0x48)))
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses basic 8-bit HR with contact detected`() {
+    fun `parseHrMeasurement parses basic 8-bit HR with contact detected`() {
         // Flags: 0x06 (bit 1=1, bit 2=1 -> contact detected), HR: 72 bpm
         val data = byteArrayOf(0x06, 72)
-        val result = parsePolarHrMeasurement(data)
+        val result = parseHrMeasurement(data)
 
         assertNotNull(result)
         assertEquals(72, result.hr)
@@ -37,39 +37,39 @@ class PolarProtocolParserTest {
     }
 
     @Test
-    fun `parsePolarHrMeasurement handles contact status correctly`() {
+    fun `parseHrMeasurement handles contact status correctly`() {
         // Flags: 0x04 (contact supported but NOT detected -> bits 1..2 = 2)
-        val notDetected = parsePolarHrMeasurement(byteArrayOf(0x04, 60))
+        val notDetected = parseHrMeasurement(byteArrayOf(0x04, 60))
         assertNotNull(notDetected)
         assertFalse(notDetected.contactDetected)
 
         // Flags: 0x00 (contact not supported -> bits 1..2 = 0, but hr = 60 > 0 -> contact OK)
-        val notSupportedWithHr = parsePolarHrMeasurement(byteArrayOf(0x00, 60))
+        val notSupportedWithHr = parseHrMeasurement(byteArrayOf(0x00, 60))
         assertNotNull(notSupportedWithHr)
         assertTrue(notSupportedWithHr.contactDetected)
 
         // Flags: 0x00 (contact not supported, hr = 0 -> contact false)
-        val notSupportedZeroHr = parsePolarHrMeasurement(byteArrayOf(0x00, 0))
+        val notSupportedZeroHr = parseHrMeasurement(byteArrayOf(0x00, 0))
         assertNotNull(notSupportedZeroHr)
         assertFalse(notSupportedZeroHr.contactDetected)
 
         // Flags: 0x02 (contact not supported -> bits 1..2 = 1, hr = 75 > 0 -> contact OK)
-        val altNotSupportedWithHr = parsePolarHrMeasurement(byteArrayOf(0x02, 75))
+        val altNotSupportedWithHr = parseHrMeasurement(byteArrayOf(0x02, 75))
         assertNotNull(altNotSupportedWithHr)
         assertTrue(altNotSupportedWithHr.contactDetected)
 
         // Flags: 0x06 (contact supported and detected -> bits 1..2 = 3)
-        val detected = parsePolarHrMeasurement(byteArrayOf(0x06, 60))
+        val detected = parseHrMeasurement(byteArrayOf(0x06, 60))
         assertNotNull(detected)
         assertTrue(detected.contactDetected)
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses 16-bit HR`() {
+    fun `parseHrMeasurement parses 16-bit HR`() {
         // Flags: 0x01 (16-bit HR format) | 0x06 (contact detected) = 0x07
         // HR: 280 bpm (0x0118 -> LE [0x18, 0x01])
         val data = byteArrayOf(0x07, 0x18, 0x01)
-        val result = parsePolarHrMeasurement(data)
+        val result = parseHrMeasurement(data)
 
         assertNotNull(result)
         assertEquals(280, result.hr)
@@ -77,11 +77,11 @@ class PolarProtocolParserTest {
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses energy expended`() {
+    fun `parseHrMeasurement parses energy expended`() {
         // Flags: 0x08 (energy present) | 0x06 (contact detected) = 0x0E
         // HR: 80 bpm, Energy: 1500 kJ (0x05DC -> LE [0xDC, 0x05])
         val data = byteArrayOf(0x0E, 80, 0xDC.toByte(), 0x05)
-        val result = parsePolarHrMeasurement(data)
+        val result = parseHrMeasurement(data)
 
         assertNotNull(result)
         assertEquals(80, result.hr)
@@ -90,7 +90,7 @@ class PolarProtocolParserTest {
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses RR intervals accurately in milliseconds`() {
+    fun `parseHrMeasurement parses RR intervals accurately in milliseconds`() {
         // Flags: 0x10 (RR present) | 0x06 (contact detected) = 0x16
         // HR: 60 bpm
         // RR 1: 1024 raw units = exactly 1000.0 ms (0x0400 -> LE [0x00, 0x04])
@@ -101,7 +101,7 @@ class PolarProtocolParserTest {
             0x00, 0x04,
             0x33, 0x03,
         )
-        val result = parsePolarHrMeasurement(data)
+        val result = parseHrMeasurement(data)
 
         assertNotNull(result)
         assertEquals(60, result.hr)
@@ -111,7 +111,7 @@ class PolarProtocolParserTest {
     }
 
     @Test
-    fun `parsePolarHrMeasurement parses complete packet with 16-bit HR and energy and multiple RR intervals`() {
+    fun `parseHrMeasurement parses complete packet with 16-bit HR and energy and multiple RR intervals`() {
         // Flags: 0x01 (16-bit HR) | 0x06 (contact detected) | 0x08 (energy) | 0x10 (RR) = 0x1F
         // HR: 120 bpm (0x0078 -> [0x78, 0x00])
         // Energy: 250 kJ (0x00FA -> [0xFA, 0x00])
@@ -122,7 +122,7 @@ class PolarProtocolParserTest {
             0xFA.toByte(), 0x00,
             0x00, 0x02,
         )
-        val result = parsePolarHrMeasurement(data)
+        val result = parseHrMeasurement(data)
 
         assertNotNull(result)
         assertEquals(120, result.hr)
@@ -135,13 +135,13 @@ class PolarProtocolParserTest {
     // ==================== Battery Level (0x2A19) Tests ====================
 
     @Test
-    fun `parsePolarBatteryLevel parses valid percentage`() {
-        assertNull(parsePolarBatteryLevel(byteArrayOf()))
-        assertEquals(100, parsePolarBatteryLevel(byteArrayOf(100)))
-        assertEquals(85, parsePolarBatteryLevel(byteArrayOf(85)))
-        assertEquals(0, parsePolarBatteryLevel(byteArrayOf(0)))
+    fun `parseBatteryLevel parses valid percentage`() {
+        assertNull(parseBatteryLevel(byteArrayOf()))
+        assertEquals(100, parseBatteryLevel(byteArrayOf(100)))
+        assertEquals(85, parseBatteryLevel(byteArrayOf(85)))
+        assertEquals(0, parseBatteryLevel(byteArrayOf(0)))
         // Clamping out-of-range values
-        assertEquals(100, parsePolarBatteryLevel(byteArrayOf(120)))
+        assertEquals(100, parseBatteryLevel(byteArrayOf(120)))
     }
 
     // ==================== Bit Unpacking & 64-bit LE Tests ====================
@@ -257,7 +257,7 @@ class PolarProtocolParserTest {
         val acc = assertIs<PolarPmdMeasurement.Acc>(result)
         assertEquals(5000L, acc.sensorTimestampNs)
         assertEquals(1, acc.samples.size)
-        assertEquals(PolarAccSample(xMg = 100, yMg = -200, zMg = 980), acc.samples[0])
+        assertEquals(AccSample(xMg = 100, yMg = -200, zMg = 980), acc.samples[0])
     }
 
     @Test
@@ -304,9 +304,9 @@ class PolarProtocolParserTest {
         assertEquals(2000L, acc.sensorTimestampNs)
         // Base sample + 2 delta samples = 3 samples total
         assertEquals(3, acc.samples.size)
-        assertEquals(PolarAccSample(1000, 0, -1000), acc.samples[0])
-        assertEquals(PolarAccSample(1005, -10, -980), acc.samples[1])
-        assertEquals(PolarAccSample(1000, 5, -1000), acc.samples[2])
+        assertEquals(AccSample(1000, 0, -1000), acc.samples[0])
+        assertEquals(AccSample(1005, -10, -980), acc.samples[1])
+        assertEquals(AccSample(1000, 5, -1000), acc.samples[2])
     }
 
     @Test
@@ -326,7 +326,7 @@ class PolarProtocolParserTest {
         assertNotNull(result)
         val acc = assertIs<PolarPmdMeasurement.Acc>(result)
         assertEquals(1, acc.samples.size)
-        assertEquals(PolarAccSample(50, 50, 50), acc.samples[0])
+        assertEquals(AccSample(50, 50, 50), acc.samples[0])
     }
 
     @Test
@@ -336,7 +336,7 @@ class PolarProtocolParserTest {
         val result = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(packet))
 
         assertEquals(
-            listOf(PolarAccSample(50, 50, 50), PolarAccSample(51, 48, 53), PolarAccSample(46, 55, 44)),
+            listOf(AccSample(50, 50, 50), AccSample(51, 48, 53), AccSample(46, 55, 44)),
             result.samples,
         )
     }
@@ -344,15 +344,15 @@ class PolarProtocolParserTest {
     @Test
     fun `compressed ACC handles reference only and empty blocks without losing later samples`() {
         val referenceOnly = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(compressedAccPacket()))
-        assertEquals(listOf(PolarAccSample(50, 50, 50)), referenceOnly.samples)
+        assertEquals(listOf(AccSample(50, 50, 50)), referenceOnly.samples)
 
         val packet = compressedAccPacket() + byteArrayOf(0, 0, 8, 0, 8, 1, 1, -1, 2)
         val result = assertIs<PolarPmdMeasurement.Acc>(parsePolarPmdData(packet))
 
         assertEquals(
             listOf(
-                PolarAccSample(50, 50, 50),
-                PolarAccSample(51, 49, 52),
+                AccSample(50, 50, 50),
+                AccSample(51, 49, 52),
             ),
             result.samples,
         )
@@ -381,7 +381,7 @@ class PolarProtocolParserTest {
             parsePolarPmdData(header + byteArrayOf(127, -128, -1, 0, 25, -25)),
         )
 
-        assertEquals(listOf(PolarAccSample(127, -128, -1), PolarAccSample(0, 25, -25)), result.samples)
+        assertEquals(listOf(AccSample(127, -128, -1), AccSample(0, 25, -25)), result.samples)
     }
 
     @Test
@@ -409,7 +409,7 @@ class PolarProtocolParserTest {
         val acc = assertIs<PolarPmdMeasurement.Acc>(result)
         assertEquals(5000L, acc.sensorTimestampNs)
         assertEquals(1, acc.samples.size)
-        assertEquals(PolarAccSample(xMg = 100, yMg = -200, zMg = 980), acc.samples[0])
+        assertEquals(AccSample(xMg = 100, yMg = -200, zMg = 980), acc.samples[0])
     }
 
     @Test
@@ -450,9 +450,9 @@ class PolarProtocolParserTest {
         val acc = assertIs<PolarPmdMeasurement.Acc>(result)
         assertEquals(2000L, acc.sensorTimestampNs)
         assertEquals(3, acc.samples.size)
-        assertEquals(PolarAccSample(1000, 0, -1000), acc.samples[0])
-        assertEquals(PolarAccSample(1005, -10, -980), acc.samples[1])
-        assertEquals(PolarAccSample(1000, 5, -1000), acc.samples[2])
+        assertEquals(AccSample(1000, 0, -1000), acc.samples[0])
+        assertEquals(AccSample(1005, -10, -980), acc.samples[1])
+        assertEquals(AccSample(1000, 5, -1000), acc.samples[2])
     }
 
     private fun compressedAccPacket(): ByteArray = ByteArray(16).apply {
