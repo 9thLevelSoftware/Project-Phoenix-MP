@@ -100,6 +100,7 @@ import com.devil.phoenixproject.domain.model.eccentricLoadLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
+import com.devil.phoenixproject.presentation.components.GarminControlsArmStrip
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -332,6 +333,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                 .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
+            // Garmin watch-controls Arm strip (issue #1391). Compact band; the workout
+            // controls, rep counter and weight readout below are unchanged.
+            GarminControlsArmStrip(modifier = Modifier.fillMaxWidth())
+
             // Pinned header: auto-start status + workout mode (never clipped by lower content)
             Card(
                 modifier = Modifier.fillMaxWidth(),
