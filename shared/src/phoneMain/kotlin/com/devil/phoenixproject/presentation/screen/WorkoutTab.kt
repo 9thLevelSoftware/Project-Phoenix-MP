@@ -588,6 +588,11 @@ fun WorkoutTab(
                                 },
                                 exerciseRepository = exerciseRepository,
                                 enableVideoPlayback = false,
+                                // Issue #1358 round-4 P1: attach follows the Exercise
+                                // Demos preference (same value already collected for
+                                // ExerciseEditBottomSheet below), decoupled from the
+                                // picker's list-thumbnail suppression above.
+                                enablePhotoAttach = enableVideoPlayback,
                             )
                         }
 
