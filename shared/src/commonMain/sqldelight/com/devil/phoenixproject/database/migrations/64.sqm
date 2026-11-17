@@ -1,0 +1,67 @@
+-- Migration 64: power-loss autostop durable companions (issue #1392, packet P4).
+-- Additive only (SQLite API-26): no DROP COLUMN, no ON CONFLICT DO UPDATE,
+-- no INSERT OR REPLACE on parents. Legacy rows keep REP semantics with NULL
+-- new metrics — missing data is NULL, never a fabricated zero. Attempt rows
+-- carry no FK to RepMetric so rep-row replacement can never cascade them away.
+-- Fresh installs get the identical shape from PhoenixDatabase.sq.
+-- Mirrors 64.sqm exactly in MigrationStatements.getMigrationStatements(64).
+
+-- 1. PowerLossSetCompanion: immutable per-set evidence, keyed by stable
+-- session id + set id (frozen config, metric version, mask provenance,
+-- reference/trigger facts, winner + both qualification facts).
+CREATE TABLE IF NOT EXISTS PowerLossSetCompanion (
+    session_id TEXT NOT NULL,
+    set_id TEXT NOT NULL,
+    metric_version INTEGER NOT NULL DEFAULT 1,
+    target_mode TEXT NOT NULL,
+    threshold_percent INTEGER NOT NULL,
+    max_working_reps INTEGER,
+    require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+    saved_nominal_reps INTEGER,
+    active_cables TEXT NOT NULL,
+    active_cable_provenance TEXT NOT NULL,
+    reference_working_ordinal INTEGER,
+    reference_mcp_watts REAL,
+    reference_rom_a_mm REAL,
+    reference_rom_b_mm REAL,
+    trigger_working_ordinal INTEGER,
+    winner_reason TEXT,
+    short_rom_observed INTEGER NOT NULL DEFAULT 0 CHECK(short_rom_observed IN (0, 1)),
+    power_loss_observed INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_observed IN (0, 1)),
+    loss_percent_at_decision REAL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, set_id),
+    FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+-- 2.
+CREATE INDEX IF NOT EXISTS idx_power_loss_set_session ON PowerLossSetCompanion(session_id);
+
+-- 3. PowerLossAttemptCompanion: one durable row per working concentric
+-- observation. Attempt-only rows (completed = 0) need no legacy RepMetric row.
+CREATE TABLE IF NOT EXISTS PowerLossAttemptCompanion (
+    session_id TEXT NOT NULL,
+    set_id TEXT NOT NULL,
+    working_concentric_ordinal INTEGER NOT NULL,
+    legacy_rep_index INTEGER,
+    completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1)),
+    mcp_watts REAL,
+    eccentric_power_watts REAL,
+    concentric_duration_ms INTEGER,
+    eccentric_duration_ms INTEGER,
+    loss_percent_at_decision REAL,
+    reference_working_ordinal INTEGER,
+    rom_a_mm REAL,
+    rom_b_mm REAL,
+    rom_a_percent_of_reference REAL,
+    rom_b_percent_of_reference REAL,
+    rom_trustworthy INTEGER NOT NULL DEFAULT 0 CHECK(rom_trustworthy IN (0, 1)),
+    quality TEXT NOT NULL DEFAULT '',
+    short_rom INTEGER NOT NULL DEFAULT 0 CHECK(short_rom IN (0, 1)),
+    power_loss_qualified INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_qualified IN (0, 1)),
+    PRIMARY KEY (session_id, working_concentric_ordinal),
+    FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+-- 4.
+CREATE INDEX IF NOT EXISTS idx_power_loss_attempt_session_set ON PowerLossAttemptCompanion(session_id, set_id);
