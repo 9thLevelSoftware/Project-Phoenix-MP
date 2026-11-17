@@ -5240,7 +5240,14 @@ class ActiveSessionEngine(
                                 event = event,
                             )
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
-                            handleSetCompletion(eventLease, SetEndReason.TARGET_REPS_REACHED)
+                            // Issue #1392 (SD4): a finite POWER plan's device WORKOUT_COMPLETE is
+                            // the mandatory max-reps backstop — never TARGET_REPS_REACHED, never
+                            // inferred fatigue. REP/legacy behavior is unchanged.
+                            val powerFinite = coordinator.powerLossRuntimeSettings.value.powerActive
+                            handleSetCompletion(
+                                eventLease,
+                                if (powerFinite) SetEndReason.MAX_REPS_BACKSTOP else SetEndReason.TARGET_REPS_REACHED,
+                            )
                         }
                     }
                 }
@@ -6704,6 +6711,14 @@ class ActiveSessionEngine(
             isWarmup = isWarmup,
             repMetrics = repMetrics,
         ) ?: return
+        // Issue #1392 (P3 → P5): publish live HUD facts; `endingSet` is the
+        // committed stop state, distinct from the completed transition (SD6).
+        coordinator.setPowerLossHud(
+            context.powerLoss.hudState(
+                completedRepCount = coordinator._repCount.value.workingReps,
+                endingSet = decision is PowerLossDecision.Stop,
+            ),
+        )
         when (decision) {
             is PowerLossDecision.Continue -> Unit
             is PowerLossDecision.NearLimitWarning -> {
@@ -9599,6 +9614,8 @@ class ActiveSessionEngine(
             taggedExerciseId = params.selectedExerciseId,
             taggedExerciseName = context.exerciseName,
             isAmrap = params.isAMRAP,
+            // Issue #1392 (P3): frozen summary facts; null when POWER was not armed.
+            powerLoss = biomechanicsContextFor(lease)?.powerLoss?.buildSummaryFacts(repCount.workingReps),
         ).deepCopyForExitSnapshot()
         val isRoutineSet = context.routineSessionId != null
         val shouldUpdateCycleProgress = shouldUpdateCycleProgressAfterSavedSet(
@@ -9616,6 +9633,13 @@ class ActiveSessionEngine(
             terminalPath = terminalPath,
             session = session,
             completedSet = completedSet,
+            // Issue #1392 (P3): deep-frozen evidence at the pre-teardown latch (SD3).
+            // Null when POWER was never armed; attempt-only identity survives via a
+            // stable execution-scoped set id when no bottom row exists (P4 contract).
+            powerLossEvidence = biomechanicsContextFor(lease)?.powerLoss?.buildEvidence(
+                sessionId = lease.sessionId,
+                setId = completedSet?.id ?: "attempt-${lease.executionId}",
+            ),
             metrics = archiveMetrics,
             repMetrics = coordinator.setRepMetrics.snapshot().map(RepMetricData::deepCopyForExitSnapshot),
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
