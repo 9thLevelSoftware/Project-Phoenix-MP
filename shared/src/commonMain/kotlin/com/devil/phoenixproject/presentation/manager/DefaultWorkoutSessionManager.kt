@@ -1568,6 +1568,14 @@ class DefaultWorkoutSessionManager(
     // ===== Issue #1391 Phase 1 (packet B1): bounded remote set-control seam =====
 
     /**
+     * Issue #1391 (packets B1/B2): canonical `executionId:sessionId` identity of the
+     * live set execution, for remote-control command anchoring. Manager-level accessor;
+     * watch-side controllers never touch the engine directly.
+     */
+    fun currentRemoteExecutionIdentityOrNull(): String? =
+        activeSessionEngine.currentExecutionLeaseOrNull()?.let(::executionIdentityOf)
+
+    /**
      * Watch-driven set control: ends the CURRENT set exactly once through the
      * EXISTING manual-completion machinery and prepares the successor WITHOUT
      * starting it, returning an honest typed receipt observed from the commit
