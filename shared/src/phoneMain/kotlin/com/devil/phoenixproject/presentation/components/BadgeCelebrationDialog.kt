@@ -27,7 +27,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -69,30 +71,40 @@ private val MAX_CARD_WIDTH = 580.dp
 private const val CONTENT_HEIGHT_FRACTION = 0.92f
 
 /**
- * Non-flexible dialog chrome reserved before budgeting the grid and details areas:
- * 24dp+24dp Column padding, 80dp trophy, 8dp+20dp+20dp spacers, 48dp dismiss button
- * and a font-scaled header allowance. Conservative so the dismiss button stays
- * inside visible bounds in short windows.
+ * Non-flexible dialog chrome reserved before budgeting the grid and details areas,
+ * EXCLUDING the decorative trophy and the font-scaled header: 24dp+24dp Column
+ * padding, 8dp trophy spacer, 20dp header spacer, 20dp pre-dismiss spacer and the
+ * 48dp dismiss button.
  */
-private val CHROME_RESERVE = 300.dp
+private val CHROME_FIXED = 144.dp
 
-/** Vertical space reserved for the expanded details area in short windows. */
+/** Decorative trophy size; shrinks first when a window is extremely short. */
+private val TROPHY_SIZE = 80.dp
+
+/** titleLarge line height in sp; the header is hard-capped at [MAX_HEADER_LINES]. */
+private const val HEADER_LINE_HEIGHT_SP = 28f
+
+/** Hard cap on header lines (ellipsized beyond) so chrome is bounded at any font scale. */
+private const val MAX_HEADER_LINES = 2
+
+/** Slack absorbing text line-height rounding when converting sp*fontScale to dp. */
+private val HEADER_ROUNDING_SLACK = 4.dp
+
+/** Vertical space the expanded details area wishes for; it scrolls locally when capped. */
 private val DETAILS_RESERVE = 140.dp
-
-/** One grid row height — the floor the grid never shrinks below. */
-private val MIN_GRID_HEIGHT = 110.dp
-
-/** Floor for the details area; it scrolls locally when capped. */
-private val MIN_DETAILS_HEIGHT = 96.dp
 
 /**
  * Finite layout budget for the batched badge dialog, computed from live window
  * metrics captured outside the unbounded dialog layer.
  *
  * `cardWidth` is the finite Card width (≈90% of inset-adjusted usable width, capped
- * at 580dp) that bounds the grid before measurement. `maxGridHeight` and
- * `maxDetailsHeight` keep the dismiss button reachable in short windows; they are
- * no-ops when the window has room (caps sit at or above the content's natural size).
+ * at 580dp) that bounds the grid before measurement. `chromeUpperBound` is the
+ * worst-case measured chrome (fixed chrome + trophy + the header's line cap at the
+ * current font scale); `maxGridHeight` and `maxDetailsHeight` split exactly the
+ * remainder of `maxContentHeight` after that chrome — no minimum floors — so
+ * `chromeUpperBound + maxGridHeight + maxDetailsHeight <= maxContentHeight` holds
+ * by construction and the dismiss button stays inside visible bounds in short
+ * windows. Both areas may shrink to zero and scroll locally.
  */
 internal data class BadgeCelebrationLayoutBudget(
     val cardWidth: Dp,
@@ -100,6 +112,11 @@ internal data class BadgeCelebrationLayoutBudget(
     val gridContentHeight: Dp,
     val maxGridHeight: Dp,
     val maxDetailsHeight: Dp,
+    val chromeUpperBound: Dp,
+    val trophySize: Dp,
+    val spacerSmall: Dp,
+    val spacerLarge: Dp,
+    val headerMaxLines: Int,
 )
 
 /**
@@ -109,7 +126,8 @@ internal data class BadgeCelebrationLayoutBudget(
  *
  * Insets are subtracted exactly once from the raw window dimensions; callers pass
  * live, raw dimensions (e.g. `LocalWindowSizeClass` widthDp/heightDp) captured
- * outside the dialog layer.
+ * outside the dialog layer, plus the current font scale so chrome is bounded for
+ * real text sizes instead of a fixed constant.
  */
 internal fun badgeCelebrationLayoutBudget(
     windowWidth: Dp,
@@ -118,6 +136,7 @@ internal fun badgeCelebrationLayoutBudget(
     verticalInsets: Dp,
     badgeCount: Int,
     detailsExpanded: Boolean,
+    fontScale: Float = 1f,
 ): BadgeCelebrationLayoutBudget? {
     // Invalid metrics defer rendering. Non-finite and NaN values must never reach
     // the grid: a NaN/Infinity bound is not a bound.
@@ -128,6 +147,7 @@ internal fun badgeCelebrationLayoutBudget(
     }
     if (windowWidth <= 0.dp || windowHeight <= 0.dp) return null
     if (horizontalInsets < 0.dp || verticalInsets < 0.dp) return null
+    if (!fontScale.isFinite() || fontScale <= 0f) return null
 
     val usableWidth = windowWidth - horizontalInsets
     val usableHeight = windowHeight - verticalInsets
@@ -139,6 +159,49 @@ internal fun badgeCelebrationLayoutBudget(
     if (!cardWidth.value.isFinite() || cardWidth <= 0.dp) return null
 
     val maxContentHeight = usableHeight * CONTENT_HEIGHT_FRACTION
+
+    // Chrome upper bound: fixed chrome + trophy + the header's worst case
+    // (MAX_HEADER_LINES lines at the current font scale). The header is hard-capped
+    // at MAX_HEADER_LINES in the layout, so this bound holds at any text wrap.
+    // Shrink order when a window is extremely short: the decorative trophy first,
+    // then decorative spacing — never the dismiss button and never text sizes.
+    val lineHeightDp = (HEADER_LINE_HEIGHT_SP * fontScale).dp
+    val worstHeader = lineHeightDp * MAX_HEADER_LINES + HEADER_ROUNDING_SLACK
+    var trophySize = TROPHY_SIZE
+    var spacerSmall = 8.dp
+    var spacerLarge = 20.dp
+    var chromeBase = CHROME_FIXED + trophySize + worstHeader
+    if (chromeBase > maxContentHeight) {
+        trophySize = (TROPHY_SIZE - (chromeBase - maxContentHeight)).coerceAtLeast(0.dp)
+        chromeBase = CHROME_FIXED + trophySize + worstHeader
+    }
+    if (chromeBase > maxContentHeight) {
+        // Spacers: 20dp+20dp -> 8dp+8dp, then 8dp -> 4dp (28dp of decorative slack).
+        val deficit = chromeBase - maxContentHeight
+        val largeCut = minOf(deficit, 12.dp)
+        val smallCut = minOf(deficit - largeCut, 4.dp)
+        spacerLarge = 20.dp - largeCut
+        spacerSmall = 8.dp - smallCut
+        chromeBase -= largeCut * 2 + smallCut
+    }
+    // Header lines are floored to what actually fits, so chrome never exceeds the
+    // budget even in the tightest windows. The layout renders at least one line
+    // (below ~120dp usable height at large font scale something must give; the
+    // card's hard height bound keeps the dialog bounded and the button in place).
+    val chromeBeforeHeader = CHROME_FIXED + trophySize + spacerSmall + spacerLarge * 2 -
+        (8.dp + 20.dp + 20.dp) + HEADER_ROUNDING_SLACK
+    val headerMaxLines = if (lineHeightDp <= 0.dp) {
+        0
+    } else {
+        ((maxContentHeight - chromeBeforeHeader) / lineHeightDp).toInt().coerceIn(0, MAX_HEADER_LINES)
+    }
+    val chromeUpperBound = chromeBeforeHeader + lineHeightDp * headerMaxLines
+
+    // Everything left after chrome is shared by the grid and the details area
+    // with NO minimum floors (merge audit F1: floors previously pushed the total
+    // past the declared budget). Each area may shrink to zero and scrolls locally,
+    // so chrome + grid + details <= maxContentHeight always holds.
+    val contentAvail = (maxContentHeight - chromeUpperBound).coerceAtLeast(0.dp)
     // Grid row height ~= 80dp (56dp icon + 16dp tier text + padding) + 12dp spacing.
     // 1 row (1-3 badges): 110dp, 2 rows (4-6 badges): 220dp, 3+ rows: 280dp with scroll.
     val gridContentHeight = when {
@@ -146,12 +209,19 @@ internal fun badgeCelebrationLayoutBudget(
         badgeCount <= 6 -> 220.dp
         else -> 280.dp
     }
-    val detailsReserve = if (detailsExpanded) DETAILS_RESERVE else 0.dp
-    val gridBudget = (maxContentHeight - CHROME_RESERVE - detailsReserve)
-        .coerceAtLeast(MIN_GRID_HEIGHT)
-    val maxGridHeight = minOf(gridContentHeight, gridBudget)
-    val maxDetailsHeight = (maxContentHeight - CHROME_RESERVE - maxGridHeight)
-        .coerceAtLeast(MIN_DETAILS_HEIGHT)
+    val maxGridHeight: Dp
+    val maxDetailsHeight: Dp
+    if (!detailsExpanded) {
+        maxGridHeight = minOf(gridContentHeight, contentAvail)
+        maxDetailsHeight = 0.dp
+    } else {
+        // The details block the user just opened gets up to half the remainder
+        // (capped at its reserve); the grid keeps the rest up to its natural rows,
+        // and any slack the grid does not use goes back to the details block.
+        val detailsFirst = minOf(DETAILS_RESERVE, contentAvail * 0.5f)
+        maxGridHeight = minOf(gridContentHeight, contentAvail - detailsFirst)
+        maxDetailsHeight = minOf(DETAILS_RESERVE, contentAvail - maxGridHeight)
+    }
 
     return BadgeCelebrationLayoutBudget(
         cardWidth = cardWidth,
@@ -159,6 +229,11 @@ internal fun badgeCelebrationLayoutBudget(
         gridContentHeight = gridContentHeight,
         maxGridHeight = maxGridHeight,
         maxDetailsHeight = maxDetailsHeight,
+        chromeUpperBound = chromeUpperBound,
+        trophySize = trophySize,
+        spacerSmall = spacerSmall,
+        spacerLarge = spacerLarge,
+        headerMaxLines = headerMaxLines,
     )
 }
 
@@ -197,6 +272,7 @@ fun BatchedBadgeCelebrationDialog(
             safeDrawing.calculateBottomPadding(),
         badgeCount = badges.size,
         detailsExpanded = selectedBadgeId != null,
+        fontScale = LocalDensity.current.fontScale,
     )
     // Invalid/zero metrics defer rendering: no dialog, no sound, and no dismissal or
     // celebration callbacks — queued badges stay queued until metrics become valid.
@@ -275,6 +351,7 @@ internal fun BatchedBadgeCelebrationDialogContent(
             // measured (≈90% usable width, capped at 580dp). Modifier.width coerces
             // into tighter parent constraints; never requiredWidth.
             .width(budget.cardWidth)
+            .testTag("badge-celebration-card")
             .scale(scale)
             .alpha(alpha),
         shape = MaterialTheme.shapes.large,
@@ -286,22 +363,27 @@ internal fun BatchedBadgeCelebrationDialogContent(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Merge audit F1: hard total bound on the actual Column. Chrome +
+                // grid + details + dismiss button can never exceed the visible
+                // budget; the budget split has no floors that could push past it.
+                .heightIn(max = budget.maxContentHeight)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Lottie trophy animation in background
+            // Lottie trophy animation in background (decorative size shrinks in
+            // extremely short windows per the layout budget)
             Box(
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.size(budget.trophySize),
                 contentAlignment = Alignment.Center,
             ) {
                 LottieAnimation(
                     animationJson = CelebrationAnimations.trophy,
-                    size = 80.dp,
+                    size = budget.trophySize,
                     contentDescription = stringResource(Res.string.cd_trophy),
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(budget.spacerSmall))
 
             // Header with badge count
             Text(
@@ -316,9 +398,13 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary,
                 textAlign = TextAlign.Center,
+                // Hard line cap: chrome's header allowance is bounded at any font
+                // scale or wrap, so the dismiss button can never be pushed out.
+                maxLines = budget.headerMaxLines.coerceAtLeast(1),
+                overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(budget.spacerLarge))
 
             // Badge grid (3 columns). Height is capped by the short-window budget so
             // the dismiss button stays reachable; the cap is a no-op when the window
@@ -329,7 +415,8 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = gridHeight),
+                    .heightIn(max = gridHeight)
+                    .testTag("badge-celebration-grid"),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 // Rows scroll whenever the grid is capped below its natural row
@@ -412,7 +499,7 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(budget.spacerLarge))
 
             // Dismiss button
             Button(

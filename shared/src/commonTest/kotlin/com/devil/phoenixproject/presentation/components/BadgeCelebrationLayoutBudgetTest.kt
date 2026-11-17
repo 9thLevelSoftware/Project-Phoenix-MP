@@ -13,8 +13,9 @@ import kotlin.test.assertTrue
  * (usePlatformDefaultWidth = false); the grid must therefore get a finite width
  * computed from live window metrics BEFORE measurement. These tests pin the width
  * policy (approximately 90% of inset-adjusted usable width, capped at 580dp), the
- * invalid-metric defer signal, and the short-window height budget that keeps the
- * dismiss button reachable.
+ * invalid-metric defer signal, and — per the merge audit F1 — the TOTAL height fit:
+ * chrome + grid + details must never exceed the declared content budget at any
+ * window height, font scale, badge count or expansion state (no minimum floors).
  */
 class BadgeCelebrationLayoutBudgetTest {
 
@@ -135,6 +136,134 @@ class BadgeCelebrationLayoutBudgetTest {
         )
     }
 
+    @Test
+    fun nonFiniteFontScale_defer() {
+        assertNull(
+            badgeCelebrationLayoutBudget(400.dp, 800.dp, 0.dp, 0.dp, 3, false, fontScale = Float.NaN),
+            "NaN font scale must defer",
+        )
+        assertNull(
+            badgeCelebrationLayoutBudget(400.dp, 800.dp, 0.dp, 0.dp, 3, false, fontScale = 0f),
+            "zero font scale must defer",
+        )
+    }
+
+    // ── Merge audit F1: total height fit (no over-allocating floors) ───────
+
+    /**
+     * The audit's named failure case: 400dp usable height, 7 badges with expanded
+     * details previously reserved 300 + 110 + 96 = 506dp against a 368dp budget.
+     * The budget must fit its declared total exactly, by construction.
+     */
+    @Test
+    fun shortWindow400dpExpandedDetails_fitsTotalBudget() {
+        val budget = badgeCelebrationLayoutBudget(
+            windowWidth = 400.dp,
+            windowHeight = 400.dp,
+            horizontalInsets = 0.dp,
+            verticalInsets = 0.dp,
+            badgeCount = 7,
+            detailsExpanded = true,
+        )!!
+        val maxContent = 400.dp * 0.92f
+        assertDpEquals(maxContent, budget.maxContentHeight, "content budget")
+        assertTrue(
+            budget.chromeUpperBound + budget.maxGridHeight + budget.maxDetailsHeight <=
+                budget.maxContentHeight + 0.1.dp,
+            "chrome (${budget.chromeUpperBound}) + grid (${budget.maxGridHeight}) + " +
+                "details (${budget.maxDetailsHeight}) must fit the " +
+                "${budget.maxContentHeight} content budget",
+        )
+        assertTrue(budget.maxGridHeight >= 0.dp, "grid share must not go negative")
+        assertTrue(budget.maxDetailsHeight >= 0.dp, "details share must not go negative")
+    }
+
+    @Test
+    fun totalFitHoldsAcrossHeightFontScaleCountMatrix() {
+        val heights = listOf(200.dp, 280.dp, 320.dp, 400.dp, 600.dp, 720.dp, 1194.dp)
+        val fontScales = listOf(1f, 1.5f, 2f)
+        val counts = listOf(1, 3, 4, 6, 7, 12)
+        for (height in heights) {
+            for (fontScale in fontScales) {
+                for (count in counts) {
+                    for (expanded in listOf(false, true)) {
+                        val label = "height=$height fontScale=$fontScale count=$count expanded=$expanded"
+                        val budget = badgeCelebrationLayoutBudget(
+                            windowWidth = 800.dp,
+                            windowHeight = height,
+                            horizontalInsets = 0.dp,
+                            verticalInsets = 0.dp,
+                            badgeCount = count,
+                            detailsExpanded = expanded,
+                            fontScale = fontScale,
+                        )!!
+                        assertTrue(
+                            budget.chromeUpperBound + budget.maxGridHeight + budget.maxDetailsHeight <=
+                                budget.maxContentHeight + 0.1.dp,
+                            "$label: total overflow — chrome=${budget.chromeUpperBound} " +
+                                "grid=${budget.maxGridHeight} details=${budget.maxDetailsHeight} " +
+                                "budget=${budget.maxContentHeight}",
+                        )
+                        assertTrue(
+                            budget.maxGridHeight <= budget.gridContentHeight + 0.1.dp,
+                            "$label: grid cap must not exceed natural rows",
+                        )
+                        assertTrue(
+                            budget.maxGridHeight >= 0.dp && budget.maxDetailsHeight >= 0.dp,
+                            "$label: areas must not go negative",
+                        )
+                        assertTrue(
+                            budget.maxDetailsHeight <= 140.dp + 0.1.dp,
+                            "$label: details share must stay within its reserve",
+                        )
+                        if (!expanded) {
+                            assertTrue(
+                                budget.maxDetailsHeight == 0.dp,
+                                "$label: collapsed details must not reserve space",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun fontScaleDrivesHeaderAllowanceNotAFixedConstant() {
+        val normal = badgeCelebrationLayoutBudget(
+            800.dp, 600.dp, 0.dp, 0.dp, 3, false, fontScale = 1f,
+        )!!
+        val scaled = badgeCelebrationLayoutBudget(
+            800.dp, 600.dp, 0.dp, 0.dp, 3, false, fontScale = 2f,
+        )!!
+        assertTrue(
+            scaled.chromeUpperBound > normal.chromeUpperBound,
+            "chrome must grow with the actual font scale (no fixed 300dp reserve)",
+        )
+    }
+
+    @Test
+    fun extremeShortWindowShrinksOnlyTheDecorativeTrophy() {
+        // 320dp height at 2x font scale: chrome without shrinking exceeds the
+        // budget; only the decorative trophy may shrink — never the dismiss
+        // button (48dp stays inside CHROME_FIXED at full accessible size).
+        val budget = badgeCelebrationLayoutBudget(
+            800.dp, 320.dp, 0.dp, 0.dp, 3, true, fontScale = 2f,
+        )!!
+        assertTrue(
+            budget.trophySize < 80.dp,
+            "decorative trophy must absorb the deficit first",
+        )
+        assertTrue(
+            budget.trophySize >= 0.dp,
+            "trophy size must not go negative",
+        )
+        assertTrue(
+            budget.chromeUpperBound <= budget.maxContentHeight + 0.1.dp,
+            "even fully shrunk chrome must fit the budget",
+        )
+    }
+
     // ── Short-window height budget keeps dismissal reachable ───────────────
 
     @Test
@@ -156,12 +285,8 @@ class BadgeCelebrationLayoutBudgetTest {
             "grid must clamp below its natural row height in short windows",
         )
         assertTrue(
-            budget.maxGridHeight >= 110.dp,
-            "grid never shrinks below one row",
-        )
-        // Total budget (chrome + grid + details) stays inside the visible budget.
-        assertTrue(
-            300.dp + budget.maxGridHeight + budget.maxDetailsHeight <= budget.maxContentHeight + 0.1.dp,
+            budget.chromeUpperBound + budget.maxGridHeight + budget.maxDetailsHeight <=
+                budget.maxContentHeight + 0.1.dp,
             "chrome + grid + details must fit the content budget",
         )
     }

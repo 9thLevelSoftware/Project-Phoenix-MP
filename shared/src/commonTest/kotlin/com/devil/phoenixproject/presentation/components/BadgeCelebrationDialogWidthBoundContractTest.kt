@@ -120,6 +120,35 @@ class BadgeCelebrationDialogWidthBoundContractTest {
     }
 
     @Test
+    fun totalHeightIsBoundOnTheRealColumnNotJustReturnedByTheBudget() {
+        val src = readDialogSource()
+        assertTrue(
+            src.contains(".heightIn(max = budget.maxContentHeight)"),
+            "The content Column must carry the hard total height bound — returning " +
+                "maxContentHeight from the budget alone does not constrain the layout.",
+        )
+        assertTrue(
+            src.contains("maxLines = budget.headerMaxLines"),
+            "The header line cap must be budget-driven so chrome is bounded at any " +
+                "font scale (no fixed chrome reserve).",
+        )
+    }
+
+    @Test
+    fun shortWindowBudgetHasNoOverAllocatingFloors() {
+        val src = readDialogSource()
+        // Merge audit F1: independent minimum floors pushed the allocation past the
+        // declared total (300 + 110 + 96 = 506dp against a 368dp budget). The fixed
+        // chrome reserve and the floors must stay gone.
+        assertTrue(
+            !src.contains("CHROME_RESERVE") && !src.contains("MIN_GRID_HEIGHT") &&
+                !src.contains("MIN_DETAILS_HEIGHT"),
+            "The fixed chrome reserve and grid/details floors must not return — " +
+                "they over-allocate past the declared budget.",
+        )
+    }
+
+    @Test
     fun dialogShellAndCallbackContractPreserved() {
         val src = readDialogSource()
         assertTrue(
