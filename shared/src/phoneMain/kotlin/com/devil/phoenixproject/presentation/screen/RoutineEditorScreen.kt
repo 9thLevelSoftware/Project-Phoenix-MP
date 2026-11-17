@@ -814,6 +814,10 @@ fun RoutineEditorScreen(
             },
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = false,
+            // Issue #1358 round-4 P1: attach follows the Exercise Demos preference
+            // (already collected for ExerciseEditBottomSheet), decoupled from the
+            // picker's list-thumbnail suppression above.
+            enablePhotoAttach = enableVideoPlayback,
             enablePreviouslyCompletedFilter = true,
             completedExerciseIds = pickerCompletedExerciseIds,
             completedExerciseIdsLoading = pickerCompletedExerciseIdsLoading,

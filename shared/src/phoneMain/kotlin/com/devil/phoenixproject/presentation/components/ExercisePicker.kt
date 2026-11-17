@@ -99,6 +99,14 @@ fun ExercisePickerDialog(
     onExerciseSelected: (Exercise) -> Unit,
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean = true,
+    /**
+     * Issue #1358 round-4 P1: photo attach is gated by the USER's Exercise Demos
+     * preference, NOT by the host's demo-image display flag. Hosts that suppress
+     * picker list thumbnails (`enableVideoPlayback = false`) must still pass the
+     * preference here so `Add photos` stays reachable at every entry point (AC1).
+     * SD10 (preference OFF) disables Add and shows the notice.
+     */
+    enablePhotoAttach: Boolean = true,
     modifier: Modifier = Modifier,
     fullScreen: Boolean = false,
     enableCustomExercises: Boolean = true,
@@ -212,7 +220,10 @@ fun ExercisePickerDialog(
             exerciseRepository = exerciseRepository,
             mediaCoordinator = mediaCoordinator,
             savedImages = mediaSavedImages,
-            enablePhotoAttach = enableVideoPlayback,
+            // Issue #1358 round-4 P1: the attach gate follows the user's Exercise
+            // Demos preference (enablePhotoAttach), never the host's list-thumbnail
+            // flag (enableVideoPlayback) — those are decoupled.
+            enablePhotoAttach = enablePhotoAttach,
             onSave = { exercise, _delta ->
                 // Issue #1358 (SD9): media is committed by the shared
                 // coordinator before this runs; re-query so rows show the

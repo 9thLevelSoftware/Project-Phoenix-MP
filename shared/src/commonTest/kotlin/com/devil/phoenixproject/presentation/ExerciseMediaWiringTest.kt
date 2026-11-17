@@ -337,6 +337,45 @@ class ExerciseMediaWiringTest {
         )
     }
 
+    /**
+     * Round-4 P1 drift guard (SUPPLEMENT to the behavioral tests in
+     * `ExercisePickerHostPhotoAttachTest`, which render the real dialog):
+     * the attach gate must be its own parameter fed by the user's Exercise Demos
+     * preference at BOTH picker hosts that can open the custom-exercise dialog,
+     * never re-coupled to the host's list-thumbnail flag.
+     */
+    @Test
+    fun photoAttachGateIsDecoupledFromListThumbnailFlagAtBothHosts() {
+        val picker = readProjectFile(
+            "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/ExercisePicker.kt",
+        )
+        assertTrue(picker != null, "ExercisePicker.kt must exist")
+        val pickerSrc = stripKotlinComments(picker!!)
+        assertTrue(
+            pickerSrc.contains("enablePhotoAttach = enablePhotoAttach,"),
+            "ExercisePickerDialog must forward its own enablePhotoAttach to CreateExerciseDialog (round-4 P1).",
+        )
+        assertFalse(
+            pickerSrc.contains("enablePhotoAttach = enableVideoPlayback"),
+            "The attach gate must never be re-coupled to the host's list-thumbnail flag (round-4 P1).",
+        )
+        for ((name, path) in listOf(
+            "RoutineEditorScreen" to
+                "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineEditorScreen.kt",
+            "WorkoutTab" to
+                "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
+        )) {
+            val host = readProjectFile(path)
+            assertTrue(host != null, "$path must exist")
+            val hostSrc = stripKotlinComments(host!!)
+            assertTrue(
+                hostSrc.contains("enablePhotoAttach = enableVideoPlayback,"),
+                "$name must feed the ExercisePickerHostPhotoAttachTest-gated enablePhotoAttach from the " +
+                    "user's Exercise Demos preference (round-4 P1).",
+            )
+        }
+    }
+
     /** Strip `//` line comments and `/* */` block comments before absence checks. */
     private fun stripKotlinComments(src: String): String {
         val sb = StringBuilder()
