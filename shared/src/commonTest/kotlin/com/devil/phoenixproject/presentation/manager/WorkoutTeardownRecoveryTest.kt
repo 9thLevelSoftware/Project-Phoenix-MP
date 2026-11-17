@@ -17,6 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -378,7 +379,7 @@ class WorkoutTeardownRecoveryTest {
         ),
     )
 
-    private suspend fun startRemoteRoutineSet(harness: DWSMTestHarness, summarySeconds: Int = 0) {
+    private suspend fun TestScope.startRemoteRoutineSet(harness: DWSMTestHarness, summarySeconds: Int = 0) {
         harness.setActiveSummaryCountdownSeconds(summarySeconds)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.loadRoutineAsync(remoteRoutine())

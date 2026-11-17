@@ -1011,7 +1011,7 @@ class DefaultWorkoutSessionManager(
     // ===== SetReady Navigation — delegated to RoutineFlowManager =====
 
     fun selectExerciseInOverview(index: Int) = routineFlowManager.selectExerciseInOverview(index)
-    fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
+    fun enterSetReady(exerciseIndex: Int, setIndex: Int, reinitializeWarmups: Boolean = false) = routineFlowManager.enterSetReady(exerciseIndex, setIndex, reinitializeWarmups)
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = routineFlowManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = routineFlowManager.updateSetReadyReps(reps)

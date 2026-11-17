@@ -215,7 +215,7 @@ class ManualStopProfileAttributionTest {
         ),
     )
 
-    private suspend fun startAttributionSet(
+    private suspend fun TestScope.startAttributionSet(
         harness: DWSMTestHarness,
         routine: Routine,
         workingReps: Int,
