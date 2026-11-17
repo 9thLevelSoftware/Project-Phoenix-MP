@@ -5,9 +5,11 @@ import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineModifierType
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.util.roundToHalfKg
 import kotlin.math.roundToInt
@@ -17,6 +19,16 @@ import kotlin.math.roundToInt
  *
  * The input routine is never mutated. Callers should resolve percent-of-PR routine weights
  * before invoking this use case so fallback weights are absolute kg values.
+ *
+ * Heavy Deload (issue #1408) also converts AMRAP sets on eligible exercises into
+ * session-only fixed-rep sets: the achieved reps of the most recent completed AMRAP set
+ * for the same exercise (profile-scoped) are scaled by the deload percent (10 reps at
+ * 60% -> 6 reps, weight unchanged). Without AMRAP history the set stays AMRAP and
+ * unchanged. The routine template is never modified.
+ *
+ * Accepted limitations (signed off in the #1408 design review):
+ * - Active Recovery AMRAP rows (typically lighter weight) may serve as the reference.
+ * - History beyond the 50 most recent completed sets of that exercise is not consulted.
  */
 class ApplyRoutineModifierUseCase(
     private val prRepository: PersonalRecordRepository,
@@ -39,7 +51,7 @@ class ApplyRoutineModifierUseCase(
         profileId: String = "default",
     ): Routine = when (modifier.type) {
         RoutineModifierType.ACTIVE_RECOVERY -> applyActiveRecovery(routine, modifier.percent, profileId)
-        RoutineModifierType.HEAVY_DELOAD -> applyHeavyDeload(routine, modifier.percent)
+        RoutineModifierType.HEAVY_DELOAD -> applyHeavyDeload(routine, modifier.percent, profileId)
     }
 
     private suspend fun applyActiveRecovery(routine: Routine, percent: Int, profileId: String): Routine = routine.copy(
@@ -101,18 +113,85 @@ class ApplyRoutineModifierUseCase(
         },
     )
 
-    private fun applyHeavyDeload(routine: Routine, percent: Int): Routine = routine.copy(
-        exercises = routine.exercises.map { exercise ->
-            val timedDuration = exercise.supportedTimedDurationSeconds
-            exercise.copy(
-                setReps = exercise.setReps.map { reps -> reps?.let { scaleReps(it, percent) } },
-                duration = timedDuration?.let { scaleDurationSeconds(it, percent) } ?: exercise.duration,
-                isLaunchAdjustedDuration = timedDuration != null,
-                warmupSets = exercise.warmupSets.map { it.copy(reps = scaleReps(it.reps, percent)) },
-                isLaunchAdjustedByRoutineModifier = true,
-            )
-        },
-    )
+    /**
+     * Heavy Deload (issue #1408): scales programmed rep counts by [percent] and, on
+     * eligible exercises (not bodyweight, not timed-cable), converts each AMRAP set into
+     * a session-only fixed-rep set at `scaleReps(R, percent)`, where R is the achieved
+     * reps of the most recent completed AMRAP-typed set for the same exercise
+     * (profile-scoped, latest logical attempt). Without AMRAP history the set stays AMRAP
+     * and unchanged. The input routine is never mutated; the deloaded copy records as
+     * STANDARD at execution, so completed history never feeds back into later deloads.
+     */
+    private suspend fun applyHeavyDeload(routine: Routine, percent: Int, profileId: String): Routine {
+        // One history lookup per distinct exercise per invocation (Koin factory: no class state).
+        val amrapHistoryCache = mutableMapOf<String, List<CompletedSet>>()
+        return routine.copy(
+            exercises = routine.exercises.map { exercise ->
+                val timedDuration = exercise.supportedTimedDurationSeconds
+                // Eligibility is evaluated on the input exercise; ineligible rows keep
+                // today's exact output, including the last-set placeholder scaling.
+                val amrapEligible = !exercise.exercise.isBodyweight && timedDuration == null
+                val hasAmrapSets = exercise.setReps.indices.any { exercise.isAmrapSet(it) }
+                val amrapHistory = if (amrapEligible && hasAmrapSets) {
+                    val exerciseId = exercise.exercise.id
+                    if (exerciseId == null) {
+                        emptyList()
+                    } else {
+                        amrapHistoryCache.getOrPut(exerciseId) {
+                            completedSetRepository
+                                .getRecentCompletedSetsForExercise(exerciseId, AMRAP_HISTORY_LIMIT, profileId)
+                                // Only achieved AMRAP reps are references; deloaded sets
+                                // record as STANDARD, so no feedback loop is possible.
+                                .filter { it.setType == SetType.AMRAP && it.actualReps > 0 }
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+                val adjustedSetReps = if (!amrapEligible) {
+                    exercise.setReps.map { reps -> reps?.let { scaleReps(it, percent) } }
+                } else {
+                    exercise.setReps.mapIndexed { index, reps ->
+                        if (exercise.isAmrapSet(index)) {
+                            // With history: fixed-rep set at the scaled reference. Without:
+                            // the entry stays as-is (null stays AMRAP, the last-set
+                            // placeholder is not scaled while the set stays AMRAP).
+                            resolveAmrapReferenceReps(exercise, index, amrapHistory)
+                                ?.let { scaleReps(it, percent) }
+                                ?: reps
+                        } else {
+                            reps?.let { scaleReps(it, percent) }
+                        }
+                    }
+                }
+                exercise.copy(
+                    setReps = adjustedSetReps,
+                    // The last-set AMRAP flag survives only while the set is still AMRAP.
+                    isAMRAP = exercise.isAMRAP && amrapHistory.isEmpty(),
+                    duration = timedDuration?.let { scaleDurationSeconds(it, percent) } ?: exercise.duration,
+                    isLaunchAdjustedDuration = timedDuration != null,
+                    warmupSets = exercise.warmupSets.map { it.copy(reps = scaleReps(it.reps, percent)) },
+                    isLaunchAdjustedByRoutineModifier = true,
+                )
+            },
+        )
+    }
+
+    /**
+     * Reference achieved reps for an AMRAP set, newest attempt first (repository order):
+     * same routine-exercise and set slot, then same routine-exercise, then any completed
+     * AMRAP set of the exercise (routine or Just Lift), else null.
+     */
+    private fun resolveAmrapReferenceReps(
+        exercise: RoutineExercise,
+        setIndex: Int,
+        amrapHistory: List<CompletedSet>,
+    ): Int? {
+        val reference = amrapHistory.firstOrNull { it.routineExerciseId == exercise.id && it.setNumber == setIndex }
+            ?: amrapHistory.firstOrNull { it.routineExerciseId == exercise.id }
+            ?: amrapHistory.firstOrNull()
+        return reference?.actualReps
+    }
 
     private suspend fun resolveBaselineKg(exercise: RoutineExercise, profileId: String): Float? {
         val exerciseId = exercise.exercise.id ?: return null
@@ -145,5 +224,8 @@ class ApplyRoutineModifierUseCase(
 
     private companion object {
         const val MIN_WEIGHT_KG = 0.5f
+
+        /** Most recent completed sets consulted per exercise when resolving AMRAP reps. */
+        const val AMRAP_HISTORY_LIMIT = 50
     }
 }
