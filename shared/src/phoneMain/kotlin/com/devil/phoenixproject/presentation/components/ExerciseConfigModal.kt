@@ -17,7 +17,13 @@ import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
+import com.devil.phoenixproject.domain.powerloss.TargetMode
+import com.devil.phoenixproject.presentation.powerloss.PowerLossConfigDraftState
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiCopy
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -52,8 +58,34 @@ fun ExerciseConfigModal(
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
     // No default: a caller that forgot it would silently get the widest (Trainer+) ceiling.
     planningMaxWeightPerCableKg: Float,
+    // Issue #1392 SD4: dynamic Max-working-reps bound from the accepted execution plan
+    // (ProtocolRepBounds.maxRepresentableWorkingReps — PROGRAM: 254 minus warm-ups,
+    // Echo: its validator bound). This default is the un-warmed PROGRAM ceiling only;
+    // callers with a derived plan MUST pass the real bound — never assume 254 for Echo.
+    maxAllowedWorkingReps: Int = 254,
 ) {
     var config by remember { mutableStateOf(initialConfig) }
+
+    // Issue #1392 — Set target edits run through the pure draft state machine
+    // (validate-everything, atomic Apply; Cancel/discard restores the original).
+    var powerDraft by remember {
+        mutableStateOf(
+            PowerLossConfigDraftState.seededFrom(
+                config = initialConfig.powerLoss.copy(
+                    savedNominalReps = initialConfig.powerLoss.savedNominalReps ?: templateReps,
+                ),
+                maxAllowedWorkingReps = maxAllowedWorkingReps,
+                protocolFamily = PowerLossProtocolFamily.of(initialConfig.mode, isJustLiftExecutionStyle = false),
+            ),
+        )
+    }
+    // Program-mode switches move the capability gate (ui-spec §3).
+    val currentProtocolFamily = PowerLossProtocolFamily.of(config.mode, isJustLiftExecutionStyle = false)
+    LaunchedEffect(currentProtocolFamily) {
+        if (powerDraft.protocolFamily != currentProtocolFamily) {
+            powerDraft = powerDraft.copy(protocolFamily = currentProtocolFamily)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -162,6 +194,14 @@ fun ExerciseConfigModal(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                // Issue #1392 — Set target (power-loss) section, ui-spec §3.
+                PowerLossSetTargetSection(
+                    draft = powerDraft,
+                    onDraftChange = { powerDraft = it },
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                 // Footer buttons
                 Row(
                     modifier = Modifier
@@ -170,14 +210,25 @@ fun ExerciseConfigModal(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     OutlinedButton(
-                        onClick = onDismiss,
+                        onClick = {
+                            // Cancel: discard the unapplied draft (ui-spec §3).
+                            powerDraft = powerDraft.cancel()
+                            onDismiss()
+                        },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
-                        onClick = { onConfirm(config) },
+                        onClick = {
+                            // Apply validates every effective field and commits
+                            // atomically to ExerciseConfig.powerLoss.
+                            val committed = powerDraft.apply()
+                            powerDraft = committed
+                            onConfirm(config.copy(powerLoss = committed.committed))
+                        },
+                        enabled = powerDraft.canApply,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_apply))
@@ -465,4 +516,243 @@ private fun ModeInfoCard(title: String, description: String) {
             )
         }
     }
+}
+
+// ==================== SET TARGET (issue #1392 power-loss) ====================
+
+/**
+ * `Set target` section (ui-spec §3): Rep target | Power-loss target equal-width
+ * choices, the POWER expanded config on the pure [PowerLossConfigDraftState]
+ * machine, and the local-data disclosure. All copy comes from PowerLossUiCopy;
+ * edits stay in the draft until Apply commits atomically.
+ */
+@Composable
+private fun PowerLossSetTargetSection(
+    draft: PowerLossConfigDraftState,
+    onDraftChange: (PowerLossConfigDraftState) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(Spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+    ) {
+        Text(
+            text = PowerLossUiCopy.SECTION_HEADING,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        // Two equal-width target choices (labels wrap, never truncate).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            TargetModeButton(
+                label = PowerLossUiCopy.REP_TARGET_LABEL,
+                selected = draft.effectiveTargetMode == TargetMode.REP_TARGET,
+                onClick = { onDraftChange(draft.selectTargetMode(TargetMode.REP_TARGET)) },
+                modifier = Modifier.weight(1f),
+            )
+            TargetModeButton(
+                label = PowerLossUiCopy.POWER_TARGET_LABEL,
+                selected = draft.effectiveTargetMode == TargetMode.POWER,
+                onClick = { onDraftChange(draft.selectTargetMode(TargetMode.POWER)) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (!draft.capabilityAvailable) {
+            SectionNote(PowerLossUiCopy.CAPABILITY_UNAVAILABLE)
+            SectionNote(PowerLossUiCopy.CAPABILITY_UNAVAILABLE_SECONDARY)
+        }
+        if (draft.dormantPowerConfig) {
+            SectionNote(PowerLossUiCopy.INCOMPATIBLE_SAVED_BANNER)
+        }
+
+        if (!draft.powerSectionExpanded) {
+            SectionNote(PowerLossUiCopy.REP_HELPER)
+            draft.committed.savedNominalReps?.let { saved ->
+                SectionNote(PowerLossUiCopy.savedRepReadback(saved))
+            }
+        } else {
+            Text(
+                text = PowerLossUiCopy.POWER_LEAD,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            SectionNote(PowerLossUiCopy.POWER_HELP)
+
+            // Threshold presets — SD6 nonbreaking labels (`10%`, `Custom` never split).
+            Text(
+                text = PowerLossUiCopy.THRESHOLD_LABEL,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                draft.presetChips.forEach { chip ->
+                    FilterChip(
+                        selected = chip.selected,
+                        onClick = { onDraftChange(draft.selectPreset(chip.preset)) },
+                        label = { Text(chip.label) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            if (draft.customSelected) {
+                OutlinedTextField(
+                    value = draft.customThresholdInput,
+                    onValueChange = { onDraftChange(draft.updateCustomThreshold(it)) },
+                    label = { Text(PowerLossUiCopy.CUSTOM_THRESHOLD_LABEL) },
+                    isError = draft.customThresholdError != null,
+                    supportingText = {
+                        Text(draft.customThresholdError ?: PowerLossUiCopy.CUSTOM_THRESHOLD_HELPER)
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            if (draft.highThresholdCautionVisible) {
+                // Warning treatment only; never disables Apply (ui-spec §3.4).
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(Spacing.medium),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.medium)) {
+                        Text(
+                            text = PowerLossUiCopy.HIGH_THRESHOLD_TITLE,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                        Text(
+                            text = PowerLossUiCopy.HIGH_THRESHOLD_BODY,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = draft.maxRepsInput,
+                onValueChange = { onDraftChange(draft.updateMaxReps(it)) },
+                label = { Text(PowerLossUiCopy.MAX_WORKING_REPS_LABEL) },
+                isError = draft.maxRepsError != null,
+                supportingText = {
+                    // SD4: the error bound is dynamic (`Enter 2–{maxAllowed} working reps.`).
+                    Text(draft.maxRepsError ?: PowerLossUiCopy.MAX_WORKING_REPS_HELPER)
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = PowerLossUiCopy.TWO_CONSECUTIVE_LABEL,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = draft.draft.requireTwoConsecutive,
+                    onCheckedChange = { onDraftChange(draft.setRequireTwoConsecutive(it)) },
+                )
+            }
+            // SD1 helper copy; on/off text shown as well as the switch state.
+            SectionNote(
+                if (draft.draft.requireTwoConsecutive) {
+                    PowerLossUiCopy.TWO_CONSECUTIVE_ON_HELPER
+                } else {
+                    PowerLossUiCopy.TWO_CONSECUTIVE_OFF_HELPER
+                },
+            )
+
+            // Non-toggleable safeguard — never an optional ROM switch (ui-spec §3.7).
+            SectionNote(PowerLossUiCopy.SHORT_ROM_SAFEGUARD)
+            SectionNote(PowerLossUiCopy.SHORT_ROM_SAFEGUARD_HELP)
+
+            if (draft.protocolFamily == PowerLossProtocolFamily.ECHO) {
+                SectionNote(PowerLossUiCopy.ECHO_NOTE)
+            }
+
+            Text(
+                text = draft.nearLimitCueReadback,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SectionNote(PowerLossUiCopy.NEAR_LIMIT_CUE_HELP)
+        }
+
+        SectionNote(PowerLossUiCopy.LOCAL_DATA_DISCLOSURE)
+    }
+
+    // Unsupported-mode confirmation (ui-spec §3); POWER settings stay dormant.
+    draft.pendingModeConfirmation?.let { confirmation ->
+        AlertDialog(
+            onDismissRequest = { onDraftChange(draft.dismissModeConfirmation()) },
+            title = { Text(confirmation.title) },
+            text = { Text(confirmation.body) },
+            confirmButton = {
+                TextButton(onClick = { onDraftChange(draft.confirmUseRepTarget()) }) {
+                    Text(confirmation.confirmAction)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { onDraftChange(draft.dismissModeConfirmation()) }) {
+                    Text(confirmation.cancelAction)
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun TargetModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        ),
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun SectionNote(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
