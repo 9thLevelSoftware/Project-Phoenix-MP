@@ -42,7 +42,7 @@ class Issue1400VelocityAggregateTest {
     // ---------- F3: set summary ----------
 
     @Test
-    fun `rising MCV gives 0 percent set loss, never negative`() {
+    fun `rising MCV gives 0 percent set loss and never negative`() {
         val engine = BiomechanicsEngine()
         engine.rep(1, 450.0)
         engine.rep(2, 520.0)
@@ -99,7 +99,7 @@ class Issue1400VelocityAggregateTest {
     }
 
     @Test
-    fun `a slow calibration-contaminated rep 1 is excluded from set MCV, loss and zones`() {
+    fun `a slow calibration-contaminated rep 1 is excluded from set MCV and loss and zones`() {
         // Reporter shape: rep 1 is dragged down by calibration pulls; the working reps are fast.
         val engine = BiomechanicsEngine()
         engine.rep(1, 300.0, eligible = false)
@@ -154,7 +154,7 @@ class Issue1400VelocityAggregateTest {
     }
 
     @Test
-    fun `reps remaining projects from the baseline rep, not from rep 1`() {
+    fun `reps remaining projects from the baseline rep and not from rep 1`() {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
         engine.rep(1, 300.0, eligible = false)
         engine.rep(2, 1000.0)
