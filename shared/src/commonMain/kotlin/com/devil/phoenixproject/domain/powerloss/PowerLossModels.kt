@@ -163,6 +163,18 @@ data class ExecutionTargetPlan(
             maxWorkingReps != null &&
             workingAttemptOrdinal >= maxWorkingReps
 
+    /**
+     * The frozen effective working-rep target every consumer must share (SD4):
+     * POWER's mandatory max-reps backstop (the cap the app stops at), or the REP
+     * nominal. Null for unlimited identities under REP_TARGET (Just Lift / AMRAP
+     * stay unlimited on the wire).
+     */
+    val effectiveWorkingReps: Int?
+        get() = when (targetMode) {
+            TargetMode.POWER -> maxWorkingReps
+            TargetMode.REP_TARGET -> if (protocolIdentityFinite) nominalReps else null
+        }
+
     companion object {
         /**
          * Derive the plan before Start. Rejects impossible plans by returning null:
@@ -189,7 +201,11 @@ data class ExecutionTargetPlan(
                         nominalReps = config.savedNominalReps,
                         maxWorkingReps = config.maxWorkingReps,
                         warmupSetCount = warmupSetCount,
-                        protocolIdentityFinite = true,
+                        // SD4: finite/unlimited protocol identity is preserved even in
+                        // POWER. A genuine Just Lift / AMRAP hardware-unlimited identity
+                        // keeps its 0xFF wire sentinel and is capped in-app; only finite
+                        // identities encode the cap into the frame.
+                        protocolIdentityFinite = bounds.protocolIdentityFinite,
                         planValidatedAt = now,
                     )
                 }
