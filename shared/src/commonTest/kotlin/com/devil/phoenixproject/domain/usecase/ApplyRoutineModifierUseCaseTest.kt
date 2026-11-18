@@ -573,6 +573,244 @@ class ApplyRoutineModifierUseCaseTest {
         assertEquals(22.5f, executionWeight(adjusted.exercises[1], 1))
     }
 
+    // ==================== Issue #1408: Heavy Deload AMRAP scaling ====================
+
+    @Test
+    fun `heavy deload converts per set amrap to scaled reps from last amrap history`() = runTest {
+        seedCompletedSet(
+            sessionId = "amrap-session",
+            exerciseId = "bench",
+            setNumber = 2,
+            actualReps = 10,
+            completedAt = 1_000L,
+            routineExerciseId = "routine-ex-bench",
+        )
+        val routine = routineWith(
+            routineExercise(
+                weight = 45f,
+                setWeights = listOf(45f, 45f, 45f),
+                reps = listOf(10, 10, null),
+            ),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60))
+        val exercise = adjusted.exercises.single()
+
+        // 10 AMRAP reps at 60% -> 6 fixed reps; weights untouched.
+        assertEquals(listOf(6, 6, 6), exercise.setReps)
+        assertEquals(45f, exercise.weightPerCableKg)
+        assertEquals(listOf(45f, 45f, 45f), exercise.setWeightsPerCableKg)
+        assertEquals(true, exercise.isLaunchAdjustedByRoutineModifier)
+        assertEquals(false, exercise.isAmrapSet(2))
+    }
+
+    @Test
+    fun `heavy deload keeps per set amrap when no amrap history exists`() = runTest {
+        val routine = routineWith(routineExercise(reps = listOf(10, 10, null)))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60))
+        val exercise = adjusted.exercises.single()
+
+        assertEquals(listOf(6, 6, null), exercise.setReps)
+        assertEquals(true, exercise.isAmrapSet(2))
+    }
+
+    @Test
+    fun `heavy deload converts last set amrap flag from history and clears flag on copy`() = runTest {
+        seedCompletedSet(
+            sessionId = "amrap-session",
+            exerciseId = "bench",
+            setNumber = 2,
+            actualReps = 12,
+            completedAt = 1_000L,
+            routineExerciseId = "routine-ex-bench",
+        )
+        val input = routineWith(routineExercise(reps = listOf(10, 10, 10), isAmrap = true))
+
+        val adjusted = useCase(input, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 50))
+        val exercise = adjusted.exercises.single()
+
+        // Flag placeholder converts from history: 12 at 50% -> 6; 5 on the fixed sets.
+        assertEquals(listOf(5, 5, 6), exercise.setReps)
+        assertEquals(false, exercise.isAMRAP)
+        assertEquals(false, exercise.isAmrapSet(2))
+        // The input routine is untouched: the flag only clears on the copy.
+        assertEquals(routineWith(routineExercise(reps = listOf(10, 10, 10), isAmrap = true)), input)
+    }
+
+    @Test
+    fun `heavy deload leaves last set amrap placeholder unscaled without history`() = runTest {
+        val routine = routineWith(routineExercise(reps = listOf(10, 10, 10), isAmrap = true))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60))
+        val exercise = adjusted.exercises.single()
+
+        assertEquals(listOf(6, 6, 10), exercise.setReps)
+        assertEquals(true, exercise.isAMRAP)
+        assertEquals(true, exercise.isAmrapSet(2))
+    }
+
+    @Test
+    fun `heavy deload prefers same routine exercise and set number amrap reference`() = runTest {
+        // Newest first: other routine (15) > same routine-exercise other set (11) > same slot (9).
+        seedCompletedSet(sessionId = "s-other", exerciseId = "bench", setNumber = 1, actualReps = 15, completedAt = 3_000L, routineExerciseId = "other-routine-ex")
+        seedCompletedSet(sessionId = "s-same-re", exerciseId = "bench", setNumber = 0, actualReps = 11, completedAt = 2_000L, routineExerciseId = "routine-ex-bench")
+        seedCompletedSet(sessionId = "s-slot", exerciseId = "bench", setNumber = 1, actualReps = 9, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val routine = routineWith(routineExercise(reps = listOf(10, null)))
+
+        val sameSlotWins = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 100))
+        assertEquals(listOf(10, 9), sameSlotWins.exercises.single().setReps)
+
+        // Drop the same-slot row: the same routine-exercise row wins.
+        setup()
+        seedCompletedSet(sessionId = "s-other", exerciseId = "bench", setNumber = 1, actualReps = 15, completedAt = 3_000L, routineExerciseId = "other-routine-ex")
+        seedCompletedSet(sessionId = "s-same-re", exerciseId = "bench", setNumber = 0, actualReps = 11, completedAt = 2_000L, routineExerciseId = "routine-ex-bench")
+        val sameRoutineExerciseWins = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 100))
+        assertEquals(listOf(10, 11), sameRoutineExerciseWins.exercises.single().setReps)
+
+        // Drop both: any completed AMRAP set of the exercise is the reference.
+        setup()
+        seedCompletedSet(sessionId = "s-other", exerciseId = "bench", setNumber = 1, actualReps = 15, completedAt = 3_000L, routineExerciseId = "other-routine-ex")
+        val anyRowWorks = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 100))
+        assertEquals(listOf(10, 15), anyRowWorks.exercises.single().setReps)
+    }
+
+    @Test
+    fun `heavy deload ignores standard and zero rep rows as amrap reference`() = runTest {
+        seedCompletedSet(sessionId = "s-standard", exerciseId = "bench", setNumber = 0, setType = SetType.STANDARD, actualReps = 6, completedAt = 3_000L, routineExerciseId = "routine-ex-bench")
+        seedCompletedSet(sessionId = "s-zero", exerciseId = "bench", setNumber = 0, actualReps = 0, completedAt = 2_000L, routineExerciseId = "routine-ex-bench")
+        seedCompletedSet(sessionId = "s-amrap", exerciseId = "bench", setNumber = 0, actualReps = 10, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val routine = routineWith(routineExercise(reps = listOf(null)))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 50))
+
+        // The older AMRAP 10 row is the only valid reference: 10 at 50% -> 5.
+        assertEquals(listOf(5), adjusted.exercises.single().setReps)
+    }
+
+    @Test
+    fun `heavy deload queries history with the supplied profile`() = runTest {
+        seedCompletedSet(
+            sessionId = "p1-session",
+            exerciseId = "bench",
+            setNumber = 2,
+            actualReps = 10,
+            completedAt = 1_000L,
+            routineExerciseId = "routine-ex-bench",
+            profileId = "p1",
+        )
+        val routine = routineWith(routineExercise(reps = listOf(10, 10, null)))
+
+        val adjusted = useCase(
+            routine = routine,
+            modifier = AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60),
+            profileId = "p2",
+        )
+
+        assertEquals(listOf("p2"), completedSetRepository.recentCompletedSetRequests.map { it.third })
+        // The p1-only history is invisible to p2: the AMRAP set stays AMRAP.
+        assertEquals(listOf(6, 6, null), adjusted.exercises.single().setReps)
+    }
+
+    @Test
+    fun `heavy deload leaves bodyweight and timed amrap sets unchanged by history`() = runTest {
+        seedCompletedSet(sessionId = "s-bw", exerciseId = "pushup", setNumber = 1, actualReps = 12, completedAt = 2_000L, routineExerciseId = "routine-ex-pushup")
+        seedCompletedSet(sessionId = "s-timed", exerciseId = "bench", setNumber = 0, actualReps = 12, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val routine = routineWith(
+            routineExercise(exercise = bodyweightExercise, weight = 0f, reps = listOf(10, null)),
+            routineExercise(duration = 30, reps = listOf(null)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60))
+
+        // Bodyweight row: today's output — programmed reps scale, AMRAP entries stay null.
+        assertEquals(listOf(6, null), adjusted.exercises[0].setReps)
+        assertEquals(0f, adjusted.exercises[0].weightPerCableKg)
+        // Timed row: today's output — AMRAP entries stay null, duration scales.
+        assertEquals(listOf(null), adjusted.exercises[1].setReps)
+        assertEquals(18, adjusted.exercises[1].duration)
+        assertEquals(true, adjusted.exercises[1].isLaunchAdjustedDuration)
+        // Ineligible exercises never read AMRAP history.
+        assertEquals(0, completedSetRepository.recentCompletedSetRequests.size)
+    }
+
+    @Test
+    fun `heavy deload rounds history reps and floors at one`() = runTest {
+        seedCompletedSet(sessionId = "s-round", exerciseId = "bench", setNumber = 0, actualReps = 7, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val sevenAtSixty = useCase(routineWith(routineExercise(reps = listOf(null))), AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 60))
+        // 7 x 60% = 4.2 rounds to 4.
+        assertEquals(listOf(4), sevenAtSixty.exercises.single().setReps)
+
+        setup()
+        seedCompletedSet(sessionId = "s-floor", exerciseId = "bench", setNumber = 0, actualReps = 1, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val oneAtTen = useCase(routineWith(routineExercise(reps = listOf(null))), AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 10))
+        // 1 x 10% = 0.1 rounds to 0 and floors at 1.
+        assertEquals(listOf(1), oneAtTen.exercises.single().setReps)
+    }
+
+    @Test
+    fun `heavy deload queries history once per exercise`() = runTest {
+        seedCompletedSet(sessionId = "s1", exerciseId = "bench", setNumber = 1, actualReps = 10, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val routine = routineWith(routineExercise(reps = listOf(10, null, null)))
+
+        useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 50))
+
+        // Two AMRAP sets, one exercise: a single bounded lookup (limit 50, supplied profile).
+        assertEquals(1, completedSetRepository.recentCompletedSetRequests.size)
+        assertEquals(listOf("bench"), completedSetRepository.recentCompletedSetRequests.map { it.first })
+        assertEquals(listOf(50), completedSetRepository.recentCompletedSetRequests.map { it.second })
+        assertEquals(listOf("default"), completedSetRepository.recentCompletedSetRequests.map { it.third })
+    }
+
+    @Test
+    fun `active recovery does not read amrap history`() = runTest {
+        seedCompletedSet(sessionId = "s1", exerciseId = "bench", setNumber = 1, actualReps = 10, completedAt = 1_000L, routineExerciseId = "routine-ex-bench")
+        val routine = routineWith(routineExercise(weight = 60f, reps = listOf(10, null)))
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50))
+
+        assertEquals(0, completedSetRepository.recentCompletedSetRequests.size)
+        assertEquals(listOf(10, null), adjusted.exercises.single().setReps)
+        assertEquals(30f, adjusted.exercises.single().weightPerCableKg)
+    }
+
+    /**
+     * Seeds one completed set with explicit [completedAt] ordering: registers the session
+     * scope (exercise/profile/mode) the way production writes do, then stores the row.
+     */
+    private suspend fun seedCompletedSet(
+        sessionId: String,
+        exerciseId: String,
+        setNumber: Int,
+        actualReps: Int,
+        completedAt: Long,
+        setType: SetType = SetType.AMRAP,
+        routineExerciseId: String? = null,
+        profileId: String = "default",
+    ) {
+        completedSetRepository.registerSessionContext(
+            sessionId = sessionId,
+            exerciseId = exerciseId,
+            profileId = profileId,
+            mode = ProgramMode.OldSchool.displayName,
+        )
+        completedSetRepository.insertCompletedSet(
+            CompletedSet(
+                id = "$sessionId-set-$setNumber-at-$completedAt",
+                sessionId = sessionId,
+                plannedSetId = null,
+                setNumber = setNumber,
+                setType = setType,
+                actualReps = actualReps,
+                actualWeightKg = 45f,
+                loggedRpe = null,
+                isPr = false,
+                completedAt = completedAt,
+                routineExerciseId = routineExerciseId,
+            ),
+        )
+    }
+
     private fun executionWeight(exercise: RoutineExercise, setIndex: Int): Float = RoutineSetWeightResolver(
         RoutineSetWeightRequest(
             exercise = exercise,
@@ -598,6 +836,7 @@ class ApplyRoutineModifierUseCaseTest {
         orderInSuperset: Int = 0,
         prTypeForScaling: PRType = PRType.MAX_WEIGHT,
         scalingBasis: ScalingBasis? = null,
+        isAmrap: Boolean = false,
     ): RoutineExercise = RoutineExercise(
         id = "routine-ex-${exercise.id}",
         exercise = exercise,
@@ -608,6 +847,7 @@ class ApplyRoutineModifierUseCaseTest {
         programMode = ProgramMode.OldSchool,
         warmupSets = warmups,
         duration = duration,
+        isAMRAP = isAmrap,
         supersetId = supersetId,
         orderInSuperset = orderInSuperset,
         prTypeForScaling = prTypeForScaling,

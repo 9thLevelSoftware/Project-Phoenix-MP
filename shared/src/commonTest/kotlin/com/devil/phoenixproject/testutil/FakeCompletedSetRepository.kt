@@ -130,12 +130,19 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         return flow.asStateFlow()
     }
 
-    // profileId is accepted to match the interface; this fake does not model
-    // per-session profiles, so profile scoping is exercised by the SQL-backed
-    // repository, not here.
+    /**
+     * Every [getRecentCompletedSetsForExercise] call recorded as
+     * (exerciseId, limit, profileId), so tests can assert query count and profile scoping.
+     */
+    val recentCompletedSetRequests = mutableListOf<Triple<String, Int, String>>()
+
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> {
+        recentCompletedSetRequests += Triple(exerciseId, limit, profileId)
         val recent = completedSets.values
             .filter { sessionExerciseIds[it.sessionId] == exerciseId }
+            // Sessions with a registered profile are visible only to that profile;
+            // unregistered sessions stay visible to every profile.
+            .filter { sessionProfileIds[it.sessionId]?.let { profile -> profile == profileId } ?: true }
             .sortedByDescending { it.completedAt }
             .filter { it.sessionId !in deletedSessionIds }
         return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)

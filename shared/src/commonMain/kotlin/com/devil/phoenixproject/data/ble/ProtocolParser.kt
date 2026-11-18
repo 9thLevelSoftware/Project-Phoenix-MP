@@ -137,8 +137,10 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
         // MODERN 24-byte format - parse all 8 fields
         val upCounter = getInt32LE(data, offset + 0)
         val downCounter = getInt32LE(data, offset + 4)
-        val rangeTop = getFloatLE(data, offset + 8)
-        val rangeBottom = getFloatLE(data, offset + 12)
+        // ROM boundary floats are wire-scaled like the old parsed position (0.1x mm);
+        // multiply by 10 so they match the mm position scale (issue #1400, arch constraint 2).
+        val rangeTop = getFloatLE(data, offset + 8) * 10f
+        val rangeBottom = getFloatLE(data, offset + 12) * 10f
         val repsRomCount = getUInt16LE(data, offset + 16)
         val repsRomTotal = getUInt16LE(data, offset + 18)
         val repsSetCount = getUInt16LE(data, offset + 20)
@@ -186,11 +188,11 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
  * Hardware-validated format (26 bytes, Little Endian) — confirmed 2026-02-17:
  * - (0-1):   ticks low (uint16)
  * - (2-3):   ticks high (uint16)
- * - (4-5):   posA (signed int16, /10.0f for mm)
- * - (6-7):   velA (signed int16, firmware velocity for cable A)
+ * - (4-5):   posA (signed int16, raw mm)
+ * - (6-7):   velA (signed int16, firmware velocity for cable A, raw mm/s)
  * - (8-9):   loadA (uint16, /100.0f for kg)
- * - (10-11): posB (signed int16, /10.0f for mm)
- * - (12-13): velB (signed int16, firmware velocity for cable B)
+ * - (10-11): posB (signed int16, raw mm)
+ * - (12-13): velB (signed int16, firmware velocity for cable B, raw mm/s)
  * - (14-15): loadB (uint16, /100.0f for kg)
  * - (16-17): status flags (uint16, optional)
  * - (18-25): unknown (8 bytes, unread)
@@ -213,9 +215,10 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
     // Reconstruct 32-bit tick counter using Long to avoid Int overflow when f1 >= 0x8000
     val ticks = f0.toLong() or (f1.toLong() shl 16)
 
-    // Position values scaled to millimeters
-    val posA = posARaw / 10.0f
-    val posB = posBRaw / 10.0f
+    // Position values are millimeters (raw int16 = mm; issue #1400 RCA §5a). The
+    // legacy /10 here produced cm-scale values that every consumer labelled mm.
+    val posA = posARaw.toFloat()
+    val posB = posBRaw.toFloat()
 
     // Load in kg (device sends kg * 100)
     val loadA = loadARaw / 100.0f

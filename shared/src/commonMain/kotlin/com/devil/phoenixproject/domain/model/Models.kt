@@ -406,8 +406,8 @@ data class WorkoutParameters(
 /**
  * Real-time workout metric data from the device
  *
- * Position values are in millimeters (mm), range -1000.0 to +1000.0
- * Raw BLE values are scaled by dividing by 10.0f (Issue #197)
+ * Position values are in millimeters (mm), velocity in mm/s. Raw firmware values
+ * are mm / mm-s (issue #1400 RCA §5a); the legacy /10 ingestion scaling is gone.
  */
 data class WorkoutMetric(
     val timestamp: Long = currentTimeMillis(),

@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.data.media.ExerciseMediaDelta
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -52,6 +53,13 @@ fun CreateExerciseDialog(
     mediaCoordinator: ExerciseMediaSaveCoordinator? = null,
     savedImages: List<ExerciseImageEntity> = emptyList(),
     enablePhotoAttach: Boolean = true,
+    /**
+     * Test seam (issue #1358 N1): window properties for the host [Dialog]. The
+     * default is production-identical; the Robolectric harness passes
+     * `usePlatformDefaultWidth = false` to dodge the Dialog+TextField
+     * AppNotIdleException quirk. Never pass anything else from production.
+     */
+    dialogProperties: DialogProperties = DialogProperties(),
     onSave: (Exercise, ExerciseMediaDelta) -> Unit,
     onDelete: (() -> Unit)? = null,
     onViewHistory: (() -> Unit)? = null,
@@ -123,7 +131,7 @@ fun CreateExerciseDialog(
 
     val isEditMode = existingExercise != null
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = onDismiss, properties = dialogProperties) {
         Surface(
             modifier = Modifier.fillMaxWidth().wrapContentHeight(),
             shape = MaterialTheme.shapes.medium,

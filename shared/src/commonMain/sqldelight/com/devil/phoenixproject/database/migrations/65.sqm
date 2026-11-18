@@ -1,0 +1,59 @@
+-- Migration 65: Issue #1400 F1 metric unit correction (cm/cm-s -> mm/mm-s).
+--
+-- The pre-#1400 pipeline divided raw firmware position/velocity by 10 at ingestion,
+-- so every persisted position/velocity/power value is 1/10 of its labelled mm unit.
+-- This migration scales the persisted metric fields x10 exactly once.
+--
+-- Replay safety (arch constraint 3): applyMigrationResilient and the iOS/tvOS fallback
+-- replay a step's statements one at a time after a partial failure, so every scaling
+-- statement is row-guarded by the durable per-row marker `metric_unit_version`
+-- (1 = legacy cm/cm-s scale, 2 = mm/mm-s). A re-run matches zero rows and is a no-op,
+-- while rows scaled by a partially applied run are never scaled twice.
+-- Loads, percentages, asymmetry and counts are intentionally NOT touched.
+-- There are no data UPDATEs in schema healing; this migration is the only scaler.
+--
+-- PhaseStatistics is created here IF NOT EXISTS (the category-B idempotent pattern) so
+-- the step is self-contained: real upgrades find the populated legacy table and scale it,
+-- while synthetic/schema-skew databases get the full current shape without a failed ALTER.
+--
+-- Mirrors 65.sqm exactly in MigrationStatements.getMigrationStatements(65).
+
+CREATE TABLE IF NOT EXISTS PhaseStatistics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    concentricKgAvg REAL NOT NULL,
+    concentricKgMax REAL NOT NULL,
+    concentricVelAvg REAL NOT NULL,
+    concentricVelMax REAL NOT NULL,
+    concentricWattAvg REAL NOT NULL,
+    concentricWattMax REAL NOT NULL,
+    eccentricKgAvg REAL NOT NULL,
+    eccentricKgMax REAL NOT NULL,
+    eccentricVelAvg REAL NOT NULL,
+    eccentricVelMax REAL NOT NULL,
+    eccentricWattAvg REAL NOT NULL,
+    eccentricWattMax REAL NOT NULL,
+    timestamp INTEGER NOT NULL,
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+ALTER TABLE MetricSample ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2));
+ALTER TABLE RepMetric ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2));
+ALTER TABLE RepBiomechanics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2));
+ALTER TABLE WorkoutSession ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2));
+ALTER TABLE PhaseStatistics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2));
+
+UPDATE MetricSample SET position = position * 10, positionB = positionB * 10, velocity = velocity * 10, velocityB = velocityB * 10, power = power * 10, metric_unit_version = 2 WHERE metric_unit_version = 1;
+UPDATE RepMetric SET peakVelocity = peakVelocity * 10, avgVelocityConcentric = avgVelocityConcentric * 10, avgVelocityEccentric = avgVelocityEccentric * 10, rangeOfMotionMm = rangeOfMotionMm * 10, peakPowerWatts = peakPowerWatts * 10, avgPowerWatts = avgPowerWatts * 10, metric_unit_version = 2 WHERE metric_unit_version = 1;
+UPDATE RepBiomechanics SET mcvMmS = mcvMmS * 10, peakVelocityMmS = peakVelocityMmS * 10, metric_unit_version = 2 WHERE metric_unit_version = 1;
+UPDATE WorkoutSession SET avgMcvMmS = avgMcvMmS * 10, metric_unit_version = 2 WHERE metric_unit_version = 1;
+UPDATE PhaseStatistics SET concentricVelAvg = concentricVelAvg * 10, concentricVelMax = concentricVelMax * 10, concentricWattAvg = concentricWattAvg * 10, concentricWattMax = concentricWattMax * 10, eccentricVelAvg = eccentricVelAvg * 10, eccentricVelMax = eccentricVelMax * 10, eccentricWattAvg = eccentricWattAvg * 10, eccentricWattMax = eccentricWattMax * 10, metric_unit_version = 2 WHERE metric_unit_version = 1;
+
+-- Derived estimates computed on the old scale are invalidated, not rescaled (arch
+-- constraint 5): learned personal MVT samples and stored velocity-1RM estimates were
+-- derived from 1/10-scale velocities. They rebuild from new-scale sets automatically
+-- (per-set onPostSaveComputed hook). RPG attributes and POWER_CEILING are physical
+-- watts and are unchanged. DELETE is idempotent under replay.
+DELETE FROM ExerciseMvt;
+DELETE FROM VelocityOneRepMaxEstimate;

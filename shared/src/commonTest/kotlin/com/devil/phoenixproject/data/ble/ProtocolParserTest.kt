@@ -200,7 +200,7 @@ class ProtocolParserTest {
         assertFalse(result.isLegacyFormat)
         assertEquals(10, result.topCounter)
         assertEquals(8, result.completeCounter)
-        assertEquals(300.0f, result.rangeTop)
+        assertEquals(3000.0f, result.rangeTop) // wire 300.0f scaled x10 to mm at parse (issue #1400)
         assertEquals(0.0f, result.rangeBottom)
         assertEquals(3, result.repsRomCount)
         assertEquals(5, result.repsRomTotal)
@@ -239,7 +239,7 @@ class ProtocolParserTest {
         assertFalse(result.isLegacyFormat)
         assertEquals(5, result.topCounter)
         assertEquals(4, result.completeCounter)
-        assertEquals(1.0f, result.rangeTop)
+        assertEquals(10.0f, result.rangeTop) // wire 1.0f scaled x10 to mm at parse (issue #1400)
         assertEquals(1, result.repsRomCount)
         assertEquals(3, result.repsSetCount)
     }
@@ -256,7 +256,7 @@ class ProtocolParserTest {
     fun `parseMonitorPacket parses position correctly`() {
         // 16-byte packet with positions
         // posA at offset 4-5 (signed), posB at offset 10-11 (signed)
-        // posA raw = 1234 -> 123.4mm, posB raw = -567 -> -56.7mm
+        // posA raw = 1234 -> 1234mm, posB raw = -567 -> -567mm (raw int16 is mm, issue #1400)
         val data = ByteArray(16)
         // posA = 1234 = 0x04D2 LE
         data[4] = 0xD2.toByte()
@@ -268,8 +268,8 @@ class ProtocolParserTest {
         val result = parseMonitorPacket(data)
 
         assertNotNull(result)
-        assertEquals(123.4f, result.posA, 0.01f)
-        assertEquals(-56.7f, result.posB, 0.01f)
+        assertEquals(1234f, result.posA, 0.01f)
+        assertEquals(-567f, result.posB, 0.01f)
     }
 
     @Test
