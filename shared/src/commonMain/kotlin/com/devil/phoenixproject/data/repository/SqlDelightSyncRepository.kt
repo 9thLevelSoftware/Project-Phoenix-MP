@@ -1532,6 +1532,7 @@ class SqlDelightSyncRepository(
         maxTorsoPitchDeg: Double?,
         maxTorsoRollDeg: Double?,
         routineModifierApplied: Long,
+        metricUnitVersion: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,

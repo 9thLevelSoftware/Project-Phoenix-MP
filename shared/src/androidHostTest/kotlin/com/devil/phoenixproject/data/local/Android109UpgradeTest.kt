@@ -23,7 +23,7 @@ import org.robolectric.annotation.SQLiteMode
 
 /**
  * Android-driver reproduction of a canonical 1.0.8 (v59) database opening in the
- * current build (v65). The old DDL is pinned to the released tag, not reconstructed from today's
+ * current build (v66). The old DDL is pinned to the released tag, not reconstructed from today's
  * schema. Native SQLite exercises Android's open-helper callbacks without JDBC.
  *
  * SDK 35 is a representative Pixel 9 platform, not evidence of the reporting
@@ -45,7 +45,7 @@ class Android109UpgradeTest {
 
     @Test
     fun v108Database_upgradesThroughProductionDriver_andReopensWithOldAndNewData() {
-        assertEquals(65L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
+        assertEquals(66L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
         seedReleased108Database()
 
         val upgraded = DriverFactory(context).createDriver()
@@ -136,7 +136,7 @@ class Android109UpgradeTest {
     }
 
     private fun assertHealthyUpgrade(driver: SqlDriver) {
-        assertEquals(65L, driver.longValue("PRAGMA user_version"))
+        assertEquals(66L, driver.longValue("PRAGMA user_version"))
         assertEquals("ok", driver.textValue("PRAGMA quick_check"))
         assertEquals(1L, driver.longValue("PRAGMA foreign_keys"))
         driver.executeQuery(null, "PRAGMA foreign_key_check", { cursor ->
@@ -162,9 +162,12 @@ class Android109UpgradeTest {
         val metric = queries.selectMetricById(41).executeAsOne()
         assertEquals(SESSION_ID, metric.sessionId)
         assertEquals(1_730_000_000_100L, metric.timestamp)
-        assertEquals(100.5, metric.position)
+        // Issue #1400 (migration 65): the released fixture's cm-scale position is
+        // scaled x10 to mm exactly once; loads are untouched.
+        assertEquals(1005.0, metric.position)
         assertEquals(21.5, metric.loadB)
         assertEquals(2L, metric.status)
+        assertEquals(2L, metric.metric_unit_version, "Legacy row must carry the new metric unit version after the x10 migration")
         assertNull(metric.heartRateBpm)
         assertNull(metric.chestAccZMg)
     }

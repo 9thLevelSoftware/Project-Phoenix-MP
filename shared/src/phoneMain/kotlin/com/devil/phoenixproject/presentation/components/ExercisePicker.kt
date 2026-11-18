@@ -114,6 +114,12 @@ fun ExercisePickerDialog(
     enablePreviouslyCompletedFilter: Boolean = false,
     completedExerciseIds: Set<String> = emptySet(),
     completedExerciseIdsLoading: Boolean = false,
+    /**
+     * Test seam (issue #1358 N1): forwarded to [CreateExerciseDialog]'s host
+     * [Dialog]. Defaults to production `DialogProperties()`; only the
+     * Robolectric harness overrides it. No production call site passes this.
+     */
+    createDialogProperties: DialogProperties = DialogProperties(),
 ) {
     if (!showDialog) return
 
@@ -220,6 +226,7 @@ fun ExercisePickerDialog(
             exerciseRepository = exerciseRepository,
             mediaCoordinator = mediaCoordinator,
             savedImages = mediaSavedImages,
+            dialogProperties = createDialogProperties,
             // Issue #1358 round-4 P1: the attach gate follows the user's Exercise
             // Demos preference (enablePhotoAttach), never the host's list-thumbnail
             // flag (enableVideoPlayback) — those are decoupled.

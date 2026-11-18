@@ -11,7 +11,7 @@ class BlePacketCaptureTest {
         val data = ByteArray(26)
         putUInt16LE(data, 0, 0x1234)
         putUInt16LE(data, 2, 0x0001)
-        putInt16LE(data, 4, 1234) // posA 123.4 mm
+        putInt16LE(data, 4, 1234) // posA 1234 mm (raw int16 is mm, issue #1400)
         putInt16LE(data, 6, 7) // velA
         putUInt16LE(data, 8, 5000) // loadA 50.0 kg
         putInt16LE(data, 10, 2000) // posB 200.0 mm
@@ -30,8 +30,8 @@ class BlePacketCaptureTest {
 
         val packet = parseMonitorPacket(data)
         assertTrue(packet != null)
-        assertEquals(123.4f, packet.posA, 0.01f)
-        assertEquals(200.0f, packet.posB, 0.01f)
+        assertEquals(1234f, packet.posA, 0.01f)
+        assertEquals(2000f, packet.posB, 0.01f)
         assertEquals(50.0f, packet.loadA, 0.01f)
         assertEquals(25.0f, packet.loadB, 0.01f)
         assertEquals(

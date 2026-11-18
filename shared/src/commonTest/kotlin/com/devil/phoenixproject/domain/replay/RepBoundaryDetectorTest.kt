@@ -54,8 +54,8 @@ class RepBoundaryDetectorTest {
         // Single rep: valley at 100mm, peak at 300mm, valley at 100mm
         // 20 samples total
         val positions = buildSingleRepPositions(
-            valleyMm = 100f,
-            peakMm = 300f,
+            valleyMm = 1000f,
+            peakMm = 3000f,
             sampleCount = 20,
         )
 
@@ -78,8 +78,8 @@ class RepBoundaryDetectorTest {
         // 3 reps: each with valley at 100mm, peak at 300mm
         val positions = buildMultiRepPositions(
             repCount = 3,
-            valleyMm = 100f,
-            peakMm = 300f,
+            valleyMm = 1000f,
+            peakMm = 3000f,
             samplesPerRep = 20,
         )
 
@@ -110,8 +110,8 @@ class RepBoundaryDetectorTest {
         // Data starts at a valley (low position)
         val positions = buildMultiRepPositions(
             repCount = 2,
-            valleyMm = 50f, // Starts at low position
-            peakMm = 250f,
+            valleyMm = 500f, // Starts at low position
+            peakMm = 2500f,
             samplesPerRep = 20,
         )
 
@@ -126,8 +126,8 @@ class RepBoundaryDetectorTest {
         // Build data that ends at a valley
         val positions = buildMultiRepPositions(
             repCount = 2,
-            valleyMm = 50f,
-            peakMm = 250f,
+            valleyMm = 500f,
+            peakMm = 2500f,
             samplesPerRep = 20,
         )
 
@@ -148,8 +148,8 @@ class RepBoundaryDetectorTest {
     @Test
     fun `detectBoundaries identifies peak position for phase split`() {
         val positions = buildSingleRepPositions(
-            valleyMm = 100f,
-            peakMm = 300f,
+            valleyMm = 1000f,
+            peakMm = 3000f,
             sampleCount = 20,
         )
 
@@ -176,8 +176,8 @@ class RepBoundaryDetectorTest {
     @Test
     fun `concentricIndices and eccentricIndices partition rep correctly`() {
         val positions = buildSingleRepPositions(
-            valleyMm = 100f,
-            peakMm = 300f,
+            valleyMm = 1000f,
+            peakMm = 3000f,
             sampleCount = 20,
         )
 
@@ -206,7 +206,7 @@ class RepBoundaryDetectorTest {
         val concentricPositions = rep.concentricIndices.map { positions[it] }
         for (i in 1 until concentricPositions.size) {
             assertTrue(
-                concentricPositions[i] >= concentricPositions[i - 1] - 5f, // Allow small smoothing variance
+                concentricPositions[i] >= concentricPositions[i - 1] - 50f, // Allow small smoothing variance
                 "Concentric phase should have generally increasing positions",
             )
         }
@@ -215,7 +215,7 @@ class RepBoundaryDetectorTest {
         val eccentricPositions = rep.eccentricIndices.map { positions[it] }
         for (i in 1 until eccentricPositions.size) {
             assertTrue(
-                eccentricPositions[i] <= eccentricPositions[i - 1] + 5f, // Allow small smoothing variance
+                eccentricPositions[i] <= eccentricPositions[i - 1] + 50f, // Allow small smoothing variance
                 "Eccentric phase should have generally decreasing positions",
             )
         }
@@ -230,14 +230,14 @@ class RepBoundaryDetectorTest {
         // Build clean data first
         val cleanPositions = buildMultiRepPositions(
             repCount = 3,
-            valleyMm = 100f,
-            peakMm = 300f,
+            valleyMm = 1000f,
+            peakMm = 3000f,
             samplesPerRep = 20,
         )
 
-        // Add noise (+/- 3mm random variation)
+        // Add noise (+/- 30mm random variation)
         val noisyPositions = FloatArray(cleanPositions.size) { i ->
-            cleanPositions[i] + (Random.nextFloat() - 0.5f) * 6f
+            cleanPositions[i] + (Random.nextFloat() - 0.5f) * 60f
         }
 
         val result = detector.detectBoundaries(noisyPositions)
@@ -256,22 +256,22 @@ class RepBoundaryDetectorTest {
         // because it's too close to the real valleys
         val positions = FloatArray(30) { i ->
             when {
-                i < 5 -> 100f
+                i < 5 -> 1000f
 
                 // Start valley
-                i < 10 -> 100f + (i - 5) * 40f
+                i < 10 -> 1000f + (i - 5) * 400f
 
                 // Rising
-                i == 12 -> 280f
+                i == 12 -> 2800f
 
                 // Small dip (should be ignored)
-                i < 15 -> 300f
+                i < 15 -> 3000f
 
                 // Peak
-                i < 25 -> 300f - (i - 15) * 20f
+                i < 25 -> 3000f - (i - 15) * 200f
 
                 // Falling
-                else -> 100f // End valley
+                else -> 1000f // End valley
             }
         }
 
@@ -286,18 +286,18 @@ class RepBoundaryDetectorTest {
         // Create data with valleys only 5 samples apart (less than minimum 8)
         val positions = FloatArray(40) { i ->
             when {
-                i < 3 -> 100f
+                i < 3 -> 1000f
 
-                i < 5 -> 200f
+                i < 5 -> 2000f
 
-                i < 8 -> 100f
+                i < 8 -> 1000f
 
                 // Valley at ~6, too close to start
-                i < 20 -> 100f + ((i - 8) * 20f).coerceAtMost(200f)
+                i < 20 -> 1000f + ((i - 8) * 200f).coerceAtMost(2000f)
 
-                i < 30 -> 300f - ((i - 20) * 20f).coerceAtLeast(0f)
+                i < 30 -> 3000f - ((i - 20) * 200f).coerceAtLeast(0f)
 
-                else -> 100f
+                else -> 1000f
             }
         }
 
@@ -314,7 +314,7 @@ class RepBoundaryDetectorTest {
     @Test
     fun `detectBoundaries handles flat data gracefully`() {
         // All positions are the same - no valleys or peaks
-        val positions = FloatArray(30) { 150f }
+        val positions = FloatArray(30) { 1500f }
 
         val result = detector.detectBoundaries(positions)
 
@@ -325,7 +325,7 @@ class RepBoundaryDetectorTest {
     fun `detectBoundaries handles single incomplete rep`() {
         // Data that goes valley -> peak but never returns to valley
         val positions = FloatArray(15) { i ->
-            100f + i * 15f // Steadily increasing, no return
+            1000f + i * 150f // Steadily increasing, no return
         }
 
         val result = detector.detectBoundaries(positions)

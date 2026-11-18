@@ -1525,6 +1525,46 @@ WHERE gs.rowid = (
         "UPDATE WorkoutSession SET totalVelocityLossPercent = 0 WHERE totalVelocityLossPercent < 0",
     )
 
+    // Migration 65: Issue #1400 F1 metric unit correction (cm/cm-s -> mm/mm-s).
+    // Row-guarded by metric_unit_version (1 = legacy scale, 2 = mm/mm-s) so a replayed
+    // statement matches zero rows instead of double-scaling. Invalidation DELETEs are
+    // idempotent. No data UPDATEs live in schema healing; this is the only scaler.
+    65 -> listOf(
+        """
+        CREATE TABLE IF NOT EXISTS PhaseStatistics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            concentricKgAvg REAL NOT NULL,
+            concentricKgMax REAL NOT NULL,
+            concentricVelAvg REAL NOT NULL,
+            concentricVelMax REAL NOT NULL,
+            concentricWattAvg REAL NOT NULL,
+            concentricWattMax REAL NOT NULL,
+            eccentricKgAvg REAL NOT NULL,
+            eccentricKgMax REAL NOT NULL,
+            eccentricVelAvg REAL NOT NULL,
+            eccentricVelMax REAL NOT NULL,
+            eccentricWattAvg REAL NOT NULL,
+            eccentricWattMax REAL NOT NULL,
+            timestamp INTEGER NOT NULL,
+            metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
+            FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )
+        """.trimIndent(),
+        "ALTER TABLE MetricSample ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+        "ALTER TABLE RepMetric ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+        "ALTER TABLE RepBiomechanics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+        "ALTER TABLE WorkoutSession ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+        "ALTER TABLE PhaseStatistics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+        "UPDATE MetricSample SET position = position * 10, positionB = positionB * 10, velocity = velocity * 10, velocityB = velocityB * 10, power = power * 10, metric_unit_version = 2 WHERE metric_unit_version = 1",
+        "UPDATE RepMetric SET peakVelocity = peakVelocity * 10, avgVelocityConcentric = avgVelocityConcentric * 10, avgVelocityEccentric = avgVelocityEccentric * 10, rangeOfMotionMm = rangeOfMotionMm * 10, peakPowerWatts = peakPowerWatts * 10, avgPowerWatts = avgPowerWatts * 10, metric_unit_version = 2 WHERE metric_unit_version = 1",
+        "UPDATE RepBiomechanics SET mcvMmS = mcvMmS * 10, peakVelocityMmS = peakVelocityMmS * 10, metric_unit_version = 2 WHERE metric_unit_version = 1",
+        "UPDATE WorkoutSession SET avgMcvMmS = avgMcvMmS * 10, metric_unit_version = 2 WHERE metric_unit_version = 1",
+        "UPDATE PhaseStatistics SET concentricVelAvg = concentricVelAvg * 10, concentricVelMax = concentricVelMax * 10, concentricWattAvg = concentricWattAvg * 10, concentricWattMax = concentricWattMax * 10, eccentricVelAvg = eccentricVelAvg * 10, eccentricVelMax = eccentricVelMax * 10, eccentricWattAvg = eccentricWattAvg * 10, eccentricWattMax = eccentricWattMax * 10, metric_unit_version = 2 WHERE metric_unit_version = 1",
+        "DELETE FROM ExerciseMvt",
+        "DELETE FROM VelocityOneRepMaxEstimate",
+    )
+
     else -> emptyList()
 }
 
