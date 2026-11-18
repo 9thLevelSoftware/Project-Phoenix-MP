@@ -107,10 +107,8 @@ class ExerciseMediaWiringTest {
     }
 
     // T6: Phase 1 adds NO migration. Two guards, both history-aware (SD14):
-    // (a) the migration set must not grow past the latest REAL migration — the
-    //     ratchet moves only when one lands (63.sqm at 4d4de558 was the Phase-1
-    //     base; 64.sqm is issue #1400's aggregateEligible migration, which does
-    //     not touch ExerciseImage — bumped for it on 2026-11-17);
+    // (a) the migration set must not grow past the implementation base's latest
+    //     (64.sqm at 6f95247) — bump this ratchet only when a real migration lands;
     // (b) the only migration allowed to mention ExerciseImage is 43.sqm, the
     //     historical migration that CREATED the table; nothing may ALTER/DROP it.
     @Test
@@ -126,7 +124,7 @@ class ExerciseMediaWiringTest {
         }
         assertTrue(
             maxSeen <= 64,
-            "Schema migration ratchet: found $maxSeen.sqm beyond the latest real migration 64.sqm (T6/AC13).",
+            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 64.sqm (T6/AC13).",
         )
         assertTrue(
             mentions == listOf("43.sqm"),
