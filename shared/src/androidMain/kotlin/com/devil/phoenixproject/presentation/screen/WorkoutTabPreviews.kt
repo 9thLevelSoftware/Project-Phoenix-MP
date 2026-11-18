@@ -144,7 +144,7 @@ private fun EnhancedPositionBarsPreview() {
             // Inactive - Grey
             EnhancedCablePositionBar(
                 label = "X",
-                currentPosition = 300f, // mm
+                currentPosition = 3000f, // mm
                 velocity = 0.0,
                 isActive = false,
                 modifier = Modifier

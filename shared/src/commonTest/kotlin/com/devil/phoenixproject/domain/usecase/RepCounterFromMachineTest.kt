@@ -956,20 +956,20 @@ class RepRangesTest {
         // This tests the Just Lift autostop scenario where handles are placed down
         // Position goes to ~0 after user has established a meaningful ROM range
         val ranges = RepRanges(
-            minPosA = 30f, // Typical overhead pulley rest position
-            maxPosA = 230f, // Extended position after reps
-            minPosB = 30f,
-            maxPosB = 230f,
+            minPosA = 300f, // Typical overhead pulley rest position
+            maxPosA = 2300f, // Extended position after reps
+            minPosB = 300f,
+            maxPosB = 2300f,
         )
 
-        // Range = 200mm, threshold = 30 + (200 * 0.05) = 40mm
+        // Range = 2000mm, threshold = 300 + (2000 * 0.05) = 400mm
         // Position at 0 or very low should trigger danger zone for autostop
         assertTrue(ranges.isInDangerZone(posA = 0f, posB = 0f))
-        assertTrue(ranges.isInDangerZone(posA = 5f, posB = 5f))
-        assertTrue(ranges.isInDangerZone(posA = 35f, posB = 35f)) // Just above min but below threshold
+        assertTrue(ranges.isInDangerZone(posA = 50f, posB = 50f))
+        assertTrue(ranges.isInDangerZone(posA = 350f, posB = 350f)) // Just above min but below threshold
 
-        // Position at 50 should NOT trigger (above threshold of 40)
-        assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))
+        // Position at 500 should NOT trigger (above threshold of 400)
+        assertFalse(ranges.isInDangerZone(posA = 500f, posB = 500f))
     }
 
     @Test
@@ -1014,14 +1014,14 @@ class RepRangesTest {
         val onlyB = RepRanges(
             minPosA = null,
             maxPosA = null,
-            minPosB = 30f,
-            maxPosB = 230f,
+            minPosB = 300f,
+            maxPosB = 2300f,
         )
         assertFalse(onlyB.isCableAInDangerZone(0f))
         assertTrue(onlyB.isCableBInDangerZone(0f))
-        assertFalse(onlyB.isCableBInDangerZone(0f, minRangeThreshold = 250f))
-        assertTrue(onlyB.isCableBInDangerZone(35f))
-        assertTrue(onlyB.isInDangerZone(posA = 0f, posB = 35f))
-        assertFalse(onlyB.isInDangerZone(posA = 0f, posB = 50f))
+        assertFalse(onlyB.isCableBInDangerZone(0f, minRangeThreshold = 2500f))
+        assertTrue(onlyB.isCableBInDangerZone(350f))
+        assertTrue(onlyB.isInDangerZone(posA = 0f, posB = 350f))
+        assertFalse(onlyB.isInDangerZone(posA = 0f, posB = 500f))
     }
 }

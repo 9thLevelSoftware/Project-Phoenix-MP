@@ -7071,7 +7071,7 @@ class ActiveSessionEngine(
                     val thresholdA = minA + (rangeA * 0.05f)
                     val cableAInDanger = metric.positionA <= thresholdA
                     val cableAReleased = metric.positionA < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                        (metric.positionA - minA) < 10
+                        (metric.positionA - minA) < 100
                     if (cableAInDanger && cableAReleased) {
                         cableAppearsReleased = true
                     }
@@ -7087,7 +7087,7 @@ class ActiveSessionEngine(
                         val thresholdB = minB + (rangeB * 0.05f)
                         val cableBInDanger = metric.positionB <= thresholdB
                         val cableBReleased = metric.positionB < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                            (metric.positionB - minB) < 10
+                            (metric.positionB - minB) < 100
                         if (cableBInDanger && cableBReleased) {
                             cableAppearsReleased = true
                         }
@@ -9890,6 +9890,7 @@ class ActiveSessionEngine(
                         completedSet = snapshot.completedSet,
                         repMetrics = snapshot.repMetrics,
                         repBiomechanics = snapshot.biomechanicsRepResults,
+                        metricUnitVersion = snapshot.metricUnitVersion,
                     ),
                 )
             }
