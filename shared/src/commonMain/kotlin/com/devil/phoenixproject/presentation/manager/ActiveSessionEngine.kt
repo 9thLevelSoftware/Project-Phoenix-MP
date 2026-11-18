@@ -122,6 +122,7 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 import com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan
 import com.devil.phoenixproject.domain.powerloss.PowerLossDecision
+import com.devil.phoenixproject.domain.powerloss.PowerLossHudState
 import com.devil.phoenixproject.domain.powerloss.TargetMode
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -4654,6 +4655,11 @@ class ActiveSessionEngine(
         return executionGuard.commitIfCurrent(lease) {
             biomechanicsContext.value = context
             coordinator.installBiomechanicsEngine(context.engine)
+            // Issue #1392 SD6 set-boundary rule: the live power panel belongs to
+            // exactly one set. Installing a new set's context starts its HUD
+            // clean — a frozen `Ending set…`/attempt panel from the previous set
+            // must never render under the next set's headers.
+            coordinator.setPowerLossHud(PowerLossHudState())
         }
     }
 
@@ -4667,6 +4673,10 @@ class ActiveSessionEngine(
                 context.consecutiveThresholdReps = 0
                 context.powerLoss.reset()
                 coordinator.resetBiomechanicsEngine(context.engine)
+                // SD6: clear the live power panel at set teardown so the frozen
+                // `Ending set…`/attempt facts end with the completed transition
+                // and never leak into the next set's HUD.
+                coordinator.setPowerLossHud(PowerLossHudState())
             }
         }
         if (!resetWhileCurrent) {
@@ -4675,6 +4685,11 @@ class ActiveSessionEngine(
             context.consecutiveThresholdReps = 0
             context.powerLoss.reset()
             coordinator.resetBiomechanicsEngine(context.engine)
+            // The coordinator HUD is shared across executions: clear it only when
+            // no newer set's context owns it (same identity rule as above).
+            if (biomechanicsContext.value === context) {
+                coordinator.setPowerLossHud(PowerLossHudState())
+            }
         }
     }
 
