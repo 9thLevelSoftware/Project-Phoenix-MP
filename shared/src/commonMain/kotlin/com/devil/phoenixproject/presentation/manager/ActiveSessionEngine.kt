@@ -9816,7 +9816,14 @@ class ActiveSessionEngine(
             taggedExerciseName = context.exerciseName,
             isAmrap = params.isAMRAP,
             // Issue #1392 (P3): frozen summary facts; null when POWER was not armed.
-            powerLoss = biomechanicsContextFor(lease)?.powerLoss?.buildSummaryFacts(repCount.workingReps),
+            // SD4: when the one-winner completion latch fired from the machine
+            // counter path before the policy could latch its winner, the
+            // committed completion reason is the winner of record so the §6
+            // headline (`Stopped at 20 working reps — max-reps limit`) renders.
+            powerLoss = biomechanicsContextFor(lease)?.powerLoss?.buildSummaryFacts(
+                completedRepCount = repCount.workingReps,
+                fallbackWinnerReason = completion.reason.toPowerStopReasonOrNull(),
+            ),
         ).deepCopyForExitSnapshot()
         val isRoutineSet = context.routineSessionId != null
         val shouldUpdateCycleProgress = shouldUpdateCycleProgressAfterSavedSet(
@@ -9840,6 +9847,8 @@ class ActiveSessionEngine(
             powerLossEvidence = biomechanicsContextFor(lease)?.powerLoss?.buildEvidence(
                 sessionId = lease.sessionId,
                 setId = completedSet?.id ?: "attempt-${lease.executionId}",
+                fallbackWinnerReason = completion.reason.toPowerStopReasonOrNull(),
+                fallbackStoppedAtAttempt = repCount.workingReps,
             ),
             metrics = archiveMetrics,
             repMetrics = coordinator.setRepMetrics.snapshot().map(RepMetricData::deepCopyForExitSnapshot),

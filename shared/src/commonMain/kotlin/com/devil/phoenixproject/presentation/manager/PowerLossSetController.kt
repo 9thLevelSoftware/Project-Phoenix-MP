@@ -145,9 +145,18 @@ internal class PowerLossSetController {
      * Deep-frozen evidence for the exit snapshot / P4 companions (P3 latch).
      * Null when POWER was never armed (no config seen) — never fabricated.
      */
-    fun buildEvidence(sessionId: String, setId: String): PowerLossSetEvidence? {
+    fun buildEvidence(
+        sessionId: String,
+        setId: String,
+        fallbackWinnerReason: PowerStopReason? = null,
+        fallbackStoppedAtAttempt: Int? = null,
+    ): PowerLossSetEvidence? {
         val config = lastConfig ?: return null
-        if (attemptRecords.isEmpty() && winnerReason == null) return null
+        // SD2 latch is authoritative; the committed completion reason (SD4
+        // machine-counter path) is the winner of record when no policy winner
+        // latched — see buildSummaryFacts.
+        val winner = winnerReason ?: fallbackWinnerReason
+        if (attemptRecords.isEmpty() && winner == null) return null
         val reference = state.reference
         return PowerLossSetEvidence(
             sessionId = sessionId,
@@ -163,8 +172,9 @@ internal class PowerLossSetController {
             referenceMcpWatts = reference?.mcpWatts,
             referenceRomAMm = reference?.romA?.romMm,
             referenceRomBMm = reference?.romB?.romMm,
-            triggerWorkingOrdinal = stoppedAtOrdinal,
-            winnerReason = winnerReason,
+            triggerWorkingOrdinal = stoppedAtOrdinal
+                ?: if (fallbackWinnerReason != null) fallbackStoppedAtAttempt else null,
+            winnerReason = winner,
             shortRomObserved = shortRomObserved,
             powerLossObserved = powerLossObserved,
             lossPercentAtDecision = lossAtStop,
@@ -187,14 +197,26 @@ internal class PowerLossSetController {
     }
 
     /** Summary facts for `WorkoutState.SetSummary.powerLoss` (P5 renders with SD6 clarification). */
-    fun buildSummaryFacts(completedRepCount: Int): PowerLossSetSummaryFacts? {
+    fun buildSummaryFacts(
+        completedRepCount: Int,
+        fallbackWinnerReason: PowerStopReason? = null,
+    ): PowerLossSetSummaryFacts? {
         val config = lastConfig ?: return null
+        // SD2: the latched policy winner is authoritative and never overwritten.
+        // When the one-winner completion latch fired from the machine-counter
+        // path (SD4 WORKOUT_COMPLETE → MAX_REPS_BACKSTOP) BEFORE the final rep's
+        // metric evaluation could latch the policy winner, the committed
+        // completion reason is the winner of record — the summary must not
+        // silently degrade to the MANUAL variant and drop its headline.
+        val winner = winnerReason ?: fallbackWinnerReason
+        val stoppedAt = stoppedAtOrdinal
+            ?: if (fallbackWinnerReason != null) completedRepCount else null
         return PowerLossSetSummaryFacts(
-            winnerReason = winnerReason,
+            winnerReason = winner,
             thresholdPercent = config.thresholdPercent,
             maxWorkingReps = config.maxWorkingReps,
             requireTwoConsecutive = config.requireTwoConsecutive,
-            stoppedAtWorkingAttempt = stoppedAtOrdinal,
+            stoppedAtWorkingAttempt = stoppedAt,
             completedRepCount = completedRepCount,
             lossPercentAtStop = lossAtStop,
             bestWorkingOrdinal = state.reference?.workingConcentricOrdinal,
@@ -288,6 +310,18 @@ internal fun PowerStopReason.toSetEndReason(): SetEndReason = when (this) {
     PowerStopReason.POWER_LOSS -> SetEndReason.POWER_LOSS
     PowerStopReason.SHORT_ROM -> SetEndReason.SHORT_ROM
     PowerStopReason.MAX_REPS_BACKSTOP -> SetEndReason.MAX_REPS_BACKSTOP
+}
+
+/**
+ * Reverse map for the summary winner fallback: only end reasons inside the
+ * power-policy vocabulary describe a power-policy winner. Manual, safety,
+ * stall, timer and REP paths keep their own reason heading (null here).
+ */
+internal fun SetEndReason.toPowerStopReasonOrNull(): PowerStopReason? = when (this) {
+    SetEndReason.POWER_LOSS -> PowerStopReason.POWER_LOSS
+    SetEndReason.SHORT_ROM -> PowerStopReason.SHORT_ROM
+    SetEndReason.MAX_REPS_BACKSTOP -> PowerStopReason.MAX_REPS_BACKSTOP
+    else -> null
 }
 
 /**

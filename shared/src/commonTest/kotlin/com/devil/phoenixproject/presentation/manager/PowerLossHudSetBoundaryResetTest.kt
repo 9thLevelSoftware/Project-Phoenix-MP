@@ -4,9 +4,11 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
 import com.devil.phoenixproject.domain.powerloss.PowerLossHudState
 import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
+import com.devil.phoenixproject.domain.powerloss.PowerStopReason
 import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.presentation.manager.DWSMTestHarnessFixtures.strongRep
 import com.devil.phoenixproject.presentation.manager.DWSMTestHarnessFixtures.weakRep
@@ -17,6 +19,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -126,6 +129,16 @@ class PowerLossHudSetBoundaryResetTest {
             runCurrent()
             advanceUntilIdle()
             assertEquals(SetEndReason.MAX_REPS_BACKSTOP, persistedReason(harness, lease))
+
+            // SD4 wiring: the summary carries the committed cap winner even when
+            // the machine-counter path claimed the completion before the policy
+            // latch — the §6 headline source must not degrade to MANUAL.
+            val summary = assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertEquals(
+                PowerStopReason.MAX_REPS_BACKSTOP,
+                summary.powerLoss?.winnerReason,
+                "the committed completion reason is the winner of record",
+            )
 
             // SD6 set boundary: the frozen panel ends with the completed
             // transition — nothing of set 1 survives for set 2 to render.
