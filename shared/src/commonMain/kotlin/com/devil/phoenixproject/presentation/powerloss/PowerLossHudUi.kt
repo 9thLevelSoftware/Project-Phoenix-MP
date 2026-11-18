@@ -34,6 +34,8 @@ data class PowerLossHudUi(
     val shortRomLine: String?,
     val endingLine: String?,
     val referenceResetLine: String?,
+    /** E04 caveat while the reference's ROM/mask is untrusted (ui-spec §4). */
+    val referenceLimitedNote: String? = null,
     val lockedNote: String = PowerLossUiCopy.TARGET_LOCKED,
     val warmupNote: String? = null,
     val capAndStopActive: String = PowerLossUiCopy.HUD_CAP_AND_STOP_ACTIVE,
@@ -115,6 +117,10 @@ fun powerLossHudUi(
         qualifyingCount != null && qualifyingCount > 0 ->
             PowerLossUiCopy.HUD_CONSECUTIVE_QUALIFYING_PREFIX + qualifyingCount + PowerLossUiCopy.HUD_CONSECUTIVE_OF
         nearLimit -> PowerLossUiCopy.HUD_NEAR_LIMIT
+        // E04 (ui-spec §4 `Initial ROM/mask uncertain`): while the reference's
+        // ROM/mask is untrusted the generic first-attempt/normal states do not
+        // apply — range checks are limited until a trustworthy reference exists.
+        referenceRomUncertain -> PowerLossUiCopy.HUD_ROM_REFERENCE_LIMITED
         attempt == 1 -> PowerLossUiCopy.HUD_FIRST_ATTEMPT_NOTE
         else -> PowerLossUiCopy.HUD_BELOW_TARGET
     }
@@ -141,6 +147,11 @@ fun powerLossHudUi(
         },
         referenceResetLine = if (interrupted) {
             PowerLossUiCopy.HUD_REFERENCE_RESET
+        } else {
+            null
+        },
+        referenceLimitedNote = if (referenceRomUncertain) {
+            PowerLossUiCopy.HUD_ROM_REFERENCE_LIMITED_NOTE
         } else {
             null
         },

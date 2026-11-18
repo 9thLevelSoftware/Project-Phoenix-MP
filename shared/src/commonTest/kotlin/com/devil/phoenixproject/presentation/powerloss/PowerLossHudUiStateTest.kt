@@ -157,4 +157,32 @@ class PowerLossHudUiStateTest {
         assertEquals("Target locked for this set. Edit before the next set.", ui.lockedNote)
         assertEquals("Target locked for this set.", PowerLossUiCopy.TARGET_LOCKED_SHORT)
     }
+
+    @Test
+    fun `E04 uncertain ROM reference shows the limited state and note`() {
+        val ui = powerLossHudUi(hud(attempt = 1, completed = 0, lastLoss = 0f), referenceRomUncertain = true)
+        assertEquals("Initial movement reference limited", ui.statusLine)
+        assertEquals(
+            "Range checks may be limited until a trustworthy reference is available.",
+            ui.referenceLimitedNote,
+        )
+    }
+
+    @Test
+    fun `trusted reference keeps the normal states without the limited note`() {
+        val ui = powerLossHudUi(hud(attempt = 3, completed = 3, lastLoss = 5f), referenceRomUncertain = false)
+        assertEquals("Below target", ui.statusLine)
+        assertNull(ui.referenceLimitedNote)
+    }
+
+    @Test
+    fun `near-limit warning outranks the uncertain reference status`() {
+        val ui = powerLossHudUi(hud(attempt = 3, completed = 3, lastLoss = 16f), referenceRomUncertain = true)
+        assertEquals("Near power-loss target", ui.statusLine)
+        assertEquals(
+            "Range checks may be limited until a trustworthy reference is available.",
+            ui.referenceLimitedNote,
+            "The caveat note stays visible even when the status line carries the warning",
+        )
+    }
 }

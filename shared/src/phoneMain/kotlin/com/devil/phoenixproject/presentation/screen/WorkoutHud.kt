@@ -1341,6 +1341,7 @@ private fun PowerLossHudReadout(hud: PowerLossHudUi) {
             hud.invalidPowerLine,
             hud.lastValidLine,
             hud.shortRomLine,
+            hud.referenceLimitedNote,
             hud.warmupNote,
             hud.endingLine,
             hud.referenceResetLine,
