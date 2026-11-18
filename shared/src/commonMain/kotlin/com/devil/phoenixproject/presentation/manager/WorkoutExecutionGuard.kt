@@ -58,6 +58,10 @@ internal data class ExecutionSeed(
     val isAmrap: Boolean = false,
     val isTimedCable: Boolean = false,
     val usesUnlimitedRepTarget: Boolean = false,
+    // Issue #1392 (SD4): the ONE frozen execution target plan derived before
+    // lease/packet/counter creation. Null = inert REP behavior (no plan derived
+    // or an impossible POWER plan failed safe).
+    val targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
 )
 
 internal data class ExecutionLease(
@@ -72,7 +76,21 @@ internal data class ExecutionLease(
     val isTimedCable: Boolean,
     val usesUnlimitedRepTarget: Boolean = false,
     val activationCutoverTimestampMs: Long? = null,
-)
+    // Issue #1392 (SD4): frozen from the seed at beginExecution; every consumer
+    // (packet/counter/freshness gate/HUD/policy) reads ONE identical effective target.
+    val targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
+) {
+    /**
+     * Issue #1392 (SD4): the ONE effective working-rep target shared by the packet
+     * byte, counter config, freshness gate and power-loss policy. POWER's frozen
+     * max-reps backstop wins; every other set keeps its per-set nominal target.
+     */
+    val effectiveWorkingRepTarget: Int
+        get() = targetPlan
+            ?.takeIf { it.targetMode == com.devil.phoenixproject.domain.powerloss.TargetMode.POWER }
+            ?.maxWorkingReps
+            ?: workingRepTarget
+}
 
 internal sealed interface PersistenceClaimResult {
     data object Claimed : PersistenceClaimResult
@@ -414,6 +432,7 @@ internal class WorkoutExecutionGuard(
             isAmrap = seed.isAmrap,
             isTimedCable = seed.isTimedCable,
             usesUnlimitedRepTarget = seed.usesUnlimitedRepTarget,
+            targetPlan = seed.targetPlan,
         )
         currentLeaseRef.value?.let { outgoingLease ->
             if (sameIdentity(completionClaim?.lease, outgoingLease)) {

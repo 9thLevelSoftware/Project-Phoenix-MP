@@ -81,6 +81,46 @@ interface WorkoutRepository {
         repBiomechanics: List<BiomechanicsRepResult>,
         completion: WorkoutCompletionMembership,
     )
+
+    /**
+     * Issue #1392 — evidence-aware overload (P3 ↔ P4 contract). Delegates to the
+     * evidence-less transaction by default so legacy fakes compile; the production
+     * `SqlDelightWorkoutRepository` overrides this to commit the deep-frozen
+     * [com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence] companions
+     * in the SAME transaction (retry/idempotent, attempt-only rows preserved).
+     */
+    suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence?,
+    ) {
+        commitCompletedSet(session, metrics, completedSet, repMetrics, repBiomechanics)
+    }
+
+    /** See [commitCompletedSet] — completion-aware evidence overload (same contract). */
+    suspend fun commitCompletedSetWithCompletion(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence?,
+    ) {
+        commitCompletedSetWithCompletion(session, metrics, completedSet, repMetrics, repBiomechanics, completion)
+    }
+
+    /**
+     * Issue #1392 — read-side hook for P5 history/summary. Returns persisted evidence
+     * rows for a session (newest set first). Default is empty for legacy fakes; the
+     * production repository implements the companion reads (P4).
+     */
+    suspend fun powerLossEvidenceForSession(sessionId: String): List<com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence> =
+        emptyList()
+
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
 
     /**

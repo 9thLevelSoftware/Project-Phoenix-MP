@@ -197,6 +197,7 @@ fun WorkoutTab(
     val isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight
     val latestRepQualityScore = state.latestRepQualityScore
     val latestBiomechanicsResult = state.latestBiomechanicsResult
+    val powerLossHudState = state.powerLossHudState
     val onTagJustLiftSessionExercise = actions::onTagJustLiftSessionExercise
     val onClearJustLiftSessionExercise = actions::onClearJustLiftSessionExercise
     val motionStartHoldProgress = state.motionStartHoldProgress
@@ -247,6 +248,7 @@ fun WorkoutTab(
                 timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 latestBiomechanicsResult = latestBiomechanicsResult,
+                powerLossHudState = powerLossHudState,
                 isExerciseTimerPaused = isExerciseTimerPaused,
                 onPauseExerciseTimer = onPauseExerciseTimer,
                 onResumeExerciseTimer = onResumeExerciseTimer,

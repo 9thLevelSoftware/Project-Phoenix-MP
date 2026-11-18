@@ -368,6 +368,8 @@ private class IosSoundManager {
             HapticEvent.AUTO_START_READY to "auto_start_ready",
             // Issue #313: Velocity loss threshold alert (attention-getting)
             HapticEvent.VELOCITY_THRESHOLD_REACHED to "boopbeepbeep",
+            // Issue #1392: power-loss near-limit cue (reuses existing beepboop asset)
+            HapticEvent.POWER_NEAR_LIMIT to "beepboop",
             // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
         )
 
@@ -797,6 +799,14 @@ private fun playHapticFeedback(event: HapticEvent) {
                 val notificationGenerator = UINotificationFeedbackGenerator()
                 notificationGenerator.prepare()
                 notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeWarning)
+            }
+
+            // Issue #1392: power-loss near-limit cue — medium impact, distinct from the
+            // velocity-threshold alert's heavy impact + warning notification.
+            is HapticEvent.POWER_NEAR_LIMIT -> {
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleMedium)
+                generator.prepare()
+                generator.impactOccurred()
             }
 
             // Issue #1356: Auto-start readiness — one firm impact, deliberately distinct

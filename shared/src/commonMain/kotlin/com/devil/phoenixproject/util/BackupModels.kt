@@ -166,6 +166,108 @@ data class PolarEcgSegmentBackup(
     val samplesUvCsv: String,
 )
 
+// =====================================================================================
+// Issue #1392 (packet P4 remainder) — versioned optional power-loss sections (backup v7).
+//
+// Three self-versioned sections ride every backup path (full, streaming,
+// session-scoped, routine-scoped). PRIVACY FILTERS: the set companion rows and
+// the per-exercise config rows are aggregate/summary facts and are retained even
+// when the raw-telemetry opt-in is OFF; the per-rep observation rows are raw
+// per-attempt telemetry and only ride an opted-in export. RESTORE SEMANTICS:
+// restore is additive (INSERT-if-absent, local wins), so an ABSENT section — an
+// old backup — never wipes local companion/config data; a present section can
+// only add. Absent fields decode as null, never as fabricated zeros. Rows with an
+// unknown [POWER_LOSS_BACKUP_FORMAT_VERSION] or unknown enum are skipped with a
+// warning by the strict readers — never crash, never coerce into active behavior,
+// never arm POWER from an unknown enum. Nothing here carries sync bookkeeping:
+// restored rows are never marked synced or backed up.
+// =====================================================================================
+
+/** Current row format version of the power-loss backup sections. */
+const val POWER_LOSS_BACKUP_FORMAT_VERSION: Int = 1
+
+/** Strict row gate: unknown section row versions are skipped, never coerced. */
+internal fun isSupportedPowerLossBackupFormatVersion(formatVersion: Int): Boolean =
+    formatVersion == POWER_LOSS_BACKUP_FORMAT_VERSION
+
+/**
+ * Backup representation of one `PowerLossSetCompanion` row: the frozen
+ * per-exercise [com.devil.phoenixproject.domain.powerloss.PowerLossConfig] plus
+ * reference/trigger/winner facts. Nullable metrics stay null — never zero.
+ */
+@Serializable
+data class PowerLossSetCompanionBackup(
+    val formatVersion: Int = POWER_LOSS_BACKUP_FORMAT_VERSION,
+    val sessionId: String,
+    val setId: String,
+    val metricVersion: Int = 1,
+    val targetMode: String,
+    val thresholdPercent: Int,
+    val maxWorkingReps: Int? = null,
+    val requireTwoConsecutive: Boolean = false,
+    val savedNominalReps: Int? = null,
+    val activeCables: String,
+    val activeCableProvenance: String,
+    val referenceWorkingOrdinal: Int? = null,
+    val referenceMcpWatts: Float? = null,
+    val referenceRomAMm: Float? = null,
+    val referenceRomBMm: Float? = null,
+    val triggerWorkingOrdinal: Int? = null,
+    val winnerReason: String? = null,
+    val shortRomObserved: Boolean = false,
+    val powerLossObserved: Boolean = false,
+    val lossPercentAtDecision: Float? = null,
+    val createdAt: Long,
+)
+
+/**
+ * Backup representation of one `PowerLossAttemptCompanion` row (the observation
+ * companion): per-rep attempt identity and nullable metrics. Attempt-only rows
+ * (no legacy RepMetric row) are first-class. Raw per-attempt telemetry — only
+ * exported when the raw-telemetry opt-in is ON.
+ */
+@Serializable
+data class PowerLossObservationCompanionBackup(
+    val formatVersion: Int = POWER_LOSS_BACKUP_FORMAT_VERSION,
+    val sessionId: String,
+    val setId: String,
+    val workingConcentricOrdinal: Int,
+    val legacyRepIndex: Int? = null,
+    val completed: Boolean = false,
+    val mcpWatts: Float? = null,
+    val eccentricPowerWatts: Float? = null,
+    val concentricDurationMs: Long? = null,
+    val eccentricDurationMs: Long? = null,
+    val lossPercentAtDecision: Float? = null,
+    val referenceWorkingOrdinal: Int? = null,
+    val romAMm: Float? = null,
+    val romBMm: Float? = null,
+    val romAPercentOfReference: Float? = null,
+    val romBPercentOfReference: Float? = null,
+    val romTrustworthy: Boolean = false,
+    val quality: String = "",
+    val shortRom: Boolean = false,
+    val powerLossQualified: Boolean = false,
+)
+
+/**
+ * Backup representation of one `PowerLossExerciseConfig` row: the per-exercise
+ * power-loss target config. Absent fields stay null (savedNominalReps) — an old
+ * backup defaults to REP with nulls, never zeros. An unknown targetMode is
+ * restored verbatim (raw values stay inspectable) but read back inert REP_TARGET.
+ */
+@Serializable
+data class PowerLossExerciseConfigBackup(
+    val formatVersion: Int = POWER_LOSS_BACKUP_FORMAT_VERSION,
+    val routineExerciseId: String,
+    val targetMode: String,
+    val thresholdPercent: Int,
+    val maxWorkingReps: Int? = null,
+    val requireTwoConsecutive: Boolean = false,
+    val savedNominalReps: Int? = null,
+    val updatedAt: Long,
+)
+
 /**
  * Backup representation of Routine
  */
@@ -846,6 +948,14 @@ data class BackupContent(
     // Added migration 58: Polar H10 multi-tier continuous timeline and ECG traces
     val polarBeatSamples: List<PolarBeatSampleBackup> = emptyList(),
     val polarEcgSegments: List<PolarEcgSegmentBackup> = emptyList(),
+    // Issue #1392 (packet P4 remainder): versioned optional power-loss sections.
+    // Old backups omit them entirely — an absent section never wipes local data
+    // (restore is additive). Observation rows are raw per-attempt telemetry and
+    // only ride raw-telemetry-opted-in exports; set companions and per-exercise
+    // configs are aggregate/summary facts and always ride.
+    val powerLossSetCompanions: List<PowerLossSetCompanionBackup> = emptyList(),
+    val powerLossObservationCompanions: List<PowerLossObservationCompanionBackup> = emptyList(),
+    val powerLossExerciseConfigs: List<PowerLossExerciseConfigBackup> = emptyList(),
 )
 
 /**
@@ -915,6 +1025,13 @@ data class ImportResult(
     val polarBeatSamplesSkipped: Int = 0,
     val polarEcgSegmentsImported: Int = 0,
     val polarEcgSegmentsSkipped: Int = 0,
+    // Issue #1392: power-loss companion/config sections (additive restore).
+    val powerLossSetCompanionsImported: Int = 0,
+    val powerLossSetCompanionsSkipped: Int = 0,
+    val powerLossObservationCompanionsImported: Int = 0,
+    val powerLossObservationCompanionsSkipped: Int = 0,
+    val powerLossExerciseConfigsImported: Int = 0,
+    val powerLossExerciseConfigsSkipped: Int = 0,
     val repairedReferences: Int = 0,
     /** Rows of a profile the user permanently deleted (PR 20), left out on purpose. */
     val deletedProfileRowsSkipped: Int = 0,
@@ -944,7 +1061,9 @@ data class ImportResult(
             pendingProfileRecoveriesImported + ownershipTransfersImported +
             appliedOwnershipEventsImported + localOwnershipClaimsImported +
             cycleConflictDraftsImported + cycleSyncStatesImported +
-            polarBeatSamplesImported + polarEcgSegmentsImported
+            polarBeatSamplesImported + polarEcgSegmentsImported +
+            powerLossSetCompanionsImported + powerLossObservationCompanionsImported +
+            powerLossExerciseConfigsImported
 
     val totalSkipped: Int
         get() = sessionsSkipped + metricsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
@@ -957,7 +1076,9 @@ data class ImportResult(
             workoutDeletionsSkipped + pendingProfileRecoveriesSkipped +
             ownershipTransfersSkipped + appliedOwnershipEventsSkipped + cycleConflictDraftsSkipped +
             localOwnershipClaimsSkipped + cycleSyncStatesSkipped +
-            polarBeatSamplesSkipped + polarEcgSegmentsSkipped + deletedProfileRowsSkipped
+            polarBeatSamplesSkipped + polarEcgSegmentsSkipped + deletedProfileRowsSkipped +
+            powerLossSetCompanionsSkipped + powerLossObservationCompanionsSkipped +
+            powerLossExerciseConfigsSkipped
 }
 
 // =====================================================================================
@@ -1019,6 +1140,9 @@ internal val BACKUP_CONTENT_ALLOWED_FIELDS: Set<String> = setOf(
     "cycleSyncStates",
     "polarBeatSamples",
     "polarEcgSegments",
+    "powerLossSetCompanions",
+    "powerLossObservationCompanions",
+    "powerLossExerciseConfigs",
 )
 
 /**

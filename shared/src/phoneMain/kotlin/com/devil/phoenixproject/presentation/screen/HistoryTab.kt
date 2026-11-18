@@ -53,6 +53,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.ble.HrmBleManager
+import com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence
+import com.devil.phoenixproject.presentation.powerloss.PowerLossHistorySetUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiCopy
+import com.devil.phoenixproject.presentation.powerloss.powerLossHistorySet
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -781,6 +785,10 @@ private fun RepDetailsSection(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     repMetricRepository: RepMetricRepository,
+    // Issue #1392: per-set power-loss evidence (WorkoutExitSnapshot.powerLossEvidence).
+    // Threading from the history store lands with the parallel persistence packet;
+    // empty keeps the legacy section byte-for-byte.
+    powerLossEvidence: List<PowerLossSetEvidence> = emptyList(),
 ) {
     var repMetrics by remember { mutableStateOf<List<RepMetricData>>(emptyList()) }
 
@@ -791,6 +799,28 @@ private fun RepDetailsSection(
         } catch (e: Exception) {
             co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load rep metrics for session $sessionId: ${e.message}" }
             repMetrics = emptyList()
+        }
+    }
+
+    // Issue #1392 — compact power-loss rows (ui-spec §6) via PowerLossHistoryUi:
+    // one line per working attempt (`coreLine`), attempt-only and trigger-only rows
+    // stay visible, missing data shows `—` with a reason — never a fabricated zero.
+    if (powerLossEvidence.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(Spacing.medium))
+
+        Text(
+            PowerLossUiCopy.DETAILS_EXPAND_LABEL,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+            powerLossEvidence.forEach { evidence ->
+                PowerLossHistoryRows(ui = powerLossHistorySet(evidence))
+            }
         }
     }
 
@@ -814,6 +844,54 @@ private fun RepDetailsSection(
                     formatWeight = formatWeight,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Issue #1392 — compact power-loss rows for history (ui-spec §6).
+ *
+ * One compact line per working attempt from [PowerLossHistorySetUi.coreRows];
+ * the config header line and trigger-only row stay visible, and the local-data
+ * disclosure is always rendered.
+ */
+@Composable
+private fun PowerLossHistoryRows(ui: PowerLossHistorySetUi) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = ui.headerLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ui.coreRows.forEach { row ->
+                Text(
+                    text = row,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            ui.triggerOnlyRow?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = ui.disclosure,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            )
         }
     }
 }

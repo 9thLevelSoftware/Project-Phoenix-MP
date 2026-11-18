@@ -1517,6 +1517,78 @@ WHERE gs.rowid = (
         )""",
     )
 
+    // Migration 66: power-loss autostop durable companions (issue #1392, packet P4).
+    // Additive only (SQLite API-26). Attempt rows carry no FK to RepMetric so the
+    // completion commit's rep-row replacement can never cascade them away.
+    66 -> listOf(
+        """CREATE TABLE IF NOT EXISTS PowerLossSetCompanion (
+            session_id TEXT NOT NULL,
+            set_id TEXT NOT NULL,
+            metric_version INTEGER NOT NULL DEFAULT 1,
+            target_mode TEXT NOT NULL,
+            threshold_percent INTEGER NOT NULL,
+            max_working_reps INTEGER,
+            require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+            saved_nominal_reps INTEGER,
+            active_cables TEXT NOT NULL,
+            active_cable_provenance TEXT NOT NULL,
+            reference_working_ordinal INTEGER,
+            reference_mcp_watts REAL,
+            reference_rom_a_mm REAL,
+            reference_rom_b_mm REAL,
+            trigger_working_ordinal INTEGER,
+            winner_reason TEXT,
+            short_rom_observed INTEGER NOT NULL DEFAULT 0 CHECK(short_rom_observed IN (0, 1)),
+            power_loss_observed INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_observed IN (0, 1)),
+            loss_percent_at_decision REAL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (session_id, set_id),
+            FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_power_loss_set_session ON PowerLossSetCompanion(session_id)",
+        """CREATE TABLE IF NOT EXISTS PowerLossAttemptCompanion (
+            session_id TEXT NOT NULL,
+            set_id TEXT NOT NULL,
+            working_concentric_ordinal INTEGER NOT NULL,
+            legacy_rep_index INTEGER,
+            completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1)),
+            mcp_watts REAL,
+            eccentric_power_watts REAL,
+            concentric_duration_ms INTEGER,
+            eccentric_duration_ms INTEGER,
+            loss_percent_at_decision REAL,
+            reference_working_ordinal INTEGER,
+            rom_a_mm REAL,
+            rom_b_mm REAL,
+            rom_a_percent_of_reference REAL,
+            rom_b_percent_of_reference REAL,
+            rom_trustworthy INTEGER NOT NULL DEFAULT 0 CHECK(rom_trustworthy IN (0, 1)),
+            quality TEXT NOT NULL DEFAULT '',
+            short_rom INTEGER NOT NULL DEFAULT 0 CHECK(short_rom IN (0, 1)),
+            power_loss_qualified INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_qualified IN (0, 1)),
+            PRIMARY KEY (session_id, working_concentric_ordinal),
+            FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_power_loss_attempt_session_set ON PowerLossAttemptCompanion(session_id, set_id)",
+    )
+
+    // Migration 67: per-exercise power-loss target config (issue #1392, packet P4
+    // remainder). Additive only (SQLite API-26). Absent row = inert REP_TARGET
+    // defaults with NULLs — never fabricated zeros. Local-only config: no wire keys.
+    67 -> listOf(
+        """CREATE TABLE IF NOT EXISTS PowerLossExerciseConfig (
+            routine_exercise_id TEXT NOT NULL PRIMARY KEY,
+            format_version INTEGER NOT NULL DEFAULT 1,
+            target_mode TEXT NOT NULL,
+            threshold_percent INTEGER NOT NULL,
+            max_working_reps INTEGER,
+            require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+            saved_nominal_reps INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+        )""",
+    )
+
     // Migration 64: Issue #1400 per-rep aggregate eligibility (calibration/ramp reps) and the
     // 0-100 set velocity-loss clamp for legacy rows. Mirrors 64.sqm exactly; the column is
     // additive (legacy rows default to eligible) and the UPDATE is idempotent on replay.

@@ -390,6 +390,13 @@ internal data class WorkoutExitSnapshot(
     val cycleDayNumber: Int?,
     val postSaveInput: PostSaveWorkoutInput,
     /**
+     * Issue #1392 — frozen power-loss evidence captured at the leased-completion latch
+     * (P3), persisted with the set by P4. Null for REP/legacy sets and any set without
+     * an armed power policy; never fabricated.
+     */
+    val powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence? = null,
+
+    /**
      * Issue #1400: explicit metric-unit contract of this snapshot's unit-bearing values
      * (rep velocities, ROM, power). The persistent crash form ([PendingChildWrite] via
      * CompletionJournalCodec) carries the same marker, so in-flight state recovered after

@@ -10,6 +10,8 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.flow.first
@@ -20,6 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Issue #772: the CSV import commit against real SQLite (foreign keys on). */
@@ -286,6 +289,40 @@ class RoutineCsvImportRepositoryTest {
             ),
         ),
     )
+
+    @Test
+    fun powerLossConfigSurvivesSaveReloadAndTheVersion3CsvRoundTrip() = runTest {
+        val powerConfig = PowerLossConfig(
+            targetMode = TargetMode.POWER,
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = 12,
+        )
+        val configured = routine("r-power", "Power day").let { base ->
+            base.copy(exercises = base.exercises.map { it.copy(powerLoss = powerConfig) })
+        }
+
+        repository.saveRoutine(configured)
+
+        val stored = repository.getRoutineById("r-power")!!
+        assertEquals(powerConfig, stored.exercises.single().powerLoss)
+
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(stored, null, null))
+        assertTrue(exported.content.startsWith("# phoenix_routine_csv_version=3"), "a POWER routine exports as version 3")
+        val reparsed = assertIs<RoutineCsvParseResult.Parsed>(RoutineCsvCodec.parse(exported.content)).routines.single()
+        assertEquals(powerConfig, reparsed.exercises.single().powerLoss)
+    }
+
+    @Test
+    fun legacyRowsKeepInertRepDefaultsWithNullsNotZeros() = runTest {
+        repository.saveRoutine(routine("r-legacy", "Legacy day"))
+
+        val stored = repository.getRoutineById("r-legacy")!!
+        val powerLoss = stored.exercises.single().powerLoss
+        assertEquals(TargetMode.REP_TARGET, powerLoss.targetMode)
+        assertNull(powerLoss.savedNominalReps)
+    }
 
     private companion object {
         const val HEADER = "routine_id,routine_name,routine_description,group_name,group_order,exercise_id,exercise_name," +

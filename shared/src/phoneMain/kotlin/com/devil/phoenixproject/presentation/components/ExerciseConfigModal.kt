@@ -17,7 +17,13 @@ import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
+import com.devil.phoenixproject.domain.powerloss.TargetMode
+import com.devil.phoenixproject.presentation.powerloss.PowerLossConfigDraftState
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiCopy
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -52,8 +58,34 @@ fun ExerciseConfigModal(
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
     // No default: a caller that forgot it would silently get the widest (Trainer+) ceiling.
     planningMaxWeightPerCableKg: Float,
+    // Issue #1392 SD4: dynamic Max-working-reps bound from the accepted execution plan
+    // (ProtocolRepBounds.maxRepresentableWorkingReps — PROGRAM: 254 minus warm-ups,
+    // Echo: its validator bound). This default is the un-warmed PROGRAM ceiling only;
+    // callers with a derived plan MUST pass the real bound — never assume 254 for Echo.
+    maxAllowedWorkingReps: Int = 254,
 ) {
     var config by remember { mutableStateOf(initialConfig) }
+
+    // Issue #1392 — Set target edits run through the pure draft state machine
+    // (validate-everything, atomic Apply; Cancel/discard restores the original).
+    var powerDraft by remember {
+        mutableStateOf(
+            PowerLossConfigDraftState.seededFrom(
+                config = initialConfig.powerLoss.copy(
+                    savedNominalReps = initialConfig.powerLoss.savedNominalReps ?: templateReps,
+                ),
+                maxAllowedWorkingReps = maxAllowedWorkingReps,
+                protocolFamily = PowerLossProtocolFamily.of(initialConfig.mode, isJustLiftExecutionStyle = false),
+            ),
+        )
+    }
+    // Program-mode switches move the capability gate (ui-spec §3).
+    val currentProtocolFamily = PowerLossProtocolFamily.of(config.mode, isJustLiftExecutionStyle = false)
+    LaunchedEffect(currentProtocolFamily) {
+        if (powerDraft.protocolFamily != currentProtocolFamily) {
+            powerDraft = powerDraft.copy(protocolFamily = currentProtocolFamily)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -162,6 +194,14 @@ fun ExerciseConfigModal(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                // Issue #1392 — Set target (power-loss) section, ui-spec §3.
+                PowerLossSetTargetSection(
+                    draft = powerDraft,
+                    onDraftChange = { powerDraft = it },
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                 // Footer buttons
                 Row(
                     modifier = Modifier
@@ -170,14 +210,25 @@ fun ExerciseConfigModal(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     OutlinedButton(
-                        onClick = onDismiss,
+                        onClick = {
+                            // Cancel: discard the unapplied draft (ui-spec §3).
+                            powerDraft = powerDraft.cancel()
+                            onDismiss()
+                        },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
-                        onClick = { onConfirm(config) },
+                        onClick = {
+                            // Apply validates every effective field and commits
+                            // atomically to ExerciseConfig.powerLoss.
+                            val committed = powerDraft.apply()
+                            powerDraft = committed
+                            onConfirm(config.copy(powerLoss = committed.committed))
+                        },
+                        enabled = powerDraft.canApply,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_apply))

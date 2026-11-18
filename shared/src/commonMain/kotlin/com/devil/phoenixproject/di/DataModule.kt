@@ -2,6 +2,8 @@ package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.csv.CsvImportInbox
+import com.devil.phoenixproject.data.export.PowerHistoryExporter
+import com.devil.phoenixproject.data.export.PowerHistoryExporterImpl
 import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
@@ -135,6 +137,8 @@ val dataModule = module {
     // Training Cycles Repositories
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
+    // Issue #1392 P4: power-history export v1 (P5 UI calls the interface only).
+    single<PowerHistoryExporter> { PowerHistoryExporterImpl(get()) }
     single<ActiveWorkoutRuntimeRepository> { SqlDelightActiveWorkoutRuntimeRepository(get()) }
     single<MachineSafetyHazardRepository> { SqlDelightMachineSafetyHazardRepository(get()) }
     single<MachineSafetyTransport> { BleRepositoryMachineSafetyTransport(get()) }

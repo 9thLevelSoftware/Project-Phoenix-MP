@@ -123,6 +123,9 @@ sealed class WorkoutState {
         val taggedExerciseId: String? = null,
         val taggedExerciseName: String? = null,
         val isAmrap: Boolean = false,
+        // Issue #1392 — power-loss summary facts (null when POWER was not armed;
+        // never fabricated). Rendered only with the SD6 completed/attempt clarification.
+        val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossSetSummaryFacts? = null,
     ) : WorkoutState()
     data class BodyweightRepEntry(
         val exerciseKey: String,
@@ -386,6 +389,11 @@ data class WorkoutParameters(
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
     val justLiftRestSeconds: Int = 0,
+    // Issue #1392 — per-exercise set-target config copied into every generated
+    // WorkoutParameters (integration-model §4). Default is inert REP_TARGET;
+    // POWER arms only from explicit per-exercise config behind the capability gate.
+    val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossConfig =
+        com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT,
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
@@ -545,6 +553,9 @@ sealed class HapticEvent {
 
     /** Issue #313: Velocity loss threshold reached — strong haptic + alert sound */
     data object VELOCITY_THRESHOLD_REACHED : HapticEvent()
+
+    /** Issue #1392: power-loss near-limit cue at max(0, threshold − 5)% loss — once per set */
+    data object POWER_NEAR_LIMIT : HapticEvent()
 
     /** Issue #100: Distinct transition sound from warmup to working sets */
     data object WARMUP_TO_WORKING : HapticEvent()

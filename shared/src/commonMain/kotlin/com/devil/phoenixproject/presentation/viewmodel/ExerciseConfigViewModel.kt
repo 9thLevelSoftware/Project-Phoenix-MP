@@ -23,8 +23,12 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.toWorkoutMode
+import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
+import com.devil.phoenixproject.presentation.powerloss.PowerLossConfigDraftState
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRuntimeGate
+import com.devil.phoenixproject.presentation.powerloss.powerLossRuntimeSettingsFor
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -203,6 +207,47 @@ class ExerciseConfigViewModel constructor(
     private val _rackBehaviorOverrides = MutableStateFlow<Map<String, RackItemBehavior>>(emptyMap())
     val rackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> = _rackBehaviorOverrides.asStateFlow()
 
+    // ===== Issue #1392 — Set-target config (P5, ui-spec §3) =====================
+    // Edits run through the pure draft state machine: Apply validates every
+    // effective field and commits atomically into the saved RoutineExercise on
+    // onSave; Cancel/discard restores the original target/settings.
+
+    private val _powerLossDraft = MutableStateFlow(PowerLossConfigDraftState())
+    val powerLossDraft: StateFlow<PowerLossConfigDraftState> = _powerLossDraft.asStateFlow()
+
+    /** UI transitions for the shared `Set target` section (pure state machine). */
+    fun onPowerLossDraftChange(next: PowerLossConfigDraftState) {
+        _powerLossDraft.value = next
+    }
+
+    /**
+     * The exercise's power-loss protocol family. Timed and bodyweight executions
+     * resolve to UNSUPPORTED (dormant/inert) exactly like TUT/TUT Beast/
+     * Eccentric-Only — POWER never arms from an excluded mode.
+     */
+    private fun currentPowerLossFamily(mode: WorkoutMode): PowerLossProtocolFamily =
+        if (_exerciseType.value == ExerciseType.BODYWEIGHT || _setMode.value == SetMode.DURATION) {
+            PowerLossProtocolFamily.UNSUPPORTED
+        } else {
+            PowerLossProtocolFamily.of(mode.toProgramMode(), isJustLiftExecutionStyle = false)
+        }
+
+    /**
+     * Runtime-settings preview for the editor's target readback facts. Unknown
+     * or excluded modes resolve to inert REP_TARGET — POWER never arms from an
+     * unknown or excluded mode (P5 propagation seam).
+     */
+    internal fun powerLossRuntimeSettingsPreview(): com.devil.phoenixproject.presentation.manager.PowerLossRuntimeSettings {
+        val draft = _powerLossDraft.value
+        return powerLossRuntimeSettingsFor(
+            config = draft.committed,
+            mode = _selectedMode.value.toProgramMode(),
+            isJustLiftExecutionStyle = false,
+            savedNominalReps = draft.committed.savedNominalReps,
+            pairedSamplesValidated = PowerLossRuntimeGate.pairedSamplesValidated,
+        )
+    }
+
     fun initialize(
         exercise: RoutineExercise,
         unit: WeightUnit,
@@ -316,6 +361,19 @@ class ExerciseConfigViewModel constructor(
         _defaultRackItemIds.value = exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct()
         _rackBehaviorOverrides.value = exercise.rackBehaviorOverrides
 
+        // Issue #1392: seed the Set-target draft from the exercise's saved config.
+        // Timed/bodyweight executions keep the saved POWER values but resolve to
+        // the inert/dormant state — POWER never arms from an excluded mode.
+        _powerLossDraft.value = PowerLossConfigDraftState.seededFrom(
+            config = exercise.powerLoss.copy(
+                savedNominalReps = exercise.powerLoss.savedNominalReps
+                    ?: exercise.setReps.firstOrNull(),
+            ),
+            maxAllowedWorkingReps = (254 - exercise.warmupSets.size)
+                .coerceAtLeast(com.devil.phoenixproject.domain.powerloss.PowerLossConfig.MIN_MAX_WORKING_REPS),
+            protocolFamily = currentPowerLossFamily(_selectedMode.value),
+        )
+
         // Load PR and typed baseline for the current exercise and mode.
         exercise.exercise.id?.let { exerciseId ->
             loadPRForExercise(exerciseId, _selectedMode.value.displayName)
@@ -332,6 +390,11 @@ class ExerciseConfigViewModel constructor(
             return
         }
         _setMode.value = mode
+        // Issue #1392: timed (DURATION) sets are an excluded execution type — a
+        // saved POWER config stays dormant instead of arming.
+        _powerLossDraft.value = _powerLossDraft.value.copy(
+            protocolFamily = currentPowerLossFamily(_selectedMode.value),
+        )
     }
 
     fun onSelectedModeChange(mode: WorkoutMode) {
@@ -339,6 +402,10 @@ class ExerciseConfigViewModel constructor(
         _currentExercisePR.value = null
         _currentMaxVolumePR.value = null
         refreshDropSetValidation()
+        // Issue #1392: program-mode switches move the capability gate (ui-spec §3).
+        _powerLossDraft.value = _powerLossDraft.value.copy(
+            protocolFamily = currentPowerLossFamily(mode),
+        )
         // Load PR for the new mode
         if (::originalExercise.isInitialized) {
             originalExercise.exercise.id?.let { exerciseId ->
@@ -1052,6 +1119,9 @@ class ExerciseConfigViewModel constructor(
             setWeightsPercentOfPR = expandedPercentOfPR,
             // Issue #517: persist explicit scaling basis (null = back-compat derivation from prTypeForScaling)
             scalingBasis = _scalingBasis.value,
+            // Issue #1392: Apply commits the Set-target draft atomically into the
+            // saved exercise (config load/edit/save + copy/equality round-trip).
+            powerLoss = _powerLossDraft.value.apply().committed,
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
             defaultRackItemIds = _defaultRackItemIds.value,

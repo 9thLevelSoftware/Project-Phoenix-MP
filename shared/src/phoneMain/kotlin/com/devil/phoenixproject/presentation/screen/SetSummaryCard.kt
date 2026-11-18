@@ -39,6 +39,13 @@ import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.powerloss.PowerLossSetSummaryFacts
+import com.devil.phoenixproject.presentation.powerloss.PowerLossAttemptRowUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRepTableUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossSummaryUi
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiCopy
+import com.devil.phoenixproject.presentation.powerloss.PowerLossUiFacts
+import com.devil.phoenixproject.presentation.powerloss.powerLossSummaryUi
 import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.ContentAwareFit
@@ -117,6 +124,10 @@ fun SetSummaryCard(
     isTerminalSummary: Boolean = false,
     hrmBleManager: HrmBleManager? = null,
     workoutRepository: WorkoutRepository? = null,
+    // Issue #1392: power-loss set-summary facts. `WorkoutState.SetSummary.powerLoss`
+    // arrives with the parallel packet; passed through PowerLossUiFacts until then.
+    // Null renders no power block (plain REP sets unchanged).
+    powerLossFacts: PowerLossSetSummaryFacts? = null,
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -189,6 +200,14 @@ fun SetSummaryCard(
     val setWeightValueText: String = primary.valueText
     val setWeightUnitText: String = primary.unitText
     val durationFormatted = DurationFormatter.formatDuration(summary.durationMs)
+
+    // Issue #1392 — power-loss summary projection (ui-spec §6). SD6: the headline
+    // renders ONLY with its adjacent `8 completed reps · lifting attempt 9`
+    // clarification; the completed count is never promoted to the headline.
+    // The engine freezes facts into `WorkoutState.SetSummary.powerLoss`; the
+    // explicit `powerLossFacts` param stays an override seam for callers/tests.
+    val powerLossSummary = PowerLossUiFacts.summaryFacts(powerLossFacts ?: summary.powerLoss)
+        ?.let { powerLossSummaryUi(it) }
 
     // Peak/Avg forces - take max of both cables for display
     // Force values are per-cable measurements; primary display stays per-cable.
@@ -272,6 +291,11 @@ fun SetSummaryCard(
                     }
                 }
             }
+        }
+
+        // Issue #1392 — power-loss block (renders only for POWER sets).
+        powerLossSummary?.let { powerUi ->
+            PowerLossSummaryBlock(ui = powerUi)
         }
 
         // Stats Grid: one-column fallback when two cards can't fit their actual content
@@ -2000,6 +2024,175 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
+        }
+    }
+}
+
+/**
+ * Issue #1392 — power-loss summary block (ui-spec §6, SD6 binding).
+ *
+ * The `Stopped at rep 9 — 21% power loss (best: rep 2)` headline renders ONLY
+ * adjacent to its `8 completed reps · lifting attempt 9` clarification; the
+ * completed count comes from actualReps and is never promoted to the headline.
+ */
+@Composable
+private fun PowerLossSummaryBlock(ui: PowerLossSummaryUi) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ui.powerActiveBadge?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            ui.headline?.let { headline ->
+                Text(
+                    text = headline,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                // SD6: the clarification must render adjacent to the headline.
+                ui.clarification?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            ui.unavailableLine?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            ui.secondaryLine?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = ui.configLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = ui.helpLine,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            )
+            // ui-spec F06 — per-attempt MCP table behind a `Power details`
+            // expandable. Rows carry text badges inline (coreLine) and expandable
+            // detail pairs (reference-at-decision, ROM A/B, con/ecc with quality).
+            PowerLossRepTable(ui = ui.table)
+            Text(
+                text = ui.savedRepsHeader,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ui.savedRepReadback?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = ui.disclosure,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            )
+        }
+    }
+}
+
+/**
+ * Issue #1392 — summary per-attempt MCP table (ui-spec F06) behind a
+ * `Power details` expandable. One compact row per working attempt (`coreLine`
+ * carries the text badges); a row expands to its detail pairs (reference at
+ * decision, ROM A/B, con/ecc with quality). Missing metrics stay `—` with a
+ * reason — never a fabricated zero.
+ */
+@Composable
+private fun PowerLossRepTable(ui: PowerLossRepTableUi) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = PowerLossUiCopy.DETAILS_EXPAND_LABEL,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) {
+                    "Hide ${PowerLossUiCopy.DETAILS_EXPAND_LABEL}"
+                } else {
+                    "Show ${PowerLossUiCopy.DETAILS_EXPAND_LABEL}"
+                },
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (expanded) {
+            Text(
+                text = ui.caption,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ui.rows.forEach { row ->
+                PowerLossAttemptRow(row = row)
+            }
+        }
+    }
+}
+
+/** One expandable attempt row: compact `coreLine`, tap to reveal detail pairs. */
+@Composable
+private fun PowerLossAttemptRow(row: PowerLossAttemptRowUi) {
+    var open by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = row.coreLine,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open }
+                .padding(vertical = 2.dp),
+        )
+        if (open) {
+            row.details.forEach { (label, value) ->
+                Text(
+                    text = "$label: $value",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 2.dp),
+                )
+            }
         }
     }
 }

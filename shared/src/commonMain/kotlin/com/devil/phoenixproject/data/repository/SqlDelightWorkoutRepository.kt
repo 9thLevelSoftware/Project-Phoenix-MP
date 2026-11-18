@@ -458,6 +458,9 @@ class SqlDelightWorkoutRepository(
                 RoutineExercise(
                     id = row.id,
                     exercise = exerciseWithBodyweightFlag,
+                    // Issue #1392: per-exercise power-loss config (absent row = inert
+                    // REP defaults with nulls, never zeros; strict reader fails safe).
+                    powerLoss = PowerLossConfigStore.readConfig(queries, row.id),
                     orderIndex = row.orderIndex.toInt(),
                     setReps = setReps,
                     weightPerCableKg = row.weightPerCableKg.toFloat(),
@@ -567,6 +570,12 @@ class SqlDelightWorkoutRepository(
         }
     }
 
+    /** Issue #1392: read-side power-loss evidence (newest set first). */
+    override suspend fun powerLossEvidenceForSession(sessionId: String): List<com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence> =
+        withContext(Dispatchers.IO) {
+            PowerLossCompanionStore.readEvidence(queries, sessionId)
+        }
+
     /**
      * F-012: the whole completion in one transaction. See
      * [WorkoutRepository.commitCompletedSet] for the contract; the guards here
@@ -582,6 +591,27 @@ class SqlDelightWorkoutRepository(
         withContext(Dispatchers.IO) {
             db.transaction {
                 commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics)
+            }
+        }
+    }
+
+    /**
+     * Issue #1392 (packet P4): evidence-aware commit. The deep-frozen
+     * [com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence] companions land in
+     * the SAME transaction as the set — retry/idempotent (INSERT-if-absent on stable
+     * keys), attempt-only rows preserved (no FK to RepMetric), never fabricated.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence?,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics, powerLossEvidence)
             }
         }
     }
@@ -607,9 +637,34 @@ class SqlDelightWorkoutRepository(
         repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
         completion: WorkoutCompletionMembership,
     ) {
+        commitCompletedSetWithCompletionImpl(session, metrics, completedSet, repMetrics, repBiomechanics, completion, null)
+    }
+
+    /** Issue #1392: completion-aware evidence overload — same contract, companions ride along. */
+    override suspend fun commitCompletedSetWithCompletion(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence?,
+    ) {
+        commitCompletedSetWithCompletionImpl(session, metrics, completedSet, repMetrics, repBiomechanics, completion, powerLossEvidence)
+    }
+
+    private suspend fun commitCompletedSetWithCompletionImpl(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+        completion: WorkoutCompletionMembership,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence?,
+    ) {
         val standaloneQueued = withContext(Dispatchers.IO) {
             db.transaction {
-                commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics)
+                commitCompletedSetBody(session, metrics, completedSet, repMetrics, repBiomechanics, powerLossEvidence)
             }
             try {
                 db.transactionWithResult {
@@ -693,6 +748,7 @@ class SqlDelightWorkoutRepository(
         completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
         repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
         repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+        powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence? = null,
     ) {
         if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
             insertSessionRow(session)
@@ -710,6 +766,12 @@ class SqlDelightWorkoutRepository(
         repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
         queries.deleteRepBiomechanicsBySession(session.id)
         repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+        // Issue #1392: deep-frozen power-loss companions in the SAME transaction
+        // (INSERT-if-absent on stable keys — retry/idempotent, attempt-only rows
+        // preserved; null evidence writes nothing and never fabricates).
+        if (powerLossEvidence != null) {
+            PowerLossCompanionStore.commitEvidence(queries, powerLossEvidence, currentTimeMillis())
+        }
         // Main's newer sync-dirty contract: every child write marks its
         // session. The atomic commit writes those children in one
         // transaction, so it must dirty the session the same way the
@@ -1589,6 +1651,11 @@ class SqlDelightWorkoutRepository(
                 dropSetMinWeightKg = dropSetMinWeightKg,
             )
         }
+
+        // Issue #1392: persist the per-exercise power-loss target config alongside the
+        // row write (delete + reinsert inside the caller's transaction; a default
+        // config removes the row so absent always means inert REP defaults).
+        PowerLossConfigStore.writeConfig(queries, exerciseRowId, exercise.powerLoss, currentTimeMillis())
 
         // Portal sync (PR 13): the duration is known to be current when this build
         // created the row, when it was already known, or when the user changed it.

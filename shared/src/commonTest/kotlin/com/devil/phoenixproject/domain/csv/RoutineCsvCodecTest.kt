@@ -13,6 +13,8 @@ import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -26,6 +28,7 @@ import kotlin.test.assertTrue
 class RoutineCsvCodecTest {
     private val header = RoutineCsvFormat.COLUMNS.joinToString(",")
     private val headerV2 = RoutineCsvFormat.COLUMNS_V2.joinToString(",")
+    private val headerV3 = RoutineCsvFormat.COLUMNS_V3.joinToString(",")
 
     private fun exercise(id: String, name: String) = Exercise(id = id, name = name, muscleGroup = "Chest")
 
@@ -82,12 +85,22 @@ class RoutineCsvCodecTest {
     private fun issues(text: String): List<RoutineCsvIssue> = assertIs<RoutineCsvParseResult.Invalid>(RoutineCsvCodec.parse(text)).issues
     private fun file(vararg rows: String) = (listOf(RoutineCsvFormat.VERSION_LINE, header) + rows).joinToString("\n")
     private fun fileV2(vararg rows: String) = (listOf(RoutineCsvFormat.VERSION_V2_LINE, headerV2) + rows).joinToString("\n")
+    private fun fileV3(vararg rows: String) = (listOf(RoutineCsvFormat.VERSION_V3_LINE, headerV3) + rows).joinToString("\n")
 
     /** A hand-written version 2 row: the fixed v1 cells, then [values] by column name. */
     private fun rowV2(vararg values: Pair<String, String>, name: String = "Barbell Squat"): String {
         val byName = values.toMap()
         val cells = listOf("", name, "", "", "", "", name, "0", "", "", "", "", "8|8|6", "40|40|42.5", "120", "", "false", "") +
             RoutineCsvFormat.COLUMNS_V2_ONLY.map { byName[it].orEmpty() }
+        return cells.joinToString(",")
+    }
+
+    /** A hand-written version 3 row: [rowV2] plus the power-loss cells by column name. */
+    private fun rowV3(vararg values: Pair<String, String>, name: String = "Barbell Squat"): String {
+        val byName = values.toMap()
+        val cells = listOf("", name, "", "", "", "", name, "0", "", "", "", "", "8|8|6", "40|40|42.5", "120", "", "false", "") +
+            RoutineCsvFormat.COLUMNS_V2_ONLY.map { byName[it].orEmpty() } +
+            RoutineCsvFormat.COLUMNS_V3_ONLY.map { byName[it].orEmpty() }
         return cells.joinToString(",")
     }
 
@@ -399,7 +412,7 @@ class RoutineCsvCodecTest {
     fun fileLevelProblemsAreReported() {
         assertTrue(issues("").single().message.contains("empty"))
         assertTrue(issues("routine_id\n").single().message.contains(RoutineCsvFormat.VERSION_LINE))
-        assertTrue(issues("# phoenix_routine_csv_version=3\n$headerV2").single().message.contains("version"))
+        assertTrue(issues("# phoenix_routine_csv_version=4\n$headerV2").single().message.contains("version"))
         assertTrue(issues("# phoenix_routine_csv_version=2\n$header").single().message.contains("header"))
         assertTrue(issues(RoutineCsvFormat.VERSION_LINE + "\nroutine_id;routine_name").single().message.contains("semicolons"))
         assertTrue(issues(RoutineCsvFormat.VERSION_LINE + "\nroutine_id,routine_name").single().message.contains("header"))
@@ -487,5 +500,115 @@ class RoutineCsvCodecTest {
 
         val huge = RoutineCsvFormat.VERSION_LINE + "\n" + "x".repeat(RoutineCsvFormat.MAX_BYTES)
         assertTrue(issues(huge).single().message.contains("2 MB"))
+    }
+
+    // ── Issue #1392: version 3 power-loss config contract ────────────────────
+
+    @Test
+    fun powerLossConfigRoundTripsThroughTheVersion3File() {
+        val powerConfig = PowerLossConfig(
+            targetMode = TargetMode.POWER,
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = 12,
+        )
+        val routine = sampleRoutine().let { base ->
+            base.copy(exercises = base.exercises.map { it.copy(powerLoss = powerConfig) })
+        }
+
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+        val draft = parsed(exported.content).single()
+        assertEquals(powerConfig, draft.exercises.first().powerLoss)
+        // Blank nullable cells stay absent (null), never a fabricated zero.
+        val withoutNominal = powerConfig.copy(savedNominalReps = null)
+        val routine2 = sampleRoutine().let { base ->
+            base.copy(exercises = base.exercises.map { it.copy(powerLoss = withoutNominal) })
+        }
+        val exported2 = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine2, null, null))
+        val draft2 = parsed(exported2.content).single()
+        assertEquals(withoutNominal, draft2.exercises.first().powerLoss)
+        assertNull(draft2.exercises.first().powerLoss.savedNominalReps)
+    }
+
+    @Test
+    fun aRoutineWithPowerLossConfigIsNeverQuietlyExportedAsVersion2() {
+        val routine = sampleRoutine().let { base ->
+            base.copy(
+                exercises = base.exercises.map {
+                    it.copy(powerLoss = PowerLossConfig(targetMode = TargetMode.POWER, savedNominalReps = 12))
+                },
+            )
+        }
+
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(routine, null, null))
+
+        assertTrue(exported.content.startsWith(RoutineCsvFormat.VERSION_V3_LINE), "POWER routines export as version 3")
+        assertTrue(!exported.content.startsWith(RoutineCsvFormat.VERSION_V2_LINE))
+    }
+
+    @Test
+    fun version1And2RowsKeepTheInertRepDefaultsWithNullsNotZeros() {
+        val draft = parsed(fileV2(rowV2())).single().exercises.single()
+        assertEquals(TargetMode.REP_TARGET, draft.powerLoss.targetMode)
+        assertNull(draft.powerLoss.savedNominalReps)
+        assertEquals(PowerLossConfig.DEFAULT.thresholdPercent, draft.powerLoss.thresholdPercent)
+    }
+
+    @Test
+    fun anUnknownPowerLossTargetModeImportsAsInertRepTargetNeverPower() {
+        val draft = parsed(
+            fileV3(
+                rowV3(
+                    "power_loss_target_mode" to "SUPER_FUTURE_MODE",
+                    "power_loss_threshold_percent" to "25",
+                    "power_loss_max_working_reps" to "15",
+                    "power_loss_require_two_consecutive" to "true",
+                    "power_loss_saved_nominal_reps" to "12",
+                ),
+            ),
+        ).single().exercises.single()
+
+        assertEquals(TargetMode.REP_TARGET, draft.powerLoss.targetMode)
+        assertEquals(25, draft.powerLoss.thresholdPercent)
+        assertEquals(15, draft.powerLoss.maxWorkingReps)
+        assertEquals(true, draft.powerLoss.requireTwoConsecutive)
+        assertEquals(12, draft.powerLoss.savedNominalReps)
+    }
+
+    @Test
+    fun anUnknownFileVersionIsRefusedSafely() {
+        val future = "# phoenix_routine_csv_version=4\n$headerV3\n"
+        val problems = issues(future)
+        assertTrue(problems.single().message.contains("Unsupported file version"))
+    }
+
+    @Test
+    fun outOfRangePowerLossNumbersAreRefusedWithoutSilentClamping() {
+        val problems = issues(
+            fileV3(
+                rowV3(
+                    "power_loss_target_mode" to "POWER",
+                    "power_loss_threshold_percent" to "50",
+                ),
+            ),
+        )
+        assertTrue(problems.any { it.message.contains("power_loss_threshold_percent") })
+    }
+
+    @Test
+    fun anInvalidPowerLossConfigBlocksExportWithExplicitCopy() {
+        val routine = sampleRoutine().let { base ->
+            base.copy(
+                exercises = base.exercises.map {
+                    it.copy(powerLoss = PowerLossConfig(targetMode = TargetMode.POWER, thresholdPercent = 50))
+                },
+            )
+        }
+
+        val blocked = assertIs<RoutineCsvExportResult.Blocked>(RoutineCsvCodec.encode(routine, null, null))
+
+        assertTrue(blocked.reasons.any { it.contains("power-loss target settings") })
+        assertTrue(blocked.reasons.any { it.contains("Use power-data export to keep them") })
     }
 }

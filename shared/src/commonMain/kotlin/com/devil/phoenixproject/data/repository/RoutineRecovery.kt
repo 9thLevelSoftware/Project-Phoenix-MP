@@ -481,6 +481,24 @@ open class RoutineRecoveryStore(private val queries: PhoenixDatabaseQueries) {
             // build, so its duration is known (same rule as writeRoutineExerciseRow);
             // the snapshot's flag described the deleted identity, not this one.
             queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown = 1L, id = newExerciseId)
+            // Issue #1392: the recovered clone keeps the source exercise's power-loss
+            // config (local-only state; restored additively, never a sync/backed-up claim).
+            val sourceConfig = queries.selectPowerLossExerciseConfigsByRoutineExerciseIds(listOf(exercise.id))
+                .executeAsList()
+                .firstOrNull { it.routine_exercise_id == exercise.id }
+            if (sourceConfig != null) {
+                PowerLossConfigStore.restoreIfAbsent(
+                    queries = queries,
+                    routineExerciseId = newExerciseId,
+                    targetMode = sourceConfig.target_mode,
+                    thresholdPercent = sourceConfig.threshold_percent.toInt(),
+                    maxWorkingReps = sourceConfig.max_working_reps?.toInt(),
+                    requireTwoConsecutive = sourceConfig.require_two_consecutive != 0L,
+                    savedNominalReps = sourceConfig.saved_nominal_reps?.toInt(),
+                    formatVersion = sourceConfig.format_version.toInt(),
+                    nowMs = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                )
+            }
         }
 
         for (plannedSet in graph.plannedSets) {

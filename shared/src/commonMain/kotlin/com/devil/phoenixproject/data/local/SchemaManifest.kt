@@ -1867,6 +1867,88 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // Issue #1392 (packet P4, migration 64.sqm): power-loss autostop durable
+    // companions. Additive nullable companions; legacy rows keep REP semantics
+    // with NULL new metrics (never zeros). Attempt rows carry no FK to RepMetric
+    // so completion rep-row replacement can never cascade them away.
+    SchemaTableOperation(
+        table = "PowerLossSetCompanion",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PowerLossSetCompanion (
+                session_id TEXT NOT NULL,
+                set_id TEXT NOT NULL,
+                metric_version INTEGER NOT NULL DEFAULT 1,
+                target_mode TEXT NOT NULL,
+                threshold_percent INTEGER NOT NULL,
+                max_working_reps INTEGER,
+                require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+                saved_nominal_reps INTEGER,
+                active_cables TEXT NOT NULL,
+                active_cable_provenance TEXT NOT NULL,
+                reference_working_ordinal INTEGER,
+                reference_mcp_watts REAL,
+                reference_rom_a_mm REAL,
+                reference_rom_b_mm REAL,
+                trigger_working_ordinal INTEGER,
+                winner_reason TEXT,
+                short_rom_observed INTEGER NOT NULL DEFAULT 0 CHECK(short_rom_observed IN (0, 1)),
+                power_loss_observed INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_observed IN (0, 1)),
+                loss_percent_at_decision REAL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (session_id, set_id),
+                FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "PowerLossAttemptCompanion",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PowerLossAttemptCompanion (
+                session_id TEXT NOT NULL,
+                set_id TEXT NOT NULL,
+                working_concentric_ordinal INTEGER NOT NULL,
+                legacy_rep_index INTEGER,
+                completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1)),
+                mcp_watts REAL,
+                eccentric_power_watts REAL,
+                concentric_duration_ms INTEGER,
+                eccentric_duration_ms INTEGER,
+                loss_percent_at_decision REAL,
+                reference_working_ordinal INTEGER,
+                rom_a_mm REAL,
+                rom_b_mm REAL,
+                rom_a_percent_of_reference REAL,
+                rom_b_percent_of_reference REAL,
+                rom_trustworthy INTEGER NOT NULL DEFAULT 0 CHECK(rom_trustworthy IN (0, 1)),
+                quality TEXT NOT NULL DEFAULT '',
+                short_rom INTEGER NOT NULL DEFAULT 0 CHECK(short_rom IN (0, 1)),
+                power_loss_qualified INTEGER NOT NULL DEFAULT 0 CHECK(power_loss_qualified IN (0, 1)),
+                PRIMARY KEY (session_id, working_concentric_ordinal),
+                FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // Issue #1392 (packet P4 remainder, migration 65.sqm): per-exercise
+    // power-loss target config. Absent row = inert REP_TARGET defaults with
+    // NULLs — never fabricated zeros. Local-only: no sync wire semantics.
+    SchemaTableOperation(
+        table = "PowerLossExerciseConfig",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PowerLossExerciseConfig (
+                routine_exercise_id TEXT NOT NULL PRIMARY KEY,
+                format_version INTEGER NOT NULL DEFAULT 1,
+                target_mode TEXT NOT NULL,
+                threshold_percent INTEGER NOT NULL,
+                max_working_reps INTEGER,
+                require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+                saved_nominal_reps INTEGER,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -2525,4 +2607,8 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation("idx_completion_receipt_external", "CREATE INDEX IF NOT EXISTS idx_completion_receipt_external ON WorkoutCompletionReceipt(external_id)"),
     SchemaIndexOperation("idx_intervals_outbox_due", "CREATE INDEX IF NOT EXISTS idx_intervals_outbox_due ON IntervalsOutbox(state, next_attempt_at)"),
     SchemaIndexOperation("idx_intervals_outbox_lease", "CREATE INDEX IF NOT EXISTS idx_intervals_outbox_lease ON IntervalsOutbox(state, lease_expires_at)"),
+
+    // ── Power-loss companions (issue #1392, migration 64.sqm) ──────────
+    SchemaIndexOperation("idx_power_loss_set_session", "CREATE INDEX IF NOT EXISTS idx_power_loss_set_session ON PowerLossSetCompanion(session_id)"),
+    SchemaIndexOperation("idx_power_loss_attempt_session_set", "CREATE INDEX IF NOT EXISTS idx_power_loss_attempt_session_set ON PowerLossAttemptCompanion(session_id, set_id)"),
 )

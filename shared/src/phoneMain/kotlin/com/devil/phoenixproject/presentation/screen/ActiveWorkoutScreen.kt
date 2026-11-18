@@ -133,6 +133,8 @@ fun ActiveWorkoutScreen(
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
+    // Issue #1392: live power-loss HUD facts for the active HUD panel (ui-spec §4)
+    val powerLossHudState by viewModel.powerLossHud.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
@@ -447,6 +449,7 @@ fun ActiveWorkoutScreen(
         canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, latestRepQuality,
         latestBiomechanicsResult,
+        powerLossHudState,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex,
         justLiftRestCountdown, isExerciseTimerPaused,
@@ -485,6 +488,7 @@ fun ActiveWorkoutScreen(
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             latestRepQualityScore = latestRepQuality?.composite,
             latestBiomechanicsResult = latestBiomechanicsResult,
+            powerLossHudState = powerLossHudState,
             motionStartHoldProgress = motionStartHoldProgress,
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,

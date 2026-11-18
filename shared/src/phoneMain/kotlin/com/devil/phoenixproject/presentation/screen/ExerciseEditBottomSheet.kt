@@ -85,11 +85,14 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaselineSource
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
+import com.devil.phoenixproject.presentation.components.PowerLossSavedTargetFacts
+import com.devil.phoenixproject.presentation.components.PowerLossSetTargetSection
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
@@ -506,6 +509,31 @@ fun ExerciseEditBottomSheet(
                     onDeleteSet = viewModel::deleteSet,
                     onRepeatCountChange = viewModel::onRepeatCountChange, // Issue #667
                 )
+
+                // Issue #1392 — Set target section beside the rep settings
+                // (ui-spec §2). Saved target facts (`Saved reps: 12` +
+                // `Power-loss target active`) render above the section; edits run
+                // through the pure draft state machine and commit atomically on
+                // Save. This sheet is configuration only — active-set UI never
+                // edits the target (`Target locked for this set.`).
+                val powerDraft by viewModel.powerLossDraft.collectAsState()
+                PowerLossSavedTargetFacts(
+                    savedNominalReps = powerDraft.committed.savedNominalReps,
+                    powerActive = powerDraft.committed.targetMode == TargetMode.POWER &&
+                        powerDraft.protocolFamily.supportsPowerLoss,
+                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                    shadowElevation = 2.dp,
+                ) {
+                    PowerLossSetTargetSection(
+                        draft = powerDraft,
+                        onDraftChange = viewModel::onPowerLossDraftChange,
+                    )
+                }
 
                 // Per Set Rest Time toggle — immediately follows SetsConfiguration so rest
                 // config lives in the same primary zone as the sets it applies to.
