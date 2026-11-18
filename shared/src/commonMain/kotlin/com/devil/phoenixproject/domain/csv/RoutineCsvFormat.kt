@@ -52,9 +52,21 @@ import com.devil.phoenixproject.util.Constants
 object RoutineCsvFormat {
     const val VERSION = 1
     const val VERSION_V2 = 2
+
+    /**
+     * Version 3 (#1392): the config-preserving power-loss format. [COLUMNS_V3_ONLY]
+     * carry `ExerciseConfig.powerLoss` ([com.devil.phoenixproject.domain.powerloss.PowerLossConfig])
+     * exactly, so a POWER routine round-trips without being silently downgraded to
+     * REP. A routine that uses non-default power-loss config is NEVER written as
+     * version 2 — see [RoutineCsvCodec.encode] and its lossy-export block. Apps
+     * reading version 2 only refuse version 3 files ("Unsupported file version")
+     * instead of quietly importing a POWER routine as REP.
+     */
+    const val VERSION_V3 = 3
     const val VERSION_PREFIX = "# phoenix_routine_csv_version="
     const val VERSION_LINE = "$VERSION_PREFIX$VERSION"
     const val VERSION_V2_LINE = "$VERSION_PREFIX$VERSION_V2"
+    const val VERSION_V3_LINE = "$VERSION_PREFIX$VERSION_V3"
 
     val COLUMNS = listOf(
         "routine_id",
@@ -107,6 +119,24 @@ object RoutineCsvFormat {
 
     /** The version 2 header: the v1 columns, unchanged, then [COLUMNS_V2_ONLY]. */
     val COLUMNS_V2 = COLUMNS + COLUMNS_V2_ONLY
+
+    /**
+     * Columns version 3 adds to [COLUMNS_V2]: the per-exercise power-loss target
+     * config (`ExerciseConfig.powerLoss`). Enum cells hold constant names
+     * (`REP_TARGET`, `POWER`); blank numeric cells mean absent (null), never zero.
+     * A blank `power_loss_target_mode` or an unknown name reads as inert
+     * `REP_TARGET` — import never silently arms POWER from an unknown string.
+     */
+    val COLUMNS_V3_ONLY = listOf(
+        "power_loss_target_mode",
+        "power_loss_threshold_percent",
+        "power_loss_max_working_reps",
+        "power_loss_require_two_consecutive",
+        "power_loss_saved_nominal_reps",
+    )
+
+    /** The version 3 header: the v2 columns, unchanged, then [COLUMNS_V3_ONLY]. */
+    val COLUMNS_V3 = COLUMNS_V2 + COLUMNS_V3_ONLY
 
     /** Denial-of-service bounds for a picked file. */
     const val MAX_BYTES = 2 * 1024 * 1024

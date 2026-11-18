@@ -1923,6 +1923,26 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // Issue #1392 (packet P4 remainder, migration 65.sqm): per-exercise
+    // power-loss target config. Absent row = inert REP_TARGET defaults with
+    // NULLs — never fabricated zeros. Local-only: no sync wire semantics.
+    SchemaTableOperation(
+        table = "PowerLossExerciseConfig",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PowerLossExerciseConfig (
+                routine_exercise_id TEXT NOT NULL PRIMARY KEY,
+                format_version INTEGER NOT NULL DEFAULT 1,
+                target_mode TEXT NOT NULL,
+                threshold_percent INTEGER NOT NULL,
+                max_working_reps INTEGER,
+                require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+                saved_nominal_reps INTEGER,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================

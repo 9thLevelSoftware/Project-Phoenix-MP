@@ -5690,3 +5690,45 @@ WHERE NOT EXISTS (
 
 selectPowerLossAttemptCompanionsBySession:
 SELECT * FROM PowerLossAttemptCompanion WHERE session_id = :session_id ORDER BY working_concentric_ordinal ASC;
+
+-- Per-exercise power-loss target config (issue #1392, packet P4 remainder,
+-- migration 65.sqm). One row per routine exercise; absent row = inert
+-- REP_TARGET defaults with NULLs — never fabricated zeros. The row is local-only
+-- configuration: no sync wire semantics, never pushed, never marked backed up.
+CREATE TABLE PowerLossExerciseConfig (
+    routine_exercise_id TEXT NOT NULL PRIMARY KEY,
+    format_version INTEGER NOT NULL DEFAULT 1,
+    target_mode TEXT NOT NULL,
+    threshold_percent INTEGER NOT NULL,
+    max_working_reps INTEGER,
+    require_two_consecutive INTEGER NOT NULL DEFAULT 0 CHECK(require_two_consecutive IN (0, 1)),
+    saved_nominal_reps INTEGER,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+);
+
+selectAllPowerLossExerciseConfigs:
+SELECT * FROM PowerLossExerciseConfig;
+
+selectPowerLossExerciseConfigsByRoutineExerciseIds:
+SELECT * FROM PowerLossExerciseConfig WHERE routine_exercise_id IN ?;
+
+-- INSERT-if-absent: backup restore and retry-safe commits. Local config wins —
+-- an existing row is never replaced by a restore (absent/present sections can
+-- only add, never wipe). API-26 safe: no upsert syntax.
+insertPowerLossExerciseConfigIfAbsent:
+INSERT INTO PowerLossExerciseConfig(
+    routine_exercise_id, format_version, target_mode, threshold_percent,
+    max_working_reps, require_two_consecutive, saved_nominal_reps, updated_at
+)
+SELECT :routine_exercise_id, :format_version, :target_mode, :threshold_percent,
+       :max_working_reps, :require_two_consecutive, :saved_nominal_reps, :updated_at
+WHERE NOT EXISTS (
+    SELECT 1 FROM PowerLossExerciseConfig
+    WHERE routine_exercise_id = :routine_exercise_id
+);
+
+-- Authoritative local edit: the local write path deletes and reinserts inside
+-- its transaction (idempotent on retry; no parent replace; leaf row only).
+deletePowerLossExerciseConfig:
+DELETE FROM PowerLossExerciseConfig WHERE routine_exercise_id = :routine_exercise_id;

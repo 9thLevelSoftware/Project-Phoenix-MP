@@ -456,6 +456,9 @@ class SqlDelightWorkoutRepository(
                 RoutineExercise(
                     id = row.id,
                     exercise = exerciseWithBodyweightFlag,
+                    // Issue #1392: per-exercise power-loss config (absent row = inert
+                    // REP defaults with nulls, never zeros; strict reader fails safe).
+                    powerLoss = PowerLossConfigStore.readConfig(queries, row.id),
                     orderIndex = row.orderIndex.toInt(),
                     setReps = setReps,
                     weightPerCableKg = row.weightPerCableKg.toFloat(),
@@ -1646,6 +1649,11 @@ class SqlDelightWorkoutRepository(
                 dropSetMinWeightKg = dropSetMinWeightKg,
             )
         }
+
+        // Issue #1392: persist the per-exercise power-loss target config alongside the
+        // row write (delete + reinsert inside the caller's transaction; a default
+        // config removes the row so absent always means inert REP defaults).
+        PowerLossConfigStore.writeConfig(queries, exerciseRowId, exercise.powerLoss, currentTimeMillis())
 
         // Portal sync (PR 13): the duration is known to be current when this build
         // created the row, when it was already known, or when the user changed it.

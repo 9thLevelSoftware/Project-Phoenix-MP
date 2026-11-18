@@ -170,6 +170,20 @@ internal class PowerLossSetController {
         )
     }
 
+    /**
+     * Restart/rebaseline entry (Issue #1392): hydrate persisted power-loss runtime
+     * state after a process restart. The armed policy is NEVER resumed — the
+     * accumulator, baseline and streak are reset here (rebaseline) and the
+     * explanatory UX state comes back for display. This method issues NO machine
+     * commands; the restore path never writes to the machine.
+     */
+    internal fun restoreFromSnapshot(
+        snapshot: com.devil.phoenixproject.data.repository.RestoredPowerLossRuntimeSnapshot?,
+    ): com.devil.phoenixproject.data.repository.PowerLossRestartRecoveryState {
+        reset()
+        return com.devil.phoenixproject.data.repository.PowerLossRestartRecovery.rebaselineOnRestart(snapshot)
+    }
+
     /** Summary facts for `WorkoutState.SetSummary.powerLoss` (P5 renders with SD6 clarification). */
     fun buildSummaryFacts(completedRepCount: Int): PowerLossSetSummaryFacts? {
         val config = lastConfig ?: return null

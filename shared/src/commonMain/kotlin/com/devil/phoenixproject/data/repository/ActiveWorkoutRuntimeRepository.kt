@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import kotlinx.serialization.Serializable
 
@@ -175,6 +176,121 @@ private val PROGRAM_MODE_NAMES = setOf(
     "ECHO",
 )
 
+/**
+ * Issue #1392 (packet P4 remainder) — versioned power-loss runtime snapshot.
+ *
+ * Carried inside [ActiveWorkoutRuntimeDocument] (its own explicit codec version
+ * on top of the document's). STRICT READER: an unknown [codecVersion], unknown
+ * target enum, or unknown restart-explanation enum throws in `init`, so the
+ * strict runtime codec rejects the whole document (CORRUPT_JSON) — an unknown
+ * value must never coerce into active behavior and must never arm POWER
+ * (spec §7). Absent snapshot = inert (REP semantics, nulls — never zeros).
+ *
+ * The snapshot exists to carry the explanatory UX state across restart; the
+ * armed policy itself is NEVER resumed from it (see [PowerLossRestartRecovery]):
+ * the accumulator/baseline/streak are always rebaselined, and restoring never
+ * issues machine commands.
+ */
+@Serializable
+data class RestoredPowerLossRuntimeSnapshot(
+    val codecVersion: Int = CURRENT_CODEC_VERSION,
+    /** [TargetMode] constant name; strict. */
+    val targetModeName: String = TargetMode.REP_TARGET.name,
+    val thresholdPercent: Int = 0,
+    val maxWorkingReps: Int = 0,
+    val requireTwoConsecutive: Boolean = false,
+    /** Absent nominal stays null — never a fabricated zero. */
+    val savedNominalReps: Int? = null,
+    /** Reducer baseline (best valid working rep) at teardown; null = no baseline. */
+    val baselineMcpWatts: Float? = null,
+    val referenceWorkingOrdinal: Int? = null,
+    /** Two-consecutive qualifying streak at teardown. */
+    val qualifyingStreak: Int = 0,
+    /** Sealed observations consumed by the accumulator at teardown. */
+    val sealedObservationCount: Int = 0,
+    /** Observations the set expected; incomplete sums explain the rebaseline. */
+    val expectedObservationCount: Int = 0,
+    /** True only when the sample stream was verifiably complete at teardown. */
+    val samplesComplete: Boolean = false,
+    /** [PowerLossRestartExplanation] constant name; the explanatory UX state. */
+    val restartExplanationName: String = PowerLossRestartExplanation.INCOMPLETE_SAMPLES.name,
+) {
+    init {
+        require(codecVersion == CURRENT_CODEC_VERSION) {
+            "Unsupported power-loss runtime snapshot codec version $codecVersion"
+        }
+        require(targetModeName in TargetMode.entries.map { it.name }) {
+            "Unknown power-loss target mode '$targetModeName'"
+        }
+        require(restartExplanationName in PowerLossRestartExplanation.entries.map { it.name }) {
+            "Unknown power-loss restart explanation '$restartExplanationName'"
+        }
+        require(thresholdPercent >= 0 && maxWorkingReps >= 0)
+        require(qualifyingStreak >= 0 && sealedObservationCount >= 0 && expectedObservationCount >= 0)
+        require(savedNominalReps == null || savedNominalReps >= 1)
+    }
+
+    companion object {
+        const val CURRENT_CODEC_VERSION: Int = 1
+    }
+}
+
+/** Explanatory UX state carried by [RestoredPowerLossRuntimeSnapshot]. */
+enum class PowerLossRestartExplanation {
+    /** No power-loss runtime state was persisted (legacy/REP runtime). */
+    NO_SNAPSHOT,
+
+    /** The set was interrupted mid-flight; its sample stream cannot continue. */
+    INTERRUPTED_MID_SET,
+
+    /** The snapshot's power-loss samples were incomplete at restart. */
+    INCOMPLETE_SAMPLES,
+}
+
+/**
+ * The restart/rebaseline outcome shown in UX: never armed, with which parts of
+ * the policy state were reset and why.
+ */
+data class PowerLossRestartRecoveryState(
+    /** ALWAYS false: an armed policy never resumes across a restart. */
+    val resumeArmed: Boolean,
+    val baselineReset: Boolean,
+    val streakReset: Boolean,
+    val accumulatorReset: Boolean,
+    val explanation: PowerLossRestartExplanation,
+)
+
+/**
+ * Issue #1392 restart/rebaseline contract (spec §7): on restart with incomplete
+ * power-loss samples the armed policy must NEVER resume. The accumulator,
+ * baseline and streak are reset (rebaseline) and the explanatory UX state comes
+ * from the snapshot. Restoring issues NO machine commands — this object is pure.
+ */
+object PowerLossRestartRecovery {
+    fun rebaselineOnRestart(snapshot: RestoredPowerLossRuntimeSnapshot?): PowerLossRestartRecoveryState {
+        if (snapshot == null) {
+            return PowerLossRestartRecoveryState(
+                resumeArmed = false,
+                baselineReset = false,
+                streakReset = false,
+                accumulatorReset = false,
+                explanation = PowerLossRestartExplanation.NO_SNAPSHOT,
+            )
+        }
+        return PowerLossRestartRecoveryState(
+            resumeArmed = false,
+            baselineReset = snapshot.baselineMcpWatts != null || snapshot.referenceWorkingOrdinal != null,
+            streakReset = snapshot.qualifyingStreak > 0,
+            accumulatorReset = snapshot.sealedObservationCount > 0,
+            explanation = if (snapshot.samplesComplete) {
+                PowerLossRestartExplanation.INTERRUPTED_MID_SET
+            } else {
+                PowerLossRestartExplanation.INCOMPLETE_SAMPLES
+            },
+        )
+    }
+}
+
 fun ProgramMode.toSnapshotName(): String = when (this) {
     ProgramMode.OldSchool -> "OLD_SCHOOL"
     ProgramMode.Pump -> "PUMP"
@@ -217,6 +333,13 @@ data class ActiveWorkoutRuntimeDocument(
     val pausedRestRemainingSeconds: Int? = null,
     val isRestPaused: Boolean = false,
     val originalRestDurationSeconds: Int,
+    /**
+     * Issue #1392: versioned power-loss runtime snapshot (null for REP/legacy
+     * documents). Additive and optional so pre-#1392 documents decode unchanged;
+     * restoring NEVER resumes the armed policy from it (see
+     * [PowerLossRestartRecovery]) and never issues machine commands.
+     */
+    val powerLoss: RestoredPowerLossRuntimeSnapshot? = null,
 ) {
     init {
         require(version == CURRENT_VERSION)

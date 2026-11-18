@@ -568,6 +568,231 @@ class DataBackupCompletenessTest {
 
     // ---- restore sync-state model, every path restore can write ----
 
+    // ── Issue #1392: versioned optional power-loss sections (backup v7) ──────
+
+    @Test
+    fun `power loss companions and configs ride full streaming and session backups and restore additively`() = runTest {
+        val source = Fixture(includeRawTelemetry = true)
+        source.seedProfiles()
+        source.saveRoutineOn("bench", 0f)
+        source.saveSession("session-power-1")
+        seedPowerLossState(source, "session-power-1", "routine-1-re")
+
+        // Full export path.
+        val exportedJson = source.manager.exportToJson()
+        val backupData = testJson.decodeFromString<BackupData>(exportedJson)
+        assertEquals(1, backupData.data.powerLossSetCompanions.size)
+        assertEquals(1, backupData.data.powerLossObservationCompanions.size)
+        assertEquals(1, backupData.data.powerLossExerciseConfigs.size)
+
+        // Streaming export path writes the identical sections.
+        val streamingData = testJson.decodeFromString<BackupData>(File(source.manager.exportToCachePublic()).readText())
+        assertEquals(backupData.data.powerLossSetCompanions, streamingData.data.powerLossSetCompanions)
+        assertEquals(backupData.data.powerLossObservationCompanions, streamingData.data.powerLossObservationCompanions)
+        assertEquals(backupData.data.powerLossExerciseConfigs, streamingData.data.powerLossExerciseConfigs)
+
+        // Session-scoped path carries the session's companions and its config.
+        val sessionPath = source.manager.exportSession("session-power-1").getOrThrow()
+        val sessionData = testJson.decodeFromString<BackupData>(File(sessionPath).readText())
+        assertEquals(1, sessionData.data.powerLossSetCompanions.size)
+        assertEquals(1, sessionData.data.powerLossObservationCompanions.size)
+        assertEquals(1, sessionData.data.powerLossExerciseConfigs.size)
+
+        // Restore onto a fresh device round-trips rows with nulls preserved —
+        // a missing metric stays null, never a fabricated zero.
+        val target = Fixture(includeRawTelemetry = true)
+        val result = target.manager.importFromJson(exportedJson).getOrThrow()
+        assertEquals(0, result.entitiesWithErrors)
+        assertEquals(1, result.powerLossSetCompanionsImported)
+        assertEquals(1, result.powerLossObservationCompanionsImported)
+        assertEquals(1, result.powerLossExerciseConfigsImported)
+
+        val restoredSet = target.queries.selectPowerLossSetCompanionsBySession("session-power-1").executeAsList().single()
+        assertEquals(null, restoredSet.reference_rom_a_mm)
+        assertEquals(312.5, restoredSet.reference_mcp_watts)
+        val restoredAttempt = target.queries.selectPowerLossAttemptCompanionsBySession("session-power-1").executeAsList().single()
+        assertEquals(null, restoredAttempt.mcp_watts)
+        assertEquals(null, restoredAttempt.legacy_rep_index)
+        assertEquals(0L, restoredAttempt.completed)
+        val restoredConfig = target.queries
+            .selectPowerLossExerciseConfigsByRoutineExerciseIds(listOf("routine-1-re"))
+            .executeAsList()
+            .single()
+        assertEquals("POWER", restoredConfig.target_mode)
+        assertEquals(12L, restoredConfig.saved_nominal_reps)
+
+        // Restoring the same backup again is idempotent: duplicates are skipped,
+        // nothing is double-written and nothing local is wiped.
+        val second = target.manager.importFromJson(exportedJson).getOrThrow()
+        assertEquals(0, second.entitiesWithErrors)
+        assertEquals(1, second.powerLossSetCompanionsSkipped)
+        assertEquals(1, second.powerLossObservationCompanionsSkipped)
+        assertEquals(1, second.powerLossExerciseConfigsSkipped)
+        assertEquals(1, target.queries.selectPowerLossSetCompanionsBySession("session-power-1").executeAsList().size)
+    }
+
+    @Test
+    fun `power loss summary facts ride without raw telemetry while observation rows require opt in`() = runTest {
+        val source = Fixture(includeRawTelemetry = false)
+        source.seedProfiles()
+        source.saveRoutineOn("bench", 0f)
+        source.saveSession("session-power-summary")
+        seedPowerLossState(source, "session-power-summary", "routine-1-re")
+
+        val exported = testJson.decodeFromString<BackupData>(source.manager.exportToJson())
+
+        // Aggregates/summary facts are retained even when the raw-telemetry
+        // opt-in is OFF; raw per-attempt rows only ride opted-in exports.
+        assertEquals(1, exported.data.powerLossSetCompanions.size)
+        assertEquals(1, exported.data.powerLossExerciseConfigs.size)
+        assertEquals(0, exported.data.powerLossObservationCompanions.size)
+    }
+
+    @Test
+    fun `an old backup without power loss sections preserves local companion and config rows`() = runTest {
+        val target = Fixture(includeRawTelemetry = true)
+        target.seedProfiles()
+        target.saveRoutineOn("bench", 0f)
+        target.saveSession("session-power-keep")
+        seedPowerLossState(target, "session-power-keep", "routine-1-re")
+
+        // A pre-#1392 backup of the same device: no power-loss sections at all.
+        val root = testJson.parseToJsonElement(target.manager.exportToJson()).jsonObject
+        val strippedData = root.getValue("data").jsonObject -
+            listOf("powerLossSetCompanions", "powerLossObservationCompanions", "powerLossExerciseConfigs")
+        val oldJson = JsonObject(root + ("data" to JsonObject(strippedData))).toString()
+
+        val result = target.manager.importFromJson(oldJson).getOrThrow()
+
+        // An absent section is "nothing to add", never a wipe: local rows survive.
+        assertEquals(0, result.powerLossSetCompanionsImported)
+        assertEquals(1, target.queries.selectPowerLossSetCompanionsBySession("session-power-keep").executeAsList().size)
+        assertEquals(1, target.queries.selectPowerLossAttemptCompanionsBySession("session-power-keep").executeAsList().size)
+        assertEquals(
+            1,
+            target.queries.selectPowerLossExerciseConfigsByRoutineExerciseIds(listOf("routine-1-re")).executeAsList().size,
+        )
+    }
+
+    @Test
+    fun `power loss restore skips unknown row versions and unknown target enums without arming`() = runTest {
+        val hostileJson = testJson.encodeToString(
+            BackupData.serializer(),
+            BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = "2026-11-17T12:00:00Z",
+                appVersion = "future",
+                data = BackupContent(
+                    powerLossSetCompanions = listOf(
+                        PowerLossSetCompanionBackup(
+                            formatVersion = 99,
+                            sessionId = "session-x",
+                            setId = "set-x",
+                            targetMode = "POWER",
+                            thresholdPercent = 25,
+                            activeCables = "A,B",
+                            activeCableProvenance = "future",
+                            createdAt = 1L,
+                        ),
+                    ),
+                    powerLossExerciseConfigs = listOf(
+                        PowerLossExerciseConfigBackup(
+                            routineExerciseId = "routine-1-re",
+                            targetMode = "FUTURE_MODE",
+                            thresholdPercent = 25,
+                            updatedAt = 1L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val target = Fixture(includeRawTelemetry = true)
+        target.seedProfiles()
+        val result = target.manager.importFromJson(hostileJson).getOrThrow()
+
+        // Strict readers fail safe: unknown row versions and unknown target enums
+        // are skipped with a warning — never crash, never arm POWER.
+        assertEquals(0, result.entitiesWithErrors)
+        assertEquals(1, result.powerLossSetCompanionsSkipped)
+        assertEquals(1, result.powerLossExerciseConfigsSkipped)
+        assertEquals(0, result.powerLossSetCompanionsImported)
+        assertEquals(0, result.powerLossExerciseConfigsImported)
+    }
+
+    private fun seedPowerLossState(fixture: Fixture, sessionId: String, routineExerciseId: String) {
+        // A completed set links the session to its routine exercise, so the
+        // session-scoped backup path can scope per-exercise config rows to it.
+        fixture.queries.insertCompletedSetIgnore(
+            id = "$sessionId-completed-1",
+            session_id = sessionId,
+            planned_set_id = null,
+            routine_exercise_id = routineExerciseId,
+            set_number = 0L,
+            set_type = "STANDARD",
+            attempt_number = 1L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 1_700_000_000_000L,
+            set_end_reason = "POWER_LOSS",
+        )
+        fixture.queries.insertPowerLossSetCompanionIfAbsent(
+            session_id = sessionId,
+            set_id = "set-1",
+            metric_version = 1L,
+            target_mode = "POWER",
+            threshold_percent = 25L,
+            max_working_reps = 15L,
+            require_two_consecutive = 1L,
+            saved_nominal_reps = 12L,
+            active_cables = "A,B",
+            active_cable_provenance = "rep-metric-load-scan:first-working-attempt",
+            reference_working_ordinal = 2L,
+            reference_mcp_watts = 312.5,
+            reference_rom_a_mm = null,
+            reference_rom_b_mm = null,
+            trigger_working_ordinal = 9L,
+            winner_reason = "POWER_LOSS",
+            short_rom_observed = 0L,
+            power_loss_observed = 1L,
+            loss_percent_at_decision = 21.5,
+            created_at = 1_700_000_000_000L,
+        )
+        fixture.queries.insertPowerLossAttemptCompanionIfAbsent(
+            session_id = sessionId,
+            set_id = "set-1",
+            working_concentric_ordinal = 9L,
+            legacy_rep_index = null,
+            completed = 0L,
+            mcp_watts = null,
+            eccentric_power_watts = null,
+            concentric_duration_ms = null,
+            eccentric_duration_ms = null,
+            loss_percent_at_decision = 21.5,
+            reference_working_ordinal = 2L,
+            rom_a_mm = null,
+            rom_b_mm = null,
+            rom_a_percent_of_reference = null,
+            rom_b_percent_of_reference = null,
+            rom_trustworthy = 0L,
+            quality = "",
+            short_rom = 0L,
+            power_loss_qualified = 1L,
+        )
+        fixture.queries.insertPowerLossExerciseConfigIfAbsent(
+            routine_exercise_id = routineExerciseId,
+            format_version = 1L,
+            target_mode = "POWER",
+            threshold_percent = 25L,
+            max_working_reps = 15L,
+            require_two_consecutive = 1L,
+            saved_nominal_reps = 12L,
+            updated_at = 1_700_000_000_000L,
+        )
+    }
+
     private data class SyncState(val portalOrigin: Long, val dirty: Boolean, val acknowledgedPush: Boolean, val updatedAt: Long?)
 
     private fun Fixture.syncState(id: String): SyncState {

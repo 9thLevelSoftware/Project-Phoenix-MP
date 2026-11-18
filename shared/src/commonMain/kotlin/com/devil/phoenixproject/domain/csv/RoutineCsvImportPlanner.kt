@@ -332,6 +332,9 @@ class RoutineCsvImportPlanner(
                 rackBehaviorOverrides = row.rackBehaviorOverrides,
                 durationSyncKnown = false,
                 isLaunchAdjustedDuration = false,
+                // Issue #1392: the power-loss target config rides the version 3 file
+                // and round-trips unchanged (absent = inert REP defaults, never zeros).
+                powerLoss = row.powerLoss,
             )
         }
 

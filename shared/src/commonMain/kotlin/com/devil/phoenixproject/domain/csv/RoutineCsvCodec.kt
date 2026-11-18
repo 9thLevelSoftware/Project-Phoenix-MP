@@ -11,6 +11,8 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.CsvParser
 
@@ -64,6 +66,12 @@ data class RoutineCsvExerciseDraft(
     val setEchoLevels: List<EchoLevel?> = emptyList(),
     /** The stored legacy AMRAP flag; null means the version 1 rule (every set is AMRAP). */
     val isAmrapFlag: Boolean? = null,
+    /**
+     * Per-exercise power-loss target config (version 3 columns). A version 1 or 2
+     * row cannot carry it and keeps [PowerLossConfig.DEFAULT] — inert REP_TARGET
+     * with nulls, never fabricated zeros.
+     */
+    val powerLoss: PowerLossConfig = PowerLossConfig.DEFAULT,
 )
 
 /** One routine from the file, rows sorted by [RoutineCsvExerciseDraft.order]. */
@@ -119,23 +127,53 @@ object RoutineCsvCodec {
     private val COL_SET_ECHO_LEVELS = RoutineCsvFormat.COLUMNS_V2.indexOf("set_echo_levels")
     private val COL_IS_AMRAP_FLAG = RoutineCsvFormat.COLUMNS_V2.indexOf("is_amrap_flag")
 
+    // Version 3 column positions (the v2 columns keep their fixed positions).
+    private val COL_POWER_LOSS_TARGET_MODE = RoutineCsvFormat.COLUMNS_V3.indexOf("power_loss_target_mode")
+    private val COL_POWER_LOSS_THRESHOLD_PERCENT = RoutineCsvFormat.COLUMNS_V3.indexOf("power_loss_threshold_percent")
+    private val COL_POWER_LOSS_MAX_WORKING_REPS = RoutineCsvFormat.COLUMNS_V3.indexOf("power_loss_max_working_reps")
+    private val COL_POWER_LOSS_REQUIRE_TWO_CONSECUTIVE = RoutineCsvFormat.COLUMNS_V3.indexOf("power_loss_require_two_consecutive")
+    private val COL_POWER_LOSS_SAVED_NOMINAL_REPS = RoutineCsvFormat.COLUMNS_V3.indexOf("power_loss_saved_nominal_reps")
+
     /** Which header a file's rows must line up with. */
     private class Layout(val version: Int) {
-        val columns: List<String> =
-            if (version == RoutineCsvFormat.VERSION_V2) RoutineCsvFormat.COLUMNS_V2 else RoutineCsvFormat.COLUMNS
+        val columns: List<String> = when (version) {
+            RoutineCsvFormat.VERSION_V3 -> RoutineCsvFormat.COLUMNS_V3
+            RoutineCsvFormat.VERSION_V2 -> RoutineCsvFormat.COLUMNS_V2
+            else -> RoutineCsvFormat.COLUMNS
+        }
         val columnCount: Int = columns.size
     }
 
     // ── Export ──────────────────────────────────────────────────────────────
 
     /**
-     * One routine as a v2 file. [groupName] and [groupOrder] describe the routine's group, if
-     * any. Blocked only when a row cannot hold the routine at all (no exercises, an exercise
-     * with no sets); every advanced setting is carried by v2.
+     * One routine as a file: version 2 for routines that use only default
+     * power-loss config, version 3 ([RoutineCsvFormat.COLUMNS_V3]) as soon as any
+     * exercise carries a non-default `ExerciseConfig.powerLoss` (Issue #1392).
+     *
+     * LOSSY-EXPORT BLOCK (binding): a routine whose exercises use non-default
+     * power-loss config is NEVER quietly exported as a version 2 REP row — the
+     * version 3 header carries the config losslessly instead, and if that is not
+     * possible (an invalid config) export is refused with explicit user-facing
+     * copy. Apps that read version 2 only refuse version 3 files outright
+     * ("Unsupported file version"), so a POWER routine can never silently
+     * re-import as REP elsewhere either.
+     *
+     * [groupName] and [groupOrder] describe the routine's group, if any. Also
+     * blocked when a row cannot hold the routine at all (no exercises, an
+     * exercise with no sets).
      */
     fun encode(routine: Routine, groupName: String?, groupOrder: Int?): RoutineCsvExportResult {
         val reasons = exportBlockers(routine)
         if (reasons.isNotEmpty()) return RoutineCsvExportResult.Blocked(reasons)
+
+        val usesPowerLossConfig = routine.exercises.any { it.powerLoss != PowerLossConfig.DEFAULT }
+        val versionLine = if (usesPowerLossConfig) {
+            RoutineCsvFormat.VERSION_V3_LINE
+        } else {
+            RoutineCsvFormat.VERSION_V2_LINE
+        }
+        val columns = if (usesPowerLossConfig) RoutineCsvFormat.COLUMNS_V3 else RoutineCsvFormat.COLUMNS_V2
 
         val supersetKeys = routine.supersets.sortedBy { it.orderIndex }
             .mapIndexed { index, superset -> superset.id to "ss${index + 1}" }
@@ -143,8 +181,8 @@ object RoutineCsvCodec {
         val supersetsById = routine.supersets.associateBy { it.id }
 
         val text = buildString {
-            append(RoutineCsvFormat.VERSION_V2_LINE).append("\r\n")
-            append(RoutineCsvFormat.COLUMNS_V2.joinToString(",")).append("\r\n")
+            append(versionLine).append("\r\n")
+            append(columns.joinToString(",")).append("\r\n")
             routine.exercises.forEachIndexed { index, exercise ->
                 val superset = exercise.supersetId?.let(supersetsById::get)
                 val cells = listOf(
@@ -167,11 +205,27 @@ object RoutineCsvCodec {
                     RoutineCsvFormat.modeName(exercise.programMode),
                     exercise.setReps.all { it == null }.toString(),
                     superset?.colorIndex?.toString().orEmpty(),
-                ) + v2Cells(exercise)
+                ) + v2Cells(exercise) + if (usesPowerLossConfig) powerLossCells(exercise) else emptyList()
                 append(cells.joinToString(",")).append("\r\n")
             }
         }
         return RoutineCsvExportResult.Exported(fileName = fileName(routine.name), content = text)
+    }
+
+    /**
+     * The version 3 power-loss cells for [exercise]. Numeric cells stay numbers;
+     * an absent nullable cell stays blank (never a fabricated zero). The target
+     * mode is written as its constant name so the reader can fail safe on it.
+     */
+    private fun powerLossCells(exercise: RoutineExercise): List<String> {
+        val powerLoss = exercise.powerLoss
+        return listOf(
+            powerLoss.targetMode.name,
+            powerLoss.thresholdPercent.toString(),
+            powerLoss.maxWorkingReps?.toString().orEmpty(),
+            powerLoss.requireTwoConsecutive.toString(),
+            powerLoss.savedNominalReps?.toString().orEmpty(),
+        )
     }
 
     /** The version 2 cells for [exercise]; numeric cells stay numbers, structured text cells are guarded. */
@@ -201,13 +255,23 @@ object RoutineCsvCodec {
 
     /**
      * Settings [routine] uses that a CSV row cannot hold at all, one readable line each. Empty
-     * when exportable: every other setting the routine uses round-trips through v2 (#896).
+     * when exportable: every other setting the routine uses round-trips through its file
+     * version (#896 v2; #1392 v3 adds the power-loss config). Includes the binding
+     * LOSSY-EXPORT BLOCK: an invalid power-loss config is refused with explicit
+     * user-facing copy — a routine is NEVER quietly exported without its power-loss
+     * settings (never silently downgraded to REP).
      */
     fun exportBlockers(routine: Routine): List<String> {
         if (routine.exercises.isEmpty()) return listOf("The routine has no exercises.")
         val reasons = linkedSetOf<String>()
         for (exercise in routine.exercises) {
             if (exercise.setReps.isEmpty()) reasons += "${exercise.exercise.name} has no sets."
+            val powerLoss = exercise.powerLoss
+            if (powerLoss != PowerLossConfig.DEFAULT && !powerLoss.isValid()) {
+                reasons += "${exercise.exercise.name} has invalid power-loss target settings, so they cannot be " +
+                    "saved in a routine CSV. This format does not include power-loss settings or per-attempt " +
+                    "details it cannot hold. Use power-data export to keep them."
+            }
         }
         return reasons.toList()
     }
@@ -256,10 +320,13 @@ object RoutineCsvCodec {
             return invalid(lines.number, "The first line must be ${RoutineCsvFormat.VERSION_LINE}.")
         }
         val version = versionLine.removePrefix(RoutineCsvFormat.VERSION_PREFIX).trim().toIntOrNull()
-        if (version != RoutineCsvFormat.VERSION && version != RoutineCsvFormat.VERSION_V2) {
+        if (version != RoutineCsvFormat.VERSION && version != RoutineCsvFormat.VERSION_V2 &&
+            version != RoutineCsvFormat.VERSION_V3
+        ) {
             return invalid(
                 lines.number,
-                "Unsupported file version; this app reads versions ${RoutineCsvFormat.VERSION} and ${RoutineCsvFormat.VERSION_V2}.",
+                "Unsupported file version; this app reads versions ${RoutineCsvFormat.VERSION}, " +
+                    "${RoutineCsvFormat.VERSION_V2} and ${RoutineCsvFormat.VERSION_V3}.",
             )
         }
         val layout = Layout(version)
@@ -418,9 +485,9 @@ object RoutineCsvCodec {
 
         val modeCell = row.raw(15)
         val mode = if (modeCell.isEmpty()) ProgramMode.OldSchool else RoutineCsvFormat.parseMode(modeCell)
-        // A v2 file carries every mode; v1 keeps the released rule (Echo and Eccentric Only refused).
+        // A v2/v3 file carries every mode; v1 keeps the released rule (Echo and Eccentric Only refused).
         val supportedModes =
-            if (layout.version == RoutineCsvFormat.VERSION_V2) RoutineCsvFormat.ALL_MODES else RoutineCsvFormat.SUPPORTED_MODES
+            if (layout.version >= RoutineCsvFormat.VERSION_V2) RoutineCsvFormat.ALL_MODES else RoutineCsvFormat.SUPPORTED_MODES
         when {
             mode == null -> issues += RoutineCsvIssue(
                 row.line,
@@ -446,6 +513,7 @@ object RoutineCsvCodec {
         }
 
         val v2 = parseV2Settings(row, issues, layout)
+        val powerLoss = parseV3Settings(row, issues, layout)
         if (issues.size != issueCount || order == null || reps == null || weights == null || mode == null) return null
         return RoutineCsvExerciseDraft(
             line = row.line,
@@ -482,6 +550,45 @@ object RoutineCsvCodec {
             eccentricLoad = v2.eccentricLoad,
             setEchoLevels = v2.setEchoLevels,
             isAmrapFlag = v2.isAmrapFlag,
+            powerLoss = powerLoss,
+        )
+    }
+
+    /**
+     * The version 3 power-loss cells of one row. A version 1 or 2 row has none, so
+     * the config keeps [PowerLossConfig.DEFAULT] — inert REP_TARGET with nulls,
+     * never fabricated zeros. STRICT READER (SD1, spec §7): an unknown
+     * `power_loss_target_mode` never silently arms POWER — the row imports with an
+     * inert REP_TARGET config carrying the remaining values. Out-of-range numbers
+     * are refused as row issues (no silent clamping).
+     */
+    private fun parseV3Settings(row: RawRow, issues: MutableList<RoutineCsvIssue>, layout: Layout): PowerLossConfig {
+        if (layout.version != RoutineCsvFormat.VERSION_V3) return PowerLossConfig.DEFAULT
+        val thresholdPercent = optionalInt(
+            row, COL_POWER_LOSS_THRESHOLD_PERCENT, "power_loss_threshold_percent",
+            PowerLossConfig.MIN_THRESHOLD_PERCENT, PowerLossConfig.MAX_THRESHOLD_PERCENT, issues,
+        ) ?: PowerLossConfig.DEFAULT.thresholdPercent
+        val maxWorkingReps = optionalInt(
+            row, COL_POWER_LOSS_MAX_WORKING_REPS, "power_loss_max_working_reps",
+            PowerLossConfig.MIN_MAX_WORKING_REPS, RoutineCsvFormat.MAX_REPS, issues,
+        ) ?: PowerLossConfig.DEFAULT.maxWorkingReps
+        val requireTwoConsecutive = optionalBool(
+            row, COL_POWER_LOSS_REQUIRE_TWO_CONSECUTIVE, "power_loss_require_two_consecutive", false, issues,
+        ) ?: false
+        val savedNominalReps = optionalInt(
+            row, COL_POWER_LOSS_SAVED_NOMINAL_REPS, "power_loss_saved_nominal_reps",
+            1, RoutineCsvFormat.MAX_REPS, issues,
+        )
+        val modeCell = row.raw(COL_POWER_LOSS_TARGET_MODE)
+        val mode = TargetMode.entries.firstOrNull { it.name.equals(modeCell, ignoreCase = true) }
+        return PowerLossConfig(
+            // Blank or unknown target mode = inert REP_TARGET (never POWER from an
+            // unknown string). The raw cell stays inspectable in the file itself.
+            targetMode = mode ?: TargetMode.REP_TARGET,
+            thresholdPercent = thresholdPercent,
+            maxWorkingReps = maxWorkingReps,
+            requireTwoConsecutive = requireTwoConsecutive,
+            savedNominalReps = savedNominalReps,
         )
     }
 
@@ -511,7 +618,9 @@ object RoutineCsvCodec {
     )
 
     private fun parseV2Settings(row: RawRow, issues: MutableList<RoutineCsvIssue>, layout: Layout): V2Settings {
-        if (layout.version != RoutineCsvFormat.VERSION_V2) return V2Settings()
+        if (layout.version != RoutineCsvFormat.VERSION_V2 && layout.version != RoutineCsvFormat.VERSION_V3) {
+            return V2Settings()
+        }
         return V2Settings(
             usePercentOfPR = optionalBool(row, COL_USE_PERCENT_OF_PR, "use_percent_of_pr", false, issues) ?: false,
             weightPercentOfPR = optionalInt(row, COL_WEIGHT_PERCENT_OF_PR, "weight_percent_of_pr", 0, RoutineCsvFormat.MAX_PERCENT, issues)
