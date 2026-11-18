@@ -2142,11 +2142,11 @@ class PhantomBleRepositoryTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val raw = monitorPacket(
             ticks = 42,
-            posA = 1250, // 125.0mm
-            velA = 320, // 32.0mm/s
+            posA = 1250, // 1250.0mm (raw mm, issue #1400)
+            velA = 320, // 320.0mm/s (raw mm/s, issue #1400)
             loadA = 1234, // 12.34kg
-            posB = -750, // -75.0mm
-            velB = -250, // -25.0mm/s
+            posB = -750, // -750.0mm (raw mm, issue #1400)
+            velB = -250, // -250.0mm/s (raw mm/s, issue #1400)
             loadB = 567, // 5.67kg
         )
 
@@ -2158,10 +2158,10 @@ class PhantomBleRepositoryTest {
             assertEquals(42, metric.ticks)
             assertEquals(12.34f, metric.loadA)
             assertEquals(5.67f, metric.loadB)
-            assertEquals(125.0f, metric.positionA)
-            assertEquals(-75.0f, metric.positionB)
-            assertEquals(32.0, metric.velocityA)
-            assertEquals(-25.0, metric.velocityB)
+            assertEquals(1250.0f, metric.positionA)
+            assertEquals(-750.0f, metric.positionB)
+            assertEquals(320.0, metric.velocityA)
+            assertEquals(-250.0, metric.velocityB)
             cancelAndIgnoreRemainingEvents()
         }
     }

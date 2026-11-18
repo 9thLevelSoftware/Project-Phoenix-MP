@@ -31,7 +31,7 @@ class RepBoundaryDetector {
         private const val MIN_SAMPLES = 15
 
         /** Minimum position difference to consider as a valley (in mm) */
-        private const val VALLEY_THRESHOLD_MM = 10f
+        private const val VALLEY_THRESHOLD_MM = 100f
 
         /** Moving average window size for smoothing */
         private const val SMOOTHING_WINDOW = 5

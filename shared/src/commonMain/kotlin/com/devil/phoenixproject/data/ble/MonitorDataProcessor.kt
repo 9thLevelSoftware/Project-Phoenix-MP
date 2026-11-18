@@ -20,7 +20,7 @@ import kotlin.math.abs
  * 2. Status flag processing (deload debounce, ROM violation callbacks)
  * 3. Issue #210: Position tracking update BEFORE jump validation (cascade prevention)
  * 4. Sample validation (range, load, jump filter)
- * 5. Firmware velocity (raw firmware velocity divided by 10)
+ * 5. Firmware velocity (raw firmware velocity, mm/s)
  * 6. EMA smoothing (with cold-start seeding and filtered-sample edge case)
  * 7. WorkoutMetric construction
  *
@@ -65,7 +65,7 @@ class MonitorDataProcessor(
     // Position-jump filter reference and poll clock
     // lastPositionA/B: previous cable positions compared by the jump filter.
     // lastTimestamp: poll clock of the last accepted sample; 0 skips the
-    // first jump check. Velocity comes from firmware (divided by 10).
+    // first jump check. Velocity comes from firmware (mm/s).
     // -------------------------------------------------------------------------
     private var lastPositionA = 0.0f
     private var lastPositionB = 0.0f
@@ -189,15 +189,16 @@ class MonitorDataProcessor(
             }
         }
 
-        // Firmware velocity is raw signed int16 in 0.1mm/s units (matching position's 0.1mm
-        // resolution). Scale by /10.0 to convert to mm/s for downstream consistency:
-        // - HandleStateDetector thresholds: 50.0 / 20.0 mm/s
-        // - Power calculation: load_kg * velocity_mm_s
+        // Firmware velocity is raw signed int16 in mm/s (issue #1400 RCA §5a: the raw
+        // velocity shares the raw position's mm unit per second, and raw position is mm).
+        // The legacy /10 here produced cm/s values that every consumer labelled mm/s.
+        // Downstream consumers (all in mm/s after this fix):
+        // - HandleStateDetector thresholds: 500.0 / 200.0 mm/s
+        // - Power calculation: load_kg * velocity_mm_s / 1000 * g
         // - MetricSample DB: stored in mm/s
         // - UI display: shown in mm/s
-        // Hardware-validated: firmware velA=832 at grab ≈ 83.2 mm/s, matching old client-side scale.
-        val rawVelocityA = packet.firmwareVelA / 10.0
-        val rawVelocityB = packet.firmwareVelB / 10.0
+        val rawVelocityA = packet.firmwareVelA.toDouble()
+        val rawVelocityB = packet.firmwareVelB.toDouble()
 
         // ===== STAGE 6: EMA SMOOTHING =====
         // Firmware velocity is already hardware-timed so less smoothing is needed,

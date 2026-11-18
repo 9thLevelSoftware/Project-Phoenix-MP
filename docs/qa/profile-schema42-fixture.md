@@ -171,7 +171,7 @@ foreach ($suffix in @('-wal', '-shm')) {
     if ($LASTEXITCODE -eq 0) { Receive-SandboxBytes $relative "$inspectDb$suffix" -AllowEmpty }
 }
 $userVersion = (& $hostSqlite -readonly -batch $inspectDb 'PRAGMA user_version;').Trim()
-if ($userVersion -ne '66') { throw "Expected user_version 66 after upgrade, got $userVersion" }
+if ($userVersion -ne '68') { throw "Expected user_version 68 after upgrade, got $userVersion" }
 & $hostSqlite -readonly -batch $inspectDb 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'
 & $adb shell run-as $package cat shared_prefs/phoenix_preferences.xml
 ```

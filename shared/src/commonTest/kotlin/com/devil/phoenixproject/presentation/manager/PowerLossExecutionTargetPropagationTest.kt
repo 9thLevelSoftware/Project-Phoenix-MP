@@ -8,13 +8,16 @@ import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
 import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
 import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.presentation.manager.DWSMTestHarnessFixtures.strongRep
 import com.devil.phoenixproject.presentation.manager.DWSMTestHarnessFixtures.invalidRep
 import com.devil.phoenixproject.presentation.manager.DWSMTestHarnessFixtures.weakRep
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRuntimeGate
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -41,12 +44,27 @@ import kotlinx.coroutines.test.runTest
  */
 class PowerLossExecutionTargetPropagationTest {
 
+    /** POWER config armed through the production propagation path (P5 seam). */
+    private var armedPowerConfig: PowerLossConfig? = null
+
     private fun armPowerSettings(
         harness: DWSMTestHarness,
         cap: Int,
         nominal: Int?,
         family: PowerLossProtocolFamily = PowerLossProtocolFamily.OLD_SCHOOL,
     ) {
+        // Production arming runs through publishPowerLossRuntimeSettingsFrom: the
+        // runtime seam is derived from the per-exercise config carried by the
+        // WorkoutParameters behind the capability gate. Arm the same way — gate on
+        // plus the config on the parameters set below.
+        PowerLossRuntimeGate.pairedSamplesValidated = true
+        armedPowerConfig = PowerLossConfig(
+            targetMode = TargetMode.POWER,
+            thresholdPercent = 20,
+            maxWorkingReps = cap,
+            requireTwoConsecutive = false,
+            savedNominalReps = nominal,
+        )
         harness.coordinator.updatePowerLossSettings(
             PowerLossRuntimeSettings(
                 targetMode = TargetMode.POWER,
@@ -58,6 +76,12 @@ class PowerLossExecutionTargetPropagationTest {
                 pairedSamplesValidated = true,
             ),
         )
+    }
+
+    @AfterTest
+    fun clearRuntimeGate() {
+        PowerLossRuntimeGate.pairedSamplesValidated = false
+        armedPowerConfig = null
     }
 
     private suspend fun startTrackedCableSet(
@@ -74,6 +98,7 @@ class PowerLossExecutionTargetPropagationTest {
                 weightPerCableKg = 25f,
                 useAutoStart = false,
                 selectedExerciseId = TestFixtures.benchPress.id,
+                powerLoss = armedPowerConfig ?: PowerLossConfig.DEFAULT,
             ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
@@ -476,6 +501,7 @@ class PowerLossExecutionTargetPropagationTest {
                     isJustLift = true,
                     useAutoStart = false,
                     selectedExerciseId = TestFixtures.benchPress.id,
+                    powerLoss = armedPowerConfig ?: PowerLossConfig.DEFAULT,
                 ),
             )
             harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)

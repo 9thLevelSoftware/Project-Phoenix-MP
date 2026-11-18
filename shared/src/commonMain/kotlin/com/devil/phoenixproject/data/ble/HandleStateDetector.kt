@@ -34,7 +34,7 @@ class HandleStateDetector(
 
     companion object {
         /** Position threshold (mm) for simple left/right handle detection booleans */
-        private const val SIMPLE_DETECTION_THRESHOLD = 50.0f
+        private const val SIMPLE_DETECTION_THRESHOLD = 500.0f
 
         /** [minPositionSeen] before any sample. */
         internal const val UNSET_MIN_POSITION_MM = Double.MAX_VALUE

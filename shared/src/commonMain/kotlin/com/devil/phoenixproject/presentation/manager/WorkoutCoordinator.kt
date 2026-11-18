@@ -126,21 +126,21 @@ class WorkoutCoordinator(
         /**
          * Two-tier velocity hysteresis for stall detection (Issue #204, #216)
          * Hysteresis prevents the stall timer toggling near the threshold:
-         * - Below LOW (<2.5): start/continue stall timer (user is stopped)
-         * - Above HIGH (>10): reset stall timer (user is clearly moving)
-         * - Between LOW and HIGH (>=2.5 and <=10): maintain current state (hysteresis band)
+         * - Below LOW (<25): start/continue stall timer (user is stopped)
+         * - Above HIGH (>100): reset stall timer (user is clearly moving)
+         * - Between LOW and HIGH (>=25 and <=100): maintain current state (hysteresis band)
          */
-        const val STALL_VELOCITY_LOW = 2.5 // Below this = definitely stalled (mm/s)
-        const val STALL_VELOCITY_HIGH = 10.0 // Above this = definitely moving (mm/s)
+        const val STALL_VELOCITY_LOW = 25.0 // Below this = definitely stalled (mm/s)
+        const val STALL_VELOCITY_HIGH = 100.0 // Above this = definitely moving (mm/s)
 
         /** Minimum position to consider handles "in use" for stall detection (mm) */
-        const val STALL_MIN_POSITION = 10.0
+        const val STALL_MIN_POSITION = 100.0
 
         /** Position threshold to consider handle at rest (aligned with BLE handle detector). */
-        const val HANDLE_REST_THRESHOLD = 5.0
+        const val HANDLE_REST_THRESHOLD = 50.0
 
         /** Minimum position range to consider "meaningful" for auto-stop detection (in mm) */
-        const val MIN_RANGE_THRESHOLD = 50f
+        const val MIN_RANGE_THRESHOLD = 500f
 
         /** Issue #204: Startup grace period for AMRAP exercises (ms)
          * Prevents auto-stop from triggering before user has time to grab handles
@@ -831,6 +831,14 @@ class WorkoutCoordinator(
      */
     // C3: Thread-safe via MutableStateFlow snapshot
     internal val repBoundaryTimestamps = MutableStateFlow<List<Long>>(emptyList())
+
+    /**
+     * Issue #1400 (F2): sample-clock time of the last warmup-only rep notification in the
+     * current set (0 = none observed). Working rep 1 starts here when no sample-based warmup
+     * mark exists. Cleared with [repBoundaryTimestamps].
+     */
+    @Volatile
+    internal var warmupRepEventSampleMs: Long = 0L
 
     /**
      * Latest biomechanics result for HUD display.

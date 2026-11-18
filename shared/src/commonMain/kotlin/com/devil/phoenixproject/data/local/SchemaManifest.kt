@@ -663,6 +663,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 eccentricWattAvg REAL NOT NULL,
                 eccentricWattMax REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -732,13 +733,14 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 avgPowerWatts REAL NOT NULL,
                 updatedAt INTEGER,
                 serverId TEXT,
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
     ),
 
     // RepBiomechanics -- migration 15 (VBT, force curve, asymmetry per rep)
-    // Full shape: no later migrations add columns
+    // Full current shape: aggregateEligible (m64, Issue #1400)
     SchemaTableOperation(
         table = "RepBiomechanics",
         createSql = """
@@ -761,6 +763,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 avgLoadA REAL NOT NULL,
                 avgLoadB REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
+                aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1)),
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -1161,7 +1165,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 hrr300Bpm INTEGER,
                 maxTorsoPitchDeg REAL,
                 maxTorsoRollDeg REAL,
-                routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
+                routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1)),
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))
             )
         """.trimIndent(),
     ),
@@ -1190,6 +1195,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 chestAccXMg INTEGER,
                 chestAccYMg INTEGER,
                 chestAccZMg INTEGER,
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -2217,6 +2223,44 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 45: stable logical-set attempt identity (Issue #673 PR 2)
     SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
     SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
+
+    // ── RepBiomechanics (1 column, migration 64) ───────────────────────
+    // Migration 64: Issue #1400 per-rep aggregate eligibility; legacy rows stay eligible
+    SchemaHealOperation(
+        "RepBiomechanics",
+        "aggregateEligible",
+        "ALTER TABLE RepBiomechanics ADD COLUMN aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1))",
+    ),
+
+    // ── Metric unit marker (1 column per scaled table, migration 65) ───
+    // Migration 65: Issue #1400 F1 unit correction. 1 = legacy cm/cm-s scale,
+    // 2 = mm/mm-s. Healing adds the marker only and never scales data (no data
+    // UPDATEs in schema healing); migration 65 is the only scaler.
+    SchemaHealOperation(
+        "MetricSample",
+        "metric_unit_version",
+        "ALTER TABLE MetricSample ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "RepMetric",
+        "metric_unit_version",
+        "ALTER TABLE RepMetric ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "RepBiomechanics",
+        "metric_unit_version",
+        "ALTER TABLE RepBiomechanics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "WorkoutSession",
+        "metric_unit_version",
+        "ALTER TABLE WorkoutSession ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "PhaseStatistics",
+        "metric_unit_version",
+        "ALTER TABLE PhaseStatistics ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
 )
 
 // ============================================================

@@ -12,6 +12,8 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_LEGACY
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_MM
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -30,14 +32,19 @@ import kotlinx.serialization.json.Json
  * `BiomechanicsRepResult`) are not `@Serializable`, so this file defines explicit
  * persistence DTOs covering every field of those constructors and converts both ways.
  *
- * Versioning: the envelope carries a `v` field. [decode] rejects unknown versions and
- * malformed payloads by returning null — a malformed child must block finalization, never
- * be silently dropped or partially replayed.
+ * Versioning: the envelope carries a `v` field and an explicit `metricUnitVersion`.
+ * [decode] rejects unknown versions and malformed payloads by returning null — a
+ * malformed child must block finalization, never be silently dropped or partially
+ * replayed. v1 payloads predate the issue #1400 metric-unit fix: their unit-bearing
+ * values are cm / cm-s and are scaled to mm / mm-s exactly once at decode.
  */
 object CompletionJournalCodec {
 
-    /** Current payload version. Bump only with a matching decoder branch. */
-    const val CURRENT_VERSION = 1
+    /** Current payload version (issue #1400: mm / mm-s metric units). */
+    const val CURRENT_VERSION = 2
+
+    /** Payload version written before the issue #1400 metric-unit fix (cm / cm-s). */
+    const val LEGACY_VERSION = 1
 
     private val json = Json {
         ignoreUnknownKeys = false
@@ -48,7 +55,8 @@ object CompletionJournalCodec {
     fun encode(write: PendingChildWrite): String = json.encodeToString(
         PendingChildWriteEnvelopeDto.serializer(),
         PendingChildWriteEnvelopeDto(
-            v = CURRENT_VERSION,
+            v = if (write.metricUnitVersion == METRIC_UNIT_VERSION_LEGACY) LEGACY_VERSION else CURRENT_VERSION,
+            metricUnitVersion = write.metricUnitVersion,
             session = PersistedSessionDto.from(write.session),
             metrics = write.metrics.map { PersistedMetricDto.from(it) },
             completedSet = write.completedSet?.let { PersistedCompletedSetDto.from(it) },
@@ -60,23 +68,75 @@ object CompletionJournalCodec {
     /**
      * Decodes a pending child write, or null when the payload is malformed or its
      * version is unknown. Unknown versions are rejected, never best-effort parsed.
+     * A v1 payload is old-scale: its unit-bearing values are scaled to mm / mm-s
+     * exactly once here, so a recovered legacy write is indistinguishable from a
+     * migrated legacy row and can never be mixed unscaled with new rows.
      */
     fun decode(payload: String): PendingChildWrite? {
         val envelope = runCatching {
             json.decodeFromString(PendingChildWriteEnvelopeDto.serializer(), payload)
         }.getOrNull() ?: return null
-        if (envelope.v != CURRENT_VERSION) return null
-        return runCatching {
+        val base = runCatching {
             PendingChildWrite(
                 session = envelope.session.toDomain(),
                 metrics = envelope.metrics.map { it.toDomain() },
                 completedSet = envelope.completedSet?.toDomain(),
                 repMetrics = envelope.repMetrics.map { it.toDomain() },
                 repBiomechanics = envelope.repBiomechanics.map { it.toDomain() },
+                metricUnitVersion = envelope.metricUnitVersion,
             )
-        }.getOrNull()
+        }.getOrNull() ?: return null
+        return when (envelope.v) {
+            CURRENT_VERSION -> base.takeIf { envelope.metricUnitVersion == METRIC_UNIT_VERSION_MM }
+            LEGACY_VERSION -> base.takeIf { envelope.metricUnitVersion == METRIC_UNIT_VERSION_LEGACY }
+                ?.scaledFromLegacyMetricUnits()
+            else -> null
+        }
     }
 }
+
+/**
+ * Issue #1400 F1: scales a legacy (cm / cm-s) pending child write to the mm / mm-s
+ * contract exactly once — the same field families migration 65 scales, so a replayed
+ * legacy write lands exactly like a migrated legacy row. Loads, percentages and counts
+ * are untouched; [PendingChildWrite.metricUnitVersion] becomes [METRIC_UNIT_VERSION_MM].
+ */
+internal fun PendingChildWrite.scaledFromLegacyMetricUnits(): PendingChildWrite = copy(
+    metricUnitVersion = METRIC_UNIT_VERSION_MM,
+    session = session.copy(avgMcvMmS = session.avgMcvMmS?.let { it * 10f }),
+    metrics = metrics.map {
+        it.copy(
+            positionA = it.positionA * 10f,
+            positionB = it.positionB * 10f,
+            velocityA = it.velocityA * 10.0,
+            velocityB = it.velocityB * 10.0,
+        )
+    },
+    repMetrics = repMetrics.map {
+        it.copy(
+            peakVelocity = it.peakVelocity * 10f,
+            avgVelocityConcentric = it.avgVelocityConcentric * 10f,
+            avgVelocityEccentric = it.avgVelocityEccentric * 10f,
+            rangeOfMotionMm = it.rangeOfMotionMm * 10f,
+            peakPowerWatts = it.peakPowerWatts * 10f,
+            avgPowerWatts = it.avgPowerWatts * 10f,
+            // The per-sample curves are unit-bearing like the scalars (positions mm,
+            // velocities mm/s after scaling); load arrays and timestamps are untouched.
+            concentricPositions = it.concentricPositions.map { v -> v * 10f }.toFloatArray(),
+            eccentricPositions = it.eccentricPositions.map { v -> v * 10f }.toFloatArray(),
+            concentricVelocities = it.concentricVelocities.map { v -> v * 10f }.toFloatArray(),
+            eccentricVelocities = it.eccentricVelocities.map { v -> v * 10f }.toFloatArray(),
+        )
+    },
+    repBiomechanics = repBiomechanics.map {
+        it.copy(
+            velocity = it.velocity.copy(
+                meanConcentricVelocityMmS = it.velocity.meanConcentricVelocityMmS * 10f,
+                peakVelocityMmS = it.velocity.peakVelocityMmS * 10f,
+            ),
+        )
+    },
+)
 
 /**
  * The immutable persistence input of one completed-set write. This is the replay unit of
@@ -89,11 +149,15 @@ data class PendingChildWrite(
     val completedSet: CompletedSet?,
     val repMetrics: List<RepMetricData>,
     val repBiomechanics: List<BiomechanicsRepResult>,
+    /** Issue #1400: explicit metric-unit contract of this write's unit-bearing values. */
+    val metricUnitVersion: Int = METRIC_UNIT_VERSION_MM,
 )
 
 @Serializable
 internal data class PendingChildWriteEnvelopeDto(
     val v: Int,
+    /** Absent on v1 payloads, which predate the issue #1400 unit fix (cm / cm-s). */
+    val metricUnitVersion: Int = METRIC_UNIT_VERSION_LEGACY,
     val session: PersistedSessionDto,
     val metrics: List<PersistedMetricDto> = emptyList(),
     val completedSet: PersistedCompletedSetDto? = null,
@@ -526,6 +590,8 @@ internal data class PersistedBiomechanicsRepDto(
     val velocity: PersistedVelocityDto,
     val forceCurve: PersistedForceCurveDto,
     val asymmetry: PersistedAsymmetryDto,
+    // Issue #1400: absent in journals written before the field existed -> eligible.
+    val aggregateEligible: Boolean = true,
 ) {
     fun toDomain() = BiomechanicsRepResult(
         velocity = velocity.toDomain(),
@@ -533,6 +599,7 @@ internal data class PersistedBiomechanicsRepDto(
         asymmetry = asymmetry.toDomain(),
         repNumber = repNumber,
         timestamp = timestamp,
+        aggregateEligible = aggregateEligible,
     )
 
     companion object {
@@ -542,6 +609,7 @@ internal data class PersistedBiomechanicsRepDto(
             velocity = PersistedVelocityDto.from(result.velocity),
             forceCurve = PersistedForceCurveDto.from(result.forceCurve),
             asymmetry = PersistedAsymmetryDto.from(result.asymmetry),
+            aggregateEligible = result.aggregateEligible,
         )
     }
 }

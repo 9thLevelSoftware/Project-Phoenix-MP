@@ -92,6 +92,11 @@ actual val platformModule: Module = module {
     single { HealthIntegration(androidContext()) }
     single<HealthWorkoutWriter> { get<HealthIntegration>() }
     single<WorkoutServiceController> { AndroidWorkoutServiceController(androidContext()) }
+    // Issue #1358 (SD5/P3): phone-only exercise media file store (never in dataModule —
+    // commonMain cannot reference a phoneMain type, F1).
+    single<com.devil.phoenixproject.data.media.ExerciseMediaStore> {
+        com.devil.phoenixproject.data.media.AndroidExerciseMediaStore(androidContext())
+    }
     viewModel {
         MainViewModel(
             bleRepository = get(),

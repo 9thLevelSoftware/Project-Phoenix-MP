@@ -12,7 +12,6 @@ import kotlin.test.assertTrue
 class HandleStateDetectorTest {
 
     private var fakeTime = 0L
-
     private fun createDetector(): HandleStateDetector = HandleStateDetector(timeProvider = { fakeTime })
 
     /**
@@ -45,8 +44,8 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
-        // Both handles below rest threshold (5mm)
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        // Both handles below rest threshold (50mm)
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -54,9 +53,8 @@ class HandleStateDetectorTest {
     fun `WaitingForRest stays when handles above rest threshold`() {
         val detector = createDetector()
         detector.enable(autoStart = true)
-
         // Both handles above rest threshold
-        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
+        detector.processMetric(metric(posA = 100.0f, posB = 100.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
     }
 
@@ -67,17 +65,17 @@ class HandleStateDetectorTest {
         fakeTime = 0L
 
         // Handles above rest threshold - starts timeout
-        detector.processMetric(metric(posA = 6.0f, posB = 6.0f))
+        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // 2999ms later - still waiting
         fakeTime = 2999L
-        detector.processMetric(metric(posA = 6.0f, posB = 6.0f))
+        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // 3001ms - timeout fires, uses real baseline (not grabbed)
         fakeTime = 3001L
-        detector.processMetric(metric(posA = 6.0f, posB = 6.0f))
+        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -87,24 +85,24 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
         fakeTime = 0L
 
-        // Handles above GRABBED threshold (8mm) - starts timeout
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f))
+        // Handles above GRABBED threshold (80mm) - starts timeout
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // Timeout fires
         fakeTime = 3001L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
-        // After virtual baseline (0.0), position 20mm is well above grab delta threshold (10mm)
+        // After virtual baseline (0.0), position 200mm is well above grab delta threshold (100mm)
         // So next metric with velocity should start the grab dwell
         fakeTime = 3100L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         // Should still be Released (dwell not started or just started)
 
         // After 200ms dwell
         fakeTime = 3300L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -113,24 +111,23 @@ class HandleStateDetectorTest {
         val detector = createDetector()
         detector.enable(autoStart = true)
         fakeTime = 0L
-
-        // Handles above rest (5mm) but below grabbed threshold (8mm) -- elevated rest
-        detector.processMetric(metric(posA = 6.0f, posB = 6.0f))
+        // Handles above rest (50mm) but below grabbed threshold (80mm) -- elevated rest
+        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
-        // Timeout fires - real baseline captured at 6.0
+        // Timeout fires - real baseline captured at 60.0
         fakeTime = 3001L
-        detector.processMetric(metric(posA = 6.0f, posB = 6.0f))
+        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
-        // Position at 17mm: delta from baseline 6.0 = 11mm > GRAB_DELTA_THRESHOLD (10mm)
+        // Position at 170mm: delta from baseline 60.0 = 110mm > GRAB_DELTA_THRESHOLD (100mm)
         // With velocity, should start grab dwell
         fakeTime = 3100L
-        detector.processMetric(metric(posA = 17.0f, posB = 17.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 170.0f, posB = 170.0f, velA = 1000.0, velB = 1000.0))
 
         // After 200ms dwell
         fakeTime = 3300L
-        detector.processMetric(metric(posA = 17.0f, posB = 17.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 170.0f, posB = 170.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -140,22 +137,22 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // First grab signal - starts dwell timer
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Released, detector.handleState.value) // Still dwelling
 
         // 199ms later - not yet
         fakeTime = 1199L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // 200ms - dwell complete
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -165,12 +162,12 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Position extended but zero velocity -> Moving
         fakeTime = 100L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 0.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 0.0, velB = 0.0))
         assertEquals(HandleState.Moving, detector.handleState.value)
     }
 
@@ -180,12 +177,12 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Handles still at rest (below grab threshold)
         fakeTime = 100L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -195,19 +192,19 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Moving
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 100L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 0.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 0.0, velB = 0.0))
         assertEquals(HandleState.Moving, detector.handleState.value)
 
         // Now add velocity - starts grab dwell
         fakeTime = 200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Moving, detector.handleState.value) // Still dwelling
 
         // 200ms later - grab confirmed
         fakeTime = 400L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -217,14 +214,14 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Moving
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 100L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 0.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 0.0, velB = 0.0))
         assertEquals(HandleState.Moving, detector.handleState.value)
 
         // Handles return to rest
         fakeTime = 200L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -234,26 +231,26 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Grabbed
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Start release - handles back at rest
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value) // Still dwelling
 
         // 199ms - not yet
         fakeTime = 2199L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // 200ms - release confirmed
         fakeTime = 2200L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -263,16 +260,16 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Grabbed
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Handles still extended
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 50.0, velB = 50.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 500.0, velB = 500.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -286,32 +283,32 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Start grab dwell
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
 
         // 150ms later - still dwelling
         fakeTime = 1150L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Handles drop back to rest - resets dwell
         fakeTime = 1160L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // New grab attempt - should need full 200ms again
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         // Only 0ms into new dwell
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // 200ms from the NEW dwell start (1200 + 200 = 1400)
         fakeTime = 1400L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -321,35 +318,35 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Grabbed
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Start release dwell
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // 150ms - still dwelling
         fakeTime = 2150L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Handles move away from rest - resets release dwell
         fakeTime = 2160L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 50.0, velB = 50.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 500.0, velB = 500.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // New release attempt - needs full 200ms again
         fakeTime = 2200L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value) // Just started new dwell
 
         fakeTime = 2400L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value) // 200ms from 2200
     }
 
@@ -359,21 +356,21 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
 
         // Start grab at t=1000
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // At exactly 199ms (< 200ms dwell) -- should NOT transition
         fakeTime = 1199L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // At exactly 200ms (>= 200ms dwell) -- SHOULD transition
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -387,15 +384,15 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
 
         // Only handle A grabbed and moving
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 1.5f, velA = 100.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 15.0f, velA = 1000.0, velB = 0.0))
 
         // 200ms dwell
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 1.5f, velA = 100.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 15.0f, velA = 1000.0, velB = 0.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -405,15 +402,15 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
 
         // Only handle B grabbed and moving
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 1.5f, posB = 20.0f, velA = 0.0, velB = 100.0))
+        detector.processMetric(metric(posA = 15.0f, posB = 200.0f, velA = 0.0, velB = 1000.0))
 
         // 200ms dwell
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 1.5f, posB = 20.0f, velA = 0.0, velB = 100.0))
+        detector.processMetric(metric(posA = 15.0f, posB = 200.0f, velA = 0.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -423,26 +420,26 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Grabbed (only handle A active)
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 1.5f, velA = 100.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 15.0f, velA = 1000.0, velB = 0.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 1.5f, velA = 100.0, velB = 0.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 15.0f, velA = 1000.0, velB = 0.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Handle B at rest (was never active) -- should NOT trigger release
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 20.0f, posB = 0.0f))
+        detector.processMetric(metric(posA = 200.0f, posB = 0.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Handle A returns to rest -- SHOULD start release dwell
         fakeTime = 2100L
-        detector.processMetric(metric(posA = 2.0f, posB = 0.0f))
+        detector.processMetric(metric(posA = 20.0f, posB = 0.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value) // Dwelling
 
         // 200ms later -- release confirmed
         fakeTime = 2300L
-        detector.processMetric(metric(posA = 2.0f, posB = 0.0f))
+        detector.processMetric(metric(posA = 20.0f, posB = 0.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -452,26 +449,26 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Go to Released -> Grabbed (both handles active)
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Only A released, B still extended -- should NOT release
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 2.0f, posB = 20.0f))
+        detector.processMetric(metric(posA = 20.0f, posB = 200.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
         // Both released
         fakeTime = 2100L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value) // Dwelling
 
         // 200ms later
         fakeTime = 2300L
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -485,26 +482,26 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Handles at rest with non-zero position -> captures baseline
-        detector.processMetric(metric(posA = 3.0f, posB = 4.0f))
+        detector.processMetric(metric(posA = 30.0f, posB = 40.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
-        // Now position must be 3.0 + GRAB_DELTA_THRESHOLD (10mm) = 13mm to trigger grab
-        // Position at 12mm -> delta = 9mm < 10mm -> NOT grabbed
+        // Now position must be 30.0 + GRAB_DELTA_THRESHOLD (100mm) = 130mm to trigger grab
+        // Position at 120mm -> delta = 90mm < 100mm -> NOT grabbed
         fakeTime = 100L
-        detector.processMetric(metric(posA = 12.0f, posB = 12.0f, velA = 100.0, velB = 100.0))
-        // Not grabbed because delta from baseline is only 9mm (12-3) and 8mm (12-4)
+        detector.processMetric(metric(posA = 120.0f, posB = 120.0f, velA = 1000.0, velB = 1000.0))
+        // Not grabbed because delta from baseline is only 90mm (120-30) and 80mm (120-40)
         // Should be Moving (position extended but doesn't meet grab delta + velocity)
-        // Actually let's check: handleAGrabbed = (12 - 3) = 9 < 10 = false for A
+        // Actually let's check: handleAGrabbed = (120 - 30) = 90 < 100 = false for A
         // So neither handle is grabbed, which means back to rest: Released
         assertEquals(HandleState.Released, detector.handleState.value)
 
-        // Position at 14mm -> delta from baseline 3 = 11mm > 10mm -> grabbed
+        // Position at 140mm -> delta from baseline 30 = 110mm > 100mm -> grabbed
         fakeTime = 200L
-        detector.processMetric(metric(posA = 14.0f, posB = 15.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 140.0f, posB = 150.0f, velA = 1000.0, velB = 1000.0))
 
         // 200ms dwell
         fakeTime = 400L
-        detector.processMetric(metric(posA = 14.0f, posB = 15.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 140.0f, posB = 150.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -513,14 +510,14 @@ class HandleStateDetectorTest {
         val detector = createDetector()
         detector.enable(autoStart = true)
 
-        // Baseline captured at 3.0, 4.0
-        detector.processMetric(metric(posA = 3.0f, posB = 4.0f))
+        // Baseline captured at 30.0, 40.0
+        detector.processMetric(metric(posA = 30.0f, posB = 40.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
-        // Absolute position 9mm > HANDLE_GRABBED_THRESHOLD (8mm) -- but baseline-relative:
-        // delta = 9 - 3 = 6mm which is < GRAB_DELTA_THRESHOLD (10mm) -- NOT grabbed
+        // Absolute position 90mm > HANDLE_GRABBED_THRESHOLD (80mm) -- but baseline-relative:
+        // delta = 90 - 30 = 60mm which is < GRAB_DELTA_THRESHOLD (100mm) -- NOT grabbed
         fakeTime = 100L
-        detector.processMetric(metric(posA = 9.0f, posB = 9.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 90.0f, posB = 90.0f, velA = 1000.0, velB = 1000.0))
         // Since neither is grab-detected via delta, this is "back to rest" => Released
         assertEquals(HandleState.Released, detector.handleState.value)
     }
@@ -530,35 +527,34 @@ class HandleStateDetectorTest {
         val detector = createDetector()
         detector.enable(autoStart = true)
 
-        // Rest baseline at 3.0
-        detector.processMetric(metric(posA = 3.0f, posB = 3.0f))
+        // Rest baseline at 30.0
+        detector.processMetric(metric(posA = 30.0f, posB = 30.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Grab with large delta
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 30.0f, posB = 30.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 300.0f, posB = 300.0f, velA = 1000.0, velB = 1000.0))
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 30.0f, posB = 30.0f, velA = 100.0, velB = 100.0))
+        detector.processMetric(metric(posA = 300.0f, posB = 300.0f, velA = 1000.0, velB = 1000.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
 
-        // Release: position returns to within RELEASE_DELTA_THRESHOLD (5mm) of baseline (3.0)
-        // Position 7.0: delta = 7 - 3 = 4mm < 5mm -> released
+        // Release: position returns to within RELEASE_DELTA_THRESHOLD (50mm) of baseline (30.0)
+        // Position 70.0: delta = 70 - 30 = 40mm < 50mm -> released
         fakeTime = 2000L
-        detector.processMetric(metric(posA = 7.0f, posB = 7.0f))
+        detector.processMetric(metric(posA = 70.0f, posB = 70.0f))
         assertEquals(HandleState.Grabbed, detector.handleState.value) // Dwelling
 
         fakeTime = 2200L
-        detector.processMetric(metric(posA = 7.0f, posB = 7.0f))
+        detector.processMetric(metric(posA = 70.0f, posB = 70.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
     @Test
     fun `baseline reset on enable`() {
         val detector = createDetector()
-
         // First session - set baseline
         detector.enable(autoStart = true)
-        detector.processMetric(metric(posA = 3.0f, posB = 3.0f))
+        detector.processMetric(metric(posA = 30.0f, posB = 30.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Re-enable - should reset everything including baseline
@@ -566,7 +562,7 @@ class HandleStateDetectorTest {
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // New baseline should be captured fresh
-        detector.processMetric(metric(posA = 1.0f, posB = 1.0f))
+        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -574,9 +570,8 @@ class HandleStateDetectorTest {
     fun `baseline reset on disable`() {
         val detector = createDetector()
         detector.enable(autoStart = true)
-
         // Set baseline
-        detector.processMetric(metric(posA = 3.0f, posB = 3.0f))
+        detector.processMetric(metric(posA = 30.0f, posB = 30.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Disable clears everything
@@ -587,7 +582,7 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // New baseline captured
-        detector.processMetric(metric(posA = 1.0f, posB = 1.0f))
+        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -595,9 +590,8 @@ class HandleStateDetectorTest {
     fun `baseline reset on reset`() {
         val detector = createDetector()
         detector.enable(autoStart = true)
-
         // Set baseline
-        detector.processMetric(metric(posA = 3.0f, posB = 3.0f))
+        detector.processMetric(metric(posA = 30.0f, posB = 30.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Reset returns to WaitingForRest
@@ -605,7 +599,7 @@ class HandleStateDetectorTest {
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // New baseline captured
-        detector.processMetric(metric(posA = 1.0f, posB = 1.0f))
+        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -613,9 +607,8 @@ class HandleStateDetectorTest {
     fun `baseline reset on enableJustLiftWaiting`() {
         val detector = createDetector()
         detector.enable(autoStart = true)
-
         // Set baseline
-        detector.processMetric(metric(posA = 3.0f, posB = 3.0f))
+        detector.processMetric(metric(posA = 30.0f, posB = 30.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // enableJustLiftWaiting resets everything
@@ -623,7 +616,7 @@ class HandleStateDetectorTest {
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // New baseline captured
-        detector.processMetric(metric(posA = 1.0f, posB = 1.0f))
+        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
     }
 
@@ -638,15 +631,15 @@ class HandleStateDetectorTest {
         assertTrue(detector.isAutoStartMode)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
 
-        // Velocity 25 mm/s > AUTO_START_VELOCITY_THRESHOLD (20) -> should detect grab
+        // Velocity 250 mm/s > AUTO_START_VELOCITY_THRESHOLD (200) -> should detect grab
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 25.0, velB = 25.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 250.0, velB = 250.0))
 
         // 200ms dwell
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 25.0, velB = 25.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 250.0, velB = 250.0))
         assertEquals(HandleState.Grabbed, detector.handleState.value)
     }
 
@@ -657,15 +650,15 @@ class HandleStateDetectorTest {
         assertFalse(detector.isAutoStartMode)
 
         // Go to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
 
-        // Velocity 25 mm/s < VELOCITY_THRESHOLD (50) -> should NOT detect grab
+        // Velocity 250 mm/s < VELOCITY_THRESHOLD (500) -> should NOT detect grab
         fakeTime = 1000L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 25.0, velB = 25.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 250.0, velB = 250.0))
 
         // 200ms later - still no grab because velocity too low
         fakeTime = 1200L
-        detector.processMetric(metric(posA = 20.0f, posB = 20.0f, velA = 25.0, velB = 25.0))
+        detector.processMetric(metric(posA = 200.0f, posB = 200.0f, velA = 250.0, velB = 250.0))
         // With no velocity above threshold, position above threshold -> Moving
         assertEquals(HandleState.Moving, detector.handleState.value)
     }
@@ -682,18 +675,18 @@ class HandleStateDetectorTest {
         // Initial: both false
         assertEquals(HandleDetection(false, false), detector.handleDetection.value)
 
-        // Left handle extended > 50mm
-        detector.processMetric(metric(posA = 60.0f, posB = 10.0f))
+        // Left handle extended > 500mm
+        detector.processMetric(metric(posA = 600.0f, posB = 100.0f))
         assertEquals(HandleDetection(true, false), detector.handleDetection.value)
 
         // Both extended
         fakeTime = 100L
-        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
+        detector.processMetric(metric(posA = 600.0f, posB = 600.0f))
         assertEquals(HandleDetection(true, true), detector.handleDetection.value)
 
         // Both back
         fakeTime = 200L
-        detector.processMetric(metric(posA = 10.0f, posB = 10.0f))
+        detector.processMetric(metric(posA = 100.0f, posB = 100.0f))
         assertEquals(HandleDetection(false, false), detector.handleDetection.value)
     }
 
@@ -703,7 +696,7 @@ class HandleStateDetectorTest {
         // Not enabled - processMetric should be no-op
         assertFalse(detector.isEnabled)
 
-        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
+        detector.processMetric(metric(posA = 600.0f, posB = 600.0f))
         assertEquals(HandleDetection(false, false), detector.handleDetection.value)
     }
 
@@ -744,7 +737,7 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = true)
 
         // Advance to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // Reset
@@ -761,7 +754,7 @@ class HandleStateDetectorTest {
         assertFalse(detector.isAutoStartMode)
 
         // Advance to Released
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.Released, detector.handleState.value)
 
         // enableJustLiftWaiting
@@ -782,11 +775,11 @@ class HandleStateDetectorTest {
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // Should not change state
-        detector.processMetric(metric(posA = 2.0f, posB = 1.5f))
+        detector.processMetric(metric(posA = 20.0f, posB = 15.0f))
         assertEquals(HandleState.WaitingForRest, detector.handleState.value)
 
         // Should not change handle detection
-        detector.processMetric(metric(posA = 60.0f, posB = 60.0f))
+        detector.processMetric(metric(posA = 600.0f, posB = 600.0f))
         assertEquals(HandleDetection(false, false), detector.handleDetection.value)
     }
 
@@ -794,15 +787,14 @@ class HandleStateDetectorTest {
     fun `position diagnostics track min and max`() {
         val detector = createDetector()
         detector.enable(autoStart = true)
-
-        detector.processMetric(metric(posA = 10.0f, posB = 5.0f))
-        assertEquals(5.0, detector.minPositionSeen)
-        assertEquals(10.0, detector.maxPositionSeen)
+        detector.processMetric(metric(posA = 100.0f, posB = 50.0f))
+        assertEquals(50.0, detector.minPositionSeen)
+        assertEquals(100.0, detector.maxPositionSeen)
 
         fakeTime = 100L
-        detector.processMetric(metric(posA = 2.0f, posB = 20.0f))
-        assertEquals(2.0, detector.minPositionSeen)
-        assertEquals(20.0, detector.maxPositionSeen)
+        detector.processMetric(metric(posA = 20.0f, posB = 200.0f))
+        assertEquals(20.0, detector.minPositionSeen)
+        assertEquals(200.0, detector.maxPositionSeen)
     }
 
     @Test
@@ -817,9 +809,9 @@ class HandleStateDetectorTest {
         detector.enable(autoStart = false)
         assertFalse(detector.hasObservedPositionRange())
 
-        detector.processMetric(metric(posA = -30.0f, posB = -8.0f))
-        assertEquals(-30.0, detector.minPositionSeen)
-        assertEquals(-8.0, detector.maxPositionSeen)
+        detector.processMetric(metric(posA = -300.0f, posB = -80.0f))
+        assertEquals(-300.0, detector.minPositionSeen)
+        assertEquals(-80.0, detector.maxPositionSeen)
         assertTrue(detector.hasObservedPositionRange())
 
         detector.reset()

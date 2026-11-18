@@ -1680,7 +1680,7 @@ abstract class BaseDataBackupManager(
                                             val rawJson = nav.nextValueAsString()
                                             val session = tryImport("session-parse", null) {
                                                 json.decodeFromString<WorkoutSessionBackup>(rawJson)
-                                            } ?: continue
+                                            }?.scaledToCurrentMetricUnits(backupVersion) ?: continue
 
                                             if (backupVersion >= 6 && session.profileId != null &&
                                                 !profileParentAvailable(session.profileId)
@@ -1898,7 +1898,7 @@ abstract class BaseDataBackupManager(
                                                 json.decodeFromString<MetricSampleBackup>(rawJson)
                                             }
                                             if (metric != null) {
-                                                restoreMetric(metric)
+                                                restoreMetric(metric.scaledToCurrentMetricUnits(backupVersion))
                                                 batchCount++
                                             }
                                             totalMetricsSeen++
@@ -1924,7 +1924,7 @@ abstract class BaseDataBackupManager(
                                                     json.decodeFromString<MetricSampleBackup>(rawJson)
                                                 }
                                                 if (metric != null) {
-                                                    restoreMetric(metric)
+                                                    restoreMetric(metric.scaledToCurrentMetricUnits(backupVersion))
                                                     batchCount++
                                                 }
                                                 totalMetricsSeen++

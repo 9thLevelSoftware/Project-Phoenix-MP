@@ -774,6 +774,71 @@ class RestoredRuntimeTimerTest {
         val routine: Routine,
     )
 
+    @Test
+    fun `issue 1360 live rest after restored rest accepts extend and pause`() = runTest {
+        assertLiveRestAfterRestoredAcceptsControls(expireFirst = false)
+    }
+
+    @Test
+    fun `issue 1360 live rest after expired restored rest accepts extend and pause`() = runTest {
+        assertLiveRestAfterRestoredAcceptsControls(expireFirst = true)
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.assertLiveRestAfterRestoredAcceptsControls(expireFirst: Boolean) {
+        var wallClockEpochMs = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
+        val harness = DWSMTestHarness(this, wallClockMillisProvider = { wallClockEpochMs })
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.setActiveSummaryCountdownSeconds(-1)
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 3,
+                weightKg = 25f,
+            )
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            val installed = installTimerRuntime(
+                harness = harness,
+                routineSessionId = "restored-then-live",
+                restDeadlineEpochMs = wallClockEpochMs + 30_000L,
+                routineOverride = routine,
+            )
+            assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(
+                harness.dwsm.resumeRoutine(installed.handle),
+            )
+            runCurrent()
+            if (expireFirst) {
+                wallClockEpochMs += 31_000L
+                advanceTimeBy(31_000)
+                runCurrent()
+            }
+
+            harness.dwsm.skipRest()
+            advanceTimeBy(1_000)
+            runCurrent()
+            if (harness.coordinator.workoutState.value !is WorkoutState.Active) {
+                harness.dwsm.startWorkout(skipCountdown = true)
+                advanceTimeBy(1_000)
+                runCurrent()
+            }
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            runCurrent()
+            val live = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+            harness.dwsm.extendRestTime(30)
+            runCurrent()
+            val extended = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(live.restSecondsRemaining + 30, extended.restSecondsRemaining)
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            assertTrue(harness.coordinator.isRestPaused.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
     private suspend fun installTimerRuntime(
         harness: DWSMTestHarness,
         routineSessionId: String,

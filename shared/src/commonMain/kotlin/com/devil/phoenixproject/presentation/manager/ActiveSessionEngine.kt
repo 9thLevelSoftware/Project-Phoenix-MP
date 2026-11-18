@@ -66,6 +66,8 @@ import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
 import com.devil.phoenixproject.domain.model.ProfileSectionMetadata
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -96,6 +98,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
+import com.devil.phoenixproject.domain.premium.reachedCommandedLoadForAggregates
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
@@ -162,11 +165,47 @@ internal fun UserPreferences.verbalEncouragementEventOrNull(): HapticEvent.VERBA
     )
 }
 
+/**
+ * Issue #1394: the machine-configuration settings a set start CONFIGs on the trainer —
+ * program mode plus the Echo level and eccentric load carried by the Echo (0x4E) frame.
+ *
+ * Two snapshots of this triple answer "does this entry boundary change what the
+ * machine is configured to do?": the OUTGOING execution's applied configuration
+ * (frozen at command-capture time — never the mutable coordinator block, which rest
+ * screen edits can overwrite) and the fully RESOLVED successor configuration (entry
+ * defaults + per-set Echo values + rest overrides).
+ */
+internal data class AppliedMachineConfiguration(
+    val programMode: ProgramMode,
+    val echoLevel: EchoLevel,
+    val eccentricLoad: EccentricLoad,
+)
+
+/**
+ * Issue #1394: does this transition require a deferred, explicitly started successor
+ * CONFIG (the Issue #572 manual Start gate), or are the resolved settings equivalent
+ * to what the trainer is already running?
+ *
+ * Adjacent-duplicate IDENTITY alone must not answer this question. Manual readiness
+ * is preserved only for real configuration transitions and for the conservative case
+ * where the outgoing applied configuration cannot be established ([outgoingApplied]
+ * is null), because there is no proof the successor would re-CONFIG the same mode.
+ */
+internal fun requiresExplicitConfigurationTransition(
+    outgoingApplied: AppliedMachineConfiguration?,
+    destination: AppliedMachineConfiguration,
+): Boolean {
+    if (outgoingApplied == null) return true
+    return outgoingApplied != destination
+}
+
 data class BiomechanicsRepInput(
     val repNumber: Int,
     val concentricMetrics: List<WorkoutMetric>,
     val allRepMetrics: List<WorkoutMetric>,
     val timestamp: Long,
+    /** Issue #1400: false keeps this rep out of set-level velocity aggregates and the loss baseline. */
+    val aggregateEligible: Boolean = true,
 )
 
 fun interface BiomechanicsRepProcessor {
@@ -182,6 +221,7 @@ fun interface BiomechanicsRepProcessor {
                 concentricMetrics = input.concentricMetrics,
                 allRepMetrics = input.allRepMetrics,
                 timestamp = input.timestamp,
+                aggregateEligible = input.aggregateEligible,
             )
         }
     }
@@ -4372,6 +4412,24 @@ class ActiveSessionEngine(
 
     internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
 
+    /**
+     * Issue #1394 merge-gate rework: test-only mirror of the production execution-facts
+     * invalidation (the reset flow's `executionContext = null` after `executionGuard.invalidate`).
+     * Used to prove the duplicate-boundary transition fails conservatively to manual readiness
+     * when the outgoing applied configuration cannot be established — through the real
+     * summary/rest transition seam, not the predicate alone.
+     */
+    internal fun clearExecutionFactsForTest() {
+        executionContext = null
+    }
+
+    /**
+     * Issue #1394 merge-gate rework: test-only read of the current execution's frozen
+     * command-capture facts, used to assert the exact command inputs (reps, weights,
+     * progression, rack snapshot, warmup, AMRAP) a set start captured for the trainer.
+     */
+    internal fun executionFactsForTest(): SetExecutionActivationFacts? = executionContext?.completionFacts
+
     internal fun claimedCompletion(lease: ExecutionLease): SetExecutionCompletion? = executionGuard.claimedCompletion(lease)
 
     internal var completionJobAttachCountForTest: Int = 0
@@ -6285,7 +6343,8 @@ class ActiveSessionEngine(
         val rawPosA = currentPositions?.positionA ?: 0f
         val rawPosB = currentPositions?.positionB ?: 0f
 
-        val repCountBefore = repCounter.getRepCount().totalReps
+        val countsBefore = repCounter.getRepCount()
+        val repCountBefore = countsBefore.totalReps
         logRepNotificationReceipt(notification, repCountBefore)
 
         // Seed ROM from machine (only has effect on first notification with valid data)
@@ -6312,7 +6371,21 @@ class ActiveSessionEngine(
         coordinator._repRanges.value = repCounter.getRepRanges()
 
         // Score the rep if rep count actually incremented
-        val repCountAfter = repCounter.getRepCount().totalReps
+        val countsAfter = repCounter.getRepCount()
+        val repCountAfter = countsAfter.totalReps
+
+        // Issue #1400 (F2): remember the last warmup rep event from the rep-event stream, on the
+        // sample clock (the newest monitor sample when the event arrived). Only a notification
+        // that advances the warmup count without counting a working rep qualifies, so the
+        // mark can never land after working rep 1 (#252 / R-1 intent). It is consumed only when
+        // working rep 1 arrives with no sample-based warmup mark (see below).
+        if (repCountAfter == repCountBefore &&
+            countsAfter.workingReps == 0 &&
+            countsAfter.warmupReps > countsBefore.warmupReps
+        ) {
+            currentPositions?.timestamp?.let { coordinator.warmupRepEventSampleMs = it }
+        }
+
         if (repCountAfter > repCountBefore) {
             // Issue #649: a completed working rep proves the user is back in
             // motion; let normal AMRAP / stall auto-stop resume by zeroing the
@@ -6325,6 +6398,28 @@ class ActiveSessionEngine(
             // can survive a subsequent valid rep and later auto-complete the set.
             resetStallTimer()
 
+            // Issue #1400 (F2): working rep 1 of a set with a configured warmup (warmupReps > 0
+            // once working reps count) and no sample-based warmup mark (F-022 seed). Without a
+            // lower bound its window would reach back to set start and include the calibration
+            // pulls. Start it at the last observed warmup rep event instead of 0L. The boundary
+            // is only trustworthy when the warmup completed in an EARLIER notification; when
+            // this notification force-completed it (coalesced warmup + working rep 1) the
+            // window still holds unobserved calibration pulls. Either way an untrusted rep 1
+            // stays counted and displayed but is kept out of set-level velocity aggregates.
+            var warmupBoundaryKnown = true
+            if (countsBefore.workingReps == 0 &&
+                countsAfter.warmupReps > 0 &&
+                coordinator.repBoundaryTimestamps.value.isEmpty()
+            ) {
+                val warmupEventMs = coordinator.warmupRepEventSampleMs
+                if (warmupEventMs > 0L) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(warmupEventMs) else boundaries
+                    }
+                }
+                warmupBoundaryKnown = warmupEventMs > 0L && countsAfter.warmupReps == countsBefore.warmupReps
+            }
+
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
             val now = KmpUtils.currentTimeMillis()
@@ -6333,7 +6428,7 @@ class ActiveSessionEngine(
             scoreCurrentRep(repCountAfter)
 
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
-            processBiomechanicsForRep(lease, repCountAfter, now)
+            processBiomechanicsForRep(lease, repCountAfter, now, warmupBoundaryKnown = warmupBoundaryKnown)
         }
     }
 
@@ -6510,11 +6605,15 @@ class ActiveSessionEngine(
      *
      * @param repNumber 1-indexed rep number
      * @param timestamp Rep completion timestamp
+     * @param warmupBoundaryKnown Issue #1400: false when a warmup was configured but no warmup
+     *   boundary was recorded before this (first) working rep, so its window may include the
+     *   calibration pulls and the rep must stay out of set-level aggregates.
      */
     private fun processBiomechanicsForRep(
         lease: ExecutionLease,
         repNumber: Int,
         timestamp: Long,
+        warmupBoundaryKnown: Boolean = true,
     ) {
         if (!executionGuard.isCurrent(lease)) return
         val context = biomechanicsContextFor(lease) ?: return
@@ -6524,6 +6623,14 @@ class ActiveSessionEngine(
             Logger.d { "Biomechanics: no rep boundary for rep $repNumber" }
             return
         }
+        // Issue #1400 (F2): the commanded load in force when this rep completed. The machine
+        // never holds more than the connected model's per-cable ceiling, so a request above it
+        // must not make every rep look like a ramp rep.
+        val paramsAtRep = coordinator._workoutParameters.value
+        val commandedPerCableKgAtRep = minOf(
+            paramsAtRep.weightPerCableKg,
+            CommandLimits.maxWeightPerCableKg(bleRepository.connectedModel),
+        )
 
         scope.launch(biomechanicsDispatcher) {
             if (!executionGuard.isCurrent(lease)) return@launch
@@ -6574,6 +6681,23 @@ class ActiveSessionEngine(
                     if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
                 }
 
+                // Issue #1400 (F2): calibration-contaminated rep 1 and constant-load ramp reps
+                // are analysed and kept for the per-rep display, but not aggregated.
+                val reachedCommandedLoad = reachedCommandedLoadForAggregates(
+                    programMode = paramsAtRep.programMode,
+                    progressionRegressionKg = paramsAtRep.progressionRegressionKg,
+                    commandedPerCableKg = commandedPerCableKgAtRep,
+                    concentricMetrics = concentricMetrics,
+                    counterweightKg = paramsAtRep.counterweightKg,
+                )
+                val aggregateEligible = warmupBoundaryKnown && reachedCommandedLoad
+                if (!aggregateEligible) {
+                    Logger.d {
+                        "Biomechanics: rep $repNumber excluded from set aggregates " +
+                            "(warmupBoundaryKnown=$warmupBoundaryKnown, reachedCommandedLoad=$reachedCommandedLoad)"
+                    }
+                }
+
                 if (!executionGuard.isCurrent(lease)) return@launch
                 val result = biomechanicsRepProcessor.process(
                     engine = context.engine,
@@ -6582,6 +6706,7 @@ class ActiveSessionEngine(
                         concentricMetrics = concentricMetrics,
                         allRepMetrics = repMetrics,
                         timestamp = timestamp,
+                        aggregateEligible = aggregateEligible,
                     ),
                 )
 
@@ -6842,6 +6967,9 @@ class ActiveSessionEngine(
                 // boundary here the window reaches back to set start, so rep 1's mean
                 // concentric velocity - the baseline for velocity-loss auto-end and for
                 // the VBT 1RM estimate - averaged in every warmup rep.
+                // Issue #1400: when no sample arrives between the warmup and working rep 1
+                // (the coalesced path), handleRepNotification starts rep 1 at the last warmup
+                // rep event instead and keeps an untrusted rep 1 out of set aggregates.
                 if (coordinator._repCount.value.warmupReps > 0) {
                     coordinator.repBoundaryTimestamps.update { boundaries ->
                         if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
@@ -7035,7 +7163,7 @@ class ActiveSessionEngine(
                     val thresholdA = minA + (rangeA * 0.05f)
                     val cableAInDanger = metric.positionA <= thresholdA
                     val cableAReleased = metric.positionA < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                        (metric.positionA - minA) < 10
+                        (metric.positionA - minA) < 100
                     if (cableAInDanger && cableAReleased) {
                         cableAppearsReleased = true
                     }
@@ -7051,7 +7179,7 @@ class ActiveSessionEngine(
                         val thresholdB = minB + (rangeB * 0.05f)
                         val cableBInDanger = metric.positionB <= thresholdB
                         val cableBReleased = metric.positionB < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                            (metric.positionB - minB) < 10
+                            (metric.positionB - minB) < 100
                         if (cableBInDanger && cableBReleased) {
                             cableAppearsReleased = true
                         }
@@ -7768,6 +7896,7 @@ class ActiveSessionEngine(
         coordinator.setRepMetrics.clear()
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
@@ -8358,6 +8487,7 @@ class ActiveSessionEngine(
         // covers every set-start path; the handleSetCompletion resets remain (they
         // must run before the summary is displayed) and are idempotent with these.
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
         // Reset quality streak only at actual workout start, not between sets.
         // skipCountdown=true indicates a set-to-set transition within the same workout.
         if (!skipCountdown) {
@@ -9621,7 +9751,8 @@ class ActiveSessionEngine(
             burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
             peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
             rpe = coordinator._currentSetRpe.value,
-            avgMcvMmS = biomechanicsSummary?.avgMcvMmS,
+            // Issue #1400: 0 means no aggregate-eligible rep had a valid MCV - store no MCV.
+            avgMcvMmS = biomechanicsSummary?.avgMcvMmS?.takeIf { it > 0f },
             avgAsymmetryPercent = biomechanicsSummary?.avgAsymmetryPercent,
             totalVelocityLossPercent = biomechanicsSummary?.totalVelocityLossPercent,
             dominantSide = biomechanicsSummary?.dominantSide,
@@ -9896,6 +10027,7 @@ class ActiveSessionEngine(
                         completedSet = snapshot.completedSet,
                         repMetrics = snapshot.repMetrics,
                         repBiomechanics = snapshot.biomechanicsRepResults,
+                        metricUnitVersion = snapshot.metricUnitVersion,
                     ),
                 )
             }
@@ -10292,6 +10424,7 @@ class ActiveSessionEngine(
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.warmupRepEventSampleMs = 0L
     }
 
     private fun detachEndedRoutineFromCoordinator() {
@@ -11184,6 +11317,7 @@ class ActiveSessionEngine(
                     coordinator.repQualityScorer.reset()
                     coordinator._latestRepQuality.value = null
                     coordinator.repBoundaryTimestamps.value = emptyList()
+                    coordinator.warmupRepEventSampleMs = 0L
 
                     if (manualSnapshot.postSaveInput.isJustLift) {
                         Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
@@ -11359,7 +11493,8 @@ class ActiveSessionEngine(
                     burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
                     peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
                     rpe = coordinator._currentSetRpe.value,
-                    avgMcvMmS = bioSummary?.avgMcvMmS,
+                    // Issue #1400: 0 means no aggregate-eligible rep had a valid MCV - store no MCV.
+                    avgMcvMmS = bioSummary?.avgMcvMmS?.takeIf { it > 0f },
                     avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
                     totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
                     dominantSide = bioSummary?.dominantSide,
@@ -12155,6 +12290,7 @@ class ActiveSessionEngine(
             resetBiomechanicsContext(lease)
             coordinator.deferAutoStopDeadlineMs = 0L
             coordinator.repBoundaryTimestamps.value = emptyList()
+            coordinator.warmupRepEventSampleMs = 0L
 
             val completedReps = snapshot.postSaveInput.workingReps
             val summary = snapshot.presentationSummary
@@ -13488,6 +13624,32 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Issue #1394: the machine configuration the OUTGOING execution actually applied,
+     * read from the lease-matched execution facts frozen at command-capture time. This
+     * immutable snapshot survives the summary/rest phases; the coordinator's
+     * `WorkoutParameters` must never be read for this purpose because rest-screen
+     * edits (`updateWorkoutParameters` / `adjustWeight`) overwrite them before the
+     * successor transition runs.
+     *
+     * Returns null when the outgoing applied configuration cannot be established
+     * (no lease-matched execution context). Callers must then fail conservatively to
+     * manual readiness.
+     */
+    private fun outgoingAppliedConfiguration(lease: ExecutionLease?): AppliedMachineConfiguration? {
+        if (lease == null) return null
+        val template = executionContext
+            ?.takeIf { it.lease.executionId == lease.executionId && it.lease.sessionId == lease.sessionId }
+            ?.completionFacts
+            ?.logicalPreRackCommandTemplate
+            ?: return null
+        return AppliedMachineConfiguration(
+            programMode = template.programMode,
+            echoLevel = template.echoLevel,
+            eccentricLoad = template.eccentricLoad,
+        )
+    }
+
+    /**
      * Issue #525: write one backup for the completed routine instead of per-set files.
      */
     private fun autoBackupRoutineIfEnabled(context: String) {
@@ -13545,15 +13707,21 @@ class ActiveSessionEngine(
             val autoplay = settingsManager.autoplayEnabled.value
 
             val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
-            // Issue #572: when getNextStep advances to the next entry but the new entry
-            // is the same physical exercise as the current one (e.g. "Sumo Belt Squat 2x8
-            // OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
-            // logical movement with a mode change between sets), treat this as a
-            // same-exercise continuation. We do NOT want to send a fresh 0x04 BLE CONFIG
-            // frame mid-movement, because the Phoenix firmware de-energises the cable
-            // on a mode change, which the user perceives as "the set deloads". The mode
-            // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
-            // the CONFIG frame is deferred until the user explicitly starts that set.
+            // Issue #572 / #1394: when getNextStep advances to the next entry but the new
+            // entry is the same physical exercise as the current one (e.g. "Sumo Belt Squat
+            // 2x8 OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
+            // logical movement with a mode change between sets), detect this as a
+            // same-exercise continuation. The detection is IDENTITY ONLY: whether the
+            // boundary may auto-continue is a separate configuration-transition decision
+            // (Issue #1394), because adjacent same-exercise entries are also the standard
+            // unilateral left/right pattern (one-arm rows left then right) that must
+            // auto-advance like every other lift-to-lift transition.
+            //
+            // When the transition genuinely changes the machine configuration (Issue #572:
+            // a program-mode change such as OldSchool -> TUT de-energises the cable
+            // mid-movement on a fresh CONFIG frame), the successor CONFIG is deferred until
+            // the user explicitly starts that set. That manual gate no longer fires for
+            // equivalent settings.
             val isAdjacentLinearExercise =
                 nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
                     currentExercise?.supersetId == null &&
@@ -13562,6 +13730,12 @@ class ActiveSessionEngine(
                 currentExercise != null &&
                 isAdjacentLinearExercise &&
                 flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
+
+            // Issue #1394: capture the OUTGOING execution's applied machine configuration
+            // before the successor mutates any state below. It is the immutable snapshot
+            // frozen at command-capture time and preserved across summary/rest — never the
+            // mutable coordinator block, which rest-screen edits overwrite.
+            val outgoingAppliedConfiguration = outgoingAppliedConfiguration(lease)
 
             coordinator._currentExerciseIndex.value = nextExIdx
             coordinator._currentSetIndex.value = nextSetIdx
@@ -13601,24 +13775,48 @@ class ActiveSessionEngine(
             val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
             val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
-            // Issue #572: for a same-exercise continuation, the on-screen programMode
-            // label and the per-set weight should reflect the new entry (so the user
-            // sees the TUT finisher weight + mode), but the firmware stays in the
-            // current programMode until the user explicitly starts that set, at which
+            // Issue #1394: adjacent-duplicate IDENTITY is not a safety gate. Defer the
+            // successor CONFIG to a manual Start only for real configuration transitions:
+            // autoplay off, or the fully resolved successor configuration (entry mode +
+            // per-set Echo values + rest overrides, exactly what the successor start will
+            // CONFIG) differs from the trainer's outgoing applied configuration, or that
+            // outgoing configuration is unknown. Equivalent effective settings use the
+            // existing authorized autoplay start path, exactly like a distinct-lift
+            // boundary.
+            val resolvedSuccessorConfiguration = AppliedMachineConfiguration(
+                programMode = nextExercise.programMode,
+                echoLevel = nextEchoLevel,
+                eccentricLoad = nextEccentricLoad,
+            )
+            val deferManualStart = isSameExerciseContinuation &&
+                (
+                    !autoplay ||
+                        requiresExplicitConfigurationTransition(
+                            outgoingApplied = outgoingAppliedConfiguration,
+                            destination = resolvedSuccessorConfiguration,
+                        )
+                    )
+
+            // Issue #572: for a deferred same-exercise continuation, the on-screen
+            // programMode label and the per-set weight should reflect the new entry (so
+            // the user sees the TUT finisher weight + mode), but the firmware stays in
+            // the current programMode until the user explicitly starts that set, at which
             // point a fresh 0x04 BLE CONFIG frame is sent. Keeping the firmware in the
             // current mode across the boundary is what prevents the cable from
-            // de-energising mid-movement.
-            val carryProgramMode = if (isSameExerciseContinuation) {
+            // de-energising mid-movement. Every other case (including an authorized
+            // auto-start of an equivalent duplicate) publishes the resolved successor
+            // configuration, matching the distinct-lift path.
+            val carryProgramMode = if (deferManualStart) {
                 currentParams.programMode
             } else {
                 nextExercise.programMode
             }
-            val carryEchoLevel = if (isSameExerciseContinuation) {
+            val carryEchoLevel = if (deferManualStart) {
                 currentParams.echoLevel
             } else {
                 nextEchoLevel
             }
-            val carryEccentricLoad = if (isSameExerciseContinuation) {
+            val carryEccentricLoad = if (deferManualStart) {
                 currentParams.eccentricLoad
             } else {
                 nextEccentricLoad
@@ -13640,10 +13838,11 @@ class ActiveSessionEngine(
             Logger.d {
                 "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for " +
                     "${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, " +
-                    "isAMRAP=$nextIsAMRAP, isSameExerciseContinuation=$isSameExerciseContinuation"
+                    "isAMRAP=$nextIsAMRAP, isSameExerciseContinuation=$isSameExerciseContinuation, " +
+                    "deferManualStart=$deferManualStart"
             }
 
-            if (isChangingExercise && !isSameExerciseContinuation) {
+            if (isChangingExercise && !deferManualStart) {
                 if (autoplay) {
                     // Autoplay bypasses SetReady, so publish the destination defaults and
                     // then consume the rest edit before startWorkout captures command inputs.
@@ -13663,16 +13862,25 @@ class ActiveSessionEngine(
                 if (!autoplay) {
                     // Manual progression lets SetReady seed destination defaults first.
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                    // Issue #1413: mirror the deferManualStart arm below — once SetReady
+                    // is set up and the rack-selection apply ran, publish Idle so
+                    // ActiveWorkoutScreen can navigate off the held Resting/SetSummary UI.
+                    // Without this the summary card strands and every retry tap dies in
+                    // hasCompletionRestAuthority (AUTHORITY_REJECTED).
+                    if (hasExpectedAuthority(lease, "manual_successor_set_ready")) {
+                        coordinator._workoutState.value = WorkoutState.Idle
+                    }
                 }
-            } else if (isSameExerciseContinuation) {
-                // Issue #572: same-exercise continuation across entries. We do NOT call
-                // startWorkout() here even when autoplay is on, because that would send
-                // a fresh 0x04 BLE CONFIG frame for the TUT finisher (or any other mode
-                // change embedded in a same-exercise continuation) mid-movement, which
-                // de-energises the cable. Instead we go to SetReady so the user
-                // explicitly starts the next set, at which point the fresh CONFIG is
-                // sent at the right time. The on-screen label and per-set weight have
-                // already been updated above to reflect the new entry.
+            } else if (deferManualStart) {
+                // Issue #572 / #1394: deferred manual configuration transition across
+                // entries (autoplay off, a real program-mode/Echo/eccentric change, or an
+                // unknown outgoing applied configuration). We do NOT call startWorkout()
+                // here because that would send a fresh 0x04 BLE CONFIG frame for the TUT
+                // finisher (or any other mode change embedded in a same-exercise
+                // continuation) mid-movement, which de-energises the cable. Instead we go
+                // to SetReady so the user explicitly starts the next set, at which point
+                // the fresh CONFIG is sent at the right time. The on-screen label and
+                // per-set weight have already been updated above to reflect the new entry.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
                 // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
@@ -13692,6 +13900,14 @@ class ActiveSessionEngine(
                 if (!autoplay) {
                     // SetReady republishes this entry's defaults even for a later set.
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                    // Issue #1413: mirror the deferManualStart arm above — once SetReady
+                    // is set up and the rack-selection apply ran, publish Idle so
+                    // ActiveWorkoutScreen can navigate off the held Resting/SetSummary UI.
+                    // Without this the summary card strands and every retry tap dies in
+                    // hasCompletionRestAuthority (AUTHORITY_REJECTED).
+                    if (hasExpectedAuthority(lease, "manual_successor_set_ready")) {
+                        coordinator._workoutState.value = WorkoutState.Idle
+                    }
                 }
             }
             coordinator._userAdjustedWeightDuringRest = false

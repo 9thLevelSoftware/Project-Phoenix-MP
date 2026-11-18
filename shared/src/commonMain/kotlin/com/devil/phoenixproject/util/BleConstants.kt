@@ -128,26 +128,28 @@ object BleConstants {
     // -------------------------------------------------------------------------
     object Thresholds {
         // Handle detection thresholds (from parent repo - proven working)
-        // Position values are in mm (raw / 10.0f), so thresholds are in mm
-        const val HANDLE_GRABBED_THRESHOLD = 8.0 // Position > 8.0mm = handles grabbed
-        const val HANDLE_REST_THRESHOLD = 5.0 // Position < 5.0mm = handles at rest
+        // Position values are in mm (raw firmware = mm since issue #1400), so thresholds are in mm.
+        // The pre-#1400 values were tuned against cm-scaled data and are scaled x10 here so
+        // control behavior is numerically identical on the corrected scale.
+        const val HANDLE_GRABBED_THRESHOLD = 80.0 // Position > 80.0mm = handles grabbed
+        const val HANDLE_REST_THRESHOLD = 50.0 // Position < 50.0mm = handles at rest
 
-        // Velocity is in mm/s (calculated from mm positions)
-        const val VELOCITY_THRESHOLD = 50.0 // Velocity > 50 mm/s = significant movement
-        const val AUTO_START_VELOCITY_THRESHOLD = 20.0 // Lower threshold for auto-start grab detection
+        // Velocity is in mm/s (raw firmware velocity since issue #1400)
+        const val VELOCITY_THRESHOLD = 500.0 // Velocity > 500 mm/s = significant movement
+        const val AUTO_START_VELOCITY_THRESHOLD = 200.0 // Lower threshold for auto-start grab detection
 
         // Velocity smoothing (Issue #204, #214)
         // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
         const val VELOCITY_SMOOTHING_ALPHA = 0.3
 
         // Sample validation
-        const val MIN_POSITION = -1000 // Valid position range
-        const val MAX_POSITION = 1000 // Valid position range
-        const val POSITION_JUMP_THRESHOLD = 20.0f // Max allowed position change between samples (mm)
+        const val MIN_POSITION = -10000 // Valid position range
+        const val MAX_POSITION = 10000 // Valid position range
+        const val POSITION_JUMP_THRESHOLD = 200.0f // Max allowed position change between samples (mm)
 
         // Handle state hysteresis - Issue #176: Dynamic baseline threshold for overhead pulley setups
-        const val GRAB_DELTA_THRESHOLD = 10.0 // Position change (mm) to detect grab
-        const val RELEASE_DELTA_THRESHOLD = 5.0 // Position must return within 5mm of baseline
+        const val GRAB_DELTA_THRESHOLD = 100.0 // Position change (mm) to detect grab
+        const val RELEASE_DELTA_THRESHOLD = 50.0 // Position must return within 50mm of baseline
     }
 
     // -------------------------------------------------------------------------

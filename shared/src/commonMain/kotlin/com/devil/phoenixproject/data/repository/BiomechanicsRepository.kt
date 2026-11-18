@@ -70,6 +70,7 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
                 ),
                 repNumber = row.repNumber.toInt(),
                 timestamp = row.timestamp,
+                aggregateEligible = row.aggregateEligible != 0L,
             )
         }
     }
@@ -102,5 +103,7 @@ internal fun PhoenixDatabaseQueries.insertRepBiomechanicsRow(sessionId: String, 
         avgLoadB = result.asymmetry.avgLoadB.toDouble(),
         // Metadata
         timestamp = result.timestamp,
+        // Issue #1400: calibration/ramp reps stay out of set-level velocity aggregates
+        aggregateEligible = if (result.aggregateEligible) 1L else 0L,
     )
 }

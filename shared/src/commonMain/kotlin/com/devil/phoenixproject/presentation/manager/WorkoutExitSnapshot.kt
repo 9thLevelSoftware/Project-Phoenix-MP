@@ -18,6 +18,7 @@ import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_MM
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.atomicfu.atomic
 
@@ -394,6 +395,14 @@ internal data class WorkoutExitSnapshot(
      * an armed power policy; never fabricated.
      */
     val powerLossEvidence: com.devil.phoenixproject.domain.powerloss.PowerLossSetEvidence? = null,
+
+    /**
+     * Issue #1400: explicit metric-unit contract of this snapshot's unit-bearing values
+     * (rep velocities, ROM, power). The persistent crash form ([PendingChildWrite] via
+     * CompletionJournalCodec) carries the same marker, so in-flight state recovered after
+     * the unit upgrade is scaled exactly once or rejected, never mixed with new rows.
+     */
+    val metricUnitVersion: Int = METRIC_UNIT_VERSION_MM,
 )
 
 internal data class WorkoutExecutionContext(

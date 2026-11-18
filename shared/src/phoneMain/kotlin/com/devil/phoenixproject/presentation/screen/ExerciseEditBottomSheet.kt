@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -814,46 +815,67 @@ fun ExerciseEditBottomSheet(
             primaryActionSupportingContent?.invoke()
 
             // Bottom actions
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
-                TextButton(
-                    onClick = dismissSheet,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Button(
-                    onClick = { viewModel.onSave(onSave) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    enabled = sets.isNotEmpty() && primaryActionEnabled && isDropSetMinWeightValid,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    shape = MaterialTheme.shapes.medium,
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 4.dp,
-                        pressedElevation = 2.dp,
-                    ),
-                ) {
-                    Text(
-                        buttonText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
+            ExerciseEditBottomActions(
+                buttonText = buttonText,
+                enabled = sets.isNotEmpty() && primaryActionEnabled && isDropSetMinWeightValid,
+                onCancel = dismissSheet,
+                onSave = { viewModel.onSave(onSave) },
+            )
+        }
+    }
+}
+
+/**
+ * Issue #1358 visual QA F2: Configure Exercise's bottom Cancel / primary-action
+ * pair. The buttons keep a 56.dp floor but grow with their label (heightIn),
+ * so an accessibility-sized two-line "Start Workout" label is fully visible
+ * instead of being clipped by a fixed-height button.
+ */
+@Composable
+internal fun ExerciseEditBottomActions(
+    buttonText: String,
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+    ) {
+        TextButton(
+            onClick = onCancel,
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 56.dp),
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Text(
+                "Cancel",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Button(
+            onClick = onSave,
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 56.dp),
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+            shape = MaterialTheme.shapes.medium,
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 4.dp,
+                pressedElevation = 2.dp,
+            ),
+        ) {
+            Text(
+                buttonText,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
