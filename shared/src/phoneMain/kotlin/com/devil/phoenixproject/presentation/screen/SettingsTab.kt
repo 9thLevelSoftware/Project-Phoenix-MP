@@ -89,6 +89,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.GarminControlsSettingsCard
 import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.ui.theme.*
@@ -1162,6 +1163,10 @@ fun SettingsTab(
 
         // HRM Heart Rate & Telemetry Sensor
         HrmSensorSettingsCard()
+
+        // Garmin watch controls (issue #1391) — Connect IQ watch buttons, kept
+        // strictly separate from the HRM Heart-rate sensor card above.
+        GarminControlsSettingsCard()
 
         // Developer Tools Section - Material 3 Expressive
         Card(

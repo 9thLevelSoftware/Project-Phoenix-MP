@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.presentation.garmin.GarminSessionController
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
@@ -20,6 +21,15 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val presentationModule = module {
+    // Garmin watch-button controls (issue #1391, packet B2). The controller itself is
+    // composed by MainViewModel (which owns the single session manager) and published
+    // through GarminSessionControllerHolder; these bindings let the phone UI resolve it
+    // with koinInject() without a second session manager entering the graph.
+    single { com.devil.phoenixproject.data.garmin.GarminControlPreferences(get()) }
+    single { com.devil.phoenixproject.presentation.garmin.GarminSessionControllerHolder() }
+    single<com.devil.phoenixproject.presentation.garmin.GarminSessionController> {
+        get<com.devil.phoenixproject.presentation.garmin.GarminSessionControllerHolder>().requireController()
+    }
     // ViewModels
     factory { ConnectionLogsViewModel() }
     factory { DiagnosticsViewModel(get()) }

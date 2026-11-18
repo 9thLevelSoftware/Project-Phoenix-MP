@@ -117,6 +117,7 @@ import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.withPlatformLock
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
@@ -4724,6 +4725,7 @@ class ActiveSessionEngine(
                 block()
             } finally {
                 executionGuard.clearCompletionJobIfOwned(lease)
+                settleRemotePresentation(lease.sessionId)
             }
         }
         if (executionGuard.attachCompletionJob(lease, job)) {
@@ -8111,6 +8113,14 @@ class ActiveSessionEngine(
         isJustLiftMode: Boolean = false,
         autoStartReadyCue: Boolean = false,
     ) {
+        // Issue #1391: while a remote set-control operation owns the no-autostart
+        // authority, no path may start a set — not handle auto-start, not a warm-up
+        // fast-path successor, not a queued successor start. The phone/watch START
+        // path (RoutineFlowManager.startSetFromReady) runs outside the window.
+        if (isRemoteSetControlHoldActive()) {
+            Logger.d("ActiveSessionEngine") { "startWorkout suppressed: remote set-control hold active" }
+            return
+        }
         when (coordinator._restTransitionPlan.value) {
             is RestTransitionPlan.UnresolvedDropOffer,
             is RestTransitionPlan.AcceptedRetry,
@@ -8186,6 +8196,12 @@ class ActiveSessionEngine(
         queuedStartCandidate: QueuedStartCandidate? = null,
         autoStartReadyCue: Boolean = false,
     ): ExecutionLease? {
+        // Issue #1391: queued/direct successor starts share this boundary; while a
+        // remote set-control operation holds the no-autostart authority none may run.
+        if (isRemoteSetControlHoldActive()) {
+            Logger.d("ActiveSessionEngine") { "startWorkoutInternal suppressed: remote set-control hold active" }
+            return null
+        }
         if (retryRequest != null && !ownsAcceptedRetryStartClaim(retryRequest)) return null
         if ((queuedSuccessorToken == null) != (queuedStartCandidate == null)) return null
         val ordinaryConfigurationInputEpoch = if (retryRequest == null && queuedSuccessorToken == null) {
@@ -9947,6 +9963,9 @@ class ActiveSessionEngine(
 
     private fun launchClaimedSnapshotPersistence(snapshot: WorkoutExitSnapshot): Deferred<Unit> {
         val sessionId = snapshot.completion.lease.sessionId
+        // Issue #1391: the remote set-control receipt observes this exact claim's
+        // commit outcome; the signal exists from claim time, not only at outcome.
+        registerRemotePersistenceSignal(sessionId)
         val commitSettled = CompletableDeferred<Unit>()
         while (true) {
             val current = setCommitSignals.value
@@ -10107,6 +10126,7 @@ class ActiveSessionEngine(
             currentCoroutineContext().ensureActive()
             withContext(NonCancellable) {
                 executionGuard.markPersistenceSucceeded(sessionId)
+                recordRemotePersistenceOutcome(sessionId, RemotePersistenceOutcome.SUCCEEDED)
                 exitSnapshotStore.remove(snapshot)
                 executionGuard.prunePersistedClaims(retainNewest = 32)
                 // The retained snapshot is auto-retried on the next startWorkout, so a
@@ -10118,9 +10138,11 @@ class ActiveSessionEngine(
             persistenceSucceeded = true
         } catch (error: CancellationException) {
             executionGuard.markPersistenceFailed(sessionId)
+            recordRemotePersistenceOutcome(sessionId, RemotePersistenceOutcome.FAILED)
             throw error
         } catch (error: Exception) {
             executionGuard.markPersistenceFailed(sessionId)
+            recordRemotePersistenceOutcome(sessionId, RemotePersistenceOutcome.FAILED)
             Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
             // F-040: raise a failure the UI can attach a working Retry to.
             // compareAndSet, like the success path: an earlier session's still-pending
@@ -11533,6 +11555,17 @@ class ActiveSessionEngine(
             return
         }
 
+        discardCurrentSetAndReturnToSetReady(executionGuard.currentLease)
+    }
+
+    /**
+     * Issue #1391: the EXISTING discard-and-retry tail of [stopAndReturnToSetReady]
+     * (the phone's "original discard-and-retry behavior" for temp_single_* and
+     * zero-working-reps sets), extracted so the remote set-control seam replays
+     * exactly this path for a reserved execution. [lease] is the execution whose
+     * set is discarded; it is prepared again (retry) in SetReady, never started.
+     */
+    private fun discardCurrentSetAndReturnToSetReady(lease: ExecutionLease?) {
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
@@ -11543,7 +11576,6 @@ class ActiveSessionEngine(
         coordinator._timedExerciseRemainingSeconds.value = null
         cancelJustLiftEggTimer()
 
-        val lease = executionGuard.currentLease
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
         // Leave this armed after a successful Stop Set so Idle routing cannot race the
@@ -11911,6 +11943,243 @@ class ActiveSessionEngine(
         }
     }
 
+    // ===== Issue #1391 (packet B1): bounded remote set-control seam =====
+    //
+    // The manager-level `endCurrentSetAndPrepareNext` operation ends the CURRENT
+    // set through the EXISTING manual-completion machinery and prepares the
+    // successor WITHOUT starting it. While the operation window is open the hold
+    // below suppresses handle auto-start, summary auto-advance and any queued
+    // successor start, so a watch press can never leave a motorised start armed.
+
+    private val remoteSetControlLock = Any()
+    private var remoteSetControlHoldDepth = 0
+    private var remoteSetControlHoldSequence = 0L
+    private var remoteSetControlReservation: RemoteSetControlReservation? = null
+    private val remotePersistenceSignals = atomic<Map<String, CompletableDeferred<RemotePersistenceOutcome>>>(emptyMap())
+    private val remotePresentationSignals = atomic<Map<String, CompletableDeferred<Unit>>>(emptyMap())
+
+    /** True while a remote set-control operation owns the no-autostart authority. */
+    internal fun isRemoteSetControlHoldActive(): Boolean = withPlatformLock(remoteSetControlLock) {
+        remoteSetControlHoldDepth > 0
+    }
+
+    private fun armRemoteSetControlHold(): RemoteSetControlHold = withPlatformLock(remoteSetControlLock) {
+        remoteSetControlHoldDepth += 1
+        RemoteSetControlHold(id = ++remoteSetControlHoldSequence)
+    }
+
+    private fun releaseRemoteSetControlHold(hold: RemoteSetControlHold) = withPlatformLock(remoteSetControlLock) {
+        if (remoteSetControlHoldDepth > 0) {
+            remoteSetControlHoldDepth -= 1
+        }
+    }
+
+    internal sealed interface RemoteSetControlReserveResult {
+        data class Reserved(val reservation: RemoteSetControlReservation) : RemoteSetControlReserveResult
+        data object Superseded : RemoteSetControlReserveResult
+        data object PhoneInputPending : RemoteSetControlReserveResult
+    }
+
+    /**
+     * Reserves the current execution for the remote set-control operation:
+     * atomically claims its completion (the guard's lease-scoped reservation that
+     * prevents both duplicate completion and stale execution ownership) under an
+     * exact [expectedExecutionIdentity] check, then arms the no-autostart hold.
+     * A mismatch, a missing execution or a completion already claimed by another
+     * path (e.g. an auto-complete racing the press) returns without mutating.
+     */
+    internal fun reserveRemoteSetControl(
+        expectedExecutionIdentity: String,
+        operationId: String,
+    ): RemoteSetControlReserveResult {
+        // A bodyweight rep-entry prompt already owns this completion: the phone must
+        // decide before anything else may end the set again. The prompt outlives the
+        // execution lease, so this runs before the live-lease checks and is anchored
+        // to the pressed identity — a stale press cannot hijack another execution's
+        // prompt (it falls through to the honest SUPERSEDED path below).
+        val pendingBodyweight = bodyweightCompletionGate.pending()
+        if (pendingBodyweight != null &&
+            executionIdentityOf(pendingBodyweight.lease) == expectedExecutionIdentity
+        ) {
+            return RemoteSetControlReserveResult.PhoneInputPending
+        }
+        val lease = executionGuard.currentLease ?: return RemoteSetControlReserveResult.Superseded
+        // One transition per invocation: only a genuinely running set may be ended.
+        // (The Issue #320 Active check — rep counts survive past set end, so a press
+        // during SetSummary/Resting must never complete the set a second time.)
+        if (coordinator._workoutState.value !is WorkoutState.Active) {
+            return RemoteSetControlReserveResult.Superseded
+        }
+        if (bodyweightCompletionGate.pendingFor(lease) != null) {
+            // A bodyweight rep-entry prompt already owns this completion: the phone
+            // must decide before anything else may end the set again.
+            return RemoteSetControlReserveResult.PhoneInputPending
+        }
+        val requested = completionFor(lease, SetEndReason.USER_STOPPED)
+        val claimed = when (val claim = executionGuard.claimCompletion(requested)) {
+            is CompletionClaimResult.Claimed -> claim.completion.also { completion ->
+                afterCompletionClaim(completion.lease.executionId, completion.lease.sessionId, completion.reason)
+            }
+            is CompletionClaimResult.AlreadyClaimed,
+            CompletionClaimResult.Rejected,
+            -> return RemoteSetControlReserveResult.Superseded
+        }
+        if (executionIdentityOf(claimed.lease) != expectedExecutionIdentity) {
+            // Superseded between the caller's observation and the claim: undo the
+            // reservation and mutate nothing else.
+            executionGuard.releaseCompletionClaim(claimed.lease)
+            return RemoteSetControlReserveResult.Superseded
+        }
+        val route = when {
+            coordinator.bodyweightCompletionVariantOverride == null &&
+                coordinator._loadedRoutine.value != null &&
+                coordinator._loadedRoutine.value
+                    ?.exercises
+                    ?.getOrNull(coordinator._currentExerciseIndex.value)
+                    ?.exercise
+                    ?.isBodyweight == true &&
+                !isSingleExerciseMode(coordinator) &&
+                claimed.actualReps > 0
+            -> RemoteCompletionRoute.SAVE_AND_ADVANCE // completes into the rep-entry prompt
+
+            coordinator._currentWarmupSetIndex.value >= 0 -> RemoteCompletionRoute.DISCARD_AND_RETRY
+            claimed.actualReps > 0 && !isSingleExerciseMode(coordinator) -> RemoteCompletionRoute.SAVE_AND_ADVANCE
+            claimed.actualReps > 0 && coordinator._workoutParameters.value.isJustLift -> RemoteCompletionRoute.SAVE_AND_ADVANCE
+            else -> RemoteCompletionRoute.DISCARD_AND_RETRY
+        }
+        val reservation = RemoteSetControlReservation(
+            operationId = operationId,
+            expectedExecutionIdentity = expectedExecutionIdentity,
+            lease = claimed.lease,
+            completion = claimed,
+            route = route,
+            hold = armRemoteSetControlHold(),
+            routineSessionIdAtReserve = coordinator.currentRoutineSessionId,
+            routineIdAtReserve = coordinator.currentRoutineId,
+        )
+        withPlatformLock(remoteSetControlLock) {
+            remoteSetControlReservation = reservation
+        }
+        return RemoteSetControlReserveResult.Reserved(reservation)
+    }
+
+    /**
+     * Invokes the EXISTING manual-completion path for a reserved execution. The
+     * save route replays exactly the call the phone's Issue #320 save-and-advance
+     * makes (`handleSetCompletion(lease, USER_STOPPED)` == this overload with the
+     * identical completion and AUTO_COMPLETE teardown reason), now identity-bound
+     * by the reservation's claim. The discard route replays the phone's
+     * discard-and-retry tail (`stopAndReturnToSetReady`'s return-to-SetReady path).
+     */
+    internal fun invokeRemoteManualCompletion(reservation: RemoteSetControlReservation) {
+        when (reservation.route) {
+            RemoteCompletionRoute.SAVE_AND_ADVANCE -> {
+                handleSetCompletion(
+                    completion = reservation.completion,
+                    reason = TeardownReason.AUTO_COMPLETE,
+                    completionClaimed = true,
+                )
+            }
+            RemoteCompletionRoute.DISCARD_AND_RETRY -> {
+                if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+                discardCurrentSetAndReturnToSetReady(reservation.lease)
+            }
+            RemoteCompletionRoute.PHONE_INPUT_PENDING -> Unit
+        }
+    }
+
+    /** Releases the reservation's no-autostart hold and clears the active slot. */
+    internal fun releaseRemoteSetControl(reservation: RemoteSetControlReservation) {
+        withPlatformLock(remoteSetControlLock) {
+            if (remoteSetControlReservation === reservation) {
+                remoteSetControlReservation = null
+            }
+        }
+        releaseRemoteSetControlHold(reservation.hold)
+    }
+
+    /** True while [reservation] still owns the remote set-control slot. */
+    internal fun isRemoteSetControlReservationCurrent(reservation: RemoteSetControlReservation): Boolean =
+        withPlatformLock(remoteSetControlLock) {
+            remoteSetControlHoldDepth > 0 && remoteSetControlReservation === reservation
+        }
+
+    /**
+     * The receipt's persistence outcome, straight from the commit-path ledger.
+     * NOT_REQUIRED is only ever reported for an explicit no-save decision (no
+     * persistence claim was ever made for this session id).
+     */
+    internal fun remotePersistenceOutcome(sessionId: String): RemotePersistenceOutcome =
+        when (executionGuard.persistenceClaimStatus(sessionId)) {
+            PersistenceClaimStatus.PERSISTED -> RemotePersistenceOutcome.SUCCEEDED
+            PersistenceClaimStatus.FAILED -> RemotePersistenceOutcome.FAILED
+            PersistenceClaimStatus.IN_PROGRESS -> RemotePersistenceOutcome.PENDING
+            PersistenceClaimStatus.UNCLAIMED -> RemotePersistenceOutcome.NOT_REQUIRED
+        }
+
+    /**
+     * Awaits the exact commit outcome for [sessionId] (recorded by the commit
+     * path itself, never by UI-state polling) within [timeoutMs]. Returns null
+     * when no outcome was observed inside the window.
+     */
+    internal suspend fun awaitRemoteSetCommitOutcome(
+        sessionId: String,
+        timeoutMs: Long = REMOTE_SET_CONTROL_RESULT_WINDOW_MS,
+    ): RemotePersistenceOutcome? {
+        val signal = remotePersistenceSignals.value[sessionId]
+            ?: registerRemotePersistenceSignal(sessionId)
+        return withTimeoutOrNull(timeoutMs) { signal.await() }
+    }
+
+    /** Installs the commit-outcome signal when the persistence claim is taken. */
+    internal fun registerRemotePersistenceSignal(sessionId: String): CompletableDeferred<RemotePersistenceOutcome> {
+        while (true) {
+            val current = remotePersistenceSignals.value
+            current[sessionId]?.let { return it }
+            val signal = CompletableDeferred<RemotePersistenceOutcome>()
+            if (remotePersistenceSignals.compareAndSet(current, current + (sessionId to signal))) return signal
+        }
+    }
+
+    private fun recordRemotePersistenceOutcome(sessionId: String, outcome: RemotePersistenceOutcome) {
+        registerRemotePersistenceSignal(sessionId).complete(outcome)
+    }
+
+    /**
+     * Settles when the lease's completion/presentation job has finished running.
+     * The operation awaits this before its prepare step so the existing
+     * completion pipeline cannot race the successor preparation. A job that
+     * settled before the first awaiter is still observed.
+     */
+    internal fun remotePresentationSettled(sessionId: String): Deferred<Unit> {
+        while (true) {
+            val current = remotePresentationSignals.value
+            current[sessionId]?.let { return it }
+            val signal = CompletableDeferred<Unit>()
+            if (remotePresentationSignals.compareAndSet(current, current + (sessionId to signal))) return signal
+        }
+    }
+
+    private fun settleRemotePresentation(sessionId: String) {
+        remotePresentationSettled(sessionId).let { (it as CompletableDeferred).complete(Unit) }
+    }
+
+    /** True when a bodyweight rep-entry prompt currently owns this execution's completion. */
+    internal fun isRemoteBodyweightPromptPending(lease: ExecutionLease): Boolean =
+        bodyweightCompletionGate.pendingFor(lease) != null
+
+    /** Clears the per-session remote observation signals for a finished operation. */
+    internal fun clearRemoteObservationSignals(sessionId: String) {
+        while (true) {
+            val current = remotePersistenceSignals.value
+            if (remotePersistenceSignals.compareAndSet(current, current - sessionId)) break
+        }
+        while (true) {
+            val current = remotePresentationSignals.value
+            if (remotePresentationSignals.compareAndSet(current, current - sessionId)) break
+        }
+    }
+
     // ===== Set Completion (cross-cutting) =====
 
     /**
@@ -11927,7 +12196,7 @@ class ActiveSessionEngine(
         handleSetCompletion(completionFor(lease, endReason), TeardownReason.AUTO_COMPLETE)
     }
 
-    private fun handleSetCompletion(
+    internal fun handleSetCompletion(
         completion: SetExecutionCompletion,
         reason: TeardownReason,
         completionClaimed: Boolean = false,
@@ -12316,12 +12585,14 @@ class ActiveSessionEngine(
 
                 if (skipSummary) {
                     Logger.d("AMRAP: Summary OFF - skipping summary, proceeding to rest timer")
-                    startRestTimer(completion)
+                    if (!isRemoteSetControlHoldActive()) startRestTimer(completion)
                 } else if (summaryDelayMs > 0) {
                     delay(summaryDelayMs)
                     if (!hasCurrentAuthority(lease, "amrap_summary_delay")) return@launchCompletionJob
 
-                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                    if (coordinator._workoutState.value is WorkoutState.SetSummary &&
+                        !isRemoteSetControlHoldActive()
+                    ) {
                         startRestTimer(completion)
                     }
                 } else {
@@ -12337,7 +12608,7 @@ class ActiveSessionEngine(
 
                     Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
-                    startRestTimer(completion)
+                    if (!isRemoteSetControlHoldActive()) startRestTimer(completion)
                 } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator) && !holdTerminalRoutineSummary) {
                     // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
                     // full bookkeeping: clearing RPE, marking exercises completed, checking routine
@@ -13463,7 +13734,9 @@ class ActiveSessionEngine(
      */
     private fun startWorkoutOrSetReady(lease: ExecutionLease?, autoplay: Boolean) {
         if (!hasExpectedAuthority(lease, "workout_or_set_ready")) return
-        if (autoplay) {
+        // Issue #1391: under the remote set-control hold this is prepare-only —
+        // the successor lands in SetReady whether or not autoplay is enabled.
+        if (autoplay && !isRemoteSetControlHoldActive()) {
             startWorkout(skipCountdown = true)
         } else {
             flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
@@ -14687,6 +14960,9 @@ class ActiveSessionEngine(
     // ===== Auto-Start Timer =====
 
     private fun startAutoStartTimer(expectedLease: ExecutionLease?) {
+        // Issue #1391: handle auto-start (the grab countdown) stays suppressed while a
+        // remote set-control operation owns the no-autostart authority.
+        if (isRemoteSetControlHoldActive()) return
         if (coordinator.autoStartJob != null) return
         if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) return
         if (!hasAutoStartAuthority(expectedLease, "auto_start_timer_start")) return
@@ -14767,6 +15043,8 @@ class ActiveSessionEngine(
      * stop/end/skip teardowns never auto-restart a user holding the handles.
      */
     private fun restartJustLiftAutoStartIfHandlesHeld() {
+        // Issue #1391: handle auto-start stays suppressed inside the remote set-control window.
+        if (isRemoteSetControlHoldActive()) return
         val params = coordinator._workoutParameters.value
         if (!params.isJustLift || !params.useAutoStart) return
         // The detector keeps its last state across an unexpected link drop; never

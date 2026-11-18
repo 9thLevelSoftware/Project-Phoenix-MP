@@ -1,7 +1,11 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -538,6 +542,134 @@ class JustLiftCompletionBehaviorTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
         } finally {
             release.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    // ===== Issue #1391 (packet B1): phone-input terminals for the remote seam =====
+
+    @Test
+    fun `remote end of a Just Lift set with reps reports PHONE_INPUT_REQUIRED and never auto starts`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 5)
+            grabToStart(harness)
+            harness.coordinator._repCount.value = RepCount(workingReps = 2, totalReps = 2, isWarmupComplete = true)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+            val commands = harness.fakeBleRepo.commandsReceived.size
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+
+            assertEquals(RemoteCompletionDecision.SAVED_AND_ADVANCED, receipt.completionDecision)
+            assertEquals(RemotePersistenceOutcome.SUCCEEDED, receipt.persistence)
+            assertEquals(RemoteTeardownState.READY, receipt.teardownState)
+            assertEquals(RemoteSetControlTerminal.PHONE_INPUT_REQUIRED, receipt.terminal)
+            // The completion path clears the Just Lift selection: the phone must
+            // re-select — never fabricate a target.
+            assertNull(harness.coordinator._workoutParameters.value.selectedExerciseId)
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
+            // The shared JustLift completion machinery arms the machine's JustLift
+            // waiting mode on every set end (enableJustLiftWaitingMode — machine waits
+            // for the next grab WITHOUT arming auto-start). The fake conflates machine
+            // mode with the polled handle signal, so the post-completion reading is
+            // WaitingForRest; the "handles still held, never auto starts" invariants
+            // are pinned by the suppressed auto-start assertions below.
+            assertEquals(HandleState.WaitingForRest, harness.fakeBleRepo.handleState.value)
+
+            advanceTimeBy(15_000)
+            runCurrent()
+
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.Active)
+            assertNull(harness.coordinator.autoStartCountdown.value)
+            assertEquals(commands, harness.fakeBleRepo.commandsReceived.size, "handle auto-start stays suppressed")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `remote end of a zero rep Just Lift set discards and prepares a retry without auto start`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 5)
+            grabToStart(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+            val commands = harness.fakeBleRepo.commandsReceived.size
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+
+            assertEquals(RemoteCompletionDecision.DISCARDED_AND_RETRIED, receipt.completionDecision)
+            assertEquals(RemotePersistenceOutcome.NOT_REQUIRED, receipt.persistence)
+            assertEquals(RemoteSetControlTerminal.PREPARED, receipt.terminal)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty(), "a zero-rep set is a no-save case")
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+
+            advanceTimeBy(15_000)
+            runCurrent()
+
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.Active)
+            assertNull(harness.coordinator.autoStartCountdown.value)
+            assertEquals(commands, harness.fakeBleRepo.commandsReceived.size)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private val bodyweightExercise = Exercise(
+        id = "bw-remote-1",
+        name = "KB Swings",
+        muscleGroup = "Full Body",
+        muscleGroups = "Full Body",
+        equipment = "",
+    )
+
+    private fun bodyweightRoutine() = Routine(
+        id = "bw-remote-routine",
+        name = "Bodyweight Remote",
+        exercises = listOf(
+            RoutineExercise(
+                id = "bw-remote-rex",
+                exercise = bodyweightExercise,
+                orderIndex = 0,
+                setReps = listOf(10, 10),
+                weightPerCableKg = 11f,
+                programMode = ProgramMode.OldSchool,
+            ),
+        ),
+    )
+
+    @Test
+    fun `remote end of a bodyweight set ends into the rep entry prompt and reports PHONE_INPUT_REQUIRED`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeExerciseRepo.addExercise(bodyweightExercise)
+            harness.dwsm.loadRoutine(bodyweightRoutine())
+            runCurrent()
+            harness.dwsm.enterSetReady(0, 0)
+            runCurrent()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            harness.coordinator._repCount.value = RepCount(workingReps = 5, totalReps = 5, isWarmupComplete = true)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val identity = executionIdentityOf(lease)
+
+            val receipt = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+
+            assertEquals(RemoteSetControlTerminal.PHONE_INPUT_REQUIRED, receipt.terminal)
+            assertEquals(RemoteCompletionDecision.NO_COMPLETION, receipt.completionDecision)
+            assertEquals(RemotePersistenceOutcome.PENDING, receipt.persistence)
+            assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty(), "the save is deferred to the rep-entry dialog")
+
+            // One transition per invocation: a second press while the prompt owns the
+            // completion changes nothing.
+            val second = harness.dwsm.endCurrentSetAndPrepareNext(identity)
+            assertEquals(RemoteSetControlTerminal.PHONE_INPUT_REQUIRED, second.terminal)
+            assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
+        } finally {
             harness.cleanup()
         }
     }

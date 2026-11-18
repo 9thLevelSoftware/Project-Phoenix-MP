@@ -49,6 +49,7 @@ import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueueSta
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
+import com.devil.phoenixproject.presentation.components.GarminControlsArmStrip
 import com.devil.phoenixproject.presentation.components.HrmWorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.RestControlFeedback
@@ -569,6 +570,13 @@ fun ActiveWorkoutScreen(
 
             // HRM Live Telemetry Strip (visible when connected)
             HrmWorkoutStrip(hrmBleManager = viewModel.hrmBleManager)
+
+            // Garmin watch-controls Arm strip (issue #1391). Compact top band — the STOP
+            // button, rep counter and weight readout below are unchanged and stay visible.
+            GarminControlsArmStrip(
+                modifier = Modifier.fillMaxWidth(),
+                onConfirmSkipExercise = { viewModel.stopAndSkipCurrentExercise() },
+            )
 
             WorkoutTab(
                 state = workoutUiState,

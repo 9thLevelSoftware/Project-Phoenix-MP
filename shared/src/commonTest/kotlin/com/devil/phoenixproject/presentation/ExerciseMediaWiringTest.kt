@@ -123,9 +123,14 @@ class ExerciseMediaWiringTest {
             maxSeen = maxOf(maxSeen, n)
             if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
+        // Baseline 65: #1392's power-loss tier-1 companions added 64.sqm and #1400's
+        // metric-unit x10 fix added 65.sqm AFTER this gate was written against 63. The
+        // gate means "media Phase 1 adds no migration of its own" — ExerciseImage schema
+        // is separately pinned to 43.sqm below. Unrelated schema work moves the base;
+        // media additions must not.
         assertTrue(
             maxSeen <= 65,
-            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 64.sqm (T6/AC13).",
+            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 65.sqm (T6/AC13).",
         )
         assertTrue(
             mentions == listOf("43.sqm"),

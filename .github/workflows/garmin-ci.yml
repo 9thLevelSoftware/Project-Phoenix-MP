@@ -1,0 +1,134 @@
+# Garmin Connect IQ watch app CI - issue #1391 B7 (watch button controls).
+#
+# Builds the Phoenix Remote watch app with monkeyc and runs the simulator
+# protocol/input checks from garmin/tests/ per allowlisted product.
+#
+# - The Connect IQ SDK version is PINNED below (never "latest"), and device
+#   definitions come from the setup action's bundled archive for that exact
+#   SDK version, so builds are reproducible.
+# - CI artifacts are unsigned/ephemeral-signed builds only. Release signing
+#   keys live in GitHub secrets (CONNECTIQ_DEVELOPER_KEY_BASE64) and are
+#   NEVER committed to the repository.
+# - This workflow is intentionally standalone: the watch app is NOT wired
+#   into the Android/iOS Gradle build at all (no Gradle task here).
+
+name: garmin-ci
+
+on:
+  push:
+    paths:
+      - "garmin/**"
+      - ".github/workflows/garmin-ci.yml"
+  pull_request:
+    paths:
+      - "garmin/**"
+      - ".github/workflows/garmin-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned Connect IQ SDK + device definitions (see garmin/README.md).
+  CIQ_SDK_VERSION: "9.2.0"
+
+jobs:
+  static-checks:
+    name: Static checks (XML, contract strings, allowlist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Run static checks
+        run: bash garmin/tests/run-static-checks.sh
+
+  build-and-test:
+    name: Build + simulator checks (${{ matrix.device }})
+    needs: static-checks
+    runs-on: ubuntu-22.04   # required by the Linux simulator dependencies
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Product allowlist (five-button products, signoff correction 3).
+        # Keep in sync with garmin/manifest.xml (enforced by static checks).
+        device:
+          - fr255
+          - fr265
+          - fr965
+          - fenix7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # NOTE: DuckSoft/setup-connectiq-actions@v1 predates the
+      # install-simulator-dependencies input and silently ignores it, which left
+      # the simulator/monkeydo native deps (libsecret, libusb, libjpeg-turbo8,
+      # fonts, xauth ...) unresolved — monkeydo then hung until the outer
+      # timeout. Pin to the upstream main SHA that ships and validates the
+      # simulator dependency installer (ldd-checked for bin/simulator AND
+      # bin/shell); it requires runs-on: ubuntu-22.04 above.
+      - name: Set up ConnectIQ SDK + device definitions + simulator dependencies
+        uses: DuckSoft/setup-connectiq-actions@64f7145dcd1087c262d89f5f714fa03af27b3cba
+        with:
+          sdk-version: ${{ env.CIQ_SDK_VERSION }}
+          install-devices: "true"
+          install-simulator-dependencies: "true"
+
+      # Signing keys stay in GitHub secrets and are NEVER committed. If no
+      # secret is configured, an ephemeral key is generated: fine for CI-only
+      # unsigned test artifacts, useless for store submission.
+      - name: Restore developer key (or create ephemeral CI key)
+        shell: bash
+        env:
+          DEVELOPER_KEY_BASE64: ${{ secrets.CONNECTIQ_DEVELOPER_KEY_BASE64 }}
+        run: |
+          if [ -n "$DEVELOPER_KEY_BASE64" ]; then
+            printf '%s' "$DEVELOPER_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/developer_key.der"
+            echo "Using repository-secret developer key (not printed)."
+          else
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$RUNNER_TEMP/test-key.pem"
+            openssl pkcs8 -topk8 -inform PEM -outform DER -in "$RUNNER_TEMP/test-key.pem" \
+              -out "$RUNNER_TEMP/developer_key.der" -nocrypt
+            rm -f "$RUNNER_TEMP/test-key.pem"
+            echo "Using ephemeral CI-only developer key."
+          fi
+
+      - name: Build watch app (monkeyc)
+        run: |
+          mkdir -p build
+          monkeyc \
+            -f garmin/monkey.jungle \
+            -d "${{ matrix.device }}" \
+            -o "build/phoenix-app-${{ matrix.device }}.prg" \
+            -y "$RUNNER_TEMP/developer_key.der"
+
+      - name: Build Run No Evil tests (monkeyc -t)
+        run: |
+          monkeyc \
+            -f garmin/monkey.jungle \
+            -d "${{ matrix.device }}" \
+            -o "build/phoenix-tests-${{ matrix.device }}.prg" \
+            -y "$RUNNER_TEMP/developer_key.der" \
+            -t
+
+      - name: Run simulator protocol/input checks (monkeydo -t)
+        run: |
+          bash garmin/tests/run-simulator-tests.sh \
+            "build/phoenix-tests-${{ matrix.device }}.prg" \
+            "${{ matrix.device }}"
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-garmin-${{ matrix.device }}
+          path: build/*.prg
+          if-no-files-found: error
