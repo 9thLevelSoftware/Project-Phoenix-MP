@@ -36,6 +36,15 @@ data class RestoredWorkoutCommandTemplateSnapshot(
     val echoLevelName: String,
     val eccentricLoadName: String,
     val justLiftRestSeconds: Int,
+    // Issue #1392 — frozen power-loss target config, persisted as names/ints.
+    // Read strictly: an unknown target-mode name resolves to inert REP_TARGET —
+    // POWER never arms from an unknown or excluded mode. Old documents decode
+    // with these defaults (REP), preserving their legacy meaning.
+    val powerLossTargetModeName: String = "REP_TARGET",
+    val powerLossThresholdPercent: Int = 20,
+    val powerLossMaxWorkingReps: Int = 20,
+    val powerLossRequireTwoConsecutive: Boolean = false,
+    val powerLossSavedNominalReps: Int? = null,
 ) {
     init {
         require(programModeName in PROGRAM_MODE_NAMES)
@@ -77,6 +86,15 @@ data class RestoredWorkoutCommandTemplateSnapshot(
         echoLevel = EchoLevel.valueOf(echoLevelName),
         eccentricLoad = EccentricLoad.valueOf(eccentricLoadName),
         justLiftRestSeconds = justLiftRestSeconds,
+        // Issue #1392: strict persisted-enum read — unknown target-mode names
+        // resolve to inert REP_TARGET (P5 propagation seam).
+        powerLoss = com.devil.phoenixproject.presentation.powerloss.powerLossConfigFromPersisted(
+            persistedTargetMode = powerLossTargetModeName,
+            thresholdPercent = powerLossThresholdPercent,
+            maxWorkingReps = powerLossMaxWorkingReps,
+            requireTwoConsecutive = powerLossRequireTwoConsecutive,
+            savedNominalReps = powerLossSavedNominalReps,
+        ),
     )
 
     companion object {
@@ -101,6 +119,13 @@ data class RestoredWorkoutCommandTemplateSnapshot(
             echoLevelName = parameters.echoLevel.name,
             eccentricLoadName = parameters.eccentricLoad.name,
             justLiftRestSeconds = parameters.justLiftRestSeconds,
+            // Issue #1392: the frozen power-loss target config round-trips through
+            // the runtime snapshot (local-only; never synced).
+            powerLossTargetModeName = parameters.powerLoss.targetMode.name,
+            powerLossThresholdPercent = parameters.powerLoss.thresholdPercent,
+            powerLossMaxWorkingReps = parameters.powerLoss.maxWorkingReps,
+            powerLossRequireTwoConsecutive = parameters.powerLoss.requireTwoConsecutive,
+            powerLossSavedNominalReps = parameters.powerLoss.savedNominalReps,
         )
     }
 }

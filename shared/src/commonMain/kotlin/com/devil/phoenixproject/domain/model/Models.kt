@@ -389,6 +389,11 @@ data class WorkoutParameters(
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
     val justLiftRestSeconds: Int = 0,
+    // Issue #1392 — per-exercise set-target config copied into every generated
+    // WorkoutParameters (integration-model §4). Default is inert REP_TARGET;
+    // POWER arms only from explicit per-exercise config behind the capability gate.
+    val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossConfig =
+        com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT,
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo

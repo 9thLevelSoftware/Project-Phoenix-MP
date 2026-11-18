@@ -141,6 +141,12 @@ data class RoutineExercise(
     // Runtime only: Active Recovery/Heavy Deload changed the launch prescription.
     // The session persists this provenance; the routine template remains untouched.
     val isLaunchAdjustedByRoutineModifier: Boolean = false,
+    // Issue #1392 — per-exercise set-target config (REP_TARGET default; POWER opt-in).
+    // Pure domain config carried through the edit/propagation flows; default is inert
+    // and never changes legacy routine semantics. Unknown/unavailable values resolve
+    // to inert REP_TARGET — POWER never arms from an unknown or excluded mode.
+    val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossConfig =
+        com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT,
 ) {
     companion object {
         const val MIN_TIMED_DURATION_SECONDS = 10

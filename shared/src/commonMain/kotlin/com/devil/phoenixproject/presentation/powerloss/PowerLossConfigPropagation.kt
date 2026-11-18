@@ -56,3 +56,30 @@ internal fun powerLossConfigFromPersisted(
     requireTwoConsecutive = requireTwoConsecutive,
     savedNominalReps = savedNominalReps,
 )
+
+/**
+ * Unsupported execution paths (timed, bodyweight) keep their saved POWER values
+ * but resolve to the inert default for execution: POWER never arms from an
+ * excluded mode (spec §7). TUT/TUT Beast/Eccentric-Only are excluded by the
+ * protocol family inside [powerLossRuntimeSettingsFor].
+ */
+internal fun powerLossExecutionConfig(
+    config: PowerLossConfig,
+    isTimed: Boolean,
+    isBodyweight: Boolean,
+): PowerLossConfig = if (isTimed || isBodyweight) PowerLossConfig.DEFAULT else config
+
+/**
+ * Internal capability gate for the power-loss runtime seam (spec §1/§7: the
+ * feature stays off by default behind an internal gate until the P6–P8 release
+ * gate authorises enablement — never enabled by a worker). The gate models the
+ * "validated paired samples" prerequisite only; protocol-family eligibility is
+ * resolved per set inside [powerLossRuntimeSettingsFor].
+ */
+internal object PowerLossRuntimeGate {
+    /**
+     * True only when validated paired samples exist for the connected trainer.
+     * Default OFF — POWER config intent is retained but `powerActive` stays false.
+     */
+    var pairedSamplesValidated: Boolean = false
+}

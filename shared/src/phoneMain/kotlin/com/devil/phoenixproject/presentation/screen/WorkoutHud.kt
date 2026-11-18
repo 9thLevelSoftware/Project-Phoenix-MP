@@ -1272,6 +1272,13 @@ private fun PowerLossHudReadout(hud: PowerLossHudUi) {
                 )
             }
         }
+        // Issue #1392 (P5 readback): the active set is read-only — the target is
+        // edited before the next set, never from active-set UI.
+        Text(
+            text = com.devil.phoenixproject.presentation.powerloss.PowerLossUiCopy.TARGET_LOCKED,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             text = hud.completedLine,
             style = MaterialTheme.typography.bodySmall,

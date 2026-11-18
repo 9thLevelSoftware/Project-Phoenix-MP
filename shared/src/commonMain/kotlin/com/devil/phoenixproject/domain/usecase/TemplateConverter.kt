@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
@@ -221,6 +222,9 @@ class TemplateConverter(
                             scalingBasis = ScalingBasis.ESTIMATED_1RM,
                             setWeightsPercentOfPR = computeFiveThreeOneSetWeights(activeSets)
                                 .ifEmpty { computeFiveThreeOneSetWeightsForWeek(weekNumber) },
+                            // Issue #1392 (P5 propagation, template path): the template
+                            // config's per-exercise power-loss target survives conversion.
+                            powerLoss = config?.powerLoss ?: PowerLossConfig.DEFAULT,
                         )
                     } else {
                         RoutineExercise(
@@ -239,6 +243,9 @@ class TemplateConverter(
                             usePercentOfPR = configuredWeight == null && !isBodyweight,
                             weightPercentOfPR = templateExercise.percentOfOneRm,
                             scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                            // Issue #1392 (P5 propagation, template path): the template
+                            // config's per-exercise power-loss target survives conversion.
+                            powerLoss = config?.powerLoss ?: PowerLossConfig.DEFAULT,
                         )
                     }
 

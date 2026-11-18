@@ -153,6 +153,33 @@ fun IntegrationsScreen(
         )
     }
 
+    // ── Power-history file saver (issue #1392 `Export power data`) ────────────
+    var triggerPowerSave by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.powerExportResult) {
+        if (uiState.powerExportResult != null) {
+            triggerPowerSave = true
+        }
+    }
+
+    if (triggerPowerSave && uiState.powerExportResult != null) {
+        val filePicker = rememberFilePicker()
+        val powerExport = uiState.powerExportResult!!
+        filePicker.LaunchFileSaver(
+            fileName = powerExport.displayName,
+            content = powerExport.content,
+            onSaved = { path ->
+                triggerPowerSave = false
+                viewModel.clearPowerExportContent()
+                if (path != null) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Power data saved successfully")
+                    }
+                }
+            },
+        )
+    }
+
     // ── CSV file picker (import) ──────────────────────────────────────────────
     var triggerCsvImport by remember { mutableStateOf(false) }
 
@@ -575,7 +602,10 @@ fun IntegrationsScreen(
                         OutlinedButton(
                             onClick = {
                                 csvExportWeightUnit = csvWeightUnit
-                                viewModel.exportCsv(csvWeightUnit)
+                                // Issue #1392 (ui-spec §6): a legacy export always surfaces
+                                // the omission disclosure first — this format omits
+                                // power-loss settings and per-attempt details.
+                                viewModel.requestLegacyExport()
                             },
                             enabled = !uiState.isExporting,
                             shape = MaterialTheme.shapes.small,
@@ -611,6 +641,61 @@ fun IntegrationsScreen(
                                 Text("Import CSV", style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                    }
+
+                    // Issue #1392 — `Export power data` entry (ui-spec §6): the versioned
+                    // power-history export preserves null/zero and attempt identity.
+                    val powerLossExportUi = remember { com.devil.phoenixproject.presentation.powerloss.PowerLossExportUi() }
+                    OutlinedButton(
+                        onClick = { viewModel.exportPowerData() },
+                        enabled = !uiState.isPowerExporting && !uiState.isExporting,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (uiState.isPowerExporting) {
+                            LoadingIndicator(LoadingIndicatorSize.Small)
+                        } else {
+                            Icon(
+                                Icons.Default.Upload,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                powerLossExportUi.entryLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                    Text(
+                        powerLossExportUi.localDataDisclosure,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    // Issue #1392 — legacy-export omission disclosure (ui-spec §6). The
+                    // dialog is shown BEFORE any legacy export run; outside dismissal runs
+                    // nothing.
+                    uiState.legacyExportConfirmation?.let { confirmation ->
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissLegacyExportConfirmation() },
+                            text = { Text(confirmation.disclosure) },
+                            confirmButton = {
+                                TextButton(onClick = { viewModel.choosePowerDataExport() }) {
+                                    Text(confirmation.primaryAction)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = {
+                                        csvExportWeightUnit = csvWeightUnit
+                                        viewModel.exportWithoutPowerDetails(csvWeightUnit)
+                                    },
+                                ) {
+                                    Text(confirmation.secondaryAction)
+                                }
+                            },
+                        )
                     }
                 }
             }

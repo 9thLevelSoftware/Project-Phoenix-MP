@@ -83,6 +83,10 @@ data class IntegrationsUiState(
     val csvContent: String? = null,
     val errorMessage: String? = null,
     val successMessage: String? = null,
+    // Issue #1392 (P5, ui-spec §6): legacy-export omission disclosure + power export.
+    val legacyExportConfirmation: com.devil.phoenixproject.presentation.powerloss.LegacyExportConfirmationUi? = null,
+    val powerExportResult: com.devil.phoenixproject.data.export.PowerHistoryExportResult? = null,
+    val isPowerExporting: Boolean = false,
 )
 
 class IntegrationsViewModel(
@@ -98,6 +102,8 @@ class IntegrationsViewModel(
     private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager,
     private val userProfileRepository: UserProfileRepository,
     private val portalTokenStorage: PortalTokenStorage,
+    // Issue #1392 (P5): versioned power-history export behind the `Export power data` entry.
+    private val powerHistoryExporter: com.devil.phoenixproject.data.export.PowerHistoryExporter,
 ) : ViewModel() {
 
     /** Resolved active profile ID, reactive to profile switches. */
@@ -242,6 +248,82 @@ class IntegrationsViewModel(
     /** Clear the generated CSV content from state (e.g. after the share sheet is dismissed). */
     fun clearCsvContent() {
         _uiState.value = _uiState.value.copy(csvContent = null)
+    }
+
+    // ===== Issue #1392 — export entry + legacy-export omission disclosure ======
+
+    private val _exportFlow =
+        MutableStateFlow(com.devil.phoenixproject.presentation.powerloss.PowerLossExportFlowState.INITIAL)
+
+    /**
+     * A legacy (non-power) export: the omission disclosure ALWAYS surfaces first
+     * — exporting via the legacy path omits power data, and the app says so
+     * explicitly before anything runs (ui-spec §6).
+     */
+    fun requestLegacyExport() {
+        val next = _exportFlow.value.reduce(
+            com.devil.phoenixproject.presentation.powerloss.PowerLossExportIntent.RequestLegacyExport,
+        )
+        _exportFlow.value = next
+        _uiState.value = _uiState.value.copy(
+            legacyExportConfirmation = if (next.legacyConfirmationVisible) {
+                com.devil.phoenixproject.presentation.powerloss.legacyExportConfirmation()
+            } else {
+                null
+            },
+        )
+    }
+
+    /** `Choose power-data export` — leave the legacy path for the versioned power export. */
+    fun choosePowerDataExport() {
+        _exportFlow.value = _exportFlow.value.reduce(
+            com.devil.phoenixproject.presentation.powerloss.PowerLossExportIntent.ChoosePowerDataExport,
+        )
+        _uiState.value = _uiState.value.copy(legacyExportConfirmation = null)
+        exportPowerData()
+    }
+
+    /** `Export without power details` — the disclosed legacy export proceeds. */
+    fun exportWithoutPowerDetails(weightUnit: WeightUnit) {
+        _exportFlow.value = _exportFlow.value.reduce(
+            com.devil.phoenixproject.presentation.powerloss.PowerLossExportIntent.ExportWithoutPowerDetails,
+        )
+        _uiState.value = _uiState.value.copy(legacyExportConfirmation = null)
+        exportCsv(weightUnit)
+    }
+
+    /** Disclosure dismissed (outside tap / system Back): no export runs. */
+    fun dismissLegacyExportConfirmation() {
+        _exportFlow.value = _exportFlow.value.reduce(
+            com.devil.phoenixproject.presentation.powerloss.PowerLossExportIntent.DismissLegacyConfirmation,
+        )
+        _uiState.value = _uiState.value.copy(legacyExportConfirmation = null)
+    }
+
+    /**
+     * `Export power data` — run the versioned power-history export (P4 codec)
+     * for the active profile. The caller owns share/save UX over [IntegrationsUiState.powerExportResult].
+     */
+    fun exportPowerData() {
+        if (_uiState.value.isPowerExporting) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isPowerExporting = true, errorMessage = null)
+            try {
+                val result = powerHistoryExporter.exportPowerData(activeProfileId.value)
+                _uiState.value = _uiState.value.copy(powerExportResult = result)
+            } catch (error: Throwable) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = error.message ?: "Power-data export failed",
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(isPowerExporting = false)
+            }
+        }
+    }
+
+    /** Clear the produced power-history document (after save/share is dismissed). */
+    fun clearPowerExportContent() {
+        _uiState.value = _uiState.value.copy(powerExportResult = null)
     }
 
     // ─── CSV Import ───────────────────────────────────────────────────────────
