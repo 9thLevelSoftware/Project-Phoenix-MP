@@ -114,7 +114,7 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
         onMain {
             guard let device = self.device(for: deviceRef) else { return }
             let app = self.app(deviceRef: deviceRef, appUuid: appUuid, device: device)
-            ConnectIQ.sharedInstance().registerForAppMessages(app, delegate: self)
+            ConnectIQ.sharedInstance().register(forAppMessages: app, delegate: self)
         }
     }
 
@@ -123,14 +123,14 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
         onMain {
             let key = Self.appKey(deviceRef: deviceRef, appUuid: appUuid)
             guard let app = self.appsByKey[key] else { return }
-            ConnectIQ.sharedInstance().unregisterForAppMessages(app, delegate: self)
+            ConnectIQ.sharedInstance().unregister(forAppMessages: app, delegate: self)
         }
     }
 
     @objc(unregisterAllAppMessages)
     nonisolated func unregisterAllAppMessages() {
         onMain {
-            ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
+            ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
         }
     }
 
@@ -177,7 +177,7 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
             // The iOS SDK exposes no explicit shutdown; drop all native references and
             // unregister every listener (paired with each register performed above).
             ConnectIQ.sharedInstance().unregister(forAllDeviceEvents: self)
-            ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
+            ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
             self.devicesByRef.removeAll()
             self.appsByKey.removeAll()
         }
@@ -241,7 +241,7 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
 
     // MARK: - IQAppMessageDelegate
 
-    func receivedMessage(_ message: Any!, fromApp app: IQApp!) {
+    func receivedMessage(_ message: Any!, from app: IQApp!) {
         // Forwarded RAW with native provenance; Kotlin checks receive/provenance
         // BEFORE decoding into a GarminInboundEnvelope. `message` is only ever
         // forwarded as a dictionary-shaped payload; non-dictionaries are dropped
