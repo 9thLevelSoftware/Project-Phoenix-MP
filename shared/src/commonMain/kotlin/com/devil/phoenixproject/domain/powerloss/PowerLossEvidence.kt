@@ -170,4 +170,6 @@ data class PowerLossSetSummaryFacts(
     val shortRomObserved: Boolean,
     val powerLossObserved: Boolean,
     val attempts: List<PowerLossAttemptRecord> = emptyList(),
+    /** SD6 `Saved reps: 12` readback source (config at set time; null renders `—`). */
+    val savedNominalReps: Int? = null,
 )

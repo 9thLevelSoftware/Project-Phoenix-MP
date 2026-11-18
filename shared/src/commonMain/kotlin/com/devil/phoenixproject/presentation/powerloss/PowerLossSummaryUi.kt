@@ -57,7 +57,7 @@ fun powerLossSummaryVariant(facts: PowerLossSetSummaryFacts): PowerLossSummaryVa
  */
 fun powerLossSummaryUi(
     facts: PowerLossSetSummaryFacts,
-    savedNominalReps: Int? = null,
+    savedNominalReps: Int? = facts.savedNominalReps,
     endedManually: Boolean = false,
     activeCables: Set<com.devil.phoenixproject.domain.powerloss.PowerCable> =
         setOf(

@@ -201,6 +201,7 @@ internal class PowerLossSetController {
             shortRomObserved = shortRomObserved,
             powerLossObserved = powerLossObserved,
             attempts = attemptRecords.toList(),
+            savedNominalReps = config.savedNominalReps,
         )
     }
 
