@@ -2567,10 +2567,14 @@ class ActiveSessionEngine(
             document.restTransitionPlan == null &&
             executionGuard.isCurrent(lease) &&
             lease.executionId.toString() == authority.sourceExecutionId &&
-            coordinator.currentRoutineId == document.routineId &&
-            coordinator.currentRoutineSessionId == document.routineSessionId &&
-            coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
-            coordinator._currentSetIndex.value == document.sourceSetIndex
+            // Issue #1413: anchored live position (see liveRoutinePositionMatchesSource).
+            liveRoutinePositionMatchesSource(
+                routineId = document.routineId,
+                routineSessionId = document.routineSessionId,
+                sourceExerciseIndex = document.sourceExerciseIndex,
+                sourceSetIndex = document.sourceSetIndex,
+                sourceRoutineExerciseId = document.routineExerciseId,
+            )
     }
 
     private fun consumeNormalTransitionAndDispatch(plan: RestTransitionPlan.NormalAdvance) {
@@ -2607,10 +2611,14 @@ class ActiveSessionEngine(
                 return@withLock null
             }
             if (!executionGuard.isCurrent(lease) ||
-                coordinator.currentRoutineId != cleared.routineId ||
-                coordinator.currentRoutineSessionId != cleared.routineSessionId ||
-                coordinator._currentExerciseIndex.value != cleared.sourceExerciseIndex ||
-                coordinator._currentSetIndex.value != cleared.sourceSetIndex
+                // Issue #1413: anchored live position (see liveRoutinePositionMatchesSource).
+                !liveRoutinePositionMatchesSource(
+                    routineId = cleared.routineId,
+                    routineSessionId = cleared.routineSessionId,
+                    sourceExerciseIndex = cleared.sourceExerciseIndex,
+                    sourceSetIndex = cleared.sourceSetIndex,
+                    sourceRoutineExerciseId = cleared.routineExerciseId,
+                )
             ) {
                 return@withLock null
             }
@@ -2767,13 +2775,17 @@ class ActiveSessionEngine(
             return false
         }
         val routine = coordinator._loadedRoutine.value ?: return false
-        val sourceExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return false
         return (routine.profileId ?: "default") == document.profileId &&
-            coordinator.currentRoutineId == document.routineId &&
-            coordinator.currentRoutineSessionId == document.routineSessionId &&
-            coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
-            coordinator._currentSetIndex.value == document.sourceSetIndex &&
-            sourceExercise.id == document.routineExerciseId
+            // Issue #1413: the live position is anchored by the loaded routine and the
+            // entered routine-flow position, not the raw mirror flows (see
+            // liveRoutinePositionMatchesSource).
+            liveRoutinePositionMatchesSource(
+                routineId = document.routineId,
+                routineSessionId = document.routineSessionId,
+                sourceExerciseIndex = document.sourceExerciseIndex,
+                sourceSetIndex = document.sourceSetIndex,
+                sourceRoutineExerciseId = document.routineExerciseId,
+            )
     }
 
     private fun liveRestTransitionProfileIsCurrent(document: ActiveWorkoutRuntimeDocument): Boolean = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
@@ -4427,6 +4439,10 @@ class ActiveSessionEngine(
     internal var completionJobAttachCountForTest: Int = 0
         private set
     internal var lastInitialRestPlanInstallResultForTest: InitialRestPlanInstallResult? = null
+        private set
+
+    /** Issue #1413 instrumentation: the failing identity-coordinate conjunct name, if any. */
+    internal var lastCompletionRestAuthorityFailureForTest: String? = null
         private set
     internal var afterDurableRestPlanClearForTest: (suspend () -> Unit)? = null
     internal var afterAcceptedRetryPlanConsumedForTest: (suspend () -> Unit)? = null
@@ -13298,19 +13314,147 @@ class ActiveSessionEngine(
         )
     }
 
+    /**
+     * Issue #1413: live-position match for a plan/identity's source coordinates.
+     *
+     * While a SetSummary is still displayed, the raw mirror flows (`currentRoutineId`,
+     * `currentRoutineSessionId`, `_currentExerciseIndex`, `_currentSetIndex`) can
+     * drift silently — the #1413 capture proved it (the same check passed when the
+     * plan installed at set completion; every later tap on the still-displayed summary
+     * was rejected; zero engine log output in the drift window) — so under a held
+     * summary the mirror alone must not reject a still-anchored transition. The
+     * material anchors there are the LOADED ROUTINE (a reload/detach/replace changes
+     * it; a mirror drift does not) and the last explicitly ENTERED routine-flow
+     * position ([RoutineFlowState.SetReady], which every legitimate position
+     * transition writes atomically with the index flows). A genuine successor
+     * transition re-enters SetReady at the successor coordinates and is still
+     * rejected.
+     *
+     * In every other state the raw mirrors stay fully authoritative — pre-#1413
+     * semantics exactly. That strictness is load-bearing: #1398's rest-control
+     * revalidation deliberately reports a post-write mirror drift during Resting as
+     * `PostWriteDrift` (Issue1360RestControlOutcomeTest), and that contract is
+     * preserved. Lease currency, the completion claim, plan/document source
+     * coherence, cleanup fences and terminal supersession are checked separately at
+     * every call site and are unchanged.
+     */
+    private fun liveRoutinePositionMatchesSource(
+        routineId: String,
+        routineSessionId: String?,
+        sourceExerciseIndex: Int,
+        sourceSetIndex: Int,
+        sourceRoutineExerciseId: String,
+        reportMirrorDrift: Boolean = false,
+    ): Boolean {
+        val routine = coordinator._loadedRoutine.value ?: return false
+        if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
+            // Pre-#1413 semantics exactly: the raw mirrors are authoritative.
+            val sourceExercise = routine.exercises.getOrNull(sourceExerciseIndex) ?: return false
+            return coordinator.currentRoutineId == routineId &&
+                coordinator.currentRoutineSessionId == routineSessionId &&
+                coordinator._currentExerciseIndex.value == sourceExerciseIndex &&
+                coordinator._currentSetIndex.value == sourceSetIndex &&
+                sourceExercise.id == sourceRoutineExerciseId
+        }
+        // Held summary: the loaded routine + entered position anchor.
+        if (routine.id != routineId) return false
+        if (routine.exercises.getOrNull(sourceExerciseIndex)?.id != sourceRoutineExerciseId) return false
+        val indexesMatch = coordinator._currentExerciseIndex.value == sourceExerciseIndex &&
+            coordinator._currentSetIndex.value == sourceSetIndex
+        if (indexesMatch) return true
+        val entered = coordinator._routineFlowState.value as? RoutineFlowState.SetReady
+        val enteredMatches = entered != null &&
+            entered.exerciseIndex == sourceExerciseIndex &&
+            entered.setIndex == sourceSetIndex
+        if (enteredMatches && reportMirrorDrift) {
+            recordRoutinePositionMirrorDrift(sourceExerciseIndex, sourceSetIndex)
+        }
+        return enteredMatches
+    }
+
+    /**
+     * Issue #1413: the anchored routine position while a SetSummary is held — the
+     * last explicitly entered [RoutineFlowState.SetReady] coordinates whenever they
+     * disagree with the raw index mirrors (see [liveRoutinePositionMatchesSource]).
+     * Every other state uses the raw mirrors unchanged.
+     */
+    private fun anchoredRoutinePosition(): Pair<Int, Int> {
+        val rawExercise = coordinator._currentExerciseIndex.value
+        val rawSet = coordinator._currentSetIndex.value
+        if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
+            return rawExercise to rawSet
+        }
+        val entered = coordinator._routineFlowState.value as? RoutineFlowState.SetReady
+        if (entered != null && (entered.exerciseIndex != rawExercise || entered.setIndex != rawSet)) {
+            return entered.exerciseIndex to entered.setIndex
+        }
+        return rawExercise to rawSet
+    }
+
+    /**
+     * Issue #1413 instrumentation: name the drifting live mirror when the anchor
+     * still accepts a transition. Kermit [Logger] never reaches the unified log in
+     * this build, so the diagnostic rides the observable connection-log channel
+     * (PHX-CAPTURE-LOG). Privacy-safe: coordinate values only, never identifiers.
+     */
+    private fun recordRoutinePositionMirrorDrift(sourceExerciseIndex: Int, sourceSetIndex: Int) {
+        connectionLogRepository.info(
+            LogEventType.WORKOUT_PERSISTENCE,
+            "Rest transition live mirror drifted; entered position still authoritative",
+            details = "identityExerciseIndex=$sourceExerciseIndex,identitySetIndex=$sourceSetIndex" +
+                ",currentExerciseIndex=${coordinator._currentExerciseIndex.value}" +
+                ",currentSetIndex=${coordinator._currentSetIndex.value}" +
+                ",enteredPosition=${(coordinator._routineFlowState.value as? RoutineFlowState.SetReady)?.let { "${it.exerciseIndex}:${it.setIndex}" } ?: "none"}",
+        )
+    }
+
     private fun hasCompletionRestAuthority(completion: SetExecutionCompletion): Boolean {
         val identity = completion.routineIdentity ?: return false
-        if (!executionGuard.isCurrent(completion.lease) ||
-            completion.lease.profileId != identity.profileId ||
-            coordinator.currentRoutineId != identity.routineId ||
-            coordinator.currentRoutineSessionId != identity.routineSessionId ||
-            coordinator._currentExerciseIndex.value != identity.exerciseIndex ||
-            coordinator._currentSetIndex.value != identity.setIndex
-        ) {
+        if (!executionGuard.isCurrent(completion.lease)) {
+            recordCompletionRestAuthorityFailure("lease_not_current", identity)
             return false
         }
-        val routine = coordinator._loadedRoutine.value ?: return false
-        return routine.exercises.getOrNull(identity.exerciseIndex)?.id == identity.routineExerciseId
+        if (completion.lease.profileId != identity.profileId) {
+            recordCompletionRestAuthorityFailure("profile_id", identity)
+            return false
+        }
+        if (!liveRoutinePositionMatchesSource(
+                routineId = identity.routineId,
+                routineSessionId = identity.routineSessionId,
+                sourceExerciseIndex = identity.exerciseIndex,
+                sourceSetIndex = identity.setIndex,
+                sourceRoutineExerciseId = identity.routineExerciseId,
+                reportMirrorDrift = true,
+            )
+        ) {
+            recordCompletionRestAuthorityFailure("live_routine_position", identity)
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Issue #1413 instrumentation: name the exact conjunct that rejected a
+     * completion's rest authority. Privacy-safe: conjunct names and index values
+     * only; the identifier-valued conjuncts log their name, never their values.
+     */
+    private fun recordCompletionRestAuthorityFailure(
+        conjunct: String,
+        identity: com.devil.phoenixproject.domain.model.RoutineExecutionIdentity,
+    ) {
+        lastCompletionRestAuthorityFailureForTest = conjunct
+        val details = when (conjunct) {
+            "live_routine_position" -> "conjunct=live_routine_position,identityExerciseIndex=${identity.exerciseIndex}" +
+                ",identitySetIndex=${identity.setIndex}" +
+                ",currentExerciseIndex=${coordinator._currentExerciseIndex.value}" +
+                ",currentSetIndex=${coordinator._currentSetIndex.value}"
+            else -> "conjunct=$conjunct"
+        }
+        connectionLogRepository.info(
+            LogEventType.WORKOUT_PERSISTENCE,
+            "Rest transition authority check rejected a completion",
+            details = details,
+        )
     }
 
     /**
@@ -13549,10 +13693,15 @@ class ActiveSessionEngine(
         if (nextStep != null) {
             val (nextExIdx, nextSetIdx) = nextStep
             val nextExercise = routine.exercises[nextExIdx]
-            val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+            // Issue #1413: classify the boundary from the anchored position (see
+            // liveRoutinePositionMatchesSource), not the raw index mirrors — a silent
+            // mirror drift would mis-classify an entry boundary as a within-entry
+            // advance and strand the summary on screen.
+            val (fromExerciseIndex, _) = anchoredRoutinePosition()
+            val currentExercise = routine.exercises.getOrNull(fromExerciseIndex)
             val autoplay = settingsManager.autoplayEnabled.value
 
-            val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
+            val isChangingExercise = nextExIdx != fromExerciseIndex
             // Issue #572 / #1394: when getNextStep advances to the next entry but the new
             // entry is the same physical exercise as the current one (e.g. "Sumo Belt Squat
             // 2x8 OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
@@ -13569,7 +13718,7 @@ class ActiveSessionEngine(
             // the user explicitly starts that set. That manual gate no longer fires for
             // equivalent settings.
             val isAdjacentLinearExercise =
-                nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
+                nextExIdx == fromExerciseIndex + 1 &&
                     currentExercise?.supersetId == null &&
                     nextExercise.supersetId == null
             val isSameExerciseContinuation = isChangingExercise &&
