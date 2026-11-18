@@ -244,7 +244,7 @@ class Issue869SummaryAfterCommitTest {
     }
 
     @Test
-    fun `the remote receipt reports the exact observed commit, not the summary`() = runTest {
+    fun `the remote receipt reports the exact observed commit and not the summary`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             startRealRoutineSet(harness, workingReps = 3)
