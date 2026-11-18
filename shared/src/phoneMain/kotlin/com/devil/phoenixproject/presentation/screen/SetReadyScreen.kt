@@ -78,12 +78,15 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
+import com.devil.phoenixproject.presentation.components.PowerLossTargetReadbackCard
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.powerloss.powerLossExecutionSupported
+import com.devil.phoenixproject.presentation.powerloss.powerLossTargetReadback
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
@@ -490,6 +493,28 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             }
 
             Spacer(Modifier.height(12.dp))
+
+            // Issue #1392 — Set target readback before the set (ui-spec §2). The
+            // target is edited in the exercise configuration surfaces, never from
+            // here; during the set the HUD renders `Target locked for this set.`
+            PowerLossTargetReadbackCard(
+                powerLossTargetReadback(
+                    config = currentExercise.powerLoss,
+                    supportedExecution = powerLossExecutionSupported(
+                        config = currentExercise.powerLoss,
+                        mode = currentExercise.programMode,
+                        isJustLiftExecutionStyle = false,
+                        isTimed = currentExercise.duration != null,
+                        isBodyweight = isBodyweight,
+                    ),
+                    savedNominalReps = if (currentExercise.isAmrapSet(setReadyState.setIndex)) {
+                        null
+                    } else {
+                        setReadyState.adjustedReps
+                    },
+                    locked = false,
+                ),
+            )
 
             // Issue #600: once-per-session Current bodyweight card for any routine
             // containing a bodyweight exercise, even if the current Set Ready exercise is cable.

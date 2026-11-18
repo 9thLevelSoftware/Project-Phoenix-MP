@@ -54,6 +54,8 @@ import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUse
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRuntimeGate
+import com.devil.phoenixproject.presentation.powerloss.powerLossRuntimeSettingsFor
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.CancellationException
@@ -1071,7 +1073,40 @@ class DefaultWorkoutSessionManager(
     // ===== Workout Lifecycle — delegated to ActiveSessionEngine =====
 
     fun resetForNewWorkout() = activeSessionEngine.resetForNewWorkout()
-    fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
+
+    // ===== Issue #1392 — power-loss runtime propagation (P5, integration-model §4) =====
+
+    /** Runtime seam passthrough (issue #1392): `coordinator.powerLossRuntimeSettings`. */
+    internal val powerLossRuntimeSettings: StateFlow<PowerLossRuntimeSettings> = coordinator.powerLossRuntimeSettings
+
+    /** Runtime seam passthrough for callers holding an already-derived settings object. */
+    internal fun updatePowerLossSettings(settings: PowerLossRuntimeSettings) =
+        coordinator.updatePowerLossSettings(settings)
+
+    /**
+     * Copy the per-exercise power-loss target config carried by [params] into the
+     * `coordinator.powerLossRuntimeSettings` runtime seam. Called on the initial,
+     * next set/exercise, adjusted/retry and transition parameter paths so POWER
+     * arms only from explicit per-exercise config behind the capability gate;
+     * unknown or excluded modes resolve to inert REP_TARGET.
+     */
+    internal fun publishPowerLossRuntimeSettingsFrom(params: WorkoutParameters) {
+        val config = params.powerLoss
+        coordinator.updatePowerLossSettings(
+            powerLossRuntimeSettingsFor(
+                config = config,
+                mode = params.programMode,
+                isJustLiftExecutionStyle = params.isJustLift,
+                savedNominalReps = config.savedNominalReps ?: params.reps.takeIf { it >= 1 },
+                pairedSamplesValidated = PowerLossRuntimeGate.pairedSamplesValidated,
+            ),
+        )
+    }
+
+    fun updateWorkoutParameters(params: WorkoutParameters) {
+        publishPowerLossRuntimeSettingsFrom(params)
+        activeSessionEngine.updateWorkoutParameters(params)
+    }
     fun setWorkoutParametersInternal(params: WorkoutParameters) = activeSessionEngine.setWorkoutParametersInternal(params)
     fun updateActiveRackSelection(itemIds: List<String>) = activeSessionEngine.updateActiveRackSelection(itemIds)
     fun updateActiveRackBehaviorOverrides(
@@ -1089,6 +1124,9 @@ class DefaultWorkoutSessionManager(
         val tracker = profileRecoveryActivityTracker
         if (tracker?.setWorkoutActive(true) == false) return
         try {
+            // Issue #1392 (P5 propagation): initial path — the runtime seam is
+            // re-published from the current parameters before execution starts.
+            publishPowerLossRuntimeSettingsFrom(coordinator._workoutParameters.value)
             activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
         } catch (error: Throwable) {
             tracker?.setWorkoutActive(isWorkoutRecoveryBlocking(coordinator._workoutState.value))

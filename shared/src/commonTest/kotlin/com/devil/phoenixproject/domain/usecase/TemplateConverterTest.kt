@@ -14,6 +14,8 @@ import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import kotlin.test.Test
@@ -593,5 +595,63 @@ class TemplateConverterTest {
                 "${template.name}: templates must declare rest days explicitly",
             )
         }
+    }
+
+    @Test
+    fun `template config power-loss target survives conversion and stays inert without config`() = runTest {
+        val repository = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "bench-001",
+                    name = "Bench Press",
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = "BAR",
+                ),
+            )
+        }
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
+
+        val template = CycleTemplate(
+            id = "template-power-loss",
+            name = "Power Day",
+            description = "Test",
+            days = listOf(
+                CycleDayTemplate.training(
+                    dayNumber = 1,
+                    name = "Day 1",
+                    routine = RoutineTemplate(
+                        name = "Bench Day",
+                        exercises = listOf(
+                            TemplateExercise(exerciseName = "Bench Press", sets = 3, reps = 12),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val powerConfig = PowerLossConfig(
+            targetMode = TargetMode.POWER,
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            savedNominalReps = 12,
+        )
+        val configs = mapOf(
+            "Bench Press" to ExerciseConfig(
+                exerciseName = "Bench Press",
+                mode = ProgramMode.OldSchool,
+                powerLoss = powerConfig,
+            ),
+        )
+
+        val result = converter.convert(template, configs)
+        val converted = result.routines.single().exercises.single()
+        assertEquals(powerConfig, converted.powerLoss, "Template path must carry the power-loss config")
+
+        val plain = converter.convert(template)
+        assertEquals(
+            PowerLossConfig.DEFAULT,
+            plain.routines.single().exercises.single().powerLoss,
+            "Without a template config the generated exercise stays inert REP",
+        )
     }
 }

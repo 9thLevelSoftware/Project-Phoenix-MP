@@ -99,10 +99,16 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.eccentricLoadLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
+import com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
+import com.devil.phoenixproject.presentation.components.PowerLossSetTargetSection
+import com.devil.phoenixproject.presentation.components.PowerLossTargetReadbackCard
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.powerloss.PowerLossConfigDraftState
+import com.devil.phoenixproject.presentation.powerloss.powerLossExecutionSupported
+import com.devil.phoenixproject.presentation.powerloss.powerLossTargetReadback
 import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
@@ -164,6 +170,22 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
     var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
     var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
     var defaultsProfileId by remember { mutableStateOf<String?>(null) }
+    // Issue #1392 — Set target draft (ui-spec §2: controls below the mode/load
+    // controls, above Start). Ad-hoc choices apply to the next execution only;
+    // the active set is frozen (`Target locked for this set.`) and edits take
+    // effect next execution. No cross-profile reuse.
+    var powerDraft by remember {
+        mutableStateOf(
+            PowerLossConfigDraftState.seededFrom(
+                config = workoutParameters.powerLoss,
+                maxAllowedWorkingReps = 254,
+                protocolFamily = PowerLossProtocolFamily.of(
+                    workoutParameters.programMode,
+                    isJustLiftExecutionStyle = true,
+                ),
+            ),
+        )
+    }
     // Profile-scoped workout defaults
     val profileRepository: UserProfileRepository = koinInject()
     val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
@@ -219,6 +241,14 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
         }
     }
 
+    // Issue #1392: mode switches move the capability gate (ui-spec §3).
+    LaunchedEffect(selectedMode) {
+        val family = PowerLossProtocolFamily.of(selectedMode.toProgramMode(), isJustLiftExecutionStyle = true)
+        if (powerDraft.protocolFamily != family) {
+            powerDraft = powerDraft.copy(protocolFamily = family)
+        }
+    }
+
     // Navigate to ActiveWorkout when workout becomes active
     LaunchedEffect(workoutState) {
         if (workoutState is WorkoutState.Active) {
@@ -270,6 +300,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
         restSeconds,
         weightUnit,
         defaultsLoaded,
+        powerDraft,
     ) {
         // Don't write params until saved defaults have been loaded.
         // Without this guard, the effect fires immediately with the hardcoded
@@ -296,6 +327,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
             repCountTiming = repCountTiming,
             selectedExerciseId = null, // Issue #97: Clear exercise ID for Just Lift sessions
             justLiftRestSeconds = restSeconds, // Issue #113: Configurable rest timer
+            // Issue #1392: the Set-target draft's committed config freezes into
+            // the parameters for the next execution (valid drafts commit
+            // atomically; an invalid draft keeps the last committed config).
+            powerLoss = powerDraft.apply().committed,
         )
         Logger.d { "JustLift: Updating params - eccentricLoad=${eccentricLoad.percentage}%, echoLevel=${newEchoLevel.displayName}" }
         viewModel.updateWorkoutParameters(updatedParameters)
@@ -761,6 +796,34 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                     )
                 }
             }
+
+            // Issue #1392 — Set target (ui-spec §2: below the mode/load controls,
+            // above Start) plus the pre-set target readback facts. Ad-hoc choices
+            // apply to the next execution only; the active set is read-only.
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                PowerLossSetTargetSection(
+                    draft = powerDraft,
+                    onDraftChange = { powerDraft = it },
+                )
+            }
+            PowerLossTargetReadbackCard(
+                powerLossTargetReadback(
+                    config = powerDraft.committed,
+                    supportedExecution = powerLossExecutionSupported(
+                        config = powerDraft.committed,
+                        mode = selectedMode.toProgramMode(),
+                        isJustLiftExecutionStyle = true,
+                    ),
+                    savedNominalReps = powerDraft.committed.savedNominalReps,
+                    locked = false,
+                ),
+            )
 
             // Active workout status (replaces mode cards when active)
             if (workoutState !is WorkoutState.Idle) {

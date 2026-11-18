@@ -31,6 +31,9 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRuntimeGate
+import com.devil.phoenixproject.presentation.powerloss.powerLossExecutionConfig
+import com.devil.phoenixproject.presentation.powerloss.powerLossRuntimeSettingsFor
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
@@ -902,6 +905,30 @@ class RoutineFlowManager(
         coordinator._sessionBodyweightState.value = SessionBodyweightState()
     }
 
+    /**
+     * Issue #1392 (P5 propagation, integration-model §4): copy the per-exercise
+     * power-loss target config into the `coordinator.powerLossRuntimeSettings`
+     * runtime seam wherever WorkoutParameters are generated — initial, next
+     * set/exercise, adjusted/retry and transition paths. Unsupported timed and
+     * bodyweight paths resolve to inert REP_TARGET; POWER never arms from an
+     * unknown or excluded mode.
+     */
+    private fun publishPowerLossRuntimeSettings(exercise: RoutineExercise, savedNominalReps: Int?) {
+        coordinator.updatePowerLossSettings(
+            powerLossRuntimeSettingsFor(
+                config = powerLossExecutionConfig(
+                    config = exercise.powerLoss,
+                    isTimed = exercise.duration != null,
+                    isBodyweight = exercise.exercise.isBodyweight,
+                ),
+                mode = exercise.programMode,
+                isJustLiftExecutionStyle = false,
+                savedNominalReps = savedNominalReps,
+                pairedSamplesValidated = PowerLossRuntimeGate.pairedSamplesValidated,
+            ),
+        )
+    }
+
     private fun loadRoutineInternal(
         routine: Routine,
         resumeLaunchOrigin: RoutineLaunchOrigin? = null,
@@ -941,6 +968,13 @@ class RoutineFlowManager(
             selectedExerciseId = firstExercise.exercise.id,
             stallDetectionEnabled = firstExercise.stallDetectionEnabled,
             repCountTiming = firstExercise.repCountTiming,
+            // Issue #1392 (P5 propagation): the generated parameters carry the
+            // per-exercise power-loss target config (inert on timed/bodyweight).
+            powerLoss = powerLossExecutionConfig(
+                config = firstExercise.powerLoss,
+                isTimed = firstExercise.duration != null,
+                isBodyweight = isFirstBodyweight,
+            ),
         )
         val hasVariableWarmups = firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight
 
@@ -969,6 +1003,12 @@ class RoutineFlowManager(
             coordinator._userAdjustedWeightDuringRest = false
             coordinator._workoutParameters.value = params.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
+            )
+            // Issue #1392 (P5 propagation): initial path — the first exercise's
+            // power-loss target config seeds the runtime seam with the routine.
+            publishPowerLossRuntimeSettings(
+                firstExercise,
+                savedNominalReps = if (firstIsAMRAP) null else firstSetReps ?: firstExercise.reps,
             )
         }
         val published = if (publicationStillCurrent == null) {
@@ -1240,6 +1280,13 @@ class RoutineFlowManager(
             progressionRegressionKg = progressionKg,
             isJustLift = false,
             useAutoStart = false,
+            // Issue #1392 (P5 propagation): every generated WorkoutParameters
+            // carries the per-exercise power-loss target config.
+            powerLoss = powerLossExecutionConfig(
+                config = exercise.powerLoss,
+                isTimed = exercise.duration != null,
+                isBodyweight = exercise.exercise.isBodyweight,
+            ),
         )
         lifecycleDelegate.mutateConfigurationInputs {
             coordinator._currentExerciseIndex.value = exerciseIndex
@@ -1254,6 +1301,11 @@ class RoutineFlowManager(
             }
             coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
+            )
+            // Issue #1392 (P5 propagation): next set/exercise path.
+            publishPowerLossRuntimeSettings(
+                exercise,
+                savedNominalReps = if (isSetAmrap) null else setReps,
             )
         }
 
@@ -1314,6 +1366,13 @@ class RoutineFlowManager(
             progressionRegressionKg = progressionKg,
             isJustLift = false,
             useAutoStart = false,
+            // Issue #1392 (P5 propagation): every generated WorkoutParameters
+            // carries the per-exercise power-loss target config.
+            powerLoss = powerLossExecutionConfig(
+                config = exercise.powerLoss,
+                isTimed = exercise.duration != null,
+                isBodyweight = exercise.exercise.isBodyweight,
+            ),
         )
         lifecycleDelegate.mutateConfigurationInputs {
             coordinator._currentExerciseIndex.value = exerciseIndex
@@ -1328,6 +1387,11 @@ class RoutineFlowManager(
             }
             coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
+            )
+            // Issue #1392 (P5 propagation): adjusted/retry path.
+            publishPowerLossRuntimeSettings(
+                exercise,
+                savedNominalReps = if (isSetAmrap) null else adjustedReps,
             )
         }
 
@@ -1365,6 +1429,16 @@ class RoutineFlowManager(
             lifecycleDelegate.mutateConfigurationInputs {
                 coordinator._routineFlowState.value = state.copy(adjustedReps = reps)
                 coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(reps = reps)
+                // Issue #1392 (P5 propagation): transition path — the nominal rep
+                // target changed, so the runtime seam's saved nominal follows it.
+                coordinator._loadedRoutine.value
+                    ?.exercises?.getOrNull(state.exerciseIndex)
+                    ?.let { exercise ->
+                        publishPowerLossRuntimeSettings(
+                            exercise,
+                            savedNominalReps = if (exercise.isAmrapSet(state.setIndex)) null else reps,
+                        )
+                    }
             }
         }
     }

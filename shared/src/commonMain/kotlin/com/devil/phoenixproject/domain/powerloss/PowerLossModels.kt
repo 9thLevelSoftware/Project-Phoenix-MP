@@ -94,14 +94,16 @@ enum class PowerLossProtocolFamily {
     companion object {
         /**
          * Map a [ProgramMode] plus the Just Lift execution-style flag to the
-         * protocol family. Just Lift is an execution style, not a ProgramMode.
+         * protocol family. Just Lift is an execution style, not a ProgramMode —
+         * but V1 effective modes are Old School / Pump / Echo only: a TUT,
+         * TUT Beast or Eccentric-Only set stays excluded even in Just Lift
+         * style, so POWER never arms from an excluded mode (spec §1/§7).
          */
         fun of(mode: ProgramMode, isJustLiftExecutionStyle: Boolean): PowerLossProtocolFamily {
-            if (isJustLiftExecutionStyle) return JUST_LIFT
             return when (mode) {
-                ProgramMode.OldSchool -> OLD_SCHOOL
-                ProgramMode.Pump -> PUMP
-                ProgramMode.Echo -> ECHO
+                ProgramMode.OldSchool -> if (isJustLiftExecutionStyle) JUST_LIFT else OLD_SCHOOL
+                ProgramMode.Pump -> if (isJustLiftExecutionStyle) JUST_LIFT else PUMP
+                ProgramMode.Echo -> if (isJustLiftExecutionStyle) JUST_LIFT else ECHO
                 else -> UNSUPPORTED
             }
         }

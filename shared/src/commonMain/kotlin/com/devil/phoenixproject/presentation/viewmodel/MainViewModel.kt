@@ -71,6 +71,8 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
 import com.devil.phoenixproject.presentation.components.exercisepicker.recentJustLiftExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.powerloss.PowerLossRuntimeGate
+import com.devil.phoenixproject.presentation.powerloss.powerLossRuntimeSettingsFor
 import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -1000,7 +1002,30 @@ class MainViewModel(
 
     // ===== Workout Lifecycle Delegation =====
 
-    fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
+    /**
+     * Issue #1392 (P5 propagation, integration-model §4): the active parameter
+     * boundary copies the per-exercise power-loss target config into the runtime
+     * seam (`coordinator.powerLossRuntimeSettings`) before the parameters are
+     * applied. Config intent is per-profile and never leaks across profiles;
+     * mid-set policy mutation is rejected by the engine's parameter guard.
+     */
+    fun updateWorkoutParameters(params: WorkoutParameters) {
+        workoutSessionManager.updatePowerLossSettings(
+            powerLossRuntimeSettingsFor(
+                config = params.powerLoss,
+                mode = params.programMode,
+                isJustLiftExecutionStyle = params.isJustLift,
+                savedNominalReps = params.powerLoss.savedNominalReps
+                    ?: params.reps.takeIf { it >= 1 },
+                pairedSamplesValidated = PowerLossRuntimeGate.pairedSamplesValidated,
+            ),
+        )
+        workoutSessionManager.updateWorkoutParameters(params)
+    }
+
+    /** Live power-loss runtime settings (issue #1392); default is inert (POWER off). */
+    internal val powerLossRuntimeSettings: kotlinx.coroutines.flow.StateFlow<com.devil.phoenixproject.presentation.manager.PowerLossRuntimeSettings> =
+        workoutSessionManager.powerLossRuntimeSettings
     fun updateActiveRackSelection(itemIds: List<String>) = workoutSessionManager.updateActiveRackSelection(itemIds)
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = workoutSessionManager.updateActiveRackBehaviorOverrides(overrides)
     fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()

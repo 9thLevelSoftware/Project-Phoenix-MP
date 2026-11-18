@@ -27,3 +27,56 @@ data class LegacyExportConfirmationUi(
 /** Show the omission disclosure before any legacy export run. */
 fun legacyExportConfirmation(): LegacyExportConfirmationUi =
     LegacyExportConfirmationUi(visible = true)
+
+/** Export-flow intents (P5 item 4). */
+sealed interface PowerLossExportIntent {
+    /** The user asked for a legacy (non-power) export: disclosure comes first. */
+    data object RequestLegacyExport : PowerLossExportIntent
+
+    /** `Choose power-data export` — route to the versioned power-history export. */
+    data object ChoosePowerDataExport : PowerLossExportIntent
+
+    /** `Export without power details` — the legacy run proceeds after disclosure. */
+    data object ExportWithoutPowerDetails : PowerLossExportIntent
+
+    /** Disclosure dismissed (outside tap / back): no export runs. */
+    data object DismissLegacyConfirmation : PowerLossExportIntent
+}
+
+/**
+ * Pure export-flow state machine: a legacy export ALWAYS surfaces the omission
+ * disclosure first; `Export power data` routes to the versioned power-history
+ * export. Nothing runs silently without the disclosure (ui-spec §6).
+ */
+data class PowerLossExportFlowState(
+    val legacyConfirmationVisible: Boolean = false,
+    val legacyExportApproved: Boolean = false,
+    val powerExportRequested: Boolean = false,
+) {
+    fun reduce(intent: PowerLossExportIntent): PowerLossExportFlowState = when (intent) {
+        PowerLossExportIntent.RequestLegacyExport -> copy(
+            legacyConfirmationVisible = true,
+            legacyExportApproved = false,
+            powerExportRequested = false,
+        )
+        PowerLossExportIntent.ChoosePowerDataExport -> copy(
+            legacyConfirmationVisible = false,
+            legacyExportApproved = false,
+            powerExportRequested = true,
+        )
+        PowerLossExportIntent.ExportWithoutPowerDetails -> copy(
+            legacyConfirmationVisible = false,
+            legacyExportApproved = true,
+            powerExportRequested = false,
+        )
+        PowerLossExportIntent.DismissLegacyConfirmation -> copy(
+            legacyConfirmationVisible = false,
+            legacyExportApproved = false,
+            powerExportRequested = false,
+        )
+    }
+
+    companion object {
+        val INITIAL = PowerLossExportFlowState()
+    }
+}

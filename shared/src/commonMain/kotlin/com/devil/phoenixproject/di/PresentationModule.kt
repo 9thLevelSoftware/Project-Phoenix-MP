@@ -28,7 +28,7 @@ val presentationModule = module {
     // when that entry leaves the back stack.
     viewModel { CycleEditorViewModel(get(), get()) }
     viewModel { GamificationViewModel(get(), get()) }
-    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { RoutineCsvViewModel(get(), get(), get()) }
     factory { ExternalActivitiesViewModel(get(), get()) }
     factory { ExternalRoutinesViewModel(get(), get()) }
