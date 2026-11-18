@@ -1460,11 +1460,14 @@ class PhantomBleRepository(
                                 timestamp = now,
                                 loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
                                 loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
-                                positionA = wave * 650f * config.positionScale,
-                                positionB = wave * 640f * config.positionScale,
+                                // Issue #1400: post-parse metric space is mm / mm/s. The wave
+                                // amplitudes are scaled x10 from the old cm/cm-s emission so the
+                                // simulated motion is identical against the x10 control constants.
+                                positionA = wave * 6500f * config.positionScale,
+                                positionB = wave * 6400f * config.positionScale,
                                 ticks = ticks++,
-                                velocityA = wave * 250.0 * config.velocityScale,
-                                velocityB = wave * 245.0 * config.velocityScale,
+                                velocityA = wave * 2500.0 * config.velocityScale,
+                                velocityB = wave * 2450.0 * config.velocityScale,
                                 status = 0,
                             )
                             _metricsFlow.tryEmit(metric)
@@ -1645,7 +1648,8 @@ class PhantomBleRepository(
                                     repsSetCount = target?.let { minOf(workingCount, it) } ?: workingCount,
                                     // The machine reports an unlimited command (0xFF) as target 252.
                                     repsSetTotal = target ?: 252,
-                                    rangeTop = 650f,
+                                    // Issue #1400: parsed rep-packet ROM bounds are mm (x10 at parse).
+                                    rangeTop = 6500f,
                                     rangeBottom = 0f,
                                     rawData = byteArrayOf(), // Synthetic event, not captured BLE bytes.
                                     timestamp = Clock.System.now().toEpochMilliseconds(),
@@ -1710,8 +1714,9 @@ class PhantomBleRepository(
                                 repsRomTotal = params.warmupReps,
                                 repsSetCount = rep.coerceAtMost(target),
                                 repsSetTotal = target,
-                                rangeTop = 650f,
-                                rangeBottom = -650f,
+                                // Issue #1400: parsed rep-packet ROM bounds are mm (x10 at parse).
+                                rangeTop = 6500f,
+                                rangeBottom = -6500f,
                                 rawData = rawData,
                                 timestamp = timestamp,
                             ),

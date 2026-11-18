@@ -59,7 +59,7 @@ class RepCounterFromMachine {
     private var phasePeakPosition: Float = 0f // Peak position during current rep (for eccentric progress)
     private var positionHistoryForDirection = mutableListOf<Float>() // Rolling window for smoothing
     private val DIRECTION_WINDOW_SIZE = 3
-    private val DIRECTION_THRESHOLD_MM = 5f // Minimum movement to detect direction change (mm)
+    private val DIRECTION_THRESHOLD_MM = 50f // Minimum movement to detect direction change (mm)
 
     // Track directional counters for position calibration AND visual feedback
     // Issue #210 FIX: Initialize to 0 instead of null so first rep notification
@@ -197,7 +197,7 @@ class RepCounterFromMachine {
      */
     fun seedRomBoundaries(rangeTop: Float, rangeBottom: Float) {
         if (rangeTop <= 0f || rangeBottom < 0f) return
-        if (rangeTop == 300.0f && rangeBottom == 0.0f) return // Default/unset values
+        if (rangeTop == 3000.0f && rangeBottom == 0.0f) return // Default/unset values (3 m rope in mm)
 
         // Only seed if not already calibrated from actual reps
         if (maxRepPosA == null && topPositionsA.isEmpty()) {
@@ -768,7 +768,7 @@ class RepCounterFromMachine {
                 }
                 // Progress: 0.0 at bottom, 1.0 at top
                 val range = phasePeakPosition - phaseStartPosition
-                phaseProgress = if (range > 10f) {
+                phaseProgress = if (range > 100f) {
                     ((currentPos - phaseStartPosition) / range).coerceIn(0f, 1f)
                 } else {
                     0f
@@ -779,7 +779,7 @@ class RepCounterFromMachine {
                 // Progress: 0.0 at top, 1.0 at bottom
                 val minPos = minRepPosA ?: minRepPosB ?: phaseStartPosition
                 val range = phasePeakPosition - minPos
-                phaseProgress = if (range > 10f) {
+                phaseProgress = if (range > 100f) {
                     ((phasePeakPosition - currentPos) / range).coerceIn(0f, 1f)
                 } else {
                     0f
@@ -808,7 +808,7 @@ class RepCounterFromMachine {
         lastRepBottomB = lastRepBottomB,
     )
 
-    fun hasMeaningfulRange(minRangeThreshold: Float = 50f): Boolean {
+    fun hasMeaningfulRange(minRangeThreshold: Float = 500f): Boolean {
         val minA = minRepPosA
         val maxA = maxRepPosA
         val minB = minRepPosB
@@ -847,7 +847,7 @@ data class RepRanges(
      * Check if cable A is active (has built meaningful range of motion).
      * Used to determine whether to show cable position indicators.
      */
-    fun isCableAActive(minRangeThreshold: Float = 50f): Boolean {
+    fun isCableAActive(minRangeThreshold: Float = 500f): Boolean {
         return !(minPosA == null || maxPosA == null) && (maxPosA - minPosA) > minRangeThreshold
     }
 
@@ -855,7 +855,7 @@ data class RepRanges(
      * Check if cable B is active (has built meaningful range of motion).
      * Used to determine whether to show cable position indicators.
      */
-    fun isCableBActive(minRangeThreshold: Float = 50f): Boolean {
+    fun isCableBActive(minRangeThreshold: Float = 500f): Boolean {
         return !(minPosB == null || maxPosB == null) && (maxPosB - minPosB) > minRangeThreshold
     }
 
@@ -871,7 +871,7 @@ data class RepRanges(
      * @param minRangeThreshold Minimum ROM range required before that cable can be in the danger zone
      * @return true if either cable with meaningful range is in danger zone
      */
-    fun isInDangerZone(posA: Float, posB: Float, minRangeThreshold: Float = 50f): Boolean {
+    fun isInDangerZone(posA: Float, posB: Float, minRangeThreshold: Float = 500f): Boolean {
         return isCableAInDangerZone(posA, minRangeThreshold) ||
             isCableBInDangerZone(posB, minRangeThreshold)
     }
@@ -879,14 +879,14 @@ data class RepRanges(
     /**
      * True when cable A has built a meaningful range and [posA] is within 5% of its minimum.
      */
-    fun isCableAInDangerZone(posA: Float, minRangeThreshold: Float = 50f): Boolean {
+    fun isCableAInDangerZone(posA: Float, minRangeThreshold: Float = 500f): Boolean {
         return isCableInDangerZone(posA, minPosA, maxPosA, minRangeThreshold)
     }
 
     /**
      * True when cable B has built a meaningful range and [posB] is within 5% of its minimum.
      */
-    fun isCableBInDangerZone(posB: Float, minRangeThreshold: Float = 50f): Boolean {
+    fun isCableBInDangerZone(posB: Float, minRangeThreshold: Float = 500f): Boolean {
         return isCableInDangerZone(posB, minPosB, maxPosB, minRangeThreshold)
     }
 

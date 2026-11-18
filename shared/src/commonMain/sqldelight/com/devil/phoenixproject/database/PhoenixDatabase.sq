@@ -135,7 +135,9 @@ CREATE TABLE WorkoutSession (
     maxTorsoRollDeg REAL,
     -- Legacy or imported sessions are unknown until a local workout explicitly records
     -- whether a one-shot routine modifier was applied. Fail closed for 1RM inputs.
-    routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1))
+    routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1)),
+    -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -173,6 +175,8 @@ CREATE TABLE MetricSample (
     chestAccXMg INTEGER,
     chestAccYMg INTEGER,
     chestAccZMg INTEGER,
+    -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -403,6 +407,8 @@ CREATE TABLE PhaseStatistics (
     eccentricWattAvg REAL NOT NULL,
     eccentricWattMax REAL NOT NULL,
     timestamp INTEGER NOT NULL,
+    -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -445,6 +451,8 @@ CREATE TABLE RepMetric (
     avgPowerWatts REAL NOT NULL,
     updatedAt INTEGER,
     serverId TEXT,
+    -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -479,6 +487,8 @@ CREATE TABLE RepBiomechanics (
     timestamp INTEGER NOT NULL,
     -- Issue #1400 (migration 64): 0 = kept out of set-level velocity aggregates
     aggregateEligible INTEGER NOT NULL DEFAULT 1 CHECK(aggregateEligible IN (0, 1)),
+    -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
@@ -1088,9 +1098,10 @@ INSERT INTO WorkoutSession (
     avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
     formScore,
     profile_id,
-    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
+    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson,
+    metric_unit_version
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 updateSessionRoutineModifierApplied:
 UPDATE WorkoutSession SET routineModifierApplied = :routineModifierApplied WHERE id = :id;
@@ -1113,8 +1124,8 @@ INSERT OR IGNORE INTO WorkoutSession (
     updatedAt,
     profile_id,
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 -- First materialization of a portal exercise-row projection. Existing rows
 -- are never replaced: the repository uses updatePortalSessionProjection for
@@ -1136,8 +1147,8 @@ INSERT OR IGNORE INTO WorkoutSession (
     profile_id,
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson,
     portalOrigin, local_sync_generation, synced_sync_generation
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0);
+, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 2);
 
 updatePortalSessionProjection:
 UPDATE WorkoutSession SET
@@ -1230,27 +1241,27 @@ selectMetricById:
 SELECT * FROM MetricSample WHERE id = :id;
 
 insertMetric:
-INSERT INTO MetricSample (sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO MetricSample (sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 insertMetricWithPolar:
 INSERT INTO MetricSample (
     sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status,
     heartRateBpm, rrIntervalMs, torsoPitchDeg, torsoRollDeg, dynamicAccMg, chestAccXMg, chestAccYMg, chestAccZMg
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 insertMetricRestoreIfAbsent:
 INSERT OR IGNORE INTO MetricSample(
     id, sessionId, timestamp, position, positionB, velocity, velocityB,
     load, loadB, power, status,
     heartRateBpm, rrIntervalMs, torsoPitchDeg, torsoRollDeg, dynamicAccMg, chestAccXMg, chestAccYMg, chestAccZMg
-)
+, metric_unit_version)
 VALUES (
     :id, :sessionId, :timestamp, :position, :positionB, :velocity, :velocityB,
     :load, :loadB, :power, :status,
     :heartRateBpm, :rrIntervalMs, :torsoPitchDeg, :torsoRollDeg, :dynamicAccMg, :chestAccXMg, :chestAccYMg, :chestAccZMg
-);
+, 2);
 
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
@@ -1678,8 +1689,8 @@ WHERE id = ?;
 -- ==================== PHASE STATISTICS QUERIES ====================
 
 insertPhaseStatistics:
-INSERT INTO PhaseStatistics (sessionId, concentricKgAvg, concentricKgMax, concentricVelAvg, concentricVelMax, concentricWattAvg, concentricWattMax, eccentricKgAvg, eccentricKgMax, eccentricVelAvg, eccentricVelMax, eccentricWattAvg, eccentricWattMax, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO PhaseStatistics (sessionId, concentricKgAvg, concentricKgMax, concentricVelAvg, concentricVelMax, concentricWattAvg, concentricWattMax, eccentricKgAvg, eccentricKgMax, eccentricVelAvg, eccentricVelMax, eccentricWattAvg, eccentricWattMax, timestamp, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 selectPhaseStatsBySessionIds:
 SELECT * FROM PhaseStatistics WHERE sessionId IN ?;
@@ -1700,8 +1711,8 @@ INSERT INTO RepMetric (
     avgForceEccentricA, avgForceEccentricB, peakVelocity,
     avgVelocityConcentric, avgVelocityEccentric, rangeOfMotionMm,
     peakPowerWatts, avgPowerWatts, updatedAt, serverId
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 selectRepMetricsBySession:
 SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
@@ -1733,7 +1744,7 @@ INSERT OR REPLACE INTO RepBiomechanics (
     velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
     normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
     asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp, aggregateEligible
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+, metric_unit_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 deleteRepBiomechanicsBySession:
 DELETE FROM RepBiomechanics WHERE sessionId = ?;
@@ -4201,8 +4212,8 @@ INSERT OR IGNORE INTO WorkoutSession (
     profile_id,
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson,
     portalOrigin, local_sync_generation, synced_sync_generation
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0);
+, metric_unit_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 2);
 
 updateLegacyPortalSessionProjection:
 UPDATE WorkoutSession SET

@@ -537,7 +537,7 @@ class IntervalsMigrationTest {
     // ==================== EXPECTED 63.sqm SHAPE ====================
 
     private companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 65L
+        private const val EXPECTED_SCHEMA_VERSION = 66L
 
         private val EXPECTED_TABLES: Map<String, Map<String, String>> = linkedMapOf(
             "IntervalsConnection" to linkedMapOf(

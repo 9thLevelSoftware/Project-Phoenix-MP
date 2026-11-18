@@ -23,11 +23,11 @@ class MonitorDataProcessorTest {
 
     /**
      * Helper to build a MonitorPacket with sensible defaults.
-     * Positions at 10mm (well within valid range), loads at 5kg.
+     * Positions at 100mm (well within valid range), loads at 5kg.
      */
     private fun packet(
-        posA: Float = 10.0f,
-        posB: Float = 10.0f,
+        posA: Float = 100.0f,
+        posB: Float = 100.0f,
         loadA: Float = 5.0f,
         loadB: Float = 5.0f,
         ticks: Long = 0L,
@@ -55,10 +55,10 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        val result = processor.process(packet(posA = 100.0f, posB = 200.0f))
+        val result = processor.process(packet(posA = 1000.0f, posB = 2000.0f))
         assertNotNull(result)
-        assertEquals(100.0f, result.positionA)
-        assertEquals(200.0f, result.positionB)
+        assertEquals(1000.0f, result.positionA)
+        assertEquals(2000.0f, result.positionB)
     }
 
     @Test
@@ -67,15 +67,15 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // First sample: establish last-good values
-        val m1 = processor.process(packet(posA = 50.0f, posB = 60.0f))
+        val m1 = processor.process(packet(posA = 500.0f, posB = 600.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
-        // Second sample: posA out of range (>1000), should use last-good (50.0)
-        val m2 = processor.process(packet(posA = 1500.0f, posB = 65.0f))
+        // Second sample: posA out of range (>10000), should use last-good (500.0)
+        val m2 = processor.process(packet(posA = 15000.0f, posB = 650.0f))
         assertNotNull(m2)
-        assertEquals(50.0f, m2.positionA, "posA should fall back to last-good value")
-        assertEquals(65.0f, m2.positionB, "posB should pass through unchanged")
+        assertEquals(500.0f, m2.positionA, "posA should fall back to last-good value")
+        assertEquals(650.0f, m2.positionB, "posB should pass through unchanged")
     }
 
     @Test
@@ -84,15 +84,15 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // Establish last-good
-        val m1 = processor.process(packet(posA = 50.0f, posB = 60.0f))
+        val m1 = processor.process(packet(posA = 500.0f, posB = 600.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
         // posB out of range
-        val m2 = processor.process(packet(posA = 55.0f, posB = -1500.0f))
+        val m2 = processor.process(packet(posA = 550.0f, posB = -15000.0f))
         assertNotNull(m2)
-        assertEquals(55.0f, m2.positionA)
-        assertEquals(60.0f, m2.positionB, "posB should fall back to last-good value")
+        assertEquals(550.0f, m2.positionA)
+        assertEquals(600.0f, m2.positionB, "posB should fall back to last-good value")
     }
 
     @Test
@@ -101,15 +101,15 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // Establish last-good
-        val m1 = processor.process(packet(posA = 50.0f, posB = 60.0f))
+        val m1 = processor.process(packet(posA = 500.0f, posB = 600.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
         // Both out of range
-        val m2 = processor.process(packet(posA = 2000.0f, posB = -2000.0f))
+        val m2 = processor.process(packet(posA = 20000.0f, posB = -20000.0f))
         assertNotNull(m2)
-        assertEquals(50.0f, m2.positionA, "posA should fall back to last-good")
-        assertEquals(60.0f, m2.positionB, "posB should fall back to last-good")
+        assertEquals(500.0f, m2.positionA, "posA should fall back to last-good")
+        assertEquals(600.0f, m2.positionB, "posB should fall back to last-good")
     }
 
     @Test
@@ -118,7 +118,7 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         val result = processor.process(
-            packet(posA = BleConstants.Thresholds.MIN_POSITION.toFloat(), posB = 10.0f),
+            packet(posA = BleConstants.Thresholds.MIN_POSITION.toFloat(), posB = 100.0f),
         )
         assertNotNull(result)
         assertEquals(BleConstants.Thresholds.MIN_POSITION.toFloat(), result.positionA)
@@ -130,7 +130,7 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         val result = processor.process(
-            packet(posA = BleConstants.Thresholds.MAX_POSITION.toFloat(), posB = 10.0f),
+            packet(posA = BleConstants.Thresholds.MAX_POSITION.toFloat(), posB = 100.0f),
         )
         assertNotNull(result)
         assertEquals(BleConstants.Thresholds.MAX_POSITION.toFloat(), result.positionA)
@@ -179,13 +179,13 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // First sample establishes baseline
-        val m1 = processor.process(packet(posA = 100.0f, posB = 100.0f))
+        val m1 = processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
-        // Jump of 25mm > POSITION_JUMP_THRESHOLD (20mm)
-        val m2 = processor.process(packet(posA = 125.0f, posB = 100.0f))
-        assertNull(m2, "Position jump >20mm should reject sample")
+        // Jump of 250mm > POSITION_JUMP_THRESHOLD (200mm)
+        val m2 = processor.process(packet(posA = 1250.0f, posB = 1000.0f))
+        assertNull(m2, "Position jump >200mm should reject sample")
     }
 
     @Test
@@ -194,13 +194,13 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // First sample establishes baseline
-        val m1 = processor.process(packet(posA = 100.0f, posB = 100.0f))
+        val m1 = processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
-        // Jump of 15mm < POSITION_JUMP_THRESHOLD (20mm)
-        val m2 = processor.process(packet(posA = 115.0f, posB = 110.0f))
-        assertNotNull(m2, "Position jump <20mm should pass")
+        // Jump of 150mm < POSITION_JUMP_THRESHOLD (200mm)
+        val m2 = processor.process(packet(posA = 1150.0f, posB = 1100.0f))
+        assertNotNull(m2, "Position jump <200mm should pass")
     }
 
     @Test
@@ -208,20 +208,20 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // Normal sample establishes baseline at 100mm
-        val m1 = processor.process(packet(posA = 100.0f, posB = 100.0f))
+        // Normal sample establishes baseline at 1000mm
+        val m1 = processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
-        // Spike: +50mm jump (> 20mm threshold) -> filtered
-        val m2 = processor.process(packet(posA = 150.0f, posB = 100.0f))
+        // Spike: +500mm jump (> 200mm threshold) -> filtered
+        val m2 = processor.process(packet(posA = 1500.0f, posB = 1000.0f))
         assertNull(m2, "Spike should be filtered")
 
         fakeTime = 1040L
-        // Next sample at 150mm: delta from spike (150) = 0mm -> PASSES
-        // This proves the fix: lastPositionA was updated to 150 (the spike value)
+        // Next sample at 1500mm: delta from spike (1500) = 0mm -> PASSES
+        // This proves the fix: lastPositionA was updated to 1500 (the spike value)
         // so delta from the spike to the same value is 0
-        val m3 = processor.process(packet(posA = 150.0f, posB = 100.0f))
+        val m3 = processor.process(packet(posA = 1500.0f, posB = 1000.0f))
         assertNotNull(m3, "Issue #210: Same position as spike should pass (delta=0, no cascade)")
     }
 
@@ -230,24 +230,24 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // Establish baseline at 100mm
-        val m1 = processor.process(packet(posA = 100.0f, posB = 100.0f))
+        // Establish baseline at 1000mm
+        val m1 = processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
-        // Spike to 150mm -> filtered (delta = 50 > 20)
-        val m2 = processor.process(packet(posA = 150.0f, posB = 100.0f))
+        // Spike to 1500mm -> filtered (delta = 500 > 200)
+        val m2 = processor.process(packet(posA = 1500.0f, posB = 1000.0f))
         assertNull(m2)
 
         fakeTime = 1040L
-        // Normal at 102mm: delta from SPIKE value (150) = 48mm -> also filtered
+        // Normal at 1020mm: delta from SPIKE value (1500) = 480mm -> also filtered
         // This is correct: the tracking position is the spike value, not pre-spike
-        val m3 = processor.process(packet(posA = 102.0f, posB = 100.0f))
-        assertNull(m3, "Delta from spike (150 -> 102 = 48mm) should still be filtered")
+        val m3 = processor.process(packet(posA = 1020.0f, posB = 1000.0f))
+        assertNull(m3, "Delta from spike (1500 -> 1020 = 480mm) should still be filtered")
 
         fakeTime = 1060L
-        // Same position again: delta from 102 = 0 -> passes
-        val m4 = processor.process(packet(posA = 102.0f, posB = 100.0f))
+        // Same position again: delta from 1020 = 0 -> passes
+        val m4 = processor.process(packet(posA = 1020.0f, posB = 1000.0f))
         assertNotNull(m4, "Issue #210: Second attempt at same position should pass (delta=0)")
     }
 
@@ -258,7 +258,7 @@ class MonitorDataProcessorTest {
 
         // First sample ever: no lastTimestamp (==0), so jump filter should NOT apply
         // Even with a "big" position, it should pass because there's no previous reference
-        val result = processor.process(packet(posA = 500.0f, posB = 500.0f))
+        val result = processor.process(packet(posA = 5000.0f, posB = 5000.0f))
         assertNotNull(result, "First sample should always pass jump filter (no previous reference)")
     }
 
@@ -269,12 +269,12 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // First sample
-        val m1 = processor.process(packet(posA = 100.0f, posB = 100.0f))
+        val m1 = processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         assertNotNull(m1)
 
         fakeTime = 1020L
         // Huge jump, but strict validation disabled -> should pass
-        val m2 = processor.process(packet(posA = 500.0f, posB = 500.0f))
+        val m2 = processor.process(packet(posA = 5000.0f, posB = 5000.0f))
         assertNotNull(m2, "Jump should pass when strictValidationEnabled is false")
     }
 
@@ -291,12 +291,12 @@ class MonitorDataProcessorTest {
         // and seeds EMA directly with firmware velocity. With firmware velocity the very
         // first call is the seed point (unlike client-side delta which required 2 samples).
         val result = processor.process(
-            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 100),
+            packet(posA = 1000.0f, posB = 1000.0f, firmwareVelA = 100),
         )
         assertNotNull(result)
 
         // Velocity should be exactly the raw firmware value (seeded, not smoothed toward 0)
-        val expectedVelocity = 10.0 // firmwareVelA=100 / 10.0 = 10 mm/s
+        val expectedVelocity = 100.0 // firmwareVelA=100 used as-is = 100 mm/s
         assertEquals(
             expectedVelocity,
             result.velocityA,
@@ -313,22 +313,22 @@ class MonitorDataProcessorTest {
         // Establish initial position
         processor.process(packet(posA = 0.0f, posB = 0.0f))
 
-        // Feed constant firmware velocity: 1000 raw units = 100 mm/s
-        // Position moves 10mm every 100ms (within jump threshold) to pass validation
+        // Feed constant firmware velocity: 1000 raw units = 1000 mm/s
+        // Position moves 100mm every 100ms (within jump threshold) to pass validation
         var lastVelocity = 0.0
         for (i in 1..20) {
             fakeTime = (i * 100).toLong()
-            val posA = (i * 10).toFloat()
+            val posA = (i * 100).toFloat()
             val result = processor.process(packet(posA = posA, posB = 0.0f, firmwareVelA = 1000))
             if (result != null) {
                 lastVelocity = result.velocityA
             }
         }
 
-        // After 20 samples at constant firmware velocity, EMA should be very close to 100 mm/s
-        val expectedVelocity = 100.0
+        // After 20 samples at constant firmware velocity, EMA should be very close to 1000 mm/s
+        val expectedVelocity = 1000.0
         assertTrue(
-            abs(lastVelocity - expectedVelocity) < 5.0,
+            abs(lastVelocity - expectedVelocity) < 50.0,
             "After 20 samples at constant velocity, EMA should converge. Got $lastVelocity, expected ~$expectedVelocity",
         )
     }
@@ -339,23 +339,23 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // Establish baseline
-        processor.process(packet(posA = 100.0f, posB = 100.0f))
+        processor.process(packet(posA = 1000.0f, posB = 1000.0f))
 
         fakeTime = 2000L
-        // Normal movement: 110mm, velocity = 10 mm/s
-        val m2 = processor.process(packet(posA = 110.0f, posB = 100.0f))
+        // Normal movement: 1100mm, velocity = 100 mm/s
+        val m2 = processor.process(packet(posA = 1100.0f, posB = 1000.0f))
         assertNotNull(m2)
         val velocityBeforeFilter = m2.velocityA
 
         fakeTime = 3000L
-        // Spike to 200mm -> filtered
-        val m3 = processor.process(packet(posA = 200.0f, posB = 100.0f))
+        // Spike to 2000mm -> filtered
+        val m3 = processor.process(packet(posA = 2000.0f, posB = 1000.0f))
         assertNull(m3)
 
         fakeTime = 4000L
-        // Same position as spike (200mm) -> passes
+        // Same position as spike (2000mm) -> passes
         // But velocity should NOT be updated from the spike's bad reference
-        val m4 = processor.process(packet(posA = 200.0f, posB = 100.0f))
+        val m4 = processor.process(packet(posA = 2000.0f, posB = 1000.0f))
         assertNotNull(m4)
         // Velocity should equal the value before filter (skip happened)
         assertEquals(
@@ -371,30 +371,30 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // First sample seeds EMA with firmware velocity 200 raw = 20.0 mm/s
+        // First sample seeds EMA with firmware velocity 200 raw = 200.0 mm/s
         val result = processor.process(
-            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 200),
+            packet(posA = 1000.0f, posB = 1000.0f, firmwareVelA = 200),
         )
         assertNotNull(result)
 
-        // Firmware velocity is converted: raw / 10.0 = mm/s
+        // Firmware velocity is used as-is: raw = mm/s (no division)
         assertEquals(
-            20.0,
+            200.0,
             result.velocityA,
             0.01,
-            "Velocity should come from firmware: 200 raw / 10.0 = 20 mm/s",
+            "Velocity should come from firmware: 200 raw as-is = 200 mm/s",
         )
 
         fakeTime = 1500L
         // Second sample with different firmware velocity: EMA smooths toward it
         val result2 = processor.process(
-            packet(posA = 110.0f, posB = 100.0f, firmwareVelA = 400),
+            packet(posA = 1100.0f, posB = 1000.0f, firmwareVelA = 400),
         )
         assertNotNull(result2)
 
-        // EMA: 0.3 * 40.0 + 0.7 * 20.0 = 12.0 + 14.0 = 26.0
+        // EMA: 0.3 * 400.0 + 0.7 * 200.0 = 120.0 + 140.0 = 260.0
         assertEquals(
-            26.0,
+            260.0,
             result2.velocityA,
             0.01,
             "Second sample should EMA-smooth toward new firmware velocity",
@@ -407,10 +407,10 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // First sample
-        processor.process(packet(posA = 100.0f, posB = 100.0f))
+        processor.process(packet(posA = 1000.0f, posB = 1000.0f))
 
         // Same timestamp, small position change (within jump threshold)
-        val result = processor.process(packet(posA = 110.0f, posB = 100.0f))
+        val result = processor.process(packet(posA = 1100.0f, posB = 1000.0f))
         assertNotNull(result)
 
         assertEquals(
@@ -449,7 +449,6 @@ class MonitorDataProcessorTest {
     fun `deload event debounced within 2 seconds`() {
         val processor = createProcessor()
         fakeTime = 5000L
-
         // First deload
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount)
@@ -464,7 +463,6 @@ class MonitorDataProcessorTest {
     fun `deload event fires again after 2 second cooldown`() {
         val processor = createProcessor()
         fakeTime = 5000L
-
         // First deload
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount)
@@ -479,7 +477,6 @@ class MonitorDataProcessorTest {
     fun `ROM_OUTSIDE_HIGH triggers onRomViolation callback`() {
         val processor = createProcessor()
         fakeTime = 1000L
-
         processor.process(packet(status = SampleStatus.ROM_OUTSIDE_HIGH))
         assertEquals(1, romViolations.size)
         assertEquals(MonitorDataProcessor.RomViolationType.OUTSIDE_HIGH, romViolations[0])
@@ -489,7 +486,6 @@ class MonitorDataProcessorTest {
     fun `ROM_OUTSIDE_LOW triggers onRomViolation callback`() {
         val processor = createProcessor()
         fakeTime = 1000L
-
         processor.process(packet(status = SampleStatus.ROM_OUTSIDE_LOW))
         assertEquals(1, romViolations.size)
         assertEquals(MonitorDataProcessor.RomViolationType.OUTSIDE_LOW, romViolations[0])
@@ -505,16 +501,16 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         // Process some samples to establish state
-        processor.process(packet(posA = 100.0f, posB = 100.0f))
+        processor.process(packet(posA = 1000.0f, posB = 1000.0f))
         fakeTime = 1020L
-        processor.process(packet(posA = 110.0f, posB = 110.0f))
+        processor.process(packet(posA = 1100.0f, posB = 1100.0f))
 
         // Reset
         processor.resetForNewSession()
 
         // After reset, next process should act as first sample (no jump filter, no velocity)
         fakeTime = 5000L
-        val result = processor.process(packet(posA = 500.0f, posB = 500.0f))
+        val result = processor.process(packet(posA = 5000.0f, posB = 5000.0f))
         assertNotNull(result, "After reset, first sample should pass (no jump filter reference)")
     }
 
@@ -523,12 +519,12 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // Build up velocity EMA with high firmware velocity (500 mm/s)
+        // Build up velocity EMA with high firmware velocity (5000 mm/s)
         val preReset = processor.process(
             packet(posA = 0.0f, posB = 0.0f, firmwareVelA = 5000),
         )
         assertNotNull(preReset)
-        assertEquals(500.0, preReset.velocityA, 0.01, "Pre-reset EMA should be seeded at 500")
+        assertEquals(5000.0, preReset.velocityA, 0.01, "Pre-reset EMA should be seeded at 5000")
 
         // Reset clears EMA and sets isFirstVelocitySample = true
         processor.resetForNewSession()
@@ -536,12 +532,12 @@ class MonitorDataProcessorTest {
         // After reset, first sample re-seeds EMA fresh with firmware velocity
         fakeTime = 3000L
         val result = processor.process(
-            packet(posA = 200.0f, posB = 0.0f, firmwareVelA = 100),
+            packet(posA = 2000.0f, posB = 0.0f, firmwareVelA = 100),
         )
         assertNotNull(result)
-        // Velocity = firmwareVelA=100 / 10.0 = 10 mm/s (seeded fresh, not contaminated by pre-reset 500)
+        // Velocity = firmwareVelA=100 used as-is = 100 mm/s (seeded fresh, not contaminated by pre-reset 5000)
         assertEquals(
-            10.0,
+            100.0,
             result.velocityA,
             0.01,
             "After reset, EMA should be re-seeded with first raw firmware velocity",
@@ -572,17 +568,17 @@ class MonitorDataProcessorTest {
         val processor = createProcessor()
         fakeTime = 1000L
 
-        // Establish last-good at 50, 60
-        processor.process(packet(posA = 50.0f, posB = 60.0f))
+        // Establish last-good at 500, 600
+        processor.process(packet(posA = 500.0f, posB = 600.0f))
 
         // Reset
         processor.resetForNewSession()
 
         fakeTime = 5000L
-        // Process with out-of-range position -> should use preserved last-good (50, 60)
-        val result = processor.process(packet(posA = 2000.0f, posB = -2000.0f))
+        // Process with out-of-range position -> should use preserved last-good (500, 600)
+        val result = processor.process(packet(posA = 20000.0f, posB = -20000.0f))
         assertNotNull(result)
-        assertEquals(50.0f, result.positionA, "lastGoodPosA should be preserved across reset")
-        assertEquals(60.0f, result.positionB, "lastGoodPosB should be preserved across reset")
+        assertEquals(500.0f, result.positionA, "lastGoodPosA should be preserved across reset")
+        assertEquals(600.0f, result.positionB, "lastGoodPosB should be preserved across reset")
     }
 }
