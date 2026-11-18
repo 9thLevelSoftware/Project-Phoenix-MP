@@ -10,6 +10,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -121,12 +124,18 @@ import projectphoenix.shared.generated.resources.rest_weight_per_cable
 import projectphoenix.shared.generated.resources.rest_workout_complete
 
 /**
+ * Issue #1360: compact horizontal padding (M3 default is 24dp) so all three rest
+ * controls fit on one line at common phone widths; FlowRow wraps beyond that.
+ */
+private val RestControlContentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+
+/**
  * Rest Timer Card Component
  *
  * Displays during rest periods between sets/exercises in autoplay mode.
  * Shows countdown timer, next exercise info, and editable workout parameters.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RestTimerCard(
     restSecondsRemaining: Int,
@@ -355,10 +364,15 @@ fun RestTimerCard(
             }
 
             // Issue #297, #228: Timer control buttons (+30s, Pause/Resume, Reset)
-            Row(
+            // Issue #1360: a FlowRow, not an unweighted SpaceEvenly Row. The Row gave
+            // +30s and Pause their intrinsic widths first and starved Reset to a sliver
+            // (~13dp at the reporter's ~320dp Display Zoom viewport, 0x0 at 2.0x text).
+            // FlowRow keeps every control at full intrinsic size and wraps the rest
+            // onto a centred second line when the row cannot fit them.
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // +30s button
                 FilledTonalButton(
@@ -369,6 +383,7 @@ fun RestTimerCard(
                         onExtendRest(30)
                     },
                     shape = MaterialTheme.shapes.medium,
+                    contentPadding = RestControlContentPadding,
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -391,6 +406,7 @@ fun RestTimerCard(
                         onToggleRestPause()
                     },
                     shape = MaterialTheme.shapes.medium,
+                    contentPadding = RestControlContentPadding,
                     colors = if (isRestPaused) {
                         ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -426,6 +442,7 @@ fun RestTimerCard(
                         onResetRest()
                     },
                     shape = MaterialTheme.shapes.medium,
+                    contentPadding = RestControlContentPadding,
                 ) {
                     Icon(
                         Icons.Default.Refresh,
