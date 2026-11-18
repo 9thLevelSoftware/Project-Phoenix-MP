@@ -57,6 +57,11 @@ exec timeout --signal=TERM --kill-after=10s 480s \
                 cat "$log_dir/simulator.log" >&2
                 echo "::endgroup::" >&2
             fi
+            if [[ -s "$log_dir/tests.log" ]]; then
+                echo "::group::MonkeyDo output (incl. partial on timeout)" >&2
+                cat "$log_dir/tests.log" >&2
+                echo "::endgroup::" >&2
+            fi
             rm -rf "$log_dir"
         }
         trap cleanup EXIT
