@@ -137,6 +137,18 @@ data class PowerLossHudState(
     val cableRomPercentOfReference: Map<PowerCable, Float> = emptyMap(),
     /** Committed `Ending set…` state (distinct from the completed transition). */
     val endingSet: Boolean = false,
+    /** Latest sealed concentric MCP in watts (`Latest lifting power … W`); null when unavailable. */
+    val lastMcpWatts: Float? = null,
+    /** Best working MCP in watts (`Best: rep N · … W`); null until a reference exists. */
+    val bestMcpWatts: Float? = null,
+    /**
+     * Two-consecutive qualifying streak (1..2), or null when the requirement is
+     * off (`Qualifying attempts: 1 of 2`, SD1). A reset streak is 0 and renders
+     * the neutral state, never a stale qualifier line.
+     */
+    val qualifyingCount: Int? = null,
+    /** Initial ROM/mask uncertainty: the reference exists but no trustworthy ROM. */
+    val referenceRomUncertain: Boolean = false,
 )
 
 /**

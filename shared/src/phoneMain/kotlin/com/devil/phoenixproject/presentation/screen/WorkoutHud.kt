@@ -112,7 +112,16 @@ fun WorkoutHud(
     // Issue #1392 — HUD projection (ui-spec §4): `Power-loss target · 20%` /
     // `Max 20 working reps` readback plus the completed-vs-attempt identity line.
     // Strictly from PowerLossHudUi facts; nothing renders for REP sets.
-    val powerLossHud = powerLossHudUi(PowerLossUiFacts.hudFacts(powerLossHudState))
+    // SD6: warm-up identity comes from the separate warm-up rep counter; watts and
+    // the qualifying streak ride on the engine's PowerLossHudState (never invented here).
+    val powerLossHud = powerLossHudUi(
+        state = PowerLossUiFacts.hudFacts(powerLossHudState),
+        warmupActive = repCount.warmupReps > 0 && !repCount.isWarmupComplete,
+        referenceRomUncertain = powerLossHudState?.referenceRomUncertain == true,
+        latestPowerWatts = powerLossHudState?.lastMcpWatts,
+        bestWatts = powerLossHudState?.bestMcpWatts,
+        qualifyingCount = powerLossHudState?.qualifyingCount,
+    )
 
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface

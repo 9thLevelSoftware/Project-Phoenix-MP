@@ -762,6 +762,11 @@ class MainViewModel(
     // ===== Workout State Delegation =====
 
     val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
+
+    /** Issue #1392: live power-loss HUD facts for the active-workout HUD panel (ui-spec §4). */
+    val powerLossHud: StateFlow<com.devil.phoenixproject.domain.powerloss.PowerLossHudState>
+        get() = workoutSessionManager.coordinator.powerLossHud
+
     val machineTeardownState: StateFlow<MachineTeardownState>
         get() = workoutSessionManager.machineTeardownState
     val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive

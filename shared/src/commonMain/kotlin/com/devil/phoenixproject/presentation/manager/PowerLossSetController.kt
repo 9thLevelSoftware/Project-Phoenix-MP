@@ -232,6 +232,11 @@ internal class PowerLossSetController {
                 lastAttempt?.romBPercentOfReference?.let { put(PowerCable.B, it) }
             },
             endingSet = endingSet,
+            lastMcpWatts = lastValid?.mcpWatts,
+            bestMcpWatts = state.reference?.mcpWatts,
+            qualifyingCount = if (config.requireTwoConsecutive) state.consecutiveQualifyingCount else null,
+            referenceRomUncertain = state.reference
+                ?.let { !(it.romA.isTrusted || it.romB.isTrusted) } ?: false,
         )
     }
 

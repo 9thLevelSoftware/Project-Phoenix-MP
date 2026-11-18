@@ -78,6 +78,8 @@ data class WorkoutUiState(
     val isCurrentExerciseBodyweight: Boolean = false,
     val latestRepQualityScore: Int? = null,
     val latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    // Issue #1392: live power-loss HUD facts (ui-spec §4); null = inert panel (REP sets).
+    val powerLossHudState: com.devil.phoenixproject.domain.powerloss.PowerLossHudState? = null,
     // Issue #237: Motion-triggered set start hold progress (0.0-1.0, null = not active)
     val motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state for UI display
