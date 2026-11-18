@@ -1293,5 +1293,63 @@ private fun PowerLossHudReadout(hud: PowerLossHudUi) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Issue #1392 (ui-spec §4 power panel): label + primary loss, latest
+        // lifting power, best-rep line, threshold line and the status text.
+        // Strictly the projection's facts — missing data renders `—` with a
+        // reason, never a fabricated zero (SD6).
+        Text(
+            text = "Power loss",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = hud.lossDisplay,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = hud.statusLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hud.nearLimit) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        Text(
+            text = hud.latestPowerLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = hud.bestLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = hud.thresholdLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Conditional SD6 facts: invalid power + last-valid identity, trusted
+        // short-ROM detail, warm-up note, committed Ending set… state.
+        listOfNotNull(
+            hud.invalidPowerLine,
+            hud.lastValidLine,
+            hud.shortRomLine,
+            hud.warmupNote,
+            hud.endingLine,
+            hud.referenceResetLine,
+        ).forEach { line ->
+            Text(
+                text = line,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
