@@ -17,12 +17,19 @@ object WorkoutCommandValidator {
     // AMRAP sentinel (see BlePacketFactory). A finite rep count that serializes to
     // 0xFF would be indistinguishable from an unlimited workout and could defeat
     // automatic stop, so finite rep bytes are capped at 254 (audit F069/F070).
-    private const val MAX_FINITE_REP_BYTE = 254
+    //
+    // Issue #1392 (SD4): internal so the execution-target-plan derivation and the
+    // Echo packet path use THIS accepted validator bound — never a guessed value.
+    internal const val MAX_FINITE_REP_BYTE = 254
     private const val MAX_PACKET_REPS = MAX_FINITE_REP_BYTE
     private const val MAX_ECHO_ECCENTRIC_PERCENT = 150
     private const val MAX_ECHO_REP_BYTE = MAX_FINITE_REP_BYTE
 
-    fun validateProgramParams(params: WorkoutParameters, maxWeightPerCableKg: Float): Result<Unit> {
+    fun validateProgramParams(
+        params: WorkoutParameters,
+        maxWeightPerCableKg: Float,
+        targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
+    ): Result<Unit> {
         if (params.isEchoMode) {
             return failure("Program parameter packet must not be used for Echo mode")
         }
@@ -52,7 +59,22 @@ object WorkoutCommandValidator {
 
         validateRepByte("warmupReps", params.warmupReps, allowZero = true)
             .onFailure { return Result.failure(it) }
-        if (!params.isJustLift && !params.isAMRAP) {
+        // Issue #1392 (SD4): the validation must agree with the plan — in POWER mode the
+        // frame encodes the frozen max-reps backstop (plus warmup), never the saved
+        // nominal. Unlimited identities keep the 0xFF sentinel and are capped in-app.
+        val powerCap = targetPlan
+            ?.takeIf {
+                it.targetMode == com.devil.phoenixproject.domain.powerloss.TargetMode.POWER
+            }
+            ?.maxWorkingReps
+        if (!params.isJustLift && !params.isAMRAP && powerCap != null) {
+            validateRepByte("maxWorkingReps", powerCap, allowZero = false)
+                .onFailure { return Result.failure(it) }
+            val totalReps = powerCap + params.warmupReps
+            if (totalReps !in 1..MAX_PACKET_REPS) {
+                return failure("maxWorkingReps + warmupReps must fit in one byte (1..$MAX_PACKET_REPS), got $totalReps")
+            }
+        } else if (!params.isJustLift && !params.isAMRAP) {
             validateRepByte("reps", params.reps, allowZero = false).onFailure { return Result.failure(it) }
             val totalReps = params.reps + params.warmupReps
             if (totalReps !in 1..MAX_PACKET_REPS) {
@@ -70,6 +92,7 @@ object WorkoutCommandValidator {
         isJustLift: Boolean,
         isAMRAP: Boolean,
         eccentricPct: Int,
+        targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
     ): Result<Unit> {
         // Touch level so the compiler keeps this validator exhaustive if EchoLevel changes.
         when (level) {
@@ -82,8 +105,17 @@ object WorkoutCommandValidator {
 
         validateRepByte("warmupReps", warmupReps, allowZero = true)
             .onFailure { return Result.failure(it) }
+        // Issue #1392 (SD4): the Echo working-target byte must agree with the plan —
+        // POWER writes the frozen max-reps backstop (finite identity only), never the
+        // saved nominal.
+        val powerCap = targetPlan
+            ?.takeIf {
+                it.targetMode == com.devil.phoenixproject.domain.powerloss.TargetMode.POWER
+            }
+            ?.maxWorkingReps
         if (!isJustLift && !isAMRAP) {
-            validateRepByte("targetReps", targetReps, allowZero = false)
+            val effectiveTargetReps = powerCap ?: targetReps
+            validateRepByte("targetReps", effectiveTargetReps, allowZero = false)
                 .onFailure { return Result.failure(it) }
         }
         if (eccentricPct !in 0..MAX_ECHO_ECCENTRIC_PERCENT) {

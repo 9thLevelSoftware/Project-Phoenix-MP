@@ -17,8 +17,10 @@ import com.devil.phoenixproject.domain.powerloss.PowerLossPolicy
 import com.devil.phoenixproject.domain.powerloss.PowerLossPolicyState
 import com.devil.phoenixproject.domain.powerloss.PowerStopReason
 import com.devil.phoenixproject.domain.powerloss.SampleQualityMarkers
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.domain.powerloss.ValidatedPairedSample
 import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.util.WorkoutCommandValidator
 
 /**
  * Issue #1392 — per-set power-loss policy runner (P3 seam).
@@ -304,6 +306,60 @@ internal data class PowerLossRuntimeSettings(
 /** Derive the protocol family for runtime gating from the mode + Just Lift style. */
 internal fun protocolFamilyOf(mode: ProgramMode, isJustLift: Boolean) =
     com.devil.phoenixproject.domain.powerloss.PowerLossProtocolFamily.of(mode, isJustLift)
+
+/** Issue #1392 (SD4): PROGRAM frame finite total-rep byte bound (working + warmup reps). */
+internal const val PROGRAM_TOTAL_REP_BYTE_MAX: Int = WorkoutCommandValidator.MAX_FINITE_REP_BYTE
+
+/**
+ * Issue #1392 (P3 remainder) — derive the ONE frozen
+ * [com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan] before
+ * lease/packet/counter creation (SD4). Called exactly once per set start; every
+ * consumer (packet byte, counter config, freshness gate, validation, HUD, power
+ * policy) then reads the identical effective target from the lease.
+ *
+ * - PROGRAM bounds: `254 − warmupReps actually applied` at the packet/counter
+ *   path (the firmware warmup buffer forced onto every cable command).
+ * - Echo bounds: the accepted target-plan validator's finite rep-byte bound —
+ *   never a guessed value.
+ * - An impossible plan returns null: POWER does NOT arm and the set fails safe
+ *   to inert REP behavior.
+ * - Genuine Just Lift / AMRAP hardware-unlimited identity is preserved
+ *   (0xFF sentinel semantics unchanged); the cap is enforced in-app there.
+ * - Retained-but-inert paths (bodyweight, timed cable, variable warm-up sets)
+ *   never arm POWER.
+ */
+internal fun deriveFrozenExecutionTargetPlan(
+    runtime: PowerLossRuntimeSettings,
+    isEchoMode: Boolean,
+    isJustLift: Boolean,
+    isAmrap: Boolean,
+    isBodyweight: Boolean,
+    isTimedCable: Boolean,
+    isVariableWarmupSet: Boolean,
+    warmupRepsApplied: Int,
+    nowMs: Long,
+): com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? {
+    val powerArms = runtime.powerActive && !isBodyweight && !isTimedCable && !isVariableWarmupSet
+    val config = runtime.toConfig().let { current ->
+        if (powerArms) current else current.copy(targetMode = TargetMode.REP_TARGET)
+    }
+    val maxRepresentableWorkingReps = if (isEchoMode) {
+        // The Echo working-target byte is standalone; its finite bound is the
+        // accepted validator's finite rep byte — never hardcoded here.
+        WorkoutCommandValidator.MAX_FINITE_REP_BYTE
+    } else {
+        PROGRAM_TOTAL_REP_BYTE_MAX - warmupRepsApplied
+    }
+    return com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan.derive(
+        config = config,
+        bounds = com.devil.phoenixproject.domain.powerloss.ProtocolRepBounds(
+            maxRepresentableWorkingReps = maxRepresentableWorkingReps,
+            protocolIdentityFinite = !(isJustLift || isAmrap),
+        ),
+        warmupSetCount = warmupRepsApplied,
+        now = nowMs,
+    )
+}
 
 private fun WorkoutMetric.toValidatedSample(): ValidatedPairedSample = ValidatedPairedSample(
     executionId = "",

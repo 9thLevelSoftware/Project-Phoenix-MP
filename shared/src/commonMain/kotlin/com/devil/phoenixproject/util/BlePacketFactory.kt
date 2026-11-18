@@ -58,8 +58,13 @@ object BlePacketFactory {
         // Required, with no default: a builder that guesses the ceiling reopens exactly the
         // bypass KD-9 closes. Callers pass the CONNECTED model's ceiling.
         maxWeightPerCableKg: Float,
+        // Issue #1392 (SD4): the ONE frozen execution target plan. In POWER mode the
+        // total-rep byte encodes the max-reps backstop (cap + warmup) so the machine
+        // counter and the app agree on when the set is finite. Null/REP keeps the
+        // historical encoding byte-for-byte.
+        targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
     ): ByteArray {
-        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg).getOrThrow()
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg, targetPlan).getOrThrow()
 
         val profileMode = if (params.isEchoMode) {
             ProgramMode.OldSchool // Echo profile unused; Echo builds the 0x4E packet separately
@@ -82,9 +87,18 @@ object BlePacketFactory {
         // F-070: the sentinel decision reads WorkoutParameters.usesUnlimitedRepTarget,
         // the same predicate the execution lease and the engine's warm-up auto-end
         // fallback use, so the packet and the app can never disagree about a set.
+        // Issue #1392 (SD4): a finite POWER set writes the frozen effective target
+        // (the max-reps backstop) plus warmup — never the saved nominal. Genuine
+        // Just Lift / AMRAP hardware-unlimited identity keeps its sentinel and is
+        // capped in-app.
+        val powerCap = targetPlan
+            ?.takeIf { it.targetMode == com.devil.phoenixproject.domain.powerloss.TargetMode.POWER }
+            ?.maxWorkingReps
         frame[0x04] =
             if (params.usesUnlimitedRepTarget) {
                 0xFF.toByte()
+            } else if (powerCap != null) {
+                (powerCap + params.warmupReps).coerceAtMost(0xFE).toByte()
             } else {
                 (params.reps + params.warmupReps).coerceAtMost(0xFE).toByte()
             }
@@ -232,6 +246,10 @@ object BlePacketFactory {
         isJustLift: Boolean = false,
         isAMRAP: Boolean = false,
         eccentricPct: Int = 100,
+        // Issue #1392 (SD4): the ONE frozen execution target plan. In POWER mode the
+        // working-target byte encodes the max-reps backstop so the machine counter and
+        // the app agree on when the set is finite. Null/REP keeps the historical bytes.
+        targetPlan: com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan? = null,
     ): ByteArray {
         // F-010: validate the value the CALLER asked for. Clamping first made the
         // eccentricPct bound unreachable, so an out-of-range request was silently
@@ -243,6 +261,7 @@ object BlePacketFactory {
             isJustLift = isJustLift,
             isAMRAP = isAMRAP,
             eccentricPct = eccentricPct,
+            targetPlan = targetPlan,
         ).getOrThrow()
 
         val frame = ByteArray(32)
@@ -252,8 +271,18 @@ object BlePacketFactory {
 
         frame[0x04] = warmupReps.coerceAtMost(0xFE).toByte()
         // 0xFF is the unlimited/Just Lift/AMRAP sentinel; clamp a finite target to
-        // 254 so it can never collide with it (audit F069).
-        frame[0x05] = if (isJustLift || isAMRAP) 0xFF.toByte() else targetReps.coerceAtMost(0xFE).toByte()
+        // 254 so it can never collide with it (audit F069). Issue #1392 (SD4): a
+        // finite POWER set writes the frozen effective target (the max-reps
+        // backstop) — never the saved nominal; unlimited identities keep the
+        // sentinel and are capped in-app.
+        val powerCap = targetPlan
+            ?.takeIf { it.targetMode == com.devil.phoenixproject.domain.powerloss.TargetMode.POWER }
+            ?.maxWorkingReps
+        frame[0x05] = when {
+            isJustLift || isAMRAP -> 0xFF.toByte()
+            powerCap != null -> powerCap.coerceAtMost(0xFE).toByte()
+            else -> targetReps.coerceAtMost(0xFE).toByte()
+        }
 
         putShortLE(frame, 0x06, 0)
 

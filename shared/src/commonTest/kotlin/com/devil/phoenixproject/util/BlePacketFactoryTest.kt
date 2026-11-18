@@ -7,6 +7,10 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.toWorkoutMode
+import com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.ProtocolRepBounds
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -1508,5 +1512,149 @@ class BlePacketFactoryTest {
         val beastProgram = WorkoutMode.TUTBeast.toProgramMode()
         assertEquals(ProgramMode.TUTBeast, beastProgram, "TUTBeast -> ProgramMode.TUTBeast")
         assertEquals(WorkoutMode.TUTBeast, beastProgram.toWorkoutMode(), "ProgramMode.TUTBeast -> WorkoutMode.TUTBeast")
+    }
+
+    // ========== Issue #1392 (SD4): POWER effective-target plan encoding ==========
+
+    private fun powerPlan(
+        cap: Int,
+        nominal: Int? = 12,
+        finiteIdentity: Boolean = true,
+    ): ExecutionTargetPlan = requireNotNull(
+        ExecutionTargetPlan.derive(
+            config = PowerLossConfig(
+                targetMode = TargetMode.POWER,
+                thresholdPercent = 20,
+                maxWorkingReps = cap,
+                savedNominalReps = nominal,
+            ),
+            bounds = ProtocolRepBounds(
+                maxRepresentableWorkingReps = 254,
+                protocolIdentityFinite = finiteIdentity,
+            ),
+            warmupSetCount = 3,
+            now = 0L,
+        ),
+    )
+
+    private fun repPlan(nominal: Int = 12): ExecutionTargetPlan = requireNotNull(
+        ExecutionTargetPlan.derive(
+            config = PowerLossConfig(targetMode = TargetMode.REP_TARGET, savedNominalReps = nominal),
+            bounds = ProtocolRepBounds(maxRepresentableWorkingReps = 254, protocolIdentityFinite = true),
+            warmupSetCount = 3,
+            now = 0L,
+        ),
+    )
+
+    private fun finiteParams(reps: Int = 12, warmupReps: Int = 3) = WorkoutParameters(
+        programMode = ProgramMode.OldSchool,
+        reps = reps,
+        warmupReps = warmupReps,
+        weightPerCableKg = 20f,
+    )
+
+    @Test
+    fun `power plan encodes the effective cap plus warmup in the program total rep byte`() {
+        val plan = powerPlan(cap = 20, nominal = 12)
+        val packet = BlePacketFactory.createProgramParams(finiteParams(), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, plan)
+
+        assertEquals(
+            23,
+            packet[0x04].toInt() and 0xFF,
+            "the frozen effective target (cap 20) plus warmup 3 — never the saved nominal 12",
+        )
+    }
+
+    @Test
+    fun `power plan encodes the effective cap in the echo control target byte`() {
+        val plan = powerPlan(cap = 20, nominal = 12)
+        val frame = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARD,
+            warmupReps = 3,
+            targetReps = 12,
+            eccentricPct = 100,
+            targetPlan = plan,
+        )
+
+        assertEquals(3, frame[0x04].toInt() and 0xFF, "warmup byte unchanged")
+        assertEquals(20, frame[0x05].toInt() and 0xFF, "echo working byte is the frozen effective target")
+    }
+
+    @Test
+    fun `rep plan and null plan keep the legacy encoding byte identical`() {
+        val legacyProgram = BlePacketFactory.createProgramParams(finiteParams(), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG)
+        val repProgram = BlePacketFactory.createProgramParams(finiteParams(), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, repPlan())
+        assertContentEquals(legacyProgram, repProgram, "REP mode program bytes must stay byte-identical")
+
+        val legacyEcho = BlePacketFactory.createEchoControl(EchoLevel.HARD, warmupReps = 3, targetReps = 12, eccentricPct = 100)
+        val repEcho = BlePacketFactory.createEchoControl(EchoLevel.HARD, warmupReps = 3, targetReps = 12, eccentricPct = 100, targetPlan = repPlan())
+        assertContentEquals(legacyEcho, repEcho, "REP mode echo bytes must stay byte-identical")
+    }
+
+    @Test
+    fun `unlimited identity keeps its sentinel under a power plan`() {
+        val plan = powerPlan(cap = 20, nominal = null, finiteIdentity = false)
+        val justLift = finiteParams().copy(isJustLift = true)
+        val packet = BlePacketFactory.createProgramParams(justLift, CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, plan)
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift hardware-unlimited identity preserved")
+
+        val amrap = finiteParams().copy(isAMRAP = true, weightPerCableKg = 0f)
+        val amrapPacket = BlePacketFactory.createProgramParams(amrap, CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, plan)
+        assertEquals(0xFF.toByte(), amrapPacket[0x04], "AMRAP hardware-unlimited identity preserved")
+
+        val echo = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARD,
+            warmupReps = 3,
+            targetReps = 12,
+            isJustLift = true,
+            eccentricPct = 100,
+            targetPlan = plan,
+        )
+        assertEquals(0xFF.toByte(), echo[0x05], "Echo unlimited identity preserved")
+    }
+
+    @Test
+    fun `plan validation agrees with the encoded effective target`() {
+        // The validator checks what the frame will actually carry — the frozen cap
+        // plus warmup must fit the finite byte, even when each field alone would.
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(finiteParams(), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, powerPlan(cap = 251)).isSuccess,
+            "cap 251 + warmup 3 = 254 fits the finite byte",
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(finiteParams(), CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG, powerPlan(cap = 252)).isFailure,
+            "cap 252 + warmup 3 = 255 collides with the unlimited sentinel",
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARD,
+                warmupReps = 3,
+                targetReps = 12,
+                isJustLift = false,
+                isAMRAP = false,
+                eccentricPct = 100,
+                targetPlan = powerPlan(cap = 254),
+            ).isSuccess,
+            "echo working byte is standalone so the validator bound applies",
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARD,
+                warmupReps = 3,
+                targetReps = 12,
+                isJustLift = false,
+                isAMRAP = false,
+                eccentricPct = 100,
+                targetPlan = ExecutionTargetPlan(
+                    targetMode = TargetMode.POWER,
+                    nominalReps = 12,
+                    maxWorkingReps = 255,
+                    warmupSetCount = 3,
+                    protocolIdentityFinite = true,
+                    planValidatedAt = 0L,
+                ),
+            ).isFailure,
+            "an unrepresentable frozen cap must not validate",
+        )
     }
 }

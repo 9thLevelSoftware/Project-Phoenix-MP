@@ -86,6 +86,9 @@ internal class RepNotificationFreshnessGate {
         // leases retain their configured finite UI fallback target (for
         // example 10), so lease.workingRepTarget == 0 is not a reliable
         // unlimited discriminator. The notification sentinel is.
+        // Issue #1392 (SD4): the effective target is the frozen plan's POWER
+        // max-reps backstop when armed — never a re-derived or nominal value.
+        val effectiveTarget = lease.effectiveWorkingRepTarget
         val isUnlimitedAmrapPacket = lease.isAmrap &&
             lease.usesUnlimitedRepTarget &&
             notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
@@ -95,7 +98,7 @@ internal class RepNotificationFreshnessGate {
             isUnlimitedAmrapPacket ||
             isUnlimitedTimedCablePacket ||
             notification.repsSetTotal == 0 ||
-            notification.repsSetTotal == lease.workingRepTarget
+            notification.repsSetTotal == effectiveTarget
         if (!targetMatches) {
             // Issue #652 (2026-09-26 TestFlight recurrence): once this lease is
             // independently Armed, repsSetTotal is NOT packet identity — the machine can
@@ -119,8 +122,8 @@ internal class RepNotificationFreshnessGate {
         // Issue #698/#700: Just Lift and AMRAP have no finite rep target,
         // so repsSetCount should never be treated as terminal.
         val terminal = !(lease.isJustLift || lease.isAmrap) &&
-            lease.workingRepTarget > 0 &&
-            notification.repsSetCount >= lease.workingRepTarget
+            effectiveTarget > 0 &&
+            notification.repsSetCount >= effectiveTarget
         val allZero = notification.topCounter == 0 &&
             notification.completeCounter == 0 &&
             notification.repsRomCount == 0 &&
@@ -169,7 +172,7 @@ internal class RepNotificationFreshnessGate {
      * it belongs to this execution's live rep stream:
      *  1. the machine's own `repsSetCount` strictly advances what this lease has already
      *     accepted (monotonic current-set progress, not a replay of an older count),
-     *  2. it stays within the configured completion authority (`lease.workingRepTarget`) —
+     *  2. it stays within the configured completion authority (`lease.effectiveWorkingRepTarget`) —
      *     a set's completed-rep count can never pass the configured target, so beyond-target
      *     counts are prior-set carryover,
      *  3. the directional/ROM counters never rewind against this lease's high-water marks;
@@ -180,9 +183,11 @@ internal class RepNotificationFreshnessGate {
         lease: ExecutionLease,
         notification: RepNotification,
     ): Boolean {
-        if (lease.workingRepTarget <= 0) return false
+        // Issue #1392 (SD4): completion authority is the frozen effective target.
+        val effectiveTarget = lease.effectiveWorkingRepTarget
+        if (effectiveTarget <= 0) return false
         val observed = observedModernCounters[identity] ?: return false
-        if (notification.repsSetCount > lease.workingRepTarget) return false
+        if (notification.repsSetCount > effectiveTarget) return false
         if (notification.repsSetCount <= observed.repsSetCount) return false
         return notification.topCounter >= observed.topCounter &&
             notification.completeCounter >= observed.completeCounter &&

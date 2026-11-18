@@ -119,7 +119,7 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 import com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan
 import com.devil.phoenixproject.domain.powerloss.PowerLossDecision
-import com.devil.phoenixproject.domain.powerloss.ProtocolRepBounds
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.atomicfu.atomic
@@ -3698,6 +3698,8 @@ class ActiveSessionEngine(
         params: WorkoutParameters,
         isJustLiftMode: Boolean,
         maxWeightPerCableKg: Float,
+        // Issue #1392 (SD4): validation agrees with the ONE frozen plan when present.
+        targetPlan: ExecutionTargetPlan? = null,
     ): Result<Unit> = if (params.isEchoMode) {
         WorkoutCommandValidator.validateEchoControl(
             level = params.echoLevel,
@@ -3706,9 +3708,10 @@ class ActiveSessionEngine(
             isJustLift = isJustLiftMode || params.isJustLift,
             isAMRAP = params.isAMRAP,
             eccentricPct = params.eccentricLoad.percentage,
+            targetPlan = targetPlan,
         )
     } else {
-        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg)
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg, targetPlan)
     }
 
     private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> {
@@ -5242,8 +5245,12 @@ class ActiveSessionEngine(
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
                             // Issue #1392 (SD4): a finite POWER plan's device WORKOUT_COMPLETE is
                             // the mandatory max-reps backstop — never TARGET_REPS_REACHED, never
-                            // inferred fatigue. REP/legacy behavior is unchanged.
-                            val powerFinite = coordinator.powerLossRuntimeSettings.value.powerActive
+                            // inferred fatigue. The normalization reads the set-start frozen plan;
+                            // REP/legacy behavior is unchanged and unlimited identities (Just Lift /
+                            // AMRAP) keep their semantics.
+                            val powerFinite = eventLease.targetPlan?.let { plan ->
+                                plan.targetMode == TargetMode.POWER && plan.protocolIdentityFinite
+                            } == true
                             handleSetCompletion(
                                 eventLease,
                                 if (powerFinite) SetEndReason.MAX_REPS_BACKSTOP else SetEndReason.TARGET_REPS_REACHED,
@@ -6637,7 +6644,9 @@ class ActiveSessionEngine(
             // Issue #1392 (SD5): in POWER mode suppress the velocity auto-end and the
             // velocity-threshold voice/defer side effects entirely; velocity analysis
             // and display are preserved. REP and legacy behavior is unchanged.
-            val powerModeActive = coordinator.powerLossRuntimeSettings.value.powerActive
+            // The suppression reads the set-start frozen plan, so an impossible POWER
+            // plan (which failed safe) keeps ordinary velocity behavior.
+            val powerModeActive = lease.targetPlan?.targetMode == TargetMode.POWER
             if (velocity.shouldStopSet && !powerModeActive) {
                 context.consecutiveThresholdReps++
                 if (!context.velocityThresholdAlertEmitted) {
@@ -6678,33 +6687,43 @@ class ActiveSessionEngine(
     /**
      * Issue #1392 — power-loss autostop evaluation for one completed rep (P3 seam).
      *
-     * No-op unless the active set's runtime settings arm POWER behind the capability
-     * gate. Decisions: a once-per-set near-limit cue at `max(0, threshold − 5)` loss
+     * No-op unless the set-start plan froze POWER behind the capability gate.
+     * Decisions: a once-per-set near-limit cue at `max(0, threshold − 5)` loss
      * (audio/haptic only; never on the stop path), and set termination whose stop
      * path never waits for audio, animation, or persistence (SD5).
      */
+    internal suspend fun evaluatePowerLossForRep(
+        lease: ExecutionLease,
+        isWarmup: Boolean,
+        repMetrics: List<WorkoutMetric>,
+    ) {
+        val context = biomechanicsContextFor(lease) ?: return
+        evaluatePowerLossForRep(lease, context, isWarmup, repMetrics)
+    }
+
     private suspend fun evaluatePowerLossForRep(
         lease: ExecutionLease,
         context: ExecutionBiomechanicsContext,
         isWarmup: Boolean,
         repMetrics: List<WorkoutMetric>,
     ) {
-        val runtime = coordinator.powerLossRuntimeSettings.value
-        if (!runtime.powerActive) return
+        // SD4 / P3 remainder: the ONE frozen plan from the lease — never re-derived
+        // per rep (and never with a placeholder warmup bound). A null or REP plan —
+        // including an impossible POWER plan that failed safe at set start — never
+        // triggers; REP/legacy behavior is unchanged.
+        val plan = lease.targetPlan
+        if (plan == null || plan.targetMode != TargetMode.POWER) return
         if (!executionGuard.isCurrent(lease) || biomechanicsContext.value !== context) return
-        val config = runtime.toConfig()
-        // SD4: derive the plan before use against the PROGRAM byte bound (254 minus
-        // warmup applied at the packet/counter path — P3 remainder). Never hardcode
-        // a guessed Echo bound; an impossible plan simply does not arm (fail-safe).
-        val plan = ExecutionTargetPlan.derive(
-            config = config,
-            bounds = ProtocolRepBounds(
-                maxRepresentableWorkingReps = PROGRAM_MAX_REPRESENTABLE_WORKING_REPS,
-                protocolIdentityFinite = true,
-            ),
-            warmupSetCount = 0,
-            now = currentTimeMillis(),
-        ) ?: return
+        val runtime = coordinator.powerLossRuntimeSettings.value
+        // Threshold/streak facts come from the per-exercise runtime config; the
+        // effective target, saved nominal and warmup bound are the frozen plan's
+        // (SD3/SD4), so HUD/evidence read the same frozen facts the packet,
+        // counter and freshness gate used.
+        val config = runtime.toConfig().copy(
+            targetMode = plan.targetMode,
+            maxWorkingReps = plan.maxWorkingReps ?: runtime.maxWorkingReps,
+            savedNominalReps = plan.nominalReps,
+        )
         val decision = context.powerLoss.onRep(
             config = config,
             plan = plan,
@@ -8239,6 +8258,24 @@ class ActiveSessionEngine(
             variableWarmupTarget == null &&
             (isJustLiftMode || seedParams.usesUnlimitedRepTarget)
         val outgoingLease = executionGuard.currentLease
+        // Issue #1392 (SD4 / P3 remainder): derive the ONE frozen execution target
+        // plan BEFORE lease/packet/counter creation, then propagate it through the
+        // seed so every consumer reads one identical effective target. Warmup reps
+        // actually applied at the packet/counter path are the firmware warmup buffer
+        // forced onto every cable command (Constants.DEFAULT_WARMUP_REPS); bodyweight
+        // sets send no frame and apply none. An impossible plan does NOT arm POWER
+        // and fails safe to inert REP behavior.
+        val frozenTargetPlan = deriveFrozenExecutionTargetPlan(
+            runtime = coordinator.powerLossRuntimeSettings.value,
+            isEchoMode = seedParams.isEchoMode,
+            isJustLift = isJustLiftMode || seedParams.isJustLift,
+            isAmrap = seedParams.isAMRAP,
+            isBodyweight = isBodyweightAtStart,
+            isTimedCable = isTimedCableAtStart,
+            isVariableWarmupSet = variableWarmupTarget != null,
+            warmupRepsApplied = if (isBodyweightAtStart) 0 else Constants.DEFAULT_WARMUP_REPS,
+            nowMs = currentTimeMillis(),
+        )
         val executionSeed = ExecutionSeed(
             sessionId = KmpUtils.randomUUID(),
             profileId = readyProfile.profile.id,
@@ -8249,6 +8286,7 @@ class ActiveSessionEngine(
             isAmrap = seedParams.isAMRAP,
             isTimedCable = isTimedCableAtStart,
             usesUnlimitedRepTarget = usesUnlimitedRepTarget,
+            targetPlan = frozenTargetPlan,
         )
         beforeExecutionBeginForTest?.invoke()
         val leaseResult = when {
@@ -8805,7 +8843,17 @@ class ActiveSessionEngine(
                 }
                 repCounter.configure(
                     warmupTarget = repCounterWarmupTarget,
-                    workingTarget = if (isTimedCableExercise) 0 else warmupOverrideParams.reps,
+                    // Issue #1392 (SD4): the counter target is the frozen effective
+                    // target — POWER's max-reps backstop, never the saved nominal
+                    // (a nominal below the cap must never end a POWER set early).
+                    workingTarget = if (isTimedCableExercise) {
+                        0
+                    } else {
+                        lease.targetPlan
+                            ?.takeIf { it.targetMode == TargetMode.POWER }
+                            ?.maxWorkingReps
+                            ?: warmupOverrideParams.reps
+                    },
                     isJustLift = isJustLiftMode,
                     stopAtTop = warmupOverrideParams.stopAtTop,
                     isAMRAP = if (isTimedCableExercise) true else warmupOverrideParams.isAMRAP,
@@ -8932,6 +8980,7 @@ class ActiveSessionEngine(
                         params = commandParams,
                         isJustLiftMode = isJustLiftMode,
                         maxWeightPerCableKg = commandCeilingKg,
+                        targetPlan = lease.targetPlan,
                     )
                     commandValidation.onFailure { error ->
                         commandValidationFailed = true
@@ -8951,11 +9000,17 @@ class ActiveSessionEngine(
                             isJustLift = isJustLiftMode || commandParams.isJustLift,
                             isAMRAP = commandParams.isAMRAP,
                             eccentricPct = commandParams.eccentricLoad.percentage,
+                            // Issue #1392 (SD4): the frame's target byte agrees with the
+                            // ONE frozen plan's effective target.
+                            targetPlan = lease.targetPlan,
                         )
                     } else {
                         BlePacketFactory.createProgramParams(
                             params = commandParams,
                             maxWeightPerCableKg = commandCeilingKg,
+                            // Issue #1392 (SD4): the frame's total-rep byte agrees with the
+                            // ONE frozen plan's effective target.
+                            targetPlan = lease.targetPlan,
                         )
                     }
                     Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
@@ -14726,10 +14781,5 @@ class ActiveSessionEngine(
         // plus a short post-cue transition window. Exceeding it releases the defer
         // so a racked mid-set handle can end the set normally.
         const val VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS = 30_000L
-
-        // Issue #1392 (SD4): PROGRAM-frame working-rep byte bound. The effective
-        // bound subtracts warmup sets at the packet/counter path; the Echo finite
-        // bound is supplied by the accepted target-plan validator, never guessed.
-        const val PROGRAM_MAX_REPRESENTABLE_WORKING_REPS = 254
     }
 }
