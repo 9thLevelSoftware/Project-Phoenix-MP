@@ -69,29 +69,19 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install simulator runtime libraries
-        # DuckSoft/setup-connectiq-actions@v1 has NO install-simulator-dependencies
-        # input (it is silently ignored), and the Linux simulator binary links
-        # against libwebkit2gtk-4.0.so.37 which is not preinstalled on the image.
-        # Install the simulator + monkeydo runtime deps explicitly (ubuntu-22.04
-        # ships the 4.0 webkit series; run-simulator-tests.sh also needs
-        # xvfb-run, dbus-run-session, timeout, tee and grep).
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.0-37 \
-            libgtk-3-0 \
-            libsoup2.4-1 \
-            libglu1-mesa \
-            libgdk-pixbuf2.0-0 \
-            xvfb \
-            dbus
-
-      - name: Set up ConnectIQ SDK + device definitions
-        uses: DuckSoft/setup-connectiq-actions@v1
+      # NOTE: DuckSoft/setup-connectiq-actions@v1 predates the
+      # install-simulator-dependencies input and silently ignores it, which left
+      # the simulator/monkeydo native deps (libsecret, libusb, libjpeg-turbo8,
+      # fonts, xauth ...) unresolved — monkeydo then hung until the outer
+      # timeout. Pin to the upstream main SHA that ships and validates the
+      # simulator dependency installer (ldd-checked for bin/simulator AND
+      # bin/shell); it requires runs-on: ubuntu-22.04 above.
+      - name: Set up ConnectIQ SDK + device definitions + simulator dependencies
+        uses: DuckSoft/setup-connectiq-actions@64f7145dcd1087c262d89f5f714fa03af27b3cba
         with:
           sdk-version: ${{ env.CIQ_SDK_VERSION }}
           install-devices: "true"
+          install-simulator-dependencies: "true"
 
       # Signing keys stay in GitHub secrets and are NEVER committed. If no
       # secret is configured, an ephemeral key is generated: fine for CI-only

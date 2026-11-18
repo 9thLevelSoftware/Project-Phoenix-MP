@@ -40,7 +40,9 @@ done
 echo "::debug::Simulator check: SDK=$CONNECT_IQ_HOME tests=$1 device=$2"
 
 # Keep simulator, D-Bus and monkeydo inside one virtual display session.
-exec timeout --signal=TERM --kill-after=10s 240s \
+# 480s: upstream samples pass at 180s, but the Phoenix Run No Evil suite is
+# larger and cold simulator device boots on shared runners are slow.
+exec timeout --signal=TERM --kill-after=10s 480s \
     xvfb-run -a -s "-screen 0 1280x1024x24" dbus-run-session -- \
     bash -euo pipefail -c '
         log_dir="$(mktemp -d)"
