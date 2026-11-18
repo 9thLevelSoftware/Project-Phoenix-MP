@@ -1,6 +1,6 @@
 # Profile schema-42 Android fixture
 
-This recipe materializes the pre-profile database and legacy preference input used to prove the schema-42 to current-schema upgrade. The fixture source is commit `ac84d9bb8e156002833ad526bf324a8f12710da0`; do not substitute a moving branch or shortened SHA. The upgrade candidate is a debug APK from the current checkout. After that install, `PRAGMA user_version` must be 66 (highest migration file + 1).
+This recipe materializes the pre-profile database and legacy preference input used to prove the schema-42 to current-schema upgrade. The fixture source is commit `ac84d9bb8e156002833ad526bf324a8f12710da0`; do not substitute a moving branch or shortened SHA. The upgrade candidate is a debug APK from the current checkout. After that install, `PRAGMA user_version` must be 68 (highest migration file + 1).
 
 All commands below are PowerShell commands. Start at the repository root. They use the installed Android SDK (`ANDROID_HOME`, else `ANDROID_SDK_ROOT`, else `%LOCALAPPDATA%\Android\Sdk`) and must not contact Supabase. The only network use is the explicit `git fetch` of the pinned fixture commit and Gradle dependency resolution for that commit. Do not pass `--offline`.
 
@@ -176,4 +176,4 @@ if ($userVersion -ne '68') { throw "Expected user_version 68 after upgrade, got 
 & $adb shell run-as $package cat shared_prefs/phoenix_preferences.xml
 ```
 
-The host `sqlite3` query must report `user_version` 66, each existing profile row must have `legacy_migration_version = 1`, and the sentinel values from the tracked XML must appear in the corresponding profile preference sections.
+The host `sqlite3` query must report `user_version` 68, each existing profile row must have `legacy_migration_version = 1`, and the sentinel values from the tracked XML must appear in the corresponding profile preference sections.
