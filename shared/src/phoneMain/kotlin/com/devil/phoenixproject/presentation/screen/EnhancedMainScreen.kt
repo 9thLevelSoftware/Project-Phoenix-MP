@@ -101,6 +101,7 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
@@ -344,10 +345,15 @@ fun EnhancedMainScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
+        // Issue #1367: global device-local weight text size (SD6). globalSettings is
+        // initialized synchronously from the loaded preferences, so the saved choice is
+        // applied before first paint (SD10 — no Standard flash on cold start).
+        val globalSettings by viewModel.globalSettings.collectAsState()
 
         CompositionLocalProvider(
             LocalWindowSizeClass provides windowSizeClass,
             LocalPlatformAccessibilitySettings provides platformAccessibilitySettings,
+            LocalWeightTextScale provides globalSettings.weightTextScale,
         ) {
             val useCompactTopBar = isCompactAccessibilityLayout() ||
                 windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact

@@ -53,6 +53,7 @@ import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -133,6 +134,7 @@ data class SettingsGlobalUiState(
     val includeRawTelemetryInBackups: Boolean,
     val backupDestination: BackupDestination,
     val language: String,
+    val weightTextScale: WeightTextScale,
 )
 
 private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
@@ -142,6 +144,7 @@ private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
     includeRawTelemetryInBackups = includeRawTelemetryInBackups,
     backupDestination = backupDestination,
     language = language,
+    weightTextScale = weightTextScale,
 )
 
 internal enum class RoutineResumeRetryAction {
@@ -957,6 +960,9 @@ class MainViewModel(
 
     // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
     fun setBleCompatibilityMode(setting: BleCompatibilitySetting) = settingsManager.setBleCompatibilityMode(setting)
+
+    // Issue #1367: global/device-local weight text size (Standard/Large/Extra large)
+    fun setWeightTextScale(scale: WeightTextScale) = settingsManager.setWeightTextScale(scale)
     fun setAutoBackupEnabled(enabled: Boolean) {
         settingsManager.setAutoBackupEnabled(enabled)
         refreshBackupStats()

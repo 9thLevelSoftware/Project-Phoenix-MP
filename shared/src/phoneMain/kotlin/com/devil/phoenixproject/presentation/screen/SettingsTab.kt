@@ -57,6 +57,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -88,9 +89,13 @@ import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
@@ -174,6 +179,12 @@ import projectphoenix.shared.generated.resources.settings_theme_system
 import projectphoenix.shared.generated.resources.settings_title
 import projectphoenix.shared.generated.resources.settings_video_behavior
 import projectphoenix.shared.generated.resources.settings_version
+import projectphoenix.shared.generated.resources.settings_weight_text_size
+import projectphoenix.shared.generated.resources.settings_weight_text_size_extra_large
+import projectphoenix.shared.generated.resources.settings_weight_text_size_help_1
+import projectphoenix.shared.generated.resources.settings_weight_text_size_help_2
+import projectphoenix.shared.generated.resources.settings_weight_text_size_large
+import projectphoenix.shared.generated.resources.settings_weight_text_size_standard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -213,6 +224,95 @@ private fun ThemeModeSelector(
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 ) {
                     Text(label, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Issue #1367 SD7/SD8: Weight text size selection (Standard / Large / Extra large).
+ *
+ * SD7: native selected-state radio rows (whole row selectable, >=48dp bounds, child
+ * radio with a null callback so the announcement is not duplicated) for compact-width
+ * and large-text layouts; a horizontal segmented selection only where the three labels
+ * fit without truncation. The SD8 help copy is two paragraphs and must never be clipped —
+ * it lives in the scrollable Settings column.
+ */
+@Composable
+private fun WeightTextSizeSelector(
+    weightTextScale: WeightTextScale,
+    onWeightTextScaleChange: (WeightTextScale) -> Unit,
+) {
+    val options = listOf(
+        WeightTextScale.STANDARD to stringResource(Res.string.settings_weight_text_size_standard),
+        WeightTextScale.LARGE to stringResource(Res.string.settings_weight_text_size_large),
+        WeightTextScale.EXTRA_LARGE to stringResource(Res.string.settings_weight_text_size_extra_large),
+    )
+    val useRadioRows = isCompactAccessibilityLayout() ||
+        LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            stringResource(Res.string.settings_weight_text_size),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            stringResource(Res.string.settings_weight_text_size_help_1),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            stringResource(Res.string.settings_weight_text_size_help_2),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        if (useRadioRows) {
+            options.forEach { (option, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .toggleable(
+                            value = weightTextScale == option,
+                            role = Role.RadioButton,
+                            onValueChange = { onWeightTextScaleChange(option) },
+                        )
+                        .padding(horizontal = Spacing.small),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = weightTextScale == option,
+                        onClick = null, // selection is handled by the row (no duplicate announcement)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        } else {
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                options.forEachIndexed { index, (option, label) ->
+                    SegmentedButton(
+                        selected = weightTextScale == option,
+                        onClick = { onWeightTextScaleChange(option) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    ) {
+                        Text(label, maxLines = 1)
+                    }
                 }
             }
         }
@@ -306,6 +406,8 @@ fun SettingsTab(
     onBackupDestinationChange: (BackupDestination) -> Unit,
     selectedLanguage: String,
     onLanguageChange: (String) -> Unit,
+    weightTextScale: WeightTextScale,
+    onWeightTextScaleChange: (WeightTextScale) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var deleteAllTarget by remember { mutableStateOf<UserProfile?>(null) }
@@ -603,6 +705,17 @@ fun SettingsTab(
                 ThemeModeSelector(
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = Spacing.small),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+
+                // Issue #1367 SD8: Weight text size sits after Theme and before Dynamic color.
+                WeightTextSizeSelector(
+                    weightTextScale = weightTextScale,
+                    onWeightTextScaleChange = onWeightTextScaleChange,
                 )
 
                 if (dynamicColorAvailable) {

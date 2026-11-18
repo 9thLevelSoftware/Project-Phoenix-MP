@@ -618,6 +618,7 @@ fun RestTimerCard(
                                     formatValue = { formatWeightWithUnit(it, weightUnit) },
                                     deltaText = deltaText,
                                     isDeltaPositive = deltaKg >= 0f,
+                                    isWeightValue = true,
                                 )
                             }
 

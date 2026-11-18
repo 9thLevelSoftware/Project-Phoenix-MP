@@ -888,6 +888,14 @@
     <string name="intervals_reason_no_remote_match">Keine passende Aktivität gefunden</string>
     <string name="intervals_reason_multiple_remote_matches">Mehr als eine passende Aktivität gefunden</string>
     <string name="intervals_reason_suppressed_by_pause">Pausiert</string>
+    <!-- Issue #1367: Gewichtsschriftgröße -->
+    <string name="settings_weight_text_size">Gewichtsschriftgröße</string>
+    <string name="settings_weight_text_size_help_1">Vergrößert Gewichtswerte in Set-Vorbereitung, Routinenübersicht, Pause, Übungseinrichtung und Trainingsanzeigen. Just Lift bleibt in dieser ersten Version unverändert. Wird nur auf diesem Gerät gespeichert.</string>
+    <string name="settings_weight_text_size_help_2">Kombiniert sich mit der Schriftgröße deines Geräts, bis zu 2× der Standard-Basisschriftgröße. Die Optionen können bei größeren Geräteschriftgrößen gleich aussehen. Diese Grenze gilt auch für Standard, wenn die Geräteschriftgröße sie überschreitet.</string>
+    <string name="settings_weight_text_size_standard">Standard</string>
+    <string name="settings_weight_text_size_large">Groß</string>
+    <string name="settings_weight_text_size_extra_large">Sehr groß</string>
+    <string name="cd_weight_text_size">Gewichtsschriftgröße</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Fotos · %1$d von %2$d</string>
     <string name="media_add_photos">Fotos hinzufügen</string>

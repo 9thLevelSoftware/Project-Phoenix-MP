@@ -15,7 +15,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.currentEffectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
+import com.devil.phoenixproject.presentation.util.shouldSeparateWeightStepperValueRow
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
@@ -75,22 +79,34 @@ fun WeightStepper(
 
         Spacer(modifier = Modifier.height(Spacing.small))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLow,
-                    MaterialTheme.shapes.medium,
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                    MaterialTheme.shapes.medium,
-                )
-                .padding(Spacing.extraSmall),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Minus button
+        // Issue #1367 SD1/SD7/SD9: scale the numeric value only (unit label + total stay
+        // supporting text); when the effective rendered scale demands it (E > 1.5) the
+        // value moves to its own row and the +/- controls stay on one reachable row.
+        val weightTextScale = LocalWeightTextScale.current
+        val effectiveScale = currentEffectiveWeightTextScale(weightTextScale)
+        val separateValueRow = shouldSeparateWeightStepperValueRow(effectiveScale)
+        val valueStyle = MaterialTheme.typography.headlineMedium.scaledForWeightValue(weightTextScale)
+
+        val valueText: @Composable () -> Unit = {
+            Text(
+                text = if (weight == weight.toLong().toFloat()) {
+                    weight.toLong().toString()
+                } else {
+                    weight.format(1)
+                },
+                style = valueStyle,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        val unitLabel: @Composable () -> Unit = {
+            Text(
+                text = stringResource(Res.string.weight_kg_per_cable),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val minusButton: @Composable () -> Unit = {
             FilledTonalIconButton(
                 onClick = {
                     val newWeight = (weight - step).coerceAtLeast(minWeight)
@@ -104,30 +120,8 @@ fun WeightStepper(
                     contentDescription = stringResource(Res.string.cd_decrease_weight),
                 )
             }
-
-            // Weight display
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = if (weight == weight.toLong().toFloat()) {
-                        weight.toLong().toString()
-                    } else {
-                        weight.format(1)
-                    },
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(Res.string.weight_kg_per_cable),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Plus button
+        }
+        val plusButton: @Composable () -> Unit = {
             FilledTonalIconButton(
                 onClick = {
                     val newWeight = (weight + step).coerceAtMost(maxWeight)
@@ -140,6 +134,59 @@ fun WeightStepper(
                     Icons.Default.Add,
                     contentDescription = stringResource(Res.string.cd_increase_weight),
                 )
+            }
+        }
+        val containerModifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surfaceContainerLow,
+                MaterialTheme.shapes.medium,
+            )
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                MaterialTheme.shapes.medium,
+            )
+            .padding(Spacing.extraSmall)
+
+        if (separateValueRow) {
+            Column(
+                modifier = containerModifier,
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    minusButton()
+                    plusButton()
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    valueText()
+                    unitLabel()
+                }
+            }
+        } else {
+            Row(
+                modifier = containerModifier,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                minusButton()
+
+                // Weight display
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    valueText()
+                    unitLabel()
+                }
+
+                plusButton()
             }
         }
 

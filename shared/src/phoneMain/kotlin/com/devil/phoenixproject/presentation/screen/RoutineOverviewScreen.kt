@@ -86,10 +86,12 @@ import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
@@ -443,11 +445,16 @@ private fun routineOverviewSizing(): RoutineOverviewSizing {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
     val isCompactWidth = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
+    // Issue #1367 SD7: the effective weight-text scale (E) participates in the
+    // reduced-viewport decision, so Large/Extra large trigger the compact card layout
+    // even at OS fontScale 1.0. E >= 1.15f subsumes the previous fontScale-only rule.
+    val effectiveWeightScale = effectiveWeightTextScale(LocalWeightTextScale.current, fontScale)
     val isReducedViewport = isCompactWidth &&
         (
             windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
                 windowSizeClass.heightDp < 700.dp ||
-                fontScale >= 1.15f
+                fontScale >= 1.15f ||
+                effectiveWeightScale >= 1.15f
             )
 
     return if (isReducedViewport) {
@@ -761,6 +768,7 @@ private fun ExerciseOverviewCard(
                                     formatValue = { formatWeight(it, weightUnit) },
                                     deltaText = deltaText,
                                     isDeltaPositive = deltaKg >= 0f,
+                                    isWeightValue = true,
                                 )
                             }
                         }

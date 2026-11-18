@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakePreferencesManager
@@ -102,6 +103,32 @@ class SettingsManagerTest {
 
             assertEquals(ScalingBasis.ESTIMATED_1RM, readyProfile().preferences.vbt.value.defaultScalingBasis)
             assertEquals(ScalingBasis.ESTIMATED_1RM, manager.defaultScalingBasis.value)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `weight text scale is global and survives profile preference overlay`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
+
+            manager.setWeightTextScale(WeightTextScale.EXTRA_LARGE)
+            advanceUntilIdle()
+            assertEquals(WeightTextScale.EXTRA_LARGE, manager.userPreferences.value.weightTextScale)
+            assertEquals(WeightTextScale.EXTRA_LARGE, fakePreferencesManager.preferencesFlow.value.weightTextScale)
+
+            // A profile preference write re-runs overlayProfile; the global weight text
+            // size must ride through untouched (SD6: the field is not in overlayProfile).
+            val ready = readyProfile()
+            fakeProfileRepository.updateCore(
+                ready.profile.id,
+                ready.preferences.core.value.copy(weightUnit = WeightUnit.KG),
+            )
+            advanceUntilIdle()
+            assertEquals(WeightTextScale.EXTRA_LARGE, manager.userPreferences.value.weightTextScale)
+            assertEquals(WeightUnit.KG, manager.userPreferences.value.weightUnit, "overlay still applies")
         } finally {
             managerScope.cancel()
         }
