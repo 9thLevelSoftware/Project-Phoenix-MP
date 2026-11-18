@@ -2,9 +2,19 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
+import com.devil.phoenixproject.data.repository.PowerLossRestartExplanation
+import com.devil.phoenixproject.data.repository.PowerLossRestartRecovery
+import com.devil.phoenixproject.data.repository.RestoredPowerLossRuntimeSnapshot
 import com.devil.phoenixproject.data.repository.RestoredRetrySourceAuthoritySnapshot
 import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
 import com.devil.phoenixproject.data.repository.RestoredWorkoutCommandTemplateSnapshot
+import com.devil.phoenixproject.domain.powerloss.CableRom
+import com.devil.phoenixproject.domain.powerloss.ExecutionTargetPlan
+import com.devil.phoenixproject.domain.powerloss.PowerCable
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.PowerLossObservation
+import com.devil.phoenixproject.domain.powerloss.ProtocolRepBounds
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
@@ -82,6 +92,103 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
         }
     }
 
+    @Test
+    fun `interrupted power loss runtime rebaselines on resume with no machine commands`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // An armed power-loss runtime snapshot with incomplete samples survives the
+            // crash; after restart the armed policy must NEVER resume — the accumulator,
+            // baseline and streak are rebaselined with the explanatory UX state, and the
+            // restore path issues NO automatic machine commands (existing invariant).
+            val armedSnapshot = RestoredPowerLossRuntimeSnapshot(
+                codecVersion = RestoredPowerLossRuntimeSnapshot.CURRENT_CODEC_VERSION,
+                targetModeName = "POWER",
+                thresholdPercent = 25,
+                maxWorkingReps = 15,
+                requireTwoConsecutive = true,
+                savedNominalReps = 12,
+                baselineMcpWatts = 312.5f,
+                referenceWorkingOrdinal = 2,
+                qualifyingStreak = 1,
+                sealedObservationCount = 3,
+                expectedObservationCount = 4,
+                samplesComplete = false,
+                restartExplanationName = "INCOMPLETE_SAMPLES",
+            )
+            val installed = installRuntime(
+                harness = harness,
+                routineSessionId = "power-loss-interrupted-restart",
+                dormantTimer = DormantTimer.PAUSED,
+                powerLoss = armedSnapshot,
+            )
+
+            val commandsBefore = harness.fakeBleRepo.commandsReceived.size
+            val workoutParametersBefore = harness.fakeBleRepo.programCommands.size
+            val stopWorkoutCallsBefore = harness.fakeBleRepo.stopWorkoutCallCount
+
+            assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(
+                harness.dwsm.resumeRoutine(installed.handle),
+            )
+            runCurrent()
+
+            // No automatic machine commands on restore beyond the restore baseline.
+            assertEquals(
+                commandsBefore,
+                harness.fakeBleRepo.commandsReceived.size,
+                "commands after resume: ${harness.fakeBleRepo.commandsReceived}",
+            )
+            assertEquals(workoutParametersBefore, harness.fakeBleRepo.programCommands.size)
+            // The only machine-facing call on restore is the established safety
+            // teardown stop (MachineTeardownState.Ready path): nothing is started,
+            // no workout program is sent, and no other machine command is issued.
+            assertEquals(stopWorkoutCallsBefore + 1, harness.fakeBleRepo.stopWorkoutCallCount)
+
+            // The armed policy is never resumed; every part of the policy state is reset
+            // and the explanatory UX state comes from the snapshot.
+            val recovery = PowerLossRestartRecovery.rebaselineOnRestart(installed.document.powerLoss)
+            assertEquals(false, recovery.resumeArmed)
+            assertEquals(true, recovery.baselineReset)
+            assertEquals(true, recovery.streakReset)
+            assertEquals(true, recovery.accumulatorReset)
+            assertEquals(PowerLossRestartExplanation.INCOMPLETE_SAMPLES, recovery.explanation)
+
+            // The production controller entry resets the live reducer state too.
+            val controller = PowerLossSetController()
+            val seeded = controller.onObservation(
+                config = PowerLossConfig(targetMode = TargetMode.POWER, thresholdPercent = 25, maxWorkingReps = 15),
+                plan = requireNotNull(
+                    ExecutionTargetPlan.derive(
+                        config = PowerLossConfig(targetMode = TargetMode.POWER, thresholdPercent = 25, maxWorkingReps = 15),
+                        bounds = ProtocolRepBounds(maxRepresentableWorkingReps = 60, protocolIdentityFinite = true),
+                        warmupSetCount = 0,
+                        now = 0L,
+                    ),
+                ),
+                observation = PowerLossObservation(
+                    workingConcentricOrdinal = 1,
+                    isWarmup = false,
+                    mcpWatts = 312.5f,
+                    romA = CableRom.trusted(420f),
+                    romB = CableRom.trusted(415f),
+                    activeCables = setOf(PowerCable.A, PowerCable.B),
+                ),
+            )
+            assertNotNull(seeded)
+            assertNotNull(controller.buildEvidence("session-x", "set-x"))
+
+            val state = controller.restoreFromSnapshot(installed.document.powerLoss)
+            assertEquals(false, state.resumeArmed)
+            assertEquals(PowerLossRestartExplanation.INCOMPLETE_SAMPLES, state.explanation)
+            assertNull(
+                controller.buildEvidence("session-x", "set-x"),
+                "restart/rebaseline resets the accumulator baseline and streak",
+            )
+        } finally {
+            harness.cleanup()
+            runCurrent()
+        }
+    }
+
     private enum class DormantTimer { PAUSED, EXPIRED }
 
     private data class InstalledRuntime(
@@ -146,6 +253,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
         harness: DWSMTestHarness,
         routineSessionId: String,
         dormantTimer: DormantTimer,
+        powerLoss: RestoredPowerLossRuntimeSnapshot? = null,
     ): InstalledRuntime {
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         val routine = WorkoutStateFixtures.createTestRoutine(
@@ -170,6 +278,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
             logicalSetKey = logicalSetKey,
             dormantTimer = dormantTimer,
             nowEpochMs = harness.nowMs,
+            powerLoss = powerLoss,
         )
         harness.fakeCompletedSetRepo.setSessionRoutine(sourceStableSessionId, routineSessionId)
         harness.fakeCompletedSetRepo.insertCompletedSet(
@@ -206,6 +315,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
         logicalSetKey: LogicalSetKey,
         dormantTimer: DormantTimer,
         nowEpochMs: Long,
+        powerLoss: RestoredPowerLossRuntimeSnapshot? = null,
     ): ActiveWorkoutRuntimeDocument {
         val sourceExecutionId = "42"
         val plan = RestTransitionPlan.NormalAdvance(
@@ -260,6 +370,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
             },
             isRestPaused = dormantTimer == DormantTimer.PAUSED,
             originalRestDurationSeconds = 60,
+            powerLoss = powerLoss,
         )
     }
 

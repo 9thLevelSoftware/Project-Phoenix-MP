@@ -7,6 +7,8 @@ import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.local.LegacyLabelSanitizer
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.PowerLossCompanionStore
+import com.devil.phoenixproject.data.repository.PowerLossConfigStore
 import com.devil.phoenixproject.data.repository.RoutineIdentityResolver
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
@@ -40,6 +42,7 @@ import com.devil.phoenixproject.database.TrainingCycle
 import com.devil.phoenixproject.database.UserProfile
 import com.devil.phoenixproject.database.PolarBeatSample
 import com.devil.phoenixproject.database.PolarEcgSegment
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.database.WorkoutDeletion
@@ -311,6 +314,9 @@ abstract class BaseDataBackupManager(
             "workoutSessions",
             "metricSamples",
             "completedSets",
+            "powerLossSetCompanions",
+            "powerLossObservationCompanions",
+            "powerLossExerciseConfigs",
             "polarBeatSamples",
             "polarEcgSegments",
             "personalRecords",
@@ -345,6 +351,13 @@ abstract class BaseDataBackupManager(
             "workoutSessions",
             "metricSamples",
             "completedSets",
+            // Issue #1392: power-loss companions after their session parents and
+            // completed sets (set_id ties to completed sets); configs after
+            // routineExercises (FK parent). Restore is additive (insert-if-absent),
+            // so absent sections never wipe local companion/config data.
+            "powerLossSetCompanions",
+            "powerLossObservationCompanions",
+            "powerLossExerciseConfigs",
             "polarBeatSamples",
             "polarEcgSegments",
             "personalRecords",
@@ -514,6 +527,25 @@ abstract class BaseDataBackupManager(
         // Migration 27 added RoutineGroup. Preserve empty groups as legitimate user state.
         val routineGroups = queries.selectAllRoutineGroupsSync().executeAsList()
 
+        // Issue #1392: power-loss companion/config sections. Companion reads are
+        // per-session (OOM-safe, same as metrics). Privacy filter: set companions
+        // and per-exercise configs are aggregate/summary facts and always ride;
+        // per-rep observation rows are raw telemetry and only ride when opted in.
+        val powerLossSetCompanions = mutableListOf<PowerLossSetCompanionBackup>()
+        val powerLossObservationCompanions = mutableListOf<PowerLossObservationCompanionBackup>()
+        for (session in sessions) {
+            powerLossSetCompanions += queries.selectPowerLossSetCompanionsBySession(session.id)
+                .executeAsList()
+                .map { mapPowerLossSetCompanionToBackup(it) }
+            if (includeRawTelemetryInBackups) {
+                powerLossObservationCompanions += queries.selectPowerLossAttemptCompanionsBySession(session.id)
+                    .executeAsList()
+                    .map { mapPowerLossObservationCompanionToBackup(it) }
+            }
+        }
+        val powerLossExerciseConfigs = queries.selectAllPowerLossExerciseConfigs().executeAsList()
+            .map { mapPowerLossExerciseConfigToBackup(it) }
+
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
             version = CURRENT_BACKUP_VERSION,
@@ -564,6 +596,9 @@ abstract class BaseDataBackupManager(
                 cycleConflictDrafts = cycleConflictDrafts.map(::mapCycleConflictDraftToBackup),
                 polarBeatSamples = polarBeatSamples.map(::mapPolarBeatSampleToBackup),
                 polarEcgSegments = polarEcgSegments.map(::mapPolarEcgSegmentToBackup),
+                powerLossSetCompanions = powerLossSetCompanions,
+                powerLossObservationCompanions = powerLossObservationCompanions,
+                powerLossExerciseConfigs = powerLossExerciseConfigs,
             ),
         )
     }
@@ -814,6 +849,9 @@ abstract class BaseDataBackupManager(
             "workoutSessions" -> json.decodeFromString<WorkoutSessionBackup>(raw)
             "metricSamples" -> json.decodeFromString<MetricSampleBackup>(raw)
             "completedSets" -> json.decodeFromString<CompletedSetBackup>(raw)
+            "powerLossSetCompanions" -> json.decodeFromString<PowerLossSetCompanionBackup>(raw)
+            "powerLossObservationCompanions" -> json.decodeFromString<PowerLossObservationCompanionBackup>(raw)
+            "powerLossExerciseConfigs" -> json.decodeFromString<PowerLossExerciseConfigBackup>(raw)
             "polarBeatSamples" -> json.decodeFromString<PolarBeatSampleBackup>(raw)
             "polarEcgSegments" -> json.decodeFromString<PolarEcgSegmentBackup>(raw)
             "personalRecords" -> json.decodeFromString<PersonalRecordBackup>(raw)
@@ -1003,6 +1041,12 @@ abstract class BaseDataBackupManager(
             var polarBeatSamplesSkipped = 0
             var polarEcgSegmentsImported = 0
             var polarEcgSegmentsSkipped = 0
+            var powerLossSetCompanionsImported = 0
+            var powerLossSetCompanionsSkipped = 0
+            var powerLossObservationCompanionsImported = 0
+            var powerLossObservationCompanionsSkipped = 0
+            var powerLossExerciseConfigsImported = 0
+            var powerLossExerciseConfigsSkipped = 0
             var progressionEventsImported = 0
             var progressionEventsSkipped = 0
             var earnedBadgesImported = 0
@@ -3047,6 +3091,228 @@ abstract class BaseDataBackupManager(
                                     }
                                 }
 
+                                // --- powerLossSetCompanions (Issue #1392) ---
+                                // Additive restore (INSERT-if-absent, local wins): an absent
+                                // or partial section never wipes local companion data and
+                                // retries are idempotent. Strict readers skip rows with an
+                                // unknown row version or unknown target enum with a warning —
+                                // never crash, never coerce, never arm POWER from an unknown
+                                // enum. Local evidence only: restore never marks these rows
+                                // synced or backed up (no wire semantics).
+                                "powerLossSetCompanions" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val row = tryImport("powerLossSetCompanion-parse", null) {
+                                                json.decodeFromString<PowerLossSetCompanionBackup>(rawJson)
+                                            } ?: continue
+                                            if (!isSupportedPowerLossBackupFormatVersion(row.formatVersion)) {
+                                                powerLossSetCompanionsSkipped++
+                                                Logger.w {
+                                                    "Backup restore skipping power-loss set companion ${row.sessionId}/${row.setId}: " +
+                                                        "unsupported row version ${row.formatVersion}"
+                                                }
+                                                continue
+                                            }
+                                            if (TargetMode.fromPersisted(row.targetMode) == null ||
+                                                PowerLossCompanionStore.decodeActiveCables(row.activeCables) == null
+                                            ) {
+                                                powerLossSetCompanionsSkipped++
+                                                Logger.w {
+                                                    "Backup restore skipping power-loss set companion ${row.sessionId}/${row.setId}: " +
+                                                        "unknown target enum or cable mask (never armed from unknown values)"
+                                                }
+                                                continue
+                                            }
+                                            if (!parentAvailable("session", row.sessionId) ||
+                                                queries.selectSessionById(row.sessionId).executeAsOneOrNull() == null
+                                            ) {
+                                                entitiesWithErrors++
+                                                Logger.w {
+                                                    "Backup restore missing required session ${row.sessionId} for power-loss set companion ${row.setId}"
+                                                }
+                                                continue
+                                            }
+                                            val existing = queries.selectPowerLossSetCompanionsBySession(row.sessionId)
+                                                .executeAsList()
+                                                .firstOrNull { it.set_id == row.setId }
+                                            if (existing != null) {
+                                                if (mapPowerLossSetCompanionToBackup(existing) == row) {
+                                                    powerLossSetCompanionsSkipped++
+                                                } else {
+                                                    entitiesWithErrors++
+                                                    Logger.w {
+                                                        "Backup restore conflict power-loss set companion ${row.sessionId}/${row.setId}; local row preserved"
+                                                    }
+                                                }
+                                                continue
+                                            }
+                                            tryImport("powerLossSetCompanion", row.setId) {
+                                                queries.insertPowerLossSetCompanionIfAbsent(
+                                                    session_id = row.sessionId,
+                                                    set_id = row.setId,
+                                                    metric_version = row.metricVersion.toLong(),
+                                                    target_mode = row.targetMode,
+                                                    threshold_percent = row.thresholdPercent.toLong(),
+                                                    max_working_reps = row.maxWorkingReps?.toLong(),
+                                                    require_two_consecutive = if (row.requireTwoConsecutive) 1L else 0L,
+                                                    saved_nominal_reps = row.savedNominalReps?.toLong(),
+                                                    active_cables = row.activeCables,
+                                                    active_cable_provenance = row.activeCableProvenance,
+                                                    reference_working_ordinal = row.referenceWorkingOrdinal?.toLong(),
+                                                    reference_mcp_watts = row.referenceMcpWatts?.toDouble(),
+                                                    reference_rom_a_mm = row.referenceRomAMm?.toDouble(),
+                                                    reference_rom_b_mm = row.referenceRomBMm?.toDouble(),
+                                                    trigger_working_ordinal = row.triggerWorkingOrdinal?.toLong(),
+                                                    winner_reason = row.winnerReason,
+                                                    short_rom_observed = if (row.shortRomObserved) 1L else 0L,
+                                                    power_loss_observed = if (row.powerLossObserved) 1L else 0L,
+                                                    loss_percent_at_decision = row.lossPercentAtDecision?.toDouble(),
+                                                    created_at = row.createdAt,
+                                                )
+                                            }?.let { powerLossSetCompanionsImported++ }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
+                                // --- powerLossObservationCompanions (Issue #1392) ---
+                                // The per-rep observation companions (attempt-only rows are
+                                // first-class). Same additive/strict contract as the set
+                                // companions above; nullable metrics stay null, never zero.
+                                "powerLossObservationCompanions" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val row = tryImport("powerLossObservationCompanion-parse", null) {
+                                                json.decodeFromString<PowerLossObservationCompanionBackup>(rawJson)
+                                            } ?: continue
+                                            if (!isSupportedPowerLossBackupFormatVersion(row.formatVersion)) {
+                                                powerLossObservationCompanionsSkipped++
+                                                Logger.w {
+                                                    "Backup restore skipping power-loss observation ${row.sessionId}/${row.workingConcentricOrdinal}: " +
+                                                        "unsupported row version ${row.formatVersion}"
+                                                }
+                                                continue
+                                            }
+                                            if (!parentAvailable("session", row.sessionId) ||
+                                                queries.selectSessionById(row.sessionId).executeAsOneOrNull() == null
+                                            ) {
+                                                entitiesWithErrors++
+                                                Logger.w {
+                                                    "Backup restore missing required session ${row.sessionId} for power-loss observation ${row.workingConcentricOrdinal}"
+                                                }
+                                                continue
+                                            }
+                                            val existing = queries.selectPowerLossAttemptCompanionsBySession(row.sessionId)
+                                                .executeAsList()
+                                                .firstOrNull { it.working_concentric_ordinal == row.workingConcentricOrdinal.toLong() }
+                                            if (existing != null) {
+                                                if (mapPowerLossObservationCompanionToBackup(existing) == row) {
+                                                    powerLossObservationCompanionsSkipped++
+                                                } else {
+                                                    entitiesWithErrors++
+                                                    Logger.w {
+                                                        "Backup restore conflict power-loss observation ${row.sessionId}/${row.workingConcentricOrdinal}; local row preserved"
+                                                    }
+                                                }
+                                                continue
+                                            }
+                                            tryImport("powerLossObservationCompanion", "${row.sessionId}/${row.workingConcentricOrdinal}") {
+                                                queries.insertPowerLossAttemptCompanionIfAbsent(
+                                                    session_id = row.sessionId,
+                                                    set_id = row.setId,
+                                                    working_concentric_ordinal = row.workingConcentricOrdinal.toLong(),
+                                                    legacy_rep_index = row.legacyRepIndex?.toLong(),
+                                                    completed = if (row.completed) 1L else 0L,
+                                                    mcp_watts = row.mcpWatts?.toDouble(),
+                                                    eccentric_power_watts = row.eccentricPowerWatts?.toDouble(),
+                                                    concentric_duration_ms = row.concentricDurationMs,
+                                                    eccentric_duration_ms = row.eccentricDurationMs,
+                                                    loss_percent_at_decision = row.lossPercentAtDecision?.toDouble(),
+                                                    reference_working_ordinal = row.referenceWorkingOrdinal?.toLong(),
+                                                    rom_a_mm = row.romAMm?.toDouble(),
+                                                    rom_b_mm = row.romBMm?.toDouble(),
+                                                    rom_a_percent_of_reference = row.romAPercentOfReference?.toDouble(),
+                                                    rom_b_percent_of_reference = row.romBPercentOfReference?.toDouble(),
+                                                    rom_trustworthy = if (row.romTrustworthy) 1L else 0L,
+                                                    quality = row.quality,
+                                                    short_rom = if (row.shortRom) 1L else 0L,
+                                                    power_loss_qualified = if (row.powerLossQualified) 1L else 0L,
+                                                )
+                                            }?.let { powerLossObservationCompanionsImported++ }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
+                                // --- powerLossExerciseConfigs (Issue #1392) ---
+                                // The per-exercise power-loss target config. Absent rows and
+                                // absent fields mean inert REP defaults with nulls — never
+                                // fabricated zeros — and a present row never replaces local
+                                // config (INSERT-if-absent). An unknown target enum is
+                                // skipped with a warning: import never silently arms POWER.
+                                "powerLossExerciseConfigs" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val row = tryImport("powerLossExerciseConfig-parse", null) {
+                                                json.decodeFromString<PowerLossExerciseConfigBackup>(rawJson)
+                                            } ?: continue
+                                            if (!isSupportedPowerLossBackupFormatVersion(row.formatVersion) ||
+                                                TargetMode.fromPersisted(row.targetMode) == null
+                                            ) {
+                                                powerLossExerciseConfigsSkipped++
+                                                Logger.w {
+                                                    "Backup restore skipping power-loss config ${row.routineExerciseId}: " +
+                                                        "unsupported row version or unknown target enum (never armed from unknown values)"
+                                                }
+                                                continue
+                                            }
+                                            if (queries.selectRoutineExerciseById(row.routineExerciseId).executeAsOneOrNull() == null) {
+                                                powerLossExerciseConfigsSkipped++
+                                                Logger.w {
+                                                    "Backup restore skipping power-loss config ${row.routineExerciseId}: routine exercise row absent"
+                                                }
+                                                continue
+                                            }
+                                            val existingConfig = queries
+                                                .selectPowerLossExerciseConfigsByRoutineExerciseIds(listOf(row.routineExerciseId))
+                                                .executeAsList()
+                                                .firstOrNull { it.routine_exercise_id == row.routineExerciseId }
+                                            if (existingConfig != null) {
+                                                // Local config wins; a restore never replaces or wipes it.
+                                                if (mapPowerLossExerciseConfigToBackup(existingConfig) == row) {
+                                                    powerLossExerciseConfigsSkipped++
+                                                } else {
+                                                    powerLossExerciseConfigsSkipped++
+                                                    Logger.w {
+                                                        "Backup restore keeping local power-loss config ${row.routineExerciseId}; backup row differs"
+                                                    }
+                                                }
+                                                continue
+                                            }
+                                            tryImport("powerLossExerciseConfig", row.routineExerciseId) {
+                                                PowerLossConfigStore.restoreIfAbsent(
+                                                    queries = queries,
+                                                    routineExerciseId = row.routineExerciseId,
+                                                    targetMode = row.targetMode,
+                                                    thresholdPercent = row.thresholdPercent,
+                                                    maxWorkingReps = row.maxWorkingReps,
+                                                    requireTwoConsecutive = row.requireTwoConsecutive,
+                                                    savedNominalReps = row.savedNominalReps,
+                                                    formatVersion = row.formatVersion,
+                                                    nowMs = KmpUtils.currentTimeMillis(),
+                                                )
+                                            }?.let { powerLossExerciseConfigsImported++ }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
                                 // --- unknown fields: skip for forward compatibility ---
                                 else -> {
                                     Logger.d { "Streaming import: skipping unknown data field '$fieldName'" }
@@ -3158,6 +3424,12 @@ abstract class BaseDataBackupManager(
                 polarBeatSamplesSkipped = polarBeatSamplesSkipped,
                 polarEcgSegmentsImported = polarEcgSegmentsImported,
                 polarEcgSegmentsSkipped = polarEcgSegmentsSkipped,
+                powerLossSetCompanionsImported = powerLossSetCompanionsImported,
+                powerLossSetCompanionsSkipped = powerLossSetCompanionsSkipped,
+                powerLossObservationCompanionsImported = powerLossObservationCompanionsImported,
+                powerLossObservationCompanionsSkipped = powerLossObservationCompanionsSkipped,
+                powerLossExerciseConfigsImported = powerLossExerciseConfigsImported,
+                powerLossExerciseConfigsSkipped = powerLossExerciseConfigsSkipped,
                 repairedReferences = repairedReferences,
                 entitiesWithErrors = entitiesWithErrors,
             )
@@ -3360,6 +3632,45 @@ abstract class BaseDataBackupManager(
                 if (backup.plannedSetId !in plannedSetIds) backup.copy(plannedSetId = null) else backup,
             )
         })
+        writer.write(",")
+
+        // Issue #1392: power-loss companion/config sections (same privacy filter as
+        // the full export: summary facts always ride; per-rep observation rows are
+        // raw telemetry and only ride opted-in exports).
+        writeJsonArray(
+            writer,
+            "powerLossSetCompanions",
+            sessions.flatMap { session ->
+                queries.selectPowerLossSetCompanionsBySession(session.id).executeAsList()
+            }.map {
+                json.encodeToString(PowerLossSetCompanionBackup.serializer(), mapPowerLossSetCompanionToBackup(it))
+            },
+        )
+        writer.write(",")
+        writeJsonArray(
+            writer,
+            "powerLossObservationCompanions",
+            if (includeRawTelemetryInBackups) {
+                sessions.flatMap { session ->
+                    queries.selectPowerLossAttemptCompanionsBySession(session.id).executeAsList()
+                }.map {
+                    json.encodeToString(
+                        PowerLossObservationCompanionBackup.serializer(),
+                        mapPowerLossObservationCompanionToBackup(it),
+                    )
+                }
+            } else {
+                emptyList()
+            },
+        )
+        writer.write(",")
+        writeJsonArray(
+            writer,
+            "powerLossExerciseConfigs",
+            queries.selectAllPowerLossExerciseConfigs().executeAsList().map {
+                json.encodeToString(PowerLossExerciseConfigBackup.serializer(), mapPowerLossExerciseConfigToBackup(it))
+            },
+        )
         writer.write(",")
 
         writer.write("\"polarBeatSamples\":[")
@@ -3744,6 +4055,80 @@ abstract class BaseDataBackupManager(
         wallClockTimestampMs = segment.wallClockTimestampMs,
         phase = segment.phase,
         samplesUvCsv = segment.samplesUvCsv,
+    )
+
+    // -- Issue #1392: power-loss companion/config mappers (DB rows → Backup rows) --
+    // Nullable metrics map Double?/Long? to Float?/Int? exactly: a missing value
+    // stays null through export and restore, never a fabricated zero.
+
+    /** Per-exercise power-loss configs belonging to [routineExerciseIds] (scoped paths). */
+    private fun powerLossExerciseConfigsFor(routineExerciseIds: Set<String>): List<PowerLossExerciseConfigBackup> =
+        queries.selectPowerLossExerciseConfigsByRoutineExerciseIds(routineExerciseIds.toList())
+            .executeAsList()
+            .map { mapPowerLossExerciseConfigToBackup(it) }
+
+    private fun mapPowerLossSetCompanionToBackup(
+        row: com.devil.phoenixproject.database.PowerLossSetCompanion,
+    ): PowerLossSetCompanionBackup = PowerLossSetCompanionBackup(
+        formatVersion = POWER_LOSS_BACKUP_FORMAT_VERSION,
+        sessionId = row.session_id,
+        setId = row.set_id,
+        metricVersion = row.metric_version.toInt(),
+        targetMode = row.target_mode,
+        thresholdPercent = row.threshold_percent.toInt(),
+        maxWorkingReps = row.max_working_reps?.toInt(),
+        requireTwoConsecutive = row.require_two_consecutive != 0L,
+        savedNominalReps = row.saved_nominal_reps?.toInt(),
+        activeCables = row.active_cables,
+        activeCableProvenance = row.active_cable_provenance,
+        referenceWorkingOrdinal = row.reference_working_ordinal?.toInt(),
+        referenceMcpWatts = row.reference_mcp_watts?.toFloat(),
+        referenceRomAMm = row.reference_rom_a_mm?.toFloat(),
+        referenceRomBMm = row.reference_rom_b_mm?.toFloat(),
+        triggerWorkingOrdinal = row.trigger_working_ordinal?.toInt(),
+        winnerReason = row.winner_reason,
+        shortRomObserved = row.short_rom_observed != 0L,
+        powerLossObserved = row.power_loss_observed != 0L,
+        lossPercentAtDecision = row.loss_percent_at_decision?.toFloat(),
+        createdAt = row.created_at,
+    )
+
+    private fun mapPowerLossObservationCompanionToBackup(
+        row: com.devil.phoenixproject.database.PowerLossAttemptCompanion,
+    ): PowerLossObservationCompanionBackup = PowerLossObservationCompanionBackup(
+        formatVersion = POWER_LOSS_BACKUP_FORMAT_VERSION,
+        sessionId = row.session_id,
+        setId = row.set_id,
+        workingConcentricOrdinal = row.working_concentric_ordinal.toInt(),
+        legacyRepIndex = row.legacy_rep_index?.toInt(),
+        completed = row.completed != 0L,
+        mcpWatts = row.mcp_watts?.toFloat(),
+        eccentricPowerWatts = row.eccentric_power_watts?.toFloat(),
+        concentricDurationMs = row.concentric_duration_ms,
+        eccentricDurationMs = row.eccentric_duration_ms,
+        lossPercentAtDecision = row.loss_percent_at_decision?.toFloat(),
+        referenceWorkingOrdinal = row.reference_working_ordinal?.toInt(),
+        romAMm = row.rom_a_mm?.toFloat(),
+        romBMm = row.rom_b_mm?.toFloat(),
+        romAPercentOfReference = row.rom_a_percent_of_reference?.toFloat(),
+        romBPercentOfReference = row.rom_b_percent_of_reference?.toFloat(),
+        romTrustworthy = row.rom_trustworthy != 0L,
+        quality = row.quality,
+        shortRom = row.short_rom != 0L,
+        powerLossQualified = row.power_loss_qualified != 0L,
+    )
+
+    private fun mapPowerLossExerciseConfigToBackup(
+        row: com.devil.phoenixproject.database.PowerLossExerciseConfig,
+    ): PowerLossExerciseConfigBackup = PowerLossExerciseConfigBackup(
+        formatVersion = row.format_version.toInt(),
+        routineExerciseId = row.routine_exercise_id,
+        targetMode = row.target_mode,
+        thresholdPercent = row.threshold_percent.toInt(),
+        maxWorkingReps = row.max_working_reps?.toInt(),
+        requireTwoConsecutive = row.require_two_consecutive != 0L,
+        savedNominalReps = row.saved_nominal_reps?.toInt(),
+        updatedAt = row.updated_at,
     )
 
     private fun mapRoutineToBackup(routine: Routine): RoutineBackup = RoutineBackup(
@@ -4494,6 +4879,21 @@ abstract class BaseDataBackupManager(
                     completedSets = completedSets.map { mapCompletedSetToBackup(it) },
                     polarBeatSamples = beatSamples.map(::mapPolarBeatSampleToBackup),
                     polarEcgSegments = ecgSegments.map(::mapPolarEcgSegmentToBackup),
+                    // Issue #1392: session-scoped power-loss sections. Summary facts
+                    // always ride; per-rep observation rows need the raw-telemetry opt-in.
+                    powerLossSetCompanions = queries.selectPowerLossSetCompanionsBySession(sessionId)
+                        .executeAsList()
+                        .map { mapPowerLossSetCompanionToBackup(it) },
+                    powerLossObservationCompanions = if (includeRawTelemetryInBackups) {
+                        queries.selectPowerLossAttemptCompanionsBySession(sessionId)
+                            .executeAsList()
+                            .map { mapPowerLossObservationCompanionToBackup(it) }
+                    } else {
+                        emptyList()
+                    },
+                    powerLossExerciseConfigs = powerLossExerciseConfigsFor(
+                        completedSets.mapNotNullTo(hashSetOf()) { it.routine_exercise_id },
+                    ),
                 ),
             )
 
@@ -4578,6 +4978,21 @@ abstract class BaseDataBackupManager(
                     completedSets = allCompletedSets.map { mapCompletedSetToBackup(it) },
                     polarBeatSamples = allBeatSamples.map(::mapPolarBeatSampleToBackup),
                     polarEcgSegments = allEcgSegments.map(::mapPolarEcgSegmentToBackup),
+                    // Issue #1392: routine-scoped power-loss sections. Summary facts
+                    // always ride; per-rep observation rows need the raw-telemetry opt-in.
+                    powerLossSetCompanions = sessions.flatMap { session ->
+                        queries.selectPowerLossSetCompanionsBySession(session.id).executeAsList()
+                    }.map { mapPowerLossSetCompanionToBackup(it) },
+                    powerLossObservationCompanions = if (includeRawTelemetryInBackups) {
+                        sessions.flatMap { session ->
+                            queries.selectPowerLossAttemptCompanionsBySession(session.id).executeAsList()
+                        }.map { mapPowerLossObservationCompanionToBackup(it) }
+                    } else {
+                        emptyList()
+                    },
+                    powerLossExerciseConfigs = powerLossExerciseConfigsFor(
+                        allCompletedSets.mapNotNullTo(hashSetOf()) { it.routine_exercise_id },
+                    ),
                 ),
             )
 

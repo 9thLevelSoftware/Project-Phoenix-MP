@@ -12,6 +12,8 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.powerloss.PowerLossConfig
+import com.devil.phoenixproject.domain.powerloss.TargetMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -296,5 +298,50 @@ class RoutineCsvImportPlannerTest {
         assertEquals(original.rackBehaviorOverrides, stored.rackBehaviorOverrides)
         assertEquals(false, stored.durationSyncKnown, "sync state is never in the file")
         assertEquals(false, stored.isLaunchAdjustedDuration, "launch state is never in the file")
+    }
+
+    @Test
+    fun thePlannedRoutineKeepsThePowerLossConfigFromTheVersion3File() {
+        val powerConfig = PowerLossConfig(
+            targetMode = TargetMode.POWER,
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = 12,
+        )
+        val source = Routine(
+            id = "push-id",
+            name = "Push",
+            createdAt = 10L,
+            profileId = "p1",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "ex-1",
+                    exercise = bench,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8),
+                    weightPerCableKg = 40f,
+                    setWeightsPerCableKg = listOf(40f, 40f),
+                    programMode = ProgramMode.Pump,
+                    powerLoss = powerConfig,
+                ),
+            ),
+        )
+        val exported = assertIs<RoutineCsvExportResult.Exported>(RoutineCsvCodec.encode(source, null, null))
+        val drafts = assertIs<RoutineCsvParseResult.Parsed>(RoutineCsvCodec.parse(exported.content)).routines
+
+        val plan = plan(drafts)
+
+        assertTrue(plan.canCommit, plan.issues.toString())
+        assertEquals(powerConfig, plan.writes.single().exercises.single().powerLoss)
+    }
+
+    @Test
+    fun v1DraftsPlanInertRepDefaultsWithNullsNotZeros() {
+        val plan = plan(drafts(",Push,Chest day,,,bench-id,Bench Press,0,,,,,8|8|6,40|40|42.5,120,PUMP,false"))
+
+        val powerLoss = plan.writes.single().exercises.single().powerLoss
+        assertEquals(TargetMode.REP_TARGET, powerLoss.targetMode)
+        assertNull(powerLoss.savedNominalReps)
     }
 }

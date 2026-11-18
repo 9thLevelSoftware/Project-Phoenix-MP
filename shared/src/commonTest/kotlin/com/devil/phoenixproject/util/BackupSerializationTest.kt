@@ -562,4 +562,114 @@ class BackupSerializationTest {
         assertEquals("100,105,110", e.samplesUvCsv)
         assertEquals(1000000000L, e.sensorTimestampNs)
     }
+
+    // ── Issue #1392: versioned optional power-loss sections (backup v7) ─────
+
+    @Test
+    fun powerLossBackupSectionsRoundTripAndKeepNullsNotZeros() {
+        val setRow = PowerLossSetCompanionBackup(
+            sessionId = "session-1",
+            setId = "set-1",
+            metricVersion = 1,
+            targetMode = "POWER",
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = 12,
+            activeCables = "A,B",
+            activeCableProvenance = "rep-metric-load-scan:first-working-attempt",
+            referenceWorkingOrdinal = 2,
+            referenceMcpWatts = 312.5f,
+            referenceRomAMm = null,
+            referenceRomBMm = null,
+            triggerWorkingOrdinal = 9,
+            winnerReason = "POWER_LOSS",
+            shortRomObserved = false,
+            powerLossObserved = true,
+            lossPercentAtDecision = 21.5f,
+            createdAt = 1_700_000_000_000L,
+        )
+        val observationRow = PowerLossObservationCompanionBackup(
+            sessionId = "session-1",
+            setId = "set-1",
+            workingConcentricOrdinal = 9,
+            legacyRepIndex = null,
+            completed = false,
+            mcpWatts = null,
+            eccentricPowerWatts = null,
+            concentricDurationMs = null,
+            eccentricDurationMs = null,
+            lossPercentAtDecision = 21.5f,
+            referenceWorkingOrdinal = 2,
+        )
+        val configRow = PowerLossExerciseConfigBackup(
+            routineExerciseId = "routine-1-re",
+            targetMode = "POWER",
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = null,
+            updatedAt = 1_700_000_000_000L,
+        )
+        val original = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-11-17T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                powerLossSetCompanions = listOf(setRow),
+                powerLossObservationCompanions = listOf(observationRow),
+                powerLossExerciseConfigs = listOf(configRow),
+            ),
+        )
+
+        val deserialized = json.decodeFromString<BackupData>(json.encodeToString(original))
+
+        assertEquals(listOf(setRow), deserialized.data.powerLossSetCompanions)
+        assertEquals(listOf(observationRow), deserialized.data.powerLossObservationCompanions)
+        assertEquals(listOf(configRow), deserialized.data.powerLossExerciseConfigs)
+        // Absent fields stay null — never fabricated zeros.
+        assertNull(deserialized.data.powerLossSetCompanions[0].referenceRomAMm)
+        assertNull(deserialized.data.powerLossObservationCompanions[0].mcpWatts)
+        assertNull(deserialized.data.powerLossExerciseConfigs[0].savedNominalReps)
+    }
+
+    @Test
+    fun legacyBackupWithoutPowerLossSectionsDecodesWithEmptySections() {
+        // An old backup (v7 before #1392) carries none of the power-loss sections.
+        // The new reader decodes it without crashing and the sections stay empty —
+        // restore treats an absent section as "nothing to add", never a wipe.
+        val legacy = json.decodeFromString<BackupData>(
+            """{"version":7,"exportedAt":"2026-01-01T00:00:00Z","appVersion":"old","data":{}}""",
+        )
+
+        assertTrue(legacy.data.powerLossSetCompanions.isEmpty())
+        assertTrue(legacy.data.powerLossObservationCompanions.isEmpty())
+        assertTrue(legacy.data.powerLossExerciseConfigs.isEmpty())
+    }
+
+    @Test
+    fun powerLossBackupRowsFailSafelyOnUnknownFormatVersions() {
+        assertFalse(isSupportedPowerLossBackupFormatVersion(POWER_LOSS_BACKUP_FORMAT_VERSION + 1))
+        assertTrue(isSupportedPowerLossBackupFormatVersion(POWER_LOSS_BACKUP_FORMAT_VERSION))
+    }
+
+    @Test
+    fun powerLossBackupSectionsCarryNoSyncedOrBackedUpMarkers() {
+        // Restored rows are never marked synced or backed up: the wire types carry
+        // no such fields at all, so no restore path can claim one.
+        val descriptors = listOf(
+            PowerLossSetCompanionBackup.serializer().descriptor,
+            PowerLossObservationCompanionBackup.serializer().descriptor,
+            PowerLossExerciseConfigBackup.serializer().descriptor,
+        )
+        for (descriptor in descriptors) {
+            for (index in 0 until descriptor.elementsCount) {
+                val name = descriptor.getElementName(index).lowercase()
+                assertFalse(name.contains("sync"), "${descriptor.serialName}.$name must not claim sync state")
+                assertFalse(name.contains("backup") && name.contains("up"), "${descriptor.serialName}.$name")
+                assertFalse(name.contains("upload"), "${descriptor.serialName}.$name")
+                assertFalse(name.contains("acknowledg"), "${descriptor.serialName}.$name")
+            }
+        }
+    }
 }

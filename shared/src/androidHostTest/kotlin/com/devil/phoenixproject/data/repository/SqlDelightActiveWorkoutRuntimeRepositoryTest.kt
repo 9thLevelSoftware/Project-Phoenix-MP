@@ -22,6 +22,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -638,6 +639,101 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
         val rejected = assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(repository.load("profile-a", "routine-session-a"))
         assertEquals(expected, rejected.reason)
     }
+
+    @Test
+    fun powerLossSnapshotRoundTripsThroughReplaceAndLoad() = runTest {
+        val snapshot = RestoredPowerLossRuntimeSnapshot(
+            codecVersion = RestoredPowerLossRuntimeSnapshot.CURRENT_CODEC_VERSION,
+            targetModeName = "POWER",
+            thresholdPercent = 25,
+            maxWorkingReps = 15,
+            requireTwoConsecutive = true,
+            savedNominalReps = 12,
+            baselineMcpWatts = 312.5f,
+            referenceWorkingOrdinal = 2,
+            qualifyingStreak = 1,
+            sealedObservationCount = 3,
+            expectedObservationCount = 4,
+            samplesComplete = false,
+            restartExplanationName = "INCOMPLETE_SAMPLES",
+        )
+        val document = runtime().copy(powerLoss = snapshot)
+
+        repository.replace("profile-a", "routine-session-a", document)
+
+        val loaded = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        ).document
+        assertEquals(document, loaded)
+        assertEquals(snapshot, loaded.powerLoss)
+    }
+
+    @Test
+    fun legacyDocumentWithoutPowerLossSnapshotLoadsWithAnInertNullSnapshot() = runTest {
+        // A pre-#1392 document carries no powerLoss key: it decodes with a null
+        // snapshot (inert REP semantics, nulls — never fabricated zeros).
+        insertRaw(2, JsonObject(objectJson().filterKeys { it != "powerLoss" }))
+
+        val loaded = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+        assertNull(loaded.document.powerLoss)
+    }
+
+    @Test
+    fun unknownPowerLossSnapshotCodecVersionIsRejectedAsCorrupt() = runTest {
+        insertRaw(2, JsonObject(objectJson() + ("powerLoss" to powerLossJson("codecVersion" to JsonPrimitive(99)))))
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun unknownPowerLossSnapshotTargetEnumIsRejectedAsCorrupt() = runTest {
+        insertRaw(
+            2,
+            JsonObject(objectJson() + ("powerLoss" to powerLossJson("targetModeName" to JsonPrimitive("FUTURE_MODE")))),
+        )
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun unknownPowerLossRestartExplanationIsRejectedAsCorrupt() = runTest {
+        insertRaw(
+            2,
+            JsonObject(
+                objectJson() + ("powerLoss" to powerLossJson("restartExplanationName" to JsonPrimitive("FUTURE"))),
+            ),
+        )
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun aSupportedPowerLossSnapshotDecodesInsteadOfRejectingTheDocument() = runTest {
+        insertRaw(2, JsonObject(objectJson() + ("powerLoss" to powerLossJson())))
+        val loaded = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+        assertEquals("POWER", loaded.document.powerLoss?.targetModeName)
+    }
+
+    /** A structurally complete powerLoss payload with explicit overrides. */
+    private fun powerLossJson(vararg overrides: Pair<String, JsonPrimitive>): JsonObject = JsonObject(
+        buildMap {
+            put("codecVersion", JsonPrimitive(1))
+            put("targetModeName", JsonPrimitive("POWER"))
+            put("thresholdPercent", JsonPrimitive(25))
+            put("maxWorkingReps", JsonPrimitive(15))
+            put("requireTwoConsecutive", JsonPrimitive(false))
+            put("savedNominalReps", JsonPrimitive(12))
+            put("baselineMcpWatts", JsonPrimitive(300.0))
+            put("referenceWorkingOrdinal", JsonPrimitive(2))
+            put("qualifyingStreak", JsonPrimitive(1))
+            put("sealedObservationCount", JsonPrimitive(2))
+            put("expectedObservationCount", JsonPrimitive(3))
+            put("samplesComplete", JsonPrimitive(false))
+            put("restartExplanationName", JsonPrimitive("INCOMPLETE_SAMPLES"))
+            overrides.forEach { (key, value) -> put(key, value) }
+        },
+    )
 
     private fun runtime(
         profileId: String = "profile-a",

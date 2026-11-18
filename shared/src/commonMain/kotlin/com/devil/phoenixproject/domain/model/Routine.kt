@@ -141,6 +141,12 @@ data class RoutineExercise(
     // Runtime only: Active Recovery/Heavy Deload changed the launch prescription.
     // The session persists this provenance; the routine template remains untouched.
     val isLaunchAdjustedByRoutineModifier: Boolean = false,
+    // Issue #1392 — per-exercise power-loss target config (P4 remainder).
+    // Persisted in the additive PowerLossExerciseConfig table (migration 65);
+    // absent row decodes to PowerLossConfig.DEFAULT (inert REP_TARGET with nulls,
+    // never zeros). Strict readers never arm POWER from an unknown enum.
+    val powerLoss: com.devil.phoenixproject.domain.powerloss.PowerLossConfig =
+        com.devil.phoenixproject.domain.powerloss.PowerLossConfig.DEFAULT,
 ) {
     companion object {
         const val MIN_TIMED_DURATION_SECONDS = 10
