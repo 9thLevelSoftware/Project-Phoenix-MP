@@ -273,7 +273,7 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
             logger.error("Not a native device reference: \(deviceRef, privacy: .public)")
             return nil
         }
-        let device = IQDevice(deviceWithId: uuid as UUID, modelName: "Garmin", friendlyName: "Garmin")
+        let device = IQDevice(id: uuid as UUID, modelName: "Garmin", friendlyName: "Garmin")
         devicesByRef[deviceRef] = device
         return device
     }
@@ -284,7 +284,9 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
             return cached
         }
         let appUuidObj = (NSUUID(uuidString: appUuid) ?? NSUUID()) as UUID
-        let app = IQApp.app(withUUID: appUuidObj, storeUuid: appUuidObj, device: device)
+        // The Connect IQ headers predate nullability annotations, so the imported
+        // factory is optional; it constructs a plain value object and cannot fail.
+        let app = IQApp(uuid: appUuidObj, store: appUuidObj, device: device)!
         appsByKey[key] = app
         return app
     }
@@ -319,28 +321,28 @@ final class GarminCompanionBridge: NSObject, GarminNativeBridge, IQDeviceEventDe
 
     private static func statusCode(_ status: IQDeviceStatus) -> String {
         switch status {
-        case IQDeviceStatus_Connected: return "connected"
-        case IQDeviceStatus_NotConnected: return "not_connected"
-        case IQDeviceStatus_NotFound: return "not_found"
-        case IQDeviceStatus_BluetoothNotReady: return "bluetooth_not_ready"
-        case IQDeviceStatus_InvalidDevice: return "invalid"
+        case .connected: return "connected"
+        case .notConnected: return "not_connected"
+        case .notFound: return "not_found"
+        case .bluetoothNotReady: return "bluetooth_not_ready"
+        case .invalidDevice: return "invalid"
         default: return "invalid"
         }
     }
 
     private static func sendCode(_ result: IQSendMessageResult) -> String {
         switch result {
-        case IQSendMessageResult_Success: return "success"
-        case IQSendMessageResult_Failure_DeviceNotAvailable: return "failure_device_not_available"
-        case IQSendMessageResult_Failure_AppNotFound: return "failure_app_not_found"
-        case IQSendMessageResult_Failure_PromptNotDisplayed: return "failure_prompt_not_displayed"
-        case IQSendMessageResult_Failure_AppAlreadyRunning: return "failure_app_already_running"
-        case IQSendMessageResult_Failure_InternalError: return "failure_internal_error"
-        case IQSendMessageResult_Failure_DeviceIsBusy: return "failure_device_is_busy"
-        case IQSendMessageResult_Failure_UnsupportedType: return "failure_unsupported_type"
-        case IQSendMessageResult_Failure_InsufficientMemory: return "failure_insufficient_memory"
-        case IQSendMessageResult_Failure_Timeout: return "failure_timeout"
-        case IQSendMessageResult_Failure_MaxRetries: return "failure_max_retries"
+        case .success: return "success"
+        case .failure_DeviceNotAvailable: return "failure_device_not_available"
+        case .failure_AppNotFound: return "failure_app_not_found"
+        case .failure_PromptNotDisplayed: return "failure_prompt_not_displayed"
+        case .failure_AppAlreadyRunning: return "failure_app_already_running"
+        case .failure_InternalError: return "failure_internal_error"
+        case .failure_DeviceIsBusy: return "failure_device_is_busy"
+        case .failure_UnsupportedType: return "failure_unsupported_type"
+        case .failure_InsufficientMemory: return "failure_insufficient_memory"
+        case .failure_Timeout: return "failure_timeout"
+        case .failure_MaxRetries: return "failure_max_retries"
         default: return "failure_unknown"
         }
     }

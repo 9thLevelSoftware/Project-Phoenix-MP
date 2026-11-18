@@ -41,20 +41,23 @@ struct PhoenixAppEntry: App {
 
     var body: some Scene {
         WindowGroup {
-            if koinStarted {
-                ContentView()
-            } else {
-                KoinInitializationFailureView()
+            Group {
+                if koinStarted {
+                    ContentView()
+                } else {
+                    KoinInitializationFailureView()
+                }
             }
-        }
-        // Garmin Connect Mobile returns device-selection results on the dedicated
-        // Garmin scheme only. Every other URL (including the OAuth scheme) is left
-        // to its own handler; the bridge re-verifies the scheme before parsing.
-        .onOpenURL { url in
-            guard url.scheme?.lowercased() == GarminCompanionBridge.callbackUrlScheme.lowercased() else {
-                return
+            // Garmin Connect Mobile returns device-selection results on the dedicated
+            // Garmin scheme only. Every other URL (including the OAuth scheme) is left
+            // to its own handler; the bridge re-verifies the scheme before parsing.
+            // View-level: SwiftUI's Scene protocol has no onOpenURL.
+            .onOpenURL { url in
+                guard url.scheme?.lowercased() == GarminCompanionBridge.callbackUrlScheme.lowercased() else {
+                    return
+                }
+                GarminCompanionBridge.shared.handleDeviceSelectionCallback(url: url, sourceApplication: nil)
             }
-            GarminCompanionBridge.shared.handleDeviceSelectionCallback(url: url, sourceApplication: nil)
         }
     }
 }
