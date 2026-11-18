@@ -108,7 +108,8 @@ class ExerciseMediaWiringTest {
 
     // T6: Phase 1 adds NO migration. Two guards, both history-aware (SD14):
     // (a) the migration set must not grow past the implementation base's latest
-    //     (63.sqm at 4d4de558) — bump this ratchet only when a real migration lands;
+    //     (63.sqm at 4d4de558) — bump this ratchet only when a real migration lands
+    //     (64: issue #1400 aggregateEligible; 65: issue #1400 metric-unit x10);
     // (b) the only migration allowed to mention ExerciseImage is 43.sqm, the
     //     historical migration that CREATED the table; nothing may ALTER/DROP it.
     @Test
@@ -123,7 +124,7 @@ class ExerciseMediaWiringTest {
             if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
         assertTrue(
-            maxSeen <= 63,
+            maxSeen <= 65,
             "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 63.sqm (T6/AC13).",
         )
         assertTrue(

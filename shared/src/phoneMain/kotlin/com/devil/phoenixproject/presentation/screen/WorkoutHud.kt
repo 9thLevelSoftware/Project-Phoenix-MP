@@ -208,9 +208,9 @@ fun WorkoutHud(
 
             // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
             // Detect activity quickly (movement/load), then latch per-cable for the set to avoid flicker.
-            val activePositionThresholdMm = 50f // Match handle detection threshold
-            val activeVelocityThresholdMms = 20.0 // Match auto-start velocity threshold
-            val activeRangeThresholdMm = 20f // Lower than ROM threshold for early visibility
+            val activePositionThresholdMm = 500f // Match handle detection threshold
+            val activeVelocityThresholdMms = 200.0 // Match auto-start velocity threshold
+            val activeRangeThresholdMm = 200f // Lower than ROM threshold for early visibility
             val activeLoadDeltaKg = 1.0f // Above baseline to treat as engaged
 
             val cableAHasRange = repRanges?.isCableAActive(activeRangeThresholdMm) == true

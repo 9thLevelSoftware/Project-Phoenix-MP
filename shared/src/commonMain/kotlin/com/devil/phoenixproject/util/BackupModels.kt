@@ -720,7 +720,48 @@ fun backupPrivacySummary(includesRawTelemetry: Boolean): String =
  * Highest backup schema version this build can produce.
  * Bump whenever BackupContent gains/loses entities or a backup field type changes.
  */
-const val CURRENT_BACKUP_VERSION: Int = 7
+const val CURRENT_BACKUP_VERSION: Int = 8
+
+/**
+ * Issue #1400 F1: the first backup envelope version whose metric values are in the
+ * corrected mm / mm-s scale. Backups at version 7 or older carry cm / cm-s values in
+ * the mm-labelled fields, so an import of those must scale the unit-bearing fields
+ * exactly once (metric_unit_version = 2 on the restored rows is the durable marker).
+ */
+const val FIRST_MM_SCALE_BACKUP_VERSION: Int = 8
+
+/** x10 for pre-[FIRST_MM_SCALE_BACKUP_VERSION] envelopes, 1 otherwise. */
+fun legacyMetricUnitScaleFor(backupVersion: Int): Float =
+    if (backupVersion < FIRST_MM_SCALE_BACKUP_VERSION) 10f else 1f
+
+/**
+ * Scales the unit-bearing [MetricSampleBackup] fields to the current mm / mm-s contract
+ * when [backupVersion] predates [FIRST_MM_SCALE_BACKUP_VERSION]. Loads, heart rate and
+ * percentages are untouched. Pure: applying it twice with the same envelope version
+ * yields the same result (the envelope version is the scale marker).
+ */
+fun MetricSampleBackup.scaledToCurrentMetricUnits(backupVersion: Int): MetricSampleBackup {
+    val scale = legacyMetricUnitScaleFor(backupVersion)
+    if (scale == 1f) return this
+    return copy(
+        position = position?.let { it * scale },
+        positionB = positionB?.let { it * scale },
+        velocity = velocity?.let { it * scale },
+        velocityB = velocityB?.let { it * scale },
+        power = power?.let { it * scale },
+    )
+}
+
+/**
+ * Scales the unit-bearing [WorkoutSessionBackup] fields (session average MCV) to the
+ * current mm / mm-s contract for pre-[FIRST_MM_SCALE_BACKUP_VERSION] envelopes.
+ * Loads, volumes and velocity-loss percentages are untouched.
+ */
+fun WorkoutSessionBackup.scaledToCurrentMetricUnits(backupVersion: Int): WorkoutSessionBackup {
+    val scale = legacyMetricUnitScaleFor(backupVersion)
+    if (scale == 1f) return this
+    return copy(avgMcvMmS = avgMcvMmS?.let { it * scale })
+}
 
 /**
  * Profile-scoped preference payload. Raw JSON sections intentionally isolate malformed or
