@@ -339,7 +339,8 @@ class ExerciseMediaWiringTest {
 
     /**
      * Round-4 P1 drift guard (SUPPLEMENT to the behavioral tests in
-     * `ExercisePickerHostPhotoAttachTest`, which render the real dialog):
+     * `ExercisePickerDialogPhotoAttachForwardingTest`, which render the real
+     * dialog and fail under the P1 mutation):
      * the attach gate must be its own parameter fed by the user's Exercise Demos
      * preference at BOTH picker hosts that can open the custom-exercise dialog,
      * never re-coupled to the host's list-thumbnail flag.
@@ -370,7 +371,7 @@ class ExerciseMediaWiringTest {
             val hostSrc = stripKotlinComments(host!!)
             assertTrue(
                 hostSrc.contains("enablePhotoAttach = enableVideoPlayback,"),
-                "$name must feed the ExercisePickerHostPhotoAttachTest-gated enablePhotoAttach from the " +
+                "$name must feed enablePhotoAttach from the " +
                     "user's Exercise Demos preference (round-4 P1).",
             )
         }
