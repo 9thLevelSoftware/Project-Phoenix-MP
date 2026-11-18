@@ -13709,6 +13709,14 @@ class ActiveSessionEngine(
                 if (!autoplay) {
                     // Manual progression lets SetReady seed destination defaults first.
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                    // Issue #1413: mirror the deferManualStart arm below — once SetReady
+                    // is set up and the rack-selection apply ran, publish Idle so
+                    // ActiveWorkoutScreen can navigate off the held Resting/SetSummary UI.
+                    // Without this the summary card strands and every retry tap dies in
+                    // hasCompletionRestAuthority (AUTHORITY_REJECTED).
+                    if (hasExpectedAuthority(lease, "manual_successor_set_ready")) {
+                        coordinator._workoutState.value = WorkoutState.Idle
+                    }
                 }
             } else if (deferManualStart) {
                 // Issue #572 / #1394: deferred manual configuration transition across
@@ -13739,6 +13747,14 @@ class ActiveSessionEngine(
                 if (!autoplay) {
                     // SetReady republishes this entry's defaults even for a later set.
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                    // Issue #1413: mirror the deferManualStart arm above — once SetReady
+                    // is set up and the rack-selection apply ran, publish Idle so
+                    // ActiveWorkoutScreen can navigate off the held Resting/SetSummary UI.
+                    // Without this the summary card strands and every retry tap dies in
+                    // hasCompletionRestAuthority (AUTHORITY_REJECTED).
+                    if (hasExpectedAuthority(lease, "manual_successor_set_ready")) {
+                        coordinator._workoutState.value = WorkoutState.Idle
+                    }
                 }
             }
             coordinator._userAdjustedWeightDuringRest = false
