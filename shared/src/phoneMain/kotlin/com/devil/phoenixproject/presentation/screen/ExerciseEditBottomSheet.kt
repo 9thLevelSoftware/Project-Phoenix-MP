@@ -1086,17 +1086,21 @@ internal fun SetRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
-                Text(
-                    "Repeat:",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                )
+                if (!stackPickers) {
+                    Text(
+                        "Repeat:",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
                 CompactNumberPicker(
                     value = repeatCount,
                     onValueChange = onRepeatCountChange,
                     range = 1..20,
-                    label = "",
+                    label = if (stackPickers) "Repeat" else "",
                     suffix = "x",
+                    modifier = if (stackPickers) Modifier.fillMaxWidth() else Modifier,
+                    applySelectorScale = true,
                 )
             }
 
@@ -1118,6 +1122,7 @@ internal fun SetRow(
                                 label = if (showPickerLabels) "Reps" else "",
                                 suffix = "reps",
                                 modifier = Modifier.fillMaxWidth(),
+                                applySelectorScale = true,
                             )
                         } else {
                             // AMRAP label
@@ -1129,7 +1134,7 @@ internal fun SetRow(
                                 if (showPickerLabels) {
                                     Text(
                                         "Target",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
@@ -1137,7 +1142,7 @@ internal fun SetRow(
                                 Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
                                     "AMRAP",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale),
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -1151,6 +1156,7 @@ internal fun SetRow(
                             label = if (showPickerLabels) "Duration" else "",
                             suffix = "sec",
                             modifier = Modifier.fillMaxWidth(),
+                            applySelectorScale = true,
                         )
                     }
                 }
@@ -1167,7 +1173,7 @@ internal fun SetRow(
                                 if (showPickerLabels) {
                                     Text(
                                         "Force per Cable",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
@@ -1191,7 +1197,7 @@ internal fun SetRow(
                                 label = if (showPickerLabels) "Weight per Cable" else "",
                                 suffix = weightSuffix,
                                 modifier = Modifier.fillMaxWidth(),
-                                isWeightValue = true,
+                                applySelectorScale = true,
                             )
                         }
 
@@ -1204,7 +1210,7 @@ internal fun SetRow(
                                 if (showPickerLabels) {
                                     Text(
                                         "Weight",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )

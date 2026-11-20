@@ -534,7 +534,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                 modifier = Modifier
                                     .widthIn(max = pickerMaxWidth)
                                     .fillMaxWidth(),
-                                isWeightValue = true,
+                                applySelectorScale = true,
                             )
                         }
 

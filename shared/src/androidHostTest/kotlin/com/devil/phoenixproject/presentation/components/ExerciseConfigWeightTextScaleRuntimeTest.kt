@@ -4,7 +4,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.NumberPicker
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
@@ -14,7 +17,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -97,7 +102,7 @@ class ExerciseConfigWeightTextScaleRuntimeTest {
                             step = 0.5f,
                             label = "Weight per Cable",
                             suffix = "kg",
-                            isWeightValue = true,
+                            applySelectorScale = true,
                         )
                     }
                 }
@@ -149,7 +154,7 @@ class ExerciseConfigWeightTextScaleRuntimeTest {
     }
 
     @Test
-    fun `non-weight CompactNumberPicker ignores WeightTextScale`() {
+    fun `unscaled CompactNumberPicker ignores WeightTextScale`() {
         val scaleState = mutableStateOf(WeightTextScale.STANDARD)
         var rootView: View? = null
 
@@ -167,6 +172,7 @@ class ExerciseConfigWeightTextScaleRuntimeTest {
                             range = 1..50,
                             label = "Reps",
                             suffix = "reps",
+                            applySelectorScale = false,
                         )
                     }
                 }
@@ -245,6 +251,108 @@ class ExerciseConfigWeightTextScaleRuntimeTest {
             weightXl.top >= repsXl.bottom - 1f,
             "At Extra large, Weight per Cable ($weightXl) should stack below Reps ($repsXl)",
         )
+    }
+
+    @Test
+    fun `SetRow scales all three pickers labels and stepper buttons across weight scales`() {
+        val scaleState = mutableStateOf(WeightTextScale.STANDARD)
+        val compactWindow = WindowSizeClass(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            widthDp = 320.dp,
+            heightDp = 800.dp,
+        )
+        var rootView: View? = null
+
+        rule.setContent {
+            rootView = LocalView.current
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(1f, 1.0f),
+                    LocalWindowSizeClass provides compactWindow,
+                    LocalWeightTextScale provides scaleState.value,
+                ) {
+                    Column(Modifier.width(320.dp).verticalScroll(rememberScrollState())) {
+                        SetRow(
+                            setConfig = SetConfiguration(setNumber = 1, reps = 10, weightPerCable = 20f),
+                            setMode = SetMode.REPS,
+                            exerciseType = ExerciseType.STANDARD,
+                            weightSuffix = "kg",
+                            maxWeight = 100f,
+                            canDelete = true,
+                            onRepsChange = {},
+                            onWeightChange = {},
+                            onDurationChange = {},
+                            onRestChange = {},
+                            onDelete = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.waitForIdle()
+        val stdPickers = findNumberPickers(requireNotNull(rootView))
+        assertEquals(3, stdPickers.size, "Expected Repeat, Reps, and Weight per Cable NumberPickers")
+        val stdPickerSizes = stdPickers.map { it.textSize }
+        val stdRepsLabelFont = textLayoutResult("Reps").layoutInput.style.fontSize.value
+        val stdWeightLabelFont = textLayoutResult("Weight per Cable").layoutInput.style.fontSize.value
+        val stdDecWeightSize = rule.onNodeWithContentDescription("Decrease Weight per Cable").fetchSemanticsNode().size
+        val stdIncRepsSize = rule.onNodeWithContentDescription("Increase Reps").fetchSemanticsNode().size
+
+        scaleState.value = WeightTextScale.LARGE
+        rule.waitForIdle()
+        val largePickers = findNumberPickers(requireNotNull(rootView))
+        assertEquals(3, largePickers.size)
+        val largePickerSizes = largePickers.map { it.textSize }
+        largePickerSizes.indices.forEach { idx ->
+            assertTrue(
+                largePickerSizes[idx] > stdPickerSizes[idx],
+                "Picker $idx Large textSize (${largePickerSizes[idx]}) must exceed Standard (${stdPickerSizes[idx]})",
+            )
+        }
+
+        scaleState.value = WeightTextScale.EXTRA_LARGE
+        rule.waitForIdle()
+        val xlPickers = findNumberPickers(requireNotNull(rootView))
+        assertEquals(3, xlPickers.size)
+        val xlPickerSizes = xlPickers.map { it.textSize }
+        xlPickerSizes.indices.forEach { idx ->
+            assertTrue(
+                xlPickerSizes[idx] > largePickerSizes[idx],
+                "Picker $idx Extra large textSize (${xlPickerSizes[idx]}) must exceed Large (${largePickerSizes[idx]})",
+            )
+        }
+
+        val xlRepeatLabelFont = textLayoutResult("Repeat").layoutInput.style.fontSize.value
+        val xlRepsLabelFont = textLayoutResult("Reps").layoutInput.style.fontSize.value
+        val xlWeightLabelFont = textLayoutResult("Weight per Cable").layoutInput.style.fontSize.value
+        assertTrue(xlRepeatLabelFont > stdRepsLabelFont, "Repeat label should scale at Extra large")
+        assertTrue(xlRepsLabelFont > stdRepsLabelFont, "Reps label should scale at Extra large")
+        assertTrue(xlWeightLabelFont > stdWeightLabelFont, "Weight per Cable label should scale at Extra large")
+
+        val decWeightInteraction = rule.onNodeWithContentDescription("Decrease Weight per Cable")
+        decWeightInteraction.performScrollTo()
+        val decWeightNode = decWeightInteraction.fetchSemanticsNode()
+        val xlDecWeightSize = decWeightNode.size
+        val xlDecWeightBounds = decWeightNode.boundsInRoot
+
+        val incRepsInteraction = rule.onNodeWithContentDescription("Increase Reps")
+        incRepsInteraction.performScrollTo()
+        val incRepsNode = incRepsInteraction.fetchSemanticsNode()
+        val xlIncRepsSize = incRepsNode.size
+        val xlIncRepsBounds = incRepsNode.boundsInRoot
+
+        assertTrue(
+            xlDecWeightSize.width > stdDecWeightSize.width && xlDecWeightSize.height > stdDecWeightSize.height,
+            "Decrease Weight per Cable button size ($xlDecWeightSize) must grow past Standard ($stdDecWeightSize)",
+        )
+        assertTrue(
+            xlIncRepsSize.width > stdIncRepsSize.width && xlIncRepsSize.height > stdIncRepsSize.height,
+            "Increase Reps button size ($xlIncRepsSize) must grow past Standard ($stdIncRepsSize)",
+        )
+        assertTrue(xlIncRepsBounds.right <= 321f, "Increase Reps button overflows 320dp container: $xlIncRepsBounds")
+        assertTrue(xlDecWeightBounds.left >= -1f, "Decrease Weight button overflows left edge: $xlDecWeightBounds")
     }
 
     @Test

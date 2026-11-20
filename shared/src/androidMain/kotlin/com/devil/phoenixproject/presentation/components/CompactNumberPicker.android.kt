@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
+import com.devil.phoenixproject.presentation.util.scaledSelectorButtonSizeDp
+import com.devil.phoenixproject.presentation.util.scaledSelectorIconSizeDp
 import com.devil.phoenixproject.presentation.util.scaledWeightWheelHeightDp
 import com.devil.phoenixproject.presentation.util.weightTextMultiplier
 import kotlin.math.abs
@@ -39,30 +42,45 @@ actual fun CompactNumberPicker(
     suffix: String,
     step: Float,
     compactWheel: Boolean,
-    isWeightValue: Boolean,
+    applySelectorScale: Boolean,
 ) {
     val density = LocalDensity.current
     val fontScale = density.fontScale
     val weightTextScale = LocalWeightTextScale.current
-    val effectiveScale = if (isWeightValue) {
+    val effectiveScale = if (applySelectorScale) {
         effectiveWeightTextScale(weightTextScale, fontScale)
     } else {
         1f
     }
     val baseWheelHeightDp = if (compactWheel) 96f else 120f
-    val wheelHeight = if (isWeightValue) {
+    val wheelHeight = if (applySelectorScale) {
         scaledWeightWheelHeightDp(baseWheelHeightDp, effectiveScale).dp
     } else {
         baseWheelHeightDp.dp
     }
-    val weightTextSizePx: Float? = if (isWeightValue) {
+    val selectorTextSizePx: Float? = if (applySelectorScale) {
         val baseSp = if (compactWheel) 18f else 20f
         val targetSp = baseSp * weightTextMultiplier(weightTextScale.preferenceFactor, fontScale)
         with(density) { targetSp.sp.toPx() }.roundToInt().toFloat()
     } else {
         null
     }
-    val buttonSize = if (compactWheel) 40.dp else 48.dp
+    val baseButtonSizeDp = if (compactWheel) 40f else 48f
+    val buttonSize = if (applySelectorScale) {
+        scaledSelectorButtonSizeDp(baseButtonSizeDp, effectiveScale).dp
+    } else {
+        baseButtonSizeDp.dp
+    }
+    val iconSize = if (applySelectorScale) {
+        scaledSelectorIconSizeDp(24f, effectiveScale).dp
+    } else {
+        24.dp
+    }
+    val labelStyle = if (applySelectorScale) {
+        MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale)
+    } else {
+        MaterialTheme.typography.labelMedium
+    }
     val values = remember(range.start, range.endInclusive, step) {
         compactNumberPickerValues(range, step)
     }
@@ -84,7 +102,7 @@ actual fun CompactNumberPicker(
         if (label.isNotEmpty()) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = labelStyle,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -109,6 +127,7 @@ actual fun CompactNumberPicker(
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = "Decrease $label",
+                    modifier = Modifier.size(iconSize),
                     tint = if (currentIndex > 0) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -135,8 +154,8 @@ actual fun CompactNumberPicker(
 
                         // Set text color for all Android versions
                         applyNumberPickerTextColor(textColor)
-                        if (isWeightValue && weightTextSizePx != null) {
-                            applyNumberPickerTextSize(weightTextSizePx)
+                        if (applySelectorScale && selectorTextSizePx != null) {
+                            applyNumberPickerTextSize(selectorTextSizePx)
                         }
                     }
                 },
@@ -154,8 +173,8 @@ actual fun CompactNumberPicker(
 
                     // Update text color on every recomposition
                     picker.applyNumberPickerTextColor(textColor)
-                    if (isWeightValue && weightTextSizePx != null) {
-                        picker.applyNumberPickerTextSize(weightTextSizePx)
+                    if (applySelectorScale && selectorTextSizePx != null) {
+                        picker.applyNumberPickerTextSize(selectorTextSizePx)
                     }
                 },
                 modifier = Modifier
@@ -175,6 +194,7 @@ actual fun CompactNumberPicker(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Increase $label",
+                    modifier = Modifier.size(iconSize),
                     tint = if (currentIndex < values.size - 1) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -197,6 +217,7 @@ actual fun CompactNumberPicker(
     modifier: Modifier,
     label: String,
     suffix: String,
+    applySelectorScale: Boolean,
 ) {
     CompactNumberPicker(
         value = value.toFloat(),
@@ -207,12 +228,12 @@ actual fun CompactNumberPicker(
         suffix = suffix,
         step = 1.0f,
         compactWheel = false,
-        isWeightValue = false,
+        applySelectorScale = applySelectorScale,
     )
 }
 
 /**
- * Applies [textSizePx] to the wheel when [CompactNumberPicker] has `isWeightValue = true`.
+ * Applies [textSizePx] to the wheel when [CompactNumberPicker] has `applySelectorScale = true`.
  * API 29+ uses [NumberPicker.setTextSize]; API 26–28 updates TextView children and wheel paint.
  */
 internal fun NumberPicker.applyNumberPickerTextSize(textSizePx: Float) {

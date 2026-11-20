@@ -126,3 +126,21 @@ fun shouldStackExerciseSetPickers(
     val effectiveScale = effectiveWeightTextScale(weightTextScale, osFontScale)
     return weightTextScale != WeightTextScale.STANDARD || (isCompactWidth && effectiveScale >= 1.15f)
 }
+
+/**
+ * Scales `CompactNumberPicker` +/- button bounds modestly as [effectiveScale] grows,
+ * keeping touch targets larger without crowding the wheel on compact phone widths.
+ */
+fun scaledSelectorButtonSizeDp(baseButtonSizeDp: Float, effectiveScale: Float): Float {
+    val e = sanitizedScale(effectiveScale).coerceIn(1f, WEIGHT_TEXT_MAX_EFFECTIVE_SCALE)
+    return baseButtonSizeDp * (1f + (e - 1f) * 0.25f)
+}
+
+/**
+ * Scales `CompactNumberPicker` +/- icon glyph size proportionally as [effectiveScale] grows,
+ * capped against [WEIGHT_TEXT_MAX_EFFECTIVE_SCALE].
+ */
+fun scaledSelectorIconSizeDp(baseIconSizeDp: Float = 24f, effectiveScale: Float): Float {
+    val e = sanitizedScale(effectiveScale).coerceIn(1f, WEIGHT_TEXT_MAX_EFFECTIVE_SCALE)
+    return baseIconSizeDp * (1f + (e - 1f) * 0.5f)
+}

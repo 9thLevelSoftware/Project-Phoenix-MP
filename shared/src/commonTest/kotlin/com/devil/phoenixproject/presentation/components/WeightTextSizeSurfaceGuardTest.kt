@@ -176,29 +176,26 @@ class WeightTextSizeSurfaceGuardTest {
     }
 
     @Test
-    fun `compact number picker weight sites opt in and non-weight sites do not`() {
+    fun `compact number picker selectors in exercise setup and just lift opt into scaling`() {
         val allSites = listOf(exerciseEditPath, justLiftPath)
             .flatMap { path -> callBodies(source(path), "CompactNumberPicker(") }
         assertEquals(5, allSites.size, "CompactNumberPicker call-site census changed — re-census and update")
-        val weightSites = allSites.filter { body -> body.contains("\"Weight per Cable\"") }
-        val nonWeightSites = allSites.filter { body -> !body.contains("\"Weight per Cable\"") }
-        assertEquals(2, weightSites.size, "CompactNumberPicker weight-site census changed")
-        assertEquals(3, nonWeightSites.size, "CompactNumberPicker non-weight-site census changed")
 
-        weightSites.forEach { body ->
-            assertContains(body, "isWeightValue = true", message = "weight wheel missing isWeightValue opt-in: $body")
-        }
-        nonWeightSites.forEach { body ->
-            assertFalse(body.contains("isWeightValue"), "non-weight wheel must not receive weight scaling: $body")
+        allSites.forEach { body ->
+            assertContains(body, "applySelectorScale = true", message = "selector missing applySelectorScale opt-in: $body")
         }
 
         val expectSrc = source(compactPickerPath)
-        assertContains(expectSrc, "isWeightValue: Boolean = false")
+        assertEquals(
+            2,
+            Regex("""applySelectorScale:\s*Boolean\s*=\s*false""").findAll(expectSrc).count(),
+            "Both CompactNumberPicker expect overloads must default applySelectorScale to false",
+        )
         val androidSrc = source(compactPickerAndroidPath)
-        assertContains(androidSrc, "if (isWeightValue)")
+        assertContains(androidSrc, "if (applySelectorScale)")
         assertContains(androidSrc, "applyNumberPickerTextSize")
         val iosSrc = source(compactPickerIosPath)
-        assertContains(iosSrc, "if (isWeightValue)")
+        assertContains(iosSrc, "if (applySelectorScale)")
     }
 
     @Test
