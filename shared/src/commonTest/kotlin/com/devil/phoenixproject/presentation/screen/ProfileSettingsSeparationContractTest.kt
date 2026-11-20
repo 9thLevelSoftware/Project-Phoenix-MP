@@ -295,16 +295,16 @@ class ProfileSettingsSeparationContractTest {
             }
 
         assertContains(settings, "private fun GlobalSettingsSectionCard(")
-        // Issue #1367 SD8: the Settings helper wording is a binding signoff correction and
-        // must ship verbatim in the default locale.
         val weightTextStrings = source("src/commonMain/composeResources/values/strings.xml")
-        listOf(
-            "Enlarges weight values in Set Ready, Routine Overview, rest, exercise setup, Just Lift and workout readouts. Saved on this device only.",
-            "Combines with your device text size, up to 2× the standard base size. Options may look the same at larger device text sizes. This limit also applies to Standard when your device text size exceeds it.",
-        ).forEach { wording ->
-            assertContains(weightTextStrings, wording, message = "SD8 verbatim helper copy missing")
+        assertContains(
+            weightTextStrings,
+            "<string name=\"settings_weight_text_size\">Workout control size</string>",
+            message = "Settings label must be renamed to Workout control size",
+        )
+        listOf("settings_weight_text_size_help_1", "settings_weight_text_size_help_2").forEach { removedKey ->
+            assertTrue(!settings.contains(removedKey), "SettingsTab must not reference $removedKey")
+            assertTrue(!weightTextStrings.contains(removedKey), "strings.xml must not contain $removedKey")
         }
-        assertTrue(!weightTextStrings.contains("Just Lift is unchanged"), "Settings copy must reflect Just Lift support")
         assertContains(functionSource(settings, "WeightTextSizeSelector"), "Role.RadioButton")
         val switchRow = functionSource(settings, "GlobalSettingsSwitchRow")
         listOf("defaultMinSize(minHeight = 48.dp)", ".toggleable(", "role = Role.Switch")

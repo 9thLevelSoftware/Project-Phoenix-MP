@@ -224,14 +224,12 @@
     <string name="intervals_reason_no_remote_match">Nessuna attività corrispondente trovata</string>
     <string name="intervals_reason_multiple_remote_matches">Trovata più di un'attività corrispondente</string>
     <string name="intervals_reason_suppressed_by_pause">In pausa</string>
-    <!-- Issue #1367: Dimensione del testo del peso -->
-    <string name="settings_weight_text_size">Dimensione del testo del peso</string>
-    <string name="settings_weight_text_size_help_1">Ingrandisce i valori del peso in Preparazione serie, Panoramica routine, recupero, configurazione degli esercizi, Just Lift e letture dell'allenamento. Salvato solo su questo dispositivo.</string>
-    <string name="settings_weight_text_size_help_2">Si combina con la dimensione del testo del dispositivo, fino a 2× la dimensione base standard. Le opzioni possono apparire uguali con dimensioni del testo maggiori. Questo limite si applica anche a Standard quando la dimensione del testo del dispositivo lo supera.</string>
+    <!-- Issue #1367: Dimensione controlli allenamento -->
+    <string name="settings_weight_text_size">Dimensione controlli allenamento</string>
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Grande</string>
     <string name="settings_weight_text_size_extra_large">Molto grande</string>
-    <string name="cd_weight_text_size">Dimensione del testo del peso</string>
+    <string name="cd_weight_text_size">Dimensione controlli allenamento</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Foto · %1$d di %2$d</string>
     <string name="media_add_photos">Aggiungi foto</string>

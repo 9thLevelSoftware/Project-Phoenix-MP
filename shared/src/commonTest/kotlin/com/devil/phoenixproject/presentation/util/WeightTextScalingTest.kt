@@ -196,6 +196,25 @@ class WeightTextScalingTest {
         assertTrue(shouldStackExerciseSetPickers(WeightTextScale.EXTRA_LARGE, 1.0f, isCompactWidth = true))
     }
 
+    @Test
+    fun `selector button size grows modestly and caps at 2x`() {
+        assertEquals(48f, scaledSelectorButtonSizeDp(48f, 1.0f), tolerance)
+        assertEquals(54f, scaledSelectorButtonSizeDp(48f, 1.5f), tolerance)
+        assertEquals(60f, scaledSelectorButtonSizeDp(48f, 2.0f), tolerance)
+        assertEquals(60f, scaledSelectorButtonSizeDp(48f, 3.0f), tolerance)
+        assertEquals(40f, scaledSelectorButtonSizeDp(40f, 0.85f), tolerance)
+        assertEquals(40f, scaledSelectorButtonSizeDp(40f, Float.NaN), tolerance)
+    }
+
+    @Test
+    fun `selector icon size grows proportionally and caps at 2x`() {
+        assertEquals(24f, scaledSelectorIconSizeDp(24f, 1.0f), tolerance)
+        assertEquals(30f, scaledSelectorIconSizeDp(24f, 1.5f), tolerance)
+        assertEquals(36f, scaledSelectorIconSizeDp(24f, 2.0f), tolerance)
+        assertEquals(36f, scaledSelectorIconSizeDp(24f, 2.5f), tolerance)
+        assertEquals(24f, scaledSelectorIconSizeDp(24f, -1f), tolerance)
+    }
+
     // ===== T12: CompositionLocal safe default =====
     // (Asserted via a real composition in androidHostTest/LocalWeightTextScaleDefaultTest —
     // CompositionLocal.current is @Composable and cannot be read from a plain unit test.)

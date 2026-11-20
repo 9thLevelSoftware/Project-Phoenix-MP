@@ -181,8 +181,6 @@ import projectphoenix.shared.generated.resources.settings_video_behavior
 import projectphoenix.shared.generated.resources.settings_version
 import projectphoenix.shared.generated.resources.settings_weight_text_size
 import projectphoenix.shared.generated.resources.settings_weight_text_size_extra_large
-import projectphoenix.shared.generated.resources.settings_weight_text_size_help_1
-import projectphoenix.shared.generated.resources.settings_weight_text_size_help_2
 import projectphoenix.shared.generated.resources.settings_weight_text_size_large
 import projectphoenix.shared.generated.resources.settings_weight_text_size_standard
 
@@ -231,13 +229,12 @@ private fun ThemeModeSelector(
 }
 
 /**
- * Issue #1367 SD7/SD8: Weight text size selection (Standard / Large / Extra large).
+ * Issue #1367 SD7: Workout control size selection (Standard / Large / Extra large).
  *
  * SD7: native selected-state radio rows (whole row selectable, >=48dp bounds, child
  * radio with a null callback so the announcement is not duplicated) for compact-width
  * and large-text layouts; a horizontal segmented selection only where the three labels
- * fit without truncation. The SD8 help copy is two paragraphs and must never be clipped —
- * it lives in the scrollable Settings column.
+ * fit without truncation.
  */
 @Composable
 private fun WeightTextSizeSelector(
@@ -260,18 +257,6 @@ private fun WeightTextSizeSelector(
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            stringResource(Res.string.settings_weight_text_size_help_1),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            stringResource(Res.string.settings_weight_text_size_help_2),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(Spacing.small))
 
