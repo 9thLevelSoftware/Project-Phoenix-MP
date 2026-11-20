@@ -38,6 +38,12 @@ class WeightTextSizeSurfaceGuardTest {
     private val hudPath = "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt"
     private val windowSizeClassPath = "src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/WindowSizeClass.kt"
     private val justLiftPath = "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
+    private val exerciseEditPath = "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseEditBottomSheet.kt"
+    private val compactPickerPath = "src/phoneMain/kotlin/com/devil/phoenixproject/presentation/components/CompactNumberPicker.kt"
+    private val compactPickerAndroidPath =
+        "src/androidMain/kotlin/com/devil/phoenixproject/presentation/components/CompactNumberPicker.android.kt"
+    private val compactPickerIosPath =
+        "src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/CompactNumberPicker.ios.kt"
 
     private fun source(path: String): String = requireNotNull(readProjectFile(path)) { path }
 
@@ -170,11 +176,41 @@ class WeightTextSizeSurfaceGuardTest {
     }
 
     @Test
-    fun `just lift and the native picker never see the weight text scale`() {
+    fun `compact number picker weight sites opt in and non-weight sites do not`() {
+        val allSites = listOf(exerciseEditPath, justLiftPath)
+            .flatMap { path -> callBodies(source(path), "CompactNumberPicker(") }
+        assertEquals(5, allSites.size, "CompactNumberPicker call-site census changed — re-census and update")
+        val weightSites = allSites.filter { body -> body.contains("\"Weight per Cable\"") }
+        val nonWeightSites = allSites.filter { body -> !body.contains("\"Weight per Cable\"") }
+        assertEquals(2, weightSites.size, "CompactNumberPicker weight-site census changed")
+        assertEquals(3, nonWeightSites.size, "CompactNumberPicker non-weight-site census changed")
+
+        weightSites.forEach { body ->
+            assertContains(body, "isWeightValue = true", message = "weight wheel missing isWeightValue opt-in: $body")
+        }
+        nonWeightSites.forEach { body ->
+            assertFalse(body.contains("isWeightValue"), "non-weight wheel must not receive weight scaling: $body")
+        }
+
+        val expectSrc = source(compactPickerPath)
+        assertContains(expectSrc, "isWeightValue: Boolean = false")
+        val androidSrc = source(compactPickerAndroidPath)
+        assertContains(androidSrc, "if (isWeightValue)")
+        assertContains(androidSrc, "applyNumberPickerTextSize")
+        val iosSrc = source(compactPickerIosPath)
+        assertContains(iosSrc, "if (isWeightValue)")
+    }
+
+    @Test
+    fun `exercise edit bottom sheet and just lift scale weight readouts`() {
+        val exerciseEdit = source(exerciseEditPath)
+        assertContains(exerciseEdit, "LocalWeightTextScale")
+        assertContains(exerciseEdit, "scaledForWeightValue")
+        assertContains(exerciseEdit, "shouldStackExerciseSetPickers")
+
         val justLift = source(justLiftPath)
-        assertFalse(justLift.contains("WeightTextScale"), "JustLiftScreen must be untouched (Option B)")
-        assertFalse(justLift.contains("scaledForWeightValue"), "JustLiftScreen must be untouched (Option B)")
-        assertFalse(justLift.contains("LocalWeightTextScale"), "JustLiftScreen must be untouched (Option B)")
+        assertContains(justLift, "LocalWeightTextScale")
+        assertContains(justLift, "scaledForWeightValue")
     }
 
     @Test

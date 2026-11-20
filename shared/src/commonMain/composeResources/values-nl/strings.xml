@@ -868,7 +868,7 @@
     <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>
     <!-- Issue #1367: Grootte van gewichtstekst -->
     <string name="settings_weight_text_size">Grootte van gewichtstekst</string>
-    <string name="settings_weight_text_size_help_1">Vergroot gewichtswaarden in Set-klaarzetten, Routineoverzicht, rust, oefening instellen en trainingsweergaven. Just Lift blijft in deze eerste versie ongewijzigd. Alleen op dit apparaat opgeslagen.</string>
+    <string name="settings_weight_text_size_help_1">Vergroot gewichtswaarden in Set-klaarzetten, Routineoverzicht, rust, oefening instellen, Just Lift en trainingsweergaven. Alleen op dit apparaat opgeslagen.</string>
     <string name="settings_weight_text_size_help_2">Combineert met de tekstgrootte van je apparaat, tot 2× de standaard basisgrootte. Opties kunnen er hetzelfde uitzien bij grotere apparaattekstgroottes. Deze limiet geldt ook voor Standaard wanneer de apparaattekstgrootte deze overschrijdt.</string>
     <string name="settings_weight_text_size_standard">Standaard</string>
     <string name="settings_weight_text_size_large">Groot</string>

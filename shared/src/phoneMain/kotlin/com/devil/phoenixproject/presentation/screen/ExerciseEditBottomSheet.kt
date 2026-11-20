@@ -63,6 +63,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -91,6 +92,12 @@ import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCa
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
+import com.devil.phoenixproject.presentation.util.shouldStackExerciseSetPickers
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.ScalingBaselineLoadStatus
@@ -416,7 +423,7 @@ fun ExerciseEditBottomSheet(
                                     )
                                     Text(
                                         "${formatWeight(pr.weightPerCableKg, weightUnit)}/cable x ${pr.reps} reps",
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = MaterialTheme.typography.titleMedium.scaledForWeightValue(LocalWeightTextScale.current),
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
@@ -980,7 +987,7 @@ private fun SetsConfiguration(
 }
 
 @Composable
-private fun SetRow(
+internal fun SetRow(
     setConfig: SetConfiguration,
     setMode: SetMode,
     exerciseType: ExerciseType,
@@ -998,6 +1005,12 @@ private fun SetRow(
     repeatCount: Int = 1, // Issue #667
     onRepeatCountChange: (Int) -> Unit = {}, // Issue #667
 ) {
+    val weightTextScale = LocalWeightTextScale.current
+    val fontScale = LocalDensity.current.fontScale
+    val isCompactWidth = LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+    val stackPickers = shouldStackExerciseSetPickers(weightTextScale, fontScale, isCompactWidth)
+    val showPickerLabels = stackPickers || setConfig.setNumber == 1
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -1089,20 +1102,20 @@ private fun SetRow(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Reps/Duration and Weight side-by-side
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
-                // Reps or Duration picker
-                Box(modifier = Modifier.weight(1f)) {
+            val spacerHeight = when {
+                stackPickers -> Spacing.extraSmall
+                setConfig.setNumber == 1 -> 60.dp
+                else -> 80.dp
+            }
+            val repsOrDurationSlot: @Composable (Modifier) -> Unit = { slotModifier ->
+                Box(modifier = slotModifier) {
                     if (setMode == SetMode.REPS) {
                         if (setConfig.reps != null) {
                             CompactNumberPicker(
                                 value = setConfig.reps,
                                 onValueChange = onRepsChange,
                                 range = 1..50,
-                                label = if (setConfig.setNumber == 1) "Reps" else "",
+                                label = if (showPickerLabels) "Reps" else "",
                                 suffix = "reps",
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -1113,7 +1126,7 @@ private fun SetRow(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
-                                if (setConfig.setNumber == 1) {
+                                if (showPickerLabels) {
                                     Text(
                                         "Target",
                                         style = MaterialTheme.typography.labelMedium,
@@ -1121,7 +1134,7 @@ private fun SetRow(
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
+                                Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
                                     "AMRAP",
                                     style = MaterialTheme.typography.titleMedium,
@@ -1135,15 +1148,15 @@ private fun SetRow(
                             value = setConfig.duration,
                             onValueChange = onDurationChange,
                             range = RoutineExercise.MIN_TIMED_DURATION_SECONDS..RoutineExercise.MAX_TIMED_DURATION_SECONDS,
-                            label = if (setConfig.setNumber == 1) "Duration" else "",
+                            label = if (showPickerLabels) "Duration" else "",
                             suffix = "sec",
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
-
-                // Weight picker
-                Box(modifier = Modifier.weight(1f)) {
+            }
+            val weightSlot: @Composable (Modifier) -> Unit = { slotModifier ->
+                Box(modifier = slotModifier) {
                     when {
                         isEchoMode -> {
                             Column(
@@ -1151,7 +1164,7 @@ private fun SetRow(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
-                                if (setConfig.setNumber == 1) {
+                                if (showPickerLabels) {
                                     Text(
                                         "Force per Cable",
                                         style = MaterialTheme.typography.labelMedium,
@@ -1159,10 +1172,10 @@ private fun SetRow(
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
+                                Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
                                     "Adaptive",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.scaledForWeightValue(weightTextScale),
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -1175,9 +1188,10 @@ private fun SetRow(
                                 onValueChange = onWeightChange,
                                 range = 1f..maxWeight,
                                 step = weightStep,
-                                label = if (setConfig.setNumber == 1) "Weight per Cable" else "",
+                                label = if (showPickerLabels) "Weight per Cable" else "",
                                 suffix = weightSuffix,
                                 modifier = Modifier.fillMaxWidth(),
+                                isWeightValue = true,
                             )
                         }
 
@@ -1187,7 +1201,7 @@ private fun SetRow(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
-                                if (setConfig.setNumber == 1) {
+                                if (showPickerLabels) {
                                     Text(
                                         "Weight",
                                         style = MaterialTheme.typography.labelMedium,
@@ -1195,15 +1209,34 @@ private fun SetRow(
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
+                                Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
                                     "Bodyweight",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.scaledForWeightValue(weightTextScale),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                     }
+                }
+            }
+
+            if (stackPickers) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+                ) {
+                    repsOrDurationSlot(Modifier.fillMaxWidth())
+                    weightSlot(Modifier.fillMaxWidth())
+                }
+            } else {
+                // Reps/Duration and Weight side-by-side
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    repsOrDurationSlot(Modifier.weight(1f))
+                    weightSlot(Modifier.weight(1f))
                 }
             }
 
@@ -1421,7 +1454,7 @@ private fun EchoLevelSelector(
  * Issue #57: PR percentage scaling feature
  */
 @Composable
-private fun WeightConfigurationCard(
+internal fun WeightConfigurationCard(
     usePercentOfPR: Boolean,
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
@@ -1563,13 +1596,12 @@ private fun WeightConfigurationCard(
                     // Resolved weight from the selected basis's baseline (not always max-weight PR)
                     val resolvedWeight = (baselineWeightKg * weightPercentOfPR / 100f)
                         .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
+                    val weightTextScale = LocalWeightTextScale.current
+                    val fontScale = LocalDensity.current.fontScale
+                    val effectiveScale = effectiveWeightTextScale(weightTextScale, fontScale)
+                    val isCompactWidth = LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
 
-                    // Display current percentage and resolved weight
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    val percentageLabelText: @Composable () -> Unit = {
                         Text(
                             text = when (effectiveBasisForControls) {
                                 ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
@@ -1583,12 +1615,34 @@ private fun WeightConfigurationCard(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                         )
+                    }
+                    val resolvedWeightText: @Composable () -> Unit = {
                         Text(
                             text = "= ${formatWeight(resolvedWeight, weightUnit)}/cable",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale),
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+
+                    // Display current percentage and resolved weight
+                    if (effectiveScale > 1.0f || (isCompactWidth && fontScale >= 1.15f)) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            percentageLabelText()
+                            resolvedWeightText()
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            percentageLabelText()
+                            resolvedWeightText()
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(Spacing.small))
@@ -1909,7 +1963,7 @@ private fun WarmupSetsConfiguration(
  * Individual warm-up set row with reps picker, percentage picker, and calculated weight preview.
  */
 @Composable
-private fun WarmupSetRow(
+internal fun WarmupSetRow(
     index: Int,
     warmupSet: WarmupSet,
     workingWeight: Float,
@@ -1920,6 +1974,106 @@ private fun WarmupSetRow(
 ) {
     val calculatedWeight = (workingWeight * warmupSet.percentOfWorking / 100f)
         .let { (it * 2).roundToInt() / 2f } // Round to 0.5
+    val weightTextScale = LocalWeightTextScale.current
+    val fontScale = LocalDensity.current.fontScale
+    val effectiveScale = effectiveWeightTextScale(weightTextScale, fontScale)
+    val calculatedWeightStyle = MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale)
+
+    val warmupLabel: @Composable () -> Unit = {
+        Text(
+            "W${index + 1}",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.width(28.dp),
+        )
+    }
+    val repsStepper: @Composable (Modifier) -> Unit = { slotModifier ->
+        Column(
+            modifier = slotModifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "Reps",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = { onUpdateReps(warmupSet.reps - 1) },
+                    modifier = Modifier.size(32.dp),
+                    enabled = warmupSet.reps > 1,
+                ) {
+                    Text("-", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "${warmupSet.reps}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                IconButton(
+                    onClick = { onUpdateReps(warmupSet.reps + 1) },
+                    modifier = Modifier.size(32.dp),
+                    enabled = warmupSet.reps < 20,
+                ) {
+                    Text("+", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+    val percentStepper: @Composable (Modifier) -> Unit = { slotModifier ->
+        Column(
+            modifier = slotModifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "% of Working",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = { onUpdatePercent(warmupSet.percentOfWorking - 5) },
+                    modifier = Modifier.size(32.dp),
+                    enabled = warmupSet.percentOfWorking > 10,
+                ) {
+                    Text("-", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "${warmupSet.percentOfWorking}%",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+                IconButton(
+                    onClick = { onUpdatePercent(warmupSet.percentOfWorking + 5) },
+                    modifier = Modifier.size(32.dp),
+                    enabled = warmupSet.percentOfWorking < 100,
+                ) {
+                    Text("+", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+    val deleteButton: @Composable () -> Unit = {
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(36.dp),
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Remove warm-up set",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1927,128 +2081,80 @@ private fun WarmupSetRow(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.small),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Warm-up number label
-            Text(
-                "W${index + 1}",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.width(28.dp),
-            )
-
-            // Reps picker
+        if (effectiveScale > 1.0f) {
             Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.small),
+                verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
             ) {
-                Text(
-                    "Reps",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    IconButton(
-                        onClick = { onUpdateReps(warmupSet.reps - 1) },
-                        modifier = Modifier.size(32.dp),
-                        enabled = warmupSet.reps > 1,
-                    ) {
-                        Text("-", fontWeight = FontWeight.Bold)
-                    }
+                    warmupLabel()
+                    repsStepper(Modifier.weight(1f))
+                    percentStepper(Modifier.weight(1f))
+                    deleteButton()
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        "${warmupSet.reps}",
-                        style = MaterialTheme.typography.titleMedium,
+                        "Weight",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "$calculatedWeight",
+                        style = calculatedWeightStyle,
                         fontWeight = FontWeight.Bold,
                     )
-                    IconButton(
-                        onClick = { onUpdateReps(warmupSet.reps + 1) },
-                        modifier = Modifier.size(32.dp),
-                        enabled = warmupSet.reps < 20,
-                    ) {
-                        Text("+", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            // Percentage picker
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    "% of Working",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    IconButton(
-                        onClick = { onUpdatePercent(warmupSet.percentOfWorking - 5) },
-                        modifier = Modifier.size(32.dp),
-                        enabled = warmupSet.percentOfWorking > 10,
-                    ) {
-                        Text("-", fontWeight = FontWeight.Bold)
-                    }
                     Text(
-                        "${warmupSet.percentOfWorking}%",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        weightSuffix,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    IconButton(
-                        onClick = { onUpdatePercent(warmupSet.percentOfWorking + 5) },
-                        modifier = Modifier.size(32.dp),
-                        enabled = warmupSet.percentOfWorking < 100,
-                    ) {
-                        Text("+", fontWeight = FontWeight.Bold)
-                    }
                 }
             }
-
-            // Calculated weight preview
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Weight",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    "$calculatedWeight",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    weightSuffix,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                warmupLabel()
+                repsStepper(Modifier.weight(1f))
+                percentStepper(Modifier.weight(1f))
 
-            // Delete button
-            IconButton(
-                onClick = onRemove,
-                modifier = Modifier.size(36.dp),
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Remove warm-up set",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
-                )
+                // Calculated weight preview
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Weight",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "$calculatedWeight",
+                        style = calculatedWeightStyle,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        weightSuffix,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                deleteButton()
             }
         }
     }

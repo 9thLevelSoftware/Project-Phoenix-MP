@@ -23,6 +23,7 @@ import kotlin.math.roundToInt
  * @param suffix Unit suffix (e.g., "kg", "lbs")
  * @param step Step increment between values
  * @param compactWheel Shorter, narrower wheel for dense layouts (e.g. Just Lift)
+ * @param isWeightValue Explicit opt-in so weight wheels honor [LocalWeightTextScale]
  */
 @Composable
 expect fun CompactNumberPicker(
@@ -34,6 +35,7 @@ expect fun CompactNumberPicker(
     suffix: String = "",
     step: Float = 1.0f,
     compactWheel: Boolean = false,
+    isWeightValue: Boolean = false,
 )
 
 /**
