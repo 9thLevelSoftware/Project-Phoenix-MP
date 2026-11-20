@@ -4,7 +4,8 @@ package com.devil.phoenixproject.domain.model
  * Issue #1367: global device-local weight-text-size preference.
  *
  * Selects how large weight values render on the safety-critical weight surfaces
- * (Set Ready / Routine Overview / Rest Timer sliders, workout HUD readout, WeightStepper).
+ * (Set Ready / Routine Overview / Rest Timer sliders, workout HUD readout, WeightStepper,
+ * CompactNumberPicker, ExerciseEditBottomSheet, and JustLiftScreen).
  * The factor is the nominal app scale (1 / 1.5 / 2); the RENDERED size is additionally
  * capped against the OS font scale by the style helper
  * (`com.devil.phoenixproject.presentation.util.WeightTextScaling`), so this factor alone

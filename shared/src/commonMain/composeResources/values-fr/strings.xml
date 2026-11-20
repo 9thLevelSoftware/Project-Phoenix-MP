@@ -890,7 +890,7 @@
     <string name="intervals_reason_suppressed_by_pause">En pause</string>
     <!-- Issue #1367: Taille du texte des poids -->
     <string name="settings_weight_text_size">Taille du texte des poids</string>
-    <string name="settings_weight_text_size_help_1">Agrandit les valeurs de poids dans Préparation de série, Aperçu de la routine, la pause, la configuration des exercices et les affichages d'entraînement. Just Lift reste inchangé dans cette première version. Enregistré sur cet appareil uniquement.</string>
+    <string name="settings_weight_text_size_help_1">Agrandit les valeurs de poids dans Préparation de série, Aperçu de la routine, la pause, la configuration des exercices, Just Lift et les affichages d'entraînement. Enregistré sur cet appareil uniquement.</string>
     <string name="settings_weight_text_size_help_2">Se combine avec la taille du texte de votre appareil, jusqu'à 2× la taille de base standard. Les options peuvent sembler identiques avec des tailles de texte plus grandes. Cette limite s'applique aussi à Standard lorsque la taille du texte de l'appareil la dépasse.</string>
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Grand</string>

@@ -104,8 +104,11 @@ import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.DurationFormatter
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.currentEffectiveWeightTextScale
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -508,6 +511,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         val maxWeight = viewModel.kgToDisplay(maxWeightKg, weightUnit)
                         val weightStep = viewModel.kgToDisplay(userPreferences.effectiveWeightIncrementKg, weightUnit)
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
+                        val weightTextScale = LocalWeightTextScale.current
+                        val effectiveWeightScale = currentEffectiveWeightTextScale(weightTextScale)
+                        val pickerMaxWidth = if (effectiveWeightScale > 1.0f) 360.dp else 220.dp
 
                         Box(
                             modifier = Modifier
@@ -526,8 +532,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                 suffix = weightSuffix,
                                 compactWheel = true,
                                 modifier = Modifier
-                                    .widthIn(max = 220.dp)
+                                    .widthIn(max = pickerMaxWidth)
                                     .fillMaxWidth(),
+                                isWeightValue = true,
                             )
                         }
 
@@ -909,7 +916,7 @@ private fun ActiveStatusCard(
                         val loadText = currentMetric?.let { formatWeight(it.totalLoad, weightUnit) } ?: "--"
                         Text(
                             loadText,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.scaledForWeightValue(LocalWeightTextScale.current),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )

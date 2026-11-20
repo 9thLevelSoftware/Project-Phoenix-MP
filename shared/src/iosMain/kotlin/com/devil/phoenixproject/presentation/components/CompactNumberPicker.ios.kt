@@ -61,9 +61,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
+import com.devil.phoenixproject.presentation.util.scaledWeightWheelItemHeightDp
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -79,7 +83,10 @@ private data class PickerSizing(
 )
 
 @Composable
-private fun rememberPickerSizing(compactWheel: Boolean = false): PickerSizing {
+private fun rememberPickerSizing(
+    compactWheel: Boolean = false,
+    isWeightValue: Boolean = false,
+): PickerSizing {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
     val typography = MaterialTheme.typography
@@ -88,35 +95,50 @@ private fun rememberPickerSizing(compactWheel: Boolean = false): PickerSizing {
         compactWheel ||
             (isCompactWidth && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && fontScale <= 1.05f)
 
-    val itemHeight: Dp
-    val selectedTextStyle: TextStyle
+    val baseItemHeight: Dp
+    val baseSelectedTextStyle: TextStyle
     val buttonSize: Dp
-    val compactOverlayTextStyle: TextStyle
+    val baseCompactOverlayTextStyle: TextStyle
 
     when {
         compactHeightMode -> {
             // Compact width + compact height (e.g. iPhone landscape)
-            itemHeight = 30.dp
-            selectedTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
+            baseItemHeight = 30.dp
+            baseSelectedTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
             buttonSize = 40.dp
-            compactOverlayTextStyle = selectedTextStyle
+            baseCompactOverlayTextStyle = baseSelectedTextStyle
         }
 
         isCompactWidth -> {
             // Compact width + normal height (e.g. iPhone portrait)
-            itemHeight = 36.dp
-            selectedTextStyle = typography.titleLarge
+            baseItemHeight = 36.dp
+            baseSelectedTextStyle = typography.titleLarge
             buttonSize = 40.dp
-            compactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
+            baseCompactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
         }
 
         else -> {
             // Medium+ width (iPad, large phones landscape)
-            itemHeight = 40.dp
-            selectedTextStyle = if (fontScale > 1.15f) typography.titleLarge else typography.headlineMedium
+            baseItemHeight = 40.dp
+            baseSelectedTextStyle = if (fontScale > 1.15f) typography.titleLarge else typography.headlineMedium
             buttonSize = 48.dp
-            compactOverlayTextStyle = typography.titleMedium
+            baseCompactOverlayTextStyle = typography.titleMedium
         }
+    }
+
+    val itemHeight: Dp
+    val selectedTextStyle: TextStyle
+    val compactOverlayTextStyle: TextStyle
+    if (isWeightValue) {
+        val weightTextScale = LocalWeightTextScale.current
+        val effectiveScale = effectiveWeightTextScale(weightTextScale, fontScale)
+        itemHeight = scaledWeightWheelItemHeightDp(baseItemHeight.value, effectiveScale).dp
+        selectedTextStyle = baseSelectedTextStyle.scaledForWeightValue(weightTextScale, fontScale)
+        compactOverlayTextStyle = baseCompactOverlayTextStyle.scaledForWeightValue(weightTextScale, fontScale)
+    } else {
+        itemHeight = baseItemHeight
+        selectedTextStyle = baseSelectedTextStyle
+        compactOverlayTextStyle = baseCompactOverlayTextStyle
     }
 
     return PickerSizing(
@@ -147,6 +169,7 @@ actual fun CompactNumberPicker(
     suffix: String,
     step: Float,
     compactWheel: Boolean,
+    isWeightValue: Boolean,
 ) {
     val values = remember(range.start, range.endInclusive, step) {
         compactNumberPickerValues(range, step)
@@ -173,7 +196,7 @@ actual fun CompactNumberPicker(
     val coroutineScope = rememberCoroutineScope()
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val focusManager = LocalFocusManager.current
-    val pickerSizing = rememberPickerSizing(compactWheel = compactWheel)
+    val pickerSizing = rememberPickerSizing(compactWheel = compactWheel, isWeightValue = isWeightValue)
 
     // Inline editing state
     var isEditing by remember { mutableStateOf(false) }
@@ -543,8 +566,7 @@ actual fun CompactNumberPicker(
                                     BasicTextField(
                                         value = inputText,
                                         onValueChange = { inputText = it },
-                                        textStyle = TextStyle(
-                                            fontSize = pickerSizing.selectedTextStyle.fontSize,
+                                        textStyle = pickerSizing.selectedTextStyle.copy(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             textAlign = TextAlign.Center,
@@ -624,6 +646,7 @@ actual fun CompactNumberPicker(
                     ) {
                         Text(
                             text = formatOverlayValue(values[previewIndex], useCompactOverlay),
+                            modifier = if (isWeightValue) Modifier.padding(horizontal = editButtonSize) else Modifier,
                             style = overlayTextStyle,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -717,5 +740,6 @@ actual fun CompactNumberPicker(
         suffix = suffix,
         step = 1.0f,
         compactWheel = false,
+        isWeightValue = false,
     )
 }

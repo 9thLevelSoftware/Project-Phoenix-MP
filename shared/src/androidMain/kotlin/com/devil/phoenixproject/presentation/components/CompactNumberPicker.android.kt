@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import android.os.Build
+import android.util.TypedValue
 import android.widget.NumberPicker
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -12,9 +13,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledWeightWheelHeightDp
+import com.devil.phoenixproject.presentation.util.weightTextMultiplier
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -31,8 +39,29 @@ actual fun CompactNumberPicker(
     suffix: String,
     step: Float,
     compactWheel: Boolean,
+    isWeightValue: Boolean,
 ) {
-    val wheelHeight = if (compactWheel) 96.dp else 120.dp
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val weightTextScale = LocalWeightTextScale.current
+    val effectiveScale = if (isWeightValue) {
+        effectiveWeightTextScale(weightTextScale, fontScale)
+    } else {
+        1f
+    }
+    val baseWheelHeightDp = if (compactWheel) 96f else 120f
+    val wheelHeight = if (isWeightValue) {
+        scaledWeightWheelHeightDp(baseWheelHeightDp, effectiveScale).dp
+    } else {
+        baseWheelHeightDp.dp
+    }
+    val weightTextSizePx: Float? = if (isWeightValue) {
+        val baseSp = if (compactWheel) 18f else 20f
+        val targetSp = baseSp * weightTextMultiplier(weightTextScale.preferenceFactor, fontScale)
+        with(density) { targetSp.sp.toPx() }.roundToInt().toFloat()
+    } else {
+        null
+    }
     val buttonSize = if (compactWheel) 40.dp else 48.dp
     val values = remember(range.start, range.endInclusive, step) {
         compactNumberPickerValues(range, step)
@@ -106,6 +135,9 @@ actual fun CompactNumberPicker(
 
                         // Set text color for all Android versions
                         applyNumberPickerTextColor(textColor)
+                        if (isWeightValue && weightTextSizePx != null) {
+                            applyNumberPickerTextSize(weightTextSizePx)
+                        }
                     }
                 },
                 update = { picker ->
@@ -122,6 +154,9 @@ actual fun CompactNumberPicker(
 
                     // Update text color on every recomposition
                     picker.applyNumberPickerTextColor(textColor)
+                    if (isWeightValue && weightTextSizePx != null) {
+                        picker.applyNumberPickerTextSize(weightTextSizePx)
+                    }
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -172,7 +207,49 @@ actual fun CompactNumberPicker(
         suffix = suffix,
         step = 1.0f,
         compactWheel = false,
+        isWeightValue = false,
     )
+}
+
+/**
+ * Applies [textSizePx] to the wheel when [CompactNumberPicker] has `isWeightValue = true`.
+ * API 29+ uses [NumberPicker.setTextSize]; API 26–28 updates TextView children and wheel paint.
+ */
+internal fun NumberPicker.applyNumberPickerTextSize(textSizePx: Float) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (abs(textSize - textSizePx) > 0.5f) {
+            textSize = textSizePx
+        }
+    } else {
+        post {
+            try {
+                for (i in 0 until childCount) {
+                    val child = getChildAt(i)
+                    if (child is android.widget.TextView) {
+                        child.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx)
+                    }
+                }
+                try {
+                    val paintField = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
+                    paintField.isAccessible = true
+                    val paint = paintField.get(this) as? android.graphics.Paint
+                    paint?.textSize = textSizePx
+                } catch (_: Exception) {
+                    // Paint field not found - expected on some Android versions
+                }
+                try {
+                    val textSizeField = NumberPicker::class.java.getDeclaredField("mTextSize")
+                    textSizeField.isAccessible = true
+                    textSizeField.setInt(this, textSizePx.roundToInt())
+                } catch (_: Exception) {
+                    // Text size field not found - expected on some Android versions
+                }
+                invalidate()
+            } catch (_: Exception) {
+                // Reflection failed - fall back to default styling
+            }
+        }
+    }
 }
 
 /**

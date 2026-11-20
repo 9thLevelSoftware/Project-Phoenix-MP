@@ -1061,7 +1061,7 @@
     <string name="intervals_reason_suppressed_by_pause">Paused</string>
     <!-- Issue #1367: Weight text size preference. Help copy is signoff-verbatim (SD8). -->
     <string name="settings_weight_text_size">Weight text size</string>
-    <string name="settings_weight_text_size_help_1">Enlarges weight values in Set Ready, Routine Overview, rest, exercise setup and workout readouts. Just Lift is unchanged in this first version. Saved on this device only.</string>
+    <string name="settings_weight_text_size_help_1">Enlarges weight values in Set Ready, Routine Overview, rest, exercise setup, Just Lift and workout readouts. Saved on this device only.</string>
     <string name="settings_weight_text_size_help_2">Combines with your device text size, up to 2× the standard base size. Options may look the same at larger device text sizes. This limit also applies to Standard when your device text size exceeds it.</string>
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Large</string>

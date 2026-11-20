@@ -164,6 +164,38 @@ class WeightTextScalingTest {
         assertTrue(!shouldSeparateWeightStepperValueRow(Float.NaN))
     }
 
+    // ===== Wheel sizing & ExerciseEditBottomSheet set-picker stacking =====
+
+    @Test
+    fun `weight wheel container height grows modestly and caps at 2x`() {
+        assertEquals(120f, scaledWeightWheelHeightDp(120f, 1.0f), tolerance)
+        assertEquals(156f, scaledWeightWheelHeightDp(120f, 1.5f), tolerance)
+        assertEquals(192f, scaledWeightWheelHeightDp(120f, 2.0f), tolerance)
+        assertEquals(192f, scaledWeightWheelHeightDp(120f, 3.0f), tolerance)
+        assertEquals(96f, scaledWeightWheelHeightDp(96f, 0.85f), tolerance)
+        assertEquals(96f, scaledWeightWheelHeightDp(96f, Float.NaN), tolerance)
+    }
+
+    @Test
+    fun `weight wheel item height grows monotonically and caps at 2x`() {
+        assertEquals(36f, scaledWeightWheelItemHeightDp(36f, 1.0f), tolerance)
+        assertEquals(54f, scaledWeightWheelItemHeightDp(36f, 1.5f), tolerance)
+        assertEquals(72f, scaledWeightWheelItemHeightDp(36f, 2.0f), tolerance)
+        assertEquals(72f, scaledWeightWheelItemHeightDp(36f, 2.5f), tolerance)
+        assertEquals(36f, scaledWeightWheelItemHeightDp(36f, -1f), tolerance)
+    }
+
+    @Test
+    fun `exercise set pickers stack when weight scale is enlarged or compact OS scale is large`() {
+        assertTrue(!shouldStackExerciseSetPickers(WeightTextScale.STANDARD, 1.0f, isCompactWidth = true))
+        assertTrue(!shouldStackExerciseSetPickers(WeightTextScale.STANDARD, 1.0f, isCompactWidth = false))
+        assertTrue(!shouldStackExerciseSetPickers(WeightTextScale.STANDARD, 1.5f, isCompactWidth = false))
+        assertTrue(shouldStackExerciseSetPickers(WeightTextScale.STANDARD, 1.15f, isCompactWidth = true))
+        assertTrue(shouldStackExerciseSetPickers(WeightTextScale.LARGE, 1.0f, isCompactWidth = true))
+        assertTrue(shouldStackExerciseSetPickers(WeightTextScale.LARGE, 1.0f, isCompactWidth = false))
+        assertTrue(shouldStackExerciseSetPickers(WeightTextScale.EXTRA_LARGE, 1.0f, isCompactWidth = true))
+    }
+
     // ===== T12: CompositionLocal safe default =====
     // (Asserted via a real composition in androidHostTest/LocalWeightTextScaleDefaultTest —
     // CompositionLocal.current is @Composable and cannot be read from a plain unit test.)

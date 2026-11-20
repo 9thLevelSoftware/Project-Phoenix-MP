@@ -94,3 +94,35 @@ fun currentEffectiveWeightTextScale(scale: WeightTextScale): Float =
  */
 fun shouldSeparateWeightStepperValueRow(effectiveScale: Float): Boolean =
     sanitizedScale(effectiveScale) > 1.5f
+
+/**
+ * Scales the Android weight wheel container height (dp) modestly as [effectiveScale]
+ * grows, capped against [WEIGHT_TEXT_MAX_EFFECTIVE_SCALE].
+ */
+fun scaledWeightWheelHeightDp(baseHeightDp: Float, effectiveScale: Float): Float {
+    val e = sanitizedScale(effectiveScale).coerceIn(1f, WEIGHT_TEXT_MAX_EFFECTIVE_SCALE)
+    return baseHeightDp * (1f + (e - 1f) * 0.6f)
+}
+
+/**
+ * Scales the iOS weight wheel row height (dp) proportionally to [effectiveScale] (clamped
+ * to `[1f, WEIGHT_TEXT_MAX_EFFECTIVE_SCALE]`) so container height (`itemHeight * 3`) and
+ * selection dividers expand with the enlarged weight text.
+ */
+fun scaledWeightWheelItemHeightDp(baseItemHeightDp: Float, effectiveScale: Float): Float {
+    val e = sanitizedScale(effectiveScale).coerceIn(1f, WEIGHT_TEXT_MAX_EFFECTIVE_SCALE)
+    return baseItemHeightDp * e
+}
+
+/**
+ * Stacks the Reps/Duration and Weight pickers vertically in `ExerciseEditBottomSheet.SetRow`
+ * whenever a larger weight text scale is chosen or compact width combines with OS >= 1.15x.
+ */
+fun shouldStackExerciseSetPickers(
+    weightTextScale: WeightTextScale,
+    osFontScale: Float,
+    isCompactWidth: Boolean,
+): Boolean {
+    val effectiveScale = effectiveWeightTextScale(weightTextScale, osFontScale)
+    return weightTextScale != WeightTextScale.STANDARD || (isCompactWidth && effectiveScale >= 1.15f)
+}
