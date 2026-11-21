@@ -51,6 +51,35 @@ import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.insights_consistency_def
+import projectphoenix.shared.generated.resources.insights_consistency_so_what
+import projectphoenix.shared.generated.resources.insights_consistency_subtitle
+import projectphoenix.shared.generated.resources.insights_consistency_time
+import projectphoenix.shared.generated.resources.insights_consistency_title
+import projectphoenix.shared.generated.resources.insights_dashboard
+import projectphoenix.shared.generated.resources.insights_mode_dist_def
+import projectphoenix.shared.generated.resources.insights_mode_dist_so_what
+import projectphoenix.shared.generated.resources.insights_no_insights_message
+import projectphoenix.shared.generated.resources.insights_no_insights_title
+import projectphoenix.shared.generated.resources.insights_performance_trends
+import projectphoenix.shared.generated.resources.insights_performance_trends_def
+import projectphoenix.shared.generated.resources.insights_performance_trends_so_what
+import projectphoenix.shared.generated.resources.insights_performance_trends_subtitle
+import projectphoenix.shared.generated.resources.insights_performance_trends_time
+import projectphoenix.shared.generated.resources.insights_training_load_balance
+import projectphoenix.shared.generated.resources.insights_training_load_balance_subtitle
+import projectphoenix.shared.generated.resources.insights_training_overview
+import projectphoenix.shared.generated.resources.insights_volume_history_def
+import projectphoenix.shared.generated.resources.insights_volume_history_so_what
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_def
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_so_what
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_subtitle
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_time
+import projectphoenix.shared.generated.resources.insights_workload_intensity_def
+import projectphoenix.shared.generated.resources.insights_workload_intensity_so_what
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
@@ -135,14 +164,14 @@ fun InsightsTab(
             ResponsiveCardWrapper {
                 Column {
                     Text(
-                        text = "Dashboard",
+                        text = stringResource(Res.string.insights_dashboard),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Your training overview",
+                        text = stringResource(Res.string.insights_training_overview),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -207,7 +236,10 @@ fun InsightsTab(
 
         item {
             ResponsiveCardWrapper {
-                InsightSectionHeader("Weekly Snapshot", "How this week compares to your prior 7 days")
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_weekly_snapshot),
+                    stringResource(Res.string.insights_weekly_snapshot_subtitle),
+                )
             }
         }
 
@@ -216,9 +248,9 @@ fun InsightsTab(
             ResponsiveCardWrapper {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
                     InsightContextBlock(
-                        "Completed sessions, volume, and personal records.",
-                        "Last 7 days vs prior 7 days",
-                        "Review weekly momentum before adjusting volume or weight.",
+                        stringResource(Res.string.insights_weekly_snapshot_def),
+                        stringResource(Res.string.insights_weekly_snapshot_time),
+                        stringResource(Res.string.insights_weekly_snapshot_so_what),
                     )
                     ThisWeekSummaryCard(
                         workoutSessions = workoutSessions,
@@ -232,7 +264,10 @@ fun InsightsTab(
 
         item {
             ResponsiveCardWrapper {
-                InsightSectionHeader("Performance Trends", "Muscle focus and strength coverage")
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_performance_trends),
+                    stringResource(Res.string.insights_performance_trends_subtitle),
+                )
             }
         }
 
@@ -241,9 +276,9 @@ fun InsightsTab(
             item {
                 ResponsiveCardWrapper {
                     InsightContextBlock(
-                        "Personal record coverage across major muscle groups.",
-                        "All-time PRs",
-                        "Spot well-trained and undertrained regions to keep balance.",
+                        stringResource(Res.string.insights_performance_trends_def),
+                        stringResource(Res.string.insights_performance_trends_time),
+                        stringResource(Res.string.insights_performance_trends_so_what),
                     )
                 }
             }
@@ -260,7 +295,10 @@ fun InsightsTab(
 
         item {
             ResponsiveCardWrapper {
-                InsightSectionHeader("Consistency", "Session cadence over the last 30 days")
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_consistency_title),
+                    stringResource(Res.string.insights_consistency_subtitle),
+                )
             }
         }
 
@@ -269,9 +307,9 @@ fun InsightsTab(
             ResponsiveCardWrapper {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
                     InsightContextBlock(
-                        "Your workout count compared against a 3-session/week target.",
-                        "Last 30 days",
-                        "Consistent weekly sessions drive steady long-term progression.",
+                        stringResource(Res.string.insights_consistency_def),
+                        stringResource(Res.string.insights_consistency_time),
+                        stringResource(Res.string.insights_consistency_so_what),
                     )
                     ConsistencyGaugeCard(
                         workoutSessions = workoutSessions,
@@ -283,7 +321,10 @@ fun InsightsTab(
 
         item {
             ResponsiveCardWrapper {
-                InsightSectionHeader("Training Load & Balance", "Volume, intensity, and mode breakdown")
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_training_load_balance),
+                    stringResource(Res.string.insights_training_load_balance_subtitle),
+                )
             }
         }
 
@@ -292,9 +333,9 @@ fun InsightsTab(
             item {
                 ResponsiveCardWrapper {
                     InsightContextBlock(
-                        "How total workload (volume) and peak load (intensity) move together.",
+                        stringResource(Res.string.insights_workload_intensity_def),
                         selectedPeriod.label,
-                        "When peak weight rises alongside dropping volume, consider a lighter recovery session.",
+                        stringResource(Res.string.insights_workload_intensity_so_what),
                     )
                 }
             }
@@ -314,9 +355,9 @@ fun InsightsTab(
             item {
                 ResponsiveCardWrapper {
                     InsightContextBlock(
-                        "Total lifted workload per workout period.",
+                        stringResource(Res.string.insights_volume_history_def),
                         selectedPeriod.label,
-                        "Build volume gradually (5–10% per week) to avoid excess fatigue.",
+                        stringResource(Res.string.insights_volume_history_so_what),
                     )
                 }
             }
@@ -336,9 +377,9 @@ fun InsightsTab(
             item {
                 ResponsiveCardWrapper {
                     InsightContextBlock(
-                        "Breakdown of sessions across training modes.",
+                        stringResource(Res.string.insights_mode_dist_def),
                         selectedPeriod.label,
-                        "Use mode distribution to verify variety across Echo, Old School, and specialty modes.",
+                        stringResource(Res.string.insights_mode_dist_so_what),
                     )
                 }
             }
@@ -376,13 +417,13 @@ fun InsightsTab(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No Insights Yet",
+                                text = stringResource(Res.string.insights_no_insights_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Complete workouts to unlock insights",
+                                text = stringResource(Res.string.insights_no_insights_message),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

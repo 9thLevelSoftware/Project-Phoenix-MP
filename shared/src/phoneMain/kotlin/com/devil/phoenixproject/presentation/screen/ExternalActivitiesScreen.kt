@@ -41,9 +41,8 @@ import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.empty_no_external_activities_message
-import projectphoenix.shared.generated.resources.empty_no_external_activities_title
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,8 +58,9 @@ fun ExternalActivitiesScreen(
     val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        onSetTitle("External Activities")
+    val screenTitle = stringResource(Res.string.external_activities_title)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     // ── Provider filter state ─────────────────────────────────────────────────
@@ -102,7 +102,7 @@ fun ExternalActivitiesScreen(
                             selected = selectedProvider == null,
                             onClick = { selectedProvider = null },
                             modifier = Modifier.heightIn(min = 48.dp),
-                            label = { Text("All") },
+                            label = { Text(stringResource(Res.string.label_all)) },
                         )
                     }
                     items(presentProviders) { provider ->
@@ -171,12 +171,14 @@ private fun ExternalActivityItem(
     var expanded by remember { mutableStateOf(false) }
     var showTechnicalDetails by remember { mutableStateOf(false) }
 
+    val expandedState = stringResource(Res.string.external_cd_expanded)
+    val collapsedState = stringResource(Res.string.external_cd_collapsed)
     ExpressiveCard(
         onClick = { expanded = !expanded },
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                stateDescription = if (expanded) "Expanded" else "Collapsed"
+                stateDescription = if (expanded) expandedState else collapsedState
             },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
@@ -239,7 +241,11 @@ private fun ExternalActivityItem(
                 Column(horizontalAlignment = Alignment.End) {
                     val mins = activity.durationSeconds / 60
                     Text(
-                        if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m",
+                        if (mins >= 60) {
+                            stringResource(Res.string.external_duration_hm, mins / 60, mins % 60)
+                        } else {
+                            stringResource(Res.string.external_duration_m, mins)
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -259,13 +265,12 @@ private fun ExternalActivityItem(
                     .padding(start = Spacing.medium, end = Spacing.medium, bottom = Spacing.medium),
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
-                val metricItems = buildList {
-                    activity.calories?.let { add("$it kcal") }
-                    activity.distanceMeters?.let { add(formatDistance(it, weightUnit)) }
-                    activity.elevationGainMeters?.let { add(formatElevation(it, weightUnit)) }
-                    activity.avgHeartRate?.let { add("$it avg bpm") }
-                    activity.maxHeartRate?.let { add("$it max bpm") }
-                }
+                val kcalLabel = activity.calories?.let { stringResource(Res.string.external_kcal, it) }
+                val distanceLabel = activity.distanceMeters?.let { formatDistance(it, weightUnit) }
+                val elevationLabel = activity.elevationGainMeters?.let { formatElevation(it, weightUnit) }
+                val avgHrLabel = activity.avgHeartRate?.let { stringResource(Res.string.external_avg_bpm, it) }
+                val maxHrLabel = activity.maxHeartRate?.let { stringResource(Res.string.external_max_bpm, it) }
+                val metricItems = listOfNotNull(kcalLabel, distanceLabel, elevationLabel, avgHrLabel, maxHrLabel)
 
                 if (metricItems.isNotEmpty()) {
                     FlowRow(
@@ -288,7 +293,7 @@ private fun ExternalActivityItem(
                     }
                 } else {
                     Text(
-                        text = "No additional workout metrics recorded",
+                        text = stringResource(Res.string.external_no_additional_metrics),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -302,14 +307,14 @@ private fun ExternalActivityItem(
                             .clip(MaterialTheme.shapes.small)
                             .clickable(role = Role.Button) { showTechnicalDetails = !showTechnicalDetails }
                             .semantics {
-                                stateDescription = if (showTechnicalDetails) "Expanded" else "Collapsed"
+                                stateDescription = if (showTechnicalDetails) expandedState else collapsedState
                             }
                             .padding(horizontal = Spacing.extraSmall),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "Technical details",
+                            text = stringResource(Res.string.external_technical_details),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -336,7 +341,7 @@ private fun ExternalActivityItem(
                             ) {
                                 if (activity.externalId.isNotBlank()) {
                                     Text(
-                                        text = "Provider ID: ${activity.externalId}",
+                                        text = stringResource(Res.string.external_provider_id, activity.externalId),
                                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -368,25 +373,27 @@ private fun rememberActivityPreferredWeightUnit(override: WeightUnit?): WeightUn
         ?: globalPreferences.weightUnit
 }
 
+@Composable
 private fun formatDistance(distanceMeters: Double, weightUnit: WeightUnit): String = when (weightUnit) {
     WeightUnit.LB -> {
         val miles = distanceMeters / 1609.344
         if (miles >= 0.1) {
-            "${UnitConverter.formatDecimal(miles.toFloat())} mi"
+            stringResource(Res.string.external_distance_mi, UnitConverter.formatDecimal(miles.toFloat()))
         } else {
-            "${(distanceMeters * 3.28084).roundToInt()} ft"
+            stringResource(Res.string.external_distance_ft, (distanceMeters * 3.28084).roundToInt())
         }
     }
     WeightUnit.KG -> {
         if (distanceMeters >= 1000.0) {
-            "${UnitConverter.formatDecimal((distanceMeters / 1000.0).toFloat())} km"
+            stringResource(Res.string.external_distance_km, UnitConverter.formatDecimal((distanceMeters / 1000.0).toFloat()))
         } else {
-            "${distanceMeters.roundToInt()} m"
+            stringResource(Res.string.external_distance_m, distanceMeters.roundToInt())
         }
     }
 }
 
+@Composable
 private fun formatElevation(elevationMeters: Double, weightUnit: WeightUnit): String = when (weightUnit) {
-    WeightUnit.LB -> "${(elevationMeters * 3.28084).roundToInt()} ft elev"
-    WeightUnit.KG -> "${elevationMeters.roundToInt()} m elev"
+    WeightUnit.LB -> stringResource(Res.string.external_elev_ft, (elevationMeters * 3.28084).roundToInt())
+    WeightUnit.KG -> stringResource(Res.string.external_elev_m, elevationMeters.roundToInt())
 }

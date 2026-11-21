@@ -45,7 +45,58 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_stop
+import projectphoenix.shared.generated.resources.disconnect
+import projectphoenix.shared.generated.resources.hrm_action_connect
+import projectphoenix.shared.generated.resources.hrm_address_label
+import projectphoenix.shared.generated.resources.hrm_auto_reconnect
+import projectphoenix.shared.generated.resources.hrm_battery_label
+import projectphoenix.shared.generated.resources.hrm_battery_unavailable
+import projectphoenix.shared.generated.resources.hrm_chest_strap_tip
+import projectphoenix.shared.generated.resources.hrm_connecting_sensor
+import projectphoenix.shared.generated.resources.hrm_currently_state
+import projectphoenix.shared.generated.resources.hrm_device_label
+import projectphoenix.shared.generated.resources.hrm_dynamic_acc
+import projectphoenix.shared.generated.resources.hrm_forget
+import projectphoenix.shared.generated.resources.hrm_garmin_tip
+import projectphoenix.shared.generated.resources.hrm_hrv_unavailable
+import projectphoenix.shared.generated.resources.hrm_intro
+import projectphoenix.shared.generated.resources.hrm_live_hr_bpm
+import projectphoenix.shared.generated.resources.hrm_live_hr_not_standard
+import projectphoenix.shared.generated.resources.hrm_live_hr_sensor_error
+import projectphoenix.shared.generated.resources.hrm_live_hr_subscribing
+import projectphoenix.shared.generated.resources.hrm_live_hr_unavailable_dash
+import projectphoenix.shared.generated.resources.hrm_live_hr_unknown
+import projectphoenix.shared.generated.resources.hrm_live_hr_waiting
+import projectphoenix.shared.generated.resources.hrm_mg_value
+import projectphoenix.shared.generated.resources.hrm_pitch
+import projectphoenix.shared.generated.resources.hrm_raw_ecg_description
+import projectphoenix.shared.generated.resources.hrm_remember_future_sessions
+import projectphoenix.shared.generated.resources.hrm_remembered_sensor
+import projectphoenix.shared.generated.resources.hrm_reset_tare
+import projectphoenix.shared.generated.resources.hrm_roll
+import projectphoenix.shared.generated.resources.hrm_rr_hrv_available
+import projectphoenix.shared.generated.resources.hrm_save_raw_ecg
+import projectphoenix.shared.generated.resources.hrm_scan_for_sensors
+import projectphoenix.shared.generated.resources.hrm_scan_other
+import projectphoenix.shared.generated.resources.hrm_scanning_nearby
+import projectphoenix.shared.generated.resources.hrm_sensor_name_default
+import projectphoenix.shared.generated.resources.hrm_skin_contact_detected
+import projectphoenix.shared.generated.resources.hrm_skin_contact_not_detected
+import projectphoenix.shared.generated.resources.hrm_skin_contact_not_reported
+import projectphoenix.shared.generated.resources.hrm_state_off
+import projectphoenix.shared.generated.resources.hrm_state_on
+import projectphoenix.shared.generated.resources.hrm_status_connected
+import projectphoenix.shared.generated.resources.hrm_status_connecting
+import projectphoenix.shared.generated.resources.hrm_status_connection_error
+import projectphoenix.shared.generated.resources.hrm_status_disconnected
+import projectphoenix.shared.generated.resources.hrm_status_scanning
+import projectphoenix.shared.generated.resources.hrm_tare_posture
+import projectphoenix.shared.generated.resources.hrm_torso_biomechanics_title
+import projectphoenix.shared.generated.resources.reconnect
 import kotlin.math.roundToInt
 
 /**
@@ -103,24 +154,24 @@ fun HrmSensorSettingsCard(
                     ) {
                         SectionHeaderIconBadge(
                             imageVector = Icons.Default.Favorite,
-                            contentDescription = "Heart Rate Sensor",
+                            contentDescription = stringResource(Res.string.hrm_sensor_name_default),
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Heart Rate Sensor",
+                                stringResource(Res.string.hrm_sensor_name_default),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 when (connectionState) {
-                                    is ConnectionState.Connected -> "Connected"
-                                    is ConnectionState.Connecting -> "Connecting..."
-                                    is ConnectionState.Scanning -> "Scanning for sensors..."
-                                    is ConnectionState.Error -> "Connection error"
-                                    is ConnectionState.Disconnected -> "Disconnected"
+                                    is ConnectionState.Connected -> stringResource(Res.string.hrm_status_connected)
+                                    is ConnectionState.Connecting -> stringResource(Res.string.hrm_status_connecting)
+                                    is ConnectionState.Scanning -> stringResource(Res.string.hrm_status_scanning)
+                                    is ConnectionState.Error -> stringResource(Res.string.hrm_status_connection_error)
+                                    is ConnectionState.Disconnected -> stringResource(Res.string.hrm_status_disconnected)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = when (connectionState) {
@@ -140,7 +191,7 @@ fun HrmSensorSettingsCard(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(
-                                "Disconnect",
+                                stringResource(Res.string.disconnect),
                                 color = MaterialTheme.colorScheme.error,
                                 maxLines = 1,
                                 softWrap = false,
@@ -160,7 +211,7 @@ fun HrmSensorSettingsCard(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(
-                                "Disconnect",
+                                stringResource(Res.string.disconnect),
                                 color = MaterialTheme.colorScheme.error,
                                 maxLines = 1,
                             )
@@ -174,7 +225,7 @@ fun HrmSensorSettingsCard(
                 when (val state = connectionState) {
                     is ConnectionState.Disconnected, is ConnectionState.Error -> {
                         Text(
-                            "Connect a heart rate sensor for real-time heart rate. Chest straps may also provide R-R intervals, ECG, and motion telemetry when supported.",
+                            stringResource(Res.string.hrm_intro),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -193,12 +244,13 @@ fun HrmSensorSettingsCard(
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Text(
-                                        "Remembered Sensor",
+                                        stringResource(Res.string.hrm_remembered_sensor),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
                                     Text(
-                                        rememberedName?.takeIf { it.isNotBlank() } ?: "Heart Rate Sensor",
+                                        rememberedName?.takeIf { it.isNotBlank() }
+                                            ?: stringResource(Res.string.hrm_sensor_name_default),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
@@ -220,13 +272,13 @@ fun HrmSensorSettingsCard(
                                         onClick = { hrmBleManager.forgetRememberedDevice() },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text("Forget", color = MaterialTheme.colorScheme.error)
+                                        Text(stringResource(Res.string.hrm_forget), color = MaterialTheme.colorScheme.error)
                                     }
                                     Button(
                                         onClick = { scope.launch { hrmBleManager.autoReconnectIfRemembered() } },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text("Reconnect")
+                                        Text(stringResource(Res.string.reconnect))
                                     }
                                 }
                             }
@@ -241,7 +293,15 @@ fun HrmSensorSettingsCard(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (rememberedAddress != null) "Scan for Other Sensors" else "Scan for Heart Rate Sensors")
+                            Text(
+                                stringResource(
+                                    if (rememberedAddress != null) {
+                                        Res.string.hrm_scan_other
+                                    } else {
+                                        Res.string.hrm_scan_for_sensors
+                                    },
+                                ),
+                            )
                         }
                     }
 
@@ -258,7 +318,7 @@ fun HrmSensorSettingsCard(
                                 LoadingIndicator(LoadingIndicatorSize.Medium)
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    "Looking for nearby heart rate sensors...",
+                                    stringResource(Res.string.hrm_scanning_nearby),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f),
@@ -269,7 +329,7 @@ fun HrmSensorSettingsCard(
                                     onClick = { scope.launch { hrmBleManager.stopScanning() } },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
-                                    Text("Stop")
+                                    Text(stringResource(Res.string.action_stop))
                                 }
                             }
                         }
@@ -283,13 +343,13 @@ fun HrmSensorSettingsCard(
                                     onClick = { scope.launch { hrmBleManager.stopScanning() } },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
-                                    Text("Stop")
+                                    Text(stringResource(Res.string.action_stop))
                                 }
                             }
                         }
                         Spacer(modifier = Modifier.height(Spacing.small))
                         Text(
-                            "Garmin watch or strap? Enable its Heart Rate Broadcast mode (e.g. Settings > Sensors & Accessories > Broadcast Heart Rate) so it appears here.",
+                            stringResource(Res.string.hrm_garmin_tip),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                             modifier = Modifier.padding(vertical = 4.dp),
@@ -297,7 +357,7 @@ fun HrmSensorSettingsCard(
 
                         if (scannedDevices.isEmpty()) {
                             Text(
-                                "Ensure your heart rate sensor strap is moistened and worn firmly on your chest.",
+                                stringResource(Res.string.hrm_chest_strap_tip),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                 modifier = Modifier.padding(vertical = 8.dp),
@@ -322,7 +382,7 @@ fun HrmSensorSettingsCard(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    device.name.ifBlank { "Heart Rate Sensor" },
+                                                    device.name.ifBlank { stringResource(Res.string.hrm_sensor_name_default) },
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.SemiBold,
                                                 )
@@ -340,7 +400,7 @@ fun HrmSensorSettingsCard(
                                                     onClick = { scope.launch { hrmBleManager.connect(device) } },
                                                     modifier = Modifier.heightIn(min = 48.dp),
                                                 ) {
-                                                    Text("Connect")
+                                                    Text(stringResource(Res.string.hrm_action_connect))
                                                 }
                                             }
                                         }
@@ -353,7 +413,7 @@ fun HrmSensorSettingsCard(
                                                     onClick = { scope.launch { hrmBleManager.connect(device) } },
                                                     modifier = Modifier.heightIn(min = 48.dp),
                                                 ) {
-                                                    Text("Connect")
+                                                    Text(stringResource(Res.string.hrm_action_connect))
                                                 }
                                             }
                                         }
@@ -372,7 +432,7 @@ fun HrmSensorSettingsCard(
                             LoadingIndicator(LoadingIndicatorSize.Medium)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Connecting to heart rate sensor...",
+                                stringResource(Res.string.hrm_connecting_sensor),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -393,12 +453,15 @@ fun HrmSensorSettingsCard(
                         ) {
                             // Device Name & Address (advertised name; blank -> generic) — always shown.
                             Text(
-                                "Device: ${state.deviceName.ifBlank { "Heart Rate Sensor" }}",
+                                stringResource(
+                                    Res.string.hrm_device_label,
+                                    state.deviceName.ifBlank { stringResource(Res.string.hrm_sensor_name_default) },
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                "Address: ${state.deviceAddress}",
+                                stringResource(Res.string.hrm_address_label, state.deviceAddress),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -409,14 +472,17 @@ fun HrmSensorSettingsCard(
                             // Battery — a value ONLY when CONFIRMED; never fabricated.
                             if (caps.battery == HrmCapabilityState.CONFIRMED) {
                                 Text(
-                                    "Battery: ${batteryLevel?.let { "$it%" } ?: "—"}",
+                                    stringResource(
+                                        Res.string.hrm_battery_label,
+                                        batteryLevel?.let { "$it%" } ?: "—",
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if ((batteryLevel ?: 100) < 20) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 )
                             } else {
                                 Text(
-                                    "Battery unavailable",
+                                    stringResource(Res.string.hrm_battery_unavailable),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -425,37 +491,38 @@ fun HrmSensorSettingsCard(
                             // Live HR — distinct Unknown / waiting-for-first-sample / failed states (SD2).
                             when (caps.standardHr) {
                                 HrmCapabilityState.UNKNOWN -> Text(
-                                    "Live HR: unknown",
+                                    stringResource(Res.string.hrm_live_hr_unknown),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 HrmCapabilityState.CHECKING -> Text(
-                                    "Live HR: subscribing to heart rate data...",
+                                    stringResource(Res.string.hrm_live_hr_subscribing),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 HrmCapabilityState.WAITING_FIRST_SAMPLE -> Text(
-                                    "Live HR: waiting for first sample...",
+                                    stringResource(Res.string.hrm_live_hr_waiting),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 HrmCapabilityState.CONFIRMED -> Text(
-                                    "Live HR: ${hrMeasurement?.hr?.let { "$it BPM" } ?: "—"}",
+                                    hrMeasurement?.hr?.let { stringResource(Res.string.hrm_live_hr_bpm, it) }
+                                        ?: stringResource(Res.string.hrm_live_hr_unavailable_dash),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 HrmCapabilityState.ABSENT -> Text(
-                                    "Live HR: unavailable — not a standard heart rate sensor",
+                                    stringResource(Res.string.hrm_live_hr_not_standard),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.error,
                                 )
                                 HrmCapabilityState.FAILED -> Text(
-                                    "Live HR: unavailable (heart rate sensor error)",
+                                    stringResource(Res.string.hrm_live_hr_sensor_error),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.error,
@@ -466,11 +533,11 @@ fun HrmSensorSettingsCard(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 val (contactLabel, contactColor) = when (caps.contact) {
                                     ContactReportState.REPORTED_DETECTED ->
-                                        "Skin contact detected" to accessibilityColors.success
+                                        stringResource(Res.string.hrm_skin_contact_detected) to accessibilityColors.success
                                     ContactReportState.REPORTED_NOT_DETECTED ->
-                                        "Skin contact not detected" to accessibilityColors.warning
+                                        stringResource(Res.string.hrm_skin_contact_not_detected) to accessibilityColors.warning
                                     ContactReportState.NOT_REPORTED ->
-                                        "Skin contact: not reported" to MaterialTheme.colorScheme.onSurfaceVariant
+                                        stringResource(Res.string.hrm_skin_contact_not_reported) to MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                                 Icon(
                                     if (caps.contact == ContactReportState.REPORTED_DETECTED) {
@@ -493,13 +560,13 @@ fun HrmSensorSettingsCard(
                             // RR/HRV — only promised when RR intervals were actually observed (SD1).
                             if (caps.rrIntervals == HrmCapabilityState.CONFIRMED) {
                                 Text(
-                                    "R-R intervals available · HRV (RMSSD)",
+                                    stringResource(Res.string.hrm_rr_hrv_available),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = accessibilityColors.connectedGreen,
                                 )
                             } else {
                                 Text(
-                                    "HRV unavailable",
+                                    stringResource(Res.string.hrm_hrv_unavailable),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -520,12 +587,12 @@ fun HrmSensorSettingsCard(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "Auto-reconnect on workout",
+                                        stringResource(Res.string.hrm_auto_reconnect),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                     )
                                     Text(
-                                        "Remember this sensor for future sessions",
+                                        stringResource(Res.string.hrm_remember_future_sessions),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -555,14 +622,19 @@ fun HrmSensorSettingsCard(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Save raw ECG", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(Res.string.hrm_save_raw_ecg), style = MaterialTheme.typography.titleSmall)
                                     Text(
-                                        "Off by default. Save up to 5 minutes per recording locally. Raw ECG is removed after 30 days or when its workout is deleted; a storage limit can remove older traces sooner. ECG is not synced to the portal.",
+                                        stringResource(Res.string.hrm_raw_ecg_description),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        "Currently: ${if (isRawEcgStorageEnabled) "On" else "Off"}",
+                                        stringResource(
+                                            Res.string.hrm_currently_state,
+                                            stringResource(
+                                                if (isRawEcgStorageEnabled) Res.string.hrm_state_on else Res.string.hrm_state_off,
+                                            ),
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isRawEcgStorageEnabled) accessibilityColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -577,7 +649,7 @@ fun HrmSensorSettingsCard(
                             // Torso Biomechanics Posture Section
                             Spacer(modifier = Modifier.height(Spacing.small))
                             Text(
-                                "Torso Biomechanics (50 Hz ACC)",
+                                stringResource(Res.string.hrm_torso_biomechanics_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -599,7 +671,7 @@ fun HrmSensorSettingsCard(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Pitch", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(stringResource(Res.string.hrm_pitch), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Text(
                                             text = torsoPitchDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
                                             style = MaterialTheme.typography.titleMedium,
@@ -607,7 +679,7 @@ fun HrmSensorSettingsCard(
                                         )
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Roll", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(stringResource(Res.string.hrm_roll), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Text(
                                             text = torsoRollDeg?.let { "${(it * 10.0).roundToInt() / 10.0}°" } ?: "—",
                                             style = MaterialTheme.typography.titleMedium,
@@ -615,9 +687,9 @@ fun HrmSensorSettingsCard(
                                         )
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Dynamic Acc", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(stringResource(Res.string.hrm_dynamic_acc), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         Text(
-                                            text = dynamicAccMg?.let { "$it mG" } ?: "—",
+                                            text = dynamicAccMg?.let { stringResource(Res.string.hrm_mg_value, it) } ?: "—",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                         )
@@ -633,13 +705,13 @@ fun HrmSensorSettingsCard(
                                         onClick = { hrmBleManager.tareCurrentPosture() },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text("Tare Posture")
+                                        Text(stringResource(Res.string.hrm_tare_posture))
                                     }
                                     OutlinedButton(
                                         onClick = { hrmBleManager.resetPostureTare() },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text("Reset Tare")
+                                        Text(stringResource(Res.string.hrm_reset_tare))
                                     }
                                 }
                             }

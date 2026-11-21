@@ -45,6 +45,58 @@ import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.badges_workouts_label
+import projectphoenix.shared.generated.resources.exercise_unknown
+import projectphoenix.shared.generated.resources.insights_all_time_achievements
+import projectphoenix.shared.generated.resources.insights_based_on_sessions
+import projectphoenix.shared.generated.resources.insights_compared_last_7_days
+import projectphoenix.shared.generated.resources.insights_days_of_gains
+import projectphoenix.shared.generated.resources.insights_days_since_first
+import projectphoenix.shared.generated.resources.insights_favorite_exercise
+import projectphoenix.shared.generated.resources.insights_favorite_mode
+import projectphoenix.shared.generated.resources.insights_fun_blue_whales
+import projectphoenix.shared.generated.resources.insights_fun_cars_crushed
+import projectphoenix.shared.generated.resources.insights_fun_elephants
+import projectphoenix.shared.generated.resources.insights_fun_jumbo_jets
+import projectphoenix.shared.generated.resources.insights_fun_kg_lifted
+import projectphoenix.shared.generated.resources.insights_fun_titanics
+import projectphoenix.shared.generated.resources.insights_last_7_sessions
+import projectphoenix.shared.generated.resources.insights_lifetime_empty
+import projectphoenix.shared.generated.resources.insights_lifetime_stats
+import projectphoenix.shared.generated.resources.insights_max_weight_unit_label
+import projectphoenix.shared.generated.resources.insights_mode_distribution
+import projectphoenix.shared.generated.resources.insights_monthly_consistency
+import projectphoenix.shared.generated.resources.insights_monthly_consistency_cd
+import projectphoenix.shared.generated.resources.insights_muscle_arms
+import projectphoenix.shared.generated.resources.insights_muscle_back
+import projectphoenix.shared.generated.resources.insights_muscle_balance
+import projectphoenix.shared.generated.resources.insights_muscle_balance_empty
+import projectphoenix.shared.generated.resources.insights_muscle_balance_subtitle
+import projectphoenix.shared.generated.resources.insights_muscle_chest
+import projectphoenix.shared.generated.resources.insights_muscle_core
+import projectphoenix.shared.generated.resources.insights_muscle_legs
+import projectphoenix.shared.generated.resources.insights_muscle_shoulders
+import projectphoenix.shared.generated.resources.insights_no_mode_data
+import projectphoenix.shared.generated.resources.insights_no_workout_data
+import projectphoenix.shared.generated.resources.insights_prs_hit
+import projectphoenix.shared.generated.resources.insights_same
+import projectphoenix.shared.generated.resources.insights_this_week
+import projectphoenix.shared.generated.resources.insights_total_reps
+import projectphoenix.shared.generated.resources.insights_total_volume
+import projectphoenix.shared.generated.resources.insights_total_volume_history
+import projectphoenix.shared.generated.resources.insights_total_workouts
+import projectphoenix.shared.generated.resources.insights_volume_per_session
+import projectphoenix.shared.generated.resources.insights_volume_unit_label
+import projectphoenix.shared.generated.resources.insights_volume_vs_intensity
+import projectphoenix.shared.generated.resources.insights_week_summary
+import projectphoenix.shared.generated.resources.insights_workouts_count
+import projectphoenix.shared.generated.resources.insights_workouts_last_30_days
+import projectphoenix.shared.generated.resources.label_kg
+import projectphoenix.shared.generated.resources.label_lbs
 import kotlin.math.roundToInt
 
 /**
@@ -169,24 +221,30 @@ fun ThisWeekSummaryCard(
         else -> "${displayVolume.roundToInt()} ${weightUnit.name.lowercase()}"
     }
 
+    val weekSummaryDescription = stringResource(
+        Res.string.insights_week_summary,
+        thisWeek.workouts,
+        volumeText,
+        thisWeek.totalReps,
+        thisWeek.prsHit,
+    )
     Card(
         modifier = modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription =
-                    "This week summary: ${thisWeek.workouts} workouts, $volumeText volume, ${thisWeek.totalReps} reps, ${thisWeek.prsHit} PRs"
+                contentDescription = weekSummaryDescription
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "This Week",
+                stringResource(Res.string.insights_this_week),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Compared to last 7 days",
+                stringResource(Res.string.insights_compared_last_7_days),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -196,25 +254,25 @@ fun ThisWeekSummaryCard(
             // Stat rows
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WeekStatRow(
-                    label = "Workouts",
+                    label = stringResource(Res.string.badges_workouts_label),
                     value = "${thisWeek.workouts}",
                     comparison = workoutsComparison,
                 )
 
                 WeekStatRow(
-                    label = "Total Volume",
+                    label = stringResource(Res.string.insights_total_volume),
                     value = volumeText,
                     comparison = volumeComparison,
                 )
 
                 WeekStatRow(
-                    label = "Total Reps",
+                    label = stringResource(Res.string.insights_total_reps),
                     value = "${thisWeek.totalReps}",
                     comparison = repsComparison,
                 )
 
                 WeekStatRow(
-                    label = "PRs Hit",
+                    label = stringResource(Res.string.insights_prs_hit),
                     value = "${thisWeek.prsHit}",
                     comparison = prsComparison,
                 )
@@ -244,7 +302,7 @@ private fun WeekStatRow(label: String, value: String, comparison: Comparison, mo
         is Comparison.NoChange -> Triple(
             Icons.Default.Remove,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            "same",
+            stringResource(Res.string.insights_same),
         )
 
         is Comparison.NoData -> Triple(
@@ -360,11 +418,18 @@ fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseReposi
         val maxCount = counts.values.maxOrNull()?.toFloat() ?: 1f
 
         // Ensure all standard groups are represented
-        val standardGroups = listOf("Chest", "Back", "Legs", "Shoulders", "Arms", "Core")
+        val standardGroups = listOf(
+            "Chest" to Res.string.insights_muscle_chest,
+            "Back" to Res.string.insights_muscle_back,
+            "Legs" to Res.string.insights_muscle_legs,
+            "Shoulders" to Res.string.insights_muscle_shoulders,
+            "Arms" to Res.string.insights_muscle_arms,
+            "Core" to Res.string.insights_muscle_core,
+        )
 
-        radarData = standardGroups.map { group ->
+        radarData = standardGroups.map { (group, labelRes) ->
             val count = counts[group] ?: 0
-            group to (if (maxCount > 0) count / maxCount else 0f)
+            getString(labelRes) to (if (maxCount > 0) count / maxCount else 0f)
         }
     }
 
@@ -375,12 +440,12 @@ fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseReposi
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Muscle Balance",
+                stringResource(Res.string.insights_muscle_balance),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Relative training focus by body part",
+                stringResource(Res.string.insights_muscle_balance_subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -394,7 +459,7 @@ fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseReposi
                 )
             } else {
                 Text(
-                    "Complete workouts to see your muscle balance analysis.",
+                    stringResource(Res.string.insights_muscle_balance_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -415,23 +480,28 @@ fun ConsistencyGaugeCard(workoutSessions: List<WorkoutSession>, modifier: Modifi
     // Dynamic target based on history, defaulting to 12 (3/week)
     val target = 12f
 
+    val consistencyCd = stringResource(
+        Res.string.insights_monthly_consistency_cd,
+        stats,
+        target.toInt(),
+    )
     Card(
         modifier = modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "Monthly consistency: $stats workouts in the last 30 days, target is ${target.toInt()}"
+                contentDescription = consistencyCd
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Monthly Consistency",
+                stringResource(Res.string.insights_monthly_consistency),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Workouts in the last 30 days",
+                stringResource(Res.string.insights_workouts_last_30_days),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -441,7 +511,7 @@ fun ConsistencyGaugeCard(workoutSessions: List<WorkoutSession>, modifier: Modifi
             GaugeChart(
                 currentValue = stats.toFloat(),
                 targetValue = target,
-                label = "Workouts",
+                label = stringResource(Res.string.badges_workouts_label),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -489,12 +559,12 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Volume vs Intensity",
+                stringResource(Res.string.insights_volume_vs_intensity),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Last 7 sessions",
+                stringResource(Res.string.insights_last_7_sessions),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -502,19 +572,21 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
             Spacer(modifier = Modifier.height(16.dp))
 
             if (columnData.isNotEmpty()) {
-                val weightSuffix = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                val weightSuffix = stringResource(
+                    if (weightUnit == WeightUnit.KG) Res.string.label_kg else Res.string.label_lbs,
+                )
                 ComboChart(
                     columnData = columnData,
                     lineData = lineData,
-                    columnLabel = "Volume ($weightSuffix)",
-                    lineLabel = "Max Weight ($weightSuffix)",
+                    columnLabel = stringResource(Res.string.insights_volume_unit_label, weightSuffix),
+                    lineLabel = stringResource(Res.string.insights_max_weight_unit_label, weightSuffix),
                     columnUnit = weightSuffix,
                     lineUnit = weightSuffix,
                     modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Text(
-                    "No workout data available yet.",
+                    stringResource(Res.string.insights_no_workout_data),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -541,12 +613,12 @@ fun WorkoutModeDistributionCard(workoutSessions: List<WorkoutSession>, modifier:
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Mode Distribution",
+                stringResource(Res.string.insights_mode_distribution),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Based on Workout Sessions",
+                stringResource(Res.string.insights_based_on_sessions),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -562,7 +634,7 @@ fun WorkoutModeDistributionCard(workoutSessions: List<WorkoutSession>, modifier:
                 )
             } else {
                 Text(
-                    "No mode data available.",
+                    stringResource(Res.string.insights_no_mode_data),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -585,12 +657,12 @@ fun TotalVolumeCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Total Volume History",
+                stringResource(Res.string.insights_total_volume_history),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Volume lifted per workout session",
+                stringResource(Res.string.insights_volume_per_session),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -605,7 +677,7 @@ fun TotalVolumeCard(
                 )
             } else {
                 Text(
-                    "No workout data available yet.",
+                    stringResource(Res.string.insights_no_workout_data),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -618,7 +690,7 @@ fun TotalVolumeCard(
 /**
  * Volume comparison data class for fun volume representations
  */
-private data class VolumeComparison(val funValue: String, val funLabel: String, val actualKg: Float)
+private data class VolumeComparison(val funValue: String, val funLabelRes: StringResource, val actualKg: Float)
 
 /**
  * Format a float to one decimal place (KMP-compatible)
@@ -639,37 +711,37 @@ internal fun formatOneDecimal(value: Float): String {
 private fun getVolumeComparison(totalVolumeKg: Float): VolumeComparison = when {
     totalVolumeKg >= 1_000_000 -> VolumeComparison(
         funValue = formatOneDecimal(totalVolumeKg / 52_000_000f),
-        funLabel = "Titanics",
+        funLabelRes = Res.string.insights_fun_titanics,
         actualKg = totalVolumeKg,
     )
 
     totalVolumeKg >= 200_000 -> VolumeComparison(
         funValue = formatOneDecimal(totalVolumeKg / 150_000f),
-        funLabel = "Blue Whales",
+        funLabelRes = Res.string.insights_fun_blue_whales,
         actualKg = totalVolumeKg,
     )
 
     totalVolumeKg >= 100_000 -> VolumeComparison(
         funValue = formatOneDecimal(totalVolumeKg / 100_000f),
-        funLabel = "Jumbo Jets",
+        funLabelRes = Res.string.insights_fun_jumbo_jets,
         actualKg = totalVolumeKg,
     )
 
     totalVolumeKg >= 50_000 -> VolumeComparison(
         funValue = formatOneDecimal(totalVolumeKg / 5_000f),
-        funLabel = "Elephants Moved",
+        funLabelRes = Res.string.insights_fun_elephants,
         actualKg = totalVolumeKg,
     )
 
     totalVolumeKg >= 10_000 -> VolumeComparison(
         funValue = formatOneDecimal(totalVolumeKg / 1_500f),
-        funLabel = "Cars Crushed",
+        funLabelRes = Res.string.insights_fun_cars_crushed,
         actualKg = totalVolumeKg,
     )
 
     else -> VolumeComparison(
         funValue = "${totalVolumeKg.toInt()}",
-        funLabel = "kg lifted",
+        funLabelRes = Res.string.insights_fun_kg_lifted,
         actualKg = totalVolumeKg,
     )
 }
@@ -764,7 +836,7 @@ fun LifetimeStatsCard(
         val names = mutableMapOf<String, String>()
         exerciseIds.forEach { id ->
             val exercise = exerciseRepository.getExerciseById(id)
-            names[id] = exercise?.name ?: "Unknown Exercise"
+            names[id] = exercise?.name ?: getString(Res.string.exercise_unknown)
         }
         exerciseNames = names
     }
@@ -799,12 +871,12 @@ fun LifetimeStatsCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Lifetime Stats",
+                stringResource(Res.string.insights_lifetime_stats),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Your all-time achievements",
+                stringResource(Res.string.insights_all_time_achievements),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -813,7 +885,7 @@ fun LifetimeStatsCard(
 
             if (workoutSessions.isEmpty()) {
                 Text(
-                    "Complete workouts to see your lifetime stats!",
+                    stringResource(Res.string.insights_lifetime_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -822,7 +894,7 @@ fun LifetimeStatsCard(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Total Workouts
                     LifetimeStatRow(
-                        label = "Total Workouts",
+                        label = stringResource(Res.string.insights_total_workouts),
                         value = "${stats.totalWorkouts}",
                         subtext = null,
                     )
@@ -831,14 +903,14 @@ fun LifetimeStatsCard(
                     if (stats.totalVolumeKg >= 10_000) {
                         // Show fun comparison prominently
                         LifetimeStatRow(
-                            label = "Total Volume",
-                            value = "${volumeComparison.funValue} ${volumeComparison.funLabel}",
+                            label = stringResource(Res.string.insights_total_volume),
+                            value = "${volumeComparison.funValue} ${stringResource(volumeComparison.funLabelRes)}",
                             subtext = actualVolumeDisplay,
                             isFunStat = true,
                         )
                     } else {
                         LifetimeStatRow(
-                            label = "Total Volume",
+                            label = stringResource(Res.string.insights_total_volume),
                             value = actualVolumeDisplay,
                             subtext = null,
                         )
@@ -846,7 +918,7 @@ fun LifetimeStatsCard(
 
                     // Total Reps
                     LifetimeStatRow(
-                        label = "Total Reps",
+                        label = stringResource(Res.string.insights_total_reps),
                         value = when {
                             stats.totalReps >= 1000 -> "${formatOneDecimal(stats.totalReps / 1000f)}k"
                             else -> "${stats.totalReps}"
@@ -857,27 +929,27 @@ fun LifetimeStatsCard(
                     // Days Since First Workout
                     if (stats.daysSinceFirst > 0) {
                         LifetimeStatRow(
-                            label = "Days Since First",
+                            label = stringResource(Res.string.insights_days_since_first),
                             value = "${stats.daysSinceFirst}",
-                            subtext = "days of gains",
+                            subtext = stringResource(Res.string.insights_days_of_gains),
                         )
                     }
 
                     // Favorite Exercise
                     stats.favoriteExercise?.let { exercise ->
                         LifetimeStatRow(
-                            label = "Favorite Exercise",
+                            label = stringResource(Res.string.insights_favorite_exercise),
                             value = exercise,
-                            subtext = "${stats.favoriteExerciseCount} workouts",
+                            subtext = stringResource(Res.string.insights_workouts_count, stats.favoriteExerciseCount),
                         )
                     }
 
                     // Favorite Mode
                     stats.favoriteMode?.let { mode ->
                         LifetimeStatRow(
-                            label = "Favorite Mode",
+                            label = stringResource(Res.string.insights_favorite_mode),
                             value = mode,
-                            subtext = "${stats.favoriteModeCount} workouts",
+                            subtext = stringResource(Res.string.insights_workouts_count, stats.favoriteModeCount),
                         )
                     }
                 }

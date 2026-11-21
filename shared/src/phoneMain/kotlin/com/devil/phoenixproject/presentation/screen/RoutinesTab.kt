@@ -99,8 +99,10 @@ import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_copy
@@ -177,13 +179,15 @@ fun RoutinesTab(
             if (routine.exercises.isEmpty()) continue
             try {
                 val estimate = timeEstimator.estimateRoutineDuration(routine, routine.profileId)
-                val text = buildString {
-                    if (estimate.hasRange) {
-                        append(estimate.formattedRange)
-                    } else {
-                        append(estimate.formattedDuration)
-                    }
-                    if (estimate.isEntirelyFallback) append(" (est.)")
+                val baseDuration = if (estimate.hasRange) {
+                    estimate.formattedRange
+                } else {
+                    estimate.formattedDuration
+                }
+                val text = if (estimate.isEntirelyFallback) {
+                    getString(Res.string.routines_duration_est_suffix, baseDuration)
+                } else {
+                    baseDuration
                 }
                 timeEstimates[routine.id] = text
             } catch (e: Exception) {
@@ -282,7 +286,7 @@ fun RoutinesTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "${selectedIds.size} selected",
+                            text = stringResource(Res.string.routines_selected_count, selectedIds.size),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -477,7 +481,7 @@ fun RoutinesTab(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Move to Group")
+                        Icon(Icons.Default.FolderOpen, contentDescription = stringResource(Res.string.routines_move_to_group))
                     }
 
                     // Move to Profile button (only if other profiles exist)
@@ -682,7 +686,7 @@ fun RoutinesTab(
         val routine = routines.find { it.id == routineId }
         if (routine != null) {
             MoveToGroupDialog(
-                title = "Move to Group",
+                title = stringResource(Res.string.routines_move_to_group),
                 subtitle = routine.name,
                 groups = routineGroups,
                 currentGroupId = routine.groupId,
@@ -712,8 +716,12 @@ fun RoutinesTab(
             routines.find { it.id == id }?.groupId
         }
         MoveToGroupDialog(
-            title = "Move to Group",
-            subtitle = "${selectedIds.size} routine(s)",
+            title = stringResource(Res.string.routines_move_to_group),
+            subtitle = if (selectedIds.size == 1) {
+                stringResource(Res.string.routine_count_one)
+            } else {
+                stringResource(Res.string.routine_count_other, selectedIds.size)
+            },
             groups = routineGroups,
             currentGroupId = firstSelectedGroupId,
             onGroupSelected = { groupId ->
@@ -740,7 +748,7 @@ fun RoutinesTab(
     // Create Group dialog
     if (showCreateGroupDialog) {
         GroupNameDialog(
-            title = "New Group",
+            title = stringResource(Res.string.routines_new_group),
             onConfirm = { name ->
                 onCreateGroup(name)
                 showCreateGroupDialog = false
@@ -780,7 +788,7 @@ fun RoutinesTab(
     // Rename Group dialog
     renameGroupTarget?.let { group ->
         GroupNameDialog(
-            title = "Rename Group",
+            title = stringResource(Res.string.routines_rename_group),
             initialName = group.name,
             onConfirm = { newName ->
                 onRenameGroup(group.id, newName)
@@ -1133,8 +1141,17 @@ private fun RoutineCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    val exerciseCountLabel = if (routine.exercises.size == 1) {
+                        stringResource(Res.string.exercise_count_one)
+                    } else {
+                        stringResource(Res.string.exercise_count_other, routine.exercises.size)
+                    }
                     Text(
-                        text = "${routine.exercises.size} exercises • ${historicalTimeEstimate ?: formatEstimatedDuration(routine)}",
+                        text = stringResource(
+                            Res.string.routine_summary_bullet,
+                            exerciseCountLabel,
+                            historicalTimeEstimate ?: formatEstimatedDuration(routine),
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1268,7 +1285,7 @@ private fun RoutineCard(
                                 ) {
                                     Icon(
                                         Icons.Default.MoreVert,
-                                        contentDescription = "More options",
+                                        contentDescription = stringResource(Res.string.routines_more_options),
                                         modifier = Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -1279,7 +1296,7 @@ private fun RoutineCard(
                                 ) {
                                     if (hasGroups) {
                                         DropdownMenuItem(
-                                            text = { Text("Move to Group") },
+                                            text = { Text(stringResource(Res.string.routines_move_to_group)) },
                                             onClick = {
                                                 showOverflow = false
                                                 onMoveToGroup()
@@ -1475,8 +1492,9 @@ private fun RoutineCard(
 /**
  * Format set/reps for display in routine card.
  */
+@Composable
 private fun formatSetRepsForCard(setReps: List<Int?>): String {
-    if (setReps.isEmpty()) return "0 sets"
+    if (setReps.isEmpty()) return stringResource(Res.string.routines_zero_sets)
 
     // Group consecutive identical reps
     val groups = mutableListOf<Pair<Int, String>>()
@@ -1501,8 +1519,9 @@ private fun formatSetRepsForCard(setReps: List<Int?>): String {
 /**
  * Estimate workout duration based on reps and rest times.
  */
+@Composable
 private fun formatEstimatedDuration(routine: Routine): String {
-    if (routine.exercises.isEmpty()) return "0 min"
+    if (routine.exercises.isEmpty()) return stringResource(Res.string.routines_duration_min, 0)
 
     var totalWorkSeconds = 0
     var totalRestSeconds = 0
@@ -1546,11 +1565,11 @@ private fun formatEstimatedDuration(routine: Routine): String {
     val minutes = estimatedSeconds / 60
 
     return if (minutes < 60) {
-        "$minutes min"
+        stringResource(Res.string.routines_duration_min, minutes)
     } else {
         val hours = minutes / 60
         val remainingMinutes = minutes % 60
-        "${hours}h ${remainingMinutes}m"
+        stringResource(Res.string.external_duration_hm, hours, remainingMinutes)
     }
 }
 

@@ -83,8 +83,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @Composable
 fun ExternalIntegrationHubScreen(
@@ -100,8 +103,9 @@ fun ExternalIntegrationHubScreen(
     val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        onSetTitle("Integration Data")
+    val screenTitle = stringResource(Res.string.integrations_data_title)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     Box(
@@ -124,32 +128,46 @@ fun ExternalIntegrationHubScreen(
         ) {
             item {
                 HubCard(
-                    title = "Workouts",
-                    subtitle = "${uiState.externalActivities.size} imported activities",
+                    title = stringResource(Res.string.external_workouts),
+                    subtitle = stringResource(Res.string.external_imported_activities_count, uiState.externalActivities.size),
                     icon = Icons.AutoMirrored.Filled.List,
                     onClick = onNavigateToActivities,
                 )
             }
             item {
+                val routinesLabel = if (uiState.externalRoutines.size == 1) {
+                    stringResource(Res.string.routine_count_one)
+                } else {
+                    stringResource(Res.string.routine_count_other, uiState.externalRoutines.size)
+                }
+                val foldersLabel = if (uiState.externalRoutineFolders.size == 1) {
+                    stringResource(Res.string.folder_count_one)
+                } else {
+                    stringResource(Res.string.folder_count_other, uiState.externalRoutineFolders.size)
+                }
                 HubCard(
-                    title = "Hevy Routines",
-                    subtitle = "${uiState.externalRoutines.size} routines, ${uiState.externalRoutineFolders.size} folders",
+                    title = stringResource(Res.string.external_hevy_routines),
+                    subtitle = stringResource(Res.string.external_routines_folders_summary, routinesLabel, foldersLabel),
                     icon = Icons.Default.FitnessCenter,
                     onClick = onNavigateToRoutines,
                 )
             }
             item {
                 HubCard(
-                    title = "Liftosaur Programs",
-                    subtitle = "${uiState.externalPrograms.size} programs, ${uiState.externalProgramStatsByProgramId.size} stats records",
+                    title = stringResource(Res.string.external_liftosaur_programs),
+                    subtitle = stringResource(
+                        Res.string.external_programs_stats_summary,
+                        uiState.externalPrograms.size,
+                        uiState.externalProgramStatsByProgramId.size,
+                    ),
                     icon = Icons.Default.Code,
                     onClick = onNavigateToPrograms,
                 )
             }
             item {
                 HubCard(
-                    title = "Measurements",
-                    subtitle = "${uiState.externalMeasurements.size} Hevy measurement records",
+                    title = stringResource(Res.string.external_measurements),
+                    subtitle = stringResource(Res.string.external_hevy_measurements_summary, uiState.externalMeasurements.size),
                     icon = Icons.Default.Scale,
                     onClick = onNavigateToMeasurements,
                 )
@@ -169,20 +187,22 @@ fun ExternalRoutinesScreen(
     val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        onSetTitle("External Routines")
+    val screenTitle = stringResource(Res.string.external_routines_title)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     if (state.routines.isEmpty()) {
         EmptyIntegrationState(
-            message = "No routines imported yet",
+            message = stringResource(Res.string.external_routines_empty),
             icon = Icons.Default.FitnessCenter,
             modifier = modifier,
         )
         return
     }
 
-    val grouped = remember(state.routines) { state.routines.groupBy { it.folderName ?: "Unfiled" } }
+    val unfiledLabel = stringResource(Res.string.external_unfiled)
+    val grouped = remember(state.routines, unfiledLabel) { state.routines.groupBy { it.folderName ?: unfiledLabel } }
 
     Box(
         modifier = modifier
@@ -238,13 +258,14 @@ fun ExternalRoutineDetailScreen(
         state.routines.firstOrNull { it.provider.key == providerKey && it.externalId == externalRoutineId }
     }
 
-    LaunchedEffect(routine?.title) {
-        onSetTitle(routine?.title ?: "Routine")
+    val fallbackTitle = stringResource(Res.string.nav_routine)
+    LaunchedEffect(routine?.title, fallbackTitle) {
+        onSetTitle(routine?.title ?: fallbackTitle)
     }
 
     if (routine == null) {
         EmptyIntegrationState(
-            message = "Routine not found",
+            message = stringResource(Res.string.external_routine_not_found),
             icon = Icons.Default.Inbox,
             modifier = modifier,
         )
@@ -282,7 +303,7 @@ fun ExternalRoutineDetailScreen(
                     shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
-                        "Review exercise mappings before converting. External weights are preserved as informational until per-cable mapping is confirmed.",
+                        stringResource(Res.string.external_mapping_disclaimer),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(Spacing.small),
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -308,7 +329,13 @@ fun ExternalRoutineDetailScreen(
                             " @ ${formatExternalWeightKg(kg, resolvedWeightUnit)}"
                         }.orEmpty()
                         Text(
-                            "Set ${set.index + 1}: ${set.setType ?: "normal"} · ${set.reps ?: "-"} reps$weightPart",
+                            stringResource(
+                                Res.string.external_set_row,
+                                set.index + 1,
+                                set.setType ?: stringResource(Res.string.external_set_type_normal),
+                                set.reps?.toString() ?: "-",
+                                weightPart,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -329,13 +356,14 @@ fun ExternalProgramsScreen(
     val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        onSetTitle("External Programs")
+    val screenTitle = stringResource(Res.string.external_programs_title)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     if (state.programs.isEmpty()) {
         EmptyIntegrationState(
-            message = "No programs imported yet",
+            message = stringResource(Res.string.external_programs_empty),
             icon = Icons.Default.FitnessCenter,
             modifier = modifier,
         )
@@ -383,13 +411,14 @@ fun ExternalProgramDetailScreen(
         state.programs.firstOrNull { it.provider.key == providerKey && it.externalId == externalProgramId }
     }
 
-    LaunchedEffect(program?.name) {
-        onSetTitle(program?.name ?: "Program")
+    val fallbackTitle = stringResource(Res.string.nav_program)
+    LaunchedEffect(program?.name, fallbackTitle) {
+        onSetTitle(program?.name ?: fallbackTitle)
     }
 
     if (program == null) {
         EmptyIntegrationState(
-            message = "Program not found",
+            message = stringResource(Res.string.external_program_not_found),
             icon = Icons.Default.Inbox,
             modifier = modifier,
         )
@@ -423,18 +452,26 @@ fun ExternalProgramDetailScreen(
                 Text(program.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (program.isCurrent) {
                     Spacer(Modifier.height(4.dp))
-                    StatusChip("Current program")
+                    StatusChip(stringResource(Res.string.external_current_program))
                 }
                 Spacer(Modifier.height(8.dp))
                 EntityCard {
-                    Text("Stats", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text("${stats?.days ?: 0} days", style = MaterialTheme.typography.bodyMedium)
-                    Text("${stats?.approximateMinutes ?: 0} approximate minutes", style = MaterialTheme.typography.bodyMedium)
-                    Text("${stats?.setCount ?: 0} sets", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.external_stats_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    val programDays = stats?.days ?: 0
+                    Text(
+                        if (programDays == 1) {
+                            stringResource(Res.string.day_count_one)
+                        } else {
+                            stringResource(Res.string.day_count_other, programDays)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(stringResource(Res.string.external_stats_approx_minutes, stats?.approximateMinutes ?: 0), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.external_stats_sets, stats?.setCount ?: 0), style = MaterialTheme.typography.bodyMedium)
                     if (muscleBreakdown.isNotEmpty()) {
                         Spacer(Modifier.height(Spacing.small))
                         Text(
-                            "Muscle Group Breakdown",
+                            stringResource(Res.string.external_muscle_breakdown),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -459,10 +496,18 @@ fun ExternalProgramDetailScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    val formattedValue = entry.subtitle ?: when {
-                                        looksLikeRatios -> "${UnitConverter.formatDecimal((entry.value * 100.0).toFloat())}%"
-                                        looksLikePercentages -> "${UnitConverter.formatDecimal(entry.value.toFloat())}%"
-                                        else -> UnitConverter.formatDecimal(entry.value.toFloat())
+                                    val formattedValue = if (entry.direct != null && entry.indirect != null) {
+                                        stringResource(
+                                            Res.string.external_direct_indirect,
+                                            UnitConverter.formatDecimal(entry.direct.toFloat()),
+                                            UnitConverter.formatDecimal(entry.indirect.toFloat()),
+                                        )
+                                    } else {
+                                        when {
+                                            looksLikeRatios -> "${UnitConverter.formatDecimal((entry.value * 100.0).toFloat())}%"
+                                            looksLikePercentages -> "${UnitConverter.formatDecimal(entry.value.toFloat())}%"
+                                            else -> UnitConverter.formatDecimal(entry.value.toFloat())
+                                        }
                                     }
                                     Text(
                                         text = formattedValue,
@@ -485,7 +530,7 @@ fun ExternalProgramDetailScreen(
                     } else if (!stats?.muscleGroupBreakdownJson.isNullOrBlank()) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Muscle group breakdown unavailable",
+                            stringResource(Res.string.external_muscle_breakdown_unavailable),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -501,7 +546,7 @@ fun ExternalProgramDetailScreen(
                 ) {
                     Icon(Icons.Default.Science, contentDescription = null)
                     Spacer(Modifier.size(Spacing.small))
-                    Text("Preview Playground")
+                    Text(stringResource(Res.string.external_preview_playground))
                 }
                 Spacer(Modifier.height(Spacing.small))
                 Surface(
@@ -509,7 +554,7 @@ fun ExternalProgramDetailScreen(
                     shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
-                        "Liftosaur conversion is read-only here. Manual Phoenix cycle conversion should happen only after validating Liftoscript mappings.",
+                        stringResource(Res.string.external_playground_disclaimer),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(Spacing.small),
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -519,7 +564,7 @@ fun ExternalProgramDetailScreen(
             item {
                 EntityCard {
                     Text(
-                        program.scriptText ?: "No script text available",
+                        program.scriptText ?: stringResource(Res.string.external_no_script_text),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -545,8 +590,9 @@ fun ExternalProgramPlaygroundScreen(
     }
     val preview = state.playgroundPreview?.takeIf { it.programExternalId == externalProgramId }
 
-    LaunchedEffect(Unit) {
-        onSetTitle("Program Playground")
+    val screenTitle = stringResource(Res.string.external_playground_title)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     LaunchedEffect(providerKey, externalProgramId) {
@@ -564,7 +610,7 @@ fun ExternalProgramPlaygroundScreen(
 
     if (program == null) {
         EmptyIntegrationState(
-            message = "Program not found",
+            message = stringResource(Res.string.external_program_not_found),
             icon = Icons.Default.Inbox,
             modifier = modifier,
         )
@@ -599,25 +645,29 @@ fun ExternalProgramPlaygroundScreen(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                 ) {
-                    Text(if (state.isSimulating) "Simulating..." else "Run Preview")
+                    Text(
+                        stringResource(
+                            if (state.isSimulating) Res.string.external_simulating else Res.string.external_run_preview,
+                        ),
+                    )
                 }
             }
             item {
                 EntityCard {
-                    Text("Current workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(preview?.currentWorkoutText ?: "Run a preview to see the current workout.")
+                    Text(stringResource(Res.string.external_current_workout), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.currentWorkoutText ?: stringResource(Res.string.external_current_workout_empty))
                 }
             }
             item {
                 EntityCard {
-                    Text("Next workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(preview?.nextWorkoutText ?: "Run a preview to see the next workout.")
+                    Text(stringResource(Res.string.external_next_workout), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.nextWorkoutText ?: stringResource(Res.string.external_next_workout_empty))
                 }
             }
             item {
                 EntityCard {
-                    Text("Updated program", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(preview?.updatedProgramText ?: "No updated program text yet.")
+                    Text(stringResource(Res.string.external_updated_program), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.updatedProgramText ?: stringResource(Res.string.external_updated_program_empty))
                 }
             }
             if (preview?.updatedProgramText != null) {
@@ -632,7 +682,7 @@ fun ExternalProgramPlaygroundScreen(
                                 .weight(1f)
                                 .heightIn(min = 48.dp),
                         ) {
-                            Text("Commit")
+                            Text(stringResource(Res.string.external_action_commit))
                         }
                         TextButton(
                             onClick = { viewModel.clearPreview() },
@@ -640,7 +690,7 @@ fun ExternalProgramPlaygroundScreen(
                                 .weight(1f)
                                 .heightIn(min = 48.dp),
                         ) {
-                            Text("Discard")
+                            Text(stringResource(Res.string.action_discard))
                         }
                     }
                 }
@@ -668,8 +718,9 @@ fun ExternalMeasurementTrendsScreen(
     val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    LaunchedEffect(Unit) {
-        onSetTitle("Measurements")
+    val screenTitle = stringResource(Res.string.external_measurements)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     Box(
@@ -693,7 +744,7 @@ fun ExternalMeasurementTrendsScreen(
                             selected = state.selectedType == null,
                             onClick = { viewModel.selectType(null) },
                             modifier = Modifier.heightIn(min = 48.dp),
-                            label = { Text("All") },
+                            label = { Text(stringResource(Res.string.label_all)) },
                         )
                     }
                     items(state.measurementTypes) { type ->
@@ -708,11 +759,13 @@ fun ExternalMeasurementTrendsScreen(
             }
             if (state.measurements.isEmpty()) {
                 EmptyIntegrationState(
-                    message = if (state.measurementTypes.isEmpty()) {
-                        "No measurements imported yet"
-                    } else {
-                        "No measurements for this type"
-                    },
+                    message = stringResource(
+                        if (state.measurementTypes.isEmpty()) {
+                            Res.string.external_measurements_empty
+                        } else {
+                            Res.string.external_measurements_empty_filtered
+                        },
+                    ),
                     icon = Icons.Default.Scale,
                 )
             } else {
@@ -760,7 +813,14 @@ private fun HubCard(title: String, subtitle: String, icon: ImageVector, onClick:
 private fun RoutineCard(routine: ExternalRoutine, onClick: () -> Unit) {
     EntityCard(onClick = onClick) {
         Text(routine.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Text("${routine.exercises.size} exercises", style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (routine.exercises.size == 1) {
+                stringResource(Res.string.exercise_count_one)
+            } else {
+                stringResource(Res.string.exercise_count_other, routine.exercises.size)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
         Text(routine.provider.displayName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -775,7 +835,7 @@ private fun ProgramCard(program: ExternalProgram, onClick: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            if (program.isCurrent) StatusChip("Current")
+            if (program.isCurrent) StatusChip(stringResource(Res.string.external_status_current))
         }
         Text(program.provider.displayName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -889,11 +949,13 @@ private fun rememberPreferredWeightUnit(override: WeightUnit?): WeightUnit {
         ?: globalPreferences.weightUnit
 }
 
+@Composable
 private fun formatExternalWeightKg(weightKg: Double, weightUnit: WeightUnit): String = when (weightUnit) {
-    WeightUnit.KG -> "${UnitConverter.formatDecimal(weightKg.toFloat())} kg"
-    WeightUnit.LB -> "${UnitConverter.formatDecimal(UnitConverter.kgToLb(weightKg.toFloat()))} lbs"
+    WeightUnit.KG -> "${UnitConverter.formatDecimal(weightKg.toFloat())} ${stringResource(Res.string.label_kg)}"
+    WeightUnit.LB -> "${UnitConverter.formatDecimal(UnitConverter.kgToLb(weightKg.toFloat()))} ${stringResource(Res.string.label_lbs)}"
 }
 
+@Composable
 private fun formatMeasurementValue(
     value: Double,
     sourceUnit: String,
@@ -903,16 +965,16 @@ private fun formatMeasurementValue(
     return when {
         trimmedUnit.equals("kg", ignoreCase = true) -> {
             if (preferredWeightUnit == WeightUnit.LB) {
-                "${UnitConverter.formatDecimal(UnitConverter.kgToLb(value.toFloat()))} lbs"
+                "${UnitConverter.formatDecimal(UnitConverter.kgToLb(value.toFloat()))} ${stringResource(Res.string.label_lbs)}"
             } else {
-                "${UnitConverter.formatDecimal(value.toFloat())} kg"
+                "${UnitConverter.formatDecimal(value.toFloat())} ${stringResource(Res.string.label_kg)}"
             }
         }
         trimmedUnit.equals("lb", ignoreCase = true) || trimmedUnit.equals("lbs", ignoreCase = true) -> {
             if (preferredWeightUnit == WeightUnit.KG) {
-                "${UnitConverter.formatDecimal(UnitConverter.lbToKg(value.toFloat()))} kg"
+                "${UnitConverter.formatDecimal(UnitConverter.lbToKg(value.toFloat()))} ${stringResource(Res.string.label_kg)}"
             } else {
-                "${UnitConverter.formatDecimal(value.toFloat())} lbs"
+                "${UnitConverter.formatDecimal(value.toFloat())} ${stringResource(Res.string.label_lbs)}"
             }
         }
         trimmedUnit.isBlank() -> UnitConverter.formatDecimal(value.toFloat())
@@ -923,7 +985,8 @@ private fun formatMeasurementValue(
 private data class MuscleGroupBreakdownEntry(
     val label: String,
     val value: Double,
-    val subtitle: String? = null,
+    val direct: Double? = null,
+    val indirect: Double? = null,
 )
 
 private fun parseMuscleGroupBreakdown(rawJson: String?): List<MuscleGroupBreakdownEntry> {
@@ -944,13 +1007,13 @@ private fun parseMuscleGroupBreakdown(rawJson: String?): List<MuscleGroupBreakdo
                             } ?: value.values.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull }.sum()
                         val direct = (value["direct"] as? JsonPrimitive)?.doubleOrNull
                         val indirect = (value["indirect"] as? JsonPrimitive)?.doubleOrNull
-                        val sub = if (direct != null && indirect != null) {
-                            "${UnitConverter.formatDecimal(direct.toFloat())} direct · ${UnitConverter.formatDecimal(indirect.toFloat())} indirect"
-                        } else {
-                            null
-                        }
                         if (numeric.isFinite() && numeric > 0.0) {
-                            MuscleGroupBreakdownEntry(label = label, value = numeric, subtitle = sub)
+                            MuscleGroupBreakdownEntry(
+                                label = label,
+                                value = numeric,
+                                direct = if (direct != null && indirect != null) direct else null,
+                                indirect = if (direct != null && indirect != null) indirect else null,
+                            )
                         } else {
                             null
                         }

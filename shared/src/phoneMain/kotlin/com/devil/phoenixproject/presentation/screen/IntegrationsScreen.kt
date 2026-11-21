@@ -53,10 +53,8 @@ import com.devil.phoenixproject.util.rememberHealthPermissionSettingsLauncher
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.disconnect
-import projectphoenix.shared.generated.resources.disconnect_integration_message
-import projectphoenix.shared.generated.resources.disconnect_integration_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,8 +73,9 @@ fun IntegrationsScreen(
     var awaitingHealthPermissionSettingsReturn by remember { mutableStateOf(false) }
 
     // Set screen title
-    LaunchedEffect(Unit) {
-        onSetTitle("Integrations")
+    val screenTitle = stringResource(Res.string.settings_integrations)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     // ── Snackbar ──────────────────────────────────────────────────────────────
@@ -139,6 +138,8 @@ fun IntegrationsScreen(
         }
     }
 
+    val csvSavedMessage = stringResource(Res.string.integrations_csv_saved)
+    val fileReadErrorMessage = stringResource(Res.string.integrations_file_read_error)
     if (triggerCsvSave && uiState.csvContent != null) {
         val filePicker = rememberFilePicker()
         filePicker.LaunchFileSaver(
@@ -149,7 +150,7 @@ fun IntegrationsScreen(
                 viewModel.clearCsvContent()
                 if (path != null) {
                     scope.launch {
-                        snackbarHostState.showSnackbar("CSV saved successfully")
+                        snackbarHostState.showSnackbar(csvSavedMessage)
                     }
                 }
             },
@@ -169,7 +170,7 @@ fun IntegrationsScreen(
                     if (content != null) {
                         viewModel.previewCsvImport(content)
                     } else {
-                        snackbarHostState.showSnackbar("Could not read file")
+                        snackbarHostState.showSnackbar(fileReadErrorMessage)
                     }
                 }
             }
@@ -179,7 +180,7 @@ fun IntegrationsScreen(
     // ── Import preview dialog ─────────────────────────────────────────────────
     uiState.importPreview?.let { preview ->
         PhoenixModalDialogFrame(
-            title = "Import Preview",
+            title = stringResource(Res.string.integrations_import_preview),
             onDismiss = { if (!uiState.isImporting) viewModel.cancelImport() },
             dismissOnClickOutside = !uiState.isImporting,
             actions = {
@@ -192,7 +193,7 @@ fun IntegrationsScreen(
                         .heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                 ) {
-                    Text("Cancel", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(Res.string.action_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Button(
                     onClick = { viewModel.confirmImport() },
@@ -207,7 +208,7 @@ fun IntegrationsScreen(
                         LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
                         Text(
-                            "Import ${preview.activities.size}",
+                            stringResource(Res.string.integrations_import_count, preview.activities.size),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -215,17 +216,21 @@ fun IntegrationsScreen(
                 }
             },
         ) {
-            Text("Format: ${preview.format.name}", style = MaterialTheme.typography.bodyMedium)
-            Text("Workouts found: ${preview.workoutCount}", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(Res.string.integrations_format, preview.format.name), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(Res.string.integrations_workouts_found, preview.workoutCount), style = MaterialTheme.typography.bodyMedium)
             preview.dateRange?.let { (earliest, latest) ->
                 Text(
-                    "Date range: ${KmpUtils.formatTimestamp(earliest)} – ${KmpUtils.formatTimestamp(latest)}",
+                    stringResource(
+                        Res.string.integrations_date_range,
+                        KmpUtils.formatTimestamp(earliest),
+                        KmpUtils.formatTimestamp(latest),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             val totalMins = preview.totalDurationSeconds / 60
             if (totalMins > 0) {
-                Text("Total duration: ${totalMins}m", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(Res.string.integrations_total_duration_mins, totalMins), style = MaterialTheme.typography.bodyMedium)
             }
             if (preview.errors.isNotEmpty()) {
                 Surface(
@@ -235,7 +240,11 @@ fun IntegrationsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        "${preview.errors.size} row(s) could not be parsed",
+                        if (preview.errors.size == 1) {
+                            stringResource(Res.string.integrations_rows_unparsed_one)
+                        } else {
+                            stringResource(Res.string.integrations_rows_unparsed_other, preview.errors.size)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(Spacing.small),
                     )
@@ -251,9 +260,9 @@ fun IntegrationsScreen(
 
     if (showHevyApiKeyDialog) {
         ApiKeyInputDialog(
-            title = "Connect Hevy",
-            hint = "Hevy API key",
-            helperNote = "Find your API key in Hevy account settings (Hevy Pro required). Your key is encrypted in transit and stored securely.",
+            title = stringResource(Res.string.integrations_connect_hevy),
+            hint = stringResource(Res.string.integrations_hevy_api_key_hint),
+            helperNote = stringResource(Res.string.integrations_hevy_api_key_note),
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
@@ -270,9 +279,9 @@ fun IntegrationsScreen(
 
     if (showLiftosaurApiKeyDialog) {
         ApiKeyInputDialog(
-            title = "Connect Liftosaur",
-            hint = "Liftosaur API key",
-            helperNote = "Generate or copy your API key from Liftosaur Settings → Integrations. Your key is stored securely for program sync.",
+            title = stringResource(Res.string.integrations_connect_liftosaur),
+            hint = stringResource(Res.string.integrations_liftosaur_api_key_hint),
+            helperNote = stringResource(Res.string.integrations_liftosaur_api_key_note),
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
@@ -326,7 +335,7 @@ fun IntegrationsScreen(
             // ── Health Apps section ───────────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.Favorite,
-                title = "Health Apps",
+                title = stringResource(Res.string.integrations_health_apps),
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
             )
@@ -339,24 +348,31 @@ fun IntegrationsScreen(
             val latestHealthBodyWeight = uiState.latestHealthBodyWeight
             val latestHealthBodyWeightLabel = latestHealthBodyWeight?.let { measurement ->
                 if (weightUnit == WeightUnit.KG) {
-                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} kg"
+                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} ${stringResource(Res.string.label_kg)}"
                 } else {
-                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} lb"
+                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} ${stringResource(Res.string.label_lb)}"
                 }
             }
 
             IntegrationCard(
-                title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
+                title = stringResource(
+                    if (isIosPlatform) Res.string.integrations_apple_health else Res.string.integrations_health_connect,
+                ),
                 subtitle = when {
-                    healthError -> healthStatus.errorMessage ?: "Permissions need attention"
-                    healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
-                    healthConnected -> "Connected"
-                    else -> "Not connected"
+                    healthError -> healthStatus.errorMessage ?: stringResource(Res.string.integrations_permissions_attention)
+                    healthConnected && latestHealthBodyWeightLabel != null ->
+                        stringResource(Res.string.integrations_connected_latest_weight, latestHealthBodyWeightLabel)
+                    healthConnected -> stringResource(Res.string.hrm_status_connected)
+                    else -> stringResource(Res.string.integrations_status_not_connected)
                 },
                 statusConnected = healthConnected,
                 badges = buildList {
-                    latestHealthBodyWeightLabel?.let { add("Body weight: $it") }
-                    healthStatus?.lastSyncAt?.let { add("Last sync: ${KmpUtils.formatTimestamp(it)}") }
+                    latestHealthBodyWeightLabel?.let {
+                        add(stringResource(Res.string.integrations_body_weight_value, it))
+                    }
+                    healthStatus?.lastSyncAt?.let {
+                        add(stringResource(Res.string.integrations_last_sync, KmpUtils.formatTimestamp(it)))
+                    }
                 },
                 toggleRow = {
                     Row(
@@ -376,7 +392,13 @@ fun IntegrationsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = if (healthConnected) "Health sync enabled" else "Enable health sync",
+                            text = stringResource(
+                                if (healthConnected) {
+                                    Res.string.integrations_health_sync_enabled
+                                } else {
+                                    Res.string.integrations_enable_health_sync
+                                },
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f),
@@ -392,7 +414,7 @@ fun IntegrationsScreen(
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
-                            Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(Res.string.integrations_retry_permissions), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                     if (healthConnected || healthError) {
@@ -405,7 +427,7 @@ fun IntegrationsScreen(
                             if (healthBusy) {
                                 LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
-                                Text("Sync previous", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(Res.string.integrations_sync_previous), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -415,7 +437,7 @@ fun IntegrationsScreen(
             // ── Workout Trackers section ──────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.FitnessCenter,
-                title = "Workout Trackers",
+                title = stringResource(Res.string.integrations_workout_trackers),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -426,17 +448,34 @@ fun IntegrationsScreen(
             val hevyEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.HEVY]
             val hevyBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.HEVY.key}:") }
             IntegrationCard(
-                title = "Hevy",
+                title = stringResource(Res.string.integrations_hevy),
                 subtitle = hevyEntitlement?.upgradeReason
-                    ?: hevyEntitlement?.providerPlanName?.let { "Plan: $it" }
-                    ?: "Workout history, routines, templates, and measurements",
+                    ?: hevyEntitlement?.providerPlanName?.let {
+                        stringResource(Res.string.integrations_provider_plan, it)
+                    }
+                    ?: stringResource(Res.string.integrations_hevy_description),
                 statusConnected = hevyConnected,
                 badges = listOf(
-                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY }} workouts",
-                    "${uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY }} routines",
-                    "${uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY }} folders",
-                    "${uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0} templates",
-                    "${uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY }} measurements",
+                    stringResource(
+                        Res.string.integrations_workouts_chip,
+                        uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_routines_chip,
+                        uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_folders_chip,
+                        uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_templates_chip,
+                        uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0,
+                    ),
+                    stringResource(
+                        Res.string.integrations_measurements_chip,
+                        uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY },
+                    ),
                 ),
                 actions = {
                     if (hevyConnected) {
@@ -449,7 +488,7 @@ fun IntegrationsScreen(
                             if (hevyBusy) {
                                 LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
-                                Text("Sync", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(Res.string.integrations_action_sync), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                         TextButton(
@@ -457,7 +496,7 @@ fun IntegrationsScreen(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(
-                                "Disconnect",
+                                stringResource(Res.string.disconnect),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -471,7 +510,7 @@ fun IntegrationsScreen(
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
-                            Text("Connect", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(Res.string.hrm_action_connect), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 },
@@ -483,16 +522,30 @@ fun IntegrationsScreen(
             val liftosaurEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.LIFTOSAUR]
             val liftosaurBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.LIFTOSAUR.key}:") }
             IntegrationCard(
-                title = "Liftosaur",
+                title = stringResource(Res.string.integrations_liftosaur),
                 subtitle = liftosaurEntitlement?.upgradeReason
-                    ?: liftosaurEntitlement?.providerPlanName?.let { "Plan: $it" }
-                    ?: "History, programs, stats, and playground previews",
+                    ?: liftosaurEntitlement?.providerPlanName?.let {
+                        stringResource(Res.string.integrations_provider_plan, it)
+                    }
+                    ?: stringResource(Res.string.integrations_liftosaur_description),
                 statusConnected = liftosaurConnected,
                 badges = listOf(
-                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR }} workouts",
-                    "${uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR }} programs",
-                    if (uiState.activeProgram != null) "1 current" else "0 current",
-                    "${uiState.externalProgramStatsByProgramId.size} stats",
+                    stringResource(
+                        Res.string.integrations_workouts_chip,
+                        uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                    ),
+                    stringResource(
+                        Res.string.integrations_programs_chip,
+                        uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                    ),
+                    stringResource(
+                        Res.string.integrations_current_chip,
+                        if (uiState.activeProgram != null) 1 else 0,
+                    ),
+                    stringResource(
+                        Res.string.integrations_stats_chip,
+                        uiState.externalProgramStatsByProgramId.size,
+                    ),
                 ),
                 actions = {
                     if (liftosaurConnected) {
@@ -505,7 +558,7 @@ fun IntegrationsScreen(
                             if (liftosaurBusy) {
                                 LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
-                                Text("Sync", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(Res.string.integrations_action_sync), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                         TextButton(
@@ -513,7 +566,7 @@ fun IntegrationsScreen(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(
-                                "Disconnect",
+                                stringResource(Res.string.disconnect),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -527,7 +580,7 @@ fun IntegrationsScreen(
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
-                            Text("Connect", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(Res.string.hrm_action_connect), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 },
@@ -545,12 +598,12 @@ fun IntegrationsScreen(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Strong / CSV",
+                            stringResource(Res.string.integrations_strong_csv),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            "Import or export workouts in Strong-compatible CSV format",
+                            stringResource(Res.string.integrations_strong_csv_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -558,15 +611,17 @@ fun IntegrationsScreen(
                 }
 
                 Text(
-                    "Export weight unit",
+                    stringResource(Res.string.integrations_export_weight_unit),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                val kgUnitLabel = stringResource(Res.string.label_kg)
+                val lbsUnitLabel = stringResource(Res.string.label_lbs)
                 ResponsiveSegmentedSelector(
                     options = listOf(WeightUnit.KG, WeightUnit.LB),
                     selectedOption = csvWeightUnit,
                     onSelect = { csvWeightUnit = it },
-                    labelForOption = { unit -> if (unit == WeightUnit.KG) "kg" else "lbs" },
+                    labelForOption = { unit -> if (unit == WeightUnit.KG) kgUnitLabel else lbsUnitLabel },
                 )
 
                 Row(
@@ -591,7 +646,7 @@ fun IntegrationsScreen(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "Export CSV",
+                                stringResource(Res.string.integrations_export_csv),
                                 style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -616,7 +671,7 @@ fun IntegrationsScreen(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "Import CSV",
+                                stringResource(Res.string.integrations_import_csv),
                                 style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -648,20 +703,24 @@ fun IntegrationsScreen(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Integration Data",
+                            stringResource(Res.string.integrations_data_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         val count = uiState.externalActivities.size
                         Text(
-                            if (count == 0) "Browse imported provider data" else "$count workouts plus provider records",
+                            when (count) {
+                                0 -> stringResource(Res.string.integrations_data_empty_subtitle)
+                                1 -> stringResource(Res.string.integrations_data_count_subtitle_one)
+                                else -> stringResource(Res.string.integrations_data_count_subtitle_other, count)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Icon(
                         Icons.Default.ChevronRight,
-                        contentDescription = "View integration data",
+                        contentDescription = stringResource(Res.string.integrations_cd_view_data),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -744,7 +803,11 @@ private fun IntegrationCard(
                 },
             ) {
                 Text(
-                    if (statusConnected) "Connected" else "Not connected",
+                    if (statusConnected) {
+                        stringResource(Res.string.hrm_status_connected)
+                    } else {
+                        stringResource(Res.string.integrations_status_not_connected)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
                     color = if (statusConnected) {
@@ -812,9 +875,9 @@ private fun ApiKeyInputDialog(
     PhoenixModalDialogFrame(
         title = title,
         onDismiss = onDismiss,
-        confirmLabel = "Connect",
+        confirmLabel = stringResource(Res.string.hrm_action_connect),
         onConfirm = onConfirm,
-        dismissLabel = "Cancel",
+        dismissLabel = stringResource(Res.string.action_cancel),
         confirmEnabled = value.isNotBlank(),
     ) {
         Text(
@@ -839,7 +902,13 @@ private fun ApiKeyInputDialog(
                 ) {
                     Icon(
                         imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (showApiKey) "Hide API key" else "Show API key",
+                        contentDescription = stringResource(
+                            if (showApiKey) {
+                                Res.string.integrations_cd_hide_api_key
+                            } else {
+                                Res.string.integrations_cd_show_api_key
+                            },
+                        ),
                     )
                 }
             },

@@ -91,6 +91,10 @@ import projectphoenix.shared.generated.resources.equipment_rack_invalid_weight
 import projectphoenix.shared.generated.resources.equipment_rack_name_label
 import projectphoenix.shared.generated.resources.equipment_rack_title
 import projectphoenix.shared.generated.resources.equipment_rack_weight_label
+import projectphoenix.shared.generated.resources.label_kg
+import projectphoenix.shared.generated.resources.label_lb
+import projectphoenix.shared.generated.resources.rack_delete_message
+import projectphoenix.shared.generated.resources.rack_delete_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -202,8 +206,8 @@ fun EquipmentRackScreen(viewModel: MainViewModel) {
 
     deleteTarget?.let { target ->
         DestructiveConfirmDialog(
-            title = "Delete rack item?",
-            message = "Delete \"${target.name}\"? This cannot be undone.",
+            title = stringResource(Res.string.rack_delete_title),
+            message = stringResource(Res.string.rack_delete_message, target.name),
             confirmText = stringResource(Res.string.action_delete),
             onConfirm = {
                 viewModel.deleteRackItem(target.id)
@@ -378,7 +382,9 @@ private fun EquipmentRackEditorDialog(
                 Text(
                     stringResource(
                         Res.string.equipment_rack_weight_label,
-                        if (weightUnit == WeightUnit.LB) "lb" else "kg",
+                        stringResource(
+                            if (weightUnit == WeightUnit.LB) Res.string.label_lb else Res.string.label_kg,
+                        ),
                     ),
                 )
             },

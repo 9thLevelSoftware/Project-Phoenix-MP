@@ -253,7 +253,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
                 else -> 4.sp
             }
             Text(
-                text = "PROJECT PHOENIX",
+                text = stringResource(Res.string.splash_title_upper),
                 style = titleStyle.copy(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = titleTracking,
@@ -277,7 +277,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
 
             // Tagline
             Text(
-                text = "Rise from the ashes",
+                text = stringResource(Res.string.splash_tagline),
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Light,
                     letterSpacing = if (isNarrow) 1.sp else 2.sp,

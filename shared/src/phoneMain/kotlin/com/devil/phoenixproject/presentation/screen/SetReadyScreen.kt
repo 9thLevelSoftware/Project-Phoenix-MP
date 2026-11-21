@@ -100,24 +100,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_cancel
-import projectphoenix.shared.generated.resources.action_exit
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import projectphoenix.shared.generated.resources.cd_next
-import projectphoenix.shared.generated.resources.cd_previous
-import projectphoenix.shared.generated.resources.cd_stop
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_message
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_title
-import projectphoenix.shared.generated.resources.exit_routine_message
-import projectphoenix.shared.generated.resources.exit_routine_title
-import projectphoenix.shared.generated.resources.set_type_warmup
-import projectphoenix.shared.generated.resources.set_type_working
-import projectphoenix.shared.generated.resources.target_reps
-import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -311,7 +295,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
                                 stringResource(Res.string.workout_teardown_finishing)
                             } else {
-                                "START"
+                                stringResource(Res.string.set_ready_start)
                             },
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -414,6 +398,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         // dropdown anchor; tapping it opens a menu of every set index in the current
                         // exercise. Selecting an entry calls viewModel.enterSetReady(ex, pickedSet) which
                         // the engine layer already supports. Keep Role.DropdownList and descriptions.
+                        val setSelectorCd = stringResource(
+                            Res.string.set_ready_set_selector_cd,
+                            setReadyState.setIndex + 1,
+                            currentExercise.setReps.size,
+                        )
+                        val tapChooseSetDesc = stringResource(Res.string.set_ready_tap_choose_set)
                         ExposedDropdownMenuBox(
                             expanded = setPickerExpanded && currentExercise.setReps.size > 1,
                             onExpandedChange = { requested ->
@@ -425,8 +415,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             },
                         ) {
                             Text(
-                                text = "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}" +
-                                    if (currentExercise.setReps.size > 1) "  \u25BE" else "",
+                                text = stringResource(
+                                    Res.string.rest_set_of,
+                                    setReadyState.setIndex + 1,
+                                    currentExercise.setReps.size,
+                                ) + if (currentExercise.setReps.size > 1) "  \u25BE" else "",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
@@ -434,11 +427,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     .menuAnchor()
                                     .semantics {
                                         role = Role.DropdownList
-                                        contentDescription = "Set selector, currently set " +
-                                            "${setReadyState.setIndex + 1} of " +
-                                            "${currentExercise.setReps.size}"
+                                        contentDescription = setSelectorCd
                                         if (currentExercise.setReps.size > 1) {
-                                            stateDescription = "Tap to choose a different set"
+                                            stateDescription = tapChooseSetDesc
                                         }
                                     },
                             )
@@ -450,8 +441,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     DropdownMenuItem(
                                         text = {
                                             Text(
-                                                "Set ${setIdx + 1}" +
-                                                    if (setIdx == setReadyState.setIndex) "  (current)" else "",
+                                                if (setIdx == setReadyState.setIndex) {
+                                                    stringResource(Res.string.set_ready_set_numbered_current, setIdx + 1)
+                                                } else {
+                                                    stringResource(Res.string.set_ready_set_numbered, setIdx + 1)
+                                                },
                                                 style = MaterialTheme.typography.bodyMedium,
                                             )
                                         },
@@ -470,8 +464,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         }
                         Text(
                             text = if (isBodyweight) {
-                                val durationText = currentExercise.duration?.let { "${it}s" } ?: "Timed"
-                                "Bodyweight • $durationText"
+                                val durationText = currentExercise.duration?.let { "${it}s" }
+                                    ?: stringResource(Res.string.set_ready_timed)
+                                stringResource(Res.string.set_ready_bodyweight_header, durationText)
                             } else {
                                 currentExercise.programMode.displayName
                             },
@@ -541,7 +536,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 .padding(Spacing.medium),
                         ) {
                             Text(
-                                "Exercise Variant",
+                                stringResource(Res.string.set_ready_exercise_variant),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -568,7 +563,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
-                                                    "${variant.label} (${(variant.percentage * 100).toInt()}%)",
+                                                    stringResource(
+                                                        Res.string.bodyweight_variant_percent,
+                                                        variant.label,
+                                                        (variant.percentage * 100).toInt(),
+                                                    ),
                                                     style = MaterialTheme.typography.bodyMedium,
                                                 )
                                             },
@@ -588,9 +587,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     counterweightKg = currentRackLoadAdjustment.counterweightKg,
                                 )
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
-                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} ${stringResource(Res.string.label_kg)}"
                                 } else {
-                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} lb"
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} ${stringResource(Res.string.label_lb)}"
                                 }
                                 val rackLoadContributionSummary = formatRackLoadContributionSummary(
                                     contributions = currentRackLoadAdjustment.loadContributions,
@@ -600,7 +599,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "Effective load: $displayWeight",
+                                    stringResource(Res.string.bodyweight_effective_load, displayWeight),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -685,7 +684,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     },
                                     valueRange = 1f..50f,
                                     step = 1f,
-                                    label = "Target Reps",
+                                    label = stringResource(Res.string.target_reps),
                                     formatValue = { it.toInt().toString() },
                                 )
                             } else {
@@ -700,7 +699,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                         modifier = Modifier.weight(1f),
                                     )
                                     Text(
-                                        "AMRAP",
+                                        stringResource(Res.string.label_amrap),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -717,7 +716,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     },
                                     valueRange = 1f..50f,
                                     step = 1f,
-                                    label = "Target Reps",
+                                    label = stringResource(Res.string.target_reps),
                                     formatValue = { it.toInt().toString() },
                                 )
                             } else {
@@ -732,7 +731,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                         modifier = Modifier.weight(1f),
                                     )
                                     Text(
-                                        "AMRAP",
+                                        stringResource(Res.string.label_amrap),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -759,7 +758,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 },
                                 valueRange = 0f..maxWeightKg,
                                 step = weightStepKg,
-                                label = "Weight per cable",
+                                label = stringResource(Res.string.rest_weight_per_cable),
                                 formatValue = { viewModel.formatWeight(it, weightUnit) },
                                 deltaText = deltaText,
                                 isDeltaPositive = deltaKg >= 0f,
@@ -837,13 +836,18 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Text("Used only for this workout unless saved to your profile.")
+                    Text(stringResource(Res.string.set_ready_bodyweight_dialog_note))
                     OutlinedTextField(
                         value = sessionBodyweightInput,
                         onValueChange = { value ->
                             sessionBodyweightInput = value.filter { it.isDigit() || it == '.' || it == ',' }
                         },
-                        label = { Text("Current bodyweight (${if (weightUnit == WeightUnit.KG) "kg" else "lb"})") },
+                        label = {
+                            val unit = stringResource(
+                                if (weightUnit == WeightUnit.KG) Res.string.label_kg else Res.string.label_lb,
+                            )
+                            Text(stringResource(Res.string.set_ready_bodyweight_unit_label, unit))
+                        },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -881,7 +885,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             },
             dismissButton = {
                 TextButton(onClick = { showSessionBodyweightEditor = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             },
         )
@@ -1014,7 +1018,7 @@ private fun CurrentBodyweightPromptCard(
                         onClick = onEdit,
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text("Edit")
+                        Text(stringResource(Res.string.action_edit))
                     }
                 } else {
                     Button(
@@ -1065,7 +1069,7 @@ private fun HandledSessionBodyweightCard(
                     if (resolvedBodyWeightKg > 0f) {
                         formatBodyWeightForUnit(resolvedBodyWeightKg, weightUnit)
                     } else {
-                        "Not set for this session"
+                        stringResource(Res.string.set_ready_not_set_session)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -1089,11 +1093,14 @@ private fun formatBodyWeightNumberForUnit(weightKg: Float, weightUnit: WeightUni
     return UnitConverter.formatDecimal(displayValue)
 }
 
+@Composable
 private fun formatBodyWeightForUnit(weightKg: Float, weightUnit: WeightUnit): String {
-    val suffix = when (weightUnit) {
-        WeightUnit.KG -> "kg"
-        WeightUnit.LB -> "lb"
-    }
+    val suffix = stringResource(
+        when (weightUnit) {
+            WeightUnit.KG -> Res.string.label_kg
+            WeightUnit.LB -> Res.string.label_lb
+        },
+    )
     return "${formatBodyWeightNumberForUnit(weightKg, weightUnit)} $suffix"
 }
 

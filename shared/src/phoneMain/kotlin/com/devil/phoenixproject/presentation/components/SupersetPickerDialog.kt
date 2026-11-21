@@ -89,7 +89,7 @@ fun SupersetPickerDialog(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "Create New Superset",
+                        stringResource(Res.string.superset_create_new),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                     )
@@ -100,7 +100,13 @@ fun SupersetPickerDialog(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                 Text(
-                    if (canCreateNew) "Or add to existing:" else "Add to existing:",
+                    stringResource(
+                        if (canCreateNew) {
+                            Res.string.superset_or_add_existing
+                        } else {
+                            Res.string.superset_add_existing
+                        },
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -133,7 +139,11 @@ fun SupersetPickerDialog(
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
-                                "${superset.exerciseCount} exercises",
+                                if (superset.exerciseCount == 1) {
+                                    stringResource(Res.string.exercise_count_one)
+                                } else {
+                                    stringResource(Res.string.exercise_count_other, superset.exerciseCount)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

@@ -146,6 +146,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         // Shared with Android cold-start locale and workout notification copy.
         const val KEY_LANGUAGE = "language"
+        val SUPPORTED_LANGUAGE_CODES: Set<String> = setOf("en", "nl", "de", "es", "fr", "it")
+
+        fun normalizeLanguageCode(language: String?): String {
+            val normalized = language?.trim()?.lowercase().orEmpty()
+            return if (normalized in SUPPORTED_LANGUAGE_CODES) normalized else ""
+        }
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
@@ -214,7 +220,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
             includeRawTelemetryInBackups = settings.getBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, false),
             backupDestination = BackupDestination.fromJson(settings.getStringOrNull(KEY_BACKUP_DESTINATION)),
-            language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
+            language = normalizeLanguageCode(settings.getStringOrNull(KEY_LANGUAGE)),
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
             safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
             safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
@@ -299,8 +305,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun setLanguage(language: String) {
-        settings.putString(KEY_LANGUAGE, language)
-        updateAndEmit { copy(language = language) }
+        val normalized = normalizeLanguageCode(language)
+        settings.putString(KEY_LANGUAGE, normalized)
+        updateAndEmit { copy(language = normalized) }
     }
 
     internal suspend fun setVelocityLossThreshold(percent: Int) {

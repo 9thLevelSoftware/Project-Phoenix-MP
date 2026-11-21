@@ -455,9 +455,9 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 text = if (badges.size ==
                     1
                 ) {
-                    "Badge Earned!"
+                    stringResource(Res.string.badge_dialog_single_title)
                 } else {
-                    "${badges.size} Badges Earned!"
+                    stringResource(Res.string.badge_dialog_multi_title, badges.size)
                 },
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -599,7 +599,7 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Awesome!",
+                    text = stringResource(Res.string.badge_dialog_dismiss_awesome),
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -658,6 +658,12 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
 
     val displayScale = itemScale * pulseScale
 
+    val badgeContentDescription = stringResource(
+        Res.string.badge_dialog_item_cd,
+        badge.name,
+        badge.tier.displayName,
+        badge.category.displayName,
+    )
     Column(
         modifier = Modifier
             .alpha(itemAlpha)
@@ -666,8 +672,7 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
             .clickable(onClick = onClick)
             .padding(4.dp)
             .semantics {
-                contentDescription =
-                    "${badge.name}, ${badge.tier.displayName} tier, ${badge.category.displayName} category"
+                contentDescription = badgeContentDescription
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

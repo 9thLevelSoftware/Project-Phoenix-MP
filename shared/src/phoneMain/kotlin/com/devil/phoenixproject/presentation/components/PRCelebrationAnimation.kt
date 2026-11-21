@@ -123,9 +123,9 @@ private fun PRCelebrationContent(
 
     // Format the celebration title with workout mode context
     val celebrationTitle = if (workoutMode != null) {
-        "NEW ${workoutMode.uppercase()} PR!"
+        stringResource(Res.string.pr_new_mode_banner, workoutMode.uppercase())
     } else {
-        "NEW PR!"
+        stringResource(Res.string.pr_new_banner)
     }
 
     val dismissLabel = stringResource(Res.string.action_dismiss)
@@ -203,7 +203,7 @@ private fun PRCelebrationContent(
 
             phaseLabel?.takeIf { it.isNotBlank() }?.let { label ->
                 Text(
-                    text = "$label phase",
+                    text = stringResource(Res.string.pr_phase_label, label),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -230,7 +230,7 @@ private fun PRCelebrationContent(
 
             // Tap to dismiss hint
             Text(
-                text = "Tap to dismiss",
+                text = stringResource(Res.string.pr_tap_to_dismiss),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

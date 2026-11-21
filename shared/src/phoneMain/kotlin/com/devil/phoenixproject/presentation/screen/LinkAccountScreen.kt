@@ -64,8 +64,10 @@ import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.account_switch_exclude_all
 import projectphoenix.shared.generated.resources.account_switch_message
@@ -213,15 +215,17 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
         viewModel.authEvents.collect { event ->
             when (event) {
                 is AuthEvent.SessionExpired -> {
-                    snackbarHostState.showSnackbar("Session expired: ${event.reason}")
+                    snackbarHostState.showSnackbar(getString(Res.string.link_session_expired, event.reason))
                 }
 
                 is AuthEvent.RefreshFailed -> {
-                    val message = if (event.isRecoverable) {
-                        "Connection issue. Please try again."
-                    } else {
-                        "Please sign in again."
-                    }
+                    val message = getString(
+                        if (event.isRecoverable) {
+                            Res.string.link_connection_issue
+                        } else {
+                            Res.string.link_sign_in_again
+                        },
+                    )
                     snackbarHostState.showSnackbar(message)
                 }
 
@@ -250,7 +254,7 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Sync your workouts across devices",
+                    text = stringResource(Res.string.link_sync_workouts_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -292,10 +296,11 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
     }
 
     if (showUnlinkConfirmDialog) {
-        val accountLabel = currentUser?.email?.takeIf { it.isNotBlank() } ?: "this Phoenix Portal account"
+        val accountLabel = currentUser?.email?.takeIf { it.isNotBlank() }
+            ?: stringResource(Res.string.link_this_portal_account)
         DestructiveConfirmDialog(
             title = stringResource(Res.string.unlink_account),
-            message = "Unlink $accountLabel from this device? Your local workout history will stay on this device.",
+            message = stringResource(Res.string.link_unlink_confirm_message, accountLabel),
             confirmText = stringResource(Res.string.unlink_account),
             onConfirm = {
                 showUnlinkConfirmDialog = false
@@ -317,7 +322,7 @@ private fun LinkedAccountContent(
 ) {
     PhoenixSectionCard {
         Text(
-            text = "Linked Account",
+            text = stringResource(Res.string.link_linked_account),
             style = MaterialTheme.typography.titleMedium,
         )
 
@@ -350,7 +355,7 @@ private fun LinkedAccountContent(
 
             is SyncState.SyncingWithProgress -> {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Syncing... (${syncState.pagesProcessed} pages, ${syncState.entitiesFetched} items)")
+                Text(stringResource(Res.string.link_syncing_progress, syncState.pagesProcessed, syncState.entitiesFetched))
             }
 
             is SyncState.Success -> {
@@ -359,7 +364,7 @@ private fun LinkedAccountContent(
 
             is SyncState.Error -> {
                 Text(
-                    text = "Sync error: ${syncState.message}",
+                    text = stringResource(Res.string.link_sync_error, syncState.message),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -368,7 +373,7 @@ private fun LinkedAccountContent(
 
             is SyncState.NotAuthenticated -> {
                 Text(
-                    text = "Authentication failed — please sign out and sign back in",
+                    text = stringResource(Res.string.link_auth_failed),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -383,21 +388,24 @@ private fun LinkedAccountContent(
 
             is SyncState.PartialSuccess -> {
                 Text(
-                    text = "Sync partially complete — pull failed: ${syncState.pullError ?: "unknown error"}",
+                    text = stringResource(
+                        Res.string.link_sync_partial,
+                        syncState.pullError ?: stringResource(Res.string.link_unknown_error),
+                    ),
                     color = AccessibilityTheme.colors.warning,
                 )
             }
 
             is SyncState.AccountMismatch -> {
                 Text(
-                    text = "Sync paused: this phone's data belongs to another account",
+                    text = stringResource(Res.string.link_sync_paused_other_account),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
 
             is SyncState.OwnershipConflict -> {
                 Text(
-                    text = "Upload refused: ${syncState.message}",
+                    text = stringResource(Res.string.link_upload_refused, syncState.message),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -437,7 +445,7 @@ private fun LinkedAccountContent(
                 .heightIn(min = 48.dp),
         ) {
             Text(
-                text = "Force Full Resync",
+                text = stringResource(Res.string.link_force_full_resync),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -530,7 +538,9 @@ private fun LoginForm(
                 IconButton(onClick = { showPassword = !showPassword }) {
                     Icon(
                         imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (showPassword) "Hide password" else "Show password",
+                        contentDescription = stringResource(
+                            if (showPassword) Res.string.link_cd_hide_password else Res.string.link_cd_show_password,
+                        ),
                     )
                 }
             },
@@ -624,7 +634,7 @@ private fun LoginForm(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Log in with your existing Phoenix Portal account to sync workouts across devices.",
+            text = stringResource(Res.string.link_login_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -632,8 +642,9 @@ private fun LoginForm(
     }
 }
 
+@Composable
 private fun formatSyncTimestamp(timestamp: Long): String {
-    if (timestamp == 0L) return "Never"
+    if (timestamp == 0L) return stringResource(Res.string.link_never)
     val date = KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
     val time = KmpUtils.formatTimestamp(timestamp, "h:mm a")
     return "$date, $time"

@@ -105,11 +105,13 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_delete
@@ -248,9 +250,10 @@ fun RoutineEditorScreen(
             }
             hasInitialized = true
         } else if (!hasInitialized) {
+            val defaultName = getString(Res.string.routine_editor_new_routine)
             state = state.copy(
-                routineName = "New Routine",
-                routine = Routine(id = "new", name = "New Routine"),
+                routineName = defaultName,
+                routine = Routine(id = "new", name = defaultName),
             )
             hasInitialized = true
         }
@@ -510,14 +513,14 @@ fun RoutineEditorScreen(
                                     onClick = { showOverflowMenu = true },
                                     modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                                 ) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.routine_editor_more_actions))
                                 }
                                 DropdownMenu(
                                     expanded = showOverflowMenu,
                                     onDismissRequest = { showOverflowMenu = false },
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Adjust All Weights") },
+                                        text = { Text(stringResource(Res.string.routine_editor_adjust_all_weights)) },
                                         onClick = {
                                             showOverflowMenu = false
                                             bulkAdjustExerciseIds = null
@@ -560,14 +563,14 @@ fun RoutineEditorScreen(
                                 onClick = { showOverflowMenu = true },
                                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                             ) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                                Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.routine_editor_more_actions))
                             }
                             DropdownMenu(
                                 expanded = showOverflowMenu,
                                 onDismissRequest = { showOverflowMenu = false },
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Adjust All Weights") },
+                                    text = { Text(stringResource(Res.string.routine_editor_adjust_all_weights)) },
                                     onClick = {
                                         showOverflowMenu = false
                                         bulkAdjustExerciseIds = null // null = target all exercises
@@ -604,7 +607,7 @@ fun RoutineEditorScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    "Tap + to add your first exercise",
+                                    stringResource(Res.string.routine_editor_empty_prompt),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -627,6 +630,7 @@ fun RoutineEditorScreen(
                                             isDragging = isDragging,
                                         ) {
                                             // Header
+                                            val copyName = stringResource(Res.string.routine_editor_copy_suffix, superset.name)
                                             SupersetHeader(
                                                 superset = superset,
                                                 onRename = { supersetToRename = superset },
@@ -640,7 +644,7 @@ fun RoutineEditorScreen(
                                                     val newSupersetId = generateSupersetId()
                                                     val newSuperset = superset.copy(
                                                         id = newSupersetId,
-                                                        name = "${superset.name} (Copy)",
+                                                        name = copyName,
                                                     )
                                                     val copiedExercises = superset.exercises.map { ex ->
                                                         ex.copy(
@@ -701,7 +705,7 @@ fun RoutineEditorScreen(
                                                             ) {
                                                                 Icon(
                                                                     Icons.Default.DragHandle,
-                                                                    contentDescription = "Reorder exercise",
+                                                                    contentDescription = stringResource(Res.string.routine_editor_reorder_exercise),
                                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                                                     modifier = Modifier.size(20.dp),
                                                                 )
@@ -912,6 +916,8 @@ fun RoutineEditorScreen(
 
     // Exercise Configuration Bottom Sheet
     exerciseToConfig?.let { exercise ->
+        val kgUnit = stringResource(Res.string.label_kg)
+        val lbsUnit = stringResource(Res.string.label_lbs)
         ExerciseEditBottomSheet(
             exercise = exercise,
             weightUnit = weightUnit,
@@ -922,7 +928,11 @@ fun RoutineEditorScreen(
             personalRecordRepository = personalRecordRepository,
             formatWeight = { weight, unit ->
                 val displayWeight = kgToDisplay(weight, unit)
-                if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"
+                if (unit == WeightUnit.LB) {
+                    "${UnitConverter.formatDecimal(displayWeight)} $lbsUnit"
+                } else {
+                    "${UnitConverter.formatDecimal(displayWeight)} $kgUnit"
+                }
             },
             rackItems = rackItems,
             weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
@@ -947,7 +957,9 @@ fun RoutineEditorScreen(
                 isNewExercise = false
                 editingIndex = null
             },
-            buttonText = if (isNewExercise) "Add to Routine" else "Save",
+            buttonText = stringResource(
+                if (isNewExercise) Res.string.routine_editor_add_to_routine else Res.string.action_save,
+            ),
         )
     }
 
@@ -1007,9 +1019,9 @@ fun RoutineEditorScreen(
                 SupersetTheme.colors.forEachIndexed { index, color ->
                     val isSelectedColor = superset.colorIndex == index
                     val colorDesc = if (isSelectedColor) {
-                        "Color ${index + 1}, selected"
+                        stringResource(Res.string.routine_editor_color_selected, index + 1)
                     } else {
-                        "Color ${index + 1}"
+                        stringResource(Res.string.routine_editor_color_option, index + 1)
                     }
                     Box(
                         modifier = Modifier
@@ -1153,12 +1165,18 @@ fun RoutineEditorScreen(
             state.exercises
         }
 
+        val kgUnit = stringResource(Res.string.label_kg)
+        val lbsUnit = stringResource(Res.string.label_lbs)
         BulkWeightAdjustDialog(
             exercises = targetExercises,
             weightUnit = weightUnit,
             formatWeight = { weight, unit ->
                 val displayWeight = kgToDisplay(weight, unit)
-                if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"
+                if (unit == WeightUnit.LB) {
+                    "${UnitConverter.formatDecimal(displayWeight)} $lbsUnit"
+                } else {
+                    "${UnitConverter.formatDecimal(displayWeight)} $kgUnit"
+                }
             },
             onApply = { adjustedExercises ->
                 // Build a map of adjusted exercises by ID for O(1) lookup

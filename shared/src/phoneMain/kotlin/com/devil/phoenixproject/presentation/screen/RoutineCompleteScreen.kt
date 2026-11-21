@@ -166,7 +166,7 @@ fun RoutineCompleteScreen(
                     ) {
                         Icon(
                             Icons.Default.EmojiEvents,
-                            "Trophy",
+                            stringResource(Res.string.cd_trophy),
                             modifier = Modifier.size(80.dp),
                             tint = MaterialTheme.colorScheme.onPrimary,
                         )
@@ -184,7 +184,7 @@ fun RoutineCompleteScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            "ROUTINE COMPLETE!",
+                            stringResource(Res.string.routine_complete_banner),
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -231,19 +231,19 @@ fun RoutineCompleteScreen(
                                     StatItem(
                                         icon = Icons.Default.FitnessCenter,
                                         value = "${completeState.totalExercises}",
-                                        label = "Exercises",
+                                        label = stringResource(Res.string.routine_complete_exercises_label),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Repeat,
                                         value = "${completeState.totalSets}",
-                                        label = "Sets",
+                                        label = stringResource(Res.string.insights_col_sets),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Timer,
                                         value = durationFormatted,
-                                        label = "Duration",
+                                        label = stringResource(Res.string.label_duration),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
@@ -255,19 +255,19 @@ fun RoutineCompleteScreen(
                                     StatItem(
                                         icon = Icons.Default.FitnessCenter,
                                         value = "${completeState.totalExercises}",
-                                        label = "Exercises",
+                                        label = stringResource(Res.string.routine_complete_exercises_label),
                                         modifier = Modifier.weight(1f),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Repeat,
                                         value = "${completeState.totalSets}",
-                                        label = "Sets",
+                                        label = stringResource(Res.string.insights_col_sets),
                                         modifier = Modifier.weight(1f),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Timer,
                                         value = durationFormatted,
-                                        label = "Duration",
+                                        label = stringResource(Res.string.label_duration),
                                         modifier = Modifier.weight(1f),
                                     )
                                 }

@@ -129,22 +129,83 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.workout_save_retry_failed
-import projectphoenix.shared.generated.resources.workout_save_failed
 import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.cd_analytics
 import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.cd_cloud_sync
+import projectphoenix.shared.generated.resources.external_workouts
 import projectphoenix.shared.generated.resources.cd_home
 import projectphoenix.shared.generated.resources.cd_open_profile_switcher
 import projectphoenix.shared.generated.resources.cd_profile
 import projectphoenix.shared.generated.resources.cd_settings
+import projectphoenix.shared.generated.resources.connecting
+import projectphoenix.shared.generated.resources.custom_equipment_title
+import projectphoenix.shared.generated.resources.cycles_title
+import projectphoenix.shared.generated.resources.diagnostics_title
+import projectphoenix.shared.generated.resources.equipment_rack_title
+import projectphoenix.shared.generated.resources.external_activities_title
+import projectphoenix.shared.generated.resources.external_measurements
+import projectphoenix.shared.generated.resources.external_programs_title
+import projectphoenix.shared.generated.resources.external_routines_title
+import projectphoenix.shared.generated.resources.home_action_cycles
+import projectphoenix.shared.generated.resources.home_action_routines
+import projectphoenix.shared.generated.resources.hrm_status_connected
+import projectphoenix.shared.generated.resources.insights_title
+import projectphoenix.shared.generated.resources.integrations_data_title
+import projectphoenix.shared.generated.resources.just_lift
+import projectphoenix.shared.generated.resources.label_equipment
+import projectphoenix.shared.generated.resources.main_cd_connected
+import projectphoenix.shared.generated.resources.main_cd_connecting
+import projectphoenix.shared.generated.resources.main_cd_error
+import projectphoenix.shared.generated.resources.main_cd_tap_connect
+import projectphoenix.shared.generated.resources.main_connect_action
+import projectphoenix.shared.generated.resources.main_connect_connecting
+import projectphoenix.shared.generated.resources.main_connect_full_click
+import projectphoenix.shared.generated.resources.main_sync_complete
+import projectphoenix.shared.generated.resources.main_sync_error_tap
+import projectphoenix.shared.generated.resources.main_sync_partial_retry
+import projectphoenix.shared.generated.resources.main_syncing
+import projectphoenix.shared.generated.resources.nav_achievements
+import projectphoenix.shared.generated.resources.nav_activities_short
 import projectphoenix.shared.generated.resources.nav_analytics
+import projectphoenix.shared.generated.resources.nav_app_fallback
+import projectphoenix.shared.generated.resources.nav_assessment_short
+import projectphoenix.shared.generated.resources.nav_choose_workout
+import projectphoenix.shared.generated.resources.nav_complete
+import projectphoenix.shared.generated.resources.nav_cycle_review
+import projectphoenix.shared.generated.resources.nav_cycle_short
+import projectphoenix.shared.generated.resources.nav_daily_routines
+import projectphoenix.shared.generated.resources.nav_data_short
+import projectphoenix.shared.generated.resources.nav_edit_routine
+import projectphoenix.shared.generated.resources.nav_edit_short
+import projectphoenix.shared.generated.resources.nav_exercise
 import projectphoenix.shared.generated.resources.nav_insights
+import projectphoenix.shared.generated.resources.nav_logs_short
+import projectphoenix.shared.generated.resources.nav_metrics_short
+import projectphoenix.shared.generated.resources.nav_playground_short
+import projectphoenix.shared.generated.resources.nav_portal_short
 import projectphoenix.shared.generated.resources.nav_profile
+import projectphoenix.shared.generated.resources.nav_program
+import projectphoenix.shared.generated.resources.nav_program_playground
+import projectphoenix.shared.generated.resources.nav_programs_short
+import projectphoenix.shared.generated.resources.nav_rack_short
+import projectphoenix.shared.generated.resources.nav_review_short
+import projectphoenix.shared.generated.resources.nav_routine
+import projectphoenix.shared.generated.resources.nav_single_exercise
+import projectphoenix.shared.generated.resources.nav_strength_assessment
+import projectphoenix.shared.generated.resources.nav_training_cycle
+import projectphoenix.shared.generated.resources.nav_workout
+import projectphoenix.shared.generated.resources.phoenix_portal
 import projectphoenix.shared.generated.resources.profile_create_failed
 import projectphoenix.shared.generated.resources.profile_recovery_retry_failed
 import projectphoenix.shared.generated.resources.profile_switch_blocked_during_workout
 import projectphoenix.shared.generated.resources.profile_switch_failed
+import projectphoenix.shared.generated.resources.reconnect
+import projectphoenix.shared.generated.resources.settings_connection_logs
+import projectphoenix.shared.generated.resources.settings_integrations
+import projectphoenix.shared.generated.resources.settings_title
+import projectphoenix.shared.generated.resources.workout_save_failed
+import projectphoenix.shared.generated.resources.workout_save_retry_failed
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -384,19 +445,34 @@ fun EnhancedMainScreen(
             val hideTopBarSubtitle = useCompactTopBar || fontScale >= 1.3f
             // Cycle editor and review publish the cycle name through topBarTitle.
             // On those routes that name wins; a blank name uses the static fallback.
-            val fullTopBarTitle = cycleShellTitle(currentRoute, topBarTitle)
-                ?: if (!routeOwnsStaticTitle && topBarTitle.isNotEmpty()) {
-                    topBarTitle
-                } else {
-                    getScreenTitle(
-                        route = currentRoute,
-                        profileTitle = profileTitle,
-                        routineName = currentRoutineName,
-                        exerciseName = selectedExerciseName,
-                    )
-                }
+            val cycleFallback = stringResource(Res.string.nav_training_cycle)
+            val reviewFallback = stringResource(Res.string.nav_cycle_review)
+            val compactCycleFallback = stringResource(Res.string.nav_cycle_short)
+            val compactReviewFallback = stringResource(Res.string.nav_review_short)
+            val fullTopBarTitle = cycleShellTitle(
+                route = currentRoute,
+                cycleName = topBarTitle,
+                cycleFallback = cycleFallback,
+                reviewFallback = reviewFallback,
+            ) ?: if (!routeOwnsStaticTitle && topBarTitle.isNotEmpty()) {
+                topBarTitle
+            } else {
+                getScreenTitle(
+                    route = currentRoute,
+                    profileTitle = profileTitle,
+                    routineName = currentRoutineName,
+                    exerciseName = selectedExerciseName,
+                )
+            }
             val visibleTopBarTitle = if (useCompactTopBar) {
-                getCompactScreenTitle(currentRoute, fullTopBarTitle)
+                getCompactScreenTitle(
+                    route = currentRoute,
+                    title = fullTopBarTitle,
+                    fullCycleFallback = cycleFallback,
+                    compactCycleFallback = compactCycleFallback,
+                    fullReviewFallback = reviewFallback,
+                    compactReviewFallback = compactReviewFallback,
+                )
             } else {
                 fullTopBarTitle
             }
@@ -428,7 +504,7 @@ fun EnhancedMainScreen(
                                     )
                                     if (!hideTopBarSubtitle) {
                                         Text(
-                                            text = "Project Phoenix",
+                                            text = stringResource(Res.string.nav_app_fallback),
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 brush = Brush.linearGradient(
                                                     colors = listOf(
@@ -1014,11 +1090,11 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
         Icon(
             imageVector = icon,
             contentDescription = when (displayState) {
-                is SyncState.Syncing -> "Syncing"
-                is SyncState.Success -> "Sync complete"
-                is SyncState.Error -> "Sync error, tap to fix"
-                is SyncState.PartialSuccess -> "Partial sync, tap to retry"
-                else -> "Cloud sync"
+                is SyncState.Syncing -> stringResource(Res.string.main_syncing)
+                is SyncState.Success -> stringResource(Res.string.main_sync_complete)
+                is SyncState.Error -> stringResource(Res.string.main_sync_error_tap)
+                is SyncState.PartialSuccess -> stringResource(Res.string.main_sync_partial_retry)
+                else -> stringResource(Res.string.cd_cloud_sync)
             },
             tint = tint,
             modifier = Modifier
@@ -1075,25 +1151,25 @@ private fun ConnectionStatusIndicator(
 
     val buttonText = if (compact) {
         when {
-            isConnected -> "Connected"
-            isConnecting -> "Connecting"
-            isError -> "Retry"
-            else -> "Connect"
+            isConnected -> stringResource(Res.string.hrm_status_connected)
+            isConnecting -> stringResource(Res.string.main_connect_connecting)
+            isError -> stringResource(Res.string.action_retry)
+            else -> stringResource(Res.string.main_connect_action)
         }
     } else {
         when {
-            isConnected -> "Connected"
-            isConnecting -> "Connecting..."
-            isError -> "Reconnect"
-            else -> "Click to Connect"
+            isConnected -> stringResource(Res.string.hrm_status_connected)
+            isConnecting -> stringResource(Res.string.connecting)
+            isError -> stringResource(Res.string.reconnect)
+            else -> stringResource(Res.string.main_connect_full_click)
         }
     }
 
     val contentDescription = when {
-        isConnected -> "Connected to machine. Tap to disconnect"
-        isConnecting -> "Connecting to machine"
-        isError -> "Connection error. Tap to reconnect"
-        else -> "Tap to connect to machine"
+        isConnected -> stringResource(Res.string.main_cd_connected)
+        isConnecting -> stringResource(Res.string.main_cd_connecting)
+        isError -> stringResource(Res.string.main_cd_error)
+        else -> stringResource(Res.string.main_cd_tap_connect)
     }
 
     // High-contrast WCAG AA connection pill fills and inks
@@ -1179,10 +1255,15 @@ private fun ConnectionStatusIndicator(
  * review route's cycle name). A non-blank name is shown trimmed. A blank name uses
  * the static fallback. Returns null for every other route.
  */
-internal fun cycleShellTitle(route: String, cycleName: String): String? {
+internal fun cycleShellTitle(
+    route: String,
+    cycleName: String,
+    cycleFallback: String = "Training Cycle",
+    reviewFallback: String = "Cycle Review",
+): String? {
     val fallback = when {
-        route.startsWith("cycle_editor") -> "Training Cycle"
-        route.startsWith("cycleReview") -> "Cycle Review"
+        route.startsWith("cycle_editor") -> cycleFallback
+        route.startsWith("cycleReview") -> reviewFallback
         else -> return null
     }
     return cycleName.trim().ifEmpty { fallback }
@@ -1192,11 +1273,26 @@ internal fun cycleShellTitle(route: String, cycleName: String): String? {
  * Compact top-bar label for cycle routes. A real cycle name is kept (the bar
  * ellipsizes it). The static fallbacks stay short.
  */
-internal fun compactCycleShellTitle(route: String, title: String): String? = when {
+internal fun compactCycleShellTitle(
+    route: String,
+    title: String,
+    fullCycleFallback: String = "Training Cycle",
+    compactCycleFallback: String = "Cycle",
+    fullReviewFallback: String = "Cycle Review",
+    compactReviewFallback: String = "Review",
+): String? = when {
     route.startsWith("cycle_editor") ->
-        if (title.isBlank() || title == "Training Cycle") "Cycle" else title
+        if (title.isBlank() || title == fullCycleFallback || title == "Training Cycle") {
+            compactCycleFallback
+        } else {
+            title
+        }
     route.startsWith("cycleReview") ->
-        if (title.isBlank() || title == "Cycle Review") "Review" else title
+        if (title.isBlank() || title == fullReviewFallback || title == "Cycle Review") {
+            compactReviewFallback
+        } else {
+            title
+        }
     else -> null
 }
 
@@ -1211,6 +1307,7 @@ internal fun shouldKeepScreenOnForRoute(route: String, isInWorkoutSession: Boole
  * Routine and exercise flows fill in the loaded name. Cycle editor and review
  * titles are resolved earlier by [cycleShellTitle].
  */
+@Composable
 private fun getScreenTitle(
     route: String,
     profileTitle: String,
@@ -1218,101 +1315,116 @@ private fun getScreenTitle(
     exerciseName: String = "",
 ): String = when {
     // Main tabs (static titles)
-    route == NavigationRoutes.Home.route -> "Choose Your Workout"
+    route == NavigationRoutes.Home.route -> stringResource(Res.string.nav_choose_workout)
 
-    route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
+    route == NavigationRoutes.DailyRoutines.route -> stringResource(Res.string.nav_daily_routines)
 
-    route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
+    route == NavigationRoutes.TrainingCycles.route -> stringResource(Res.string.cycles_title)
 
-    route == NavigationRoutes.Analytics.route -> "Analytics"
+    route == NavigationRoutes.Analytics.route -> stringResource(Res.string.nav_analytics)
 
-    route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
+    route == NavigationRoutes.SmartInsights.route -> stringResource(Res.string.insights_title)
 
     route == NavigationRoutes.Profile.route -> profileTitle
 
-    route == NavigationRoutes.Settings.route -> "Settings"
+    route == NavigationRoutes.Settings.route -> stringResource(Res.string.settings_title)
 
-    route == NavigationRoutes.EquipmentRack.route -> "Equipment Rack"
+    route == NavigationRoutes.EquipmentRack.route -> stringResource(Res.string.equipment_rack_title)
 
-    route == NavigationRoutes.CustomEquipment.route -> "Custom Equipment"
+    route == NavigationRoutes.CustomEquipment.route -> stringResource(Res.string.custom_equipment_title)
 
-    route == NavigationRoutes.JustLift.route -> "Just Lift"
+    route == NavigationRoutes.JustLift.route -> stringResource(Res.string.just_lift)
 
-    isSingleExerciseRoute(route) -> "Single Exercise"
+    isSingleExerciseRoute(route) -> stringResource(Res.string.nav_single_exercise)
 
     // Routine flow (dynamic - uses routine name)
-    route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
+    route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { stringResource(Res.string.nav_routine) }
 
-    route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { "Routine" }
+    route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { stringResource(Res.string.nav_routine) }
 
     // Exercise detail (dynamic - uses exercise name)
-    route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
+    route.startsWith("exercise_detail") -> exerciseName.ifEmpty { stringResource(Res.string.nav_exercise) }
 
     // Routine editor (dynamic - uses routine name)
-    route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
+    route.startsWith("routine_editor") -> routineName.ifEmpty { stringResource(Res.string.nav_edit_routine) }
 
     // Static titles
-    route == NavigationRoutes.Badges.route -> "Achievements"
+    route == NavigationRoutes.Badges.route -> stringResource(Res.string.nav_achievements)
 
-    route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
+    route == NavigationRoutes.ConnectionLogs.route -> stringResource(Res.string.settings_connection_logs)
 
-    route == NavigationRoutes.Diagnostics.route -> "Diagnostics"
+    route == NavigationRoutes.Diagnostics.route -> stringResource(Res.string.diagnostics_title)
 
-    route == NavigationRoutes.LinkAccount.route -> "Phoenix Portal"
+    route == NavigationRoutes.LinkAccount.route -> stringResource(Res.string.phoenix_portal)
 
-    route == NavigationRoutes.Integrations.route -> "Integrations"
+    route == NavigationRoutes.Integrations.route -> stringResource(Res.string.settings_integrations)
 
-    route == NavigationRoutes.ExternalIntegrationHub.route -> "Integration Data"
+    route == NavigationRoutes.ExternalIntegrationHub.route -> stringResource(Res.string.integrations_data_title)
 
-    route == NavigationRoutes.ExternalActivities.route -> "External Activities"
+    route == NavigationRoutes.ExternalActivities.route -> stringResource(Res.string.external_activities_title)
 
-    route == NavigationRoutes.ExternalRoutines.route -> "External Routines"
+    route == NavigationRoutes.ExternalRoutines.route -> stringResource(Res.string.external_routines_title)
 
-    route.startsWith("external_routine/") -> "Routine"
+    route.startsWith("external_routine/") -> stringResource(Res.string.nav_routine)
 
-    route == NavigationRoutes.ExternalPrograms.route -> "External Programs"
+    route == NavigationRoutes.ExternalPrograms.route -> stringResource(Res.string.external_programs_title)
 
-    route.startsWith("external_program/") -> "Program"
+    route.startsWith("external_program/") -> stringResource(Res.string.nav_program)
 
-    route.startsWith("external_program_playground/") -> "Program Playground"
+    route.startsWith("external_program_playground/") -> stringResource(Res.string.nav_program_playground)
 
-    route == NavigationRoutes.ExternalMeasurementTrends.route -> "Measurements"
+    route == NavigationRoutes.ExternalMeasurementTrends.route -> stringResource(Res.string.external_measurements)
 
-    route.startsWith("strength_assessment") -> "Strength Assessment"
+    route.startsWith("strength_assessment") -> stringResource(Res.string.nav_strength_assessment)
 
-    route == NavigationRoutes.RoutineComplete.route -> "Complete"
+    route == NavigationRoutes.RoutineComplete.route -> stringResource(Res.string.nav_complete)
 
     // Active workout - hidden, but provide fallback
-    route == NavigationRoutes.ActiveWorkout.route -> "Workout"
+    route == NavigationRoutes.ActiveWorkout.route -> stringResource(Res.string.nav_workout)
 
     // Fallback
-    else -> "Project Phoenix"
+    else -> stringResource(Res.string.nav_app_fallback)
 }
 
-private fun getCompactScreenTitle(route: String, title: String): String {
-    compactCycleShellTitle(route, title)?.let { return it }
+@Composable
+private fun getCompactScreenTitle(
+    route: String,
+    title: String,
+    fullCycleFallback: String = "Training Cycle",
+    compactCycleFallback: String = "Cycle",
+    fullReviewFallback: String = "Cycle Review",
+    compactReviewFallback: String = "Review",
+): String {
+    compactCycleShellTitle(
+        route = route,
+        title = title,
+        fullCycleFallback = fullCycleFallback,
+        compactCycleFallback = compactCycleFallback,
+        fullReviewFallback = fullReviewFallback,
+        compactReviewFallback = compactReviewFallback,
+    )?.let { return it }
     return when {
-        route == NavigationRoutes.Home.route -> "Workouts"
-        route == NavigationRoutes.DailyRoutines.route -> "Routines"
-        route == NavigationRoutes.TrainingCycles.route -> "Cycles"
-        route == NavigationRoutes.SmartInsights.route -> "Insights"
+        route == NavigationRoutes.Home.route -> stringResource(Res.string.external_workouts)
+        route == NavigationRoutes.DailyRoutines.route -> stringResource(Res.string.home_action_routines)
+        route == NavigationRoutes.TrainingCycles.route -> stringResource(Res.string.home_action_cycles)
+        route == NavigationRoutes.SmartInsights.route -> stringResource(Res.string.nav_insights)
         route == NavigationRoutes.Profile.route -> title
-        route == NavigationRoutes.EquipmentRack.route -> "Rack"
-        route == NavigationRoutes.CustomEquipment.route -> "Equipment"
-        route == NavigationRoutes.ConnectionLogs.route -> "Logs"
-        route == NavigationRoutes.LinkAccount.route -> "Portal"
-        route == NavigationRoutes.Integrations.route -> "Integrations"
-        route == NavigationRoutes.ExternalIntegrationHub.route -> "Data"
-        route == NavigationRoutes.ExternalActivities.route -> "Activities"
-        route == NavigationRoutes.ExternalRoutines.route -> "Routines"
-        route.startsWith("external_routine/") -> if (title.isBlank()) "Routine" else title
-        route == NavigationRoutes.ExternalPrograms.route -> "Programs"
-        route.startsWith("external_program/") -> if (title.isBlank()) "Program" else title
-        route.startsWith("external_program_playground/") -> "Playground"
-        route == NavigationRoutes.ExternalMeasurementTrends.route -> "Metrics"
-        route.startsWith("strength_assessment") -> "Assessment"
-        isSingleExerciseRoute(route) -> "Exercise"
-        route.startsWith("routine_editor") -> "Edit"
+        route == NavigationRoutes.EquipmentRack.route -> stringResource(Res.string.nav_rack_short)
+        route == NavigationRoutes.CustomEquipment.route -> stringResource(Res.string.label_equipment)
+        route == NavigationRoutes.ConnectionLogs.route -> stringResource(Res.string.nav_logs_short)
+        route == NavigationRoutes.LinkAccount.route -> stringResource(Res.string.nav_portal_short)
+        route == NavigationRoutes.Integrations.route -> stringResource(Res.string.settings_integrations)
+        route == NavigationRoutes.ExternalIntegrationHub.route -> stringResource(Res.string.nav_data_short)
+        route == NavigationRoutes.ExternalActivities.route -> stringResource(Res.string.nav_activities_short)
+        route == NavigationRoutes.ExternalRoutines.route -> stringResource(Res.string.home_action_routines)
+        route.startsWith("external_routine/") -> if (title.isBlank()) stringResource(Res.string.nav_routine) else title
+        route == NavigationRoutes.ExternalPrograms.route -> stringResource(Res.string.nav_programs_short)
+        route.startsWith("external_program/") -> if (title.isBlank()) stringResource(Res.string.nav_program) else title
+        route.startsWith("external_program_playground/") -> stringResource(Res.string.nav_playground_short)
+        route == NavigationRoutes.ExternalMeasurementTrends.route -> stringResource(Res.string.nav_metrics_short)
+        route.startsWith("strength_assessment") -> stringResource(Res.string.nav_assessment_short)
+        isSingleExerciseRoute(route) -> stringResource(Res.string.nav_exercise)
+        route.startsWith("routine_editor") -> stringResource(Res.string.nav_edit_short)
         else -> title
     }
 }

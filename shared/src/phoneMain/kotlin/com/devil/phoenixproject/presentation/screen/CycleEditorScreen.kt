@@ -29,6 +29,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -115,7 +116,7 @@ fun CycleEditorScreen(
             } else {
                 // Read error directly from ViewModel (composed state may not have updated yet)
                 cycleEditorViewModel.uiState.value.saveError?.let {
-                    snackbarHostState.showSnackbar("Failed to save: $it")
+                    snackbarHostState.showSnackbar(getString(Res.string.cycle_editor_save_failed, it))
                 }
             }
         }
@@ -127,7 +128,7 @@ fun CycleEditorScreen(
             FloatingActionButton(
                 onClick = { cycleEditorViewModel.showAddDaySheet(true) },
             ) {
-                Icon(Icons.Default.Add, "Add Day")
+                Icon(Icons.Default.Add, stringResource(Res.string.cycle_editor_add_day))
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -224,8 +225,13 @@ fun CycleEditorScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val lengthCount = if (uiState.items.size == 1) {
+                        stringResource(Res.string.day_count_one)
+                    } else {
+                        stringResource(Res.string.day_count_other, uiState.items.size)
+                    }
                     Text(
-                        text = "CYCLE LENGTH: ${uiState.items.size} days",
+                        text = stringResource(Res.string.cycle_editor_length, lengthCount),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -248,11 +254,11 @@ fun CycleEditorScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "No days added yet.",
+                                text = stringResource(Res.string.cycle_editor_empty_title),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
-                                text = "Build your cycle by adding workout or rest days.",
+                                text = stringResource(Res.string.cycle_editor_empty_subtitle),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -293,8 +299,8 @@ fun CycleEditorScreen(
                                         cycleEditorViewModel.deleteItem(index)
                                         scope.launch {
                                             val result = snackbarHostState.showSnackbar(
-                                                message = "Day removed",
-                                                actionLabel = "UNDO",
+                                                message = getString(Res.string.cycle_editor_day_removed),
+                                                actionLabel = getString(Res.string.cycle_editor_undo),
                                                 duration = SnackbarDuration.Short,
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {

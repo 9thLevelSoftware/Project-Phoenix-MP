@@ -118,35 +118,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_delete
-import projectphoenix.shared.generated.resources.action_edit
-import projectphoenix.shared.generated.resources.action_ok
-import projectphoenix.shared.generated.resources.assign_routine
-import projectphoenix.shared.generated.resources.cd_create_cycle
-import projectphoenix.shared.generated.resources.cd_expand
-import projectphoenix.shared.generated.resources.create_cycle
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_action
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_body
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_title
-import projectphoenix.shared.generated.resources.delete_cycle_message
-import projectphoenix.shared.generated.resources.delete_cycle_title
-import projectphoenix.shared.generated.resources.edit_cycle
-import projectphoenix.shared.generated.resources.empty_no_cycles_message
-import projectphoenix.shared.generated.resources.empty_no_cycles_title
-import projectphoenix.shared.generated.resources.exercises_not_found
-import projectphoenix.shared.generated.resources.jump_to_day
-import projectphoenix.shared.generated.resources.label_error
-import projectphoenix.shared.generated.resources.skip_rest_day
-import projectphoenix.shared.generated.resources.start_workout
-
-// Shared failure copy for the fresh-start and restart workout paths (issue #620:
-// failures must always be surfaced, never silent).
-private const val WORKOUT_LOAD_FAILED_MESSAGE =
-    "Couldn't load this workout — routine data is missing. Try editing the cycle."
-private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
 
 /** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
 private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatMap { it.routine?.exercises ?: emptyList() }
@@ -290,13 +266,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
         completionEvent?.let { event ->
             val message = if (event.isRotationComplete) {
                 when {
-                    event.tmBumped -> "Deload complete! Week 1 begins with increased training max."
-                    event.newWeekNumber != null -> "Rotation complete! Advancing to Week ${event.newWeekNumber}."
-                    else -> "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+                    event.tmBumped -> getString(Res.string.cycles_deload_complete)
+                    event.newWeekNumber != null -> getString(Res.string.cycles_rotation_complete_week, event.newWeekNumber)
+                    else -> getString(Res.string.cycles_cycle_complete_rotation, event.rotationCount + 1)
                 }
             } else {
-                val dayLabel = event.dayName ?: "Day ${event.dayNumber}"
-                "$dayLabel completed!"
+                val dayLabel = event.dayName ?: getString(Res.string.cycles_day_numbered, event.dayNumber)
+                getString(Res.string.cycles_day_completed, dayLabel)
             }
             snackbarHostState.showSnackbar(message)
             viewModel.clearCycleDayCompletionEvent()
@@ -371,8 +347,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
     }
 
     // Set title
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("Training Cycles")
+    val cyclesTitle = stringResource(Res.string.cycles_title)
+    LaunchedEffect(cyclesTitle) {
+        viewModel.updateTopBarTitle(cyclesTitle)
     }
 
     val backgroundGradient = screenBackgroundBrush()
@@ -485,7 +462,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "All Cycles",
+                            text = stringResource(Res.string.cycles_all_cycles),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -594,9 +571,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                             )
                         ) {
                             is CycleOneRepMaxNormalization.Invalid -> {
-                                showErrorDialog =
-                                    "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
-                                        "Exercise cable metadata is unavailable; review the value and try again."
+                                showErrorDialog = getString(
+                                    Res.string.cycles_validation_failed,
+                                    normalization.exerciseName,
+                                )
                             }
 
                             is CycleOneRepMaxNormalization.Valid -> {
@@ -618,7 +596,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (failure: Exception) {
-                        showErrorDialog = "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                        showErrorDialog = getString(
+                            Res.string.cycles_save_1rm_failed,
+                            failure.message ?: getString(Res.string.cycles_unexpected_error),
+                        )
                     }
                 }
             },
@@ -760,9 +741,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                                         // Keep the user on the input page and reject the entire
                                         // submission rather than persisting a partial baseline map.
                                         if (creationSubmissionGate.isCurrent(submissionToken)) {
-                                            showErrorDialog =
-                                                "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
-                                                    "Exercise cable metadata is unavailable; review the value and try again."
+                                            showErrorDialog = getString(
+                                                Res.string.cycles_validation_failed,
+                                                normalization.exerciseName,
+                                            )
                                         }
                                     }
 
@@ -791,8 +773,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                                 return@launch
                             } catch (failure: Exception) {
                                 if (creationSubmissionGate.isCurrent(submissionToken)) {
-                                    showErrorDialog =
-                                        "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                                    showErrorDialog = getString(
+                                        Res.string.cycles_save_1rm_failed,
+                                        failure.message ?: getString(Res.string.cycles_unexpected_error),
+                                    )
                                 }
                             }
                             finally {
@@ -857,7 +841,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
-                            showErrorDialog = "Failed to create training cycle: ${e.message ?: "An unexpected error occurred."}"
+                            showErrorDialog = getString(
+                                Res.string.cycles_create_failed,
+                                e.message ?: getString(Res.string.cycles_unexpected_error),
+                            )
                         }
                     }
                 },
@@ -899,12 +886,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     tint = MaterialTheme.colorScheme.tertiary,
                 )
             },
-            title = { Text("Cycle changed on another device") },
+            title = { Text(stringResource(Res.string.cycles_conflict_title)) },
             text = {
-                Text(
-                    "The server version of “${draft.cycle.name}” was newer. " +
-                        "Your local version is preserved and can be saved as a separate inactive cycle.",
-                )
+                Text(stringResource(Res.string.cycles_conflict_message, draft.cycle.name))
             },
             confirmButton = {
                 TextButton(
@@ -915,7 +899,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         }
                     },
                 ) {
-                    Text("Save local copy")
+                    Text(stringResource(Res.string.cycles_save_local_copy))
                 }
             },
             dismissButton = {
@@ -927,7 +911,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         }
                     },
                 ) {
-                    Text("Keep server version")
+                    Text(stringResource(Res.string.cycles_keep_server_version))
                 }
             },
         )
@@ -948,7 +932,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
             text = {
                 Column {
                     Text(
-                        "The cycle was created, but the following exercises weren't found in your library:",
+                        stringResource(Res.string.cycles_warnings_header),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -961,7 +945,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "You may need to add these exercises or update the routines manually.",
+                        stringResource(Res.string.cycles_warnings_footer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1012,8 +996,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
         onNavigateSetReady = {
             navController.navigate(NavigationRoutes.SetReady.route)
         },
-        onConnectionFailed = { snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE) },
-        onWorkoutLoadFailed = { snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE) },
+        onConnectionFailed = { snackbarHostState.showSnackbar(getString(Res.string.cycles_connection_failed_message)) },
+        onWorkoutLoadFailed = { snackbarHostState.showSnackbar(getString(Res.string.cycles_missing_routine_message)) },
     )
 }
 
@@ -1132,7 +1116,9 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (isViewingCurrentDay) "UP NEXT" else "PREVIEWING",
+                        stringResource(
+                            if (isViewingCurrentDay) Res.string.cycles_up_next else Res.string.cycles_previewing,
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1144,7 +1130,7 @@ private fun ActiveCycleCard(
                     shape = MaterialTheme.shapes.extraSmall,
                 ) {
                     Text(
-                        "Day $displayedDayNumber of ${cycle.days.size}",
+                        stringResource(Res.string.cycles_day_of, displayedDayNumber, cycle.days.size),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1156,7 +1142,7 @@ private fun ActiveCycleCard(
 
             // Day name and routine
             Text(
-                displayedCycleDay?.name ?: "Day $displayedDayNumber",
+                displayedCycleDay?.name ?: stringResource(Res.string.cycles_day_numbered, displayedDayNumber),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1173,7 +1159,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Rest Day - Take it easy!",
+                        stringResource(Res.string.cycles_rest_day_message),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1203,7 +1189,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "No routine assigned",
+                        stringResource(Res.string.home_no_routine_assigned),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1221,7 +1207,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Routine data missing — edit the cycle to reassign it",
+                        stringResource(Res.string.cycles_routine_data_missing),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -1390,7 +1376,7 @@ private fun CycleListItem(
                                 shape = RoundedCornerShape(4.dp),
                             ) {
                                 Text(
-                                    "ACTIVE",
+                                    stringResource(Res.string.cycles_active_badge),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimary,
@@ -1401,9 +1387,15 @@ private fun CycleListItem(
 
                     Spacer(Modifier.height(4.dp))
 
+                    val dayCountLabel = if (cycle.days.size == 1) {
+                        stringResource(Res.string.day_count_one)
+                    } else {
+                        stringResource(Res.string.day_count_other, cycle.days.size)
+                    }
                     Text(
-                        "${cycle.days.size} days" +
-                            (progress?.let { " - Day ${it.currentDayNumber}" } ?: ""),
+                        progress?.let {
+                            stringResource(Res.string.cycles_day_progress_suffix, dayCountLabel, it.currentDayNumber)
+                        } ?: dayCountLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1460,7 +1452,7 @@ private fun CycleListItem(
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        day.name ?: "Day ${day.dayNumber}",
+                                        day.name ?: stringResource(Res.string.cycles_day_numbered, day.dayNumber),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                     )
@@ -1472,7 +1464,7 @@ private fun CycleListItem(
                                         )
                                     } else if (day.isRestDay) {
                                         Text(
-                                            "Rest",
+                                            stringResource(Res.string.cycles_rest_badge),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -1519,7 +1511,11 @@ private fun CycleListItem(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text(if (isActive) "Deactivate" else "Activate")
+                                Text(
+                                    stringResource(
+                                        if (isActive) Res.string.cycles_deactivate else Res.string.cycles_activate,
+                                    ),
+                                )
                             }
                             FilledTonalButton(
                                 onClick = onEdit,
@@ -1588,7 +1584,12 @@ private fun CycleListItem(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
+                                Text(
+                                    stringResource(
+                                        if (isActive) Res.string.cycles_deactivate else Res.string.cycles_activate,
+                                    ),
+                                    maxLines = 1,
+                                )
                             }
                             FilledTonalButton(
                                 onClick = onEdit,

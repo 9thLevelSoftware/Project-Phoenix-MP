@@ -252,13 +252,13 @@ private fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "Day Streak",
+                    text = stringResource(Res.string.badges_day_streak),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
                 if (streakInfo.isAtRisk) {
                     Text(
-                        text = "At Risk!",
+                        text = stringResource(Res.string.badges_at_risk),
                         style = MaterialTheme.typography.labelSmall,
                         color = FlameRed,
                         fontWeight = FontWeight.Bold,
@@ -292,7 +292,7 @@ private fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "Workouts",
+                    text = stringResource(Res.string.badges_workouts_label),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
@@ -328,7 +328,7 @@ private fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "Badges",
+                    text = stringResource(Res.string.badges_label),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
@@ -347,12 +347,12 @@ private fun StatsRow(earnedCount: Int, totalCount: Int, modifier: Modifier = Mod
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "Badge Progress",
+                text = stringResource(Res.string.badges_progress_title),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "$earnedCount / $totalCount",
+                text = stringResource(Res.string.badges_fraction, earnedCount, totalCount),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -447,6 +447,7 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: (() -> Unit
         label = "badge_scale",
     )
 
+    val secretLockedContentDescription = stringResource(Res.string.badges_cd_secret_locked)
     val cardModifier = Modifier
         .aspectRatio(0.85f)
         .scale(scale)
@@ -454,7 +455,7 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: (() -> Unit
         .let { base ->
             if (isSecret) {
                 base.semantics(mergeDescendants = true) {
-                    contentDescription = "Secret badge, locked"
+                    contentDescription = secretLockedContentDescription
                 }
             } else {
                 base
@@ -619,13 +620,13 @@ private fun BadgeDetailDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (isSecretLocked) "Secret Badge" else badge.name,
+                    text = if (isSecretLocked) stringResource(Res.string.badges_secret_title) else badge.name,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    text = if (isSecretLocked) "Locked" else badge.tier.displayName,
+                    text = if (isSecretLocked) stringResource(Res.string.badges_locked) else badge.tier.displayName,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (isSecretLocked) MaterialTheme.colorScheme.onSurfaceVariant else tierColor,
                     fontWeight = FontWeight.Bold,
@@ -641,7 +642,7 @@ private fun BadgeDetailDialog(
             ) {
                 Text(
                     text = if (isSecretLocked) {
-                        "Keep training to unlock this secret badge."
+                        stringResource(Res.string.badges_secret_keep_training)
                     } else {
                         badge.description
                     },
@@ -655,7 +656,7 @@ private fun BadgeDetailDialog(
                 // Progress (hidden for unearned secret badges to prevent leaking requirements)
                 if (!isEarned && !isSecretLocked) {
                     Text(
-                        text = "Progress",
+                        text = stringResource(Res.string.badges_progress_label),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -689,7 +690,7 @@ private fun BadgeDetailDialog(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Earned!",
+                            text = stringResource(Res.string.badges_earned_badge),
                             style = MaterialTheme.typography.bodyMedium,
                             color = AccessibilityTheme.colors.success,
                             fontWeight = FontWeight.Bold,
@@ -715,7 +716,7 @@ private fun BadgeDetailDialog(
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = if (isSecretLocked) "Secret" else badge.category.displayName,
+                            text = if (isSecretLocked) stringResource(Res.string.badges_secret_category) else badge.category.displayName,
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }

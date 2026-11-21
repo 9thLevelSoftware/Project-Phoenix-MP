@@ -110,6 +110,7 @@ import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.util.autoBackupLocationNote
 import com.devil.phoenixproject.util.canOpenBackupFolder
 import com.devil.phoenixproject.util.defaultBackupLocationLabel
@@ -149,7 +150,54 @@ import projectphoenix.shared.generated.resources.import_completed
 import projectphoenix.shared.generated.resources.label_please_wait
 import projectphoenix.shared.generated.resources.language_dutch
 import projectphoenix.shared.generated.resources.language_english
+import projectphoenix.shared.generated.resources.backup_all_data
+import projectphoenix.shared.generated.resources.label_error
 import projectphoenix.shared.generated.resources.language_french
+import projectphoenix.shared.generated.resources.language_italian
+import projectphoenix.shared.generated.resources.language_system_default
+import projectphoenix.shared.generated.resources.restore_from_backup
+import projectphoenix.shared.generated.resources.settings_app_info
+import projectphoenix.shared.generated.resources.settings_app_info_description
+import projectphoenix.shared.generated.resources.settings_auto_backup_description
+import projectphoenix.shared.generated.resources.settings_auto_backup_description_with_location
+import projectphoenix.shared.generated.resources.settings_auto_backup_title
+import projectphoenix.shared.generated.resources.settings_backup_complete
+import projectphoenix.shared.generated.resources.settings_backup_file_one
+import projectphoenix.shared.generated.resources.settings_backup_file_other
+import projectphoenix.shared.generated.resources.settings_backup_location
+import projectphoenix.shared.generated.resources.settings_backup_location_default
+import projectphoenix.shared.generated.resources.settings_change_location
+import projectphoenix.shared.generated.resources.settings_cloud_sync_description
+import projectphoenix.shared.generated.resources.settings_connection_logs
+import projectphoenix.shared.generated.resources.settings_connection_logs_description
+import projectphoenix.shared.generated.resources.settings_creating_backup
+import projectphoenix.shared.generated.resources.settings_data_management
+import projectphoenix.shared.generated.resources.settings_delete_all_workouts
+import projectphoenix.shared.generated.resources.settings_developer_tools
+import projectphoenix.shared.generated.resources.settings_donate_description
+import projectphoenix.shared.generated.resources.settings_import_failed_detail
+import projectphoenix.shared.generated.resources.settings_include_raw_telemetry_description
+import projectphoenix.shared.generated.resources.settings_include_raw_telemetry_title
+import projectphoenix.shared.generated.resources.settings_integrations
+import projectphoenix.shared.generated.resources.settings_integrations_description
+import projectphoenix.shared.generated.resources.settings_language_ios_restart_hint
+import projectphoenix.shared.generated.resources.settings_like_work
+import projectphoenix.shared.generated.resources.settings_link_portal_account
+import projectphoenix.shared.generated.resources.settings_open_backup_folder
+import projectphoenix.shared.generated.resources.settings_reset_to_default
+import projectphoenix.shared.generated.resources.settings_restore_already_present
+import projectphoenix.shared.generated.resources.settings_restore_complete
+import projectphoenix.shared.generated.resources.settings_restore_failed
+import projectphoenix.shared.generated.resources.settings_restore_imported
+import projectphoenix.shared.generated.resources.settings_restore_incomplete
+import projectphoenix.shared.generated.resources.settings_restore_incomplete_detail_one
+import projectphoenix.shared.generated.resources.settings_restore_incomplete_detail_other
+import projectphoenix.shared.generated.resources.settings_restore_repaired_references
+import projectphoenix.shared.generated.resources.settings_restoring_data
+import projectphoenix.shared.generated.resources.settings_test_sounds
+import projectphoenix.shared.generated.resources.settings_test_sounds_description
+import projectphoenix.shared.generated.resources.settings_unknown_database_error
+import projectphoenix.shared.generated.resources.settings_unknown_error
 import projectphoenix.shared.generated.resources.language_german
 import projectphoenix.shared.generated.resources.language_spanish
 import projectphoenix.shared.generated.resources.restore_description
@@ -457,14 +505,14 @@ fun SettingsTab(
             // Donation Card (top of settings for visibility)
             val uriHandler = LocalUriHandler.current
             GlobalSettingsSectionCard(
-                title = "Like My Work?",
+                title = stringResource(Res.string.settings_like_work),
                 icon = Icons.Default.Favorite,
                 iconContentDescription = stringResource(Res.string.cd_support_developer),
                 badgeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 badgeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             ) {
                 Text(
-                    "This app is 100% free with no ads, but I graciously accept donations if you are so inclined!",
+                    stringResource(Res.string.settings_donate_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -495,7 +543,7 @@ fun SettingsTab(
                 badgeContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
             ) {
                 SettingsActionRow(
-                    description = "Sync your workouts to the Phoenix Portal for cross-device access",
+                    description = stringResource(Res.string.settings_cloud_sync_description),
                 ) {
                     OutlinedButton(
                         onClick = onNavigateToLinkAccount,
@@ -515,7 +563,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Link Portal Account",
+                            stringResource(Res.string.settings_link_portal_account),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -558,7 +606,7 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 SettingsActionRow(
-                    description = "Connect Hevy, Liftosaur, Health apps, and import/export CSV",
+                    description = stringResource(Res.string.settings_integrations_description),
                 ) {
                     OutlinedButton(
                         onClick = onNavigateToIntegrations,
@@ -573,12 +621,12 @@ fun SettingsTab(
                     ) {
                         Icon(
                             Icons.Default.Extension,
-                            contentDescription = "Integrations",
+                            contentDescription = stringResource(Res.string.settings_integrations),
                             modifier = Modifier.size(24.dp),
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Integrations",
+                            stringResource(Res.string.settings_integrations),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -632,15 +680,18 @@ fun SettingsTab(
             ) {
                 // Language selection dropdown
                 val languageOptions = listOf(
+                    "" to stringResource(Res.string.language_system_default),
                     "en" to stringResource(Res.string.language_english),
                     "nl" to stringResource(Res.string.language_dutch),
                     "de" to stringResource(Res.string.language_german),
                     "es" to stringResource(Res.string.language_spanish),
                     "fr" to stringResource(Res.string.language_french),
+                    "it" to stringResource(Res.string.language_italian),
                 )
                 val selectedLabel = languageOptions.firstOrNull { it.first == selectedLanguage }?.second
                     ?: languageOptions.first().second
                 var languageExpanded by remember { mutableStateOf(false) }
+                var iosLanguageRestartRequired by remember { mutableStateOf(false) }
 
                 @OptIn(ExperimentalMaterial3Api::class)
                 ExposedDropdownMenuBox(
@@ -670,6 +721,9 @@ fun SettingsTab(
                                     )
                                 },
                                 onClick = {
+                                    if (isIosPlatform && code != selectedLanguage) {
+                                        iosLanguageRestartRequired = true
+                                    }
                                     onLanguageChange(code)
                                     languageExpanded = false
                                 },
@@ -677,6 +731,19 @@ fun SettingsTab(
                             )
                         }
                     }
+                }
+
+                if (isIosPlatform) {
+                    Text(
+                        stringResource(Res.string.settings_language_ios_restart_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (iosLanguageRestartRequired) FontWeight.Medium else FontWeight.Normal,
+                        color = if (iosLanguageRestartRequired) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
 
                 Box(
@@ -763,25 +830,25 @@ fun SettingsTab(
 
             // Data Management Section
             GlobalSettingsSectionCard(
-                title = "Data Management",
+                title = stringResource(Res.string.settings_data_management),
                 icon = Icons.Default.DeleteForever,
                 iconContentDescription = stringResource(Res.string.cd_delete_workouts),
                 badgeContainerColor = MaterialTheme.colorScheme.errorContainer,
                 badgeContentColor = MaterialTheme.colorScheme.onErrorContainer,
             ) {
                 GlobalSettingsSwitchRow(
-                    title = "Auto-Backup Workouts & Routines",
-                    description = "Automatically save single workouts and completed routines to local backup files" +
-                        (autoBackupLocationNote?.let { ". $it" } ?: ""),
+                    title = stringResource(Res.string.settings_auto_backup_title),
+                    description = autoBackupLocationNote?.let {
+                        stringResource(Res.string.settings_auto_backup_description_with_location, it)
+                    } ?: stringResource(Res.string.settings_auto_backup_description),
                     checked = autoBackupEnabled,
                     onCheckedChange = onAutoBackupEnabledChange,
                 )
 
                 // Raw telemetry is out of backups unless opted in (F-033)
                 GlobalSettingsSwitchRow(
-                    title = "Include raw telemetry",
-                    description = "Add every raw force and position sample to backups. Makes backups much larger; " +
-                        "workouts, reps and records are always included",
+                    title = stringResource(Res.string.settings_include_raw_telemetry_title),
+                    description = stringResource(Res.string.settings_include_raw_telemetry_description),
                     checked = includeRawTelemetryInBackups,
                     onCheckedChange = onIncludeRawTelemetryInBackupsChange,
                 )
@@ -807,14 +874,17 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Backup Location",
+                            stringResource(Res.string.settings_backup_location),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             when (backupDestination) {
-                                is BackupDestination.Default -> "Default ($defaultBackupLocationLabel)"
+                                is BackupDestination.Default -> stringResource(
+                                    Res.string.settings_backup_location_default,
+                                    defaultBackupLocationLabel,
+                                )
                                 is BackupDestination.Custom -> backupDestination.displayName
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -843,7 +913,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "Change Location",
+                            stringResource(Res.string.settings_change_location),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -864,7 +934,7 @@ fun SettingsTab(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                "Reset to Default",
+                                stringResource(Res.string.settings_reset_to_default),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -895,7 +965,11 @@ fun SettingsTab(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "${stats.fileCount} backup file${if (stats.fileCount != 1) "s" else ""}",
+                                if (stats.fileCount == 1) {
+                                    stringResource(Res.string.settings_backup_file_one)
+                                } else {
+                                    stringResource(Res.string.settings_backup_file_other, stats.fileCount)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
@@ -927,7 +1001,7 @@ fun SettingsTab(
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.small))
                                 Text(
-                                    "Open Backup Folder",
+                                    stringResource(Res.string.settings_open_backup_folder),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
@@ -959,7 +1033,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Backup All Data",
+                            stringResource(Res.string.backup_all_data),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -986,7 +1060,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Restore from Backup",
+                            stringResource(Res.string.restore_from_backup),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -1014,7 +1088,7 @@ fun SettingsTab(
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Delete All Workouts",
+                        stringResource(Res.string.settings_delete_all_workouts),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1039,7 +1113,7 @@ fun SettingsTab(
 
             // Developer Tools Section
             GlobalSettingsSectionCard(
-                title = "Developer Tools",
+                title = stringResource(Res.string.settings_developer_tools),
                 icon = Icons.Default.BugReport,
                 iconContentDescription = stringResource(Res.string.cd_developer_tools),
                 badgeContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -1076,7 +1150,7 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 SettingsActionRow(
-                    description = "View Bluetooth connection debug logs to diagnose connectivity issues",
+                    description = stringResource(Res.string.settings_connection_logs_description),
                 ) {
                     OutlinedButton(
                         onClick = onNavigateToConnectionLogs,
@@ -1096,7 +1170,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Connection Logs",
+                            stringResource(Res.string.settings_connection_logs),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -1151,7 +1225,7 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 SettingsActionRow(
-                    description = "Tests current workout sounds; numbered rep count requires Profile > Workout > Audio rep counter.",
+                    description = stringResource(Res.string.settings_test_sounds_description),
                 ) {
                     OutlinedButton(
                         onClick = onTestSounds,
@@ -1171,7 +1245,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Test Sounds",
+                            stringResource(Res.string.settings_test_sounds),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -1181,7 +1255,7 @@ fun SettingsTab(
 
             // App Info Section
             GlobalSettingsSectionCard(
-                title = "App Info",
+                title = stringResource(Res.string.settings_app_info),
                 icon = Icons.Default.Info,
                 iconContentDescription = stringResource(Res.string.cd_app_info),
                 badgeContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -1192,7 +1266,7 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "Open source community project to control Phoenix Trainer machines locally.",
+                    stringResource(Res.string.settings_app_info_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1227,11 +1301,11 @@ fun SettingsTab(
                             backupResult = path
                             showResultDialog = true
                         }.onFailure { error ->
-                            backupError = error.message ?: "Unknown error"
+                            backupError = error.message ?: getString(Res.string.settings_unknown_error)
                             showResultDialog = true
                         }
                     } catch (e: Exception) {
-                        backupError = e.message ?: "Unknown database error"
+                        backupError = e.message ?: getString(Res.string.settings_unknown_database_error)
                         showResultDialog = true
                     } finally {
                         backupInProgress = false
@@ -1250,7 +1324,7 @@ fun SettingsTab(
                         try {
                             backupManager.shareBackup()
                         } catch (e: Exception) {
-                            backupError = e.message ?: "Unknown error"
+                            backupError = e.message ?: getString(Res.string.settings_unknown_error)
                             showResultDialog = true
                         } finally {
                             backupInProgress = false
@@ -1300,10 +1374,10 @@ fun SettingsTab(
         }
         PhoenixModalDialogFrame(
             title = when {
-                isError -> "Error"
-                backupResult != null -> "Backup Complete"
-                restoreResult?.hasPartialFailure == true -> "Restore Incomplete"
-                else -> "Restore Complete"
+                isError -> stringResource(Res.string.label_error)
+                backupResult != null -> stringResource(Res.string.settings_backup_complete)
+                restoreResult?.hasPartialFailure == true -> stringResource(Res.string.settings_restore_incomplete)
+                else -> stringResource(Res.string.settings_restore_complete)
             },
             onDismiss = resetResultState,
             confirmLabel = stringResource(Res.string.action_ok),
@@ -1311,7 +1385,7 @@ fun SettingsTab(
         ) {
             when {
                 isError -> {
-                    Text(backupError ?: "Unknown error")
+                    Text(backupError ?: stringResource(Res.string.settings_unknown_error))
                 }
 
                 backupResult != null -> {
@@ -1323,16 +1397,18 @@ fun SettingsTab(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(stringResource(Res.string.import_completed))
                             Spacer(modifier = Modifier.height(Spacing.small))
-                            Text("Imported: ${result.totalImported}")
-                            Text("Already present: ${result.totalSkipped}")
-                            Text("Failed: ${result.entitiesFailed}")
-                            Text("Repaired references: ${result.repairedReferences}")
+                            Text(stringResource(Res.string.settings_restore_imported, result.totalImported))
+                            Text(stringResource(Res.string.settings_restore_already_present, result.totalSkipped))
+                            Text(stringResource(Res.string.settings_restore_failed, result.entitiesFailed))
+                            Text(stringResource(Res.string.settings_restore_repaired_references, result.repairedReferences))
                             if (result.hasPartialFailure) {
                                 Spacer(modifier = Modifier.height(Spacing.small))
                                 Text(
-                                    "Restore incomplete: ${result.entitiesFailed} " +
-                                        (if (result.entitiesFailed == 1) "item" else "items") +
-                                        " could not be restored. The counts above reflect the partial result.",
+                                    if (result.entitiesFailed == 1) {
+                                        stringResource(Res.string.settings_restore_incomplete_detail_one)
+                                    } else {
+                                        stringResource(Res.string.settings_restore_incomplete_detail_other, result.entitiesFailed)
+                                    },
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
@@ -1353,7 +1429,11 @@ fun SettingsTab(
             ),
             title = {
                 Text(
-                    if (backupInProgress) "Creating Backup..." else "Restoring Data...",
+                    if (backupInProgress) {
+                        stringResource(Res.string.settings_creating_backup)
+                    } else {
+                        stringResource(Res.string.settings_restoring_data)
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1410,9 +1490,9 @@ fun SettingsTab(
                         }.onFailure { error ->
                             // Include exception class so users sharing a screenshot give
                             // us enough to diagnose without needing a full logcat.
-                            val cls = error::class.simpleName ?: "Error"
-                            val msg = error.message?.take(240) ?: "Unknown error"
-                            backupError = "Import failed ($cls): $msg"
+                            val cls = error::class.simpleName ?: getString(Res.string.label_error)
+                            val msg = error.message?.take(240) ?: getString(Res.string.settings_unknown_error)
+                            backupError = getString(Res.string.settings_import_failed_detail, cls, msg)
                             showResultDialog = true
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -1422,9 +1502,9 @@ fun SettingsTab(
                         // Result.failure). Without this catch the thrown exception
                         // escapes the coroutine after finally, leaving the user with
                         // no error dialog. Mirror the onFailure path.
-                        val cls = e::class.simpleName ?: "Error"
-                        val msg = e.message?.take(240) ?: "Unknown error"
-                        backupError = "Import failed ($cls): $msg"
+                        val cls = e::class.simpleName ?: getString(Res.string.label_error)
+                        val msg = e.message?.take(240) ?: getString(Res.string.settings_unknown_error)
+                        backupError = getString(Res.string.settings_import_failed_detail, cls, msg)
                         showResultDialog = true
                     } finally {
                         restoreInProgress = false

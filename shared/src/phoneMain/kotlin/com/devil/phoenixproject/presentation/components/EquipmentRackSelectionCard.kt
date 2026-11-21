@@ -58,6 +58,8 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_collapse
+import projectphoenix.shared.generated.resources.cd_expand
 import projectphoenix.shared.generated.resources.equipment_rack_active_selection
 import projectphoenix.shared.generated.resources.equipment_rack_behavior_added_short
 import projectphoenix.shared.generated.resources.equipment_rack_behavior_counterweight_short
@@ -65,6 +67,10 @@ import projectphoenix.shared.generated.resources.equipment_rack_behavior_display
 import projectphoenix.shared.generated.resources.equipment_rack_manage
 import projectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
 import projectphoenix.shared.generated.resources.equipment_rack_none_selected
+import projectphoenix.shared.generated.resources.external_cd_collapsed
+import projectphoenix.shared.generated.resources.external_cd_expanded
+import projectphoenix.shared.generated.resources.rack_selection_default_suffix
+import projectphoenix.shared.generated.resources.rack_selection_display_suffix
 
 /**
  * Collapsible equipment rack summary row with per-item behavior overrides.
@@ -107,6 +113,10 @@ fun EquipmentRackSelectionCard(
                 .padding(Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
+            val expandLabel = stringResource(Res.string.cd_expand)
+            val collapseLabel = stringResource(Res.string.cd_collapse)
+            val expandedState = stringResource(Res.string.external_cd_expanded)
+            val collapsedState = stringResource(Res.string.external_cd_collapsed)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -119,10 +129,10 @@ fun EquipmentRackSelectionCard(
                         .clip(MaterialTheme.shapes.small)
                         .clickable(
                             role = Role.Button,
-                            onClickLabel = if (expanded) "Collapse" else "Expand",
+                            onClickLabel = if (expanded) collapseLabel else expandLabel,
                         ) { expanded = !expanded }
                         .semantics {
-                            stateDescription = if (expanded) "Expanded" else "Collapsed"
+                            stateDescription = if (expanded) expandedState else collapsedState
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -265,7 +275,11 @@ private fun RackItemBehaviorPicker(
         ) {
             options.forEach { behavior ->
                 val label = behaviorShortLabel(behavior)
-                val displayLabel = if (behavior == globalBehavior) "$label (Default)" else label
+                val displayLabel = if (behavior == globalBehavior) {
+                    stringResource(Res.string.rack_selection_default_suffix, label)
+                } else {
+                    label
+                }
                 FilterChip(
                     selected = behavior == currentBehavior,
                     onClick = { onBehaviorChange(behavior) },
@@ -285,7 +299,11 @@ private fun RackItemBehaviorPicker(
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             options.forEachIndexed { index, behavior ->
                 val label = behaviorShortLabel(behavior)
-                val displayLabel = if (behavior == globalBehavior) "$label (Default)" else label
+                val displayLabel = if (behavior == globalBehavior) {
+                    stringResource(Res.string.rack_selection_default_suffix, label)
+                } else {
+                    label
+                }
                 SegmentedButton(
                     selected = index == selectedIndex,
                     onClick = { onBehaviorChange(behavior) },
@@ -312,19 +330,23 @@ private fun behaviorShortLabel(behavior: RackItemBehavior): String = when (behav
     RackItemBehavior.DISPLAY_ONLY -> stringResource(Res.string.equipment_rack_behavior_display_only_short)
 }
 
+@Composable
 private fun buildCollapsedSummary(
     selectedItems: List<RackItem>,
     behaviorOverrides: Map<String, RackItemBehavior>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-): String = selectedItems.joinToString(", ") { item ->
-    val effectiveBehavior = behaviorOverrides[item.id] ?: item.behavior
-    val behaviorSuffix = when (effectiveBehavior) {
-        RackItemBehavior.ADDED_RESISTANCE -> "+"
-        RackItemBehavior.COUNTERWEIGHT -> "-"
-        RackItemBehavior.DISPLAY_ONLY -> "display"
+): String {
+    val displaySuffix = stringResource(Res.string.rack_selection_display_suffix)
+    return selectedItems.joinToString(", ") { item ->
+        val effectiveBehavior = behaviorOverrides[item.id] ?: item.behavior
+        val behaviorSuffix = when (effectiveBehavior) {
+            RackItemBehavior.ADDED_RESISTANCE -> "+"
+            RackItemBehavior.COUNTERWEIGHT -> "-"
+            RackItemBehavior.DISPLAY_ONLY -> displaySuffix
+        }
+        "${item.name} ${formatWeight(item.weightKg, weightUnit)} $behaviorSuffix"
     }
-    "${item.name} ${formatWeight(item.weightKg, weightUnit)} $behaviorSuffix"
 }
 
 private fun formatRackChipDetail(

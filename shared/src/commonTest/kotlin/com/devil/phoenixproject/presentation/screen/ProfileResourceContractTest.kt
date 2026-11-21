@@ -15,6 +15,7 @@ class ProfileResourceContractTest {
         "de" to "values-de",
         "es" to "values-es",
         "fr" to "values-fr",
+        "it" to "values-it",
     )
 
     private val files = selectableLocales.mapValues { (_, directory) ->
@@ -101,6 +102,7 @@ class ProfileResourceContractTest {
         "de" to "LED-Farbschema",
         "es" to "Esquema de color LED",
         "fr" to "Palette de couleurs LED",
+        "it" to "Schema colori LED",
     )
 
     private val expectedPlaceholders = mapOf(
@@ -114,6 +116,7 @@ class ProfileResourceContractTest {
         "de" to listOf("Blau", "Grün", "Bernstein", "Rot", "Lila", "Rosa", "Cyan", "Orange"),
         "es" to listOf("Azul", "Verde", "Ámbar", "Rojo", "Morado", "Rosa", "Cian", "Naranja"),
         "fr" to listOf("Bleu", "Vert", "Ambre", "Rouge", "Violet", "Rose", "Cyan", "Orange"),
+        "it" to listOf("Blu", "Verde", "Ambra", "Rosso", "Viola", "Rosa", "Ciano", "Arancione"),
     )
 
     private val placeholderPattern = Regex("""%\d+\${'$'}[A-Za-z]""")
@@ -121,7 +124,7 @@ class ProfileResourceContractTest {
         Regex("""&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)""")
 
     @Test
-    fun contractInventoryIsUniqueAndTracksExactlyFiveSelectableLocales() {
+    fun contractInventoryIsUniqueAndTracksAllSelectableLocales() {
         assertEquals(55, newKeys.size)
         assertEquals(newKeys.size, newKeys.toSet().size)
         assertTrue(newKeys.intersect(reusedKeys.toSet()).isEmpty())
@@ -131,10 +134,10 @@ class ProfileResourceContractTest {
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt",
             ),
         )
+        assertContains(settings, "\"\" to stringResource")
         selectableLocales.keys.forEach { languageCode ->
             assertContains(settings, "\"$languageCode\" to stringResource")
         }
-        assertFalse(settings.contains("\"it\" to stringResource"))
     }
 
     @Test

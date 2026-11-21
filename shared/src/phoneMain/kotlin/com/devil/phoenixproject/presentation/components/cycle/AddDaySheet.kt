@@ -16,6 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.presentation.components.PhoenixSheetHeader
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,7 +47,7 @@ fun AddDaySheet(
                 .padding(bottom = 24.dp),
         ) {
             PhoenixSheetHeader(
-                title = "Add to Cycle",
+                title = stringResource(Res.string.add_day_title),
                 onClose = onDismiss,
             )
 
@@ -66,7 +69,7 @@ fun AddDaySheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Edit Exercises",
+                        text = stringResource(Res.string.add_day_edit_exercises),
                         fontWeight = FontWeight.Medium,
                     )
                 }
@@ -89,7 +92,7 @@ fun AddDaySheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Add Rest Day",
+                    text = stringResource(Res.string.add_day_rest_day),
                     fontWeight = FontWeight.Medium,
                 )
             }
@@ -102,7 +105,7 @@ fun AddDaySheet(
 
             // Section header for workouts
             Text(
-                text = "Select a Workout",
+                text = stringResource(Res.string.add_day_select_workout),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -120,7 +123,7 @@ fun AddDaySheet(
                     if (recentRoutines.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Recent Routines",
+                                text = stringResource(Res.string.add_day_recent_routines),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 8.dp),
@@ -142,7 +145,13 @@ fun AddDaySheet(
                     if (otherRoutines.isNotEmpty()) {
                         item {
                             Text(
-                                text = if (recentRoutines.isNotEmpty()) "All Routines" else "Routines",
+                                text = stringResource(
+                                    if (recentRoutines.isNotEmpty()) {
+                                        Res.string.add_day_all_routines
+                                    } else {
+                                        Res.string.home_action_routines
+                                    },
+                                ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 8.dp),
@@ -163,7 +172,7 @@ fun AddDaySheet(
                     if (routines.isEmpty()) {
                         item {
                             Text(
-                                text = "No routines created yet.\nCreate a routine first to add workout days.",
+                                text = stringResource(Res.string.add_day_empty_routines),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(16.dp),
@@ -191,8 +200,17 @@ private fun RoutineListItem(routine: Routine, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
             )
             if (routine.exercises.isNotEmpty()) {
+                val countText = if (routine.exercises.size == 1) {
+                    stringResource(Res.string.exercise_count_one)
+                } else {
+                    stringResource(Res.string.exercise_count_other, routine.exercises.size)
+                }
                 Text(
-                    text = "${routine.exercises.size} exercises: ${routine.exercises.joinToString(", ") { it.exercise.name }}",
+                    text = stringResource(
+                        Res.string.add_day_routine_exercises,
+                        countText,
+                        routine.exercises.joinToString(", ") { it.exercise.name },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

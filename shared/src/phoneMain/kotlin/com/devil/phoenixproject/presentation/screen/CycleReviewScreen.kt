@@ -29,6 +29,9 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * CycleReviewScreen - Shows a collapsible timeline of all days before the user commits the cycle.
@@ -116,7 +119,7 @@ fun CycleReviewScreen(
                     shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
-                        text = "Confirm & Finish",
+                        text = stringResource(Res.string.cycle_review_confirm_finish),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -189,7 +192,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 // Day content
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Day ${day.dayNumber}",
+                        text = stringResource(Res.string.cycles_day_numbered, day.dayNumber),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -209,7 +212,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                                 modifier = Modifier.size(20.dp),
                             )
                             Text(
-                                text = "Rest",
+                                text = stringResource(Res.string.cycles_rest_badge),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -217,7 +220,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                         }
                     } else {
                         Text(
-                            text = routine?.name ?: "No routine assigned",
+                            text = routine?.name ?: stringResource(Res.string.home_no_routine_assigned),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -249,7 +252,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 if (canExpand) {
                     Icon(
                         Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                         modifier = Modifier
                             .size(24.dp)
                             .rotate(rotationAngle),
@@ -330,6 +333,7 @@ private fun ExerciseRow(routineExercise: RoutineExercise) {
  * Format sets and reps for display.
  * Examples: "3x10", "4x12", "3x8-10" for varied reps
  */
+@Composable
 private fun formatSetsReps(routineExercise: RoutineExercise): String {
     val setReps = routineExercise.setReps
     val sets = setReps.size
@@ -339,21 +343,21 @@ private fun formatSetsReps(routineExercise: RoutineExercise): String {
     // Check if all reps are the same
     val nonNullReps = setReps.filterNotNull()
     return if (nonNullReps.isEmpty()) {
-        "${sets}x AMRAP"
+        stringResource(Res.string.cycle_review_sets_amrap, sets)
     } else if (nonNullReps.distinct().size == 1 && nonNullReps.size == sets) {
         // All same reps, no AMRAP sets
-        "${sets}x${nonNullReps.first()}"
+        stringResource(Res.string.cycle_review_sets_uniform, sets, nonNullReps.first())
     } else if (nonNullReps.distinct().size == 1) {
         // Some sets are AMRAP (null reps)
-        "${nonNullReps.size}x${nonNullReps.first()} + ${sets - nonNullReps.size}x AMRAP"
+        stringResource(Res.string.cycle_review_sets_plus_amrap, nonNullReps.size, nonNullReps.first(), sets - nonNullReps.size)
     } else {
         // Different reps - show range or list
         val min = nonNullReps.minOrNull() ?: 0
         val max = nonNullReps.maxOrNull() ?: 0
         if (min != max) {
-            "${sets}x$min-$max"
+            stringResource(Res.string.cycle_review_sets_range, sets, min, max)
         } else {
-            "${sets}x$min"
+            stringResource(Res.string.cycle_review_sets_uniform, sets, min)
         }
     }
 }
@@ -361,28 +365,29 @@ private fun formatSetsReps(routineExercise: RoutineExercise): String {
 /**
  * Build list of modifier badge strings from day modifiers.
  */
+@Composable
 private fun buildModifierBadges(day: CycleDay): List<String> {
     val badges = mutableListOf<String>()
 
-    day.echoLevel?.let { badges.add("Echo:${it.displayName}") }
+    day.echoLevel?.let { badges.add(stringResource(Res.string.cycle_review_echo_badge, it.displayName)) }
     day.weightProgressionPercent?.let { pct ->
         val sign = if (pct >= 0) "+" else ""
         badges.add("${sign}${pct.roundToInt()}%")
     }
     day.eccentricLoadPercent?.let { pct ->
         if (pct != 100) {
-            badges.add("Eccentric $pct%")
+            badges.add(stringResource(Res.string.cycle_review_eccentric_badge, pct))
         }
     }
     day.repModifier?.let { mod ->
         if (mod != 0) {
             val sign = if (mod > 0) "+" else ""
-            badges.add("${sign}$mod reps")
+            badges.add(stringResource(Res.string.cycle_review_rep_mod_badge, sign, mod))
         }
     }
     day.restTimeOverrideSeconds?.let { sec ->
         // Always show rest time badge if override is set (default is 90s in config sheet)
-        badges.add("${sec}s rest")
+        badges.add(stringResource(Res.string.cycle_review_rest_badge, sec))
     }
 
     return badges

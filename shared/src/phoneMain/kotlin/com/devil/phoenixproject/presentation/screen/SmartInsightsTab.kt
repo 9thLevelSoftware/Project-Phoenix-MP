@@ -97,6 +97,43 @@ import projectphoenix.shared.generated.resources.insights_well_balanced
 import projectphoenix.shared.generated.resources.no_balance_data
 import projectphoenix.shared.generated.resources.no_plateaus
 import projectphoenix.shared.generated.resources.no_workouts_this_week
+import projectphoenix.shared.generated.resources.smart_insights_balance_def
+import projectphoenix.shared.generated.resources.smart_insights_balance_so_what
+import projectphoenix.shared.generated.resources.smart_insights_best_window_def
+import projectphoenix.shared.generated.resources.smart_insights_best_window_so_what
+import projectphoenix.shared.generated.resources.smart_insights_last_28_days
+import projectphoenix.shared.generated.resources.smart_insights_last_7_days
+import projectphoenix.shared.generated.resources.smart_insights_plateau_at
+import projectphoenix.shared.generated.resources.smart_insights_plateau_def
+import projectphoenix.shared.generated.resources.smart_insights_plateau_so_what
+import projectphoenix.shared.generated.resources.smart_insights_readiness_def
+import projectphoenix.shared.generated.resources.smart_insights_readiness_schedule_subtitle
+import projectphoenix.shared.generated.resources.smart_insights_readiness_schedule_title
+import projectphoenix.shared.generated.resources.smart_insights_readiness_so_what
+import projectphoenix.shared.generated.resources.smart_insights_readiness_time
+import projectphoenix.shared.generated.resources.smart_insights_readiness_title
+import projectphoenix.shared.generated.resources.smart_insights_recent_sessions
+import projectphoenix.shared.generated.resources.smart_insights_recovery_plateaus_subtitle
+import projectphoenix.shared.generated.resources.smart_insights_recovery_plateaus_title
+import projectphoenix.shared.generated.resources.smart_insights_sets_reps
+import projectphoenix.shared.generated.resources.smart_insights_training_balance_subtitle
+import projectphoenix.shared.generated.resources.smart_insights_training_balance_title
+import projectphoenix.shared.generated.resources.smart_insights_variety_def
+import projectphoenix.shared.generated.resources.smart_insights_variety_so_what
+import projectphoenix.shared.generated.resources.smart_insights_weekly_volume_def
+import projectphoenix.shared.generated.resources.smart_insights_weekly_volume_so_what
+import projectphoenix.shared.generated.resources.smart_insights_weekly_volume_subtitle
+import projectphoenix.shared.generated.resources.smart_insights_weekly_volume_title
+import projectphoenix.shared.generated.resources.smart_insights_window_afternoon
+import projectphoenix.shared.generated.resources.smart_insights_window_early_morning
+import projectphoenix.shared.generated.resources.smart_insights_window_evening
+import projectphoenix.shared.generated.resources.smart_insights_window_morning
+import projectphoenix.shared.generated.resources.smart_insights_window_night
+import projectphoenix.shared.generated.resources.smart_insights_window_range_afternoon
+import projectphoenix.shared.generated.resources.smart_insights_window_range_early_morning
+import projectphoenix.shared.generated.resources.smart_insights_window_range_evening
+import projectphoenix.shared.generated.resources.smart_insights_window_range_morning
+import projectphoenix.shared.generated.resources.smart_insights_window_range_night
 
 /**
  * Smart Insights Tab - training insights powered by SmartSuggestionsEngine and ReadinessEngine.
@@ -251,8 +288,8 @@ private fun SmartInsightsContent(
 
         item {
             InsightSectionHeader(
-                title = "Weekly Volume",
-                subtitle = "Muscle-group workload over the last 7 days",
+                title = stringResource(Res.string.smart_insights_weekly_volume_title),
+                subtitle = stringResource(Res.string.smart_insights_weekly_volume_subtitle),
                 modifier = widthModifier,
             )
         }
@@ -266,8 +303,8 @@ private fun SmartInsightsContent(
 
         item {
             InsightSectionHeader(
-                title = "Training Balance",
-                subtitle = "Push, pull, and lower-body distribution",
+                title = stringResource(Res.string.smart_insights_training_balance_title),
+                subtitle = stringResource(Res.string.smart_insights_training_balance_subtitle),
                 modifier = widthModifier,
             )
         }
@@ -281,8 +318,8 @@ private fun SmartInsightsContent(
 
         item {
             InsightSectionHeader(
-                title = "Recovery & Plateaus",
-                subtitle = "Undertrained movements and weight plateaus",
+                title = stringResource(Res.string.smart_insights_recovery_plateaus_title),
+                subtitle = stringResource(Res.string.smart_insights_recovery_plateaus_subtitle),
                 modifier = widthModifier,
             )
         }
@@ -303,8 +340,8 @@ private fun SmartInsightsContent(
 
         item {
             InsightSectionHeader(
-                title = "Readiness & Schedule",
-                subtitle = "When you perform best and today's load guidance",
+                title = stringResource(Res.string.smart_insights_readiness_schedule_title),
+                subtitle = stringResource(Res.string.smart_insights_readiness_schedule_subtitle),
                 modifier = widthModifier,
             )
         }
@@ -326,10 +363,10 @@ private fun SmartInsightsContent(
                     ReadinessEngine.computeReadiness(sessionSummaries, anchorNowMs)
                 }
                 InsightContextBlock(
-                    title = "Training Readiness",
-                    definition = "Compares your last 7 days of training against your 28-day baseline.",
-                    timeframe = "Acute 7d vs Chronic 28d",
-                    soWhat = "Adjust intensity or prioritize recovery when readiness dips.",
+                    title = stringResource(Res.string.smart_insights_readiness_title),
+                    definition = stringResource(Res.string.smart_insights_readiness_def),
+                    timeframe = stringResource(Res.string.smart_insights_readiness_time),
+                    soWhat = stringResource(Res.string.smart_insights_readiness_so_what),
                 )
                 ReadinessBriefingCard(
                     readinessResult = readiness,
@@ -346,9 +383,9 @@ private fun SmartInsightsContent(
 private fun WeeklyVolumeCard(report: WeeklyVolumeReport, weightUnit: WeightUnit) {
     InsightCard(
         title = stringResource(Res.string.insights_weekly_volume),
-        definition = "Weekly muscle-group workload breakdown.",
-        timeframe = "Last 7 days",
-        soWhat = "Ensure primary target muscle groups receive consistent weekly volume.",
+        definition = stringResource(Res.string.smart_insights_weekly_volume_def),
+        timeframe = stringResource(Res.string.smart_insights_last_7_days),
+        soWhat = stringResource(Res.string.smart_insights_weekly_volume_so_what),
     ) {
         if (report.volumes.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_workouts_this_week))
@@ -376,7 +413,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport, weightUnit: WeightUnit)
                         )
                     }
                     Text(
-                        "${vol.sets} sets · ${vol.reps} reps",
+                        stringResource(Res.string.smart_insights_sets_reps, vol.sets, vol.reps),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -505,7 +542,12 @@ internal data class BalanceSharePercents(
 
 @Composable
 private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_training_balance), definition = "Push/pull/legs share of your recent volume.", timeframe = "Last 28 days", soWhat = "Shift upcoming sessions toward the underrepresented bucket.") {
+    InsightCard(
+        title = stringResource(Res.string.insights_training_balance),
+        definition = stringResource(Res.string.smart_insights_balance_def),
+        timeframe = stringResource(Res.string.smart_insights_last_28_days),
+        soWhat = stringResource(Res.string.smart_insights_balance_so_what),
+    ) {
         val total = analysis.pushVolume + analysis.pullVolume + analysis.legsVolume
         val shares = balanceSharePercents(analysis.pushVolume, analysis.pullVolume, analysis.legsVolume)
 
@@ -613,7 +655,12 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
 
 @Composable
 private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
-    InsightCard(title = stringResource(Res.string.insights_exercise_variety), definition = "Exercises not trained recently.", timeframe = "Last 28 days", soWhat = "Reintroduce one neglected movement this week to maintain capacity.") {
+    InsightCard(
+        title = stringResource(Res.string.insights_exercise_variety),
+        definition = stringResource(Res.string.smart_insights_variety_def),
+        timeframe = stringResource(Res.string.smart_insights_last_28_days),
+        soWhat = stringResource(Res.string.smart_insights_variety_so_what),
+    ) {
         if (neglected.isEmpty()) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
@@ -662,7 +709,12 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
 
 @Composable
 private fun PlateauDetectionCard(plateaus: List<PlateauDetection>, weightUnit: WeightUnit) {
-    InsightCard(title = stringResource(Res.string.insights_plateau_alert), definition = "Movements with stalled peak load progression.", timeframe = "Recent comparable sessions", soWhat = "Change reps, tempo, or exercise variant to restart overload.") {
+    InsightCard(
+        title = stringResource(Res.string.insights_plateau_alert),
+        definition = stringResource(Res.string.smart_insights_plateau_def),
+        timeframe = stringResource(Res.string.smart_insights_recent_sessions),
+        soWhat = stringResource(Res.string.smart_insights_plateau_so_what),
+    ) {
         if (plateaus.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_plateaus))
         } else {
@@ -682,7 +734,15 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>, weightUnit: W
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Column {
                         Text(
-                            "${plateau.exerciseName} at ${SmartInsightsWeightText.plateauLoad(plateau.currentWeightKg, weightUnit, SmartInsightsWeightText.unitLabel(weightUnit))}",
+                            stringResource(
+                                Res.string.smart_insights_plateau_at,
+                                plateau.exerciseName,
+                                SmartInsightsWeightText.plateauLoad(
+                                    plateau.currentWeightKg,
+                                    weightUnit,
+                                    SmartInsightsWeightText.unitLabel(weightUnit),
+                                ),
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -703,7 +763,12 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>, weightUnit: W
 
 @Composable
 private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_best_window), definition = "Time windows associated with your strongest sessions.", timeframe = "Last 28 days", soWhat = "Schedule key sessions in your best-performing window.") {
+    InsightCard(
+        title = stringResource(Res.string.insights_best_window),
+        definition = stringResource(Res.string.smart_insights_best_window_def),
+        timeframe = stringResource(Res.string.smart_insights_last_28_days),
+        soWhat = stringResource(Res.string.smart_insights_best_window_so_what),
+    ) {
         if (analysis.optimalWindow == null) {
             PlaceholderText(
                 if (analysis.windowCounts.isEmpty()) {
@@ -835,18 +900,20 @@ private fun PlaceholderText(text: String) {
     )
 }
 
+@Composable
 private fun formatWindowName(window: TimeWindow): String = when (window) {
-    TimeWindow.EARLY_MORNING -> "Early Morning"
-    TimeWindow.MORNING -> "Morning"
-    TimeWindow.AFTERNOON -> "Afternoon"
-    TimeWindow.EVENING -> "Evening"
-    TimeWindow.NIGHT -> "Night"
+    TimeWindow.EARLY_MORNING -> stringResource(Res.string.smart_insights_window_early_morning)
+    TimeWindow.MORNING -> stringResource(Res.string.smart_insights_window_morning)
+    TimeWindow.AFTERNOON -> stringResource(Res.string.smart_insights_window_afternoon)
+    TimeWindow.EVENING -> stringResource(Res.string.smart_insights_window_evening)
+    TimeWindow.NIGHT -> stringResource(Res.string.smart_insights_window_night)
 }
 
+@Composable
 private fun formatWindowShort(window: TimeWindow): String = when (window) {
-    TimeWindow.EARLY_MORNING -> "5-7am"
-    TimeWindow.MORNING -> "7-10am"
-    TimeWindow.AFTERNOON -> "10am-3pm"
-    TimeWindow.EVENING -> "3-8pm"
-    TimeWindow.NIGHT -> "8pm-5am"
+    TimeWindow.EARLY_MORNING -> stringResource(Res.string.smart_insights_window_range_early_morning)
+    TimeWindow.MORNING -> stringResource(Res.string.smart_insights_window_range_morning)
+    TimeWindow.AFTERNOON -> stringResource(Res.string.smart_insights_window_range_afternoon)
+    TimeWindow.EVENING -> stringResource(Res.string.smart_insights_window_range_evening)
+    TimeWindow.NIGHT -> stringResource(Res.string.smart_insights_window_range_night)
 }

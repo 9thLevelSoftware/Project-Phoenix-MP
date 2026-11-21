@@ -41,9 +41,8 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.bulk_adjust_hint_pr_scaled
-import projectphoenix.shared.generated.resources.bulk_weight_adjust_select_hint
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -190,11 +189,15 @@ fun BulkWeightAdjustDialog(
     }
 
     PhoenixModalDialogFrame(
-        title = "Adjust All Weights",
+        title = stringResource(Res.string.routine_editor_adjust_all_weights),
         onDismiss = onDismiss,
-        confirmLabel = if (changeCount > 0) "Apply ($changeCount)" else "Apply",
+        confirmLabel = if (changeCount > 0) {
+            stringResource(Res.string.bulk_adjust_apply_count, changeCount)
+        } else {
+            stringResource(Res.string.action_apply)
+        },
         onConfirm = { preview?.let { onApply(it) } },
-        dismissLabel = "Cancel",
+        dismissLabel = stringResource(Res.string.action_cancel),
         confirmEnabled = changeCount > 0,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -206,12 +209,12 @@ fun BulkWeightAdjustDialog(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Percentage") },
+                    text = { Text(stringResource(Res.string.bulk_adjust_percentage)) },
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Absolute") },
+                    text = { Text(stringResource(Res.string.bulk_adjust_absolute)) },
                 )
             }
 
@@ -235,7 +238,7 @@ fun BulkWeightAdjustDialog(
                 1 -> AbsoluteModeContent(
                     absoluteValue = absoluteValue,
                     onValueChange = { absoluteValue = it },
-                    unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg",
+                    unitLabel = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg),
                 )
             }
 
@@ -260,7 +263,7 @@ fun BulkWeightAdjustDialog(
 
             // Preview header
             Text(
-                text = "Preview",
+                text = stringResource(Res.string.bulk_adjust_preview),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -347,8 +350,8 @@ private fun PercentageModeContent(
             value = percentValue,
             onValueChange = onCustomValueChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Custom %") },
-            placeholder = { Text("e.g. 15 or -7.5") },
+            label = { Text(stringResource(Res.string.bulk_adjust_custom_percent)) },
+            placeholder = { Text(stringResource(Res.string.bulk_adjust_hint_percent)) },
             suffix = { Text("%") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
@@ -368,8 +371,8 @@ private fun AbsoluteModeContent(
         value = absoluteValue,
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
-        label = { Text("Weight change") },
-        placeholder = { Text("e.g. 5 or -2.5") },
+        label = { Text(stringResource(Res.string.bulk_adjust_weight_change)) },
+        placeholder = { Text(stringResource(Res.string.bulk_adjust_hint_absolute)) },
         suffix = { Text(unitLabel) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
@@ -416,7 +419,7 @@ private fun PreviewRow(
         when {
             isPRScaled -> {
                 Text(
-                    text = "PR-scaled",
+                    text = stringResource(Res.string.bulk_adjust_pr_scaled),
                     style = MaterialTheme.typography.bodySmall,
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
@@ -447,7 +450,7 @@ private fun PreviewRow(
                     )
                     if (isClamped) {
                         Text(
-                            text = " (clamped)",
+                            text = stringResource(Res.string.bulk_adjust_clamped_suffix),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )

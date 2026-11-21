@@ -101,7 +101,11 @@ fun WorkoutHud(
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
-    val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
+    val topBarModeLabel = if (isCurrentExerciseBodyweight) {
+        stringResource(Res.string.label_bodyweight)
+    } else {
+        workoutParameters.programMode.displayName
+    }
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
     // Determine gradient for background based on phase?
@@ -234,7 +238,7 @@ fun WorkoutHud(
                     val isDangerA = repRanges?.isCableAInDangerZone(metric.positionA) ?: false
 
                     EnhancedCablePositionBar(
-                        label = "L",
+                        label = stringResource(Res.string.hud_cable_left_short),
                         currentPosition = metric.positionA,
                         velocity = metric.velocityA,
                         minPosition = repRanges?.minPosA,
@@ -257,7 +261,7 @@ fun WorkoutHud(
                     val isDangerB = repRanges?.isCableBInDangerZone(metric.positionB) ?: false
 
                     EnhancedCablePositionBar(
-                        label = "R",
+                        label = stringResource(Res.string.hud_cable_right_short),
                         currentPosition = metric.positionB,
                         velocity = metric.velocityB,
                         minPosition = repRanges?.minPosB,
@@ -404,7 +408,7 @@ private fun HudBottomBar(
             Column {
                 if (isCurrentExerciseBodyweight) {
                     Text(
-                        "Bodyweight",
+                        stringResource(Res.string.label_bodyweight),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -415,13 +419,13 @@ private fun HudBottomBar(
                     )
                 } else {
                     Text(
-                        "Weight/cable",
+                        stringResource(Res.string.hud_weight_per_cable_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         if (workoutParameters.isEchoMode) {
-                            "Adaptive"
+                            stringResource(Res.string.hud_adaptive)
                         } else {
                             formatWeight(selectedDisplayKg, weightUnit)
                         },
@@ -511,7 +515,7 @@ private fun ExecutionPage(
                 // Set Counter: "Set X / Y" - prominent secondary text
                 if (totalSets > 0) {
                     Text(
-                        text = "Set ${currentSetIndex + 1} / $totalSets",
+                        text = stringResource(Res.string.hud_set_of, currentSetIndex + 1, totalSets),
                         style = if (isCompactHeight) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -539,14 +543,14 @@ private fun ExecutionPage(
             val timedRemainingSeconds = timedExerciseRemainingSeconds
             if (isCurrentExerciseBodyweight) {
                 Text(
-                    "TIME",
+                    stringResource(Res.string.hud_time_label),
                     style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 val remainingSeconds = timedExerciseRemainingSeconds
                 Text(
-                    text = remainingSeconds?.let { "${it}s" } ?: "—",
+                    text = remainingSeconds?.let { stringResource(Res.string.hud_seconds_short, it) } ?: "—",
                     style = workoutCounterStyle,
                     color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
                         MaterialTheme.colorScheme.error
@@ -567,14 +571,14 @@ private fun ExecutionPage(
                 }
             } else if (timedRemainingSeconds != null) {
                 Text(
-                    "TIME",
+                    stringResource(Res.string.hud_time_label),
                     style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 // Large countdown display
                 Text(
-                    text = "${timedRemainingSeconds}s",
+                    text = stringResource(Res.string.hud_seconds_short, timedRemainingSeconds),
                     style = workoutCounterStyle,
                     color = if (timedRemainingSeconds <= 5) {
                         MaterialTheme.colorScheme.error // Highlight last 5 seconds
@@ -595,7 +599,9 @@ private fun ExecutionPage(
                 // Timed cable exercises still count reps; show a secondary rep counter.
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val repLabel = if (repCount.isWarmupComplete) "REPS" else "WARMUP"
+                val repLabel = stringResource(
+                    if (repCount.isWarmupComplete) Res.string.hud_reps_label else Res.string.hud_warmup_label,
+                )
                 Text(
                     repLabel,
                     style = MaterialTheme.typography.labelLarge,
@@ -629,7 +635,9 @@ private fun ExecutionPage(
                 // Shows phase label and animated counter during working reps
                 // Shows warmup counter during warmup phase
                 Text(
-                    if (repCount.isWarmupComplete) "REP" else "WARMUP",
+                    stringResource(
+                        if (repCount.isWarmupComplete) Res.string.hud_rep_label else Res.string.hud_warmup_label,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 2.sp,
@@ -702,12 +710,12 @@ private fun ExecutionPage(
                     maxForce = gaugeMax,
                     velocity = (metric.velocityA + metric.velocityB) / 2.0,
                     label = forceLabel,
-                    subLabel = "PER CABLE",
+                    subLabel = stringResource(Res.string.hud_per_cable_upper),
                     modifier = Modifier.size(hudSize),
                 )
             } else if (isCurrentExerciseBodyweight) {
                 Text(
-                    "Bodyweight exercise",
+                    stringResource(Res.string.hud_bodyweight_exercise),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -817,7 +825,7 @@ private fun StatsPage(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
-                    "No machine metrics for bodyweight",
+                    stringResource(Res.string.hud_no_machine_metrics_bodyweight),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -839,7 +847,7 @@ private fun StatsPage(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
-                    "Waiting for Metrics...",
+                    stringResource(Res.string.hud_waiting_for_metrics),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -859,7 +867,7 @@ private fun StatsPage(
     ) {
         // Title
         Text(
-            "Live Stats",
+            stringResource(Res.string.hud_live_stats),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -887,7 +895,7 @@ private fun StatsPage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "MEAN CONCENTRIC VELOCITY",
+                        stringResource(Res.string.hud_mcv_upper),
                         style = MaterialTheme.typography.labelMedium,
                         color = zColor,
                         letterSpacing = 1.sp,
@@ -899,22 +907,25 @@ private fun StatsPage(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         StatColumn(
-                            label = "MCV",
-                            value = "${formatMcv(mcv)} m/s",
+                            label = stringResource(Res.string.hud_mcv_short),
+                            value = stringResource(Res.string.hud_mcv_value, formatMcv(mcv)),
                             color = zColor,
                             modifier = Modifier.widthIn(min = 84.dp),
                         )
                         if (vbtEnabled) {
                             StatColumn(
-                                label = "Zone",
+                                label = stringResource(Res.string.hud_zone),
                                 value = velocityZoneLabel(zone),
                                 color = zColor,
                                 modifier = Modifier.widthIn(min = 84.dp),
                             )
                         }
                         StatColumn(
-                            label = "Peak",
-                            value = "${formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS)} m/s",
+                            label = stringResource(Res.string.hud_peak),
+                            value = stringResource(
+                                Res.string.hud_mcv_value,
+                                formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS),
+                            ),
                             color = zColor,
                             modifier = Modifier.widthIn(min = 84.dp),
                         )
@@ -935,7 +946,7 @@ private fun StatsPage(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 StatColumn(
-                                    label = "Est. Reps Left",
+                                    label = stringResource(Res.string.hud_est_reps_left),
                                     value = "$repsRemaining",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -959,7 +970,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "LOAD",
+                    stringResource(Res.string.hud_load_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 1.sp,
@@ -970,20 +981,20 @@ private fun StatsPage(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         StatColumn(
-                            label = "Left",
+                            label = stringResource(Res.string.hud_left),
                             value = formatWeight(metric.loadA, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f),
                         )
                         StatColumn(
-                            label = "Right",
+                            label = stringResource(Res.string.hud_right),
                             value = formatWeight(metric.loadB, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f),
                         )
                     }
                     StatColumn(
-                        label = "Total",
+                        label = stringResource(Res.string.hud_total),
                         value = formatWeight(metric.totalLoad, weightUnit),
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.fillMaxWidth(),
@@ -994,17 +1005,17 @@ private fun StatsPage(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         StatColumn(
-                            label = "Left",
+                            label = stringResource(Res.string.hud_left),
                             value = formatWeight(metric.loadA, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         StatColumn(
-                            label = "Right",
+                            label = stringResource(Res.string.hud_right),
                             value = formatWeight(metric.loadB, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         StatColumn(
-                            label = "Total",
+                            label = stringResource(Res.string.hud_total),
                             value = formatWeight(metric.totalLoad, weightUnit),
                             color = MaterialTheme.colorScheme.tertiary,
                         )
@@ -1026,7 +1037,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "VELOCITY",
+                    stringResource(Res.string.hud_velocity_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     letterSpacing = 1.sp,
@@ -1036,13 +1047,13 @@ private fun StatsPage(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
-                        label = "Left",
-                        value = "${metric.velocityA.toInt()} mm/s",
+                        label = stringResource(Res.string.hud_left),
+                        value = stringResource(Res.string.hud_velocity_value, metric.velocityA.toInt()),
                         color = MaterialTheme.colorScheme.secondary,
                     )
                     StatColumn(
-                        label = "Right",
-                        value = "${metric.velocityB.toInt()} mm/s",
+                        label = stringResource(Res.string.hud_right),
+                        value = stringResource(Res.string.hud_velocity_value, metric.velocityB.toInt()),
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
@@ -1062,7 +1073,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "POSITION",
+                    stringResource(Res.string.hud_position_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.tertiary,
                     letterSpacing = 1.sp,
@@ -1072,13 +1083,13 @@ private fun StatsPage(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
-                        label = "Left",
-                        value = "${metric.positionA.toInt()} mm",
+                        label = stringResource(Res.string.hud_left),
+                        value = stringResource(Res.string.hud_position_value, metric.positionA.toInt()),
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                     StatColumn(
-                        label = "Right",
-                        value = "${metric.positionB.toInt()} mm",
+                        label = stringResource(Res.string.hud_right),
+                        value = stringResource(Res.string.hud_position_value, metric.positionB.toInt()),
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
@@ -1132,7 +1143,7 @@ private fun VelocityLossIndicator(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                "Velocity Loss",
+                stringResource(Res.string.hud_velocity_loss),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1176,7 +1187,7 @@ private fun VelocityLossIndicator(
         }
         if (shouldStopSet) {
             Text(
-                "THRESHOLD REACHED",
+                stringResource(Res.string.hud_threshold_reached),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.error,
                 fontWeight = FontWeight.Bold,
@@ -1251,12 +1262,14 @@ private fun ExerciseTimerControls(
         ) {
             Icon(
                 if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                contentDescription = if (isPaused) "Resume Timer" else "Pause Timer",
+                contentDescription = stringResource(
+                    if (isPaused) Res.string.hud_cd_resume_timer else Res.string.hud_cd_pause_timer,
+                ),
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                if (isPaused) "Resume" else "Pause",
+                stringResource(if (isPaused) Res.string.rest_resume else Res.string.rest_pause),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )
@@ -1270,12 +1283,12 @@ private fun ExerciseTimerControls(
         ) {
             Icon(
                 Icons.Default.Replay,
-                contentDescription = "Reset Timer",
+                contentDescription = stringResource(Res.string.cd_reset_timer),
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                "Reset",
+                stringResource(Res.string.rest_reset),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )

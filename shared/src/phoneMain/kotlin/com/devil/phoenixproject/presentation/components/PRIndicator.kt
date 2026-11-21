@@ -17,6 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.pr_cd_above
+import projectphoenix.shared.generated.resources.pr_cd_below
+import projectphoenix.shared.generated.resources.pr_indicator_none
+import projectphoenix.shared.generated.resources.pr_indicator_phase_suffix
+import projectphoenix.shared.generated.resources.pr_indicator_value
 
 /**
  * Displays the current weight as a percentage of the user's Personal Record (PR).
@@ -39,7 +46,7 @@ fun PRIndicator(
 ) {
     if (prWeight == null || prWeight <= 0) {
         Text(
-            text = "No PR",
+            text = stringResource(Res.string.pr_indicator_none),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = modifier.semantics(mergeDescendants = true) {},
@@ -58,7 +65,11 @@ fun PRIndicator(
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "$percentage% PR${phaseLabel?.let { " · $it" } ?: ""}",
+            text = if (phaseLabel != null) {
+                stringResource(Res.string.pr_indicator_phase_suffix, percentage, phaseLabel)
+            } else {
+                stringResource(Res.string.pr_indicator_value, percentage)
+            },
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -79,7 +90,9 @@ fun PRIndicator(
                 } else {
                     Icons.Default.KeyboardArrowDown
                 },
-                contentDescription = if (isAbovePR) "Above PR" else "Below PR",
+                contentDescription = stringResource(
+                    if (isAbovePR) Res.string.pr_cd_above else Res.string.pr_cd_below,
+                ),
                 tint = if (isAbovePR) {
                     MaterialTheme.colorScheme.primary
                 } else {
